@@ -21,7 +21,10 @@ With that result, you can quickly find what is the best RAG pipeline to your own
   - [Evaluate your data to various RAG modules](#evaluate-your-data-to-various-rag-modules)
   - [Evaluate your custom RAG pipeline](#evaluate-your-custom-rag-pipeline)
   - [Config yaml file](#config-yaml-file)
+- [Installation](#installation)
 - [Supporting RAG modules](#supporting-rag-modules)
+- [To-do List](#to-do-list)
+- [Contribution](#contribution)
 
 # Strengths
 - Data Creation: Make your raw documents to RAG evaluation dataset. Generate multi-hop, ambiguous, conversational, non-answerable questions, just like real-world user questions.
@@ -114,6 +117,12 @@ node_lines:
         - module_type: openai
         - module_type: mixtral
         - module_type: llama-2
+```
+
+# Installation
+Warning! You can't install raground yet because it is under construction.
+```bash
+pip install raground
 ```
 
 # Supporting RAG modules
