@@ -3,15 +3,15 @@ from typing import List
 from uuid import UUID
 
 import pandas as pd
+import swifter  # do not delete this line
 
 
 def retrieval_metric(func):
     @functools.wraps(func)
-    def wrapper(retrieval_gt: List[List[UUID]], *args, **kwargs):
-        contents, scores, ids = func(*args, **kwargs)
+    def wrapper(retrieval_gt: List[List[UUID]], ids: List[List[UUID]]) -> List[float]:
         # make retrieval_gt and ids to pd dataframe
-        df = pd.DataFrame([retrieval_gt, ids], columns=['gt', 'pred'])
-        df[func.__name__] = df.apply(lambda x: func(x['gt'], x['pred']), axis=1)
+        df = pd.DataFrame({'gt': retrieval_gt, 'pred': ids})
+        df[func.__name__] = df.swifter.apply(lambda x: func(x['gt'], x['pred']), axis=1)
         return df[func.__name__].tolist()
 
     return wrapper
