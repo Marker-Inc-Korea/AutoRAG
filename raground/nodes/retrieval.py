@@ -1,6 +1,5 @@
 import asyncio
 from typing import List, Union, Dict, Tuple
-
 from uuid import UUID
 
 import numpy as np
@@ -20,7 +19,8 @@ def cast(queries: Union[str, List[str]]) -> List[str]:
         raise ValueError(f"queries must be str or list, but got {type(queries)}")
 
 
-def evenly_distribute_passages(ids: List[List[UUID]], scores: List[List[float]], top_k: int) -> Tuple[List[UUID], List[float]]:
+def evenly_distribute_passages(ids: List[List[UUID]], scores: List[List[float]], top_k: int) -> Tuple[
+    List[UUID], List[float]]:
     assert len(ids) == len(scores), "ids and scores must have same length."
     query_cnt = len(ids)
     avg_len = top_k // query_cnt
@@ -63,10 +63,13 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> List[Tuple[
     # check if bm25_corpus is valid
     assert ("tokens" and "passage_id" in list(bm25_corpus.keys())), \
         "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
-    # tokenize input query
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     bm25_instance = BM25Okapi(bm25_corpus["tokens"])
-
+    # run async bm25_pure function
+    tasks = [bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus) for input_queries in queries]
+    loop = asyncio.get_event_loop()
+    results = loop.run_until_complete(asyncio.gather(*tasks))
+    return results
 
 
 async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> Tuple[
@@ -104,4 +107,8 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
 
     # make a total result to top_k
     id_result, score_result = evenly_distribute_passages(id_result, score_result, top_k)
-    return id_result, score_result
+    # sort id_result and score_result by score
+    result = [(_id, score) for score, _id in
+              sorted(zip(score_result, id_result), key=lambda pair: pair[0], reverse=True)]
+    id_result, score_result = zip(*result)
+    return list(id_result), list(score_result)
