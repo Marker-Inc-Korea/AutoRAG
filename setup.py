@@ -29,6 +29,8 @@ setup(
         'tiktoken',
         'openai>=1.0.0',
         'llama-index>=0.9.28',
+        'rank_bm25',
+        'transformers',
     ],
     classifiers=[
         "Intended Audience :: Developers",

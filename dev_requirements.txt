@@ -1,2 +1,4 @@
 pytest
 pytest-env
+sphinx
+furo
