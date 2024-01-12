@@ -10,8 +10,7 @@ from raground.nodes.retrieval.base import retrieval_node, evenly_distribute_pass
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> List[Tuple[List[UUID], List[float]]]:
-    # TODO: refactor return value as Tuple[List[List[UUID]], List[List[float]]]
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[List[UUID]], List[List[float]]]:
     """
     BM25 retrieval function.
     You have to load a pickle file that is already ingested.
@@ -29,7 +28,7 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> List[Tuple[
             "passage_id": [], # 2d list of passage_id. Type must be UUID.
         }
 
-    :return: The List of tuple contains a list of passage ids that retrieved from bm25 and its scores.
+    :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
     It will be a length of queries. And each element has a length of top_k.
     """
     # check if bm25_corpus is valid
@@ -41,7 +40,9 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> List[Tuple[
     tasks = [bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus) for input_queries in queries]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
-    return results
+    id_result = list(map(lambda x: x[0], results))
+    score_result = list(map(lambda x: x[1], results))
+    return id_result, score_result
 
 
 async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> Tuple[

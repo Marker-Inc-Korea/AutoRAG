@@ -22,19 +22,14 @@ queries = [
 def test_bm25_retrieval():
     top_k = 10
     original_bm25 = bm25.__wrapped__
-    result = original_bm25(queries, top_k=top_k, bm25_corpus=bm25_corpus)
-    assert len(result) == 3
-    for each_result in result:
-        assert isinstance(each_result, tuple)
-        assert len(each_result) == 2
-        ids = each_result[0]
-        scores = each_result[1]
-        assert isinstance(ids, list)
-        assert isinstance(scores, list)
-        assert len(ids) == top_k
-        assert len(scores) == top_k
-        for _id, score in zip(ids, scores):
+    id_result, score_result = original_bm25(queries, top_k=top_k, bm25_corpus=bm25_corpus)
+    assert len(id_result) == len(score_result) == 3
+    for id_list, score_list in zip(id_result, score_result):
+        assert isinstance(id_list, list)
+        assert isinstance(score_list, list)
+        assert len(id_list) == len(score_list) == top_k
+        for _id, score in zip(id_list, score_list):
             assert isinstance(_id, UUID)
             assert isinstance(score, float)
-        for i in range(1, len(scores)):
-            assert scores[i - 1] >= scores[i]
+        for i in range(1, len(score_list)):
+            assert score_list[i - 1] >= score_list[i]
