@@ -31,6 +31,7 @@ setup(
         'llama-index>=0.9.28',
         'rank_bm25',
         'transformers',
+        'swifter',
     ],
     classifiers=[
         "Intended Audience :: Developers",
