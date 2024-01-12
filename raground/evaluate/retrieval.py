@@ -1,6 +1,6 @@
 import functools
 import warnings
-from typing import List, Callable
+from typing import List, Callable, Any, Tuple
 from uuid import UUID
 
 import pandas as pd
@@ -9,7 +9,8 @@ from raground.evaluate.metric import retrieval_recall, retrieval_precision, retr
 
 
 def evaluate_retrieval(retrieval_gt: List[List[UUID]], strategies: List[str]):
-    def decorator_evaluate_retrieval(func: Callable):
+    def decorator_evaluate_retrieval(
+            func: Callable[[Any], Tuple[List[List[str]], List[List[float]], List[List[UUID]]]]):
         """
         Decorator for evaluating retrieval results.
         You can use this decorator to any method that returns (contents, scores, retrieval_gt),
