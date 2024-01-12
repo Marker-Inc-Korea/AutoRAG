@@ -1,45 +1,17 @@
 import asyncio
-from typing import List, Union, Dict, Tuple
+from typing import List, Dict, Tuple
 from uuid import UUID
 
 import numpy as np
 from rank_bm25 import BM25Okapi
 from transformers import AutoTokenizer
 
-
-# decorator method that cast queries to list, get contents from db
-
-
-def cast(queries: Union[str, List[str]]) -> List[str]:
-    if isinstance(queries, str):
-        return [queries]
-    elif isinstance(queries, List):
-        return queries
-    else:
-        raise ValueError(f"queries must be str or list, but got {type(queries)}")
+from raground.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 
 
-def evenly_distribute_passages(ids: List[List[UUID]], scores: List[List[float]], top_k: int) -> Tuple[
-    List[UUID], List[float]]:
-    assert len(ids) == len(scores), "ids and scores must have same length."
-    query_cnt = len(ids)
-    avg_len = top_k // query_cnt
-    remainder = top_k % query_cnt
-
-    new_ids = []
-    new_scores = []
-    for i in range(query_cnt):
-        if i < remainder:
-            new_ids.extend(ids[i][:avg_len + 1])
-            new_scores.extend(scores[i][:avg_len + 1])
-        else:
-            new_ids.extend(ids[i][:avg_len])
-            new_scores.extend(scores[i][:avg_len])
-
-    return new_ids, new_scores
-
-
+@retrieval_node
 def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> List[Tuple[List[UUID], List[float]]]:
+    # TODO: refactor return value as Tuple[List[List[UUID]], List[List[float]]]
     """
     BM25 retrieval function.
     You have to load a pickle file that is already ingested.
