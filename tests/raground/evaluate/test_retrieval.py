@@ -9,7 +9,7 @@ from raground.evaluate import evaluate_retrieval
 retrieval_gt = [[uuid4() for _ in range(2)] for _ in range(4)]
 
 
-@evaluate_retrieval
+@evaluate_retrieval(retrieval_gt=retrieval_gt, strategies=['recall', 'precision', 'f1'])
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[UUID]]]:
     contents = [
         ['a', 'b', 'c', 'd'],
@@ -33,8 +33,7 @@ def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[UU
 
 
 def test_evaluate_retrieval():
-    strategies = ['recall', 'precision', 'f1']
-    result_df = pseudo_retrieval(retrieval_gt=retrieval_gt, strategies=strategies)
+    result_df = pseudo_retrieval()
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 4
     assert len(result_df.columns) == 7
