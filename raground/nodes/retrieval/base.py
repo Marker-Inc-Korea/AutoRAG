@@ -31,6 +31,7 @@ def retrieval_node(func):
             assert os.path.exists(bm25_path), f"bm25_path {bm25_path} does not exist. Please ingest first."
         # TODO: add chroma check for vectordb
 
+        # find queries columns & type cast queries
         assert "query" in previous_result.columns, "previous_result must have query column."
         if "query" not in previous_result.columns:
             previous_result["queries"] = previous_result["query"]
@@ -39,6 +40,7 @@ def retrieval_node(func):
 
         bm25_corpus = load_bm25_corpus(bm25_path)
 
+        # run retrieval function
         if func.__name__ == "bm25":
             ids, scores = func(queries, bm25_corpus, *args, **kwargs)
         else:

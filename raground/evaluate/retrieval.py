@@ -7,7 +7,7 @@ import pandas as pd
 from raground.evaluate.metric import retrieval_recall, retrieval_precision, retrieval_f1
 
 
-def evaluate_retrieval(retrieval_gt: List[List[str]], strategies: List[str]):
+def evaluate_retrieval(retrieval_gt: List[List[List[str]]], strategies: List[str]):
     def decorator_evaluate_retrieval(
             func: Callable[[Any], Tuple[List[List[str]], List[List[float]], List[List[str]]]]):
         """
