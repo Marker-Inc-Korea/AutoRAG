@@ -4,7 +4,7 @@ import pathlib
 
 import pandas as pd
 
-from raground.utils import fetch_contents
+from autorag.utils import fetch_contents
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 

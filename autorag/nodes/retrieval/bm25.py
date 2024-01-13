@@ -6,7 +6,7 @@ import numpy as np
 from rank_bm25 import BM25Okapi
 from transformers import AutoTokenizer
 
-from raground.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
+from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 
 
 @retrieval_node

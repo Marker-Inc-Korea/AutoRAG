@@ -3,7 +3,7 @@ from typing import Tuple, List
 
 import pandas as pd
 
-from raground.evaluate import evaluate_retrieval
+from autorag.evaluate import evaluate_retrieval
 
 retrieval_gt = [[[f'test{i}-{j}'] for i in range(2)] for j in range(4)]
 

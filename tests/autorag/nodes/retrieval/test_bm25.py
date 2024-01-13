@@ -4,7 +4,7 @@ import pickle
 
 import pandas as pd
 
-from raground.nodes.retrieval import bm25
+from autorag.nodes.retrieval import bm25
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 bm25_path = os.path.join(root_dir, "resources", "test_bm25_retrieval.pkl")

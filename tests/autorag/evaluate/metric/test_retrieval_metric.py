@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from raground.evaluate.metric import retrieval_f1, retrieval_precision, retrieval_recall
+from autorag.evaluate.metric import retrieval_f1, retrieval_precision, retrieval_recall
 
 retrieval_gt = [
     [['test-1', 'test-2'], ['test-3']],

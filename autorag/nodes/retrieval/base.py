@@ -6,7 +6,7 @@ from typing import List, Union, Tuple, Dict
 
 import pandas as pd
 
-from raground.utils import fetch_contents
+from autorag.utils import fetch_contents
 
 
 def retrieval_node(func):

@@ -4,7 +4,7 @@ from typing import List, Callable, Any, Tuple
 
 import pandas as pd
 
-from raground.evaluate.metric import retrieval_recall, retrieval_precision, retrieval_f1
+from autorag.evaluate.metric import retrieval_recall, retrieval_precision, retrieval_f1
 
 
 def evaluate_retrieval(retrieval_gt: List[List[List[str]]], strategies: List[str]):

@@ -1,4 +1,4 @@
-from raground.nodes.retrieval.base import evenly_distribute_passages
+from autorag.nodes.retrieval.base import evenly_distribute_passages
 
 queries = [
     ["What is Visconde structure?", "What are Visconde structure?"],
