@@ -8,7 +8,7 @@ from autorag.evaluate import evaluate_retrieval
 retrieval_gt = [[[f'test{i}-{j}'] for i in range(2)] for j in range(4)]
 
 
-@evaluate_retrieval(retrieval_gt=retrieval_gt, strategies=['recall', 'precision', 'f1'])
+@evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['recall', 'precision', 'f1'])
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
     contents = [
         ['a', 'b', 'c', 'd'],
