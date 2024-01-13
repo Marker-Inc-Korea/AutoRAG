@@ -1,4 +1,4 @@
-# RAGround
+# AutoRAG
 ## ⚠️Warning: This repository is under construction. 🚧 
 
 # Introduction
@@ -8,7 +8,7 @@ but you don’t know what method is great for “your own data” and "your own 
 Making and evaluating all RAG modules is very time-consuming and hard to do.
 But without it, you will never know your own RAG pipeline is “fit” for your own use-case than other RAG methods.
 
-RAGround is a tool for benchmarking “your data” to conventional RAG methods. 
+AutoRAG is a tool for benchmarking “your data” to conventional RAG methods. 
 You can build evaluation dataset from your raw documents, and evaluate various RAG methods automatically.
 With that result, you can quickly find what is the best RAG pipeline to your own data.
 
@@ -29,7 +29,7 @@ With that result, you can quickly find what is the best RAG pipeline to your own
 # Strengths
 - Data Creation: Make your raw documents to RAG evaluation dataset. Generate multi-hop, ambiguous, conversational, non-answerable questions, just like real-world user questions.
 - Find your RAG baseline: Easily benchmark 30+ RAG methods with few lines of code. You can quickly get a high-performance RAG pipeline just for your data. Don’t waste time dealing with complex RAG modules and academic paper. Focus on your data.
-- Analyze where is wrong: Sometimes it is hard to keep tracking where is the major problem within your RAG pipeline. RAGround gives you the data of it, so you can analyze and focus where is the major problem and where you to focus on.
+- Analyze where is wrong: Sometimes it is hard to keep tracking where is the major problem within your RAG pipeline. AutoRAG gives you the data of it, so you can analyze and focus where is the major problem and where you to focus on.
 - Quick Starter Pack for your new RAG product: Get the most effective RAG workflow among many pipelines, and start from there. Don’t start at toy-project level, start from advanced level.
 - Share your experiment to others: It's really easy to share your experiment to others. Share your config yaml file and evaluation result csv files. Plus, check out others result and adapt to your use-case.
 
@@ -50,7 +50,7 @@ Evalautor(config).evaluate()
 ```
 or you can use command line interface
 ```bash
-raground evaluate --config your/path/to/default_config.yaml
+autorag evaluate --config your/path/to/default_config.yaml
 ```
 
 ### Evaluate your custom RAG pipeline
@@ -120,9 +120,9 @@ node_lines:
 ```
 
 # Installation
-Warning! You can't install raground yet because it is under construction.
+Warning! You can't install autorag yet because it is under construction.
 ```bash
-pip install raground
+pip install autorag
 ```
 
 # Supporting RAG modules
@@ -161,4 +161,4 @@ Choose your own model
 - [ ] Human Dataset Creation Helper
 
 # Contribution
-We are developing RAGround as open-source. Feel free to contribute to this project.
+We are developing AutoRAG as open-source. Feel free to contribute to this project.
