@@ -9,7 +9,7 @@ from autorag.evaluate.metric import retrieval_recall, retrieval_precision, retri
 
 def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: List[str]):
     def decorator_evaluate_retrieval(
-            func: Callable[[Any], Tuple[List[List[str]], List[List[float]], List[List[str]]]]):
+            func: Callable[[Any], Tuple[List[List[str]], List[List[str]], List[List[float]]]]):
         """
         Decorator for evaluating retrieval results.
         You can use this decorator to any method that returns (contents, scores, ids),
@@ -21,7 +21,7 @@ def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: List[str]):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> pd.DataFrame:
-            contents, scores, pred_ids = func(*args, **kwargs)
+            contents, pred_ids, scores = func(*args, **kwargs)
             metric_funcs = {
                 retrieval_recall.__name__: retrieval_recall,
                 retrieval_precision.__name__: retrieval_precision,

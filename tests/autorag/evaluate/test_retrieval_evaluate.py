@@ -9,7 +9,7 @@ retrieval_gt = [[[f'test{i}-{j}'] for i in range(2)] for j in range(4)]
 
 
 @evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['retrieval_recall', 'retrieval_precision', 'retrieval_f1'])
-def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
+def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     contents = [
         ['a', 'b', 'c', 'd'],
         ['better', 'bone', 'caleb', 'done'],
@@ -28,7 +28,7 @@ def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[st
         [f'pred-{i}' for i in range(4, 8)],
         [retrieval_gt[3][0][0], 'pred-8', 'pred-9', 'pred-10'],
     ]
-    return contents, scores, ids
+    return contents, ids, scores
 
 
 def test_evaluate_retrieval():
