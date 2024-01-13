@@ -64,8 +64,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
 
         {
             "Tokens": [], # 2d list of tokens
-            "passage_id": [], # 2d list of passage_id. Type must be str
-            .
+            "passage_id": [], # 2d list of passage_id. Type must be str.
         }
     :return: The tuple contains a list of passage ids that retrieved from bm25 and its scores.
     """

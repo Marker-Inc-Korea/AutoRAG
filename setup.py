@@ -32,6 +32,7 @@ setup(
         'rank_bm25',
         'transformers',
         'swifter',
+        'pyyaml',
     ],
     classifiers=[
         "Intended Audience :: Developers",
