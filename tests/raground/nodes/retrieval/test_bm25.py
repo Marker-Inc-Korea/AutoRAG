@@ -2,6 +2,8 @@ import os
 import pathlib
 import pickle
 
+import pandas as pd
+
 from raground.nodes.retrieval import bm25
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
@@ -16,6 +18,11 @@ queries = [
      "What is your source of RAG framework?",
      "Is RAG framework have source?"],
 ]
+
+project_dir = os.path.join(root_dir, "resources", "sample_project")
+qa_data = pd.read_csv(os.path.join(project_dir, "data", "qa.csv"))
+corpus_data = pd.read_csv(os.path.join(project_dir, "data", "corpus.csv"))
+previous_result = qa_data.sample(5)[["qid", "query"]]
 
 
 def test_bm25_retrieval():
@@ -35,5 +42,16 @@ def test_bm25_retrieval():
 
 
 def test_bm25_node():
-    # bm25(root_dir=, previous_result=)
-    pass
+    contents, ids, scores = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4)
+    assert len(contents) == len(ids) == len(scores) == 5
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 4
+    # id is matching with corpus.csv
+    for content_list, id_list, score_list in zip(contents, ids, scores):
+        for i, (content, _id, score) in enumerate(zip(content_list, id_list, score_list)):
+            assert isinstance(content, str)
+            assert isinstance(_id, str)
+            assert isinstance(score, float)
+            assert _id in corpus_data["doc_id"].tolist()
+            assert content == corpus_data[corpus_data["doc_id"] == _id]["contents"].values[0]
+            if i >= 1:
+                assert score_list[i - 1] >= score_list[i]

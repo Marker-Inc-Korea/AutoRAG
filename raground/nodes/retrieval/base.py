@@ -20,11 +20,11 @@ def retrieval_node(func):
 
     @functools.wraps(func)
     def wrapper(
-            root_dir: Union[str, Path],
+            project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
-        resources_dir = os.path.join(root_dir, "resources")
-        data_dir = os.path.join(root_dir, "data")
+        resources_dir = os.path.join(project_dir, "resources")
+        data_dir = os.path.join(project_dir, "data")
         bm25_path = os.path.join(resources_dir, 'bm25.pkl')
         if func.__name__ == "bm25":
             assert bm25_path is not None, "bm25_path must be specified for using bm25 retrieval."
@@ -33,7 +33,7 @@ def retrieval_node(func):
 
         # find queries columns & type cast queries
         assert "query" in previous_result.columns, "previous_result must have query column."
-        if "query" not in previous_result.columns:
+        if "queries" not in previous_result.columns:
             previous_result["queries"] = previous_result["query"]
         previous_result["queries"] = previous_result["queries"].apply(cast_queries)
         queries = previous_result["queries"].tolist()
@@ -42,7 +42,7 @@ def retrieval_node(func):
 
         # run retrieval function
         if func.__name__ == "bm25":
-            ids, scores = func(queries, bm25_corpus, *args, **kwargs)
+            ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, *args, **kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
         # TODO: add chroma load for vectordb
