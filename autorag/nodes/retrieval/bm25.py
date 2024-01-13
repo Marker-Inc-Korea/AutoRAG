@@ -27,7 +27,6 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
         {
             "Tokens": [], # 2d list of tokens
             "passage_id": [], # 2d list of passage_id.
-            .
         }
 
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.

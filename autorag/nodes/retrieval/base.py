@@ -6,7 +6,7 @@ from typing import List, Union, Tuple, Dict
 
 import pandas as pd
 
-from autorag.utils import fetch_contents
+from autorag.utils import fetch_contents, result_to_dataframe
 
 
 def retrieval_node(func):
@@ -15,10 +15,12 @@ def retrieval_node(func):
     For example, it loads bm25 corpus for bm25 retrieval.
 
     :param func: Retrieval function that returns a list of ids and a list of scores
-    :return: A list of contents, list of ids, list of scores
+    :return: A pandas Dataframe that contains retrieved contents, retrieved ids, and retrieve scores.
+    The column name will be "retrieved_contents", "retrieved_ids", and "retrieve_scores".
     """
 
     @functools.wraps(func)
+    @result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,

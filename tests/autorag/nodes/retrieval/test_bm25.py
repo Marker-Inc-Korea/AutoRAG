@@ -42,7 +42,10 @@ def test_bm25_retrieval():
 
 
 def test_bm25_node():
-    contents, ids, scores = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4)
+    result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4)
+    contents = result_df["retrieved_contents"].tolist()
+    ids = result_df["retrieved_ids"].tolist()
+    scores = result_df["retrieve_scores"].tolist()
     assert len(contents) == len(ids) == len(scores) == 5
     assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 4
     # id is matching with corpus.csv
