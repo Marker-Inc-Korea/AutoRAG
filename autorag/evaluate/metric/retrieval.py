@@ -7,9 +7,9 @@ import swifter  # do not delete this line
 
 def retrieval_metric(func):
     @functools.wraps(func)
-    def wrapper(retrieval_gt: List[List[List[str]]], ids: List[List[str]]) -> List[float]:
+    def wrapper(retrieval_gt: List[List[List[str]]], pred_ids: List[List[str]]) -> List[float]:
         # make retrieval_gt and ids to pd dataframe
-        df = pd.DataFrame({'gt': retrieval_gt, 'pred': ids})
+        df = pd.DataFrame({'gt': retrieval_gt, 'pred': pred_ids})
         df[func.__name__] = df.swifter.apply(lambda x: func(x['gt'], x['pred']), axis=1)
         return df[func.__name__].tolist()
 

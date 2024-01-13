@@ -8,7 +8,7 @@ from autorag.evaluate import evaluate_retrieval
 retrieval_gt = [[[f'test{i}-{j}'] for i in range(2)] for j in range(4)]
 
 
-@evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['recall', 'precision', 'f1'])
+@evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['retrieval_recall', 'retrieval_precision', 'retrieval_f1'])
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
     contents = [
         ['a', 'b', 'c', 'd'],
@@ -36,18 +36,19 @@ def test_evaluate_retrieval():
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 4
     assert len(result_df.columns) == 7
-    assert list(result_df.columns) == ['contents', 'scores', 'pred_ids', 'retrieval_gt', 'recall', 'precision', 'f1']
-    recall = result_df['recall'].tolist()
+    assert list(result_df.columns) == ['contents', 'scores', 'pred_ids', 'retrieval_gt', 'retrieval_recall',
+                                       'retrieval_precision', 'retrieval_f1']
+    recall = result_df['retrieval_recall'].tolist()
     recall_solution = [1, 1, 0, 0.5]
     for pred, sol in zip(recall, recall_solution):
         assert math.isclose(pred, sol, rel_tol=1e-4)
 
-    precision = result_df['precision'].tolist()
+    precision = result_df['retrieval_precision'].tolist()
     precision_solution = [0.5, 0.5, 0, 0.25]
     for pred, sol in zip(precision, precision_solution):
         assert math.isclose(pred, sol, rel_tol=1e-4)
 
-    f1 = result_df['f1'].tolist()
+    f1 = result_df['retrieval_f1'].tolist()
     f1_solution = [1 / 1.5, 1 / 1.5, 0, 0.25 / 0.75]
     for pred, sol in zip(f1, f1_solution):
         assert math.isclose(pred, sol, rel_tol=1e-4)
