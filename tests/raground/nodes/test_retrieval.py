@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 from raground.nodes.retrieval.base import evenly_distribute_passages
 
 queries = [
@@ -12,7 +10,7 @@ queries = [
 
 
 def test_evenly_distribute_passages():
-    ids = [[uuid4() for _ in range(10)] for _ in range(3)]
+    ids = [[f'test-{i}-{j}' for i in range(10)] for j in range(3)]
     scores = [[i for i in range(10)] for _ in range(3)]
     top_k = 10
     new_ids, new_scores = evenly_distribute_passages(ids, scores, top_k)

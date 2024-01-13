@@ -1,7 +1,6 @@
 import os
 import pathlib
 import pickle
-from uuid import UUID
 
 from raground.nodes.retrieval import bm25
 
@@ -29,7 +28,12 @@ def test_bm25_retrieval():
         assert isinstance(score_list, list)
         assert len(id_list) == len(score_list) == top_k
         for _id, score in zip(id_list, score_list):
-            assert isinstance(_id, UUID)
+            assert isinstance(_id, str)
             assert isinstance(score, float)
         for i in range(1, len(score_list)):
             assert score_list[i - 1] >= score_list[i]
+
+
+def test_bm25_node():
+    # bm25(root_dir=, previous_result=)
+    pass

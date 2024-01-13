@@ -1,20 +1,19 @@
 import math
-from uuid import uuid4
 
 from raground.evaluate.metric import retrieval_f1, retrieval_precision, retrieval_recall
 
 retrieval_gt = [
-    [uuid4(), uuid4()],
-    [uuid4()],
-    [uuid4(), uuid4(), uuid4(), uuid4()],
-    [uuid4(), uuid4()],
+    ['test-1', 'test-2'],
+    ['test-3'],
+    ['test-4', 'test-5', 'test-6', 'test-7'],
+    ['test-8', 'test-9'],
 ]
 
 pred = [
-    [retrieval_gt[0][0], uuid4(), uuid4(), uuid4()],  # recall: 0.5, precision: 0.25, f1: 0.333
-    [uuid4(), uuid4(), uuid4(), uuid4()],  # recall: 0, precision: 0, f1: 0
-    [retrieval_gt[2][0], retrieval_gt[2][2], uuid4(), uuid4()],  # recall: 0.5, precision: 0.5, f1: 0.5
-    [retrieval_gt[3][0], retrieval_gt[3][1], uuid4(), uuid4()],  # recall: 1, precision: 0.5, f1: 0.667
+    [retrieval_gt[0][0], 'pred-1', 'pred-2', 'pred-3'],  # recall: 0.5, precision: 0.25, f1: 0.333
+    ['pred-4', 'pred-5', 'pred-6', 'pred-7'],  # recall: 0, precision: 0, f1: 0
+    [retrieval_gt[2][0], retrieval_gt[2][2], 'pred-8', 'pred-9'],  # recall: 0.5, precision: 0.5, f1: 0.5
+    [retrieval_gt[3][0], retrieval_gt[3][1], 'pred-10', 'pred-11'],  # recall: 1, precision: 0.5, f1: 0.667
 ]
 
 

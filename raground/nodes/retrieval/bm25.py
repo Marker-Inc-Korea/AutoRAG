@@ -1,6 +1,6 @@
 import asyncio
 from typing import List, Dict, Tuple
-from uuid import UUID
+
 
 import numpy as np
 from rank_bm25 import BM25Okapi
@@ -10,7 +10,8 @@ from raground.nodes.retrieval.base import retrieval_node, evenly_distribute_pass
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[List[UUID]], List[List[float]]]:
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[List[str
+]], List[List[float]]]:
     """
     BM25 retrieval function.
     You have to load a pickle file that is already ingested.
@@ -25,7 +26,8 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
 
         {
             "Tokens": [], # 2d list of tokens
-            "passage_id": [], # 2d list of passage_id. Type must be UUID.
+            "passage_id": [], # 2d list of passage_id.
+            .
         }
 
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
@@ -46,7 +48,8 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
 
 
 async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> Tuple[
-    List[UUID], List[float]]:
+    List[str
+    ], List[float]]:
     """
     Async BM25 retrieval function.
     Its usage is for async retrieval of bm25 row by row.
@@ -62,7 +65,8 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
 
         {
             "Tokens": [], # 2d list of tokens
-            "passage_id": [], # 2d list of passage_id. Type must be UUID.
+            "passage_id": [], # 2d list of passage_id. Type must be str
+            .
         }
     :return: The tuple contains a list of passage ids that retrieved from bm25 and its scores.
     """

@@ -1,16 +1,15 @@
 import math
 from typing import Tuple, List
-from uuid import UUID, uuid4
 
 import pandas as pd
 
 from raground.evaluate import evaluate_retrieval
 
-retrieval_gt = [[uuid4() for _ in range(2)] for _ in range(4)]
+retrieval_gt = [[f'test{i}-{j}' for i in range(2)] for j in range(4)]
 
 
 @evaluate_retrieval(retrieval_gt=retrieval_gt, strategies=['recall', 'precision', 'f1'])
-def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[UUID]]]:
+def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
     contents = [
         ['a', 'b', 'c', 'd'],
         ['better', 'bone', 'caleb', 'done'],
@@ -24,10 +23,10 @@ def pseudo_retrieval() -> Tuple[List[List[str]], List[List[float]], List[List[UU
         [0.6, 0.5, 0.4, 0.3],
     ]
     ids = [
-        [retrieval_gt[0][0], retrieval_gt[0][1], uuid4(), uuid4()],
-        [uuid4(), retrieval_gt[1][0], retrieval_gt[1][1], uuid4()],
-        [uuid4() for _ in range(4)],
-        [retrieval_gt[3][0], uuid4(), uuid4(), uuid4()],
+        [retrieval_gt[0][0], retrieval_gt[0][1], 'pred-0', 'pred-1'],
+        ['pred-2', retrieval_gt[1][0], retrieval_gt[1][1], 'pred-3'],
+        [f'pred-{i}' for i in range(4, 8)],
+        [retrieval_gt[3][0], 'pred-8', 'pred-9', 'pred-10'],
     ]
     return contents, scores, ids
 
