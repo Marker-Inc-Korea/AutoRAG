@@ -1,6 +1,6 @@
 import functools
 import time
-from typing import Dict, Tuple, List, Iterable
+from typing import List, Iterable
 
 import pandas as pd
 
@@ -36,7 +36,7 @@ def avoid_empty_result(func):
 
 
 @avoid_empty_result
-def filter_by_threshold(results, value, threshold):
+def filter_by_threshold(results, value, threshold) -> List:
     """
     Filter results by value's threshold.
     :param results: The result list to be filtered.
@@ -47,7 +47,7 @@ def filter_by_threshold(results, value, threshold):
     """
     assert len(results) == len(value), "results and value must have the same length."
     filtered_results, _ = zip(*filter(lambda x: x[1] <= threshold, zip(results, value)))
-    return filtered_results
+    return list(filtered_results)
 
 
 def select_best_average(results: List[pd.DataFrame], columns=Iterable[str]) -> pd.DataFrame:
@@ -63,6 +63,6 @@ def select_best_average(results: List[pd.DataFrame], columns=Iterable[str]) -> p
         "results must be pd.DataFrame."
     assert all([column in result.columns for result in results for column in columns]), \
         "columns must be in the columns of results."
-    each_average = [df.mean(axis=1)[columns].mean() for df in results]
+    each_average = [df[columns].mean(axis=1).mean() for df in results]
     best_index = each_average.index(max(each_average))
     return results[best_index]
