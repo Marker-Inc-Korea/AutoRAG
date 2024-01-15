@@ -32,6 +32,8 @@ setup(
         'rank_bm25',
         'transformers',
         'swifter',
+        'torch',
+        'sentencepiece',
     ],
     classifiers=[
         "Intended Audience :: Developers",
