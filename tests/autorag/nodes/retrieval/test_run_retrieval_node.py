@@ -33,13 +33,12 @@ def test_run_retrieval_node(node_line_dir):
     module_params = [{'top_k': 4}]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
-    retrieval_gt = pd.read_parquet(qa_path)['retrieval_gt'].tolist()
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
         'speed_threshold': 5,
     }
     previous_result = pd.read_parquet(qa_path)
-    best_result = run_retrieval_node(modules, module_params, previous_result, node_line_dir, retrieval_gt, strategies)
+    best_result = run_retrieval_node(modules, module_params, previous_result, node_line_dir, strategies)
     assert os.path.exists(os.path.join(node_line_dir, "retrieval"))
     assert os.path.exists(os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet"))
     expect_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',

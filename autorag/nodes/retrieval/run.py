@@ -13,7 +13,6 @@ def run_retrieval_node(modules: List[Callable],
                        module_params: List[Dict],
                        previous_result: pd.DataFrame,
                        node_line_dir: str,
-                       retrieval_gt: pd.DataFrame,
                        strategies: Dict,
                        ) -> pd.DataFrame:
     """
@@ -24,7 +23,6 @@ def run_retrieval_node(modules: List[Callable],
     :param previous_result: Previous result dataframe.
     Could be query expansion's best result or qa data.
     :param node_line_dir: This node line's directory.
-    :param retrieval_gt: Ground truth retrieval_gt for evaluation.
     :param strategies: Strategies for retrieval node.
     :return: The best result dataframe.
     It contains previous result columns and retrieval node's result columns.
@@ -32,6 +30,7 @@ def run_retrieval_node(modules: List[Callable],
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
+    retrieval_gt = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))['retrieval_gt'].tolist()
 
     results, execution_times = zip(*map(lambda task: measure_speed(
         task[0], project_dir=project_dir, previous_result=previous_result, **task[1]), zip(modules, module_params)))
