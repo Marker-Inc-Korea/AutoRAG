@@ -33,6 +33,7 @@ setup(
         'transformers',
         'swifter',
         'torch',
+        'sentencepiece',
     ],
     classifiers=[
         "Intended Audience :: Developers",
