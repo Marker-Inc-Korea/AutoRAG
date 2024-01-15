@@ -33,9 +33,9 @@ def run_retrieval_node(modules: List[Callable],
     save_dir = os.path.join(node_line_dir, "retrieval")  # node name
     filepaths = list(map(lambda x: os.path.join(save_dir, make_module_file_name(x[0].__name__, x[1])),
                          zip(modules, module_params)))
-    map(lambda x: x[0].to_csv(x[1], index=False), zip(results, filepaths))
+    map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths))
 
-    # make summary and save it to summary.csv
+    # make summary and save it to summary.parquet
 
     # filter by strategies
     if strategies.get('speed_threshold') is not None:

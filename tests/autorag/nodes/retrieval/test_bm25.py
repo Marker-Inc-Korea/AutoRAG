@@ -20,8 +20,8 @@ queries = [
 ]
 
 project_dir = os.path.join(root_dir, "resources", "sample_project")
-qa_data = pd.read_csv(os.path.join(project_dir, "data", "qa.csv"))
-corpus_data = pd.read_csv(os.path.join(project_dir, "data", "corpus.csv"))
+qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
 previous_result = qa_data.sample(5)[["qid", "query"]]
 
 
@@ -48,7 +48,7 @@ def test_bm25_node():
     scores = result_df["retrieve_scores"].tolist()
     assert len(contents) == len(ids) == len(scores) == 5
     assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 4
-    # id is matching with corpus.csv
+    # id is matching with corpus.parquet
     for content_list, id_list, score_list in zip(contents, ids, scores):
         for i, (content, _id, score) in enumerate(zip(content_list, id_list, score_list)):
             assert isinstance(content, str)

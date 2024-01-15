@@ -50,7 +50,7 @@ def retrieval_node(func):
         # TODO: add chroma load for vectordb
 
         # fetch data from corpus_data
-        corpus_data = pd.read_csv(os.path.join(data_dir, "corpus.csv"))
+        corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
         contents = fetch_contents(corpus_data, ids)
 
         return contents, ids, scores
