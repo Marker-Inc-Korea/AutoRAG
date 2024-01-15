@@ -25,14 +25,15 @@ setup(
         'numpy',
         'pandas',
         'tqdm',
-        'pgvector',
-        'tiktoken',
+        'tiktoken',  # for counting token
         'openai>=1.0.0',
         'llama-index>=0.9.28',
-        'rank_bm25',
+        'rank_bm25',  # for bm25 retrieval
         'transformers',
-        'swifter',
-        'pyyaml',
+        'swifter',  # for parallel pandas apply
+        'pyyaml',  # for yaml file
+        'pyarrow',  # for pandas with parquet
+        'fastparquet',  # for pandas with parquet
     ],
     classifiers=[
         "Intended Audience :: Developers",
