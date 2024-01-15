@@ -35,8 +35,8 @@ def test_evaluate_retrieval():
     result_df = pseudo_retrieval()
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 4
-    assert len(result_df.columns) == 7
-    assert list(result_df.columns) == ['contents', 'scores', 'pred_ids', 'retrieval_gt', 'retrieval_recall',
+    assert len(result_df.columns) == 6
+    assert list(result_df.columns) == ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_recall',
                                        'retrieval_precision', 'retrieval_f1']
     recall = result_df['retrieval_recall'].tolist()
     recall_solution = [1, 1, 0, 0.5]

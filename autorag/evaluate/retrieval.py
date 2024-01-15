@@ -38,10 +38,9 @@ def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: List[str]):
 
             metric_result_df = pd.DataFrame(metric_scores)
             execution_result_df = pd.DataFrame({
-                'contents': contents,
-                'scores': scores,
-                'pred_ids': pred_ids,
-                'retrieval_gt': retrieval_gt,
+                'retrieved_contents': contents,
+                'retrieved_ids': pred_ids,
+                'retrieve_scores': scores,
             })
             result_df = pd.concat([execution_result_df, metric_result_df], axis=1)
             return result_df

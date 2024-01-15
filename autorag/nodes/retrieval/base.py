@@ -6,7 +6,7 @@ from typing import List, Union, Tuple, Dict
 
 import pandas as pd
 
-from autorag.utils import fetch_contents, result_to_dataframe
+from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 
 def retrieval_node(func):
@@ -25,6 +25,7 @@ def retrieval_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+        validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
         bm25_path = os.path.join(resources_dir, 'bm25.pkl')

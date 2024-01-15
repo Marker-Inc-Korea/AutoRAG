@@ -42,7 +42,6 @@ def test_run_retrieval_node(node_line_dir):
     best_result = run_retrieval_node(modules, module_params, previous_result, node_line_dir, retrieval_gt, strategies)
     assert os.path.exists(os.path.join(node_line_dir, "retrieval"))
     assert os.path.exists(os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet"))
-    expect_columns = ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
+    expect_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
+                      'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
     assert all([expect_column in best_result.columns for expect_column in expect_columns])
-    # TODO: 채점이 이상함. 수정 필요 => csv를 parquet으로 수정
-    # TODO: output column이 마음에 들지 않음. 수정 필요
