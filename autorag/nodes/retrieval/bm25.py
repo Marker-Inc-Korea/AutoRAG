@@ -35,7 +35,7 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
     # check if bm25_corpus is valid
     assert ("tokens" and "passage_id" in list(bm25_corpus.keys())), \
         "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
     bm25_instance = BM25Okapi(bm25_corpus["tokens"])
     # run async bm25_pure function
     tasks = [bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus) for input_queries in queries]
