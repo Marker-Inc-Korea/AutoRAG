@@ -1,9 +1,7 @@
+import asyncio
 from typing import List
 
-import asyncio
-
 from llama_index.llms.llm import BaseLLM
-from llama_index.llms.openai import OpenAI
 
 decompose_prompt = """Decompose a question in self-contained sub-questions. Use \"The question needs no decomposition\" when no decomposition is needed.
 
@@ -52,12 +50,12 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
     """
 
 
-def query_decompose(queries: List[str], llm: BaseLLM = OpenAI(temperature=0.2),
+def query_decompose(queries: List[str], llm: BaseLLM,
                     prompt: str = decompose_prompt) -> List[List[str]]:
     """
     decompose query to little piece of questions.
     :param queries: List[str], queries to decompose.
-    :param llm: BaseLLM, language model to use. llama_index's default model is gpt3.5-turbo.
+    :param llm: BaseLLM, language model to use.
     :param prompt: str, prompt to use for query decomposition.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """

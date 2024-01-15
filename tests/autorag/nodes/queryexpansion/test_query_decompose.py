@@ -1,9 +1,11 @@
-from autorag.nodes.queryexpansion import query_decompose
+from llama_index.llms.openai import OpenAI
 
+from autorag.nodes.queryexpansion import query_decompose
 
 sample_query = ["Which group has more members, Newjeans or Espa?"]
 
 
 def test_query_decompose():
-    result = query_decompose(sample_query)
+    llm = OpenAI(temperature=0.2)
+    result = query_decompose(sample_query, llm)
     assert len(result[0]) > 1
