@@ -2,6 +2,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Callable
 
+import pandas as pd
+
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema.module import Module
 
@@ -39,3 +41,10 @@ class Node:
         modules = list(map(lambda x: Module.from_dict(x), _node_dict.pop('modules')))
         node_params = _node_dict
         return cls(node_type, strategy, node_params, modules)
+
+    def run(self, previous_result: pd.DataFrame, node_line_dir: str) -> pd.DataFrame:
+        return self.run_node(modules=list(map(lambda x: x.module, self.modules)),
+                             module_params=self.get_module_node_params(),
+                             previous_result=previous_result,
+                             node_line_dir=node_line_dir,
+                             strategies=self.strategy)
