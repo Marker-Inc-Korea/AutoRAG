@@ -45,8 +45,10 @@ evaluate_dataset.to_parquet('your/path/to/evaluate_dataset.parquet')
 
 ### Evaluate your data to various RAG modules
 ```python
-config = EvaluateConfig.from_yaml('your/path/to/default_config.yaml') # yaml file with config, more detail in config yaml section
-Evalautor(config).evaluate()
+from autorag import Evaluator
+
+evaluator = Evaluator(qa_path='your/path/to/qa.parquet', corpus_path='your/path/to/corpus.parquet')
+evaluator.start_trial('your/path/to/config.yaml')
 ```
 or you can use command line interface
 ```bash

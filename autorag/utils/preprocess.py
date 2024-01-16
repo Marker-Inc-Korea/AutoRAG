@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 
@@ -22,8 +23,12 @@ def cast_qa_dataset(df: pd.DataFrame):
                 return [gt]
             elif isinstance(gt[0], list):
                 return gt
+            elif isinstance(gt[0], np.ndarray):
+                return cast_retrieval_gt(list(map(lambda x: x.tolist(), gt)))
             else:
                 raise ValueError(f"retrieval_gt must be str or list, but got {type(gt[0])}")
+        elif isinstance(gt, np.ndarray):
+            return cast_retrieval_gt(gt.tolist())
         else:
             raise ValueError(f"retrieval_gt must be str or list, but got {type(gt)}")
 
@@ -32,6 +37,8 @@ def cast_qa_dataset(df: pd.DataFrame):
             return [gt]
         elif isinstance(gt, list):
             return gt
+        elif isinstance(gt, np.ndarray):
+            return cast_generation_gt(gt.tolist())
         else:
             raise ValueError(f"generation_gt must be str or list, but got {type(gt)}")
 
