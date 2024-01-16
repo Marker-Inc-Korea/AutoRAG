@@ -58,3 +58,22 @@ class Node:
                              previous_result=previous_result,
                              node_line_dir=node_line_dir,
                              strategies=self.strategy)
+
+
+def find_embedding_models(nodes: List[Node]) -> List[str]:
+    def extract_embedding_model_values(node: Node):
+        def extract_embedding_model_module(module: Module):
+            if 'embedding_model' not in module.module_param:
+                return []
+            embedding_model = module.module_param['embedding_model']
+            if isinstance(embedding_model, str):
+                return [embedding_model]
+            elif isinstance(embedding_model, list):
+                return embedding_model
+            else:
+                raise ValueError(f"embedding_model must be str or list, but got {type(embedding_model)}")
+        values = list(map(extract_embedding_model_module, node.modules))
+        return list(set(list(itertools.chain.from_iterable(values))))
+
+    embedding_model_values = list(map(extract_embedding_model_values, nodes))
+    return list(set(itertools.chain.from_iterable(embedding_model_values)))

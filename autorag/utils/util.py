@@ -17,6 +17,7 @@ def result_to_dataframe(column_names: List[str]):
     """
     Decorator for converting results to pd.DataFrame.
     """
+
     def decorator_result_to_dataframe(func: Callable):
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> pd.DataFrame:
@@ -24,7 +25,9 @@ def result_to_dataframe(column_names: List[str]):
             df_input = {column_name: result for result, column_name in zip(results, column_names)}
             result_df = pd.DataFrame(df_input)
             return result_df
+
         return wrapper
+
     return decorator_result_to_dataframe
 
 
