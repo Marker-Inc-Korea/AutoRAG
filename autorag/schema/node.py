@@ -1,3 +1,4 @@
+import itertools
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Callable
@@ -25,13 +26,22 @@ class Node:
         if self.run_node is None:
             raise ValueError(f"Node type {self.node_type} is not supported.")
 
-    def get_module_node_params(self) -> List[Dict]:
+    def get_param_combinations(self) -> List[Dict]:
         """
-        This method returns module parameters for each module, including node parameters.
+        This method returns a combination of module and node parameters.
 
         :return: Module Parameters from each module.
         """
-        return list(map(lambda x: {**self.node_params, **x.module_param}, self.modules))
+        input_dict = list(map(lambda x: {**self.node_params, **x.module_param}, self.modules))[0]
+
+        dict_with_lists = {k: (v if isinstance(v, list) else [v]) for k, v in input_dict.items()}
+
+        # Generate all combinations of values
+        combinations = list(itertools.product(*dict_with_lists.values()))
+
+        # Convert combinations back into dictionaries with the original keys
+        combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combinations]
+        return combination_dicts
 
     @classmethod
     def from_dict(cls, node_dict: Dict) -> 'Node':
@@ -44,7 +54,7 @@ class Node:
 
     def run(self, previous_result: pd.DataFrame, node_line_dir: str) -> pd.DataFrame:
         return self.run_node(modules=list(map(lambda x: x.module, self.modules)),
-                             module_params=self.get_module_node_params(),
+                             module_params=self.get_param_combinations(),
                              previous_result=previous_result,
                              node_line_dir=node_line_dir,
                              strategies=self.strategy)
