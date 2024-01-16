@@ -6,29 +6,30 @@ import asyncio
 import torch
 
 
-def UPR_rerank(queries: List[str], contents_list: List[List[str]],
-               scores_list: List[List[float]], ids_list: List[List[UUID]], shard_size: int = 16, prefix_prompt: str = "",
-               suffix_prompt: str = "",
-               model_name: str = "t5-large", device: str = "gpu", torch_dtype=torch.float16) -> List[Tuple[List[str]]]:
+def upr_rerank(queries: List[str], contents_list: List[List[str]],
+               scores_list: List[List[float]], ids_list: List[List[UUID]],
+               shard_size: int = 16, model_name: str = "t5-large",
+               prefix_prompt: str = "", suffix_prompt: str = "",
+               device: str = "gpu", torch_dtype = torch.float16) -> List[Tuple[List[str]]]:
     """
     UPRReranker is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
     The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
     """
-    model = AutoModel.from_pretrained(model_name, torch_dtype)
+    model = AutoModel.from_pretrained(model_name, torch_dtype=torch_dtype)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    tasks = [UPR_rerank_pure(query, contents, scores, ids, model, tokenizer, device, shard_size, prefix_prompt, suffix_prompt) for query, contents, scores, ids in
+    tasks = [upr_rerank_pure(query, contents, scores, ids, model, tokenizer, device, shard_size, prefix_prompt, suffix_prompt) for query, contents, scores, ids in
              zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
     return results
 
 
-async def UPR_rerank_pure(query: str, contents: List[str], scores: List[float], ids: List[UUID],
+async def upr_rerank_pure(query: str, contents: List[str], scores: List[float], ids: List[UUID],
                           model: AutoModel = AutoModel.from_pretrained("t5-large", torch_dtype=torch.float16),
-                          tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained("t5-large"), device: str = "gpu",
-                          shard_size: int = 16, prefix_prompt: str = "Passage: ",
-                          suffix_prompt: str = "Please write a question based on this passage.") -> Tuple[List[str]]:
+                          tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained("t5-large"),
+                          device: str = "gpu", shard_size: int = 16,
+                          prefix_prompt: str = "Passage: ", suffix_prompt: str = "Please write a question based on this passage.") -> Tuple[List[str]]:
     """
     Rerank a list of contents based on their relevance to a query using UPR.
     :param query: str: The query that UPR rerank contents according to
