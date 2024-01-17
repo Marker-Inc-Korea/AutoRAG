@@ -1,7 +1,7 @@
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.schema.module import Module
-from autorag.schema.node import find_embedding_models
+from autorag.schema.node import find_embedding_models, find_llm_models
 
 
 # Test for Node.get_module_node_params method
@@ -84,3 +84,46 @@ def test_find_embedding_models():
     ]
     embedding_models = find_embedding_models(nodes)
     assert set(embedding_models) == {'model1', 'model2', 'model3', 'model4'}
+
+
+def test_find_llm_models():
+    nodes = [
+        Node.from_dict({
+            'node_type': 'retrieval',
+            'param1': 'value1',
+            'strategy': {
+                'metrics': ['retrieval_f1', 'retrieval_recall'],
+            },
+            'modules': [
+                {
+                    'module_type': 'bm25'
+                },
+                {
+                    'module_type': 'bm25',
+                    'param2': 'value2',
+                    'llm': 'model1',
+                },
+                {
+                    'module_type': 'bm25',
+                    'param2': 'value3',
+                    'param3': ['value4', 'value5'],
+                    'llm': ['model1', 'model3'],
+                }
+            ]
+        }),
+        Node.from_dict({
+            'node_type': 'retrieval',
+            'strategy': {
+                'metrics': ['retrieval_f1'],
+            },
+            'modules': [
+                {
+                    'module_type': 'bm25',
+                    'param2': 'value2',
+                    'llm': ['model1', 'model2', 'model4']
+                }
+            ]
+        })
+    ]
+    llm_models = find_llm_models(nodes)
+    assert set(llm_models) == {'model1', 'model2', 'model3', 'model4'}

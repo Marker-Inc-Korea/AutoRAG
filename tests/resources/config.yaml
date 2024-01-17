@@ -32,6 +32,5 @@ node_lines:
       strategy:
         metrics: [bleu, rouge, kf1]
       modules:
-        - module_type: openai
-        - module_type: mixtral
-        - module_type: llama-2
+        - module_type: basic_llm
+          llm: [gpt-3.5-turbo, mixtral, llama-2]

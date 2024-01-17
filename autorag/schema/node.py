@@ -60,20 +60,34 @@ class Node:
                              strategies=self.strategy)
 
 
-def find_embedding_models(nodes: List[Node]) -> List[str]:
-    def extract_embedding_model_values(node: Node):
-        def extract_embedding_model_module(module: Module):
-            if 'embedding_model' not in module.module_param:
-                return []
-            embedding_model = module.module_param['embedding_model']
-            if isinstance(embedding_model, str):
-                return [embedding_model]
-            elif isinstance(embedding_model, list):
-                return embedding_model
-            else:
-                raise ValueError(f"embedding_model must be str or list, but got {type(embedding_model)}")
-        values = list(map(extract_embedding_model_module, node.modules))
-        return list(set(list(itertools.chain.from_iterable(values))))
+def extract_values(node: Node, key: str) -> List[str]:
+    """
+    This function extract values from node's modules' module_param.
+    :param node: The node you want to extract values from.
+    :param key: The key of module_param that you want to extract.
+    :return: The list of extracted values.
+    It removes duplicated elements automatically.
+    """
+    def extract_module_values(module: Module):
+        if key not in module.module_param:
+            return []
+        value = module.module_param[key]
+        if isinstance(value, str):
+            return [value]
+        elif isinstance(value, list):
+            return value
+        else:
+            raise ValueError(f"{key} must be str or list, but got {type(value)}")
 
-    embedding_model_values = list(map(extract_embedding_model_values, nodes))
+    values = list(map(extract_module_values, node.modules))
+    return list(set(list(itertools.chain.from_iterable(values))))
+
+
+def find_embedding_models(nodes: List[Node]) -> List[str]:
+    embedding_model_values = list(map(lambda node: extract_values(node, 'embedding_model'), nodes))
     return list(set(itertools.chain.from_iterable(embedding_model_values)))
+
+
+def find_llm_models(nodes: List[Node]) -> List[str]:
+    llm_model_values = list(map(lambda node: extract_values(node, 'llm'), nodes))
+    return list(set(itertools.chain.from_iterable(llm_model_values)))
