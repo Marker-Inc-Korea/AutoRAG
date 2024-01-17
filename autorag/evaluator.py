@@ -67,6 +67,8 @@ class Evaluator:
             # ingest BM25 corpus
             logger.info('Ingesting BM25 corpus...')
             bm25_dir = os.path.join(self.project_dir, 'resources', 'bm25.pkl')
+            if not os.path.exists(os.path.dirname(bm25_dir)):
+                os.makedirs(os.path.dirname(bm25_dir))
             if os.path.exists(bm25_dir):
                 logger.info('BM25 corpus already exists.')
             else:

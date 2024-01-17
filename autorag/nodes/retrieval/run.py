@@ -55,8 +55,11 @@ def run_retrieval_node(modules: List[Callable],
     if strategies.get('speed_threshold') is not None:
         results = filter_by_threshold(results, average_times, strategies['speed_threshold'])
     selected_result = select_best_average(results, strategies.get('metrics'))
-    final_result = pd.concat([previous_result, selected_result], axis=1)
-    return final_result
+    best_result = pd.concat([previous_result, selected_result], axis=1)
+
+    # save the best result to best.parquet
+    best_result.to_parquet(os.path.join(save_dir, 'best.parquet'), index=False)
+    return best_result
 
 
 def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics) -> pd.DataFrame:

@@ -60,4 +60,18 @@ def test_load_node_line(evaluator):
 
 
 def test_start_trial(evaluator):
-    pass
+    evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'data'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))
+    expect_each_result_columns = ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
+    each_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))
+    assert all([expect_column in each_result.columns for expect_column in expect_each_result_columns])
+    expect_best_result_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
+                      'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
+    best_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'best.parquet'))
+    assert all([expect_column in best_result.columns for expect_column in expect_best_result_columns])
