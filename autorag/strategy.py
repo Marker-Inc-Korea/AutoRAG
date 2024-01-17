@@ -39,6 +39,7 @@ def avoid_empty_result(func):
 def filter_by_threshold(results, value, threshold) -> List:
     """
     Filter results by value's threshold.
+
     :param results: The result list to be filtered.
     :param value: The value list to be filtered.
         It must have the same length with results.
@@ -53,6 +54,7 @@ def filter_by_threshold(results, value, threshold) -> List:
 def select_best_average(results: List[pd.DataFrame], columns=Iterable[str]) -> pd.DataFrame:
     """
     Select the best result by average value among given columns.
+
     :param results: The list of results.
         Each result must be pd.DataFrame.
     :param columns: Column names to be averaged.

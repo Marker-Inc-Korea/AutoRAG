@@ -25,6 +25,7 @@ def run_node_line(nodes: List[Node],
                   previous_result: Optional[pd.DataFrame] = None):
     """
     Run the whole node line by running each node.
+
     :param nodes: A list of nodes.
     :param node_line_dir: This node line's directory.
     :param previous_result: A result of the previous node line.

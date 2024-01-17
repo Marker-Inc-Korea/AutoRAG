@@ -34,6 +34,7 @@ def result_to_dataframe(column_names: List[str]):
 def make_module_file_name(module_name: str, module_params: Dict) -> str:
     """
     Make module parquet file name for saving results dataframe.
+
     :param module_name: Module name.
         It can be module function's name.
     :param module_params: Parameters of the module function.

@@ -63,6 +63,7 @@ class Node:
 def extract_values(node: Node, key: str) -> List[str]:
     """
     This function extract values from node's modules' module_param.
+
     :param node: The node you want to extract values from.
     :param key: The key of module_param that you want to extract.
     :return: The list of extracted values.
@@ -87,6 +88,7 @@ def extract_values(node: Node, key: str) -> List[str]:
 def extract_values_from_nodes(nodes: List[Node], key: str) -> List[str]:
     """
     This function extract values from nodes' modules' module_param.
+
     :param nodes: The nodes you want to extract values from.
     :param key: The key of module_param that you want to extract.
     :return: The list of extracted values.
@@ -99,6 +101,7 @@ def extract_values_from_nodes(nodes: List[Node], key: str) -> List[str]:
 def module_type_exists(nodes: List[Node], module_type: str) -> bool:
     """
     This function check if the module type exists in the nodes.
+
     :param nodes: The nodes you want to check.
     :param module_type: The module type you want to check.
     :return: True if the module type exists in the nodes.
