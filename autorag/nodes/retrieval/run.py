@@ -21,11 +21,11 @@ def run_retrieval_node(modules: List[Callable],
     :param modules: Retrieval modules to run.
     :param module_params: Retrieval module parameters.
     :param previous_result: Previous result dataframe.
-    Could be query expansion's best result or qa data.
+        Could be query expansion's best result or qa data.
     :param node_line_dir: This node line's directory.
     :param strategies: Strategies for retrieval node.
     :return: The best result dataframe.
-    It contains previous result columns and retrieval node's result columns.
+        It contains previous result columns and retrieval node's result columns.
     """
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
@@ -70,7 +70,7 @@ def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics) -> p
     :param retrieval_gt: Ground truth for retrieval from qa dataset.
     :param metrics: Metric list from input strategies.
     :return: Return result_df with metrics columns.
-    The columns will be 'retrieved_contents', 'retrieved_ids', 'retrieve_scores', and metric names.
+        The columns will be 'retrieved_contents', 'retrieved_ids', 'retrieve_scores', and metric names.
     """
 
     @evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=metrics)

@@ -19,20 +19,20 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
     You have to load a pickle file that is already ingested.
 
     :param queries: 2-d list of query strings.
-    Each element of the list is a query strings of each row.
+        Each element of the list is a query strings of each row.
     :param top_k: The number of passages to be retrieved.
     :param bm25_corpus: A dictionary containing the bm25 corpus, which is doc_id from corpus and tokenized corpus.
-    Its data structure looks like this:
+        Its data structure looks like this:
 
-    .. Code:: python
+        .. Code:: python
 
-        {
-            "tokens": [], # 2d list of tokens
-            "passage_id": [], # 2d list of passage_id.
-        }
+            {
+                "tokens": [], # 2d list of tokens
+                "passage_id": [], # 2d list of passage_id.
+            }
 
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
-    It will be a length of queries. And each element has a length of top_k.
+        It will be a length of queries. And each element has a length of top_k.
     """
     # check if bm25_corpus is valid
     assert ("tokens" and "passage_id" in list(bm25_corpus.keys())), \
@@ -60,14 +60,14 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     :param tokenizer: A tokenizer that will be used to tokenize queries.
     :param bm25_api: A bm25 api instance that will be used to retrieve passages.
     :param bm25_corpus: A dictionary containing the bm25 corpus, which is doc_id from corpus and tokenized corpus.
-    Its data structure looks like this:
+        Its data structure looks like this:
 
-    .. Code:: python
+        .. Code:: python
 
-        {
-            "tokens": [], # 2d list of tokens
-            "passage_id": [], # 2d list of passage_id. Type must be str.
-        }
+            {
+                "tokens": [], # 2d list of tokens
+                "passage_id": [], # 2d list of passage_id. Type must be str.
+            }
     :return: The tuple contains a list of passage ids that retrieved from bm25 and its scores.
     """
     # I don't make queries operation to async, because queries length might be small, so it will occur overhead.
