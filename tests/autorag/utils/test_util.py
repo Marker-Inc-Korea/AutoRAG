@@ -10,8 +10,8 @@ root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.
 
 
 def test_fetch_contents():
-    corpus_data_path = os.path.join(root_dir, "resources", "corpus_data_sample.csv")
-    corpus_data = pd.read_csv(corpus_data_path)
+    corpus_data_path = os.path.join(root_dir, "resources", "corpus_data_sample.parquet")
+    corpus_data = pd.read_parquet(corpus_data_path)
     search_rows = corpus_data.sample(n=10)
     find_contents = fetch_contents(corpus_data, list(map(lambda x: [x], search_rows['doc_id'].tolist())))
     assert len(find_contents) == len(search_rows)

@@ -6,7 +6,7 @@ from typing import List, Union, Tuple, Dict
 
 import pandas as pd
 
-from autorag.utils import fetch_contents
+from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 
 def retrieval_node(func):
@@ -15,14 +15,17 @@ def retrieval_node(func):
     For example, it loads bm25 corpus for bm25 retrieval.
 
     :param func: Retrieval function that returns a list of ids and a list of scores
-    :return: A list of contents, list of ids, list of scores
+    :return: A pandas Dataframe that contains retrieved contents, retrieved ids, and retrieve scores.
+    The column name will be "retrieved_contents", "retrieved_ids", and "retrieve_scores".
     """
 
     @functools.wraps(func)
+    @result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+        validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
         bm25_path = os.path.join(resources_dir, 'bm25.pkl')
@@ -48,7 +51,7 @@ def retrieval_node(func):
         # TODO: add chroma load for vectordb
 
         # fetch data from corpus_data
-        corpus_data = pd.read_csv(os.path.join(data_dir, "corpus.csv"))
+        corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
         contents = fetch_contents(corpus_data, ids)
 
         return contents, ids, scores

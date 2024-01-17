@@ -2,3 +2,6 @@ pytest
 pytest-env
 sphinx
 furo
+twine
+build
+setuptools-scm
