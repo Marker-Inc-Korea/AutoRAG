@@ -41,7 +41,7 @@ def filter_by_threshold(results, value, threshold) -> List:
     Filter results by value's threshold.
     :param results: The result list to be filtered.
     :param value: The value list to be filtered.
-    It must have the same length with results.
+        It must have the same length with results.
     :param threshold: The threshold value.
     :return: Filtered list of results.
     """
@@ -54,9 +54,9 @@ def select_best_average(results: List[pd.DataFrame], columns=Iterable[str]) -> p
     """
     Select the best result by average value among given columns.
     :param results: The list of results.
-    Each result must be pd.DataFrame.
+        Each result must be pd.DataFrame.
     :param columns: Column names to be averaged.
-    Standard to select the best result.
+        Standard to select the best result.
     :return: The best result.
     """
     assert all([isinstance(result, pd.DataFrame) for result in results]), \
