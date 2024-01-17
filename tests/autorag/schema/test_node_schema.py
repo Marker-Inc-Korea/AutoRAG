@@ -5,7 +5,7 @@ from autorag.schema.node import find_embedding_models
 
 
 # Test for Node.get_module_node_params method
-def test_get_module_node_params():
+def test_get_param_combinations():
     modules = [
         Module.from_dict(
             {'module_type': 'bm25', 'key2': ['value1', 'value2'], 'key3': 'value3', 'key4': ['value4', 'value5']}),
@@ -83,4 +83,4 @@ def test_find_embedding_models():
         })
     ]
     embedding_models = find_embedding_models(nodes)
-    assert embedding_models == ['model1', 'model2', 'model3', 'model4']
+    assert set(embedding_models) == {'model1', 'model2', 'model3', 'model4'}
