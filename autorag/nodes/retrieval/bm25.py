@@ -1,12 +1,14 @@
 import asyncio
+import pickle
 from typing import List, Dict, Tuple
 
-
 import numpy as np
+import pandas as pd
 from rank_bm25 import BM25Okapi
 from transformers import AutoTokenizer
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
+from autorag.utils import validate_corpus_dataset
 
 
 @retrieval_node
@@ -25,7 +27,7 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
     .. Code:: python
 
         {
-            "Tokens": [], # 2d list of tokens
+            "tokens": [], # 2d list of tokens
             "passage_id": [], # 2d list of passage_id.
         }
 
@@ -63,7 +65,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     .. Code:: python
 
         {
-            "Tokens": [], # 2d list of tokens
+            "tokens": [], # 2d list of tokens
             "passage_id": [], # 2d list of passage_id. Type must be str.
         }
     :return: The tuple contains a list of passage ids that retrieved from bm25 and its scores.
@@ -87,3 +89,25 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
               sorted(zip(score_result, id_result), key=lambda pair: pair[0], reverse=True)]
     id_result, score_result = zip(*result)
     return list(id_result), list(score_result)
+
+
+def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
+    if not corpus_path.endswith('.pkl'):
+        raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
+    validate_corpus_dataset(corpus_data)
+    tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
+    tasks = list(map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(corpus_data['contents'], corpus_data['doc_id'])))
+    loop = asyncio.get_event_loop()
+    results = loop.run_until_complete(asyncio.gather(*tasks))
+    tokenized_corpus, passage_ids = zip(*results)
+    bm25_dict = {
+        'tokens': list(tokenized_corpus),
+        'passage_id': list(passage_ids),
+    }
+    with open(corpus_path, 'wb') as w:
+        pickle.dump(bm25_dict, w)
+
+
+async def bm25_tokenize(queries: List[str], passage_id: str, tokenizer) -> Tuple[List[int], str]:
+    tokenized_queries = tokenizer(queries).input_ids
+    return tokenized_queries, passage_id

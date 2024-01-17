@@ -9,7 +9,9 @@ import pandas as pd
 import yaml
 
 from autorag.node_line import run_node_line
+from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.schema import Node
+from autorag.schema.node import module_type_exists
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ class Evaluator:
         self.__make_trial_dir(trial_name)
 
         node_lines = self._load_node_lines(yaml_path)
+        self.__ingest(node_lines)
 
         for i, (node_line_name, node_line) in enumerate(node_lines.items()):
             logger.info(f'Running node line {node_line_name}...')
@@ -59,9 +62,22 @@ class Evaluator:
 
             # TODO: record summary of each node line to trial summary
 
-    def __ingest(self):
-        # TODO: add ingest
-        pass
+    def __ingest(self, node_lines: Dict[str, List[Node]]):
+        if any(list(map(lambda nodes: module_type_exists(nodes, 'bm25'), node_lines.values()))):
+            # ingest BM25 corpus
+            logger.info('Ingesting BM25 corpus...')
+            bm25_dir = os.path.join(self.project_dir, 'resources', 'bm25.pkl')
+            if os.path.exists(bm25_dir):
+                logger.info('BM25 corpus already exists.')
+            else:
+                bm25_ingest(bm25_dir, self.corpus_data)
+            logger.info('BM25 corpus ingestion complete.')
+            pass
+        elif any(list(map(lambda nodes: module_type_exists(nodes, 'vector'), node_lines.values()))):
+            # TODO: ingest vector DB
+            pass
+        else:
+            logger.info('No ingestion needed.')
 
     def __get_new_trial_name(self) -> str:
         trial_json_path = os.path.join(self.project_dir, 'trial.json')

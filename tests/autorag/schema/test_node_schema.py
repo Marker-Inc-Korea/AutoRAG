@@ -1,7 +1,7 @@
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.schema.module import Module
-from autorag.schema.node import find_embedding_models, find_llm_models
+from autorag.schema.node import extract_values_from_nodes, module_type_exists
 
 
 # Test for Node.get_module_node_params method
@@ -82,7 +82,7 @@ def test_find_embedding_models():
             ]
         })
     ]
-    embedding_models = find_embedding_models(nodes)
+    embedding_models = extract_values_from_nodes(nodes, 'embedding_model')
     assert set(embedding_models) == {'model1', 'model2', 'model3', 'model4'}
 
 
@@ -125,5 +125,7 @@ def test_find_llm_models():
             ]
         })
     ]
-    llm_models = find_llm_models(nodes)
+    llm_models = extract_values_from_nodes(nodes, 'llm')
     assert set(llm_models) == {'model1', 'model2', 'model3', 'model4'}
+    assert module_type_exists(nodes, 'bm25') is True
+    assert module_type_exists(nodes, 'bm26') is False
