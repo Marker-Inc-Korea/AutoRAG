@@ -127,6 +127,18 @@ Warning! You can't install autorag yet because it is under construction.
 pip install autorag
 ```
 
+## Installation for developing
+```bash
+pip install -e .
+pip install -r dev_requirements.txt
+```
+
+Then, You can test with pytest.
+
+```bash
+pytest
+```
+
 # Supporting RAG modules
 ### Query Expansion
 - Query Decompose
