@@ -22,7 +22,7 @@ queries = [
 project_dir = os.path.join(root_dir, "resources", "sample_project")
 qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
 corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
-previous_result = qa_data.sample(5)[["qid", "query"]]
+previous_result = qa_data.sample(5)
 
 
 def test_bm25_retrieval():
