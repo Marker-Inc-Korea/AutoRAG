@@ -21,7 +21,7 @@ def retrieval_f1(gt: List[List[str]], pred: List[str]):
     """
     Compute f1 score for retrieval.
     :param gt: 2-d list of ground truth ids.
-    It contains and/or connections between ids.
+        It contains and/or connections between ids.
     :param pred: Prediction ids.
     :return: The f1 score.
     """

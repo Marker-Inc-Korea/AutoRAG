@@ -28,7 +28,7 @@ def run_node_line(nodes: List[Node],
     :param nodes: A list of nodes.
     :param node_line_dir: This node line's directory.
     :param previous_result: A result of the previous node line.
-    If None, it loads qa data from data/qa.parquet.
+        If None, it loads qa data from data/qa.parquet.
     :return: The final result of the node line.
     """
     if previous_result is None:

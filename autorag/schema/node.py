@@ -66,7 +66,7 @@ def extract_values(node: Node, key: str) -> List[str]:
     :param node: The node you want to extract values from.
     :param key: The key of module_param that you want to extract.
     :return: The list of extracted values.
-    It removes duplicated elements automatically.
+        It removes duplicated elements automatically.
     """
 
     def extract_module_values(module: Module):
@@ -90,7 +90,7 @@ def extract_values_from_nodes(nodes: List[Node], key: str) -> List[str]:
     :param nodes: The nodes you want to extract values from.
     :param key: The key of module_param that you want to extract.
     :return: The list of extracted values.
-    It removes duplicated elements automatically.
+        It removes duplicated elements automatically.
     """
     values = list(map(lambda node: extract_values(node, key), nodes))
     return list(set(list(itertools.chain.from_iterable(values))))
