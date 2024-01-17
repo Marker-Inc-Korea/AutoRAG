@@ -16,7 +16,7 @@ def retrieval_node(func):
 
     :param func: Retrieval function that returns a list of ids and a list of scores
     :return: A pandas Dataframe that contains retrieved contents, retrieved ids, and retrieve scores.
-    The column name will be "retrieved_contents", "retrieved_ids", and "retrieve_scores".
+        The column name will be "retrieved_contents", "retrieved_ids", and "retrieve_scores".
     """
 
     @functools.wraps(func)

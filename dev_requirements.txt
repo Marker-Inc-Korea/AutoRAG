@@ -5,3 +5,7 @@ furo
 twine
 build
 setuptools-scm
+myst-parser
+sphinx-inline-tabs
+sphinx-copybutton
+sphinx_design
