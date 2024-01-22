@@ -10,3 +10,4 @@ swifter  # for parallel pandas apply
 pyyaml  # for yaml file
 pyarrow  # for pandas with parquet
 fastparquet  # for pandas with parquet
+sacrebleu  # for bleu score
