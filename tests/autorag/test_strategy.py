@@ -16,16 +16,20 @@ def test_filter_by_threshold():
     results = [1, 2, 3, 4]
     values = [1, 2, 3, 4]
     threshold = 3
-    filtered_results = filter_by_threshold(results, values, threshold)
+    filename = ['a', 'b', 'c', 'd']
+    filtered_results, filtered_filenames = filter_by_threshold(results, values, threshold, filename)
     assert filtered_results == [1, 2, 3]
+    assert filtered_filenames == ['a', 'b', 'c']
 
 
 def test_avoid_empty_result():
     results = [1, 2, 3, 4]
     values = [1, 2, 3, 4]
     threshold = 5
-    filtered_results = filter_by_threshold(results, values, threshold)
+    filenames = ['a', 'b', 'c', 'd']
+    filtered_results, filtered_filenames = filter_by_threshold(results, values, threshold, filenames)
     assert filtered_results == [1, 2, 3, 4]
+    assert filtered_filenames == ['a', 'b', 'c', 'd']
 
 
 def test_select_best_average():
@@ -34,7 +38,9 @@ def test_select_best_average():
         pd.DataFrame({'content': ['d', 'e', 'f'], 'retrieval_f1': [0.2, 0.3, 0.4], 'retrieval_recall': [0.2, 0.3, 0.4]}),
         pd.DataFrame({'content': ['g', 'h', 'i'], 'retrieval_f1': [0.3, 0.4, 0.5], 'retrieval_recall': [0.3, 0.4, 0.5]}),
     ]
-    best_df = select_best_average(sample_dfs, ['retrieval_f1', 'retrieval_recall'])
+    sample_filenames = ['a', 'b', 'c']
+    best_df, best_filename = select_best_average(sample_dfs, ['retrieval_f1', 'retrieval_recall'], sample_filenames)
     assert best_df['content'].tolist() == ['g', 'h', 'i']
     assert best_df['retrieval_f1'].tolist() == [0.3, 0.4, 0.5]
     assert best_df['retrieval_recall'].tolist() == [0.3, 0.4, 0.5]
+    assert best_filename == 'c'
