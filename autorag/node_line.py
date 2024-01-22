@@ -45,6 +45,5 @@ def run_node_line(nodes: List[Node],
         previous_result = node.run(previous_result, node_line_dir)
         best_module_filename = os.path.basename(find_best_result_path(os.path.join(node_line_dir, node.node_type)))
         summary_lst.append({'node_type': node.node_type, 'best_module_filename': best_module_filename})
-    summary_df = pd.DataFrame(summary_lst)
-    summary_df.to_csv(os.path.join(node_line_dir, 'summary.csv'), index=False)
+    pd.DataFrame(summary_lst).to_csv(os.path.join(node_line_dir, 'summary.csv'), index=False)
     return previous_result
