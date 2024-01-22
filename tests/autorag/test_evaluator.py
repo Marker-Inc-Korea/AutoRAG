@@ -73,5 +73,6 @@ def test_start_trial(evaluator):
     assert all([expect_column in each_result.columns for expect_column in expect_each_result_columns])
     expect_best_result_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
                       'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
-    best_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'best.parquet'))
+    best_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
+                                               'best_bm25=>top_k_50.parquet'))
     assert all([expect_column in best_result.columns for expect_column in expect_best_result_columns])
