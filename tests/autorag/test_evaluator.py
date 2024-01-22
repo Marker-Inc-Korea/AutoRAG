@@ -73,5 +73,25 @@ def test_start_trial(evaluator):
     assert all([expect_column in each_result.columns for expect_column in expect_each_result_columns])
     expect_best_result_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
                       'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
-    best_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'best.parquet'))
+    best_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
+                                               'best_bm25=>top_k_50.parquet'))
     assert all([expect_column in best_result.columns for expect_column in expect_best_result_columns])
+
+    # test node line summary
+    node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.csv')
+    assert os.path.exists(node_line_summary_path)
+    node_line_summary_df = pd.read_csv(node_line_summary_path)
+    assert len(node_line_summary_df) == 1
+    assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename'}
+    assert node_line_summary_df['node_type'][0] == 'retrieval'
+    assert node_line_summary_df['best_module_filename'][0] == 'best_bm25=>top_k_50.parquet'
+
+    # test trial summary
+    trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.csv')
+    assert os.path.exists(trial_summary_path)
+    trial_summary_df = pd.read_csv(trial_summary_path)
+    assert len(trial_summary_df) == 1
+    assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename'}
+    assert trial_summary_df['node_line_name'][0] == 'retrieve_node_line'
+    assert trial_summary_df['node_type'][0] == 'retrieval'
+    assert trial_summary_df['best_module_filename'][0] == 'best_bm25=>top_k_50.parquet'

@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from autorag.schema import Node
+from autorag.utils.util import find_best_result_path
 
 
 def make_node_lines(node_line_dict: Dict) -> List[Node]:
@@ -39,8 +40,10 @@ def run_node_line(nodes: List[Node],
             raise ValueError(f"qa.parquet does not exist in {qa_path}.")
         previous_result = pd.read_parquet(qa_path)
 
+    summary_lst = []
     for node in nodes:
         previous_result = node.run(previous_result, node_line_dir)
-        # TODO: record summary of each node to node_line summary
-
+        best_module_filename = os.path.basename(find_best_result_path(os.path.join(node_line_dir, node.node_type)))
+        summary_lst.append({'node_type': node.node_type, 'best_module_filename': best_module_filename})
+    pd.DataFrame(summary_lst).to_csv(os.path.join(node_line_dir, 'summary.csv'), index=False)
     return previous_result
