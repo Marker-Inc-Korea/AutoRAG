@@ -53,7 +53,7 @@ def run_retrieval_node(modules: List[Callable],
         'filename': list(map(lambda x: os.path.basename(x), filepaths)),
         **{metric: list(map(lambda result: result[metric].mean(), results)) for metric in strategies.get('metrics')},
     })
-    summary_df.to_parquet(os.path.join(save_dir, 'summary.parquet'), index=False)
+    summary_df.to_csv(os.path.join(save_dir, 'summary.csv'), index=False)
 
     # filter by strategies
     module_filenames = list(map(lambda x: os.path.splitext(os.path.basename(x))[0], filepaths))

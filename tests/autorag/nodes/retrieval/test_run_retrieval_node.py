@@ -44,12 +44,12 @@ def test_run_retrieval_node(node_line_dir):
                       'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
     assert all([expect_column in best_result.columns for expect_column in expect_columns])
     # test summary feature
-    summary_path = os.path.join(node_line_dir, "retrieval", "summary.parquet")
+    summary_path = os.path.join(node_line_dir, "retrieval", "summary.csv")
     bm25_top_k_path = os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet")
     assert os.path.exists(os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet"))
     bm25_top_k_df = pd.read_parquet(bm25_top_k_path)
     assert os.path.exists(summary_path)
-    summary_df = pd.read_parquet(summary_path)
+    summary_df = pd.read_csv(summary_path)
     assert ['filename', 'retrieval_f1', 'retrieval_recall'] == summary_df.columns.tolist()
     assert len(summary_df) == 1
     assert summary_df['filename'][0] == "bm25=>top_k_4.parquet"
