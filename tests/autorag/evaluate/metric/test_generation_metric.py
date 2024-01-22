@@ -1,6 +1,6 @@
 import pytest
 
-from autorag.evaluate.metric.generation import bleu
+from autorag.evaluate.metric.generation import bleu, meteor
 
 generation_gts = [
     ['The dog had bit the man.', 'The man had bitten the dog.'],
@@ -26,3 +26,7 @@ def base_test_generation_metrics(func, solution):
 
 def test_bleu():
     base_test_generation_metrics(bleu,  [51.1507, 23.5783, 100.0])
+
+
+def test_meteor():
+    base_test_generation_metrics(meteor, [0.853462, 0.5859375, 1.0])
