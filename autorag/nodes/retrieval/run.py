@@ -56,13 +56,16 @@ def run_retrieval_node(modules: List[Callable],
     summary_df.to_parquet(os.path.join(save_dir, 'summary.parquet'), index=False)
 
     # filter by strategies
+    module_filenames = list(map(lambda x: os.path.splitext(os.path.basename(x))[0], filepaths))
     if strategies.get('speed_threshold') is not None:
-        results = filter_by_threshold(results, average_times, strategies['speed_threshold'])
-    selected_result = select_best_average(results, strategies.get('metrics'))
+        results, module_filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'],
+                                                        module_filenames)
+    selected_result, selected_module_filename = select_best_average(results, strategies.get('metrics'),
+                                                                    module_filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # save the best result to best.parquet
-    best_result.to_parquet(os.path.join(save_dir, 'best.parquet'), index=False)
+    best_result.to_parquet(os.path.join(save_dir, f'best_{selected_module_filename}.parquet'), index=False)
     return best_result
 
 

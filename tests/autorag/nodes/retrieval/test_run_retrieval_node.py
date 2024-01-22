@@ -55,3 +55,6 @@ def test_run_retrieval_node(node_line_dir):
     assert summary_df['filename'][0] == "bm25=>top_k_4.parquet"
     assert summary_df['retrieval_f1'][0] == bm25_top_k_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][0] == bm25_top_k_df['retrieval_recall'].mean()
+    # test the best file is saved properly
+    best_path = os.path.join(node_line_dir, "retrieval", "best_bm25=>top_k_4.parquet")
+    assert os.path.exists(best_path)
