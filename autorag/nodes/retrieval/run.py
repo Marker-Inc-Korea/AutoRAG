@@ -49,7 +49,11 @@ def run_retrieval_node(modules: List[Callable],
                          zip(modules, module_params)))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
 
-    # TODO: make summary and save it to summary.parquet
+    summary_df = pd.DataFrame({
+        'filename': list(map(lambda x: os.path.basename(x), filepaths)),
+        **{metric: list(map(lambda result: result[metric].mean(), results)) for metric in strategies.get('metrics')},
+    })
+    summary_df.to_parquet(os.path.join(save_dir, 'summary.parquet'), index=False)
 
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
