@@ -85,3 +85,13 @@ def test_start_trial(evaluator):
     assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename'}
     assert node_line_summary_df['node_type'][0] == 'retrieval'
     assert node_line_summary_df['best_module_filename'][0] == 'best_bm25=>top_k_50.parquet'
+
+    # test trial summary
+    trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.csv')
+    assert os.path.exists(trial_summary_path)
+    trial_summary_df = pd.read_csv(trial_summary_path)
+    assert len(trial_summary_df) == 1
+    assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename'}
+    assert trial_summary_df['node_line_name'][0] == 'retrieve_node_line'
+    assert trial_summary_df['node_type'][0] == 'retrieval'
+    assert trial_summary_df['best_module_filename'][0] == 'best_bm25=>top_k_50.parquet'
