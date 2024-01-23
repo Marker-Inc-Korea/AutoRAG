@@ -1,6 +1,6 @@
 import functools
 import os
-from typing import List, Callable, Dict, Tuple
+from typing import List, Callable, Dict
 
 import pandas as pd
 import swifter
