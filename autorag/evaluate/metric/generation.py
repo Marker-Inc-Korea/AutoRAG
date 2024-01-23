@@ -1,5 +1,5 @@
 import functools
-from typing import List, Callable
+from typing import List
 
 import evaluate
 import pandas as pd
