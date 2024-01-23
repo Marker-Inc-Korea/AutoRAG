@@ -4,11 +4,54 @@ import pathlib
 import tempfile
 
 import pandas as pd
+import pytest
 
 from autorag.utils import fetch_contents
-from autorag.utils.util import find_best_result_path
+from autorag.utils.util import find_best_result_path, make_module_file_name, decode_module_file_name
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
+
+
+@pytest.fixture
+def module_name():
+    return "test_module"
+
+
+@pytest.fixture
+def module_params():
+    return {
+        "param1": "value1",
+        "param2": "value2",
+        "param3": "value3",
+    }
+
+
+def test_make_module_file_name(module_name, module_params):
+    module_file_name = make_module_file_name(module_name, module_params)
+    assert module_file_name == "test_module=>param1_value1-param2_value2-param3_value3.parquet"
+
+    module_file_name = make_module_file_name(module_name, {})
+    assert module_file_name == "test_module.parquet"
+
+    module_file_name = make_module_file_name(module_name, {"param1": "value1"})
+    assert module_file_name == "test_module=>param1_value1.parquet"
+
+
+def test_decode_module_file_name(module_name, module_params):
+    module_file_name = make_module_file_name(module_name, module_params)
+    decoded_module_name, decoded_module_params = decode_module_file_name(module_file_name)
+    assert decoded_module_name == module_name
+    assert decoded_module_params == module_params
+
+    module_file_name = make_module_file_name(module_name, {})
+    decoded_module_name, decoded_module_params = decode_module_file_name(module_file_name)
+    assert decoded_module_name == module_name
+    assert decoded_module_params == {}
+
+    module_file_name = make_module_file_name(module_name, {"param1": "value1"})
+    decoded_module_name, decoded_module_params = decode_module_file_name(module_file_name)
+    assert decoded_module_name == module_name
+    assert decoded_module_params == {"param1": "value1"}
 
 
 def test_fetch_contents():
