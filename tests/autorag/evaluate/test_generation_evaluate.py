@@ -23,7 +23,7 @@ def pseudo_generation():
     return pseudo_generations
 
 
-@evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor'])
+@evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'donggeon_metric'])
 def pseudo_generation_with_log_probs():
     tokenizer = AutoTokenizer.from_pretrained('gpt2')
     tokens = list(map(lambda x: tokenizer.tokenize(x), pseudo_generations))
@@ -38,7 +38,8 @@ def test_evaluate_generation():
     assert len(result_df.columns) == 4
     assert set(result_df.columns) == {'answer', 'bleu', 'meteor', 'rouge'}
 
-    result_df_log_probs = pseudo_generation_with_log_probs()
+    with pytest.warns():
+        result_df_log_probs = pseudo_generation_with_log_probs()
     assert isinstance(result_df_log_probs, pd.DataFrame)
     assert len(result_df_log_probs) == 3
     assert len(result_df_log_probs.columns) == 5

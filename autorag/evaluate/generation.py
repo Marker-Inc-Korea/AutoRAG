@@ -24,15 +24,16 @@ def evaluate_generation(generation_gt: List[List[str]], metrics: List[str]):
                     "Input func must return string list as generated answer at the first return value."
                 generated_str = generation_result
             else:
-                raise ValueError("Input func must return str as generated answer at the first return value.")
+                raise ValueError("Input func must return string list as generated answer at the first return value.")
 
             metric_scores = {}
             for metric in metrics:
                 if metric not in GENERATION_METRIC_FUNC_DICT:
                     warnings.warn(f"metric {metric} is not in supported metrics: {GENERATION_METRIC_FUNC_DICT.keys()}"
                                   f"{metric} will be ignored.")
-                metric_scores[metric] = GENERATION_METRIC_FUNC_DICT[metric](
-                    generation_gt=generation_gt, generations=generated_str)
+                else:
+                    metric_scores[metric] = GENERATION_METRIC_FUNC_DICT[metric](
+                        generation_gt=generation_gt, generations=generated_str)
 
             metric_result_df = pd.DataFrame(metric_scores)
             execution_result_df = pd.DataFrame({

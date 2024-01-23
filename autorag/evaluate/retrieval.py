@@ -33,8 +33,9 @@ def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: List[str]):
                 if metric not in metric_funcs:
                     warnings.warn(f"metric {metric} is not in supported metrics: {metric_funcs.keys()}"
                                   f"{metric} will be ignored.")
-                metric_func = metric_funcs[metric]
-                metric_scores[metric] = metric_func(retrieval_gt=retrieval_gt, pred_ids=pred_ids)
+                else:
+                    metric_func = metric_funcs[metric]
+                    metric_scores[metric] = metric_func(retrieval_gt=retrieval_gt, pred_ids=pred_ids)
 
             metric_result_df = pd.DataFrame(metric_scores)
             execution_result_df = pd.DataFrame({
