@@ -47,23 +47,6 @@ def make_module_file_name(module_name: str, module_params: Dict) -> str:
     return f"{module_name}=>{module_params_str}.parquet"
 
 
-def decode_module_file_name(module_file_name: str) -> Tuple[str, Dict]:
-    """
-    Decode module parquet file name to module name and module parameters.
-
-    :param module_file_name: Module parquet file name.
-    :return: Module name and module parameters.
-    """
-    name = module_file_name.replace(".parquet", "")
-    module_name = name.split("=>")[0]
-    if len(name.split('=>')) >= 2:
-        module_params_str = name.split("=>")[1].split('-')
-        module_params = {param.split('_')[0]: param.split('_')[1] for param in module_params_str}
-    else:
-        module_params = {}
-    return module_name, module_params
-
-
 def find_best_result_path(node_dir: str) -> str:
     """
     Find the best result filepath from node directory.
