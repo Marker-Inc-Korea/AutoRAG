@@ -1,4 +1,5 @@
 import functools
+import os
 from typing import List, Callable, Dict
 
 import pandas as pd
@@ -44,3 +45,12 @@ def make_module_file_name(module_name: str, module_params: Dict) -> str:
     if len(module_params_str) <= 0:
         return f"{module_name}.parquet"
     return f"{module_name}=>{module_params_str}.parquet"
+
+
+def find_best_result_path(node_dir: str) -> str:
+    """
+    Find the best result filepath from node directory.
+    :param node_dir: The directory of the node.
+    :return: The filepath of the best result.
+    """
+    return list(filter(lambda x: x.endswith(".parquet") and x.startswith("best_"), os.listdir(node_dir)))[0]
