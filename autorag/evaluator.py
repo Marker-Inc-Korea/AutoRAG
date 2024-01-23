@@ -1,9 +1,9 @@
 import json
+import logging
 import os
 import shutil
 from datetime import datetime
 from typing import List, Dict
-import logging
 
 import pandas as pd
 import yaml
@@ -14,7 +14,8 @@ from autorag.schema import Node
 from autorag.schema.node import module_type_exists
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
 
-logger = logging.getLogger(__name__)
+
+logger = logging.getLogger("AutoRAG")
 
 
 class Evaluator:
