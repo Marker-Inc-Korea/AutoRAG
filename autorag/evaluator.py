@@ -51,7 +51,7 @@ class Evaluator:
         self.__make_trial_dir(trial_name)
 
         node_lines = self._load_node_lines(yaml_path)
-        self.__ingest(node_lines)
+        self.__embed(node_lines)
 
         trial_summary_df = pd.DataFrame(columns=['node_line_name', 'node_type', 'best_module_filename'])
         for i, (node_line_name, node_line) in enumerate(node_lines.items()):
@@ -60,6 +60,7 @@ class Evaluator:
             os.makedirs(node_line_dir, exist_ok=False)
             if i == 0:
                 previous_result = self.qa_data
+            logger.info(f'Running node line {node_line_name}...')
             previous_result = run_node_line(node_line, node_line_dir, previous_result)
 
             summary_df = pd.read_csv(os.path.join(node_line_dir, 'summary.csv'))
@@ -69,18 +70,18 @@ class Evaluator:
 
         trial_summary_df.to_csv(os.path.join(self.project_dir, trial_name, 'summary.csv'), index=False)
 
-    def __ingest(self, node_lines: Dict[str, List[Node]]):
+    def __embed(self, node_lines: Dict[str, List[Node]]):
         if any(list(map(lambda nodes: module_type_exists(nodes, 'bm25'), node_lines.values()))):
             # ingest BM25 corpus
-            logger.info('Ingesting BM25 corpus...')
+            logger.info('Embedding BM25 corpus...')
             bm25_dir = os.path.join(self.project_dir, 'resources', 'bm25.pkl')
             if not os.path.exists(os.path.dirname(bm25_dir)):
                 os.makedirs(os.path.dirname(bm25_dir))
             if os.path.exists(bm25_dir):
-                logger.info('BM25 corpus already exists.')
+                logger.debug('BM25 corpus already exists.')
             else:
                 bm25_ingest(bm25_dir, self.corpus_data)
-            logger.info('BM25 corpus ingestion complete.')
+            logger.info('BM25 corpus embedding complete.')
             pass
         elif any(list(map(lambda nodes: module_type_exists(nodes, 'vector'), node_lines.values()))):
             # TODO: ingest vector DB
