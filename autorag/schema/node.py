@@ -1,4 +1,5 @@
 import itertools
+import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Dict, List, Callable
@@ -11,6 +12,7 @@ from autorag.schema.module import Module
 SUPPORT_NODES = {
     'retrieval': run_retrieval_node,
 }
+logger = logging.getLogger("AutoRAG")
 
 
 @dataclass
@@ -53,6 +55,7 @@ class Node:
         return cls(node_type, strategy, node_params, modules)
 
     def run(self, previous_result: pd.DataFrame, node_line_dir: str) -> pd.DataFrame:
+        logger.info(f'Running node {self.node_type}...')
         return self.run_node(modules=list(map(lambda x: x.module, self.modules)),
                              module_params=self.get_param_combinations(),
                              previous_result=previous_result,
