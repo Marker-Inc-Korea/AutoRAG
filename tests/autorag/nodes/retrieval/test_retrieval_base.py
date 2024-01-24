@@ -1,3 +1,8 @@
+import os
+import pathlib
+
+import pandas as pd
+
 from autorag.nodes.retrieval.base import evenly_distribute_passages
 
 queries = [
@@ -7,6 +12,12 @@ queries = [
      "What is your source of RAG framework?",
      "Is RAG framework have source?"],
 ]
+
+root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
+project_dir = os.path.join(root_dir, "resources", "sample_project")
+qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
+previous_result = qa_data.sample(5)
 
 
 def test_evenly_distribute_passages():

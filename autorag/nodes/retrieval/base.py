@@ -31,23 +31,23 @@ def retrieval_node(func):
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
 
-        # check if bm25_path and file exists
-        bm25_path = os.path.join(resources_dir, 'bm25.pkl')
         if func.__name__ == "bm25":
+            # check if bm25_path and file exists
+            bm25_path = os.path.join(resources_dir, 'bm25.pkl')
             assert bm25_path is not None, "bm25_path must be specified for using bm25 retrieval."
             assert os.path.exists(bm25_path), f"bm25_path {bm25_path} does not exist. Please ingest first."
 
-        # check if chroma_path and file exists
-        chroma_path = os.path.join(resources_dir, 'chroma')
-        embedding_model_str = kwargs.pop("embedding_model")
-        chroma_collection_path = os.path.join(chroma_path, embedding_model_str)
         if func.__name__ == "vectordb":
+            # check if chroma_path and file exists
+            chroma_path = os.path.join(resources_dir, 'chroma')
+            embedding_model_str = kwargs.pop("embedding_model")
+            chroma_collection_path = os.path.join(chroma_path, embedding_model_str)
             assert chroma_path is not None, "chroma_path must be specified for using vectordb retrieval."
             assert os.path.exists(chroma_path), f"chroma_path {chroma_path} does not exist. Please ingest first."
-            assert chroma_collection_path is not None, \
-                "chroma_collection_path must be specified for using vectordb retrieval."
-            assert os.path.exists(chroma_collection_path), \
-                f"chroma_collection_path {chroma_collection_path} does not exist. Please ingest first."
+            # assert chroma_collection_path is not None, \
+                # "chroma_collection_path must be specified for using vectordb retrieval."
+            # assert os.path.exists(chroma_collection_path), \
+                # f"chroma_collection_path {chroma_collection_path} does not exist. Please ingest first."
 
         # find queries columns & type cast queries
         assert "query" in previous_result.columns, "previous_result must have query column."
@@ -56,15 +56,13 @@ def retrieval_node(func):
         previous_result["queries"] = previous_result["queries"].apply(cast_queries)
         queries = previous_result["queries"].tolist()
 
-        # load instances
-        bm25_corpus = load_bm25_corpus(bm25_path)
-        chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
-        embedding_model = embedding_models[embedding_model_str]
-
         # run retrieval function
         if func.__name__ == "bm25":
+            bm25_corpus = load_bm25_corpus(bm25_path)
             ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, *args, **kwargs)
         elif func.__name__ == "vectordb":
+            chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
+            embedding_model = embedding_models[embedding_model_str]
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, *args, **kwargs)
         else:

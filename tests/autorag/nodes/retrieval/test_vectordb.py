@@ -2,10 +2,10 @@ import os
 import pathlib
 
 import chromadb
-import pandas as pd
 from llama_index.embeddings import OpenAIEmbedding
 
 from autorag.nodes.retrieval import vectordb
+from tests.autorag.nodes.retrieval.test_retrieval_base import queries, project_dir, corpus_data, previous_result
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 chroma_path = os.path.join(root_dir, "resources", "test_vectordb_retrieval_chroma")
@@ -14,19 +14,6 @@ db = chromadb.PersistentClient(path=chroma_path)
 collection = db.get_collection(name="test_vectordb_retrieval")
 
 embedding_model = OpenAIEmbedding()
-
-queries = [
-    ["What is Visconde structure?", "What are Visconde structure?"],
-    ["What is the structure of StrategyQA dataset in this paper?"],
-    ["What's your favorite source of RAG framework?",
-     "What is your source of RAG framework?",
-     "Is RAG framework have source?"],
-]
-
-project_dir = os.path.join(root_dir, "resources", "sample_project")
-qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
-corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
-previous_result = qa_data.sample(5)
 
 
 def test_vectordb_retrieval():
