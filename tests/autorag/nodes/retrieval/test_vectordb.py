@@ -18,20 +18,6 @@ collection = db.get_collection(name="test_vectordb_retrieval")
 
 embedding_model = OpenAIEmbedding()
 
-# 곧 없어질 녀석, 테스트용 코퍼스 만들기
-node_chroma_path = os.path.join(root_dir, "resources", "sample_project", "resources", "chroma")
-node_db = chromadb.PersistentClient(path=node_chroma_path)
-node_collection = node_db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
-
-node_test_corpus_path = os.path.join(root_dir, "resources", "sample_project", "data", "corpus.parquet")
-corpus_df = pd.read_parquet(path=node_test_corpus_path, engine='pyarrow')
-
-contents = corpus_df["contents"].tolist()
-ids = corpus_df["doc_id"].tolist()
-
-embedded_contents = embedding_model._get_text_embeddings(contents)
-node_collection.add(ids=ids, embeddings=embedded_contents)
-
 
 def test_vectordb_retrieval():
     top_k = 10

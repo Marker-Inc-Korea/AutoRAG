@@ -45,16 +45,8 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
 
     # Distribute passages evenly
     id_result, score_result = evenly_distribute_passages(id_result, score_result, top_k)
-
-    # Pair up the ids and scores and sort by score in ascending order
-    # Note: Lower distances indicate higher scores, so we sort by score in ascending order
-    paired_results = sorted(zip(id_result, score_result), key=lambda pair: pair[1])
-
-    # Unzip the pairs back into ids and scores
-    id_result, score_result = zip(*paired_results)
-
-    # Convert the tuples back to lists
-    id_result = list(id_result)
-    score_result = list(score_result)
-
-    return id_result, score_result
+    # sort id_result and score_result by score
+    result = [(_id, score) for score, _id in
+              sorted(zip(score_result, id_result), key=lambda pair: pair[0], reverse=True)]
+    id_result, score_result = zip(*result)
+    return list(id_result), list(score_result)
