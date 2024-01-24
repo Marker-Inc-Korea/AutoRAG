@@ -4,6 +4,14 @@ autorag.evaluate.metric package
 Submodules
 ----------
 
+autorag.evaluate.metric.generation module
+-----------------------------------------
+
+.. automodule:: autorag.evaluate.metric.generation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.evaluate.metric.retrieval module
 ----------------------------------------
 
