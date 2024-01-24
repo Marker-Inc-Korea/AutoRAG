@@ -141,14 +141,14 @@ def cli():
 
 @click.command()
 @click.option('--config', '-c', help='Path to config yaml file. Must be yaml or yml file.', type=str)
-@click.option('--qa_path', help='Path to QA dataset. Must be parquet file.', type=str)
-@click.option('--corpus_path', help='Path to corpus dataset. Must be parquet file.', type=str)
-def evaluate(config, qa_path, corpus_path):
+@click.option('--qa_data_path', help='Path to QA dataset. Must be parquet file.', type=str)
+@click.option('--corpus_data_path', help='Path to corpus dataset. Must be parquet file.', type=str)
+def evaluate(config, qa_data_path, corpus_data_path):
     if not config.endswith('.yaml') and not config.endswith('.yml'):
         raise ValueError(f"Config file {config} is not a parquet file.")
     if not os.path.exists(config):
         raise ValueError(f"Config file {config} does not exist.")
-    evaluator = Evaluator(qa_path, corpus_path)
+    evaluator = Evaluator(qa_data_path, corpus_data_path)
     evaluator.start_trial(config)
     logger.info('Evaluation complete.')
 

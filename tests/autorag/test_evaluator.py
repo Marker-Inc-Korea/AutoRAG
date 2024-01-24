@@ -111,8 +111,8 @@ def test_start_trial(evaluator):
 
 def test_evaluator_cli(evaluator):
     result = subprocess.run(['autorag', 'evaluate', '--config', os.path.join(resource_dir, 'simple.yaml'),
-                             '--qa_path', os.path.join(resource_dir, 'qa_data_sample.parquet'),
-                             '--corpus_path', os.path.join(resource_dir, 'corpus_data_sample.parquet')])
+                             '--qa_data_path', os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                             '--corpus_data_path', os.path.join(resource_dir, 'corpus_data_sample.parquet')])
     assert result.returncode == 0
     # check if the files are created
     assert os.path.exists(os.path.join(os.getcwd(), '0'))
