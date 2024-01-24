@@ -10,6 +10,9 @@ import pandas as pd
 from autorag import embedding_models
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
+import logging
+logger = logging.getLogger("AutoRAG")
+
 
 def retrieval_node(func):
     """
@@ -56,7 +59,11 @@ def retrieval_node(func):
             ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, *args, **kwargs)
         elif func.__name__ == "vectordb":
             chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
-            embedding_model = embedding_models[embedding_model_str]
+            if embedding_model_str in embedding_models:
+                embedding_model = embedding_models[embedding_model_str]
+            else:
+                logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
+                raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, *args, **kwargs)
         else:
