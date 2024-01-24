@@ -48,7 +48,7 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
 
     # Pair up the ids and scores and sort by score in ascending order
     # Note: Lower distances indicate higher scores, so we sort by score in ascending order
-    paired_results = sorted(zip(score_result, id_result), key=lambda pair: pair[0])
+    paired_results = sorted(zip(id_result, score_result), key=lambda pair: pair[1])
 
     # Unzip the pairs back into ids and scores
     id_result, score_result = zip(*paired_results)
