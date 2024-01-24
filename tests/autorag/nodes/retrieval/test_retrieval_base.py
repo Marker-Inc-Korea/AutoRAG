@@ -20,6 +20,37 @@ corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"
 previous_result = qa_data.sample(5)
 
 
+def base_retrieval_test(id_result, score_result, top_k):
+    assert len(id_result) == len(score_result) == 3
+    for id_list, score_list in zip(id_result, score_result):
+        assert isinstance(id_list, list)
+        assert isinstance(score_list, list)
+        assert len(id_list) == len(score_list) == top_k
+        for _id, score in zip(id_list, score_list):
+            assert isinstance(_id, str)
+            assert isinstance(score, float)
+        for i in range(1, len(score_list)):
+            assert score_list[i - 1] >= score_list[i]
+
+
+def base_retrieval_node_test(result_df):
+    contents = result_df["retrieved_contents"].tolist()
+    ids = result_df["retrieved_ids"].tolist()
+    scores = result_df["retrieve_scores"].tolist()
+    assert len(contents) == len(ids) == len(scores) == 5
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 4
+    # id is matching with corpus.parquet
+    for content_list, id_list, score_list in zip(contents, ids, scores):
+        for i, (content, _id, score) in enumerate(zip(content_list, id_list, score_list)):
+            assert isinstance(content, str)
+            assert isinstance(_id, str)
+            assert isinstance(score, float)
+            assert _id in corpus_data["doc_id"].tolist()
+            assert content == corpus_data[corpus_data["doc_id"] == _id]["contents"].values[0]
+            if i >= 1:
+                assert score_list[i - 1] >= score_list[i]
+
+
 def test_evenly_distribute_passages():
     ids = [[f'test-{i}-{j}' for i in range(10)] for j in range(3)]
     scores = [[i for i in range(10)] for _ in range(3)]
