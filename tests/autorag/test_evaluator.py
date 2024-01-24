@@ -1,6 +1,7 @@
 import os.path
 import pathlib
 import shutil
+import subprocess
 
 import pandas as pd
 import pytest
@@ -106,3 +107,18 @@ def test_start_trial(evaluator):
     assert trial_summary_df['best_module_name'][0] == 'bm25'
     assert trial_summary_df['best_module_params'][0] == {'top_k': 50}
     assert trial_summary_df['best_execution_time'][0] > 0
+
+
+def test_evaluator_cli(evaluator):
+    result = subprocess.run(['autorag', 'evaluate', '--config', os.path.join(resource_dir, 'simple.yaml'),
+                             '--qa_path', os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                             '--corpus_path', os.path.join(resource_dir, 'corpus_data_sample.parquet')])
+    assert result.returncode == 0
+    # check if the files are created
+    assert os.path.exists(os.path.join(os.getcwd(), '0'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'data'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))

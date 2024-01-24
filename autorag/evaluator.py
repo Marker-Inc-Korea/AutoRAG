@@ -15,7 +15,6 @@ from autorag.schema import Node
 from autorag.schema.node import module_type_exists
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
 
-
 logger = logging.getLogger("AutoRAG")
 
 
@@ -135,12 +134,17 @@ class Evaluator:
         return node_line_dict
 
 
-@click.group(invoke_without_command=True)
+@click.group()
+def cli():
+    pass
+
+
+@click.command()
 @click.option('--config', '-c', help='Path to config yaml file. Must be yaml or yml file.', type=str)
 @click.option('--qa_path', help='Path to QA dataset. Must be parquet file.', type=str)
 @click.option('--corpus_path', help='Path to corpus dataset. Must be parquet file.', type=str)
 def evaluate(config, qa_path, corpus_path):
-    if not config.endswith('.yaml') or not config.endswith('.yml'):
+    if not config.endswith('.yaml') and not config.endswith('.yml'):
         raise ValueError(f"Config file {config} is not a parquet file.")
     if not os.path.exists(config):
         raise ValueError(f"Config file {config} does not exist.")
@@ -149,5 +153,7 @@ def evaluate(config, qa_path, corpus_path):
     logger.info('Evaluation complete.')
 
 
+cli.add_command(evaluate)
+
 if __name__ == '__main__':
-    evaluate()
+    cli()
