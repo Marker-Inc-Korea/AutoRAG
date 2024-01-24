@@ -86,7 +86,7 @@ class Evaluator:
                 bm25_ingest(bm25_dir, self.corpus_data)
             logger.info('BM25 corpus embedding complete.')
             pass
-        elif any(list(map(lambda nodes: module_type_exists(nodes, 'vector'), node_lines.values()))):
+        elif any(list(map(lambda nodes: module_type_exists(nodes, 'vectordb'), node_lines.values()))):
             # TODO: ingest vector DB
             pass
         else:

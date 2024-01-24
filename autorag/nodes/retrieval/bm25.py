@@ -49,8 +49,7 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
 
 
 async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> Tuple[
-    List[str
-    ], List[float]]:
+        List[str], List[float]]:
     """
     Async BM25 retrieval function.
     Its usage is for async retrieval of bm25 row by row.
@@ -96,7 +95,8 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
     tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
-    tasks = list(map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(corpus_data['contents'], corpus_data['doc_id'])))
+    tasks = list(
+        map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(corpus_data['contents'], corpus_data['doc_id'])))
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
     tokenized_corpus, passage_ids = zip(*results)

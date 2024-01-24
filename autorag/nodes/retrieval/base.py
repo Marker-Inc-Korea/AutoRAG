@@ -4,9 +4,14 @@ import pickle
 from pathlib import Path
 from typing import List, Union, Tuple, Dict
 
+import chromadb
 import pandas as pd
 
+from autorag import embedding_models
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
+
+import logging
+logger = logging.getLogger("AutoRAG")
 
 
 def retrieval_node(func):
@@ -28,11 +33,18 @@ def retrieval_node(func):
         validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
-        bm25_path = os.path.join(resources_dir, 'bm25.pkl')
+
         if func.__name__ == "bm25":
+            # check if bm25_path and file exists
+            bm25_path = os.path.join(resources_dir, 'bm25.pkl')
             assert bm25_path is not None, "bm25_path must be specified for using bm25 retrieval."
             assert os.path.exists(bm25_path), f"bm25_path {bm25_path} does not exist. Please ingest first."
-        # TODO: add chroma check for vectordb
+        elif func.__name__ == "vectordb":
+            # check if chroma_path and file exists
+            chroma_path = os.path.join(resources_dir, 'chroma')
+            embedding_model_str = kwargs.pop("embedding_model")
+            assert chroma_path is not None, "chroma_path must be specified for using vectordb retrieval."
+            assert os.path.exists(chroma_path), f"chroma_path {chroma_path} does not exist. Please ingest first."
 
         # find queries columns & type cast queries
         assert "query" in previous_result.columns, "previous_result must have query column."
@@ -41,14 +53,21 @@ def retrieval_node(func):
         previous_result["queries"] = previous_result["queries"].apply(cast_queries)
         queries = previous_result["queries"].tolist()
 
-        bm25_corpus = load_bm25_corpus(bm25_path)
-
         # run retrieval function
         if func.__name__ == "bm25":
+            bm25_corpus = load_bm25_corpus(bm25_path)
             ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, *args, **kwargs)
+        elif func.__name__ == "vectordb":
+            chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
+            if embedding_model_str in embedding_models:
+                embedding_model = embedding_models[embedding_model_str]
+            else:
+                logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
+                raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
+            ids, scores = func(queries=queries, collection=chroma_collection,
+                               embedding_model=embedding_model, *args, **kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
-        # TODO: add chroma load for vectordb
 
         # fetch data from corpus_data
         corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
@@ -65,6 +84,12 @@ def load_bm25_corpus(bm25_path: str) -> Dict:
     with open(bm25_path, "rb") as f:
         bm25_corpus = pickle.load(f)
     return bm25_corpus
+
+
+def load_chroma_collection(db_path: str, collection_name: str) -> chromadb.Collection:
+    db = chromadb.PersistentClient(path=db_path)
+    collection = db.get_collection(name=collection_name)
+    return collection
 
 
 def cast_queries(queries: Union[str, List[str]]) -> List[str]:
