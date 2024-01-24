@@ -1,8 +1,6 @@
 import os
 import pathlib
 
-import pandas as pd
-
 import chromadb
 from llama_index.embeddings import OpenAIEmbedding
 
