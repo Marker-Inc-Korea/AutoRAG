@@ -3,6 +3,7 @@ import os
 from typing import List, Callable, Dict
 
 import pandas as pd
+import swifter
 
 
 def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]]) -> List[List[str]]:
