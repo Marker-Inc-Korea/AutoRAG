@@ -50,7 +50,8 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
     :return: The tuple contains a list of passage ids that retrieved from vectordb and a list of its scores.
     """
     # embed query
-    embedded_queries = (embedding_model.get_query_embedding(query) for query in queries)
+    embedded_queries = list(map(embedding_model.get_query_embedding, queries))
+
     id_result, score_result = [], []
     for embedded_query in embedded_queries:
         result = collection.query(query_embeddings=embedded_query, n_results=top_k)
