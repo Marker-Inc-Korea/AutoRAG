@@ -15,16 +15,26 @@ from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resource_path = os.path.join(root_dir, "resources")
-chroma_path = os.path.join(resource_path, "test_vectordb_retrieval_chroma")
-
-db = chromadb.PersistentClient(path=chroma_path)
-# collection = db.get_collection(name="test_vectordb_retrieval")
 
 embedding_model = OpenAIEmbedding()
 
 
 @pytest.fixture
-def chroma_for_vectordb_node():
+def ingested_vectordb():
+    chroma_path = os.path.join(resource_path, "test_vectordb_retrieval_chroma")
+    db = chromadb.PersistentClient(path=chroma_path)
+    collection = db.create_collection(name="test_vectordb_retrieval", metadata={"hnsw:space": "cosine"})
+
+    vectordb_ingest(collection, corpus_df, embedding_model)
+
+    assert collection.count() == 5
+    yield collection
+    if os.path.exists(chroma_path):
+        shutil.rmtree(chroma_path)
+
+
+@pytest.fixture
+def ingested_vectordb_node():
     node_chroma_path = os.path.join(resource_path, "sample_project", "resources", "chroma")
     node_db = chromadb.PersistentClient(path=node_chroma_path)
     node_collection = node_db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
@@ -34,19 +44,20 @@ def chroma_for_vectordb_node():
 
     vectordb_ingest(node_collection, sample_project_corpus_df, embedding_model)
 
+    assert node_collection.count() == 30
     yield node_collection
     if os.path.exists(node_chroma_path):
         shutil.rmtree(node_chroma_path)
 
 
-def test_vectordb_retrieval():
-    top_k = 10
+def test_vectordb_retrieval(ingested_vectordb):
+    top_k = 4
     original_vectordb = vectordb.__wrapped__
-    id_result, score_result = original_vectordb(queries, top_k=top_k, collection=collection,
+    id_result, score_result = original_vectordb(queries, top_k=top_k, collection=ingested_vectordb,
                                                 embedding_model=embedding_model)
     base_retrieval_test(id_result, score_result, top_k)
 
 
-def test_vectordb_node(chroma_for_vectordb_node):
+def test_vectordb_node(ingested_vectordb_node):
     result_df = vectordb(project_dir=project_dir, previous_result=previous_result, top_k=4, embedding_model="openai")
     base_retrieval_node_test(result_df)
