@@ -61,7 +61,7 @@ class Evaluator:
                 previous_result = self.qa_data
             previous_result = run_node_line(node_line, node_line_dir, previous_result)
 
-            summary_df = pd.read_csv(os.path.join(node_line_dir, 'summary.csv'))
+            summary_df = pd.read_parquet(os.path.join(node_line_dir, 'summary.parquet'))
             summary_df = summary_df.assign(node_line_name=node_line_name)
             summary_df = summary_df[list(trial_summary_df.columns)]
             trial_summary_df = pd.concat([trial_summary_df, summary_df], ignore_index=True)

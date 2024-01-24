@@ -68,23 +68,30 @@ def test_start_trial(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))
-    expect_each_result_columns = ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
-    each_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))
+    expect_each_result_columns = ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1',
+                                  'retrieval_recall']
+    each_result = pd.read_parquet(
+        os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))
     assert all([expect_column in each_result.columns for expect_column in expect_each_result_columns])
     expect_best_result_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
-                      'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
+                                  'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1',
+                                  'retrieval_recall']
     best_result = pd.read_parquet(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
                                                'best_bm25=>top_k_50.parquet'))
     assert all([expect_column in best_result.columns for expect_column in expect_best_result_columns])
 
     # test node line summary
-    node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.csv')
+    node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.parquet')
     assert os.path.exists(node_line_summary_path)
-    node_line_summary_df = pd.read_csv(node_line_summary_path)
+    node_line_summary_df = pd.read_parquet(node_line_summary_path)
     assert len(node_line_summary_df) == 1
-    assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename'}
+    assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename',
+                                                 'best_module_name', 'best_module_params', 'best_execution_time'}
     assert node_line_summary_df['node_type'][0] == 'retrieval'
-    assert node_line_summary_df['best_module_filename'][0] == 'best_bm25=>top_k_50.parquet'
+    assert node_line_summary_df['best_module_filename'][0] == 'bm25=>top_k_50.parquet'
+    assert node_line_summary_df['best_module_name'][0] == 'bm25'
+    assert node_line_summary_df['best_module_params'][0] == {'top_k': 50}
+    assert node_line_summary_df['best_execution_time'][0] > 0
 
     # test trial summary
     trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.csv')
@@ -94,4 +101,4 @@ def test_start_trial(evaluator):
     assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename'}
     assert trial_summary_df['node_line_name'][0] == 'retrieve_node_line'
     assert trial_summary_df['node_type'][0] == 'retrieval'
-    assert trial_summary_df['best_module_filename'][0] == 'best_bm25=>top_k_50.parquet'
+    assert trial_summary_df['best_module_filename'][0] == 'bm25=>top_k_50.parquet'
