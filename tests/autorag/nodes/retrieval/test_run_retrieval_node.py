@@ -44,17 +44,24 @@ def test_run_retrieval_node(node_line_dir):
                       'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
     assert all([expect_column in best_result.columns for expect_column in expect_columns])
     # test summary feature
-    summary_path = os.path.join(node_line_dir, "retrieval", "summary.csv")
+    summary_path = os.path.join(node_line_dir, "retrieval", "summary.parquet")
     bm25_top_k_path = os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet")
     assert os.path.exists(os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet"))
     bm25_top_k_df = pd.read_parquet(bm25_top_k_path)
     assert os.path.exists(summary_path)
-    summary_df = pd.read_csv(summary_path)
-    assert ['filename', 'retrieval_f1', 'retrieval_recall'] == summary_df.columns.tolist()
+    summary_df = pd.read_parquet(summary_path)
+    assert set(summary_df.columns) == {'filename', 'retrieval_f1', 'retrieval_recall',
+                                       'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 1
     assert summary_df['filename'][0] == "bm25=>top_k_4.parquet"
     assert summary_df['retrieval_f1'][0] == bm25_top_k_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][0] == bm25_top_k_df['retrieval_recall'].mean()
+    assert summary_df['module_name'][0] == "bm25"
+    assert summary_df['module_params'][0] == {'top_k': 4}
+    assert summary_df['execution_time'][0] > 0
+    assert summary_df['is_best'][0] == True # is_best is np.bool_
     # test the best file is saved properly
     best_path = os.path.join(node_line_dir, "retrieval", "best_bm25=>top_k_4.parquet")
     assert os.path.exists(best_path)
+    best_df = pd.read_parquet(best_path)
+    assert all([expect_column in best_df.columns for expect_column in expect_columns])

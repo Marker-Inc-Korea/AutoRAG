@@ -43,7 +43,14 @@ def run_node_line(nodes: List[Node],
     summary_lst = []
     for node in nodes:
         previous_result = node.run(previous_result, node_line_dir)
-        best_module_filename = os.path.basename(find_best_result_path(os.path.join(node_line_dir, node.node_type)))
-        summary_lst.append({'node_type': node.node_type, 'best_module_filename': best_module_filename})
-    pd.DataFrame(summary_lst).to_csv(os.path.join(node_line_dir, 'summary.csv'), index=False)
+        node_summary_df = pd.read_parquet(os.path.join(node_line_dir, node.node_type, 'summary.parquet'))
+        best_node_row = node_summary_df.loc[node_summary_df['is_best']]
+        summary_lst.append({
+            'node_type': node.node_type,
+            'best_module_filename': best_node_row['filename'].values[0],
+            'best_module_name': best_node_row['module_name'].values[0],
+            'best_module_params': best_node_row['module_params'].values[0],
+            'best_execution_time': best_node_row['execution_time'].values[0],
+        })
+    pd.DataFrame(summary_lst).to_parquet(os.path.join(node_line_dir, 'summary.parquet'), index=False)
     return previous_result
