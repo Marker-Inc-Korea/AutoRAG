@@ -65,7 +65,10 @@ class Evaluator:
             summary_df = pd.read_parquet(os.path.join(node_line_dir, 'summary.parquet'))
             summary_df = summary_df.assign(node_line_name=node_line_name)
             summary_df = summary_df[list(trial_summary_df.columns)]
-            trial_summary_df = pd.concat([trial_summary_df, summary_df], ignore_index=True)
+            if len(trial_summary_df) <= 0:
+                trial_summary_df = summary_df
+            else:
+                trial_summary_df = pd.concat([trial_summary_df, summary_df], ignore_index=True)
 
         trial_summary_df.to_parquet(os.path.join(self.project_dir, trial_name, 'summary.parquet'), index=False)
 
