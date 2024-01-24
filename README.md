@@ -52,7 +52,7 @@ evaluator.start_trial('your/path/to/config.yaml')
 ```
 or you can use command line interface
 ```bash
-autorag evaluate --config your/path/to/default_config.yaml --qa_path your/path/to/qa.parquet --corpus_path your/path/to/corpus.parquet
+autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
 ```
 
 ### Evaluate your custom RAG pipeline
