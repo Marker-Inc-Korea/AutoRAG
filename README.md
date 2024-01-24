@@ -55,6 +55,33 @@ or you can use command line interface
 autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
 ```
 
+### Use a found optimal RAG pipeline
+You can use a found optimal RAG pipeline right away.
+It needs just a few lines of code, and you are ready to use!
+
+First, you need to build pipeline yaml file from your evaluated trial folder.
+```python
+from autorag.deploy import extract_pipeline
+
+pipeline_dict = extract_pipeline(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
+```
+
+Then, you can use your RAG pipeline from extracted pipeline yaml file.
+Plus, you can easily share your RAG pipeline to others just by sharing pipeline yaml file.
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run('your question')
+```
+
+Or, you can run this pipeline with command line interface. 
+You can input any parameters that your pipeline needs.
+```bash
+autorag run --pipeline your/path/to/pipeline.yaml --query "your question"
+```
+
+
 ### Evaluate your custom RAG pipeline
 
 ```python
