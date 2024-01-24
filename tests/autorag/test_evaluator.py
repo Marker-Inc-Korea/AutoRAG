@@ -66,6 +66,7 @@ def test_start_trial(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), 'data'))
     assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
     assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'config.yaml'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_50.parquet'))
