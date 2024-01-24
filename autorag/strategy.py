@@ -43,7 +43,9 @@ def filter_by_threshold(results, value, threshold, metadatas=None) -> Tuple[List
         It must have the same length with results.
     :param threshold: The threshold value.
     :param metadatas: The metadata of each result.
-    :return: Filtered list of results.
+    :return: Filtered list of results and filtered list of metadatas.
+        Metadatas will be returned even if you did not give input metadatas.
+    :rtype: Tuple[List, List]
     """
     if metadatas is None:
         metadatas = [None] * len(results)
@@ -63,7 +65,9 @@ def select_best_average(results: List[pd.DataFrame], columns: Iterable[str],
         Standard to select the best result.
     :param metadatas: The metadata of each result. 
         It will select one metadata with the best result.
-    :return: The best result.
+    :return: The best result and the best metadata.
+        The metadata will be returned even if you did not give input 'metadatas' parameter.
+    :rtype: Tuple[pd.DataFrame, Any]
     """
     if metadatas is None:
         metadatas = [None] * len(results)
