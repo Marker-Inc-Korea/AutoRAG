@@ -58,6 +58,8 @@ autorag evaluate --config your/path/to/default_config.yaml --qa_path your/path/t
 ### Evaluate your custom RAG pipeline
 
 ```python
+from autorag.evaluate import evaluate_retrieval, evaluate_generation
+
 @evaluate
 def your_custom_rag_pipeline(query: str) -> str:
     # your custom rag pipeline
@@ -65,15 +67,15 @@ def your_custom_rag_pipeline(query: str) -> str:
 
 
 # also, you can evaluate each RAG module one by one
-@evaluate_retrieval
-def your_retrieval_module(query: str, top_k: int = 5) -> List[uuid.UUID]:
+@evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['retrieval_f1', 'retrieval_recall', 'retrieval_precision'])
+def your_retrieval_module(query: str, top_k: int = 5) ->  tuple[list[list[str]], list[list[str]], list[list[float]]]:
     # your custom retrieval module
-    return retrieved_ids
+    return retrieved_contents, scores, retrieved_ids
 
-@evaluate_generation
-def your_llm_module(prompt: str) -> str:
+@evaluate_generation(generation_gt=generation_gt, metrics=['bleu', 'rouge'])
+def your_llm_module(prompt: str) -> list[str]:
     # your custom llm module
-    return answer
+    return answers
 ```
 
 ### Config yaml file
