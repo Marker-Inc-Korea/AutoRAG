@@ -6,7 +6,7 @@ import subprocess
 import pandas as pd
 import pytest
 
-from autorag import Evaluator
+from autorag.evaluator import Evaluator
 from autorag.nodes.retrieval import bm25
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node

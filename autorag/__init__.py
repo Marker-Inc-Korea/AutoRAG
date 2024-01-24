@@ -1,15 +1,18 @@
-__version__ = '0.0.1'
-
+import os
 import logging
 import logging.config
 import sys
 
 from rich.logging import RichHandler
 
-from .evaluator import Evaluator
-
 from llama_index import OpenAIEmbedding
 from llama_index.llms import OpenAI
+
+root_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+version_path = os.path.join(root_path, 'VERSION')
+
+with open(version_path, 'r') as f:
+    __version__ = f.read().strip()
 
 embedding_models = {
     'openai': OpenAIEmbedding(),
