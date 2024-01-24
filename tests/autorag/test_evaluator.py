@@ -94,11 +94,15 @@ def test_start_trial(evaluator):
     assert node_line_summary_df['best_execution_time'][0] > 0
 
     # test trial summary
-    trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.csv')
+    trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.parquet')
     assert os.path.exists(trial_summary_path)
-    trial_summary_df = pd.read_csv(trial_summary_path)
+    trial_summary_df = pd.read_parquet(trial_summary_path)
     assert len(trial_summary_df) == 1
-    assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename'}
+    assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename',
+                                             'best_module_name', 'best_module_params', 'best_execution_time'}
     assert trial_summary_df['node_line_name'][0] == 'retrieve_node_line'
     assert trial_summary_df['node_type'][0] == 'retrieval'
     assert trial_summary_df['best_module_filename'][0] == 'bm25=>top_k_50.parquet'
+    assert trial_summary_df['best_module_name'][0] == 'bm25'
+    assert trial_summary_df['best_module_params'][0] == {'top_k': 50}
+    assert trial_summary_df['best_execution_time'][0] > 0
