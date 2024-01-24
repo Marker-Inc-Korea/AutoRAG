@@ -12,6 +12,14 @@ Subpackages
 Submodules
 ----------
 
+autorag.evaluate.generation module
+----------------------------------
+
+.. automodule:: autorag.evaluate.generation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.evaluate.retrieval module
 ---------------------------------
 

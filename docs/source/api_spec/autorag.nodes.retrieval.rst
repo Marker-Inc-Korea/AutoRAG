@@ -28,6 +28,14 @@ autorag.nodes.retrieval.run module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.retrieval.vectordb module
+---------------------------------------
+
+.. automodule:: autorag.nodes.retrieval.vectordb
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

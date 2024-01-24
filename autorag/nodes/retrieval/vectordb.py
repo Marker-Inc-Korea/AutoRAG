@@ -10,7 +10,20 @@ from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passa
 @retrieval_node
 def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collection,
              embedding_model: BaseEmbedding) -> Tuple[List[List[str]], List[List[float]]]:
+    """
+    VectorDB retrieval function.
+    You have to get chroma collection that is already ingested.
+    You have to get embedding model that is already used in ingest.
 
+    :param queries: 2-d list of query strings.
+        Each element of the list is a query strings of each row.
+    :param top_k: The number of passages to be retrieved.
+    :param collection: A chroma collection instance that will be used to retrieve passages.
+    :param embedding_model: An embedding model instance that will be used to embed queries.
+
+    :return: The 2-d list contains a list of passage ids that retrieved from vectordb and 2-d list of its scores.
+        It will be a length of queries. And each element has a length of top_k.
+    """
     # check if bm25_corpus is valid
     assert (collection.count() > 0), \
         "collection must contain at least one document. Please check you ingested collection correctly."
@@ -33,7 +46,8 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
     :param top_k: The number of passages to be retrieved.
     :param collection: A chroma collection instance that will be used to retrieve passages.
     :param embedding_model: An embedding model instance that will be used to embed queries.
-    :return: A tuple of list of passage ids and list of its scores.
+
+    :return: The tuple contains a list of passage ids that retrieved from vectordb and a list of its scores.
     """
     # embed query
     embedded_queries = (embedding_model.get_query_embedding(query) for query in queries)
