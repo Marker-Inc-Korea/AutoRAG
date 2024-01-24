@@ -56,7 +56,6 @@ class Evaluator:
         trial_summary_df = pd.DataFrame(columns=['node_line_name', 'node_type', 'best_module_filename',
                                                  'best_module_name', 'best_module_params', 'best_execution_time'])
         for i, (node_line_name, node_line) in enumerate(node_lines.items()):
-            logger.info(f'Running node line {node_line_name}...')
             node_line_dir = os.path.join(self.project_dir, trial_name, node_line_name)
             os.makedirs(node_line_dir, exist_ok=False)
             if i == 0:
