@@ -14,7 +14,8 @@ from autorag.schema import Node
 from autorag.schema.node import module_type_exists
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
 
-logger = logging.getLogger(__name__)
+
+logger = logging.getLogger("AutoRAG")
 
 
 class Evaluator:
@@ -50,36 +51,40 @@ class Evaluator:
         self.__make_trial_dir(trial_name)
 
         node_lines = self._load_node_lines(yaml_path)
-        self.__ingest(node_lines)
+        self.__embed(node_lines)
 
-        trial_summary_df = pd.DataFrame(columns=['node_line_name', 'node_type', 'best_module_filename'])
+        trial_summary_df = pd.DataFrame(columns=['node_line_name', 'node_type', 'best_module_filename',
+                                                 'best_module_name', 'best_module_params', 'best_execution_time'])
         for i, (node_line_name, node_line) in enumerate(node_lines.items()):
-            logger.info(f'Running node line {node_line_name}...')
             node_line_dir = os.path.join(self.project_dir, trial_name, node_line_name)
             os.makedirs(node_line_dir, exist_ok=False)
             if i == 0:
                 previous_result = self.qa_data
+            logger.info(f'Running node line {node_line_name}...')
             previous_result = run_node_line(node_line, node_line_dir, previous_result)
 
-            summary_df = pd.read_csv(os.path.join(node_line_dir, 'summary.csv'))
+            summary_df = pd.read_parquet(os.path.join(node_line_dir, 'summary.parquet'))
             summary_df = summary_df.assign(node_line_name=node_line_name)
             summary_df = summary_df[list(trial_summary_df.columns)]
-            trial_summary_df = pd.concat([trial_summary_df, summary_df], ignore_index=True)
+            if len(trial_summary_df) <= 0:
+                trial_summary_df = summary_df
+            else:
+                trial_summary_df = pd.concat([trial_summary_df, summary_df], ignore_index=True)
 
-        trial_summary_df.to_csv(os.path.join(self.project_dir, trial_name, 'summary.csv'), index=False)
+        trial_summary_df.to_parquet(os.path.join(self.project_dir, trial_name, 'summary.parquet'), index=False)
 
-    def __ingest(self, node_lines: Dict[str, List[Node]]):
+    def __embed(self, node_lines: Dict[str, List[Node]]):
         if any(list(map(lambda nodes: module_type_exists(nodes, 'bm25'), node_lines.values()))):
             # ingest BM25 corpus
-            logger.info('Ingesting BM25 corpus...')
+            logger.info('Embedding BM25 corpus...')
             bm25_dir = os.path.join(self.project_dir, 'resources', 'bm25.pkl')
             if not os.path.exists(os.path.dirname(bm25_dir)):
                 os.makedirs(os.path.dirname(bm25_dir))
             if os.path.exists(bm25_dir):
-                logger.info('BM25 corpus already exists.')
+                logger.debug('BM25 corpus already exists.')
             else:
                 bm25_ingest(bm25_dir, self.corpus_data)
-            logger.info('BM25 corpus ingestion complete.')
+            logger.info('BM25 corpus embedding complete.')
             pass
         elif any(list(map(lambda nodes: module_type_exists(nodes, 'vectordb'), node_lines.values()))):
             # TODO: ingest vector DB

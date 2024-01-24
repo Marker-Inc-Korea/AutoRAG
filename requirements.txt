@@ -13,4 +13,5 @@ fastparquet  # for pandas with parquet
 sacrebleu  # for bleu score
 evaluate  # for meteor and other scores
 rouge_score  # for rouge score
+rich  # for pretty logging
 chromadb # for vectordb retrieval
