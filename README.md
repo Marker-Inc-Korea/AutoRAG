@@ -45,19 +45,21 @@ evaluate_dataset.to_parquet('your/path/to/evaluate_dataset.parquet')
 
 ### Evaluate your data to various RAG modules
 ```python
-from autorag import Evaluator
+from autorag.evaluator import Evaluator
 
-evaluator = Evaluator(qa_path='your/path/to/qa.parquet', corpus_path='your/path/to/corpus.parquet')
+evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
 evaluator.start_trial('your/path/to/config.yaml')
 ```
 or you can use command line interface
 ```bash
-autorag evaluate --config your/path/to/default_config.yaml
+autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
 ```
 
 ### Evaluate your custom RAG pipeline
 
 ```python
+from autorag.evaluate import evaluate_retrieval, evaluate_generation
+
 @evaluate
 def your_custom_rag_pipeline(query: str) -> str:
     # your custom rag pipeline
@@ -65,15 +67,15 @@ def your_custom_rag_pipeline(query: str) -> str:
 
 
 # also, you can evaluate each RAG module one by one
-@evaluate_retrieval
-def your_retrieval_module(query: str, top_k: int = 5) -> List[uuid.UUID]:
+@evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['retrieval_f1', 'retrieval_recall', 'retrieval_precision'])
+def your_retrieval_module(query: str, top_k: int = 5) ->  tuple[list[list[str]], list[list[str]], list[list[float]]]:
     # your custom retrieval module
-    return retrieved_ids
+    return retrieved_contents, scores, retrieved_ids
 
-@evaluate_generation
-def your_llm_module(prompt: str) -> str:
+@evaluate_generation(generation_gt=generation_gt, metrics=['bleu', 'rouge'])
+def your_llm_module(prompt: str) -> list[str]:
     # your custom llm module
-    return answer
+    return answers
 ```
 
 ### Config yaml file
