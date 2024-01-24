@@ -1,3 +1,4 @@
+import logging
 import os
 import pathlib
 from typing import List, Callable, Dict
@@ -7,6 +8,8 @@ import pandas as pd
 from autorag.evaluate import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 from autorag.utils.util import make_module_file_name
+
+logger = logging.getLogger("AutoRAG")
 
 
 def run_retrieval_node(modules: List[Callable],

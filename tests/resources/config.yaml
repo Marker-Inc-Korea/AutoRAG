@@ -27,7 +27,7 @@ node_lines:
       skip_evaluation: True
       modules:
         - module_type: default_prompt_maker
-          prompt: "This is a news dataset, cralwed from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{{context}}\n\nQ: {{question}}\nA:"
+          prompt: "This is a news dataset, crawled from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{{context}}\n\nQ: {{question}}\nA:"
     - node_type: generation
       strategy:
         metrics: [bleu, rouge, kf1]
