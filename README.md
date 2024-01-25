@@ -67,7 +67,9 @@ pipeline_dict = extract_pipeline(trial_path='your/path/to/trial_folder', output_
 ```
 
 Then, you can use your RAG pipeline from extracted pipeline yaml file.
-Plus, you can easily share your RAG pipeline to others just by sharing pipeline yaml file.
+Plus, you can share your RAG pipeline to others just by sharing pipeline yaml file.
+You must run this at project folder.
+It will automatically find ingested corpus for retrieval and fetching data for RAG system.
 ```python
 from autorag.deploy import Runner
 
@@ -75,10 +77,18 @@ runner = Runner.from_yaml('your/path/to/pipeline.yaml')
 runner.run('your question')
 ```
 
+Or run from a trial folder that you want to run.
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('your/path/to/trial_folder')
+runner.run('your question')
+```
+
 Or, you can run this pipeline with command line interface. 
 You can input any parameters that your pipeline needs.
 ```bash
-autorag run --pipeline your/path/to/pipeline.yaml --query "your question"
+autorag run --yaml your/path/to/pipeline.yaml --query "your question"
 ```
 
 

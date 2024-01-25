@@ -6,7 +6,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from autorag.deploy import summary_df_to_yaml, extract_pipeline
+from autorag.deploy import summary_df_to_yaml, extract_pipeline, Runner
+from test_evaluator import evaluator
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
@@ -87,3 +88,22 @@ def test_extract_pipeline(pseudo_trial_path):
         assert os.path.exists(yaml_path.name)
         yaml_dict = yaml.safe_load(yaml_path)
         assert yaml_dict == solution_dict
+
+
+def test_runner(evaluator):
+    evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
+
+    def runner_test(runner: Runner):
+        answer = runner.run('What is the best movie in Korea? Have Korea movie ever won Oscar?',
+                            'retrieved_contents')
+        assert len(answer) == 10
+        assert isinstance(answer, list)
+        assert isinstance(answer[0], str)
+
+    runner = Runner.from_trial_folder(os.path.join(os.getcwd(), '0'))
+    runner_test(runner)
+
+    with tempfile.NamedTemporaryFile(suffix='yaml', mode='w+t') as yaml_path:
+        extract_pipeline(os.path.join(os.getcwd(), '0'), yaml_path.name)
+        runner = Runner.from_yaml(yaml_path.name)
+        runner_test(runner)
