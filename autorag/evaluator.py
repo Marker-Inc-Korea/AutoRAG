@@ -4,15 +4,19 @@ import os
 import shutil
 from datetime import datetime
 from typing import List, Dict
+from itertools import chain
 
+import chromadb
 import click
 import pandas as pd
 import yaml
 
+from autorag import embedding_models
 from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.bm25 import bm25_ingest
+from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.schema import Node
-from autorag.schema.node import module_type_exists
+from autorag.schema.node import module_type_exists, extract_values_from_nodes
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
 
 logger = logging.getLogger("AutoRAG")
@@ -85,10 +89,29 @@ class Evaluator:
             else:
                 bm25_ingest(bm25_dir, self.corpus_data)
             logger.info('BM25 corpus embedding complete.')
-            pass
-        elif any(list(map(lambda nodes: module_type_exists(nodes, 'vectordb'), node_lines.values()))):
-            # TODO: ingest vector DB
-            pass
+        if any(list(map(lambda nodes: module_type_exists(nodes, 'vectordb'), node_lines.values()))):
+            # load embedding_models in nodes
+            embedding_models_list = list(chain.from_iterable(
+                map(lambda nodes: extract_values_from_nodes(nodes, 'embedding_model'), node_lines.values())))
+            
+            # duplicate check in embedding_models
+            list(dict.fromkeys(embedding_models_list))
+
+            for embedding_model_str in embedding_models_list:
+                # ingest VectorDB corpus
+                logger.info(f'Embedding VectorDB corpus with {embedding_model_str}...')
+                vectordb_dir = os.path.join(self.project_dir, 'resources', 'chroma')
+                vectordb = chromadb.PersistentClient(path=vectordb_dir)
+                # Get the collection with GET or CREATE, as it may already exist
+                collection = vectordb.get_or_create_collection(name=embedding_model_str, metadata={"hnsw:space": "cosine"})
+                # get embedding_model
+                if embedding_model_str in embedding_models:
+                    embedding_model = embedding_models[embedding_model_str]
+                else:
+                    logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
+                    raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
+                vectordb_ingest(collection, self.corpus_data, embedding_model)
+                logger.info(f'VectorDB corpus embedding complete with {embedding_model_str}.')
         else:
             logger.info('No ingestion needed.')
 

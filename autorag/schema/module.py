@@ -2,10 +2,11 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Callable, Dict
 
-from autorag.nodes.retrieval import bm25
+from autorag.nodes.retrieval import bm25, vectordb
 
 SUPPORT_MODULES = {
     'bm25': bm25,
+    'vectordb': vectordb,
 }
 
 
