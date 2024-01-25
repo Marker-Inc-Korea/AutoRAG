@@ -97,7 +97,7 @@ class Evaluator:
                 map(lambda nodes: extract_values_from_nodes(nodes, 'embedding_model'), node_lines.values())))
             
             # duplicate check in embedding_models
-            list(dict.fromkeys(embedding_models_list))
+            embedding_models_list = list(set(embedding_models_list))
 
             for embedding_model_str in embedding_models_list:
                 # ingest VectorDB corpus
