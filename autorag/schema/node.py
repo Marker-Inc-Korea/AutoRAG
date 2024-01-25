@@ -2,7 +2,7 @@ import itertools
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Tuple
 
 import pandas as pd
 
@@ -28,22 +28,30 @@ class Node:
         if self.run_node is None:
             raise ValueError(f"Node type {self.node_type} is not supported.")
 
-    def get_param_combinations(self) -> List[Dict]:
+    def get_param_combinations(self) -> Tuple[List[Callable], List[Dict]]:
         """
-        This method returns a combination of module and node parameters.
+        This method returns a combination of module and node parameters, also corresponding modules.
 
-        :return: Module Parameters from each module.
+        :return: Each module and its module parameters.
+        :rtype: Tuple[List[Callable], List[Dict]]
         """
-        input_dict = list(map(lambda x: {**self.node_params, **x.module_param}, self.modules))[0]
 
-        dict_with_lists = {k: (v if isinstance(v, list) else [v]) for k, v in input_dict.items()}
+        def make_single_combination(module: Module) -> List[Dict]:
+            input_dict = {**self.node_params, **module.module_param}
+            dict_with_lists = dict(map(lambda x: (x[0], x[1] if isinstance(x[1], list) else [x[1]]),
+                                       input_dict.items()))
+            dict_with_lists = dict(map(lambda x: (x[0], list(set(x[1]))), dict_with_lists.items()))
+            combination = list(itertools.product(*dict_with_lists.values()))
+            combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
+            return combination_dicts
 
-        # Generate all combinations of values
-        combinations = list(itertools.product(*dict_with_lists.values()))
-
-        # Convert combinations back into dictionaries with the original keys
-        combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combinations]
-        return combination_dicts
+        combinations = list(map(make_single_combination, self.modules))
+        df = pd.DataFrame({
+            'module': self.modules,
+            'combinations': combinations
+        })
+        df = df.explode('combinations')
+        return list(map(lambda x: x.module, df['module'].tolist())), df['combinations'].tolist()
 
     @classmethod
     def from_dict(cls, node_dict: Dict) -> 'Node':
@@ -56,8 +64,9 @@ class Node:
 
     def run(self, previous_result: pd.DataFrame, node_line_dir: str) -> pd.DataFrame:
         logger.info(f'Running node {self.node_type}...')
-        return self.run_node(modules=list(map(lambda x: x.module, self.modules)),
-                             module_params=self.get_param_combinations(),
+        input_modules, input_params = self.get_param_combinations()
+        return self.run_node(modules=input_modules,
+                             module_params=input_params,
                              previous_result=previous_result,
                              node_line_dir=node_line_dir,
                              strategies=self.strategy)
