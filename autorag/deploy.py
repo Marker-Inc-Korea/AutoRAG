@@ -3,6 +3,9 @@ import os
 from typing import Optional, Dict
 
 import pandas as pd
+import yaml
+
+from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
 
@@ -53,16 +56,9 @@ def extract_pipeline(trial_path: str, output_path: Optional[str] = None) -> Dict
     summary_path = os.path.join(trial_path, 'summary.parquet')
     if not os.path.exists(summary_path):
         raise ValueError(f"summary.parquet does not exist in {trial_path}.")
-    trial_summary_df = pd.read_parquet(summary_path)
-
-    # config_path = os.path.join(trial_path, 'config.yaml')
-    # if not os.path.exists(config_path):
-    #     raise ValueError(f"config.yaml does not exist in {trial_path}.")
-    # try:
-    #     with open(config_path, 'r') as f:
-    #         config = yaml.safe_load(f)
-    # except yaml.YAMLError as exc:
-    #     logger.error(exc)
-    #     raise ValueError(f"config.yaml is invalid yaml file. {exc}")
-    #
-    # node_lines = config['node_lines']
+    trial_summary_df = load_summary_file(summary_path, dict_columns=['best_module_params'])
+    yaml_dict = summary_df_to_yaml(trial_summary_df)
+    if output_path is not None:
+        with open(output_path, 'w') as f:
+            yaml.dump(yaml_dict, f)
+    return yaml_dict

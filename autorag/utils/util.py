@@ -79,6 +79,8 @@ def load_summary_file(summary_path: str,
         raise ValueError(f"summary.parquet does not exist in {summary_path}.")
     summary_df = pd.read_parquet(summary_path)
     if dict_columns is None:
+        logger.warning("dict_columns is None."
+                       "If your input summary_df has dictionary type columns, you must fill dict_columns.")
         return summary_df
 
     def delete_none_at_dict(elem):
