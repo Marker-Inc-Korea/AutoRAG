@@ -7,9 +7,14 @@ import pandas as pd
 import pytest
 
 from autorag.utils import fetch_contents
-from autorag.utils.util import find_best_result_path, make_module_file_name
+from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
+
+summary_df = pd.DataFrame({
+    'best_module_name': ['bm25', 'upr', 'gpt-4'],
+    'best_module_params': [{'top_k': 50}, {'model': 'llama-2', 'havertz': 'chelsea'}, {'top_p': 0.9}],
+})
 
 
 @pytest.fixture
@@ -24,6 +29,14 @@ def module_params():
         "param2": "value2",
         "param3": "value3",
     }
+
+
+@pytest.fixture
+def summary_path():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        summary_path = os.path.join(tmp_dir, "summary.parquet")
+        summary_df.to_parquet(summary_path, index=False)
+        yield summary_path
 
 
 def test_make_module_file_name(module_name, module_params):
@@ -65,3 +78,10 @@ def test_find_best_result_path():
 
         # Check that the function returns the correct path
         assert best_path == "best_result.parquet"
+
+
+def test_load_summary_file(summary_path):
+    df = load_summary_file(summary_path)
+    assert not df.equals(summary_df)
+    df = load_summary_file(summary_path, ['best_module_params'])
+    assert df.equals(summary_df)
