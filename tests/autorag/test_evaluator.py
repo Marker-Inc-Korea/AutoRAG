@@ -11,6 +11,7 @@ from autorag.nodes.retrieval import bm25, vectordb
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
+from autorag.utils.util import load_summary_file
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
@@ -72,13 +73,17 @@ def test_start_trial(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_10.parquet'))
-    assert os.path.exists(
-        os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'vectordb=>top_k_10.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
+                                       'vectordb=>top_k_10-embedding_model_openai.parquet'))
     expect_each_result_columns = ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1',
                                   'retrieval_recall']
-    each_result = pd.read_parquet(
+    each_result_bm25 = pd.read_parquet(
         os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_10.parquet'))
-    assert all([expect_column in each_result.columns for expect_column in expect_each_result_columns])
+    each_result_vectordb = pd.read_parquet(
+        os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
+                     'vectordb=>top_k_10-embedding_model_openai.parquet'))
+    assert all([expect_column in each_result_bm25.columns for expect_column in expect_each_result_columns])
+    assert all([expect_column in each_result_vectordb.columns for expect_column in expect_each_result_columns])
     expect_best_result_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
                                   'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1',
                                   'retrieval_recall']
@@ -89,7 +94,7 @@ def test_start_trial(evaluator):
     # test node line summary
     node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.parquet')
     assert os.path.exists(node_line_summary_path)
-    node_line_summary_df = pd.read_parquet(node_line_summary_path)
+    node_line_summary_df = load_summary_file(node_line_summary_path,["best_module_params"])
     assert len(node_line_summary_df) == 1
     assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename',
                                                  'best_module_name', 'best_module_params', 'best_execution_time'}
@@ -102,7 +107,7 @@ def test_start_trial(evaluator):
     # test trial summary
     trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.parquet')
     assert os.path.exists(trial_summary_path)
-    trial_summary_df = pd.read_parquet(trial_summary_path)
+    trial_summary_df = load_summary_file(trial_summary_path, ["best_module_params"])
     assert len(trial_summary_df) == 1
     assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename',
                                              'best_module_name', 'best_module_params', 'best_execution_time'}
