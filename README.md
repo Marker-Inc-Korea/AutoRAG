@@ -60,10 +60,11 @@ You can use a found optimal RAG pipeline right away.
 It needs just a few lines of code, and you are ready to use!
 
 First, you need to build pipeline yaml file from your evaluated trial folder.
-```python
-from autorag.deploy import extract_pipeline
 
-pipeline_dict = extract_pipeline(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
+```python
+from autorag.deploy import extract_best_config
+
+pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
 ```
 
 Then, you can use your RAG pipeline from extracted pipeline yaml file.

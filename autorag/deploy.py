@@ -43,7 +43,7 @@ def summary_df_to_yaml(summary_df: pd.DataFrame) -> Dict:
     return {'node_lines': node_lines}
 
 
-def extract_pipeline(trial_path: str, output_path: Optional[str] = None) -> Dict:
+def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> Dict:
     """
     Extract the optimal pipeline from evaluated trial.
 
@@ -75,7 +75,7 @@ class Runner:
     def from_yaml(cls, yaml_path: str):
         """
         Load Runner from yaml file.
-        Must be extracted yaml file from evaluated trial using extract_pipeline method.
+        Must be extracted yaml file from evaluated trial using extract_best_config method.
 
         :param yaml_path: The path of the yaml file.
         :return: Initialized Runner.
@@ -97,7 +97,7 @@ class Runner:
         :param trial_path: The path of the trial folder.
         :return: Initialized Runner.
         """
-        config = extract_pipeline(trial_path)
+        config = extract_best_config(trial_path)
         return cls(config)
 
     def run(self, query: str, result_column: str = "answer"):
@@ -122,7 +122,7 @@ class Runner:
             for node in node_line['nodes']:
                 if len(node['modules']) != 1:
                     raise ValueError("The number of modules in a node must be 1 for using runner."
-                                     "Please use extract_pipeline method for extracting yaml file from evaluated trial.")
+                                     "Please use extract_best_config method for extracting yaml file from evaluated trial.")
                 module = node['modules'][0]
                 module_type = module.pop('module_type')
                 module_params = module

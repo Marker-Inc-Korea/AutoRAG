@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from autorag.deploy import summary_df_to_yaml, extract_pipeline, Runner
+from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner
 from autorag.evaluator import Evaluator
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
@@ -99,11 +99,11 @@ def test_summary_df_to_yaml():
     assert yaml_dict == solution_dict
 
 
-def test_extract_pipeline(pseudo_trial_path):
-    yaml_dict = extract_pipeline(pseudo_trial_path)
+def test_extract_best_config(pseudo_trial_path):
+    yaml_dict = extract_best_config(pseudo_trial_path)
     assert yaml_dict == solution_dict
     with tempfile.NamedTemporaryFile(suffix='yaml', mode='w+t') as yaml_path:
-        yaml_dict = extract_pipeline(pseudo_trial_path, yaml_path.name)
+        yaml_dict = extract_best_config(pseudo_trial_path, yaml_path.name)
         assert yaml_dict == solution_dict
         assert os.path.exists(yaml_path.name)
         yaml_dict = yaml.safe_load(yaml_path)
@@ -124,6 +124,6 @@ def test_runner(evaluator):
     runner_test(runner)
 
     with tempfile.NamedTemporaryFile(suffix='yaml', mode='w+t') as yaml_path:
-        extract_pipeline(os.path.join(os.getcwd(), '0'), yaml_path.name)
+        extract_best_config(os.path.join(os.getcwd(), '0'), yaml_path.name)
         runner = Runner.from_yaml(yaml_path.name)
         runner_test(runner)
