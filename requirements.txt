@@ -14,5 +14,5 @@ sacrebleu  # for bleu score
 evaluate  # for meteor and other scores
 rouge_score  # for rouge score
 rich  # for pretty logging
-chromadb # for vectordb retrieval
+chromadb==0.4.9 # for vectordb retrieval
 click  # for cli
