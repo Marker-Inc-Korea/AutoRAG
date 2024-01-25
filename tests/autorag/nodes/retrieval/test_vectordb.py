@@ -40,7 +40,7 @@ def ingested_vectordb_node():
     node_collection = node_db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
 
     node_test_corpus_path = os.path.join(resource_path, "sample_project", "data", "corpus.parquet")
-    sample_project_corpus_df = pd.read_parquet(path=node_test_corpus_path, engine='pyarrow')
+    sample_project_corpus_df = pd.read_parquet(path=node_test_corpus_path)
 
     vectordb_ingest(node_collection, sample_project_corpus_df, embedding_model)
 
