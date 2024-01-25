@@ -95,15 +95,16 @@ class Evaluator:
             # load embedding_models in nodes
             embedding_models_list = list(chain.from_iterable(
                 map(lambda nodes: extract_values_from_nodes(nodes, 'embedding_model'), node_lines.values())))
-            
+
             # duplicate check in embedding_models
             embedding_models_list = list(set(embedding_models_list))
+
+            vectordb_dir = os.path.join(self.project_dir, 'resources', 'chroma')
+            vectordb = chromadb.PersistentClient(path=vectordb_dir)
 
             for embedding_model_str in embedding_models_list:
                 # ingest VectorDB corpus
                 logger.info(f'Embedding VectorDB corpus with {embedding_model_str}...')
-                vectordb_dir = os.path.join(self.project_dir, 'resources', 'chroma')
-                vectordb = chromadb.PersistentClient(path=vectordb_dir)
                 # Get the collection with GET or CREATE, as it may already exist
                 collection = vectordb.get_or_create_collection(name=embedding_model_str, metadata={"hnsw:space": "cosine"})
                 # get embedding_model
