@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 import tempfile
 
 import pandas as pd
@@ -7,10 +8,29 @@ import pytest
 import yaml
 
 from autorag.deploy import summary_df_to_yaml, extract_pipeline, Runner
-from test_evaluator import evaluator
+from autorag.evaluator import Evaluator
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
+
+
+@pytest.fixture
+def evaluator():
+    evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                          os.path.join(resource_dir, 'corpus_data_sample.parquet'))
+    yield evaluator
+    paths_to_remove = ['0', 'data', 'resources', 'trial.json']
+
+    for path in paths_to_remove:
+        full_path = os.path.join(os.getcwd(), path)
+        try:
+            if os.path.isdir(full_path):
+                shutil.rmtree(full_path)
+            else:
+                os.remove(full_path)
+        except FileNotFoundError:
+            pass
+
 
 summary_df = pd.DataFrame({
     'node_line_name': ['node_line_1', 'node_line_1', 'node_line_2'],
