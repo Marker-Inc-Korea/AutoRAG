@@ -1,6 +1,8 @@
 from llama_index.llms.openai import OpenAI
 
 from autorag.nodes.queryexpansion import hyde
+from tests.autorag.nodes.queryexpansion.test_query_expansion_base import project_dir, previous_result, \
+    base_query_expansion_node_test, ingested_vectordb_node
 
 sample_query = ["How many members are in Newjeans?", "What is visconde structure?"]
 
@@ -13,5 +15,8 @@ def test_hyde():
     assert len(result) == 2
 
 
-def test_hyde_node():
-    pass
+def test_hyde_node(ingested_vectordb_node):
+    retrieval_module = {"module_type": "vectordb", "embedding_model": "openai"}
+    result_df = hyde(project_dir=project_dir, previous_result=previous_result, top_k=10,
+                     retrieval_module=retrieval_module, llm="openai", max_tokens=64)
+    base_query_expansion_node_test(result_df)
