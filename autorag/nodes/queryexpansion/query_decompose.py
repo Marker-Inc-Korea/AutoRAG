@@ -57,7 +57,7 @@ def query_decompose(queries: List[str], llm: BaseLLM,
     :param queries: List[str], queries to decompose.
     :param llm: BaseLLM, language model to use.
     :param prompt: str, prompt to use for query decomposition.
-        default prompt is prompt comes from Visconde's StrategyQA few-shot prompt.
+        default prompt comes from Visconde's StrategyQA few-shot prompt.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
     # Run async query_decompose_pure function
@@ -74,7 +74,7 @@ async def query_decompose_pure(query: str, llm: BaseLLM,
     :param query: str, query to decompose.
     :param llm: BaseLLM, language model to use.
     :param prompt: str, prompt to use for query decomposition.
-        default prompt is prompt comes from Visconde's StrategyQA few-shot prompt.
+        default prompt comes from Visconde's StrategyQA few-shot prompt.
     :return: List[str], list of decomposed query. Return input query if query is not decomposable.
     """
     full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
