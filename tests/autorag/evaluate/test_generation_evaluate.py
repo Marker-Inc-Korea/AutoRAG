@@ -12,10 +12,14 @@ generation_gts = [
      'To be a lawyer these days, you can overcome by AI.'],
 ]
 pseudo_generations = [
-        'The dog bit the man.',
-        'It really like to be a programmer, but I think artist is my passion.',
-        'To be a artist these days, you can overcome by AI.',
-    ]
+    'The dog bit the man.',
+    'It really like to be a programmer, but I think artist is my passion.',
+    'To be a artist these days, you can overcome by AI.',
+]
+
+tokenizer = AutoTokenizer.from_pretrained('gpt2')
+pseudo_tokens = list(map(lambda x: tokenizer.tokenize(x), pseudo_generations))
+pseudo_log_probs = list(map(lambda x: [0.1] * len(x), pseudo_tokens))
 
 
 @evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'rouge'])
@@ -25,10 +29,7 @@ def pseudo_generation():
 
 @evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'donggeon_metric'])
 def pseudo_generation_with_log_probs():
-    tokenizer = AutoTokenizer.from_pretrained('gpt2')
-    tokens = list(map(lambda x: tokenizer.tokenize(x), pseudo_generations))
-    log_probs = list(map(lambda x: [0.1] * len(x), tokens))
-    return pseudo_generations, tokens, log_probs
+    return pseudo_generations, pseudo_tokens, pseudo_log_probs
 
 
 def test_evaluate_generation():
@@ -46,6 +47,9 @@ def test_evaluate_generation():
     assert set(result_df_log_probs.columns) == {'generated_texts', 'bleu', 'meteor', 'generated_tokens',
                                                 'generated_log_probs'}
 
+    assert result_df_log_probs['generated_texts'].tolist() == pseudo_generations
+    assert result_df_log_probs['generated_tokens'].tolist() == pseudo_tokens
+    assert result_df_log_probs['generated_log_probs'].tolist() == pseudo_log_probs
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(result_df['bleu'].tolist(), [51.1507, 23.5783, 100.0]))))
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
