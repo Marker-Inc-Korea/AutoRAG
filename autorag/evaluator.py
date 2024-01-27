@@ -157,11 +157,11 @@ def evaluate(config, qa_data_path, corpus_data_path):
 
 
 @click.command()
-@click.option('--yaml_path', type=str, help='Path to extracted yaml file.')
+@click.option('--config_path', type=str, help='Path to extracted config yaml file.')
 @click.option('--host', type=str, default='0.0.0.0', help='Host address')
 @click.option('--port', type=int, default=8000, help='Port number')
-def run_api(yaml_path, host, port):
-    runner = Runner.from_yaml(yaml_path)
+def run_api(config_path, host, port):
+    runner = Runner.from_yaml(config_path)
     logger.info(f"Running API server at {host}:{port}...")
     runner.run_api_server(host, port)
 

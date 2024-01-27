@@ -96,7 +96,7 @@ runner.run_api_server()
 ```
 
 ```bash
-autorag run_api --yaml_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
 ```
 
 

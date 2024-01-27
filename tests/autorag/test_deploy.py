@@ -154,7 +154,7 @@ def test_runner_api_server(evaluator):
 
 def test_run_api():
     runner = CliRunner()
-    result = runner.invoke(cli, ['run_api', '--yaml_path', 'test/path/test.yaml',
+    result = runner.invoke(cli, ['run_api', '--config_path', 'test/path/test.yaml',
                                  '--host', '0.0.0.0', '--port', '8080'])
     assert result.exit_code == 1  # it will occur error because I run this test with a wrong yaml path.
     # But it means that the command is working well. If not, it will occur exit_code 2.
