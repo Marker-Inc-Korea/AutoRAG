@@ -2,7 +2,7 @@ from llama_index.llms.openai import OpenAI
 
 from autorag.nodes.queryexpansion import query_decompose
 
-sample_query = ["Which group has more members, Newjeans or Espa?"]
+sample_query = ["Which group has more members, Newjeans or Espa?", "Which group has more members, STAYC or Espa?"]
 
 
 def test_query_decompose():

@@ -57,6 +57,7 @@ def query_decompose(queries: List[str], llm: BaseLLM,
     :param queries: List[str], queries to decompose.
     :param llm: BaseLLM, language model to use.
     :param prompt: str, prompt to use for query decomposition.
+        default prompt is guidelines into simpler sub-questions or stating no decomposition is needed, illustrated with examples.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
     # Run async query_decompose_pure function
@@ -71,8 +72,9 @@ async def query_decompose_pure(query: str, llm: BaseLLM,
     """
     decompose query to little piece of questions.
     :param query: str, query to decompose.
-    :param llm: BaseLLM, language model to use. llama_index's default model is gpt3.5-turbo.
+    :param llm: BaseLLM, language model to use.
     :param prompt: str, prompt to use for query decomposition.
+        default prompt is guidelines into simpler sub-questions or stating no decomposition is needed, illustrated with examples.
     :return: List[str], list of decomposed query. Return input query if query is not decomposable.
     """
     full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
