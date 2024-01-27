@@ -1,5 +1,3 @@
-qa_data_path: ./qa_data_sample.parquet
-corpus_data_path: ./corpus_data_sample.parquet
 node_lines:
 - node_line_name: retrieve_node_line
   nodes:

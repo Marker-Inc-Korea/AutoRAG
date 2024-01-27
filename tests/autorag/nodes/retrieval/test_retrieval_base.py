@@ -1,6 +1,8 @@
 import os
 import pathlib
 
+from datetime import datetime
+
 import pandas as pd
 
 from autorag.nodes.retrieval.base import evenly_distribute_passages
@@ -18,6 +20,12 @@ project_dir = os.path.join(root_dir, "resources", "sample_project")
 qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
 corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
 previous_result = qa_data.sample(5)
+
+doc_id = ["doc1", "doc2", "doc3", "doc4", "doc5"]
+contents = ["This is a test document 1.", "This is a test document 2.", "This is a test document 3.",
+            "This is a test document 4.", "This is a test document 5."]
+metadata = [{'datetime': datetime.now()} for _ in range(5)]
+corpus_df = pd.DataFrame({"doc_id": doc_id, "contents": contents, "metadata": metadata})
 
 
 def base_retrieval_test(id_result, score_result, top_k):

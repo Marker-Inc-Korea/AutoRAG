@@ -2,9 +2,11 @@ import asyncio
 from typing import List, Tuple
 
 import chromadb
+import pandas as pd
 from llama_index.embeddings import BaseEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
+from autorag.utils import validate_corpus_dataset
 
 
 @retrieval_node
@@ -65,3 +67,13 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
               sorted(zip(score_result, id_result), key=lambda pair: pair[0], reverse=True)]
     id_result, score_result = zip(*result)
     return list(id_result), list(score_result)
+
+
+def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, embedding_model: BaseEmbedding):
+    validate_corpus_dataset(corpus_data)
+    ids = corpus_data['doc_id'].tolist()
+    contents = corpus_data['contents'].tolist()
+
+    # embed corpus
+    embedded_contents = embedding_model._get_text_embeddings(contents)
+    collection.add(ids=ids, embeddings=embedded_contents)

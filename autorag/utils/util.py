@@ -1,11 +1,12 @@
 import functools
 import os
-from typing import List, Callable, Dict
+from typing import List, Callable, Dict, Optional
 
 import pandas as pd
 import swifter
 
 import logging
+
 logger = logging.getLogger("AutoRAG")
 
 
@@ -61,3 +62,29 @@ def find_best_result_path(node_dir: str) -> str:
     :return: The filepath of the best result.
     """
     return list(filter(lambda x: x.endswith(".parquet") and x.startswith("best_"), os.listdir(node_dir)))[0]
+
+
+def load_summary_file(summary_path: str,
+                      dict_columns: Optional[List[str]] = None) -> pd.DataFrame:
+    """
+    Load summary file from summary_path.
+
+    :param summary_path: The path of the summary file.
+    :param dict_columns: The columns that are dictionary type.
+        You must fill this parameter if you want to load summary file properly.l
+        Default is None.
+    :return: The summary dataframe.
+    """
+    if not os.path.exists(summary_path):
+        raise ValueError(f"summary.parquet does not exist in {summary_path}.")
+    summary_df = pd.read_parquet(summary_path)
+    if dict_columns is None:
+        logger.warning("dict_columns is None."
+                       "If your input summary_df has dictionary type columns, you must fill dict_columns.")
+        return summary_df
+
+    def delete_none_at_dict(elem):
+        return dict(filter(lambda item: item[1] is not None, elem.items()))
+
+    summary_df[dict_columns] = summary_df[dict_columns].applymap(delete_none_at_dict)
+    return summary_df

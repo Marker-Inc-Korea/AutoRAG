@@ -16,6 +16,14 @@ Subpackages
 Submodules
 ----------
 
+autorag.deploy module
+---------------------
+
+.. automodule:: autorag.deploy
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.evaluator module
 ------------------------
 
