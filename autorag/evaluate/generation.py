@@ -37,7 +37,7 @@ def evaluate_generation(generation_gt: List[List[str]], metrics: List[str]):
 
             metric_result_df = pd.DataFrame(metric_scores)
             execution_result_df = pd.DataFrame({
-                'answer': generation_result
+                'texts': generation_result
             })
             if type(generation_result) is tuple:
                 execution_result_df['tokens'] = generation_result[1]
