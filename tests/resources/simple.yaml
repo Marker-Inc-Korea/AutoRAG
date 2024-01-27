@@ -8,3 +8,5 @@ node_lines:
       top_k: 10 # node param, which adapt to every module in this node.
       modules:
         - module_type: bm25
+        - module_type: vectordb
+          embedding_model: [openai, openai]

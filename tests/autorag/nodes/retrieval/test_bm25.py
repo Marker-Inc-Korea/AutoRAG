@@ -1,14 +1,12 @@
 import os
 import pathlib
 import pickle
-from datetime import datetime
 
-import pandas as pd
 import pytest
 
 from autorag.nodes.retrieval import bm25
 from autorag.nodes.retrieval.bm25 import bm25_ingest
-from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_data, previous_result,
+from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test)
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
@@ -20,11 +18,6 @@ with open(bm25_path, 'rb') as r:
 @pytest.fixture
 def ingested_bm25_path():
     path = os.path.join(root_dir, "resources", "test_bm25_ingested.pkl")
-    doc_id = ["doc1", "doc2", "doc3", "doc4", "doc5"]
-    contents = ["This is a test document 1.", "This is a test document 2.", "This is a test document 3.",
-                "This is a test document 4.", "This is a test document 5."]
-    metadata = [{'datetime': datetime.now()} for _ in range(5)]
-    corpus_df = pd.DataFrame({"doc_id": doc_id, "contents": contents, "metadata": metadata})
     bm25_ingest(path, corpus_df)
     yield path
     os.remove(path)
