@@ -10,7 +10,7 @@ node_lines:
         - module_type: vectordb
           embedding_model: [openai, huggingface]
       modules:
-        - module_type: query_expansion
+        - module_type: query_decompose
           llm: [openai, huggingface]
           temperature: [0.2, 0.5, 1.0]
           top_p: 0.9
