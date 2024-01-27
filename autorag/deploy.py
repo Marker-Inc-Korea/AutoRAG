@@ -4,7 +4,10 @@ import uuid
 from typing import Optional, Dict
 
 import pandas as pd
+import uvicorn
 import yaml
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 from autorag.schema.module import SUPPORT_MODULES
 from autorag.utils.util import load_summary_file
@@ -70,6 +73,8 @@ class Runner:
     def __init__(self, config: Dict):
         self.config = config
         self.project_dir = os.getcwd()
+        self.app = FastAPI()
+        self.__add_api_route()
 
     @classmethod
     def from_yaml(cls, yaml_path: str):
@@ -132,3 +137,43 @@ class Runner:
                     **module_params
                 )
         return previous_result[result_column].tolist()[0]
+
+    def __add_api_route(self):
+
+        @self.app.post("/run")
+        async def run_pipeline(runner_input: RunnerInput):
+            query = runner_input.query
+            result_column = runner_input.result_column
+            result = self.run(query, result_column)
+            return {result_column: result}
+
+    def run_api_server(self, host: str = '0.0.0.0', port: int = 8000, **kwargs):
+        """
+        Run the pipeline as api server.
+        You can send POST request to `http://host:port/run` with json body like below:
+
+        .. Code:: json
+
+            {
+                "Query": "your query",
+                "result_column": "answer"
+            }
+
+        And it returns json response like below:
+
+        .. Code:: json
+            {
+                "answer": "your answer"
+            }
+
+        :param host: The host of the api server.
+        :param port: The port of the api server.
+        :param kwargs: Other arguments for uvicorn.run.
+        """
+        logger.info(f"Run api server at {host}:{port}")
+        uvicorn.run(self.app, host=host, port=port, **kwargs)
+
+
+class RunnerInput(BaseModel):
+    query: str
+    result_column: str = "answer"

@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from fastapi.testclient import TestClient
 from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner
 from autorag.evaluator import Evaluator
 
@@ -127,3 +128,24 @@ def test_runner(evaluator):
         extract_best_config(os.path.join(os.getcwd(), '0'), yaml_path.name)
         runner = Runner.from_yaml(yaml_path.name)
         runner_test(runner)
+
+
+def test_runner_api_server(evaluator):
+    import nest_asyncio
+    nest_asyncio.apply()
+    evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
+    runner = Runner.from_trial_folder(os.path.join(os.getcwd(), '0'))
+
+    client = TestClient(runner.app)
+
+    # Use the TestClient to make a request to the server
+    response = client.post('/run', json={
+        'query': 'What is the best movie in Korea? Have Korea movie ever won Oscar?',
+        'result_column': 'retrieved_contents'
+    })
+    assert response.status_code == 200
+    assert 'retrieved_contents' in response.json()
+    retrieved_contents = response.json()['retrieved_contents']
+    assert len(retrieved_contents) == 10
+    assert isinstance(retrieved_contents, list)
+    assert isinstance(retrieved_contents[0], str)
