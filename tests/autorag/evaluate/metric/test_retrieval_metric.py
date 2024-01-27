@@ -21,20 +21,20 @@ pred = [
 
 def test_retrieval_f1():
     solution = [0.5, 2 / 7, 2 / 5, 4 / 7]
-    result = retrieval_f1(retrieval_gt=retrieval_gt, ids=pred)
+    result = retrieval_f1(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert math.isclose(gt, res, rel_tol=1e-4)
 
 
 def test_retrieval_recall():
     solution = [0.5, 1 / 3, 1, 2 / 3]
-    result = retrieval_recall(retrieval_gt=retrieval_gt, ids=pred)
+    result = retrieval_recall(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_precision():
     solution = [0.5, 0.25, 0.25, 0.5]
-    result = retrieval_precision(retrieval_gt=retrieval_gt, ids=pred)
+    result = retrieval_precision(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
