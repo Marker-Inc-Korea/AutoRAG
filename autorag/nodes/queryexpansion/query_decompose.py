@@ -80,6 +80,8 @@ async def query_decompose_pure(query: str, llm: BaseLLM,
         default prompt comes from Visconde's StrategyQA few-shot prompt.
     :return: List[str], list of decomposed query. Return input query if query is not decomposable.
     """
+    if prompt is None:
+        prompt = decompose_prompt
     full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
     answer = llm.complete(full_prompt)
     if answer.text == "the question needs no decomposition.":
