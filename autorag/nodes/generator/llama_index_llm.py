@@ -4,7 +4,10 @@ from typing import List, Tuple
 from llama_index.llms.base import BaseLLM
 from transformers import AutoTokenizer
 
+from autorag.nodes.generator.base import generator_node
 
+
+@generator_node
 def llama_index_llm(prompts: List[str], llm: BaseLLM) -> Tuple[List[str], List[List[int]], List[List[float]]]:
     """
     Llama Index LLM module.
