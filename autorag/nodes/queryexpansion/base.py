@@ -31,25 +31,28 @@ def query_expansion_node(func):
         assert "query" in previous_result.columns, "previous_result must have query column."
         queries = previous_result["query"].tolist()
 
+        # pop prompt
+        if "prompt" in kwargs.keys():
+            prompt = kwargs.pop("prompt")
+        else:
+            prompt = None
+
         # set module parameters
         llm_str = kwargs.pop("llm")
-        temperature = kwargs.pop("temperature")
-        top_p = kwargs.pop("top_p")
-        max_token = kwargs.pop("max_token")
 
         # set llm model for query expansion
         if llm_str in generator_models:
             llm = generator_models[llm_str]
-            llm(temperature=temperature, top_p=top_p, max_token=max_token)
+            llm(**kwargs)
         else:
             logger.error(f"llm_str {llm_str} does not exist.")
             raise KeyError(f"llm_str {llm_str} does not exist.")
 
         # run query expansion function
         if func.__name__ == "query_decompose":
-            decomposed_queries = func(queries=queries, llm=llm, *args, **kwargs)
+            decomposed_queries = func(queries=queries, llm=llm, prompt=prompt)
         elif func.__name__ == "hyde":
-            decomposed_queries = func(queries=queries, llm=llm, *args, **kwargs)
+            decomposed_queries = func(queries=queries, llm=llm, prompt=prompt)
             pass
         else:
             raise ValueError(f"Unknown query expansion function: {func.__name__}")
