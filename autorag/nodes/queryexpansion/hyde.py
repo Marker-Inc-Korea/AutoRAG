@@ -15,7 +15,7 @@ def hyde(queries: List[str], llm: BaseLLM,
     :param queries: List[str], queries to retrieve.
     :param llm: llm to use for hypothetical passage generation.
     :param prompt: prompt to use when generating hypothetical passage
-    :return: List[List[str]], List of retrieved passages
+    :return: List[List[str]], List of hyde results.
     """
     # Run async query_decompose_pure function
     tasks = [hyde_pure(query, llm, prompt) for query in queries]

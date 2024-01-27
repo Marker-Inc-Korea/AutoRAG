@@ -2,7 +2,7 @@ from llama_index.llms.openai import OpenAI
 
 from autorag.nodes.queryexpansion import hyde
 
-sample_query = ["How many members are in Newjeans?"]
+sample_query = ["How many members are in Newjeans?", "What is visconde structure?"]
 
 
 def test_hyde():
