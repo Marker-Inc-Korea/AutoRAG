@@ -86,10 +86,17 @@ runner = Runner.from_trial_folder('your/path/to/trial_folder')
 runner.run('your question')
 ```
 
-Or, you can run this pipeline with command line interface. 
-You can input any parameters that your pipeline needs.
+Or, you can run this pipeline as api server.
+You can use python code or CLI command.
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('your/path/to/trial_folder')
+runner.run_api_server()
+```
+
 ```bash
-autorag run --yaml your/path/to/pipeline.yaml --query "your question"
+autorag run_api --yaml_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
 ```
 
 

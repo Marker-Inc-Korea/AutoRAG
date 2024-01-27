@@ -7,9 +7,10 @@ import pandas as pd
 import pytest
 import yaml
 
+from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner
-from autorag.evaluator import Evaluator
+from autorag.evaluator import Evaluator, cli
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
@@ -149,3 +150,11 @@ def test_runner_api_server(evaluator):
     assert len(retrieved_contents) == 10
     assert isinstance(retrieved_contents, list)
     assert isinstance(retrieved_contents[0], str)
+
+
+def test_run_api():
+    runner = CliRunner()
+    result = runner.invoke(cli, ['run_api', '--yaml_path', 'test/path/test.yaml',
+                                 '--host', '0.0.0.0', '--port', '8080'])
+    assert result.exit_code == 1  # it will occur error because I run this test with a wrong yaml path.
+    # But it means that the command is working well. If not, it will occur exit_code 2.
