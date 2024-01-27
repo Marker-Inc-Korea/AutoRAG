@@ -31,31 +31,80 @@ With that result, you can quickly find what is the best RAG pipeline to your own
 - Find your RAG baseline: Easily benchmark 30+ RAG methods with few lines of code. You can quickly get a high-performance RAG pipeline just for your data. Don’t waste time dealing with complex RAG modules and academic paper. Focus on your data.
 - Analyze where is wrong: Sometimes it is hard to keep tracking where is the major problem within your RAG pipeline. AutoRAG gives you the data of it, so you can analyze and focus where is the major problem and where you to focus on.
 - Quick Starter Pack for your new RAG product: Get the most effective RAG workflow among many pipelines, and start from there. Don’t start at toy-project level, start from advanced level.
-- Share your experiment to others: It's really easy to share your experiment to others. Share your config yaml file and evaluation result csv files. Plus, check out others result and adapt to your use-case.
+- Share your experiment to others: It's really easy to share your experiment to others. Share your config yaml file and evaluation result parquet files. Plus, check out others result and adapt to your use-case.
 
 # QuickStart
 
 ### Generate synthetic evaluation dataset
 ```python
-data = pd.read_csv('your/data.csv')
+data = pd.read_parquet('your/data.parquet')
 generator = DataGenerator(prompt="This data is news dataset, cralwed from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.")
 evaluate_dataset = generator.generate(data)
-evaluate_dataset.to_csv('your/path/to/evaluate_dataset.csv')
+evaluate_dataset.to_parquet('your/path/to/evaluate_dataset.parquet')
 ```
 
 ### Evaluate your data to various RAG modules
 ```python
-config = EvaluateConfig.from_yaml('your/path/to/default_config.yaml') # yaml file with config, more detail in config yaml section
-Evalautor(config).evaluate()
+from autorag.evaluator import Evaluator
+
+evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
+evaluator.start_trial('your/path/to/config.yaml')
 ```
 or you can use command line interface
 ```bash
-autorag evaluate --config your/path/to/default_config.yaml
+autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
 ```
+
+### Use a found optimal RAG pipeline
+You can use a found optimal RAG pipeline right away.
+It needs just a few lines of code, and you are ready to use!
+
+First, you need to build pipeline yaml file from your evaluated trial folder.
+
+```python
+from autorag.deploy import extract_best_config
+
+pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
+```
+
+Then, you can use your RAG pipeline from extracted pipeline yaml file.
+Plus, you can share your RAG pipeline to others just by sharing pipeline yaml file.
+You must run this at project folder.
+It will automatically find ingested corpus for retrieval and fetching data for RAG system.
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run('your question')
+```
+
+Or run from a trial folder that you want to run.
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('your/path/to/trial_folder')
+runner.run('your question')
+```
+
+Or, you can run this pipeline as api server.
+You can use python code or CLI command.
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('your/path/to/trial_folder')
+runner.run_api_server()
+```
+
+```bash
+autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+```
+
 
 ### Evaluate your custom RAG pipeline
 
 ```python
+from autorag.evaluate import evaluate_retrieval, evaluate_generation
+
 @evaluate
 def your_custom_rag_pipeline(query: str) -> str:
     # your custom rag pipeline
@@ -63,15 +112,15 @@ def your_custom_rag_pipeline(query: str) -> str:
 
 
 # also, you can evaluate each RAG module one by one
-@evaluate_retrieval
-def your_retrieval_module(query: str, top_k: int = 5) -> List[uuid.UUID]:
+@evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=['retrieval_f1', 'retrieval_recall', 'retrieval_precision'])
+def your_retrieval_module(query: str, top_k: int = 5) ->  tuple[list[list[str]], list[list[str]], list[list[float]]]:
     # your custom retrieval module
-    return retrieved_ids
+    return retrieved_contents, scores, retrieved_ids
 
-@evaluate_generation
-def your_llm_module(prompt: str) -> str:
+@evaluate_generation(generation_gt=generation_gt, metrics=['bleu', 'rouge'])
+def your_llm_module(prompt: str) -> list[str]:
     # your custom llm module
-    return answer
+    return answers
 ```
 
 ### Config yaml file
@@ -80,8 +129,8 @@ There is a simple yaml file example.
 It evaluates two retrieval modules which are BM25 and Vector Retriever, and three reranking modules.
 Lastly, it generates prompt and makes generation with three other LLM models. 
 ```yaml
-qa_dataset_path: your/path/to/qa.csv
-corpus_path: your/path/to/corpus.csv
+qa_dataset_path: your/path/to/qa.parquet
+corpus_path: your/path/to/corpus.parquet
 node_lines:
 - node_line_name: retrieve_node_line
   nodes:
@@ -123,6 +172,18 @@ node_lines:
 Warning! You can't install autorag yet because it is under construction.
 ```bash
 pip install autorag
+```
+
+## Installation for developing
+```bash
+pip install -e .
+pip install -r dev_requirements.txt
+```
+
+Then, You can test with pytest.
+
+```bash
+pytest
 ```
 
 # Supporting RAG modules
