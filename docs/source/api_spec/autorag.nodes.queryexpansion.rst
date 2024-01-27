@@ -1,6 +1,17 @@
 autorag.nodes.queryexpansion package
 ====================================
 
+Submodules
+----------
+
+autorag.nodes.queryexpansion.hyde module
+----------------------------------------
+
+.. automodule:: autorag.nodes.queryexpansion.hyde
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
