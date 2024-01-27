@@ -18,11 +18,11 @@ logger = logging.getLogger("AutoRAG")
 
 def query_expansion_node(func):
     @functools.wraps(func)
-    @result_to_dataframe(["expanded_queries", "retrieved_contents", "retrieved_ids", "retrieve_scores"])
+    @result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
-            *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[str]], List[List[float]]]:
+            *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
         validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
@@ -31,19 +31,30 @@ def query_expansion_node(func):
         assert "query" in previous_result.columns, "previous_result must have query column."
         queries = previous_result["query"].tolist()
 
-        # pop prompt
+        # pop top_k from kwargs
+        if "top_k" in kwargs.keys():
+            top_k = kwargs.pop("top_k")
+        else:
+            top_k = 10  # default value
+
+        # pop prompt from kwargs
         if "prompt" in kwargs.keys():
             prompt = kwargs.pop("prompt")
         else:
-            prompt = None
+            prompt = ""
+
+        # get retrieval module values
+        if "retrieval_module" in kwargs.keys():
+            retrieval_modules = kwargs.pop("retrieval_module")
+        else:
+            retrieval_modules = {"module_type": "bm25"}  # default value
 
         # set module parameters
         llm_str = kwargs.pop("llm")
 
         # set llm model for query expansion
         if llm_str in generator_models:
-            llm = generator_models[llm_str]
-            llm(**kwargs)
+            llm = generator_models[llm_str](**kwargs)
         else:
             logger.error(f"llm_str {llm_str} does not exist.")
             raise KeyError(f"llm_str {llm_str} does not exist.")
@@ -57,22 +68,21 @@ def query_expansion_node(func):
         else:
             raise ValueError(f"Unknown query expansion function: {func.__name__}")
 
-        # get retrieval module values
-        retrieval_modules = kwargs.pop("retrieval_module")
+        # run retrieval function
         ids, scores = retrieval_by_retrieval_module(retrieval_module=retrieval_modules, resources_dir=resources_dir,
-                                                    decomposed_queries=decomposed_queries, *args, **kwargs)
+                                                    decomposed_queries=decomposed_queries, top_k=top_k)
 
         # fetch data from corpus_data
         corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
         contents = fetch_contents(corpus_data, ids)
 
-        return decomposed_queries, contents, ids, scores
+        return contents, ids, scores
 
     return wrapper
 
 
 def retrieval_by_retrieval_module(retrieval_module: Dict, resources_dir: str, decomposed_queries: List[List[str]],
-                                  *args, **kwargs) -> Tuple[List[List[str]], List[List[float]]]:
+                                  top_k: int) -> Tuple[List[List[str]], List[List[float]]]:
     module = Module.from_dict(retrieval_module)
     retrieval_module_type = module.module_type
 
@@ -85,7 +95,7 @@ def retrieval_by_retrieval_module(retrieval_module: Dict, resources_dir: str, de
 
         # run retrieval function
         bm25_corpus = load_bm25_corpus(bm25_path)
-        ids, scores = bm25(queries=decomposed_queries, bm25_corpus=bm25_corpus, *args, **kwargs)
+        ids, scores = bm25(queries=decomposed_queries, bm25_corpus=bm25_corpus, top_k=top_k)
 
     elif retrieval_module_type == "vectordb":
         # check if chroma_path and file exists
@@ -103,8 +113,9 @@ def retrieval_by_retrieval_module(retrieval_module: Dict, resources_dir: str, de
 
         # run retrieval function
         chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
-        ids, scores = vectordb(queries=decomposed_queries, collection=chroma_collection,
-                               embedding_model=embedding_model, *args, **kwargs)
+        original_vectordb = vectordb.__wrapped__
+        ids, scores = original_vectordb(queries=decomposed_queries, collection=chroma_collection,
+                                        embedding_model=embedding_model, top_k=top_k)
     else:
         raise ValueError(f"invalid f{retrieval_module} for using query_expansion_io decorator.")
 
