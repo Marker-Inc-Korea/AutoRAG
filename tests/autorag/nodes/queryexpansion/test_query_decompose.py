@@ -9,3 +9,5 @@ def test_query_decompose():
     llm = OpenAI(temperature=0.2)
     result = query_decompose(sample_query, llm)
     assert len(result[0]) > 1
+    assert len(result) == 2
+    assert isinstance(result[0][0], str)
