@@ -11,6 +11,8 @@ import click
 import pandas as pd
 import yaml
 
+
+from autorag.deploy import Runner
 from autorag import embedding_models
 from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.bm25 import bm25_ingest
@@ -179,7 +181,18 @@ def evaluate(config, qa_data_path, corpus_data_path):
     logger.info('Evaluation complete.')
 
 
-cli.add_command(evaluate)
+@click.command()
+@click.option('--config_path', type=str, help='Path to extracted config yaml file.')
+@click.option('--host', type=str, default='0.0.0.0', help='Host address')
+@click.option('--port', type=int, default=8000, help='Port number')
+def run_api(config_path, host, port):
+    runner = Runner.from_yaml(config_path)
+    logger.info(f"Running API server at {host}:{port}...")
+    runner.run_api_server(host, port)
+
+
+cli.add_command(evaluate, 'evaluate')
+cli.add_command(run_api, 'run_api')
 
 if __name__ == '__main__':
     cli()
