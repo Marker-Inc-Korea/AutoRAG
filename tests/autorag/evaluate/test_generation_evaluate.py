@@ -36,14 +36,15 @@ def test_evaluate_generation():
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 3
     assert len(result_df.columns) == 4
-    assert set(result_df.columns) == {'texts', 'bleu', 'meteor', 'rouge'}
+    assert set(result_df.columns) == {'generated_texts', 'bleu', 'meteor', 'rouge'}
 
     with pytest.warns():
         result_df_log_probs = pseudo_generation_with_log_probs()
     assert isinstance(result_df_log_probs, pd.DataFrame)
     assert len(result_df_log_probs) == 3
     assert len(result_df_log_probs.columns) == 5
-    assert set(result_df_log_probs.columns) == {'texts', 'bleu', 'meteor', 'tokens', 'log_probs'}
+    assert set(result_df_log_probs.columns) == {'generated_texts', 'bleu', 'meteor', 'generated_tokens',
+                                                'generated_log_probs'}
 
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(result_df['bleu'].tolist(), [51.1507, 23.5783, 100.0]))))
