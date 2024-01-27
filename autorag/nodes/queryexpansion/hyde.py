@@ -3,9 +3,12 @@ from typing import List
 
 from llama_index.llms.llm import BaseLLM
 
+from autorag.nodes.queryexpansion.base import query_expansion_node
+
 hyde_prompt = "Please write a passage to answer the question"
 
 
+@query_expansion_node
 def hyde(queries: List[str], llm: BaseLLM,
          prompt: str = hyde_prompt) -> List[List[str]]:
     """

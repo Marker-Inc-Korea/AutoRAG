@@ -3,6 +3,8 @@ from typing import List
 
 from llama_index.llms.llm import BaseLLM
 
+from autorag.nodes.queryexpansion.base import query_expansion_node
+
 decompose_prompt = """Decompose a question in self-contained sub-questions. Use \"The question needs no decomposition\" when no decomposition is needed.
 
     Example 1:
@@ -50,6 +52,7 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
     """
 
 
+@query_expansion_node
 def query_decompose(queries: List[str], llm: BaseLLM,
                     prompt: str = decompose_prompt) -> List[List[str]]:
     """
