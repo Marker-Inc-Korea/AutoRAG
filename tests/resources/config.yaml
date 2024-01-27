@@ -1,6 +1,25 @@
 node_lines:
 - node_line_name: retrieve_node_line
   nodes:
+    - node_type: query_expansion
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 50
+      retrieval_module:
+        - module_type: bm25
+        - module_type: vectordb
+          embedding_model: [openai, huggingface]
+      modules:
+        - module_type: query_expansion
+          llm: [openai, huggingface]
+          temperature: [0.2, 0.5, 1.0]
+          top_p: 0.9
+          max_token: 64
+        - module_type: hyde
+          llm: [openai, huggingface]
+          temperature: 0.2
+          top_p: 0.9
+          max_token: 64
     - node_type: retrieval  # represents run_node function
       strategy:  # essential for every node
         metrics: [retrieval_f1, retrieval_recall]
