@@ -1,6 +1,17 @@
 autorag.nodes.queryexpansion package
 ====================================
 
+Submodules
+----------
+
+autorag.nodes.queryexpansion.query\_decompose module
+----------------------------------------------------
+
+.. automodule:: autorag.nodes.queryexpansion.query_decompose
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
