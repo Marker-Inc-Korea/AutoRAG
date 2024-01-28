@@ -41,20 +41,7 @@ def ingested_vectordb_node():
         shutil.rmtree(node_chroma_path)
 
 
-
 def base_query_expansion_node_test(result_df):
-    contents = result_df["retrieved_contents"].tolist()
-    ids = result_df["retrieved_ids"].tolist()
-    scores = result_df["retrieve_scores"].tolist()
-    assert len(contents) == len(ids) == len(scores) == 5
-    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 10
-    # id is matching with corpus.parquet
-    for content_list, id_list, score_list in zip(contents, ids, scores):
-        for i, (content, _id, score) in enumerate(zip(content_list, id_list, score_list)):
-            assert isinstance(content, str)
-            assert isinstance(_id, str)
-            assert isinstance(score, float)
-            assert _id in corpus_data["doc_id"].tolist()
-            assert content == corpus_data[corpus_data["doc_id"] == _id]["contents"].values[0]
-            if i >= 1:
-                assert score_list[i - 1] >= score_list[i]
+    queries = result_df["expanded_queries"].tolist()
+    assert len(queries) == 5
+    assert all(isinstance(query, str) for query_list in queries for query in query_list)

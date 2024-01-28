@@ -18,7 +18,6 @@ def test_query_decompose():
 
 
 def test_query_decompose_node(ingested_vectordb_node):
-    retrieval_module = {"module_type": "vectordb", "embedding_model": "openai"}
-    result_df = query_decompose(project_dir=project_dir, previous_result=previous_result, top_k=10,
-                                retrieval_module=retrieval_module, llm="openai", temperature=0.2)
+    result_df = query_decompose(project_dir=project_dir, previous_result=previous_result,
+                                llm="openai", temperature=0.2)
     base_query_expansion_node_test(result_df)
