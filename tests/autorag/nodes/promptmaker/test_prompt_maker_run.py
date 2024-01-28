@@ -18,6 +18,12 @@ sample_generation_gt = [
     ['Hello, Do you know the world without war?', 'Hi, I am dreaming about the world without any war.']
 ]
 metrics = ['bleu', 'rouge']
+previous_result = pd.DataFrame({
+    'query': ['What is the war?', 'Who is John Lennon?'],
+    'retrieved_contents': [['War is horrible.', 'War is bad.'],
+                           ['John Lennon is a musician.', 'John Lennon is a singer.']],
+    'test_column': ['test_value_1', 'test_value_2'],
+})
 
 
 def test_evaluate_generator_result():
@@ -58,13 +64,27 @@ def node_line_dir():
         yield node_line_path
 
 
+def check_best_result(best_df: pd.DataFrame):
+    assert isinstance(best_df, pd.DataFrame)
+    assert len(best_df) == len(previous_result)
+    assert set(best_df.columns) == {
+        'query', 'retrieved_contents', 'test_column', 'prompts', 'prompt_maker_bleu', 'prompt_maker_rouge'
+    }
+
+
+def check_summary_df(node_line_dir):
+    # check the files saved properly
+    summary_path = os.path.join(node_line_dir, "prompt_maker", "summary.parquet")
+    assert os.path.exists(summary_path)
+    summary_df = pd.read_parquet(summary_path)
+    assert len(summary_df) == len(previous_result)
+    assert set(summary_df.columns) == {'filename', 'module_name', 'module_params', 'execution_time',
+                                       'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
+    best_filename = summary_df[summary_df['is_best']]['filename'].values[0]
+    return best_filename
+
+
 def test_run_prompt_maker_node(node_line_dir):
-    previous_result = pd.DataFrame({
-        'query': ['What is the war?', 'Who is John Lennon?'],
-        'retrieved_contents': [['War is horrible.', 'War is bad.'],
-                               ['John Lennon is a musician.', 'John Lennon is a singer.']],
-        'test_column': ['test_value_1', 'test_value_2'],
-    })
     modules = [fstring, fstring]
     params = [{'prompt': 'Tell me something about the question: {query} \n\n {retrieved_contents}'},
               {'prompt': 'Question: {query} \n Something to read: {retrieved_contents} \n What\'s your answer?'}]
@@ -78,22 +98,44 @@ def test_run_prompt_maker_node(node_line_dir):
         }]
     }
     best_result = run_prompt_maker_node(modules, params, previous_result, node_line_dir, strategies)
-    assert isinstance(best_result, pd.DataFrame)
-    assert len(best_result) == len(previous_result)
-    assert set(best_result.columns) == {
-        'query', 'retrieved_contents', 'test_column', 'prompts', 'prompt_maker_bleu', 'prompt_maker_rouge'
-    }
-    # check the files saved properly
-    summary_path = os.path.join(node_line_dir, "prompt_maker", "summary.parquet")
-    assert os.path.exists(summary_path)
-    summary_df = pd.read_parquet(summary_path)
-    assert len(summary_df) == len(params)
-    assert set(summary_df.columns) == {'filename', 'module_name', 'module_params', 'execution_time',
-                                       'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
-    best_filename = summary_df[summary_df['is_best']]['filename'].values[0]
-
+    check_best_result(best_result)
+    best_filename = check_summary_df(node_line_dir)
     best_result_path = os.path.join(node_line_dir, "prompt_maker", f"best_{best_filename}")
     assert os.path.exists(best_result_path)
 
     assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "fstring=>prompt_0.parquet"))
     assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "fstring=>prompt_1.parquet"))
+
+
+def test_run_prompt_maker_node_default(node_line_dir):
+    modules = [fstring, fstring]
+    params = [{'prompt': 'Tell me something about the question: {query} \n\n {retrieved_contents}'},
+              {'prompt': 'Question: {query} \n Something to read: {retrieved_contents} \n What\'s your answer?'}]
+    strategies = {
+        'metrics': metrics
+    }
+    best_result = run_prompt_maker_node(modules, params, previous_result, node_line_dir, strategies)
+    check_best_result(best_result)
+    best_filename = check_summary_df(node_line_dir)
+    best_result_path = os.path.join(node_line_dir, "prompt_maker", f"best_{best_filename}")
+    assert os.path.exists(best_result_path)
+
+
+def test_run_prompt_maker_one_module(node_line_dir):
+    modules = [fstring]
+    params = [{'prompt': 'Tell me something about the question: {query} \n\n {retrieved_contents}'}]
+    strategies = {
+        'metrics': metrics
+    }
+    best_result = run_prompt_maker_node(modules, params, previous_result, node_line_dir, strategies)
+    assert set(best_result.columns) == {
+        'query', 'retrieved_contents', 'test_column', 'prompts'  # automatically skip evaluation
+    }
+    summary_filepath = os.path.join(node_line_dir, "prompt_maker", "summary.parquet")
+    assert os.path.exists(summary_filepath)
+    summary_df = pd.read_parquet(summary_filepath)
+    assert set(summary_df) == {
+        'filename', 'module_name', 'module_params', 'execution_time', 'is_best'
+    }
+    best_filepath = os.path.join(node_line_dir, "prompt_maker", f"best_{summary_df['filename'].values[0]}")
+    assert os.path.exists(best_filepath)

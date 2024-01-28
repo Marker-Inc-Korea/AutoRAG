@@ -1,7 +1,7 @@
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Tuple
+from typing import List, Callable, Dict, Tuple, Optional
 
 import pandas as pd
 
@@ -27,6 +27,8 @@ def run_prompt_maker_node(modules: List[Callable],
     Because it uses generator modules and generator metrics for evaluation this module.
     It is recommended to use one params and modules for evaluation,
     but you can use multiple params and modules for evaluation.
+    When you don't set generator module at strategies, it will use the default generator module.
+    The default generator module is llama_index_llm with openai gpt-3.5-turbo model.
 
     :param modules: Prompt maker modules to run.
     :param module_params: Prompt maker module parameters.
@@ -121,7 +123,13 @@ def run_prompt_maker_node(modules: List[Callable],
 
 def make_generator_callable_params(strategy_dict: Dict):
     node_dict = deepcopy(strategy_dict)
-    generator_module_list: List[Dict] = node_dict.pop('generator_modules')
+    generator_module_list: Optional[List[Dict]] = node_dict.pop('generator_modules', None)
+    if generator_module_list is None:
+        generator_module_list = [{
+            'module_type': 'llama_index_llm',
+            'llm': 'openai',
+            'model_name': 'gpt-3.5-turbo',
+        }]
     node_params = node_dict
     modules = list(map(lambda module_dict: SUPPORT_MODULES[module_dict.pop('module_type')],
                        generator_module_list))
