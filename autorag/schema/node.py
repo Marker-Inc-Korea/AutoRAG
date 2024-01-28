@@ -6,17 +6,10 @@ from typing import Dict, List, Callable, Tuple
 
 import pandas as pd
 
-from autorag.nodes.generator.run import run_generator_node
-from autorag.nodes.promptmaker.run import run_prompt_maker_node
-from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema.module import Module
+from autorag.support import get_support_nodes
 from autorag.utils.util import make_combinations, explode
 
-SUPPORT_NODES = {
-    'retrieval': run_retrieval_node,
-    'generator': run_generator_node,
-    'prompt_maker': run_prompt_maker_node,
-}
 logger = logging.getLogger("AutoRAG")
 
 
@@ -29,7 +22,7 @@ class Node:
     run_node: Callable = field(init=False)
 
     def __post_init__(self):
-        self.run_node = SUPPORT_NODES.get(self.node_type)
+        self.run_node = get_support_nodes(self.node_type)
         if self.run_node is None:
             raise ValueError(f"Node type {self.node_type} is not supported.")
 

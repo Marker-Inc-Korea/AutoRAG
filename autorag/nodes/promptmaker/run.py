@@ -1,12 +1,12 @@
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Tuple, Optional
+from typing import List, Callable, Dict, Optional
 
 import pandas as pd
 
 from autorag.evaluate import evaluate_generation
-from autorag.schema.module import SUPPORT_MODULES
+from autorag.support import get_support_modules
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 from autorag.utils import validate_qa_dataset
 from autorag.utils.util import make_combinations, explode, make_module_file_name
@@ -131,7 +131,7 @@ def make_generator_callable_params(strategy_dict: Dict):
             'model_name': 'gpt-3.5-turbo',
         }]
     node_params = node_dict
-    modules = list(map(lambda module_dict: SUPPORT_MODULES[module_dict.pop('module_type')],
+    modules = list(map(lambda module_dict: get_support_modules(module_dict.pop('module_type')),
                        generator_module_list))
     param_combinations = list(map(lambda module_dict: make_combinations({**module_dict, **node_params}),
                                   generator_module_list))
