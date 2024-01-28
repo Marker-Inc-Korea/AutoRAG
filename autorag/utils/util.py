@@ -1,6 +1,7 @@
 import functools
+import itertools
 import os
-from typing import List, Callable, Dict, Optional
+from typing import List, Callable, Dict, Optional, Iterable, Union, Any
 
 import pandas as pd
 import swifter
@@ -91,3 +92,23 @@ def load_summary_file(summary_path: str,
 
     summary_df[dict_columns] = summary_df[dict_columns].applymap(delete_none_at_dict)
     return summary_df
+
+
+def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Make combinations from target_dict.
+    The target_dict key value must be a string,
+    and the value can be list of values or single value.
+    If generates all combinations of values from target_dict,
+    which means generated dictionaries that contain only one value for each key,
+    and all dictionaries will be different from each other.
+
+    :param target_dict: The target dictionary.
+    :return: The list of generated dictionaries.
+    """
+    dict_with_lists = dict(map(lambda x: (x[0], x[1] if isinstance(x[1], list) else [x[1]]),
+                               target_dict.items()))
+    dict_with_lists = dict(map(lambda x: (x[0], list(set(x[1]))), dict_with_lists.items()))
+    combination = list(itertools.product(*dict_with_lists.values()))
+    combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
+    return combination_dicts

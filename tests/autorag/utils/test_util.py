@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 
 from autorag.utils import fetch_contents
-from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe
+from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
+    make_combinations
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -106,3 +107,16 @@ def test_result_to_dataframe():
     assert isinstance(result2, pd.DataFrame)
     assert result2.columns.tolist() == ['col_1']
     assert result2['col_1'].tolist() == [1, 2, 3]
+
+
+def test_make_combinations():
+    target_dict = {'key1': 'value1', 'key2': ['value1', 'value2'], 'key3': 'value3', 'key4': ['value4', 'value5']}
+    solution = [
+        {'key1': 'value1', 'key2': 'value1', 'key3': 'value3', 'key4': 'value4'},
+        {'key1': 'value1', 'key2': 'value1', 'key3': 'value3', 'key4': 'value5'},
+        {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'key4': 'value4'},
+        {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'key4': 'value5'}
+    ]
+    combinations = make_combinations(target_dict)
+    assert len(combinations) == len(solution)
+    assert all([combination in solution for combination in combinations])
