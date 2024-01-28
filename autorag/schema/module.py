@@ -2,9 +2,12 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Callable, Dict
 
+from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.retrieval import bm25, vectordb
 
 SUPPORT_MODULES = {
+    'query_decompose': query_decompose,
+    'hyde': hyde,
     'bm25': bm25,
     'vectordb': vectordb,
 }
