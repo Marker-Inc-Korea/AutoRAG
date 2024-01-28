@@ -42,29 +42,31 @@ def test_run_retrieval_node(node_line_dir):
     }
     previous_result = pd.read_parquet(qa_path)
     best_result = run_query_expansion_node(modules, module_params, previous_result, node_line_dir, strategies)
-    assert os.path.exists(os.path.join(node_line_dir, "retrieval"))
+    assert os.path.exists(os.path.join(node_line_dir, "query_expansion"))
     expect_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
                       'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
     assert all([expect_column in best_result.columns for expect_column in expect_columns])
     # test summary feature
-    summary_path = os.path.join(node_line_dir, "retrieval", "summary.parquet")
-    bm25_top_k_path = os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet")
-    assert os.path.exists(os.path.join(node_line_dir, "retrieval", "bm25=>top_k_4.parquet"))
-    bm25_top_k_df = pd.read_parquet(bm25_top_k_path)
+    summary_path = os.path.join(node_line_dir, "query_expansion", "summary.parquet")
+    query_decompose_llm_temperature_path = os.path.join(node_line_dir, "query_expansion",
+                                   "query_decompose=>llm_openai-temperature_0.2.parquet")
+    assert os.path.exists(os.path.join(node_line_dir, "query_expansion",
+                                       "query_decompose=>llm_openai-temperature_0.2.parquet"))
+    query_decompose_llm_temperature_df = pd.read_parquet(query_decompose_llm_temperature_path)
     assert os.path.exists(summary_path)
     summary_df = pd.read_parquet(summary_path)
     assert set(summary_df.columns) == {'filename', 'retrieval_f1', 'retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 1
-    assert summary_df['filename'][0] == "bm25=>top_k_4.parquet"
-    assert summary_df['retrieval_f1'][0] == bm25_top_k_df['retrieval_f1'].mean()
-    assert summary_df['retrieval_recall'][0] == bm25_top_k_df['retrieval_recall'].mean()
-    assert summary_df['module_name'][0] == "bm25"
-    assert summary_df['module_params'][0] == {'top_k': 4}
+    assert summary_df['filename'][0] == "query_decompose=>llm_openai-temperature_0.2.parquet"
+    assert summary_df['retrieval_f1'][0] == query_decompose_llm_temperature_df['retrieval_f1'].mean()
+    assert summary_df['retrieval_recall'][0] == query_decompose_llm_temperature_df['retrieval_recall'].mean()
+    assert summary_df['module_name'][0] == "query_decompose"
+    assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True # is_best is np.bool_
     # test the best file is saved properly
-    best_path = os.path.join(node_line_dir, "retrieval", "best_bm25=>top_k_4.parquet")
+    best_path = os.path.join(node_line_dir, "query_expansion", "best_query_decompose=>llm_openai-temperature_0.2.parquet")
     assert os.path.exists(best_path)
     best_df = pd.read_parquet(best_path)
     assert all([expect_column in best_df.columns for expect_column in expect_columns])
