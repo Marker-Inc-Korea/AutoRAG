@@ -22,6 +22,17 @@ def run_query_expansion_node(modules: List[Callable],
                              node_line_dir: str,
                              strategies: Dict,
                              ) -> pd.DataFrame:
+    """
+    Run evaluation and select the best module among query expansion node results.
+
+    :param modules: Query expansion modules to run.
+    :param module_params: Query expansion module parameters.
+    :param previous_result: Previous result dataframe.
+        In this case, it would be qa data.
+    :param node_line_dir: This node line's directory.
+    :param strategies: Strategies for query expansion node.
+    :return: The best result dataframe.
+    """
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
@@ -143,13 +154,17 @@ def process_retrieval_module(retrieval_module, resources_dir, expanded_queries, 
 
 def module_best_retrieval(result_df: pd.DataFrame, top_k: int, retrieval_modules: List[Dict], resources_dir,
                           retrieval_gt, data_dir, strategies):
+    # get expanded_queries to list
     expanded_queries = result_df["expanded_queries"].tolist()
+
+    # get all combinations of retrieval modules
     final_retrieval_modules = [item for retrieval_module in retrieval_modules
                                for item in make_combinations(retrieval_module)]
 
+    # get retrieval results
     retrieval_results = list(map(lambda x: process_retrieval_module(x, resources_dir, expanded_queries,
                                                                     top_k, data_dir), final_retrieval_modules))
-    # get scores
+    # get best retrieval result for each retrieval module
     if strategies.get('metrics') is None:
         raise ValueError("You must at least one metrics for retrieval evaluation.")
     results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics')), retrieval_results))
