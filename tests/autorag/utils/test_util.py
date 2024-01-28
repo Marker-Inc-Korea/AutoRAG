@@ -8,7 +8,7 @@ import pytest
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
-    make_combinations
+    make_combinations, explode
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -120,3 +120,15 @@ def test_make_combinations():
     combinations = make_combinations(target_dict)
     assert len(combinations) == len(solution)
     assert all([combination in solution for combination in combinations])
+
+
+def test_explode():
+    index_values = ['a', 'b', 'c']
+    explode_values = [
+        ['apple', 'banana', 'cherry'],
+        ['april', 'may'],
+        ['alpha'],
+    ]
+    result_index, result_values = explode(index_values, explode_values)
+    assert result_index == ['a', 'a', 'a', 'b', 'b', 'c']
+    assert result_values == ['apple', 'banana', 'cherry', 'april', 'may', 'alpha']

@@ -1,7 +1,7 @@
 import functools
 import itertools
 import os
-from typing import List, Callable, Dict, Optional, Iterable, Union, Any
+from typing import List, Callable, Dict, Optional, Any, Collection
 
 import pandas as pd
 import swifter
@@ -112,3 +112,22 @@ def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
     combination = list(itertools.product(*dict_with_lists.values()))
     combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
     return combination_dicts
+
+
+def explode(index_values: Collection[Any], explode_values: Collection[Collection[Any]]):
+    """
+    Explode index_values and explode_values.
+    The index_values and explode_values must have the same length.
+    It will flatten explode_values and keep index_values as a pair.
+
+    :param index_values: The index values.
+    :param explode_values: The exploded values.
+    :return: Tuple of exploded index_values and exploded explode_values.
+    """
+    assert len(index_values) == len(explode_values), "Index values and explode values must have same length"
+    df = pd.DataFrame({
+        'index_values': index_values,
+        'explode_values': explode_values
+    })
+    df = df.explode('explode_values')
+    return df['index_values'].tolist(), df['explode_values'].tolist()
