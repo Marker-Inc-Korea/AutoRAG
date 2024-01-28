@@ -1,6 +1,9 @@
 from typing import List
 
+from autorag.nodes.promptmaker.base import prompt_maker_node
 
+
+@prompt_maker_node
 def fstring(prompt: str,
             queries: List[str], retrieved_contents: List[List[str]]) -> List[str]:
     """
