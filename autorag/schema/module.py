@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict
 
 from autorag.nodes.queryexpansion import query_decompose, hyde
+from autorag.nodes.promptmaker import fstring
+from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.retrieval import bm25, vectordb
 
 SUPPORT_MODULES = {
@@ -10,6 +12,8 @@ SUPPORT_MODULES = {
     'hyde': hyde,
     'bm25': bm25,
     'vectordb': vectordb,
+    'fstring': fstring,
+    'llama_index_llm': llama_index_llm,
 }
 
 

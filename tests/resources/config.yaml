@@ -41,13 +41,25 @@ node_lines:
 - node_line_name:
   nodes:
     - node_type: prompt_maker
-      skip_evaluation: True
+      strategy:
+        metrics: [bleu, rouge]
+        generator_modules:
+          - module_type: llama_index_llm
+            llm: [openai]
+            model_name: [gpt-3.5-turbo, gpt-4-1106-preview]
+            temperature: 0.8
       modules:
-        - module_type: default_prompt_maker
-          prompt: "This is a news dataset, crawled from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{{context}}\n\nQ: {{question}}\nA:"
+        - module_type: fstring
+          prompt: "This is a news dataset, crawled from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{{retrieved_contents}}\n\nQ: {{query}}\nA:"
     - node_type: generation
       strategy:
         metrics: [bleu, rouge, kf1]
       modules:
-        - module_type: basic_llm
-          llm: [gpt-3.5-turbo, mixtral, llama-2]
+        - module_type: llama_index_llm
+          llm: [openai]
+          model_name: [gpt-3.5-turbo, gpt-4-1106-preview]
+          temperature: [0.5, 1.0, 1.5]
+        - module_type: llama_index_llm
+          llm: [huggingface]
+          model_name: [mixtral, llama-2]
+          top_p: [0.5, 0.8, 0.9]
