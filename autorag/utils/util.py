@@ -31,7 +31,10 @@ def result_to_dataframe(column_names: List[str]):
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> pd.DataFrame:
             results = func(*args, **kwargs)
-            df_input = {column_name: result for result, column_name in zip(results, column_names)}
+            if len(column_names) == 1:
+                df_input = {column_names[0]: results}
+            else:
+                df_input = {column_name: result for result, column_name in zip(results, column_names)}
             result_df = pd.DataFrame(df_input)
             return result_df
 

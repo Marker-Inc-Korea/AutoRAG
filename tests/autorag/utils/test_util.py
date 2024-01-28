@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from autorag.utils import fetch_contents
-from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file
+from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -85,3 +85,24 @@ def test_load_summary_file(summary_path):
     assert not df.equals(summary_df)
     df = load_summary_file(summary_path, ['best_module_params'])
     assert df.equals(summary_df)
+
+
+def test_result_to_dataframe():
+    @result_to_dataframe(['col_1', 'col_2'])
+    def func1():
+        return [1, 2], [3, 4]
+
+    result1 = func1()
+    assert isinstance(result1, pd.DataFrame)
+    assert result1.columns.tolist() == ['col_1', 'col_2']
+    assert result1['col_1'].tolist() == [1, 2]
+    assert result1['col_2'].tolist() == [3, 4]
+
+    @result_to_dataframe(['col_1'])
+    def func2():
+        return [1, 2, 3]
+
+    result2 = func2()
+    assert isinstance(result2, pd.DataFrame)
+    assert result2.columns.tolist() == ['col_1']
+    assert result2['col_1'].tolist() == [1, 2, 3]
