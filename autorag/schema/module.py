@@ -2,12 +2,14 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Callable, Dict
 
+from autorag.nodes.promptmaker import fstring
 from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.retrieval import bm25, vectordb
 
 SUPPORT_MODULES = {
     'bm25': bm25,
     'vectordb': vectordb,
+    'fstring': fstring,
     'llama_index_llm': llama_index_llm,
 }
 

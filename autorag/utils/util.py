@@ -1,6 +1,7 @@
 import functools
+import itertools
 import os
-from typing import List, Callable, Dict, Optional
+from typing import List, Callable, Dict, Optional, Any, Collection
 
 import pandas as pd
 import swifter
@@ -31,7 +32,10 @@ def result_to_dataframe(column_names: List[str]):
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> pd.DataFrame:
             results = func(*args, **kwargs)
-            df_input = {column_name: result for result, column_name in zip(results, column_names)}
+            if len(column_names) == 1:
+                df_input = {column_names[0]: results}
+            else:
+                df_input = {column_name: result for result, column_name in zip(results, column_names)}
             result_df = pd.DataFrame(df_input)
             return result_df
 
@@ -88,3 +92,42 @@ def load_summary_file(summary_path: str,
 
     summary_df[dict_columns] = summary_df[dict_columns].applymap(delete_none_at_dict)
     return summary_df
+
+
+def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Make combinations from target_dict.
+    The target_dict key value must be a string,
+    and the value can be list of values or single value.
+    If generates all combinations of values from target_dict,
+    which means generated dictionaries that contain only one value for each key,
+    and all dictionaries will be different from each other.
+
+    :param target_dict: The target dictionary.
+    :return: The list of generated dictionaries.
+    """
+    dict_with_lists = dict(map(lambda x: (x[0], x[1] if isinstance(x[1], list) else [x[1]]),
+                               target_dict.items()))
+    dict_with_lists = dict(map(lambda x: (x[0], list(set(x[1]))), dict_with_lists.items()))
+    combination = list(itertools.product(*dict_with_lists.values()))
+    combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
+    return combination_dicts
+
+
+def explode(index_values: Collection[Any], explode_values: Collection[Collection[Any]]):
+    """
+    Explode index_values and explode_values.
+    The index_values and explode_values must have the same length.
+    It will flatten explode_values and keep index_values as a pair.
+
+    :param index_values: The index values.
+    :param explode_values: The exploded values.
+    :return: Tuple of exploded index_values and exploded explode_values.
+    """
+    assert len(index_values) == len(explode_values), "Index values and explode values must have same length"
+    df = pd.DataFrame({
+        'index_values': index_values,
+        'explode_values': explode_values
+    })
+    df = df.explode('explode_values')
+    return df['index_values'].tolist(), df['explode_values'].tolist()

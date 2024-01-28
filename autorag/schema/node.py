@@ -9,6 +9,7 @@ import pandas as pd
 from autorag.nodes.generator.run import run_generator_node
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema.module import Module
+from autorag.utils.util import make_combinations, explode
 
 SUPPORT_NODES = {
     'retrieval': run_retrieval_node,
@@ -40,20 +41,11 @@ class Node:
 
         def make_single_combination(module: Module) -> List[Dict]:
             input_dict = {**self.node_params, **module.module_param}
-            dict_with_lists = dict(map(lambda x: (x[0], x[1] if isinstance(x[1], list) else [x[1]]),
-                                       input_dict.items()))
-            dict_with_lists = dict(map(lambda x: (x[0], list(set(x[1]))), dict_with_lists.items()))
-            combination = list(itertools.product(*dict_with_lists.values()))
-            combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
-            return combination_dicts
+            return make_combinations(input_dict)
 
         combinations = list(map(make_single_combination, self.modules))
-        df = pd.DataFrame({
-            'module': self.modules,
-            'combinations': combinations
-        })
-        df = df.explode('combinations')
-        return list(map(lambda x: x.module, df['module'].tolist())), df['combinations'].tolist()
+        module_list, combination_list = explode(self.modules, combinations)
+        return list(map(lambda x: x.module, module_list)), combination_list
 
     @classmethod
     def from_dict(cls, node_dict: Dict) -> 'Node':
