@@ -16,7 +16,6 @@ def test_hyde():
 
 
 def test_hyde_node(ingested_vectordb_node):
-    retrieval_module = {"module_type": "vectordb", "embedding_model": "openai"}
-    result_df = hyde(project_dir=project_dir, previous_result=previous_result, top_k=10,
-                     retrieval_module=retrieval_module, llm="openai", max_tokens=64)
+    result_df = hyde(project_dir=project_dir, previous_result=previous_result,
+                     llm="openai", max_tokens=64)
     base_query_expansion_node_test(result_df)
