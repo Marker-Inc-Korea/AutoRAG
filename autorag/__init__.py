@@ -19,7 +19,7 @@ embedding_models = {
 }
 
 generator_models = {
-    'openai': OpenAI(),
+    'openai': OpenAI,
 }
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"

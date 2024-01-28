@@ -6,12 +6,14 @@ from typing import Dict, List, Callable, Tuple
 
 import pandas as pd
 
+from autorag.nodes.generator.run import run_generator_node
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema.module import Module
 from autorag.utils.util import make_combinations, explode
 
 SUPPORT_NODES = {
     'retrieval': run_retrieval_node,
+    'generator': run_generator_node,
 }
 logger = logging.getLogger("AutoRAG")
 
