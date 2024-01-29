@@ -6,11 +6,7 @@ from copy import deepcopy
 
 import pandas as pd
 
-from autorag import embedding_models
-from autorag.nodes.retrieval import bm25, vectordb
-from autorag.nodes.retrieval.base import load_bm25_corpus, load_chroma_collection
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.schema import Module
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 from autorag.utils.util import make_module_file_name, make_combinations, explode
 from autorag.support import get_support_modules
@@ -145,15 +141,19 @@ def evaluate_one_query_expansion_node(retrieval_funcs: List[Callable],
 
 def make_retrieval_callable_params(strategy_dict: Dict):
     """
-    [example]
-    strategies = {
-            "metrics": ["retrieval_f1", "retrieval_recall"],
-            "top_k": 50,
-            "retrieval_modules": [
-              {"module_type": "bm25"},
-              {"module_type": "vectordb", "embedding_model": ["openai", "huggingface"]}
-            ]
-          }
+        strategy_dict looks like this:
+
+        .. Code:: python # 코드는 이렇게 작성한다.
+
+            {
+                "metrics": ["retrieval_f1", "retrieval_recall"],
+                "top_k": 50,
+                "retrieval_modules": [
+                  {"module_type": "bm25"},
+                  {"module_type": "vectordb", "embedding_model": ["openai", "huggingface"]}
+                ]
+              }
+
     """
     node_dict = deepcopy(strategy_dict)
     retrieval_module_list: Optional[List[Dict]] = node_dict.pop('retrieval_modules', None)
