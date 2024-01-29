@@ -2,19 +2,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Callable, Dict
 
-from autorag.nodes.queryexpansion import query_decompose, hyde
-from autorag.nodes.promptmaker import fstring
-from autorag.nodes.generator import llama_index_llm
-from autorag.nodes.retrieval import bm25, vectordb
-
-SUPPORT_MODULES = {
-    'query_decompose': query_decompose,
-    'hyde': hyde,
-    'bm25': bm25,
-    'vectordb': vectordb,
-    'fstring': fstring,
-    'llama_index_llm': llama_index_llm,
-}
+from autorag.support import get_support_modules
 
 
 @dataclass
@@ -24,7 +12,7 @@ class Module:
     module: Callable = field(init=False)
 
     def __post_init__(self):
-        self.module = SUPPORT_MODULES.get(self.module_type)
+        self.module = get_support_modules(self.module_type)
         if self.module is None:
             raise ValueError(f"Module type {self.module_type} is not supported.")
 
