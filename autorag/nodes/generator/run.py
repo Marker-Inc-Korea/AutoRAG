@@ -69,7 +69,7 @@ def run_generator_node(modules: List[Callable],
     selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
-    # add summary.csv 'is_best' column
+    # add 'is_best' column at summary file
     summary_df['is_best'] = summary_df['filename'] == selected_filename
 
     # save files

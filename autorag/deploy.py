@@ -9,7 +9,7 @@ import yaml
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from autorag.schema.module import SUPPORT_MODULES
+from autorag.support import get_support_modules
 from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
@@ -131,7 +131,7 @@ class Runner:
                 module = node['modules'][0]
                 module_type = module.pop('module_type')
                 module_params = module
-                previous_result = SUPPORT_MODULES[module_type](
+                previous_result = get_support_modules(module_type)(
                     project_dir=self.project_dir,
                     previous_result=previous_result,
                     **module_params
