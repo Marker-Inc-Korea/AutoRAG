@@ -49,13 +49,11 @@ def test_evaluate_one_prompt_maker_node(node_line_dir):
     sample_previous_result = previous_result.head(2)
     sample_retrieval_gt = sample_previous_result['retrieval_gt'].tolist()
 
-
     retrieval_funcs = [bm25, bm25]
     retrieval_params = [{'top_k': 1}, {'top_k': 2}]
-    test_project_dir = pathlib.PurePath(node_line_dir).parent.parent
     best_result = evaluate_one_query_expansion_node(retrieval_funcs, retrieval_params,
                                                     sample_expanded_queries, sample_retrieval_gt,
-                                                    metrics, test_project_dir, sample_previous_result)
+                                                    metrics, project_dir, sample_previous_result)
     assert isinstance(best_result, pd.DataFrame)
     assert all(metric_name in best_result.columns for metric_name in metrics)
     assert len(best_result) == len(sample_expanded_queries)
