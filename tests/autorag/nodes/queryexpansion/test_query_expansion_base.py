@@ -42,6 +42,6 @@ def ingested_vectordb_node():
 
 
 def base_query_expansion_node_test(result_df):
-    queries = result_df["expanded_queries"].tolist()
+    queries = result_df["queries"].tolist()
     assert len(queries) == 5
     assert all(isinstance(query, str) for query_list in queries for query in query_list)

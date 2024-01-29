@@ -1,7 +1,8 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict, Tuple
+from typing import List, Callable, Dict, Optional
+from copy import deepcopy
 
 import pandas as pd
 
@@ -11,7 +12,8 @@ from autorag.nodes.retrieval.base import load_bm25_corpus, load_chroma_collectio
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
 from autorag.schema import Module
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils.util import make_module_file_name, fetch_contents, make_combinations
+from autorag.utils.util import make_module_file_name, make_combinations, explode
+from autorag.support import get_support_modules
 
 logger = logging.getLogger("AutoRAG")
 
@@ -24,6 +26,11 @@ def run_query_expansion_node(modules: List[Callable],
                              ) -> pd.DataFrame:
     """
     Run evaluation and select the best module among query expansion node results.
+    Initially, retrieval is run using expanded_queries, the result of the query_expansion module.
+    The retrieval module is run as a combination of the retrieval_modules in strategies.
+    If there are multiple retrieval_modules, run them all and choose the best result.
+    If there are no retrieval_modules, run them with the default of bm25.
+    In this way, the best result is selected for each module, and then the best result is selected.
 
     :param modules: Query expansion modules to run.
     :param module_params: Query expansion module parameters.
@@ -45,21 +52,15 @@ def run_query_expansion_node(modules: List[Callable],
         task[0], project_dir=project_dir, previous_result=previous_result, **task[1]), zip(modules, module_params)))
     average_times = list(map(lambda x: x / len(result_queries[0]), execution_times))
 
-    # pop top_k from strategies
-    if "top_k" in strategies.keys():
-        top_k = strategies.pop("top_k")
-    else:
-        top_k = 10  # default value
-
     # get retrieval module values
-    if "retrieval_module" in strategies.keys():
-        retrieval_modules = strategies.pop("retrieval_module")
+    if "retrieval_modules" in strategies.keys():
+        retrieval_modules = strategies.pop("retrieval_modules")
     else:
         retrieval_modules = [{"module_type": "bm25"}]  # default value
 
     # get the best retrieval result for each module
-    results = list(map(lambda x: module_best_retrieval(x, top_k, retrieval_modules, resources_dir,
-                                                       retrieval_gt, data_dir, strategies), result_queries))
+    results = list(map(lambda x: module_best_retrieval(x, retrieval_modules, project_dir,
+                                                       retrieval_gt, strategies, previous_result), result_queries))
 
     # save results to folder
     save_dir = os.path.join(node_line_dir, "query_expansion")  # node name
@@ -75,7 +76,7 @@ def run_query_expansion_node(modules: List[Callable],
         'module_name': list(map(lambda module: module.__name__, modules)),
         'module_params': module_params,
         'execution_time': average_times,
-        **{metric: list(map(lambda result: result[metric].mean(), results)) for metric in strategies.get('metrics')},
+        **{f"query_expansion_{metric}": list(map(lambda result: result[metric].mean(), results)) for metric in strategies.get('metrics')},
     })
 
     # filter by strategies
@@ -84,7 +85,7 @@ def run_query_expansion_node(modules: List[Callable],
     selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
-    # add summary.csv 'is_best' column
+    # add 'is_best' column at summary file
     summary_df['is_best'] = summary_df['filename'] == selected_filename
 
     # save the result files
@@ -94,54 +95,24 @@ def run_query_expansion_node(modules: List[Callable],
     return best_result
 
 
-def retrieval_by_retrieval_module(retrieval_module: Dict, resources_dir: str, decomposed_queries: List[List[str]],
-                                  top_k: int) -> Tuple[List[List[str]], List[List[float]]]:
-    module = Module.from_dict(retrieval_module)
-    retrieval_module_type = module.module_type
+def process_retrieval_module(retrieval_module, project_dir, expanded_queries, top_k, previous_result):
+    retrieval_module_type = retrieval_module.pop('module_type')
 
-    # set parameters for retrieval module
+    previous_result['queries'] = expanded_queries
+
+    retrieval_callabes, 
+
     if retrieval_module_type == "bm25":
-        # check if bm25_path and file exists
-        bm25_path = os.path.join(resources_dir, 'bm25.pkl')
-        assert bm25_path is not None, "bm25_path must be specified for using bm25 retrieval."
-        assert os.path.exists(bm25_path), f"bm25_path {bm25_path} does not exist. Please ingest first."
-
-        # run retrieval function
-        bm25_corpus = load_bm25_corpus(bm25_path)
-        original_bm25 = bm25.__wrapped__
-        ids, scores = original_bm25(queries=decomposed_queries, bm25_corpus=bm25_corpus, top_k=top_k)
-
+        result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=top_k)
     elif retrieval_module_type == "vectordb":
-        # check if chroma_path and file exists
-        chroma_path = os.path.join(resources_dir, 'chroma')
-        assert chroma_path is not None, "chroma_path must be specified for using vectordb retrieval."
-        assert os.path.exists(chroma_path), f"chroma_path {chroma_path} does not exist. Please ingest first."
-
-        # set embedding model
-        embedding_model_str = module.module_param["embedding_model"]
-        if embedding_model_str in embedding_models:
-            embedding_model = embedding_models[embedding_model_str]
-        else:
-            logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
-            raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
-
-        # run retrieval function
-        chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
-        original_vectordb = vectordb.__wrapped__
-        ids, scores = original_vectordb(queries=decomposed_queries, collection=chroma_collection,
-                                        embedding_model=embedding_model, top_k=top_k)
+        embedding_model_str = retrieval_module.pop("embedding_model")
+        result_df = vectordb(project_dir=project_dir, previous_result=previous_result, top_k=top_k, embedding_model=embedding_model_str)
     else:
-        raise ValueError(f"invalid f{retrieval_module} for using query_expansion_io decorator.")
+        raise ValueError(f"invalid f{retrieval_module_type} for using query_expansion_io decorator.")
 
-    return ids, scores
-
-
-def process_retrieval_module(retrieval_module, resources_dir, expanded_queries, top_k, data_dir):
-    ids, scores = retrieval_by_retrieval_module(retrieval_module=retrieval_module, resources_dir=resources_dir,
-                                                decomposed_queries=expanded_queries, top_k=top_k)
-    # fetch data from corpus_data
-    corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
-    contents = fetch_contents(corpus_data, ids)
+    contents = result_df["retrieved_contents"].tolist()
+    ids = result_df["retrieved_ids"].tolist()
+    scores = result_df["retrieve_scores"].tolist()
 
     # create retrieval df
     retrieval_df = pd.DataFrame({
@@ -152,18 +123,44 @@ def process_retrieval_module(retrieval_module, resources_dir, expanded_queries, 
     return retrieval_df
 
 
-def module_best_retrieval(result_df: pd.DataFrame, top_k: int, retrieval_modules: List[Dict], resources_dir,
-                          retrieval_gt, data_dir, strategies):
+def make_retrieval_callable_params(retrieval_module: Dict):
+    """
+    [example]
+    retrieval_modules = [
+    {"module_type": "bm25"},
+    {"module_type": "vectordb", "embedding_model": ["openai", huggingface"]}
+    ]
+    """
+    retrieval_dict = deepcopy(retrieval_module)
+    generator_module_list: Optional[List[Dict]] = retrieval_dict.pop('generator_modules', None)
+    if generator_module_list is None:
+        generator_module_list = [{
+            'module_type': 'llama_index_llm',
+            'llm': 'openai',
+            'model_name': 'gpt-3.5-turbo',
+        }]
+    node_params = retrieval_dict
+    modules = list(map(lambda module_dict: get_support_modules(module_dict.pop('module_type')),
+                       generator_module_list))
+    param_combinations = list(map(lambda module_dict: make_combinations({**module_dict, **node_params}),
+                                  generator_module_list))
+    return explode(modules, param_combinations)
+
+
+def module_best_retrieval(result_df: pd.DataFrame, retrieval_modules: List[Dict], project_dir,
+                          retrieval_gt, strategies, previous_result: pd.DataFrame):
     # get expanded_queries to list
-    expanded_queries = result_df["expanded_queries"].tolist()
+    expanded_queries = result_df["queries"].tolist()
 
     # get all combinations of retrieval modules
     final_retrieval_modules = [item for retrieval_module in retrieval_modules
                                for item in make_combinations(retrieval_module)]
 
     # get retrieval results
-    retrieval_results = list(map(lambda x: process_retrieval_module(x, resources_dir, expanded_queries,
-                                                                    top_k, data_dir), final_retrieval_modules))
+    if strategies.get('top_k') is None:
+        raise ValueError("You must specify top_k for retrieval evaluation.")
+    retrieval_results = list(map(lambda x: process_retrieval_module(x, project_dir, expanded_queries,
+                                                                    strategies.get('top_k'), previous_result), final_retrieval_modules))
     # get best retrieval result for each retrieval module
     if strategies.get('metrics') is None:
         raise ValueError("You must at least one metrics for retrieval evaluation.")

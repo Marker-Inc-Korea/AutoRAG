@@ -5,7 +5,7 @@ import shutil
 import pandas as pd
 import pytest
 
-from autorag.nodes.queryexpansion import query_decompose
+from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 
 
@@ -30,15 +30,15 @@ def node_line_dir():
 
 
 def test_run_retrieval_node(node_line_dir):
-    modules = [query_decompose]
-    module_params = [{'llm': "openai", 'temperature': 0.2}]
+    modules = [query_decompose, hyde]
+    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "openai", 'max_token': 64}]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
         'speed_threshold': 5,
         'top_k': 4,
-        'retrieval_module': [{'module_type': 'bm25'}],
+        'retrieval_modules': [{'module_type': 'bm25'}],
     }
     previous_result = pd.read_parquet(qa_path)
     best_result = run_query_expansion_node(modules, module_params, previous_result, node_line_dir, strategies)
@@ -55,14 +55,14 @@ def test_run_retrieval_node(node_line_dir):
     query_decompose_llm_temperature_df = pd.read_parquet(query_decompose_llm_temperature_path)
     assert os.path.exists(summary_path)
     summary_df = pd.read_parquet(summary_path)
-    assert set(summary_df.columns) == {'filename', 'retrieval_f1', 'retrieval_recall',
+    assert set(summary_df.columns) == {'filename', 'query_expansion_retrieval_f1', 'query_expansion_retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
-    assert len(summary_df) == 1
+    assert len(summary_df) == 2
     assert summary_df['filename'][0] == "query_decompose=>llm_openai-temperature_0.2.parquet"
-    assert summary_df['retrieval_f1'][0] == query_decompose_llm_temperature_df['retrieval_f1'].mean()
-    assert summary_df['retrieval_recall'][0] == query_decompose_llm_temperature_df['retrieval_recall'].mean()
+    assert summary_df['query_expansion_retrieval_f1'][0] == query_decompose_llm_temperature_df['retrieval_f1'].mean()
+    assert summary_df['query_expansion_retrieval_recall'][0] == query_decompose_llm_temperature_df['retrieval_recall'].mean()
     assert summary_df['module_name'][0] == "query_decompose"
-    assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2}
+    assert summary_df['module_params'][0] == {'llm': "openai", 'max_token': None, 'temperature': 0.2}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True # is_best is np.bool_
     # test the best file is saved properly
