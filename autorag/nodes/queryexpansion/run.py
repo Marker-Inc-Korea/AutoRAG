@@ -143,7 +143,7 @@ def make_retrieval_callable_params(strategy_dict: Dict):
     """
         strategy_dict looks like this:
 
-        .. Code:: python # 코드는 이렇게 작성한다.
+        .. Code:: json
 
             {
                 "metrics": ["retrieval_f1", "retrieval_recall"],

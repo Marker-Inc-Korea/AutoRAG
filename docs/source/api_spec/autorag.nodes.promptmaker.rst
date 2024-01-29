@@ -20,6 +20,14 @@ autorag.nodes.promptmaker.fstring module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.promptmaker.run module
+------------------------------------
+
+.. automodule:: autorag.nodes.promptmaker.run
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
