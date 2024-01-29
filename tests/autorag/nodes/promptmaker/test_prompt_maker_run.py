@@ -1,6 +1,7 @@
 import os
 import tempfile
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -139,3 +140,31 @@ def test_run_prompt_maker_one_module(node_line_dir):
     }
     best_filepath = os.path.join(node_line_dir, "prompt_maker", f"best_{summary_df['filename'].values[0]}")
     assert os.path.exists(best_filepath)
+
+
+def test_summary_metric_name_at_threshold_cutoff():
+    evaluation_results = [
+        pd.DataFrame({
+            'test_column': ['test_value_1', 'test_value_2', 'test_value_3'],
+            'bleu': [0.1, 0.2, 0.3],
+            'rouge': [0.4, 0.5, 0.6],
+        })
+    ]
+    summary_df = pd.DataFrame({
+        'filename': ['filename_1', 'filename_2'],
+        'execution_time': [1, 2],
+    })
+    filenames = ['filename_2']
+
+    evaluation_df = pd.DataFrame({
+        'filename': filenames,
+        **{f'prompt_maker_{metric_name}': list(map(lambda x: x[metric_name].mean(), evaluation_results))
+           for metric_name in metrics}
+    })
+    summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
+
+    assert set(summary_df.columns) == {'filename', 'execution_time', 'prompt_maker_bleu', 'prompt_maker_rouge'}
+    assert np.isnan(summary_df['prompt_maker_bleu'].values[0])
+    assert np.isnan(summary_df['prompt_maker_rouge'].values[0])
+    assert summary_df['prompt_maker_bleu'].values[1] == pytest.approx(0.2)
+    assert summary_df['prompt_maker_rouge'].values[1] == pytest.approx(0.5)

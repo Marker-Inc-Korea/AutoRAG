@@ -98,8 +98,12 @@ def run_prompt_maker_node(modules: List[Callable],
             generator_callables, generator_params, result['prompts'].tolist(),
             generation_gt, general_strategy['metrics'], project_dir), results))
 
-        for metric_name in general_strategy['metrics']:
-            summary_df[f'prompt_maker_{metric_name}'] = list(map(lambda x: x[metric_name].mean(), evaluation_results))
+        evaluation_df = pd.DataFrame({
+            'filename': filenames,
+            **{f'prompt_maker_{metric_name}': list(map(lambda x: x[metric_name].mean(), evaluation_results))
+               for metric_name in general_strategy['metrics']}
+        })
+        summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
 
         best_result, best_filename = select_best_average(evaluation_results, general_strategy['metrics'], filenames)
         # change metric name columns to prompt_maker_metric_name
