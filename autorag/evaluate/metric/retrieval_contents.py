@@ -43,3 +43,19 @@ def retrieval_token_f1(gt: List[str], pred: List[str]):
     _, _, result = zip(*calculated_results)
     result_np = np.array(list(result)).reshape(len(pred), -1)
     return result_np.max(axis=1).mean()
+
+
+@retrieval_contents_metric
+def retrieval_token_precision(gt: List[str], pred: List[str]):
+    calculated_results = list(map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt))))
+    result, _, _ = zip(*calculated_results)
+    result_np = np.array(list(result)).reshape(len(pred), -1)
+    return result_np.max(axis=1).mean()
+
+
+@retrieval_contents_metric
+def retrieval_token_recall(gt: List[str], pred: List[str]):
+    calculated_results = list(map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt))))
+    _, result, _ = zip(*calculated_results)
+    result_np = np.array(list(result)).reshape(len(pred), -1)
+    return result_np.max(axis=1).mean()

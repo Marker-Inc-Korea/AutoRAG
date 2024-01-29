@@ -1,6 +1,7 @@
 import pytest
 
-from autorag.evaluate.metric.retrieval_contents import single_token_f1, retrieval_token_f1
+from autorag.evaluate.metric.retrieval_contents import single_token_f1, retrieval_token_f1, retrieval_token_precision, \
+    retrieval_token_recall
 
 gt = [
     ['Enough for drinking water', 'Just looking for a water bottle'],
@@ -33,3 +34,13 @@ def test_retrieval_token_f1():
 
     result_f1 = retrieval_token_f1(gt_contents=gt, pred_contents=pred)
     assert result_f1 == pytest.approx([0.38333, 0.797979], rel=0.001)
+
+
+def test_retrieval_token_precision():
+    result_precision = retrieval_token_precision(gt_contents=gt, pred_contents=pred)
+    assert result_precision == pytest.approx([0.383333, 0.8222222], rel=0.001)
+
+
+def test_retrieval_token_recall():
+    result_recall = retrieval_token_recall(gt_contents=gt, pred_contents=pred)
+    assert result_recall == pytest.approx([0.383333, 0.777777], rel=0.001)
