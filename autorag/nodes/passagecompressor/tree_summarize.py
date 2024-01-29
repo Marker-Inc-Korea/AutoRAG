@@ -7,7 +7,10 @@ from llama_index.prompts import PromptType
 from llama_index.prompts.utils import is_chat_model
 from llama_index.response_synthesizers import TreeSummarize
 
+from autorag.nodes.passagecompressor.base import passage_compressor_node
 
+
+@passage_compressor_node
 def tree_summarize(queries: List[str],
                    contents: List[List[str]],
                    scores,
