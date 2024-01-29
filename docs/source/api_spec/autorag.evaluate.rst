@@ -28,6 +28,14 @@ autorag.evaluate.retrieval module
    :undoc-members:
    :show-inheritance:
 
+autorag.evaluate.retrieval\_contents module
+-------------------------------------------
+
+.. automodule:: autorag.evaluate.retrieval_contents
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

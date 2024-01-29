@@ -8,7 +8,7 @@ import pytest
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
-    make_combinations, explode
+    make_combinations, explode, normalize_string
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -132,3 +132,25 @@ def test_explode():
     result_index, result_values = explode(index_values, explode_values)
     assert result_index == ['a', 'a', 'a', 'b', 'b', 'c']
     assert result_values == ['apple', 'banana', 'cherry', 'april', 'may', 'alpha']
+
+
+def test_normalize_string():
+    text = "This IS a TEST Text."
+    expected = "this is test text"
+    assert normalize_string(text) == expected
+
+    text = "Hello, world! This is a test."
+    expected = "hello world this is test"
+    assert normalize_string(text) == expected
+
+    text = "The quick brown fox jumps over the lazy dog."
+    expected = "quick brown fox jumps over lazy dog"
+    assert normalize_string(text) == expected
+
+    text = "This    is      a test    text."
+    expected = "this is test text"
+    assert normalize_string(text) == expected
+
+    text = "The, QUICK Brown-Fox; jumps over... the LAZY dog!"
+    expected = "quick brownfox jumps over lazy dog"
+    assert normalize_string(text) == expected
