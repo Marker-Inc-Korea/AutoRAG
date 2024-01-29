@@ -4,7 +4,9 @@ import shutil
 
 import pandas as pd
 import pytest
+from llama_index.llms import MockLLM
 
+from autorag import generator_models
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
@@ -67,7 +69,7 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert os.path.exists(os.path.join(node_line_dir, "query_expansion",
                                        "query_decompose=>llm_openai-temperature_0.2.parquet"))
     assert os.path.exists(os.path.join(node_line_dir, "query_expansion",
-                                       "query_decompose=>llm_openai-max_token_64.parquet"))
+                                       "hyde=>llm_mock.parquet"))
     # test summary feature
     summary_path = os.path.join(node_line_dir, "query_expansion", "summary.parquet")
     assert os.path.exists(summary_path)
@@ -77,7 +79,7 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "query_decompose=>llm_openai-temperature_0.2.parquet"
     assert summary_df['module_name'][0] == "query_decompose"
-    assert summary_df['module_params'][0] == {'llm': "openai", 'max_token': None, 'temperature': 0.2}
+    assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True  # is_best is np.bool_
     # test the best file is saved properly
@@ -93,8 +95,9 @@ def test_run_query_expansion_node(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
-    modules = [query_decompose, query_decompose]
-    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "openai", 'max_token': 64}]
+    generator_models['mock'] = MockLLM
+    modules = [query_decompose, hyde]
+    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "mock"}]
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
@@ -110,8 +113,9 @@ def test_run_query_expansion_node_default(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
-    modules = [query_decompose, query_decompose]
-    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "openai", 'max_token': 64}]
+    generator_models['mock'] = MockLLM
+    modules = [query_decompose, hyde]
+    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "mock"}]
     strategies = {
         'metrics': metrics
     }
