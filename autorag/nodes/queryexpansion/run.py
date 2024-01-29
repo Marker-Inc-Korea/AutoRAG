@@ -53,8 +53,12 @@ def run_query_expansion_node(modules: List[Callable],
     average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
     # save results to folder
+    pseudo_module_params = deepcopy(module_params)
+    for i, module_param in enumerate(pseudo_module_params):
+        if 'prompt' in module_params:
+            module_param['prompt'] = str(i)
     filepaths = list(map(lambda x: os.path.join(node_dir, make_module_file_name(x[0].__name__, x[1])),
-                         zip(modules, module_params)))
+                         zip(modules, pseudo_module_params)))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
 
@@ -82,6 +86,9 @@ def run_query_expansion_node(modules: List[Callable],
         if general_strategy.get('metrics') is None:
             raise ValueError("You must at least one metrics for query expansion evaluation.")
 
+        if extra_strategy.get('top_k') is None:
+            extra_strategy['top_k'] = 10  # default value
+
         # get retrieval modules from strategy
         retrieval_callables, retrieval_params = make_retrieval_callable_params(extra_strategy)
 
@@ -93,21 +100,24 @@ def run_query_expansion_node(modules: List[Callable],
             retrieval_callables, retrieval_params, result['queries'].tolist(), retrieval_gt,
             general_strategy['metrics'], project_dir, previous_result), results))
 
-        for metric_name in general_strategy['metrics']:
-            summary_df[f'query_expansion_{metric_name}'] = list(map(lambda x: x[metric_name].mean(), evaluation_results))
+        evaluation_df = pd.DataFrame({
+            'filename': filenames,
+            **{f'query_expansion_{metric_name}': list(map(lambda x: x[metric_name].mean(), evaluation_results))
+               for metric_name in general_strategy['metrics']}
+        })
+        summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
 
         best_result, best_filename = select_best_average(evaluation_results, general_strategy['metrics'], filenames)
         # change metric name columns to query_expansion_metric_name
         best_result = best_result.rename(columns={
             metric_name: f'query_expansion_{metric_name}' for metric_name in strategies['metrics']})
-        best_result = best_result.drop(columns=['generated_texts'])
+        best_result = best_result.drop(columns=['retrieved_contents', 'retrieved_ids', 'retrieve_scores'])
     else:
         best_result, best_filename = results[0], filenames[0]
+        best_result = pd.concat([previous_result, best_result], axis=1)
 
     # add 'is_best' column at summary file
     summary_df['is_best'] = summary_df['filename'] == best_filename
-
-    best_result = pd.concat([previous_result, best_result], axis=1)
 
     # save files
     summary_df.to_parquet(os.path.join(node_dir, "summary.parquet"), index=False)
