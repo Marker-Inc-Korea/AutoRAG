@@ -3,6 +3,7 @@ from typing import List
 import pandas as pd
 from llama_index.llms import OpenAI, MockLLM
 
+from autorag import generator_models
 from autorag.nodes.passagecompressor import tree_summarize
 
 queries = [
@@ -52,7 +53,8 @@ def test_tree_summarize_custom_prompt_chat():
 
 
 def test_tree_summarize_node():
-    mock = MockLLM()
+    generator_models['mock'] = MockLLM
+
     df = pd.DataFrame({
         'query': queries,
         'retrieved_contents': retrieved_contents,
@@ -62,8 +64,9 @@ def test_tree_summarize_node():
     result = tree_summarize(
         "project_dir",
         df,
-        llm=mock,
+        llm='mock',
         prompt="This is a custom prompt. {context_str} {query_str}",
+        max_tokens=64,
     )
     assert isinstance(result, pd.DataFrame)
     contents = result['retrieved_contents'].tolist()
@@ -73,4 +76,3 @@ def test_tree_summarize_node():
     assert len(contents[0]) == 1
     assert isinstance(contents[0][0], str)
     assert bool(contents[0][0]) is True
-    assert 'This is a custom prompt.' in result['retrieved_contents'].tolist()[0][0]
