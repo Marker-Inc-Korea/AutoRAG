@@ -87,6 +87,7 @@ def test_run_passage_reranker_node(node_line_dir):
     assert os.path.exists(os.path.join(node_line_dir, "passage_reranker"))
     assert set(best_result.columns) == {'qid', 'query', 'retrieval_gt', 'generation_gt',
                                         'retrieved_contents', 'retrieved_ids', 'retrieve_scores',
+                                        'retrieval_f1', 'retrieval_recall',
                                         'passage_reranker_retrieval_f1',
                                         'passage_reranker_retrieval_recall'}
     # test summary feature

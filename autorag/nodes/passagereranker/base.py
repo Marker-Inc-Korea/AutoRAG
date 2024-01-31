@@ -25,15 +25,15 @@ def passage_reranker_node(func):
         queries = previous_result["query"].tolist()
 
         # find contents_list columns
-        assert "retrieved_contents" in previous_result.columns, "previous_result must have contents_list column."
+        assert "retrieved_contents" in previous_result.columns, "previous_result must have retrieved_contents column."
         contents = previous_result["retrieved_contents"].tolist()
 
         # find scores columns
-        assert "retrieve_scores" in previous_result.columns, "previous_result must have scores column."
+        assert "retrieve_scores" in previous_result.columns, "previous_result must have retrieve_scores column."
         scores = previous_result["retrieve_scores"].tolist()
 
         # find ids columns
-        assert "retrieved_ids" in previous_result.columns, "previous_result must have ids column."
+        assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
         # run passage reranker function

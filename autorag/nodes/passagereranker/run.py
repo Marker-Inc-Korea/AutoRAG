@@ -72,8 +72,7 @@ def run_passage_reranker_node(modules: List[Callable],
     selected_result = selected_result.rename(columns={
         metric_name: f'passage_reranker_{metric_name}' for metric_name in strategies['metrics']})
     # drop retrieval result columns in previous_result
-    previous_result = previous_result.drop(columns=['retrieved_contents', 'retrieved_ids', 'retrieve_scores',
-                                                    'retrieval_f1', 'retrieval_recall'])
+    previous_result = previous_result.drop(columns=['retrieved_contents', 'retrieved_ids', 'retrieve_scores'])
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add summary.parquet 'is_best' column
