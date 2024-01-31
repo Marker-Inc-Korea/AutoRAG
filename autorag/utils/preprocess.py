@@ -57,16 +57,16 @@ def cast_corpus_dataset(df: pd.DataFrame):
 
     def make_datetime_metadata(x):
         if x is None or x == {}:
-            return {'datetime': datetime.now()}
-        elif x.get('datetime') is None:
-            return {**x, 'datetime': datetime.now()}
+            return {'last_modified_datetime': datetime.now()}
+        elif x.get('last_modified_datetime') is None:
+            return {**x, 'last_modified_datetime': datetime.now()}
         else:
             return x
 
     df['metadata'] = df['metadata'].apply(make_datetime_metadata)
 
     # check every metadata have a datetime key
-    assert sum(df['metadata'].apply(lambda x: x.get('datetime') is not None)) == len(df), \
+    assert sum(df['metadata'].apply(lambda x: x.get('last_modified_datetime') is not None)) == len(df), \
         "Every metadata must have a datetime key."
 
     return df
