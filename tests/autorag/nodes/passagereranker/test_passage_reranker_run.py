@@ -79,7 +79,7 @@ def node_line_dir():
 
 def test_run_passage_reranker_node(node_line_dir):
     modules = [monot5]
-    module_params = [{'model_name': 'castorini_monot5-3b-msmarco-10k'}]
+    module_params = [{'top_k': 4, 'model_name': 'castorini_monot5-3b-msmarco-10k'}]
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
     }
@@ -93,7 +93,7 @@ def test_run_passage_reranker_node(node_line_dir):
     summary_path = os.path.join(node_line_dir, "passage_reranker", "summary.parquet")
     assert os.path.exists(summary_path)
     single_result_path = os.path.join(node_line_dir, "passage_reranker",
-                                      'monot5=>model_name_castorini_monot5-3b-msmarco-10k.parquet')
+                                      'monot5=>top_k_4-model_name_castorini_monot5-3b-msmarco-10k.parquet')
     assert os.path.exists(single_result_path)
     single_result_df = pd.read_parquet(single_result_path)
     summary_df = pd.read_parquet(summary_path)
@@ -101,11 +101,11 @@ def test_run_passage_reranker_node(node_line_dir):
                                        'passage_reranker_retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 1
-    assert summary_df['filename'][0] == "monot5=>model_name_castorini_monot5-3b-msmarco-10k.parquet"
+    assert summary_df['filename'][0] == "monot5=>top_k_4-model_name_castorini_monot5-3b-msmarco-10k.parquet"
     assert summary_df['passage_reranker_retrieval_f1'][0] == single_result_df['retrieval_f1'].mean()
     assert summary_df['passage_reranker_retrieval_recall'][0] == single_result_df['retrieval_recall'].mean()
     assert summary_df['module_name'][0] == "monot5"
-    assert summary_df['module_params'][0] == {'model_name': 'castorini_monot5-3b-msmarco-10k'}
+    assert summary_df['module_params'][0] == {'top_k': 4, 'model_name': 'castorini_monot5-3b-msmarco-10k'}
     assert summary_df['execution_time'][0] > 0
     # test the best file is saved properly
     best_path = summary_df[summary_df['is_best']]['filename'].values[0]

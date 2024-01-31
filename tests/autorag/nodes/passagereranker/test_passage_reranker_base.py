@@ -28,8 +28,9 @@ previous_result['retrieval_f1'] = f1_example
 previous_result['retrieval_recall'] = recall_example
 
 
-def base_reranker_test(contents, ids, scores):
+def base_reranker_test(contents, ids, scores, top_k):
     assert len(contents) == len(ids) == len(scores) == 2
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == top_k
     for content_list, id_list, score_list in zip(contents, ids, scores):
         assert isinstance(content_list, list)
         assert isinstance(id_list, list)
@@ -47,8 +48,8 @@ def base_reranker_test(contents, ids, scores):
     assert ids[1][0] in ids_example[1][2]
 
 
-def base_reranker_node_test(result_df):
+def base_reranker_node_test(result_df, top_k):
     contents = result_df["retrieved_contents"].tolist()
     ids = result_df["retrieved_ids"].tolist()
     scores = result_df["retrieve_scores"].tolist()
-    base_reranker_test(contents, ids, scores)
+    base_reranker_test(contents, ids, scores, top_k)
