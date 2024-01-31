@@ -1,6 +1,7 @@
 import functools
 import itertools
 import os
+from copy import deepcopy
 import re
 import string
 from typing import List, Callable, Dict, Optional, Any, Collection
@@ -133,6 +134,24 @@ def explode(index_values: Collection[Any], explode_values: Collection[Collection
     })
     df = df.explode('explode_values')
     return df['index_values'].tolist(), df['explode_values'].tolist()
+
+
+def replace_value_in_dict(target_dict: Dict, key: str,
+                          replace_value: Any) -> Dict:
+    """
+    Replace the value of the certain key in target_dict.
+    If there is not targeted key in target_dict, it will return target_dict.
+
+    :param target_dict: The target dictionary.
+    :param key: The key to replace.
+    :param replace_value: The value to replace.
+    :return: The replaced dictionary.
+    """
+    replaced_dict = deepcopy(target_dict)
+    if key not in replaced_dict:
+        return replaced_dict
+    replaced_dict[key] = replace_value
+    return replaced_dict
 
 
 def normalize_string(s: str) -> str:
