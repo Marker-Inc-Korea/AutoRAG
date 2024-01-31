@@ -61,7 +61,7 @@ def run_passage_compressor_node(modules: List[Callable],
     # save results to folder
     pseudo_module_params = list(map(lambda x: replace_value_in_dict(x[1], 'prompt', str(x[0])),
                                     enumerate(module_params)))
-    filepaths = list(map(lambda x: os.path.join(node_line_dir, make_module_file_name(x[0].__name__, x[1])),
+    filepaths = list(map(lambda x: os.path.join(save_dir, make_module_file_name(x[0].__name__, x[1])),
                          zip(modules, pseudo_module_params)))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
@@ -80,10 +80,18 @@ def run_passage_compressor_node(modules: List[Callable],
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
     selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    new_retrieved_contents = selected_result['retrieved_contents']
+    previous_result['retrieved_contents'] = new_retrieved_contents
+    selected_result = selected_result.drop(columns=['retrieved_contents'])
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add summary.parquet 'is_best' column
     summary_df['is_best'] = summary_df['filename'] == selected_filename
+
+    # add prefix 'passage_compressor' to best_result columns
+    best_result = best_result.rename(columns={
+        metric_name: f'passage_compressor_{metric_name}' for metric_name in strategies.get('metrics')
+    })
 
     # save the result files
     best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'),
