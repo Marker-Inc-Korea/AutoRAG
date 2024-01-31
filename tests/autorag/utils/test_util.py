@@ -8,7 +8,7 @@ import pytest
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
-    make_combinations, explode, normalize_string
+    make_combinations, explode, replace_value_in_dict, normalize_string
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -132,6 +132,22 @@ def test_explode():
     result_index, result_values = explode(index_values, explode_values)
     assert result_index == ['a', 'a', 'a', 'b', 'b', 'c']
     assert result_values == ['apple', 'banana', 'cherry', 'april', 'may', 'alpha']
+
+
+def test_replace_value_in_dict():
+    target_dict = {
+        'key1': 'value1',
+        'key2': 'value2',
+        'key3': 'value3',
+    }
+    result_dict = replace_value_in_dict(target_dict, 'key1', 'value4')
+    assert result_dict == {
+        'key1': 'value4',
+        'key2': 'value2',
+        'key3': 'value3',
+    }
+    result_dict = replace_value_in_dict(target_dict, 'key4', 'value4')
+    assert result_dict == target_dict
 
 
 def test_normalize_string():

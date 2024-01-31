@@ -67,7 +67,7 @@ def run_retrieval_node(modules: List[Callable],
     selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
-    # add summary.csv 'is_best' column
+    # add summary.parquet 'is_best' column
     summary_df['is_best'] = summary_df['filename'] == selected_filename
 
     # save the result files
