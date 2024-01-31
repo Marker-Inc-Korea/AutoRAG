@@ -38,7 +38,7 @@ def passage_reranker_node(func):
 
         # run passage reranker function
         reranked_contents, reranked_ids, reranked_scores\
-            = func(queries=queries, contents_list=contents, scores_list=scores , ids_list=ids)
+            = func(queries=queries, contents_list=contents, scores_list=scores, ids_list=ids, *args, **kwargs)
 
         return reranked_contents, reranked_ids, reranked_scores
 
