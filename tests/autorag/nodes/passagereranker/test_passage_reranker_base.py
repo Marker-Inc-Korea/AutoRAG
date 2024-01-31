@@ -23,7 +23,7 @@ recall_example = [1.0, 1.0]
 previous_result['query'] = queries_example
 previous_result['retrieved_contents'] = contents_example
 previous_result['retrieved_ids'] = ids_example
-previous_result['retrieved_scores'] = scores_example
+previous_result['retrieve_scores'] = scores_example
 previous_result['retrieval_f1'] = f1_example
 previous_result['retrieval_recall'] = recall_example
 
@@ -50,5 +50,5 @@ def base_reranker_test(contents, ids, scores):
 def base_reranker_node_test(result_df):
     contents = result_df["retrieved_contents"].tolist()
     ids = result_df["retrieved_ids"].tolist()
-    scores = result_df["retrieved_scores"].tolist()
+    scores = result_df["retrieve_scores"].tolist()
     base_reranker_test(contents, ids, scores)

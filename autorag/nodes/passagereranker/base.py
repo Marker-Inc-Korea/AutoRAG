@@ -13,7 +13,7 @@ logger = logging.getLogger("AutoRAG")
 
 def passage_reranker_node(func):
     @functools.wraps(func)
-    @result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieved_scores"])
+    @result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
@@ -29,8 +29,8 @@ def passage_reranker_node(func):
         contents = previous_result["retrieved_contents"].tolist()
 
         # find scores columns
-        assert "retrieved_scores" in previous_result.columns, "previous_result must have scores column."
-        scores = previous_result["retrieved_scores"].tolist()
+        assert "retrieve_scores" in previous_result.columns, "previous_result must have scores column."
+        scores = previous_result["retrieve_scores"].tolist()
 
         # find ids columns
         assert "retrieved_ids" in previous_result.columns, "previous_result must have ids column."

@@ -72,7 +72,7 @@ def node_line_dir():
         yield node_line_dir
 
 
-def test_run_retrieval_node(node_line_dir):
+def test_run_passage_compressor_node(node_line_dir):
     modules = [tree_summarize, tree_summarize]
     module_params = [{'llm': 'openai', 'model_name': 'babbage-002'},
                      {'llm': 'openai', 'model_name': 'gpt-3.5-turbo'}]

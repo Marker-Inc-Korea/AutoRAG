@@ -32,7 +32,6 @@ node_lines:
       strategy:
         metrics: [retrieval_f1, retrieval_recall]
         speed_threshold: 5
-      top_k: 3
       modules:
         - module_type: tart
         - module_type: monoT5
