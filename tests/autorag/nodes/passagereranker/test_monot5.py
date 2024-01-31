@@ -1,6 +1,6 @@
 from autorag.nodes.passagereranker import monot5
 
-import test_base_reranker
+from tests.autorag.nodes.passagereranker import test_base_reranker
 
 
 def test_monot5():
