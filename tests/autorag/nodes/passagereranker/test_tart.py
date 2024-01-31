@@ -1,4 +1,4 @@
-import test_base_reranker
+from tests.autorag.nodes.passagereranker import test_base_reranker
 from autorag.nodes.passagereranker import tart
 
 
