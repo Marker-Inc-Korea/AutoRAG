@@ -23,4 +23,6 @@ def base_reranker_test(contents, ids, scores):
             assert score_list[i - 1] >= score_list[i]
 
     assert contents[0][0] == "Paris is the capital of France."
+    assert ids[0][0] in ids_example[0][1]
     assert contents[1][0] == "Newjeans has 5 members."
+    assert ids[1][0] in ids_example[1][2]
