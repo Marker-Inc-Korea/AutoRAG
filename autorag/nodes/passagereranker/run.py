@@ -18,6 +18,20 @@ def run_passage_reranker_node(modules: List[Callable],
                               node_line_dir: str,
                               strategies: Dict,
                               ) -> pd.DataFrame:
+    """
+    Run evaluation and select the best module among passage reranker node results.
+
+    :param modules: Passage reranker modules to run.
+    :param module_params: Passage reranker module parameters.
+    :param previous_result: Previous result dataframe.
+        Could be retrieval, reranker modules result.
+        It means it must contain 'query', 'retrieved_contents', 'retrieved_ids', 'retrieve_scores' columns.
+    :param node_line_dir: This node line's directory.
+    :param strategies: Strategies for passage reranker node.
+        In this node, we use
+        You can skip evaluation when you use only one module and a module parameter.
+    :return: The best result dataframe with previous result columns.
+    """
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent

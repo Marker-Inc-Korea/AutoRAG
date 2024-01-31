@@ -36,6 +36,22 @@ def monot5(queries: List[str], contents_list: List[List[str]],
            scores_list: List[List[float]], ids_list: List[List[str]],
            model_name: str = 'castorini/monot5-3b-msmarco-10k') \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+    """
+    Rerank a list of contents based on their relevance to a query using MonoT5.
+    :param queries: The list of queries to use for reranking
+    :param contents_list: The list of lists of contents to rerank
+    :param scores_list: The list of lists of scores retrieved from the initial ranking
+    :param ids_list: The list of lists of ids retrieved from the initial ranking
+    :param model_name: The name of the MonoT5 model to use for reranking
+        Note: default model name is 'castorini/monot5-3b-msmarco-10k'
+            If there is a '/' in the model name parameter,
+            when we create the file to store the results, the path will be twisted because of the '/'.
+            Therefore, it will be received as '_' instead of '/'.
+    :return: tuple of lists containing the reranked contents, ids, and scores
+    """
+    # replace '_' to '/'
+    if '_' in model_name:
+        model_name = model_name.replace('_', '/')
     # Load the tokenizer and model from the pre-trained MonoT5 model
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name).eval()
