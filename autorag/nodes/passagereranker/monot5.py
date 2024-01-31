@@ -1,5 +1,4 @@
 from typing import List, Tuple
-from uuid import UUID
 
 import torch
 import asyncio
@@ -32,8 +31,9 @@ prediction_tokens = {
 
 
 def monot5(queries: List[str], contents_list: List[List[str]],
-           scores_list: List[List[float]], ids_list: List[List[UUID]],
-           model_name: str = 'castorini/monot5-3b-msmarco-10k') -> List[Tuple[List[str]]]:
+           scores_list: List[List[float]], ids_list: List[List[str]],
+           model_name: str = 'castorini/monot5-3b-msmarco-10k') \
+        -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     # Load the tokenizer and model from the pre-trained MonoT5 model
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name).eval()
@@ -48,11 +48,15 @@ def monot5(queries: List[str], contents_list: List[List[str]],
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
-    return results
+    content_result = list(map(lambda x: x[0], results))
+    id_result = list(map(lambda x: x[1], results))
+    score_result = list(map(lambda x: x[2], results))
+    return content_result, id_result, score_result
 
 
-async def mono_t5_pure(query: str, contents: List[str], scores: List[float], ids: List[UUID],
-                       model, device, tokenizer, token_false_id, token_true_id) -> Tuple[List[str]]:
+async def mono_t5_pure(query: str, contents: List[str], scores: List[float],
+                       ids: List[str], model, device, tokenizer, token_false_id, token_true_id)\
+        -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using MonoT5.
     :param query: The query to use for reranking
@@ -92,4 +96,6 @@ async def mono_t5_pure(query: str, contents: List[str], scores: List[float], ids
     # Sort the list of pairs based on the relevance score in descending order
     sorted_content_ids_probs = sorted(content_ids_probs, key=lambda x: x[2], reverse=True)
 
-    return tuple(map(list, zip(*sorted_content_ids_probs)))
+    content_result, id_result, score_result = zip(*sorted_content_ids_probs)
+
+    return list(content_result), list(id_result), list(score_result)
