@@ -21,6 +21,7 @@ def get_support_modules(module_name: str) -> Callable:
         'vectordb': ('autorag.nodes.retrieval', 'vectordb'),
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
+        'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
     }
     return dynamically_find_function(module_name, support_modules)
 
