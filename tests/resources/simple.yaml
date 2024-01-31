@@ -1,0 +1,12 @@
+# need to delete when there are full modules implemented
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: retrieval  # represents run_node function
+      strategy:  # essential for every node
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10 # node param, which adapt to every module in this node.
+      modules:
+        - module_type: bm25
+        - module_type: vectordb
+          embedding_model: [openai, openai]
