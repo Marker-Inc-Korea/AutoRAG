@@ -8,7 +8,7 @@ import pytest
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
-    make_combinations, explode, replace_value_in_dict
+    make_combinations, explode, replace_value_in_dict, normalize_string
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -148,3 +148,25 @@ def test_replace_value_in_dict():
     }
     result_dict = replace_value_in_dict(target_dict, 'key4', 'value4')
     assert result_dict == target_dict
+
+
+def test_normalize_string():
+    text = "This IS a TEST Text."
+    expected = "this is test text"
+    assert normalize_string(text) == expected
+
+    text = "Hello, world! This is a test."
+    expected = "hello world this is test"
+    assert normalize_string(text) == expected
+
+    text = "The quick brown fox jumps over the lazy dog."
+    expected = "quick brown fox jumps over lazy dog"
+    assert normalize_string(text) == expected
+
+    text = "This    is      a test    text."
+    expected = "this is test text"
+    assert normalize_string(text) == expected
+
+    text = "The, QUICK Brown-Fox; jumps over... the LAZY dog!"
+    expected = "quick brownfox jumps over lazy dog"
+    assert normalize_string(text) == expected

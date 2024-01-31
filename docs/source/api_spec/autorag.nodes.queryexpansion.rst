@@ -4,6 +4,14 @@ autorag.nodes.queryexpansion package
 Submodules
 ----------
 
+autorag.nodes.queryexpansion.base module
+----------------------------------------
+
+.. automodule:: autorag.nodes.queryexpansion.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.queryexpansion.hyde module
 ----------------------------------------
 
@@ -16,6 +24,14 @@ autorag.nodes.queryexpansion.query\_decompose module
 ----------------------------------------------------
 
 .. automodule:: autorag.nodes.queryexpansion.query_decompose
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+autorag.nodes.queryexpansion.run module
+---------------------------------------
+
+.. automodule:: autorag.nodes.queryexpansion.run
    :members:
    :undoc-members:
    :show-inheritance:

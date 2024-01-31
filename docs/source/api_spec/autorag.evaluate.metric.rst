@@ -20,6 +20,14 @@ autorag.evaluate.metric.retrieval module
    :undoc-members:
    :show-inheritance:
 
+autorag.evaluate.metric.retrieval\_contents module
+--------------------------------------------------
+
+.. automodule:: autorag.evaluate.metric.retrieval_contents
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

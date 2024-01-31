@@ -48,6 +48,14 @@ autorag.strategy module
    :undoc-members:
    :show-inheritance:
 
+autorag.support module
+----------------------
+
+.. automodule:: autorag.support
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
