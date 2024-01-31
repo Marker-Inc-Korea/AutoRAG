@@ -5,7 +5,6 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base \
             contents_example, scores_example, ids_example, project_dir, previous_result)
 
 
-
 def test_monot5():
     original_monot5 = monot5.__wrapped__
     contents_result, id_result, score_result \

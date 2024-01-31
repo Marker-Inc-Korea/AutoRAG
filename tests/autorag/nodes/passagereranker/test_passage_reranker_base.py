@@ -48,7 +48,7 @@ def base_reranker_test(contents, ids, scores):
 
 
 def base_reranker_node_test(result_df):
-    contents = result_df["reranked_contents"].tolist()
-    ids = result_df["reranked_ids"].tolist()
-    scores = result_df["reranked_scores"].tolist()
+    contents = result_df["retrieved_contents"].tolist()
+    ids = result_df["retrieved_ids"].tolist()
+    scores = result_df["retrieved_scores"].tolist()
     base_reranker_test(contents, ids, scores)

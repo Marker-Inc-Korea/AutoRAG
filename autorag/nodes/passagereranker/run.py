@@ -13,11 +13,11 @@ logger = logging.getLogger("AutoRAG")
 
 
 def run_passage_reranker_node(modules: List[Callable],
-                       module_params: List[Dict],
-                       previous_result: pd.DataFrame,
-                       node_line_dir: str,
-                       strategies: Dict,
-                       ) -> pd.DataFrame:
+                              module_params: List[Dict],
+                              previous_result: pd.DataFrame,
+                              node_line_dir: str,
+                              strategies: Dict,
+                              ) -> pd.DataFrame:
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
@@ -54,13 +54,19 @@ def run_passage_reranker_node(modules: List[Callable],
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
     selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    # change metric name columns to passage_reranker_metric_name
+    selected_result = selected_result.rename(columns={
+        metric_name: f'passage_reranker_{metric_name}' for metric_name in strategies['metrics']})
+    # drop retrieval result columns in previous_result
+    previous_result = previous_result.drop(columns=['retrieved_contents', 'retrieved_ids', 'retrieve_scores',
+                                                    'retrieval_f1', 'retrieval_recall'])
     best_result = pd.concat([previous_result, selected_result], axis=1)
-    best_result = best_result.drop(columns=['retrieved_contents', 'retrieved_ids', 'retrieve_scores'])
 
     # add summary.parquet 'is_best' column
     summary_df['is_best'] = summary_df['filename'] == selected_filename
 
     # save files
     summary_df.to_parquet(os.path.join(save_dir, "summary.parquet"), index=False)
-    best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'), index=False)
+    best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'),
+                           index=False)
     return best_result

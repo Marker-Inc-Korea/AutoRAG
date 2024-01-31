@@ -13,7 +13,7 @@ logger = logging.getLogger("AutoRAG")
 
 def passage_reranker_node(func):
     @functools.wraps(func)
-    @result_to_dataframe(["reranked_contents", "reranked_ids", "reranked_scores"])
+    @result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieved_scores"])
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
