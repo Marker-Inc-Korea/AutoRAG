@@ -38,6 +38,14 @@ node_lines:
         - module_type: tart
           prompt: Arrange the following sentences in the correct order.
         - module_type: monoT5
+    - node_type: passage_reranker
+      strategy:
+        metrics: precision
+        speed_threshold: 5
+      top_k: 3
+      modules:
+        - module_type: tart
+        - module_type: monoT5
 - node_line_name:
   nodes:
     - node_type: prompt_maker
