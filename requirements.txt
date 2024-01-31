@@ -18,3 +18,4 @@ chromadb==0.4.9 # for vectordb retrieval
 click  # for cli
 fastapi  # for api server
 uvicorn  # for api server
+torch

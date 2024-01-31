@@ -5,7 +5,7 @@ queries_example = ["What is the capital of France?",
 contents_example = [["NomaDamas is Great Team", "Paris is the capital of France.", "havertz is suck at soccer"],
                     ["i am hungry", "LA is a country in the United States.", "Newjeans has 5 members."]]
 ids_example = [[uuid4() for _ in range(len(contents_example[0]))], [uuid4() for _ in range(len(contents_example[1]))]]
-scores_example = [[0.1, 0.8, 0.1],[0.1, 0.2, 0.7]]
+scores_example = [[0.1, 0.8, 0.1], [0.1, 0.2, 0.7]]
 
 
 def rerank_test(reranker):
