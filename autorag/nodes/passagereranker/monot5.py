@@ -5,6 +5,7 @@ import asyncio
 
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
+from autorag.nodes.passagereranker.base import passage_reranker_node
 
 prediction_tokens = {
     'castorini/monot5-base-msmarco': ['▁false', '▁true'],
@@ -30,6 +31,7 @@ prediction_tokens = {
 }
 
 
+@passage_reranker_node
 def monot5(queries: List[str], contents_list: List[List[str]],
            scores_list: List[List[float]], ids_list: List[List[str]],
            model_name: str = 'castorini/monot5-3b-msmarco-10k') \

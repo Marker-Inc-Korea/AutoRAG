@@ -1,4 +1,14 @@
+import os
+import pathlib
+import pandas as pd
+
 from uuid import uuid4
+
+root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
+project_dir = os.path.join(root_dir, "resources", "sample_project")
+qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+corpus_data = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
+previous_result = qa_data.sample(2)
 
 queries_example = ["What is the capital of France?",
                    "How many members are in Newjeans?"]
@@ -7,6 +17,15 @@ contents_example = [["NomaDamas is Great Team", "Paris is the capital of France.
 ids_example = [[str(uuid4()) for _ in range(len(contents_example[0]))],
                [str(uuid4()) for _ in range(len(contents_example[1]))]]
 scores_example = [[0.1, 0.8, 0.1], [0.1, 0.2, 0.7]]
+f1_example = [0.4, 0.4]
+recall_example = [1.0, 1.0]
+
+previous_result['query'] = queries_example
+previous_result['retrieved_contents'] = contents_example
+previous_result['retrieved_ids'] = ids_example
+previous_result['retrieved_scores'] = scores_example
+previous_result['retrieval_f1'] = f1_example
+previous_result['retrieval_recall'] = recall_example
 
 
 def base_reranker_test(contents, ids, scores):
@@ -26,3 +45,10 @@ def base_reranker_test(contents, ids, scores):
     assert ids[0][0] in ids_example[0][1]
     assert contents[1][0] == "Newjeans has 5 members."
     assert ids[1][0] in ids_example[1][2]
+
+
+def base_reranker_node_test(result_df):
+    contents = result_df["reranked_contents"].tolist()
+    ids = result_df["reranked_ids"].tolist()
+    scores = result_df["reranked_scores"].tolist()
+    base_reranker_test(contents, ids, scores)
