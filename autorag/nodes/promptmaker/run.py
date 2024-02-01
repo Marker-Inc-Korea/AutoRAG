@@ -131,7 +131,7 @@ def make_generator_callable_params(strategy_dict: Dict):
         generator_module_list = [{
             'module_type': 'llama_index_llm',
             'llm': 'openai',
-            'model_name': 'gpt-3.5-turbo',
+            'model': 'gpt-3.5-turbo',
         }]
     node_params = node_dict
     modules = list(map(lambda module_dict: get_support_modules(module_dict.pop('module_type')),

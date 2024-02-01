@@ -44,7 +44,7 @@ node_lines:
         generator_modules:
           - module_type: llama_index_llm
             llm: [openai]
-            model_name: [gpt-3.5-turbo, gpt-4-1106-preview]
+            model: [gpt-3.5-turbo, gpt-4-1106-preview]
             temperature: 0.8
       modules:
         - module_type: fstring
@@ -55,9 +55,9 @@ node_lines:
       modules:
         - module_type: llama_index_llm
           llm: [openai]
-          model_name: [gpt-3.5-turbo, gpt-4-1106-preview]
+          model: [gpt-3.5-turbo, gpt-4-1106-preview]
           temperature: [0.5, 1.0, 1.5]
         - module_type: llama_index_llm
           llm: [huggingface]
-          model_name: [mixtral, llama-2]
+          model: [mixtral, llama-2]
           top_p: [0.5, 0.8, 0.9]

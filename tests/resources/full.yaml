@@ -38,13 +38,13 @@ node_lines:
         - module_type: monot5
     - node_type: passage_compressor
       strategy:
-        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        metrics: [retrieval_token_f1, retrieval_token_recall, retrieval_token_precision]
         speed_threshold: 10
       top_k: 5
       modules:
         - module_type: tree_summarize
           llm: openai
-          model_name: gpt-3.5-turbo-16k
+          model: gpt-3.5-turbo-16k
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: prompt_maker
@@ -54,7 +54,7 @@ node_lines:
         generator_modules:
           - module_type: llama_index_llm
             llm: openai
-            model_name: [gpt-3.5-turbo, babbage-002]
+            model: [gpt-3.5-turbo-16k, gpt-3.5-turbo-16k]
       modules:
         - module_type: fstring
           prompt: ["Tell me something about the question: {query} \n\n {retrieved_contents}",
@@ -66,7 +66,5 @@ node_lines:
       modules:
         - module_type: llama_index_llm
           llm: [openai]
-          model_name: [gpt-3.5-turbo, babbage-002]
+          model: [gpt-3.5-turbo-16k, babbage-002]
           temperature: [0.5, 1.0, 1.5]
-
-

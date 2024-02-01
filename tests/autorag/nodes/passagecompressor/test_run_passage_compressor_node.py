@@ -74,8 +74,8 @@ def node_line_dir():
 
 def test_run_passage_compressor_node(node_line_dir):
     modules = [tree_summarize, tree_summarize]
-    module_params = [{'llm': 'openai', 'model_name': 'babbage-002'},
-                     {'llm': 'openai', 'model_name': 'gpt-3.5-turbo'}]
+    module_params = [{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'},
+                     {'llm': 'openai', 'model': 'gpt-3.5-turbo'}]
     strategies = {
         'metrics': ['retrieval_token_f1', 'retrieval_token_precision'],
         'speed_threshold': 5,
@@ -89,7 +89,7 @@ def test_run_passage_compressor_node(node_line_dir):
     # test summary feature
     summary_path = os.path.join(node_line_dir, "passage_compressor", "summary.parquet")
     single_result_path = os.path.join(node_line_dir, "passage_compressor",
-                                      'tree_summarize=>llm_openai-model_name_babbage-002.parquet')
+                                      'tree_summarize=>llm_openai-model_gpt-3.5-turbo-16k.parquet')
     assert os.path.exists(single_result_path)
     single_result_df = pd.read_parquet(single_result_path)
     assert os.path.exists(summary_path)
@@ -98,13 +98,13 @@ def test_run_passage_compressor_node(node_line_dir):
                                        'passage_compressor_retrieval_token_precision',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
-    assert summary_df['filename'][0] == "tree_summarize=>llm_openai-model_name_babbage-002.parquet"
+    assert summary_df['filename'][0] == "tree_summarize=>llm_openai-model_gpt-3.5-turbo-16k.parquet"
     assert summary_df['passage_compressor_retrieval_token_f1'][0] == single_result_df[
         'retrieval_token_f1'].mean()
     assert summary_df['passage_compressor_retrieval_token_precision'][0] == single_result_df[
         'retrieval_token_precision'].mean()
     assert summary_df['module_name'][0] == "tree_summarize"
-    assert summary_df['module_params'][0] == {'llm': 'openai', 'model_name': 'babbage-002'}
+    assert summary_df['module_params'][0] == {'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'}
     assert summary_df['execution_time'][0] > 0
     # test the best file is saved properly
     best_path = summary_df[summary_df['is_best']]['filename'].values[0]
