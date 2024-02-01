@@ -67,10 +67,8 @@ def base_query_expansion_test(best_result, node_line_dir):
     expect_columns = ['qid', 'query', 'generation_gt', 'retrieval_gt', 'queries',
                       'query_expansion_retrieval_f1', 'query_expansion_retrieval_recall']
     assert all([expect_column in best_result.columns for expect_column in expect_columns])
-    assert os.path.exists(os.path.join(node_line_dir, "query_expansion",
-                                       "query_decompose=>llm_openai-temperature_0.2.parquet"))
-    assert os.path.exists(os.path.join(node_line_dir, "query_expansion",
-                                       "hyde=>llm_mock.parquet"))
+    assert os.path.exists(os.path.join(node_line_dir, "query_expansion", "0.parquet"))
+    assert os.path.exists(os.path.join(node_line_dir, "query_expansion", "1.parquet"))
     # test summary feature
     summary_path = os.path.join(node_line_dir, "query_expansion", "summary.csv")
     assert os.path.exists(summary_path)
@@ -78,14 +76,13 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert set(summary_df.columns) == {'filename', 'query_expansion_retrieval_f1', 'query_expansion_retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
-    assert summary_df['filename'][0] == "query_decompose=>llm_openai-temperature_0.2.parquet"
+    assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['module_name'][0] == "query_decompose"
     assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True  # is_best is np.bool_
     # test the best file is saved properly
-    best_path = os.path.join(node_line_dir, "query_expansion",
-                             "best_query_decompose=>llm_openai-temperature_0.2.parquet")
+    best_path = os.path.join(node_line_dir, "query_expansion", "best_0.parquet")
     assert os.path.exists(best_path)
     best_df = pd.read_parquet(best_path)
     assert all([expect_column in best_df.columns for expect_column in expect_columns])

@@ -105,8 +105,8 @@ def test_run_prompt_maker_node(node_line_dir):
     best_result_path = os.path.join(node_line_dir, "prompt_maker", f"best_{best_filename}")
     assert os.path.exists(best_result_path)
 
-    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "fstring=>prompt_0.parquet"))
-    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "fstring=>prompt_1.parquet"))
+    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "0.parquet"))
+    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "1.parquet"))
 
 
 def test_run_prompt_maker_node_default(node_line_dir):

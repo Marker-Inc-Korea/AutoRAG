@@ -8,7 +8,7 @@ import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils.util import make_module_file_name, make_combinations, explode
+from autorag.utils.util import make_combinations, explode
 from autorag.support import get_support_modules
 
 logger = logging.getLogger("AutoRAG")
@@ -53,8 +53,7 @@ def run_query_expansion_node(modules: List[Callable],
     for i, module_param in enumerate(pseudo_module_params):
         if 'prompt' in module_params:
             module_param['prompt'] = str(i)
-    filepaths = list(map(lambda x: os.path.join(node_dir, make_module_file_name(x[0].__name__, x[1])),
-                         zip(modules, pseudo_module_params)))
+    filepaths = list(map(lambda x: os.path.join(node_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
 

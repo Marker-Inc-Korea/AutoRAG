@@ -8,7 +8,7 @@ import pandas as pd
 from autorag.evaluate.metric import retrieval_token_recall, retrieval_token_precision, retrieval_token_f1
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
-from autorag.utils.util import replace_value_in_dict, make_module_file_name, fetch_contents
+from autorag.utils.util import fetch_contents
 
 
 def run_passage_compressor_node(modules: List[Callable],
@@ -59,10 +59,7 @@ def run_passage_compressor_node(modules: List[Callable],
                                                                   strategies.get('metrics')), results))
 
     # save results to folder
-    pseudo_module_params = list(map(lambda x: replace_value_in_dict(x[1], 'prompt', str(x[0])),
-                                    enumerate(module_params)))
-    filepaths = list(map(lambda x: os.path.join(save_dir, make_module_file_name(x[0].__name__, x[1])),
-                         zip(modules, pseudo_module_params)))
+    filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
 

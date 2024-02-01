@@ -94,8 +94,7 @@ def test_run_passage_reranker_node(node_line_dir):
     # test summary feature
     summary_path = os.path.join(node_line_dir, "passage_reranker", "summary.csv")
     assert os.path.exists(summary_path)
-    single_result_path = os.path.join(node_line_dir, "passage_reranker",
-                                      'monot5=>top_k_4-model_name_castorini_monot5-3b-msmarco-10k.parquet')
+    single_result_path = os.path.join(node_line_dir, "passage_reranker", '0.parquet')
     assert os.path.exists(single_result_path)
     single_result_df = pd.read_parquet(single_result_path)
     summary_df = load_summary_file(summary_path)
@@ -103,7 +102,7 @@ def test_run_passage_reranker_node(node_line_dir):
                                        'passage_reranker_retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 1
-    assert summary_df['filename'][0] == "monot5=>top_k_4-model_name_castorini_monot5-3b-msmarco-10k.parquet"
+    assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['passage_reranker_retrieval_f1'][0] == single_result_df['retrieval_f1'].mean()
     assert summary_df['passage_reranker_retrieval_recall'][0] == single_result_df['retrieval_recall'].mean()
     assert summary_df['module_name'][0] == "monot5"
