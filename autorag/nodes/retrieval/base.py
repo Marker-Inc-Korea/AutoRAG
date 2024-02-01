@@ -31,7 +31,7 @@ def retrieval_node(func):
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
-            *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+            **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
         validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
@@ -58,7 +58,7 @@ def retrieval_node(func):
         # run retrieval function
         if func.__name__ == "bm25":
             bm25_corpus = load_bm25_corpus(bm25_path)
-            ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, *args, **kwargs)
+            ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, **kwargs)
         elif func.__name__ == "vectordb":
             chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
             if embedding_model_str in embedding_models:
@@ -67,9 +67,15 @@ def retrieval_node(func):
                 logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
                 raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
-                               embedding_model=embedding_model, *args, **kwargs)
+                               embedding_model=embedding_model, **kwargs)
         elif func.__name__ == "hybrid_rrf":
-            pass
+            target_modules = kwargs.pop("target_modules")
+            assert isinstance(target_modules, tuple), "target_modules must be tuple."
+            assert len(target_modules) > 1, "target_modules must have at least 2 modules."
+            node_dir = kwargs.pop("node_dir")
+            assert node_dir is not None, "You must pass node_dir for using hybrid retrieval."
+            target_ids, target_scores = get_evaluation_result(node_dir, target_modules)
+            ids, scores = func(target_ids, target_scores, **kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
 
@@ -137,6 +143,9 @@ def get_evaluation_result(node_dir: str, target_modules: Tuple) -> Tuple[Tuple, 
         modules_summary = df.loc[lambda row: row['module_name'] == module_name]
         if len(modules_summary) == 1:
             return modules_summary.iloc[0, :]
+        elif len(modules_summary) <= 0:
+            raise ValueError(f"module_name {module_name} does not exist in summary.parquet. "
+                             f"You must run {module_name} before running hybrid retrieval.")
         metrics = modules_summary.drop(columns=['filename', 'module_name', 'module_params', 'execution_time'])
         metric_average = metrics.mean(axis=1)
         metric_average = metric_average.reset_index(drop=True)
