@@ -22,6 +22,7 @@ def get_support_modules(module_name: str) -> Callable:
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
+        'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
     }
     return dynamically_find_function(module_name, support_modules)
 

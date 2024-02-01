@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from autorag.evaluator import Evaluator
-from autorag.nodes.retrieval import bm25, vectordb
+from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
@@ -59,8 +59,15 @@ def test_load_node_line(evaluator):
     assert node.strategy['metrics'] == ['retrieval_f1', 'retrieval_recall']
     assert node.modules[0].module_type == 'bm25'
     assert node.modules[1].module_type == 'vectordb'
+    assert node.modules[2].module_type == 'hybrid_rrf'
     assert node.modules[0].module == bm25
     assert node.modules[1].module == vectordb
+    assert node.modules[2].module == hybrid_rrf
+    assert node.modules[0].module_param == {}
+    assert node.modules[1].module_param == {'embedding_model': ['openai', 'openai']}
+    assert node.modules[2].module_param == {
+        'rrf_k': 5, 'target_modules': ('bm25', 'vectordb')
+    }
 
 
 def test_start_trial(evaluator):
