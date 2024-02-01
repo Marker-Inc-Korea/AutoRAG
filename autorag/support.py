@@ -24,6 +24,7 @@ def get_support_modules(module_name: str) -> Callable:
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),
+        'upr': ('autorag.nodes.passagereranker', 'upr'),
     }
     return dynamically_find_function(module_name, support_modules)
 
