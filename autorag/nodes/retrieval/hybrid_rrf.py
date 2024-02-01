@@ -16,6 +16,12 @@ def hybrid_rrf(
     Hybrid RRF function.
     RRF (Rank Reciprocal Fusion) is a method to fuse multiple retrieval results.
     It is common to fuse dense retrieval and sparse retrieval results using RRF.
+    To use this function, you must input ids and scores as tuple.
+    It is uniquer than other retrieval modules, because it does not really execute retrieval,
+    but just fuse the results of other retrieval functions.
+    So you have to run more than two retrieval modules before running this function.
+    And collect ids and scores result from each retrieval module.
+    Make it as tuple and input it to this function.
 
     :param ids: The tuple of ids that you want to fuse.
         The length of this must be the same as the length of scores.
