@@ -37,8 +37,8 @@ def test_evaluate_generator_result():
 
 def test_evaluate_one_prompt_maker_node():
     generator_funcs = [llama_index_llm, llama_index_llm]
-    generator_params = [{'llm': 'openai', 'model_name': 'gpt-3.5-turbo'},
-                        {'llm': 'openai', 'model_name': 'gpt-4-1106-preview'}]
+    generator_params = [{'llm': 'openai', 'model': 'gpt-3.5-turbo'},
+                        {'llm': 'openai', 'model': 'gpt-3.5-turbo-1106'}]
     project_dir = '_'
     best_result = evaluate_one_prompt_maker_node(generator_funcs, generator_params, prompts, sample_generation_gt,
                                                  metrics, project_dir)
@@ -96,7 +96,7 @@ def test_run_prompt_maker_node(node_line_dir):
         'generator_modules': [{
             'module_type': 'llama_index_llm',
             'llm': 'openai',
-            'model_name': ['gpt-3.5-turbo', 'gpt-4-1106-preview'],
+            'model': ['gpt-3.5-turbo', 'gpt-3.5-turbo-1106'],
         }]
     }
     best_result = run_prompt_maker_node(modules, params, previous_result, node_line_dir, strategies)

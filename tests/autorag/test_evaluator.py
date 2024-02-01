@@ -136,3 +136,46 @@ def test_evaluator_cli(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
+
+
+def start_trial_full(evaluator):
+    """
+    Function names doesn't start with 'test' because full test takes too long time.
+    """
+    evaluator.start_trial(os.path.join(resource_dir, 'full.yaml'))
+    # full path check
+    assert os.path.exists(os.path.join(os.getcwd(), '0'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'data'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'config.yaml'))
+
+    # node line path check
+    # 1. pre_retrieve_node_line
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion', "0.parquet"))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion', "1.parquet"))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion', '2.parquet'))
+    # 2. retrieve_node_line
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', '1.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker', '0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker', '1.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_compressor'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_compressor', '0.parquet'))
+    # 3. post_retrieve_node_line
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker', '0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker', '1.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '1.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '2.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '3.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '4.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '5.parquet'))
