@@ -132,3 +132,31 @@ def test_evaluator_cli(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_10.parquet'))
+
+
+def test_start_trial_full(evaluator):
+    evaluator.start_trial(os.path.join(resource_dir, 'full.yaml'))
+    # 전반적인 path check
+    assert os.path.exists(os.path.join(os.getcwd(), '0'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'data'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'config.yaml'))
+
+    # node line별 path check
+    # 1. pre_retrieve_node_line
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion',
+                                       "query_decompose=>llm_openai-temperature_0.2.parquet"))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion',
+                                       "query_decompose=>llm_openai-temperature_1.0.parquet"))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion',
+                                       'hyde=>llm_openai-max_token_64.parquet'))
+    # 2. retrieve_node_line
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_10.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
+                                       'vectordb=>top_k_10-embedding_model_openai.parquet'))
+    # 3. post_retrieve_node_line
