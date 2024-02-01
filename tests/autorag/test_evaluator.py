@@ -156,6 +156,35 @@ def test_start_trial_full(evaluator):
     # 2. retrieve_node_line
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
-    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_10.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
+                                       'bm25=>top_k_10.parquet'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
                                        'vectordb=>top_k_10-embedding_model_openai.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker',
+                                       'tart=>top_k_5.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker',
+                                       'monot5=>top_k_5.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_compressor'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_compressor',
+                                       'tree_summarize=>top_k_5-llm_openai-model_gpt-3.5-turbo-16k.parquet'))
+    # 3. post_retrieve_node_line
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-16k.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-1106.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-16k-temperature_0.5.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-16k-temperature_1.0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-16k-temperature_1.5.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-1106-temperature_0.5.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-1106-temperature_1.0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'generator',
+                                       'llama_index_llm=>llm_openai-gpt-3.5-turbo-1106-temperature_1.5.parquet'))
