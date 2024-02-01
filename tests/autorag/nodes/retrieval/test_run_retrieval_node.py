@@ -76,7 +76,8 @@ def test_run_retrieval_node(node_line_dir):
     assert summary_df['module_params'][0] == {'top_k': 4}
     assert summary_df['execution_time'][0] > 0
     # test the best file is saved properly
-    best_path = summary_df[summary_df['is_best'] == True]['filename'].values[0]
+    best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]
+    best_path = os.path.join(node_line_dir, "retrieval", f'best_{best_filename}')
     assert os.path.exists(best_path)
     best_df = pd.read_parquet(best_path)
     assert all([expect_column in best_df.columns for expect_column in expect_columns])

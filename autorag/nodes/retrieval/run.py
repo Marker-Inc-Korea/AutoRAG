@@ -49,7 +49,7 @@ def run_retrieval_node(modules: List[Callable],
         result = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics')), result))
 
         # save results to folder
-        filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'), range(len(modules))))
+        filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'), range(len(input_modules))))
         list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(result, filepaths)))  # execute save to parquet
         filename_list = list(map(lambda x: os.path.basename(x), filepaths))
 
