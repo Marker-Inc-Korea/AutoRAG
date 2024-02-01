@@ -1,21 +1,23 @@
 from typing import List, Tuple
 from uuid import UUID, uuid4
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoTokenizer, T5ForConditionalGeneration
 
 import asyncio
 import torch
 
 
 def upr_rerank(queries: List[str], contents_list: List[List[str]],
-               scores_list: List[List[float]], ids_list: List[List[UUID]],
+               scores_list: List[List[float]], ids_list: List[List[str]],
                shard_size: int = 16, model_name: str = "t5-large",
-               prefix_prompt: str = "", suffix_prompt: str = "",
-               device: str = "gpu", torch_dtype = torch.float16) -> List[Tuple[List[str]]]:
+               prefix_prompt: str = "Passage: ",
+               suffix_prompt: str = "Please write a question based on this passage.") \
+        -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     UPRReranker is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
     The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
     """
-    model = AutoModel.from_pretrained(model_name, torch_dtype=torch_dtype)
+    model = T5ForConditionalGeneration.from_pretrained(model_name,
+                                                       torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     tasks = [upr_rerank_pure(query, contents, scores, ids, model, tokenizer, device, shard_size, prefix_prompt, suffix_prompt) for query, contents, scores, ids in
@@ -25,22 +27,10 @@ def upr_rerank(queries: List[str], contents_list: List[List[str]],
     return results
 
 
-async def upr_rerank_pure(query: str, contents: List[str], scores: List[float], ids: List[UUID],
-                          model: AutoModel = AutoModel.from_pretrained("t5-large", torch_dtype=torch.float16),
-                          tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained("t5-large"),
-                          device: str = "gpu", shard_size: int = 16,
-                          prefix_prompt: str = "Passage: ", suffix_prompt: str = "Please write a question based on this passage.") -> Tuple[List[str]]:
-    """
-    Rerank a list of contents based on their relevance to a query using UPR.
-    :param query: str: The query that UPR rerank contents according to
-    :param contents: List[str]: The contents that is going to
-    :param scores: List[float]: scores of contents from last node(Retrieval or Reranker).
-    :param ids: List[UUID]: IDs of contents
-    :param model: transformers.Automodel: LLM model to score contents for rerank
-    :param device: string: choose "gpu" if not, this version UPR
-    :param tokenizer: transformers.AutoTokenizer
-    :return: tuple of lists containing the reranked contents, ids, and scores
-    """
+async def upr_rerank_pure(query: str, contents: List[str], scores: List[float],
+                          ids: List[str], top_k: int, model, device, tokenizer,
+                          shard_size: int, prefix_prompt: str, suffix_prompt: str)\
+        -> Tuple[List[str], List[str], List[float]]:
 
     indexes, scores = calculate_likelihood(model=model, tokenizer=tokenizer, query=query, contents=contents,
                                            shard_size=shard_size, device=device, prefix_prompt=prefix_prompt,
