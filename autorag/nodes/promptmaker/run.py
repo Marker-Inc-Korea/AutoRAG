@@ -9,7 +9,7 @@ from autorag.evaluate import evaluate_generation
 from autorag.support import get_support_modules
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 from autorag.utils import validate_qa_dataset
-from autorag.utils.util import make_combinations, explode, make_module_file_name, replace_value_in_dict
+from autorag.utils.util import make_combinations, explode, replace_value_in_dict
 
 
 def run_prompt_maker_node(modules: List[Callable],
@@ -54,8 +54,7 @@ def run_prompt_maker_node(modules: List[Callable],
     # save results to folder
     pseudo_module_params = list(map(lambda x: replace_value_in_dict(x[1], 'prompt', str(x[0])),
                                     enumerate(module_params)))
-    filepaths = list(map(lambda x: os.path.join(node_dir, make_module_file_name(x[0].__name__, x[1])),
-                         zip(modules, pseudo_module_params)))
+    filepaths = list(map(lambda x: os.path.join(node_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
 

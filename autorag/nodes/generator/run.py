@@ -6,7 +6,6 @@ import pandas as pd
 
 from autorag.evaluate import evaluate_generation
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils.util import make_module_file_name
 
 
 def run_generator_node(modules: List[Callable],
@@ -50,8 +49,7 @@ def run_generator_node(modules: List[Callable],
     results = list(map(lambda result: evaluate_generator_node(result, generation_gt, strategies.get('metrics')), results))
 
     # save results to folder
-    filepaths = list(map(lambda x: os.path.join(node_dir, make_module_file_name(x[0].__name__, x[1])),
-                         zip(modules, module_params)))
+    filepaths = list(map(lambda x: os.path.join(node_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
 

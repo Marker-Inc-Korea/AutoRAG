@@ -48,21 +48,6 @@ def result_to_dataframe(column_names: List[str]):
     return decorator_result_to_dataframe
 
 
-def make_module_file_name(module_name: str, module_params: Dict) -> str:
-    """
-    Make module parquet file name for saving results dataframe.
-
-    :param module_name: Module name.
-        It can be module function's name.
-    :param module_params: Parameters of the module function.
-    :return: Module parquet file name
-    """
-    module_params_str = "-".join(list(map(lambda x: f"{x[0]}_{x[1]}", module_params.items())))
-    if len(module_params_str) <= 0:
-        return f"{module_name}.parquet"
-    return f"{module_name}=>{module_params_str}.parquet"
-
-
 def find_best_result_path(node_dir: str) -> str:
     """
     Find the best result filepath from node directory.
