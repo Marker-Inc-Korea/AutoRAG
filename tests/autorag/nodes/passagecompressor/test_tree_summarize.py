@@ -31,7 +31,7 @@ def test_tree_summarize_default():
 
 
 def test_tree_summarize_chat():
-    gpt_3 = OpenAI(model_name="gpt-3.5-turbo")
+    gpt_3 = OpenAI(model="gpt-3.5-turbo")
     result = tree_summarize.__wrapped__(queries, retrieved_contents, [], [], gpt_3)
     check_result(result)
 
@@ -45,7 +45,7 @@ def test_tree_summarize_custom_prompt():
 
 
 def test_tree_summarize_custom_prompt_chat():
-    gpt_3 = OpenAI(model_name="gpt-3.5-turbo")
+    gpt_3 = OpenAI(model="gpt-3.5-turbo")
     prompt = "Query: {query_str} Passages: {context_str}. Repeat the query."
     result = tree_summarize.__wrapped__(queries, retrieved_contents, [], [], gpt_3, chat_prompt=prompt)
     check_result(result)

@@ -75,8 +75,8 @@ def node_line_dir():
 
 def test_run_passage_compressor_node(node_line_dir):
     modules = [tree_summarize, tree_summarize]
-    module_params = [{'llm': 'openai', 'model_name': 'babbage-002'},
-                     {'llm': 'openai', 'model_name': 'gpt-3.5-turbo'}]
+    module_params = [{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'},
+                     {'llm': 'openai', 'model': 'gpt-3.5-turbo'}]
     strategies = {
         'metrics': ['retrieval_token_f1', 'retrieval_token_precision'],
         'speed_threshold': 5,
@@ -104,7 +104,7 @@ def test_run_passage_compressor_node(node_line_dir):
     assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(single_result_df[
         'retrieval_token_precision'].mean())
     assert summary_df['module_name'][0] == "tree_summarize"
-    assert summary_df['module_params'][0] == {'llm': 'openai', 'model_name': 'babbage-002'}
+    assert summary_df['module_params'][0] == {'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'}
     assert summary_df['execution_time'][0] > 0
     # test the best file is saved properly
     best_path = summary_df[summary_df['is_best']]['filename'].values[0]
