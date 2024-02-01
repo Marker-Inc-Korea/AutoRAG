@@ -1,6 +1,6 @@
 import functools
 import time
-from typing import List, Iterable, Tuple, Any, Optional
+from typing import List, Iterable, Tuple, Any, Optional, Callable
 
 import pandas as pd
 
@@ -15,25 +15,39 @@ def measure_speed(func, *args, **kwargs):
     return result, end_time - start_time
 
 
-def avoid_empty_result(func):
+def avoid_empty_result(return_index: List[int]):
     """
     Decorator for avoiding empty results from the function.
     When the func returns an empty result, it will return the origin results.
-    It keeps the first input parameter of the function as the origin results.
+    When the func returns a None, it will return the origin results.
+    When the return value is a tuple, it will check all the value or list is empty.
+    If so, it will return the origin results.
+    It keeps parameters at return_index of the function as the origin results.
+
+    :param return_index: The index of the result to be returned when there is no result.
+    :return: The origin results or the results from the function.
     """
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs) -> List:
-        func_result = func(*args, **kwargs)
-        if len(func_result) == 0:
-            return args[0]
-        else:
-            return func_result
+    def decorator_avoid_empty_result(func: Callable):
 
-    return wrapper
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs) -> List:
+            func_result = func(*args, **kwargs)
+            if isinstance(func_result, tuple):
+                # if all the results are empty, return the origin results.
+                if all([not bool(result) for result in func_result]):
+                    return [args[index] for index in return_index]
+            if not bool(func_result):
+                return [args[index] for index in return_index]
+            else:
+                return func_result
+
+        return wrapper
+
+    return decorator_avoid_empty_result
 
 
-@avoid_empty_result
+@avoid_empty_result([0, 3])
 def filter_by_threshold(results, value, threshold, metadatas=None) -> Tuple[List, List]:
     """
     Filter results by value's threshold.
@@ -50,7 +64,11 @@ def filter_by_threshold(results, value, threshold, metadatas=None) -> Tuple[List
     if metadatas is None:
         metadatas = [None] * len(results)
     assert len(results) == len(value), "results and value must have the same length."
-    filtered_results, _, filtered_metadatas = zip(*filter(lambda x: x[1] <= threshold, zip(results, value, metadatas)))
+    try:
+        filtered_results, _, filtered_metadatas = zip(
+            *filter(lambda x: x[1] <= threshold, zip(results, value, metadatas)))
+    except ValueError:
+        return [], []
     return list(filtered_results), list(filtered_metadatas)
 
 

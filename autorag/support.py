@@ -22,6 +22,9 @@ def get_support_modules(module_name: str) -> Callable:
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
+        'monot5': ('autorag.nodes.passagereranker', 'monot5'),
+        'tart': ('autorag.nodes.passagereranker', 'tart'),
+        'upr': ('autorag.nodes.passagereranker', 'upr'),
         'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
     }
     return dynamically_find_function(module_name, support_modules)
@@ -33,5 +36,7 @@ def get_support_nodes(node_name: str) -> Callable:
         'retrieval': ('autorag.nodes.retrieval.run', 'run_retrieval_node'),
         'generator': ('autorag.nodes.generator.run', 'run_generator_node'),
         'prompt_maker': ('autorag.nodes.promptmaker.run', 'run_prompt_maker_node'),
+        'passage_compressor': ('autorag.nodes.passagecompressor.run', 'run_passage_compressor_node'),
+        'passage_reranker': ('autorag.nodes.passagereranker.run', 'run_passage_reranker_node'),
     }
     return dynamically_find_function(node_name, support_nodes)

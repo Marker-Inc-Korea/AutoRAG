@@ -5,6 +5,7 @@ import asyncio
 
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
+from autorag.nodes.passagereranker.base import passage_reranker_node
 
 prediction_tokens = {
     'castorini/monot5-base-msmarco': ['▁false', '▁true'],
@@ -30,10 +31,28 @@ prediction_tokens = {
 }
 
 
+@passage_reranker_node
 def monot5(queries: List[str], contents_list: List[List[str]],
            scores_list: List[List[float]], ids_list: List[List[str]],
-           model_name: str = 'castorini/monot5-3b-msmarco-10k') \
+           top_k: int, model_name: str = 'castorini/monot5-3b-msmarco-10k') \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+    """
+    Rerank a list of contents based on their relevance to a query using MonoT5.
+    :param queries: The list of queries to use for reranking
+    :param contents_list: The list of lists of contents to rerank
+    :param scores_list: The list of lists of scores retrieved from the initial ranking
+    :param ids_list: The list of lists of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
+    :param model_name: The name of the MonoT5 model to use for reranking
+        Note: default model name is 'castorini/monot5-3b-msmarco-10k'
+            If there is a '/' in the model name parameter,
+            when we create the file to store the results, the path will be twisted because of the '/'.
+            Therefore, it will be received as '_' instead of '/'.
+    :return: tuple of lists containing the reranked contents, ids, and scores
+    """
+    # replace '_' to '/'
+    if '_' in model_name:
+        model_name = model_name.replace('_', '/')
     # Load the tokenizer and model from the pre-trained MonoT5 model
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name).eval()
@@ -44,7 +63,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     # Determine the device to run the model on (GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Run async mono_t5_rerank_pure function
-    tasks = [mono_t5_pure(query, contents, scores, ids, model, device, tokenizer, token_false_id, token_true_id) \
+    tasks = [mono_t5_pure(query, contents, scores, top_k, ids, model, device, tokenizer, token_false_id, token_true_id) \
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
@@ -54,7 +73,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     return content_result, id_result, score_result
 
 
-async def mono_t5_pure(query: str, contents: List[str], scores: List[float],
+async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top_k: int,
                        ids: List[str], model, device, tokenizer, token_false_id, token_true_id)\
         -> Tuple[List[str], List[str], List[float]]:
     """
@@ -95,6 +114,11 @@ async def mono_t5_pure(query: str, contents: List[str], scores: List[float],
 
     # Sort the list of pairs based on the relevance score in descending order
     sorted_content_ids_probs = sorted(content_ids_probs, key=lambda x: x[2], reverse=True)
+
+    # crop with top_k
+    if len(contents) < top_k:
+        top_k = len(contents)
+    sorted_content_ids_probs = sorted_content_ids_probs[:top_k]
 
     content_result, id_result, score_result = zip(*sorted_content_ids_probs)
 
