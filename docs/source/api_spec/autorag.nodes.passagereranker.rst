@@ -1,6 +1,14 @@
 autorag.nodes.passagereranker package
 =====================================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   autorag.nodes.passagereranker.tart
+
 Submodules
 ----------
 
