@@ -58,9 +58,9 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
         Default is None.
     :return: The dictionary of the extracted pipeline.
     """
-    summary_path = os.path.join(trial_path, 'summary.parquet')
+    summary_path = os.path.join(trial_path, 'summary.csv')
     if not os.path.exists(summary_path):
-        raise ValueError(f"summary.parquet does not exist in {trial_path}.")
+        raise ValueError(f"summary.csv does not exist in {trial_path}.")
     trial_summary_df = load_summary_file(summary_path, dict_columns=['best_module_params'])
     yaml_dict = summary_df_to_yaml(trial_summary_df)
     if output_path is not None:

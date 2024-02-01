@@ -1,3 +1,4 @@
+import ast
 import functools
 import itertools
 import os
@@ -47,21 +48,6 @@ def result_to_dataframe(column_names: List[str]):
     return decorator_result_to_dataframe
 
 
-def make_module_file_name(module_name: str, module_params: Dict) -> str:
-    """
-    Make module parquet file name for saving results dataframe.
-
-    :param module_name: Module name.
-        It can be module function's name.
-    :param module_params: Parameters of the module function.
-    :return: Module parquet file name
-    """
-    module_params_str = "-".join(list(map(lambda x: f"{x[0]}_{x[1]}", module_params.items())))
-    if len(module_params_str) <= 0:
-        return f"{module_name}.parquet"
-    return f"{module_name}=>{module_params_str}.parquet"
-
-
 def find_best_result_path(node_dir: str) -> str:
     """
     Find the best result filepath from node directory.
@@ -78,22 +64,23 @@ def load_summary_file(summary_path: str,
 
     :param summary_path: The path of the summary file.
     :param dict_columns: The columns that are dictionary type.
-        You must fill this parameter if you want to load summary file properly.l
-        Default is None.
+        You must fill this parameter if you want to load summary file properly.
+        Default is ['module_params'].
     :return: The summary dataframe.
     """
     if not os.path.exists(summary_path):
-        raise ValueError(f"summary.parquet does not exist in {summary_path}.")
-    summary_df = pd.read_parquet(summary_path)
+        raise ValueError(f"summary.csv does not exist in {summary_path}.")
+    summary_df = pd.read_csv(summary_path)
     if dict_columns is None:
-        logger.warning("dict_columns is None."
-                       "If your input summary_df has dictionary type columns, you must fill dict_columns.")
-        return summary_df
+        dict_columns = ['module_params']
 
-    def delete_none_at_dict(elem):
-        return dict(filter(lambda item: item[1] is not None, elem.items()))
+    if any([col not in summary_df.columns for col in dict_columns]):
+        raise ValueError(f"{dict_columns} must be in summary_df.columns.")
 
-    summary_df[dict_columns] = summary_df[dict_columns].applymap(delete_none_at_dict)
+    def convert_dict(elem):
+        return ast.literal_eval(elem)
+
+    summary_df[dict_columns] = summary_df[dict_columns].applymap(convert_dict)
     return summary_df
 
 

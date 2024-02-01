@@ -9,6 +9,7 @@ from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.promptmaker import fstring
 from autorag.nodes.promptmaker.run import evaluate_generator_result, evaluate_one_prompt_maker_node, \
     run_prompt_maker_node
+from autorag.utils.util import load_summary_file
 
 prompts = ['Hello, Do you know the world without war?',
            'Hi, I am dreaming about the world without any war.']
@@ -75,9 +76,9 @@ def check_best_result(best_df: pd.DataFrame):
 
 def check_summary_df(node_line_dir):
     # check the files saved properly
-    summary_path = os.path.join(node_line_dir, "prompt_maker", "summary.parquet")
+    summary_path = os.path.join(node_line_dir, "prompt_maker", "summary.csv")
     assert os.path.exists(summary_path)
-    summary_df = pd.read_parquet(summary_path)
+    summary_df = load_summary_file(summary_path)
     assert len(summary_df) == len(previous_result)
     assert set(summary_df.columns) == {'filename', 'module_name', 'module_params', 'execution_time',
                                        'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
@@ -104,8 +105,8 @@ def test_run_prompt_maker_node(node_line_dir):
     best_result_path = os.path.join(node_line_dir, "prompt_maker", f"best_{best_filename}")
     assert os.path.exists(best_result_path)
 
-    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "fstring=>prompt_0.parquet"))
-    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "fstring=>prompt_1.parquet"))
+    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "0.parquet"))
+    assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "1.parquet"))
 
 
 def test_run_prompt_maker_node_default(node_line_dir):
@@ -132,9 +133,9 @@ def test_run_prompt_maker_one_module(node_line_dir):
     assert set(best_result.columns) == {
         'query', 'retrieved_contents', 'test_column', 'prompts'  # automatically skip evaluation
     }
-    summary_filepath = os.path.join(node_line_dir, "prompt_maker", "summary.parquet")
+    summary_filepath = os.path.join(node_line_dir, "prompt_maker", "summary.csv")
     assert os.path.exists(summary_filepath)
-    summary_df = pd.read_parquet(summary_filepath)
+    summary_df = load_summary_file(summary_filepath)
     assert set(summary_df) == {
         'filename', 'module_name', 'module_params', 'execution_time', 'is_best'
     }

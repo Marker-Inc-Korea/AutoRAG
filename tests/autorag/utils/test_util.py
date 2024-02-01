@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from autorag.utils import fetch_contents
-from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
+from autorag.utils.util import find_best_result_path, load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -35,20 +35,9 @@ def module_params():
 @pytest.fixture
 def summary_path():
     with tempfile.TemporaryDirectory() as tmp_dir:
-        summary_path = os.path.join(tmp_dir, "summary.parquet")
-        summary_df.to_parquet(summary_path, index=False)
+        summary_path = os.path.join(tmp_dir, "summary.csv")
+        summary_df.to_csv(summary_path, index=False)
         yield summary_path
-
-
-def test_make_module_file_name(module_name, module_params):
-    module_file_name = make_module_file_name(module_name, module_params)
-    assert module_file_name == "test_module=>param1_value1-param2_value2-param3_value3.parquet"
-
-    module_file_name = make_module_file_name(module_name, {})
-    assert module_file_name == "test_module.parquet"
-
-    module_file_name = make_module_file_name(module_name, {"param1": "value1"})
-    assert module_file_name == "test_module=>param1_value1.parquet"
 
 
 def test_fetch_contents():
@@ -82,8 +71,8 @@ def test_find_best_result_path():
 
 
 def test_load_summary_file(summary_path):
-    df = load_summary_file(summary_path)
-    assert not df.equals(summary_df)
+    with pytest.raises(ValueError):
+        load_summary_file(summary_path)
     df = load_summary_file(summary_path, ['best_module_params'])
     assert df.equals(summary_df)
 
