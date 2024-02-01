@@ -69,6 +69,8 @@ async def tart_pure(query: str, contents: List[str], scores: List[float],
     sorted_contents_ids_scores = sorted(contents_ids_scores, key=lambda x: x[2], reverse=True)
 
     # crop with top_k
+    if len(contents) < top_k:
+        top_k = len(contents)
     sorted_contents_ids_scores = sorted_contents_ids_scores[:top_k]
 
     content_result, id_result, score_result = zip(*sorted_contents_ids_scores)
