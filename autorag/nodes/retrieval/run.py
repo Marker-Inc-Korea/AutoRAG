@@ -7,7 +7,6 @@ import pandas as pd
 
 from autorag.evaluate import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils.util import make_module_file_name
 
 logger = logging.getLogger("AutoRAG")
 
@@ -48,8 +47,7 @@ def run_retrieval_node(modules: List[Callable],
     save_dir = os.path.join(node_line_dir, "retrieval")  # node name
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-    filepaths = list(map(lambda x: os.path.join(save_dir, make_module_file_name(x[0].__name__, x[1])),
-                         zip(modules, module_params)))
+    filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
 

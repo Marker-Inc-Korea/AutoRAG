@@ -89,8 +89,7 @@ def test_run_passage_compressor_node(node_line_dir):
                                         'passage_compressor_retrieval_token_precision'}
     # test summary feature
     summary_path = os.path.join(node_line_dir, "passage_compressor", "summary.csv")
-    single_result_path = os.path.join(node_line_dir, "passage_compressor",
-                                      'tree_summarize=>llm_openai-model_name_babbage-002.parquet')
+    single_result_path = os.path.join(node_line_dir, "passage_compressor", '0.parquet')
     assert os.path.exists(single_result_path)
     single_result_df = pd.read_parquet(single_result_path)
     assert os.path.exists(summary_path)
@@ -99,7 +98,7 @@ def test_run_passage_compressor_node(node_line_dir):
                                        'passage_compressor_retrieval_token_precision',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
-    assert summary_df['filename'][0] == "tree_summarize=>llm_openai-model_name_babbage-002.parquet"
+    assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['passage_compressor_retrieval_token_f1'][0] ==pytest.approx(single_result_df[
         'retrieval_token_f1'].mean())
     assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(single_result_df[

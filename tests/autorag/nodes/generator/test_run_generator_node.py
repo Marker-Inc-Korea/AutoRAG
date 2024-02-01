@@ -65,8 +65,7 @@ def test_run_generator_node(node_line_dir):
     assert len(summary_df) == 2
     assert summary_df['module_params'][0] == {'llm': 'openai', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128}
 
-    first_path = os.path.join(node_line_dir, "generator",
-                              "llama_index_llm=>llm_openai-temperature_0.5-top_p_0.9-max_tokens_128.parquet")
+    first_path = os.path.join(node_line_dir, "generator", "0.parquet")
     assert os.path.exists(first_path)
 
     best_path = summary_df[summary_df['is_best']]['filename'].values[0]
