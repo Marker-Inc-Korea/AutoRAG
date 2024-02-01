@@ -23,6 +23,7 @@ def get_support_modules(module_name: str) -> Callable:
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
+        'tart': ('autorag.nodes.passagereranker', 'tart'),
     }
     return dynamically_find_function(module_name, support_modules)
 

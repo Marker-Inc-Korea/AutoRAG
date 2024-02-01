@@ -159,4 +159,3 @@ def test_start_trial_full(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'bm25=>top_k_10.parquet'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval',
                                        'vectordb=>top_k_10-embedding_model_openai.parquet'))
-    # 3. post_retrieve_node_line

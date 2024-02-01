@@ -49,7 +49,7 @@ node_lines:
       modules:
         - module_type: fstring
           prompt: "This is a news dataset, crawled from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{{retrieved_contents}}\n\nQ: {{query}}\nA:"
-    - node_type: generation
+    - node_type: generator
       strategy:
         metrics: [bleu, rouge, kf1]
       modules:
