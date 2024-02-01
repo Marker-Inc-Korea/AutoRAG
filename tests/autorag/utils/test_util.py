@@ -121,12 +121,30 @@ def test_make_combinations():
     assert len(combinations) == len(solution)
     assert all([combination in solution for combination in combinations])
 
-    target_dict = {'key1': 'value1', 'key2': ['value1', 'value2'], 'key3': 'value3', 'key4': ('value4', 'value5')}
+    elem1 = {
+        'key5': 'value5',
+        'key6': ['value6', 'value7']
+    }
+    elem2 = {'key7': 'value8'}
+    value_of_key_4 = [elem1, elem2]
+    target_dict = {'key1': 'value1', 'key2': ['value1', 'value2'], 'key3': 'value3', 'key4': value_of_key_4}
     combinations = make_combinations(target_dict)
+    solution = [
+        {'key1': 'value1', 'key2': 'value1', 'key3': 'value3', 'key4': elem1},
+        {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'key4': elem1},
+        {'key1': 'value1', 'key2': 'value1', 'key3': 'value3', 'key4': elem2},
+        {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'key4': elem2},
+    ]
+    assert len(combinations) == len(solution)
+    assert all([combination in solution for combination in combinations])
+
+    target_dict = {'key1': 'value1', 'key2': ['value1', 'value2'], 'key3': 'value3', 'key4': ('value4', 'value5')}
     solution = [
         {'key1': 'value1', 'key2': 'value1', 'key3': 'value3', 'key4': ('value4', 'value5')},
         {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'key4': ('value4', 'value5')},
     ]
+    combinations = make_combinations(target_dict)
+    assert len(combinations) == len(solution)
     assert all([combination in solution for combination in combinations])
 
 

@@ -111,7 +111,22 @@ def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     dict_with_lists = dict(map(lambda x: (x[0], x[1] if isinstance(x[1], list) else [x[1]]),
                                target_dict.items()))
-    dict_with_lists = dict(map(lambda x: (x[0], list(set(x[1]))), dict_with_lists.items()))
+
+    def delete_duplicate(x):
+        def is_hashable(obj):
+            try:
+                hash(obj)
+                return True
+            except TypeError:
+                return False
+
+        if any([not is_hashable(elem) for elem in x]):
+            # TODO: add duplication check for unhashable objects
+            return x
+        else:
+            return list(set(x))
+
+    dict_with_lists = dict(map(lambda x: (x[0], delete_duplicate(x[1])), dict_with_lists.items()))
     combination = list(itertools.product(*dict_with_lists.values()))
     combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
     return combination_dicts
