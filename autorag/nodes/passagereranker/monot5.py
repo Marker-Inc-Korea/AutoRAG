@@ -116,6 +116,8 @@ async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top
     sorted_content_ids_probs = sorted(content_ids_probs, key=lambda x: x[2], reverse=True)
 
     # crop with top_k
+    if len(contents) < top_k:
+        top_k = len(contents)
     sorted_content_ids_probs = sorted_content_ids_probs[:top_k]
 
     content_result, id_result, score_result = zip(*sorted_content_ids_probs)

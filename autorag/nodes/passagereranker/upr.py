@@ -1,77 +1,92 @@
 from typing import List, Tuple
-from uuid import UUID, uuid4
-from transformers import AutoTokenizer, T5ForConditionalGeneration
+
+from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 import asyncio
 import torch
 
 
-def upr_rerank(queries: List[str], contents_list: List[List[str]],
-               scores_list: List[List[float]], ids_list: List[List[str]],
-               shard_size: int = 16, model_name: str = "t5-large",
-               prefix_prompt: str = "Passage: ",
-               suffix_prompt: str = "Please write a question based on this passage.") \
+def upr(queries: List[str], contents_list: List[List[str]],
+        scores_list: List[List[float]], ids_list: List[List[str]],
+        top_k: int, shard_size: int = 16, model_name: str = "t5-large",
+        use_bf16: bool = False, prefix_prompt: str = "Passage: ",
+        suffix_prompt: str = "Please write a question based on this passage.") \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     UPRReranker is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
     The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
     """
+    # Load the tokenizer and model
+    tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name,
                                                        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    tasks = [upr_rerank_pure(query, contents, scores, ids, model, tokenizer, device, shard_size, prefix_prompt, suffix_prompt) for query, contents, scores, ids in
+    # Determine the device to run the model on (GPU if available, otherwise CPU)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Run async upr_rerank_pure function
+    tasks = [upr_pure(query, contents, scores, ids, top_k, model, tokenizer, device, shard_size, prefix_prompt,
+                      suffix_prompt) for query, contents, scores, ids in
              zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
-    return results
+    content_result = list(map(lambda x: x[0], results))
+    id_result = list(map(lambda x: x[1], results))
+    score_result = list(map(lambda x: x[2], results))
+    return content_result, id_result, score_result
 
 
-async def upr_rerank_pure(query: str, contents: List[str], scores: List[float],
-                          ids: List[str], top_k: int, model, device, tokenizer,
-                          shard_size: int, prefix_prompt: str, suffix_prompt: str)\
+async def upr_pure(query: str, contents: List[str], scores: List[float],
+                   ids: List[str], top_k: int, model, device, tokenizer,
+                   shard_size: int, prefix_prompt: str, suffix_prompt: str) \
         -> Tuple[List[str], List[str], List[float]]:
-
     indexes, scores = calculate_likelihood(model=model, tokenizer=tokenizer, query=query, contents=contents,
                                            shard_size=shard_size, device=device, prefix_prompt=prefix_prompt,
                                            suffix_prompt=suffix_prompt)
-    reranked_contents, scores, ids = zip(*[list(zip(contents, scores, ids))[idx] for idx in indexes])
+    reranked_contents, reranked_ids = zip(*[(contents[idx], ids[idx]) for idx in indexes])
 
-    return tuple(reranked_contents, scores, ids)
+    # crop with top_k
+    if len(reranked_contents) < top_k:
+        top_k = len(reranked_contents)
+    reranked_contents = reranked_contents[:top_k]
+    reranked_ids = reranked_ids[:top_k]
+    scores = scores[:top_k]
+
+    return reranked_contents, reranked_ids, scores
 
 
-def calculate_likelihood(model: AutoModel, tokenizer: AutoTokenizer, query: str, contents: List[str], shard_size: int,
-                         device: str = "gpu", prefix_prompt: str = "", suffix_prompt: str = "") -> tuple[
-    List[int], List[float]]:
-    prompts = [f"{prefix_prompt}{content}{suffix_prompt}" for content in contents]
-    # tokenize contents and instruction prompts
-    content_tokens = tokenizer(prompts,
+def calculate_likelihood(question: str, contents: List[str],
+                         prefix_prompt: str, suffix_prompt: str,
+                         tokenizer, device, model, shard_size: int, ) -> tuple[List[int], List[float]]:
+    # create prompts
+    prompts = [f"{prefix_prompt} {content} {suffix_prompt}" for content in contents]
+
+    # tokenize contexts and instruction prompts
+    context_tokens = tokenizer(prompts,
                                padding='longest',
                                max_length=512,
                                pad_to_multiple_of=8,
                                truncation=True,
                                return_tensors='pt')
-    content_tensor, content_attention_mask = content_tokens.input_ids, content_tokens.attention_mask
-    if device in ["gpu", "GPU"]:
-        content_tensor, content_attention_mask = content_tensor.cuda(), content_attention_mask.cuda()
+    context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
+    if device.type == 'cuda':
+        context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
 
     # tokenize question
-    query_tokens = tokenizer([query],
-                             max_length=128,
-                             truncation=True,
-                             return_tensors='pt')
-    query_tensor = query_tokens.input_ids
-    if device in ["gpu", "GPU"]:
-        query_tensor = query_tensor.cuda()
-    query_tensor = torch.repeat_interleave(query_tensor, len(contents), dim=0)
+    question_tokens = tokenizer([question],
+                                max_length=128,
+                                truncation=True,
+                                return_tensors='pt')
+    question_tensor = question_tokens.input_ids
+    if device.type == 'cuda':
+        question_tensor = question_tensor.cuda()
+    question_tensor = torch.repeat_interleave(question_tensor, len(contents), dim=0)
 
     sharded_nll_list = []
 
     # calculate log likelihood
-    for i in range(0, len(content_tensor), shard_size):
-        encoder_tensor_view = content_tensor[i: i + shard_size]
-        attention_mask_view = content_attention_mask[i: i + shard_size]
-        decoder_tensor_view = query_tensor[i: i + shard_size]
+    for i in range(0, len(context_tensor), shard_size):
+        encoder_tensor_view = context_tensor[i: i + shard_size]
+        attention_mask_view = context_attention_mask[i: i + shard_size]
+        decoder_tensor_view = question_tensor[i: i + shard_size]
         with torch.no_grad():
             logits = model(input_ids=encoder_tensor_view,
                            attention_mask=attention_mask_view,
@@ -83,6 +98,6 @@ def calculate_likelihood(model: AutoModel, tokenizer: AutoTokenizer, query: str,
         avg_nll = torch.sum(nll, dim=1)
         sharded_nll_list.append(avg_nll)
 
-    topk_scores, indexes = torch.topk(-torch.cat(sharded_nll_list), k=len(content_tensor))
+    topk_scores, indexes = torch.topk(-torch.cat(sharded_nll_list), k=len(context_tensor))
 
     return indexes.tolist(), topk_scores.tolist()
