@@ -7,6 +7,7 @@ import pytest
 
 from autorag.nodes.passagecompressor import tree_summarize
 from autorag.nodes.passagecompressor.run import run_passage_compressor_node
+from autorag.utils.util import load_summary_file
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -87,22 +88,22 @@ def test_run_passage_compressor_node(node_line_dir):
                                         'passage_compressor_retrieval_token_f1',
                                         'passage_compressor_retrieval_token_precision'}
     # test summary feature
-    summary_path = os.path.join(node_line_dir, "passage_compressor", "summary.parquet")
+    summary_path = os.path.join(node_line_dir, "passage_compressor", "summary.csv")
     single_result_path = os.path.join(node_line_dir, "passage_compressor",
                                       'tree_summarize=>llm_openai-model_name_babbage-002.parquet')
     assert os.path.exists(single_result_path)
     single_result_df = pd.read_parquet(single_result_path)
     assert os.path.exists(summary_path)
-    summary_df = pd.read_parquet(summary_path)
+    summary_df = load_summary_file(summary_path)
     assert set(summary_df.columns) == {'filename', 'passage_compressor_retrieval_token_f1',
                                        'passage_compressor_retrieval_token_precision',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "tree_summarize=>llm_openai-model_name_babbage-002.parquet"
-    assert summary_df['passage_compressor_retrieval_token_f1'][0] == single_result_df[
-        'retrieval_token_f1'].mean()
-    assert summary_df['passage_compressor_retrieval_token_precision'][0] == single_result_df[
-        'retrieval_token_precision'].mean()
+    assert summary_df['passage_compressor_retrieval_token_f1'][0] ==pytest.approx(single_result_df[
+        'retrieval_token_f1'].mean())
+    assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(single_result_df[
+        'retrieval_token_precision'].mean())
     assert summary_df['module_name'][0] == "tree_summarize"
     assert summary_df['module_params'][0] == {'llm': 'openai', 'model_name': 'babbage-002'}
     assert summary_df['execution_time'][0] > 0

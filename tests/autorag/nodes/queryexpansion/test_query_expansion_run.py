@@ -11,6 +11,7 @@ from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 from autorag.nodes.retrieval import bm25
+from autorag.utils.util import load_summary_file
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -71,9 +72,9 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert os.path.exists(os.path.join(node_line_dir, "query_expansion",
                                        "hyde=>llm_mock.parquet"))
     # test summary feature
-    summary_path = os.path.join(node_line_dir, "query_expansion", "summary.parquet")
+    summary_path = os.path.join(node_line_dir, "query_expansion", "summary.csv")
     assert os.path.exists(summary_path)
-    summary_df = pd.read_parquet(summary_path)
+    summary_df = load_summary_file(summary_path)
     assert set(summary_df.columns) == {'filename', 'query_expansion_retrieval_f1', 'query_expansion_retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
@@ -137,9 +138,9 @@ def test_run_query_expansion_one_module(node_line_dir):
     assert set(best_result.columns) == {
         'qid', 'query', 'generation_gt', 'retrieval_gt', 'queries'  # automatically skip evaluation
     }
-    summary_filepath = os.path.join(node_line_dir, "query_expansion", "summary.parquet")
+    summary_filepath = os.path.join(node_line_dir, "query_expansion", "summary.csv")
     assert os.path.exists(summary_filepath)
-    summary_df = pd.read_parquet(summary_filepath)
+    summary_df = load_summary_file(summary_filepath)
     assert set(summary_df) == {
         'filename', 'module_name', 'module_params', 'execution_time', 'is_best'
     }

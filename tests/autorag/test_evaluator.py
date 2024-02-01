@@ -99,7 +99,7 @@ def test_start_trial(evaluator):
     assert all([expect_column in best_result.columns for expect_column in expect_best_result_columns])
 
     # test node line summary
-    node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.parquet')
+    node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.csv')
     assert os.path.exists(node_line_summary_path)
     node_line_summary_df = load_summary_file(node_line_summary_path,["best_module_params"])
     assert len(node_line_summary_df) == 1
@@ -112,7 +112,7 @@ def test_start_trial(evaluator):
     assert node_line_summary_df['best_execution_time'][0] > 0
 
     # test trial summary
-    trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.parquet')
+    trial_summary_path = os.path.join(os.getcwd(), '0', 'summary.csv')
     assert os.path.exists(trial_summary_path)
     trial_summary_df = load_summary_file(trial_summary_path, ["best_module_params"])
     assert len(trial_summary_df) == 1

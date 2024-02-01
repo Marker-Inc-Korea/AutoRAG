@@ -6,6 +6,7 @@ import pytest
 
 from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.generator.run import run_generator_node
+from autorag.utils.util import load_summary_file
 
 qa_df = pd.DataFrame({
     'qid': ['id-1', 'id-2', 'id-3'],
@@ -55,9 +56,9 @@ def test_run_generator_node(node_line_dir):
                       'bleu', 'meteor', 'rouge'}
     assert set(best_result.columns) == expect_columns
 
-    summary_path = os.path.join(node_line_dir, "generator", "summary.parquet")
+    summary_path = os.path.join(node_line_dir, "generator", "summary.csv")
     assert os.path.exists(summary_path)
-    summary_df = pd.read_parquet(summary_path)
+    summary_df = load_summary_file(summary_path)
     expect_columns = {'filename', 'bleu', 'meteor', 'rouge', 'module_name', 'module_params', 'execution_time',
                       'is_best'}
     assert set(summary_df.columns) == expect_columns

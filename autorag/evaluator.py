@@ -19,7 +19,7 @@ from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.schema import Node
 from autorag.schema.node import module_type_exists, extract_values_from_nodes
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
-from autorag.utils.util import convert_string_to_tuple_in_dict
+from autorag.utils.util import load_summary_file, convert_string_to_tuple_in_dict
 
 logger = logging.getLogger("AutoRAG")
 
@@ -71,7 +71,8 @@ class Evaluator:
             logger.info(f'Running node line {node_line_name}...')
             previous_result = run_node_line(node_line, node_line_dir, previous_result)
 
-            summary_df = pd.read_parquet(os.path.join(node_line_dir, 'summary.parquet'))
+            summary_df = load_summary_file(os.path.join(node_line_dir, 'summary.csv'),
+                                           dict_columns=['best_module_params'])
             summary_df = summary_df.assign(node_line_name=node_line_name)
             summary_df = summary_df[list(trial_summary_df.columns)]
             if len(trial_summary_df) <= 0:
@@ -79,7 +80,7 @@ class Evaluator:
             else:
                 trial_summary_df = pd.concat([trial_summary_df, summary_df], ignore_index=True)
 
-        trial_summary_df.to_parquet(os.path.join(self.project_dir, trial_name, 'summary.parquet'), index=False)
+        trial_summary_df.to_csv(os.path.join(self.project_dir, trial_name, 'summary.csv'), index=False)
 
     def __embed(self, node_lines: Dict[str, List[Node]]):
         if any(list(map(lambda nodes: module_type_exists(nodes, 'bm25'), node_lines.values()))):
