@@ -8,9 +8,11 @@ import chromadb
 import pandas as pd
 
 from autorag import embedding_models
+from autorag.strategy import select_best_average
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 import logging
+
 logger = logging.getLogger("AutoRAG")
 
 
@@ -66,6 +68,8 @@ def retrieval_node(func):
                 raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, *args, **kwargs)
+        elif func.__name__ == "hybrid_rrf":
+            pass
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
 
@@ -119,3 +123,30 @@ def evenly_distribute_passages(ids: List[List[str]], scores: List[List[float]], 
             new_scores.extend(scores[i][:avg_len])
 
     return new_ids, new_scores
+
+
+def get_evaluation_result(node_dir: str, target_modules: Tuple) -> Tuple[Tuple, Tuple]:
+    """
+    Get ids and scores of target_module from summary.parquet and each result parquet file.
+
+    :param node_dir: The directory of the node.
+    :param target_modules: The name of the target modules.
+    :return: A tuple of ids and tuple of scores at each target module.
+    """
+    def select_best_among_module(df: pd.DataFrame, module_name: str):
+        modules_summary = df.loc[lambda row: row['module_name'] == module_name]
+        if len(modules_summary) == 1:
+            return modules_summary.iloc[0, :]
+        metrics = modules_summary.drop(columns=['filename', 'module_name', 'module_params', 'execution_time'])
+        metric_average = metrics.mean(axis=1)
+        metric_average = metric_average.reset_index(drop=True)
+        max_idx = metric_average.idxmax()
+        best_module = modules_summary.iloc[max_idx, :]
+        return best_module
+
+    summary_df = pd.read_parquet(os.path.join(node_dir, "summary.parquet"))
+    best_results = list(map(lambda module_name: select_best_among_module(summary_df, module_name), target_modules))
+    best_results_df = list(map(lambda df: pd.read_parquet(os.path.join(node_dir, df['filename'])), best_results))
+    ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
+    scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
+    return ids, scores
