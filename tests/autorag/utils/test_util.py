@@ -8,7 +8,7 @@ import pytest
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, make_module_file_name, load_summary_file, result_to_dataframe, \
-    make_combinations, explode, replace_value_in_dict, normalize_string
+    make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -196,3 +196,35 @@ def test_normalize_string():
     text = "The, QUICK Brown-Fox; jumps over... the LAZY dog!"
     expected = "quick brownfox jumps over lazy dog"
     assert normalize_string(text) == expected
+
+
+def test_convert_string_to_tuple_in_dict():
+    # Example usage
+    data = {
+        'key1': '(1, \'two\', 3)',
+        'key2': ['(4, 5, \'six\')', {'nested_key': '(7, 8, \'nine\')'},
+                 {'key4': 'value2'}],
+        'key3': {'nested_key2': '(10, \'eleven\', 12)',
+                 'nested_key3': 'value1',
+                 'nested_key4': {'nested_key5': '(\'thirteen\', 14, 15)'}},
+    }
+    result = convert_string_to_tuple_in_dict(data)
+    assert result == {
+        'key1': (1, 'two', 3),
+        'key2': [
+            (4, 5, 'six'),
+            {
+                'nested_key': (7, 8, 'nine')
+            },
+            {
+                'key4': 'value2'
+            }
+        ],
+        'key3': {
+            'nested_key2': (10, 'eleven', 12),
+            'nested_key3': 'value1',
+            'nested_key4': {
+                'nested_key5': ('thirteen', 14, 15)
+            }
+        }
+    }
