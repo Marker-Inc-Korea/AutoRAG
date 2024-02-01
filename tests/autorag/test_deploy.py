@@ -92,7 +92,7 @@ def pseudo_trial_path():
     with tempfile.TemporaryDirectory() as project_dir:
         trial_path = os.path.join(project_dir, '0')
         os.makedirs(trial_path)
-        summary_df.to_parquet(os.path.join(trial_path, 'summary.parquet'), index=False)
+        summary_df.to_csv(os.path.join(trial_path, 'summary.csv'), index=False)
         yield trial_path
 
 

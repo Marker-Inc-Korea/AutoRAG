@@ -10,6 +10,7 @@ from autorag.nodes.passagereranker import monot5
 from autorag.nodes.passagereranker.run import run_passage_reranker_node
 from autorag.nodes.retrieval import bm25
 from autorag.nodes.retrieval.run import run_retrieval_node
+from autorag.utils.util import load_summary_file
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -91,13 +92,13 @@ def test_run_passage_reranker_node(node_line_dir):
                                         'passage_reranker_retrieval_f1',
                                         'passage_reranker_retrieval_recall'}
     # test summary feature
-    summary_path = os.path.join(node_line_dir, "passage_reranker", "summary.parquet")
+    summary_path = os.path.join(node_line_dir, "passage_reranker", "summary.csv")
     assert os.path.exists(summary_path)
     single_result_path = os.path.join(node_line_dir, "passage_reranker",
                                       'monot5=>top_k_4-model_name_castorini_monot5-3b-msmarco-10k.parquet')
     assert os.path.exists(single_result_path)
     single_result_df = pd.read_parquet(single_result_path)
-    summary_df = pd.read_parquet(summary_path)
+    summary_df = load_summary_file(summary_path)
     assert set(summary_df.columns) == {'filename', 'passage_reranker_retrieval_f1',
                                        'passage_reranker_retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}

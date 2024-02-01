@@ -67,12 +67,12 @@ def run_retrieval_node(modules: List[Callable],
     selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
-    # add summary.parquet 'is_best' column
+    # add summary.csv 'is_best' column
     summary_df['is_best'] = summary_df['filename'] == selected_filename
 
     # save the result files
     best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'), index=False)
-    summary_df.to_parquet(os.path.join(save_dir, 'summary.parquet'), index=False)
+    summary_df.to_csv(os.path.join(save_dir, 'summary.csv'), index=False)
     return best_result
 
 
