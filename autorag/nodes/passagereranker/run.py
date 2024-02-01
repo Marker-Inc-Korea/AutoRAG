@@ -75,11 +75,11 @@ def run_passage_reranker_node(modules: List[Callable],
     previous_result = previous_result.drop(columns=['retrieved_contents', 'retrieved_ids', 'retrieve_scores'])
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
-    # add summary.parquet 'is_best' column
+    # add 'is_best' column to summary file
     summary_df['is_best'] = summary_df['filename'] == selected_filename
 
     # save files
-    summary_df.to_parquet(os.path.join(save_dir, "summary.parquet"), index=False)
+    summary_df.to_csv(os.path.join(save_dir, "summary.csv"), index=False)
     best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'),
                            index=False)
     return best_result

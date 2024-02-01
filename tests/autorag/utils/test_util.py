@@ -35,8 +35,8 @@ def module_params():
 @pytest.fixture
 def summary_path():
     with tempfile.TemporaryDirectory() as tmp_dir:
-        summary_path = os.path.join(tmp_dir, "summary.parquet")
-        summary_df.to_parquet(summary_path, index=False)
+        summary_path = os.path.join(tmp_dir, "summary.csv")
+        summary_df.to_csv(summary_path, index=False)
         yield summary_path
 
 
@@ -82,8 +82,8 @@ def test_find_best_result_path():
 
 
 def test_load_summary_file(summary_path):
-    df = load_summary_file(summary_path)
-    assert not df.equals(summary_df)
+    with pytest.raises(ValueError):
+        load_summary_file(summary_path)
     df = load_summary_file(summary_path, ['best_module_params'])
     assert df.equals(summary_df)
 

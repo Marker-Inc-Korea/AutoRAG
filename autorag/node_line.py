@@ -1,3 +1,4 @@
+import ast
 import os
 import pathlib
 from typing import Dict, List, Optional
@@ -5,7 +6,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from autorag.schema import Node
-from autorag.utils.util import find_best_result_path
+from autorag.utils.util import find_best_result_path, load_summary_file
 
 
 def make_node_lines(node_line_dict: Dict) -> List[Node]:
@@ -43,7 +44,7 @@ def run_node_line(nodes: List[Node],
     summary_lst = []
     for node in nodes:
         previous_result = node.run(previous_result, node_line_dir)
-        node_summary_df = pd.read_parquet(os.path.join(node_line_dir, node.node_type, 'summary.parquet'))
+        node_summary_df = load_summary_file(os.path.join(node_line_dir, node.node_type, 'summary.csv'))
         best_node_row = node_summary_df.loc[node_summary_df['is_best']]
         summary_lst.append({
             'node_type': node.node_type,
@@ -52,5 +53,5 @@ def run_node_line(nodes: List[Node],
             'best_module_params': best_node_row['module_params'].values[0],
             'best_execution_time': best_node_row['execution_time'].values[0],
         })
-    pd.DataFrame(summary_lst).to_parquet(os.path.join(node_line_dir, 'summary.parquet'), index=False)
+    pd.DataFrame(summary_lst).to_csv(os.path.join(node_line_dir, 'summary.csv'), index=False)
     return previous_result

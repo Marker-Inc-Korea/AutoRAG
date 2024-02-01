@@ -116,7 +116,7 @@ def run_query_expansion_node(modules: List[Callable],
     summary_df['is_best'] = summary_df['filename'] == best_filename
 
     # save files
-    summary_df.to_parquet(os.path.join(node_dir, "summary.parquet"), index=False)
+    summary_df.to_csv(os.path.join(node_dir, "summary.csv"), index=False)
     best_result.to_parquet(os.path.join(node_dir, f"best_{os.path.splitext(best_filename)[0]}.parquet"), index=False)
 
     return best_result
