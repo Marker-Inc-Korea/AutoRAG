@@ -4,7 +4,8 @@ from typing import List, Tuple
 import torch
 import torch.nn.functional as F
 
-from autorag.nodes.passagereranker.tart import EncT5ForSequenceClassification, EncT5Tokenizer
+from autorag.nodes.passagereranker.tart.modeling_enc_t5 import EncT5ForSequenceClassification
+from autorag.nodes.passagereranker.tart.tokenization_enc_t5 import EncT5Tokenizer
 from autorag.nodes.passagereranker.base import passage_reranker_node
 
 
