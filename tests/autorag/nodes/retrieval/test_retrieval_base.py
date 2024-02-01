@@ -1,13 +1,11 @@
 import os
 import pathlib
-import tempfile
 
 from datetime import datetime
 
 import pandas as pd
-import pytest
 
-from autorag.nodes.retrieval.base import evenly_distribute_passages, get_evaluation_result
+from autorag.nodes.retrieval.base import evenly_distribute_passages
 
 queries = [
     ["What is Visconde structure?", "What are Visconde structure?"],
@@ -69,80 +67,3 @@ def test_evenly_distribute_passages():
     assert len(new_ids) == top_k
     assert len(new_scores) == top_k
     assert new_scores == [0, 1, 2, 3, 0, 1, 2, 0, 1, 2]
-
-
-@pytest.fixture
-def pseudo_node_dir():
-    summary_df = pd.DataFrame({
-        'filename': ['bm25=>top_k_3.parquet', 'vectordb=>top_k_3-embedding_model_openai.parquet',
-                      'vectordb=>top_k_3-embedding_model_huggingface.parquet'],
-        'module_name': ['bm25', 'vectordb', 'vectordb'],
-        'module_params': [
-            {'top_k': 3},
-            {'top_k': 3, 'embedding_model': 'openai'},
-            {'top_k': 3, 'embedding_model': 'huggingface'},
-        ],
-        'execution_time': [1, 1, 1],
-        'retrieval_f1': [0.1, 0.2, 0.3],
-        'retrieval_recall': [0.2, 0.55, 0.5],
-    })
-    bm25_df = pd.DataFrame({
-        'query': ['query-1', 'query-2', 'query-3'],
-        'retrieved_ids': [['id-1', 'id-2', 'id-3'],
-                          ['id-1', 'id-2', 'id-3'],
-                          ['id-1', 'id-2', 'id-3']],
-        'retrieve_scores': [[0.1, 0.2, 0.3],
-                            [0.1, 0.2, 0.3],
-                            [0.1, 0.2, 0.3]],
-        'retrieval_f1': [0.05, 0.1, 0.15],
-        'retrieval_recall': [0.1, 0.275, 0.25],
-    })
-    vector_openai_df = pd.DataFrame({
-        'query': ['query-1', 'query-2', 'query-3'],
-        'retrieved_ids': [['id-4', 'id-5', 'id-6'],
-                          ['id-4', 'id-5', 'id-6'],
-                          ['id-4', 'id-5', 'id-6']],
-        'retrieve_scores': [[0.3, 0.4, 0.5],
-                            [0.3, 0.4, 0.5],
-                            [0.3, 0.4, 0.5]],
-        'retrieval_f1': [0.15, 0.2, 0.25],
-        'retrieval_recall': [0.3, 0.55, 0.5],
-    })
-    vector_huggingface_df = pd.DataFrame({
-        'query': ['query-1', 'query-2', 'query-3'],
-        'retrieved_ids': [['id-7', 'id-8', 'id-9'],
-                          ['id-7', 'id-8', 'id-9'],
-                          ['id-7', 'id-8', 'id-9']],
-        'retrieve_scores': [[0.5, 0.6, 0.7],
-                            [0.5, 0.6, 0.7],
-                            [0.5, 0.6, 0.7]],
-        'retrieval_f1': [0.25, 0.3, 0.35],
-        'retrieval_recall': [0.5, 0.825, 0.75],
-    })
-
-    with tempfile.TemporaryDirectory() as node_dir:
-        summary_df.to_parquet(os.path.join(node_dir, "summary.parquet"))
-        bm25_df.to_parquet(os.path.join(node_dir, "bm25=>top_k_3.parquet"))
-        vector_openai_df.to_parquet(os.path.join(node_dir, "vectordb=>top_k_3-embedding_model_openai.parquet"))
-        vector_huggingface_df.to_parquet(
-            os.path.join(node_dir, "vectordb=>top_k_3-embedding_model_huggingface.parquet"))
-        yield node_dir
-
-
-def test_get_evaluation_result(pseudo_node_dir):
-    ids, scores = get_evaluation_result(pseudo_node_dir, ("bm25", "vectordb"))
-    assert len(ids) == len(scores) == 2
-    assert len(ids[0]) == len(scores[0]) == 3
-    assert len(ids[1]) == len(scores[1]) == 3
-    assert ids[0] == [['id-1', 'id-2', 'id-3'],
-                      ['id-1', 'id-2', 'id-3'],
-                      ['id-1', 'id-2', 'id-3']]
-    assert scores[0] == [[0.1, 0.2, 0.3],
-                         [0.1, 0.2, 0.3],
-                         [0.1, 0.2, 0.3]]
-    assert ids[1] == [['id-7', 'id-8', 'id-9'],
-                      ['id-7', 'id-8', 'id-9'],
-                      ['id-7', 'id-8', 'id-9']]
-    assert scores[1] == [[0.5, 0.6, 0.7],
-                         [0.5, 0.6, 0.7],
-                         [0.5, 0.6, 0.7]]

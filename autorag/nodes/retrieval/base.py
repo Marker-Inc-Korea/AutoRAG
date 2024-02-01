@@ -69,13 +69,7 @@ def retrieval_node(func):
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, **kwargs)
         elif func.__name__ == "hybrid_rrf":
-            target_modules = kwargs.pop("target_modules")
-            assert isinstance(target_modules, tuple), "target_modules must be tuple."
-            assert len(target_modules) > 1, "target_modules must have at least 2 modules."
-            node_dir = kwargs.pop("node_dir")
-            assert node_dir is not None, "You must pass node_dir for using hybrid retrieval."
-            target_ids, target_scores = get_evaluation_result(node_dir, target_modules)
-            ids, scores = func(target_ids, target_scores, **kwargs)
+            ids, scores = func(**kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
 
@@ -129,33 +123,3 @@ def evenly_distribute_passages(ids: List[List[str]], scores: List[List[float]], 
             new_scores.extend(scores[i][:avg_len])
 
     return new_ids, new_scores
-
-
-def get_evaluation_result(node_dir: str, target_modules: Tuple) -> Tuple[Tuple, Tuple]:
-    """
-    Get ids and scores of target_module from summary.parquet and each result parquet file.
-
-    :param node_dir: The directory of the node.
-    :param target_modules: The name of the target modules.
-    :return: A tuple of ids and tuple of scores at each target module.
-    """
-    def select_best_among_module(df: pd.DataFrame, module_name: str):
-        modules_summary = df.loc[lambda row: row['module_name'] == module_name]
-        if len(modules_summary) == 1:
-            return modules_summary.iloc[0, :]
-        elif len(modules_summary) <= 0:
-            raise ValueError(f"module_name {module_name} does not exist in summary.parquet. "
-                             f"You must run {module_name} before running hybrid retrieval.")
-        metrics = modules_summary.drop(columns=['filename', 'module_name', 'module_params', 'execution_time'])
-        metric_average = metrics.mean(axis=1)
-        metric_average = metric_average.reset_index(drop=True)
-        max_idx = metric_average.idxmax()
-        best_module = modules_summary.iloc[max_idx, :]
-        return best_module
-
-    summary_df = pd.read_parquet(os.path.join(node_dir, "summary.parquet"))
-    best_results = list(map(lambda module_name: select_best_among_module(summary_df, module_name), target_modules))
-    best_results_df = list(map(lambda df: pd.read_parquet(os.path.join(node_dir, df['filename'])), best_results))
-    ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
-    scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
-    return ids, scores

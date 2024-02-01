@@ -1,12 +1,13 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict
+from typing import List, Callable, Dict, Tuple
 
 import pandas as pd
 
 from autorag.evaluate import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
 
@@ -61,7 +62,7 @@ def run_retrieval_node(modules: List[Callable],
             **{metric: list(map(lambda result: result[metric].mean(), result)) for metric in
                strategies.get('metrics')},
         })
-        summary_df.to_parquet(os.path.join(save_dir, 'summary.parquet'), index=False)
+        summary_df.to_csv(os.path.join(save_dir, 'summary.csv'), index=False)
         return result, average_times, summary_df
 
     # run retrieval modules except hybrid
@@ -71,15 +72,17 @@ def run_retrieval_node(modules: List[Callable],
     non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = run_and_save(non_hybrid_modules,
                                                                                non_hybrid_module_params)
 
-    def add_hybrid_params(x, node_dir):
-        x['node_dir'] = node_dir
-        return x
-
     if any([module.__name__ in hybrid_module_names for module in modules]):
         hybrid_modules, hybrid_module_params = zip(*filter(lambda x: x[0].__name__ in hybrid_module_names,
                                                            zip(modules, module_params)))
-        hybrid_module_params = list(map(lambda x: add_hybrid_params(x, save_dir), hybrid_module_params))
+        target_modules = list(map(lambda x: x.pop('target_modules'), hybrid_module_params))
+        target_filenames = list(map(lambda x: select_result_for_hybrid(save_dir, x), target_modules))
+        ids_scores = list(map(lambda x: get_ids_and_scores(save_dir, x), target_filenames))
+        hybrid_module_params = list(map(lambda x: {**x[0], **x[1]}, zip(hybrid_module_params, ids_scores)))
+        real_hybrid_times = list(map(lambda filename: get_hybrid_execution_times(save_dir, filename), target_filenames))
         hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params)
+        hybrid_times = real_hybrid_times.copy()
+        hybrid_summary_df['execution_time'] = hybrid_times
     else:
         hybrid_results, hybrid_times, hybrid_summary_df = [], [], pd.DataFrame()
 
@@ -119,3 +122,48 @@ def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics) -> p
         return df['retrieved_contents'].tolist(), df['retrieved_ids'].tolist(), df['retrieve_scores'].tolist()
 
     return evaluate_this_module(result_df)
+
+
+def select_result_for_hybrid(node_dir: str, target_modules: Tuple) -> List[str]:
+    """
+    Get ids and scores of target_module from summary.csv and each result parquet file.
+
+    :param node_dir: The directory of the node.
+    :param target_modules: The name of the target modules.
+    :return: A list of filenames.
+    """
+    def select_best_among_module(df: pd.DataFrame, module_name: str):
+        modules_summary = df.loc[lambda row: row['module_name'] == module_name]
+        if len(modules_summary) == 1:
+            return modules_summary.iloc[0, :]
+        elif len(modules_summary) <= 0:
+            raise ValueError(f"module_name {module_name} does not exist in summary.csv. "
+                             f"You must run {module_name} before running hybrid retrieval.")
+        metrics = modules_summary.drop(columns=['filename', 'module_name', 'module_params', 'execution_time'])
+        metric_average = metrics.mean(axis=1)
+        metric_average = metric_average.reset_index(drop=True)
+        max_idx = metric_average.idxmax()
+        best_module = modules_summary.iloc[max_idx, :]
+        return best_module
+
+    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
+    best_results = list(map(lambda module_name: select_best_among_module(summary_df, module_name), target_modules))
+    best_filenames = list(map(lambda df: df['filename'], best_results))
+    return best_filenames
+
+
+def get_ids_and_scores(node_dir: str, filenames: List[str]) -> Dict:
+    best_results_df = list(map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename)), filenames))
+    ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
+    scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
+    return {
+        'ids': ids,
+        'scores': scores,
+    }
+
+
+def get_hybrid_execution_times(node_dir: str, filenames: List[str]) -> float:
+    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
+    best_results = summary_df[summary_df['filename'].isin(filenames)]
+    execution_times = best_results['execution_time'].sum()
+    return execution_times

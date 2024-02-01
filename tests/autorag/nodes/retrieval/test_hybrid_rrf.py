@@ -6,7 +6,7 @@ import pytest
 
 from autorag.nodes.retrieval.hybrid_rrf import rrf_pure
 from autorag.nodes.retrieval import hybrid_rrf
-from tests.autorag.nodes.retrieval.test_retrieval_base import pseudo_node_dir
+from tests.autorag.nodes.retrieval.test_run_retrieval_node import pseudo_node_dir
 
 
 def test_hybrid_rrf():
