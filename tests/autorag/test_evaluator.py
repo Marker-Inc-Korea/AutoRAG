@@ -136,14 +136,14 @@ def test_evaluator_cli(evaluator):
 
 def test_start_trial_full(evaluator):
     evaluator.start_trial(os.path.join(resource_dir, 'full.yaml'))
-    # 전반적인 path check
+    # full path check
     assert os.path.exists(os.path.join(os.getcwd(), '0'))
     assert os.path.exists(os.path.join(os.getcwd(), 'data'))
     assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
     assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'config.yaml'))
 
-    # node line별 path check
+    # node line path check
     # 1. pre_retrieve_node_line
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion'))
