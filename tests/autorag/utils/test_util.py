@@ -121,6 +121,14 @@ def test_make_combinations():
     assert len(combinations) == len(solution)
     assert all([combination in solution for combination in combinations])
 
+    target_dict = {'key1': 'value1', 'key2': ['value1', 'value2'], 'key3': 'value3', 'key4': ('value4', 'value5')}
+    combinations = make_combinations(target_dict)
+    solution = [
+        {'key1': 'value1', 'key2': 'value1', 'key3': 'value3', 'key4': ('value4', 'value5')},
+        {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'key4': ('value4', 'value5')},
+    ]
+    assert all([combination in solution for combination in combinations])
+
 
 def test_explode():
     index_values = ['a', 'b', 'c']
