@@ -1,4 +1,3 @@
-import ast
 import os
 import pathlib
 from typing import Dict, List, Optional
@@ -6,7 +5,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from autorag.schema import Node
-from autorag.utils.util import find_best_result_path, load_summary_file
+from autorag.utils.util import load_summary_file
 
 
 def make_node_lines(node_line_dict: Dict) -> List[Node]:
