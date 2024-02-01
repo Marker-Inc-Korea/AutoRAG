@@ -10,15 +10,37 @@ from autorag.nodes.passagereranker.base import passage_reranker_node
 @passage_reranker_node
 def upr(queries: List[str], contents_list: List[List[str]],
         scores_list: List[List[float]], ids_list: List[List[str]],
-        top_k: int, shard_size: int = 16, model_name: str = "t5-large",
-        use_bf16: bool = False, prefix_prompt: str = "Passage: ",
+        top_k: int, shard_size: int = 16, use_bf16: bool = False,
+        prefix_prompt: str = "Passage: ",
         suffix_prompt: str = "Please write a question based on this passage.") \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
-    UPRReranker is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
+    Rerank a list of contents based on their relevance to a query using UPR.
+    UPR is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
     The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
+    The default model is t5-large.
+    :param queries: The list of queries to use for reranking
+    :param contents_list: The list of lists of contents to rerank
+    :param scores_list: The list of lists of scores retrieved from the initial ranking
+    :param ids_list: The list of lists of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
+    :param shard_size: The shard size for the model.
+        The larger the shard size, the faster the reranking speed.
+        But it will consume more memory and compute power.
+        Default is 16.
+    :param use_bf16: Whether to use bfloat16 for the model. Default is False.
+    :param prefix_prompt: The prefix prompt for the language model that generates question for reranking.
+        Default is "Passage: ".
+        The prefix prompt serves as the initial context or instruction for the language model.
+        It sets the stage for what is expected in the output
+    :param suffix_prompt: The suffix prompt for the language model that generates question for reranking.
+        Default is "Please write a question based on this passage.".
+        The suffix prompt provides a cue or a closing instruction to the language model,
+            signaling how to conclude the generated text or what format to follow at the end.
+    :return: tuple of lists containing the reranked contents, ids, and scores
     """
     # Load the tokenizer and model
+    model_name = "t5-large"
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name,
                                                        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
@@ -44,6 +66,18 @@ async def upr_pure(query: str, contents: List[str], scores: List[float],
                    ids: List[str], top_k: int, model, device, tokenizer,
                    shard_size: int, prefix_prompt: str, suffix_prompt: str) \
         -> Tuple[List[str], List[str], List[float]]:
+    """
+    Rerank a list of contents based on their relevance to a query using UPR.
+    :param query: The query to use for reranking
+    :param contents: The list of contents to rerank
+    :param scores: The list of scores retrieved from the initial ranking
+    :param ids: The list of ids retrieved from the initial ranking
+    :param model: The UPR model to use for reranking
+    :param device: The device to run the model on (GPU if available, otherwise CPU)
+    :param tokenizer: The tokenizer to use for the model
+    :param shard_size: The shard size for the model.
+    :return: tuple of lists containing the reranked contents, ids, and scores
+    """
     indexes, scores = calculate_likelihood(query, contents, prefix_prompt, suffix_prompt,
                                            tokenizer, device, model, shard_size)
     reranked_contents, reranked_ids = zip(*[(contents[idx], ids[idx]) for idx in indexes])

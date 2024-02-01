@@ -36,6 +36,14 @@ autorag.nodes.passagereranker.run module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.upr module
+----------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.upr
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
