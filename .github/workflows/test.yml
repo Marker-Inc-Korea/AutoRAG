@@ -1,0 +1,32 @@
+name: Unit Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Upgrade pip
+      run: |
+        python -m pip install --upgrade pip
+    - name: Install gcc
+      run: |
+        sudo apt-get install gcc
+    - name: Install AutoRAG
+      run: |
+        pip install -e .
+    - name: Install dependencies
+      run: |
+        pip install pytest
+    - name: Run tests
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        pytest tests/

@@ -1,0 +1,22 @@
+numpy
+pandas
+tqdm
+tiktoken  # for counting token
+openai>=1.0.0
+llama-index>=0.9.32
+rank_bm25  # for bm25 retrieval
+transformers
+swifter  # for parallel pandas apply
+pyyaml  # for yaml file
+pyarrow  # for pandas with parquet
+fastparquet  # for pandas with parquet
+sacrebleu  # for bleu score
+evaluate  # for meteor and other scores
+rouge_score  # for rouge score
+rich  # for pretty logging
+chromadb==0.4.9 # for vectordb retrieval
+click  # for cli
+fastapi  # for api server
+uvicorn  # for api server
+torch  # for monot5 reranker
+sentencepiece  # for monot5 reranker

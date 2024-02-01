@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "AutoRAG"
+authors = [
+    {name = "Marker-Inc", email = "vkehfdl1@gmail.com"}
+]
+description = 'Automatically Evaluate RAG pipelines with your own data. Find optimal structure for new RAG product.'
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ['RAG', 'AutoRAG', 'autorag', 'rag-evaluation', 'evaluation', 'rag-auto', 'AutoML', 'AutoML-RAG']
+license = {file = "LICENSE"}
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    'Programming Language :: Python :: 3.8',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+urls = {Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG"}
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.dynamic]
+version = {file = ["VERSION"]}
+dependencies = {file = ["requirements.txt"]}
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autorag*"]
+exclude = ["tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"] # default is prepend
+
+[project.entry-points.console_scripts]
+autorag = "autorag.evaluator:cli"
