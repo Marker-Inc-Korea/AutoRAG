@@ -71,14 +71,27 @@ def test_hybrid_rrf_node(pseudo_project_dir, pseudo_node_dir):
         ]
     })
     modules = {
+        'ids': ([['id-1', 'id-2', 'id-3'],
+                 ['id-1', 'id-2', 'id-3'],
+                 ['id-1', 'id-2', 'id-3']],
+                [['id-7', 'id-8', 'id-9'],
+                ['id-7', 'id-8', 'id-9'],
+                ['id-7', 'id-8', 'id-9']]),
+        'scores': ([
+            [0.1, 0.2, 0.3],
+            [0.1, 0.2, 0.3],
+            [0.1, 0.2, 0.3]
+        ],[
+            [0.5, 0.6, 0.7],
+            [0.5, 0.6, 0.7],
+            [0.5, 0.6, 0.7]
+        ]),
         'top_k': 3,
-        'target_modules': ('bm25', 'vectordb'),
         'rrf_k': 1,
     }
-    result_df = hybrid_rrf(project_dir=pseudo_project_dir, previous_result=previous_result, node_dir=pseudo_node_dir,
-                           **modules)
+    result_df = hybrid_rrf(project_dir=pseudo_project_dir, previous_result=previous_result, **modules)
     assert len(result_df) == 3
     assert isinstance(result_df, pd.DataFrame)
     assert set(result_df.columns) == {'retrieved_contents', 'retrieved_ids', 'retrieve_scores'}
     assert set(result_df['retrieved_ids'].tolist()[0]) == {'id-9', 'id-3', 'id-2'}
-    assert result_df['retrieve_scores'].tolist()[0] == pytest.approx([0.5, 0.5, 1/3])
+    assert result_df['retrieve_scores'].tolist()[0] == pytest.approx([0.5, 0.5, 1 / 3])

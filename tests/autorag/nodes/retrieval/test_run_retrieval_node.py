@@ -9,7 +9,7 @@ import pytest
 from llama_index import OpenAIEmbedding
 
 from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf
-from autorag.nodes.retrieval.run import run_retrieval_node, select_result_for_hybrid
+from autorag.nodes.retrieval.run import run_retrieval_node, select_result_for_hybrid, get_ids_and_scores
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
 
@@ -145,7 +145,10 @@ def pseudo_node_dir():
 
 
 def test_select_result_for_hybrid(pseudo_node_dir):
-    ids, scores = select_result_for_hybrid(pseudo_node_dir, ("bm25", "vectordb"))
+    filenames = select_result_for_hybrid(pseudo_node_dir, ("bm25", "vectordb"))
+    dict_id_scores = get_ids_and_scores(pseudo_node_dir, filenames)
+    ids = dict_id_scores['ids']
+    scores = dict_id_scores['scores']
     assert len(ids) == len(scores) == 2
     assert len(ids[0]) == len(scores[0]) == 3
     assert len(ids[1]) == len(scores[1]) == 3
