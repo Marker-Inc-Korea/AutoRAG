@@ -7,7 +7,7 @@ def hybrid_cc(
         ids: Tuple,
         scores: Tuple,
         top_k: int,
-        weights: Tuple[float] = (0.5, 0.5)) -> Tuple[List[List[str]], List[List[float]]]:
+        weights: Tuple = (0.5, 0.5)) -> Tuple[List[List[str]], List[List[float]]]:
     """
     Hybrid CC function.
     CC (convex combination) is a method to fuse multiple retrieval results.
@@ -39,6 +39,15 @@ def hybrid_cc(
 
     id_df = pd.DataFrame({f'id_{i}': id_list for i, id_list in enumerate(ids)})
     score_df = pd.DataFrame({f'score_{i}': score_list for i, score_list in enumerate(scores)})
+    df = pd.concat([id_df, score_df], axis=1)
+
+    def cc_pure_apply(row):
+        ids_tuple = tuple(row[[f'id_{i}' for i in range(len(ids))]].values)
+        scores_tuple = tuple(row[[f'score_{i}' for i in range(len(scores))]].values)
+        return pd.Series(cc_pure(ids_tuple, scores_tuple, weights, top_k))
+
+    df[['cc_id', 'cc_score']] = df.apply(cc_pure_apply, axis=1)
+    return df['cc_id'].tolist(), df['cc_score'].tolist()
 
 
 def cc_pure(ids: Tuple, scores: Tuple, weights: Tuple, top_k: int) -> Tuple[
