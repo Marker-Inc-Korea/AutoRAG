@@ -8,9 +8,11 @@ import chromadb
 import pandas as pd
 
 from autorag import embedding_models
+from autorag.strategy import select_best_average
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 import logging
+
 logger = logging.getLogger("AutoRAG")
 
 
@@ -29,7 +31,7 @@ def retrieval_node(func):
     def wrapper(
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
-            *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+            **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
         validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
@@ -56,7 +58,7 @@ def retrieval_node(func):
         # run retrieval function
         if func.__name__ == "bm25":
             bm25_corpus = load_bm25_corpus(bm25_path)
-            ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, *args, **kwargs)
+            ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, **kwargs)
         elif func.__name__ == "vectordb":
             chroma_collection = load_chroma_collection(db_path=chroma_path, collection_name=embedding_model_str)
             if embedding_model_str in embedding_models:
@@ -65,7 +67,9 @@ def retrieval_node(func):
                 logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
                 raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
-                               embedding_model=embedding_model, *args, **kwargs)
+                               embedding_model=embedding_model, **kwargs)
+        elif func.__name__ == "hybrid_rrf":
+            ids, scores = func(**kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
 

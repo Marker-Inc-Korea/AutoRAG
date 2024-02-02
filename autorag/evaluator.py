@@ -11,7 +11,6 @@ import click
 import pandas as pd
 import yaml
 
-
 from autorag.deploy import Runner
 from autorag import embedding_models
 from autorag.node_line import run_node_line
@@ -20,7 +19,7 @@ from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.schema import Node
 from autorag.schema.node import module_type_exists, extract_values_from_nodes
 from autorag.utils import cast_qa_dataset, cast_corpus_dataset
-from autorag.utils.util import load_summary_file
+from autorag.utils.util import load_summary_file, convert_string_to_tuple_in_dict
 
 logger = logging.getLogger("AutoRAG")
 
@@ -110,7 +109,8 @@ class Evaluator:
                 # ingest VectorDB corpus
                 logger.info(f'Embedding VectorDB corpus with {embedding_model_str}...')
                 # Get the collection with GET or CREATE, as it may already exist
-                collection = vectordb.get_or_create_collection(name=embedding_model_str, metadata={"hnsw:space": "cosine"})
+                collection = vectordb.get_or_create_collection(name=embedding_model_str,
+                                                               metadata={"hnsw:space": "cosine"})
                 # get embedding_model
                 if embedding_model_str in embedding_models:
                     embedding_model = embedding_models[embedding_model_str]
@@ -156,6 +156,7 @@ class Evaluator:
             except yaml.YAMLError as exc:
                 raise ValueError(f"YAML file {yaml_path} could not be loaded.") from exc
 
+        yaml_dict = convert_string_to_tuple_in_dict(yaml_dict)
         node_lines = yaml_dict['node_lines']
         node_line_dict = {}
         for node_line in node_lines:

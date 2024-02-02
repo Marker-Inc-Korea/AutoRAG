@@ -25,6 +25,7 @@ def get_support_modules(module_name: str) -> Callable:
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),
         'upr': ('autorag.nodes.passagereranker', 'upr'),
+        'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
     }
     return dynamically_find_function(module_name, support_modules)
 

@@ -6,6 +6,7 @@ from copy import deepcopy
 import re
 import string
 from typing import List, Callable, Dict, Optional, Any, Collection
+import ast
 
 import pandas as pd
 import swifter
@@ -98,7 +99,22 @@ def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     dict_with_lists = dict(map(lambda x: (x[0], x[1] if isinstance(x[1], list) else [x[1]]),
                                target_dict.items()))
-    dict_with_lists = dict(map(lambda x: (x[0], list(set(x[1]))), dict_with_lists.items()))
+
+    def delete_duplicate(x):
+        def is_hashable(obj):
+            try:
+                hash(obj)
+                return True
+            except TypeError:
+                return False
+
+        if any([not is_hashable(elem) for elem in x]):
+            # TODO: add duplication check for unhashable objects
+            return x
+        else:
+            return list(set(x))
+
+    dict_with_lists = dict(map(lambda x: (x[0], delete_duplicate(x[1])), dict_with_lists.items()))
     combination = list(itertools.product(*dict_with_lists.values()))
     combination_dicts = [dict(zip(dict_with_lists.keys(), combo)) for combo in combination]
     return combination_dicts
@@ -161,3 +177,25 @@ def normalize_string(s: str) -> str:
         return text.lower()
 
     return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+
+def convert_string_to_tuple_in_dict(d):
+    """Recursively converts strings that start with '(' and end with ')' to tuples in a dictionary."""
+    for key, value in d.items():
+        # If the value is a dictionary, recurse
+        if isinstance(value, dict):
+            convert_string_to_tuple_in_dict(value)
+        # If the value is a list, iterate through its elements
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                # If an item in the list is a dictionary, recurse
+                if isinstance(item, dict):
+                    convert_string_to_tuple_in_dict(item)
+                # If an item in the list is a string matching the criteria, convert it to a tuple
+                elif isinstance(item, str) and item.startswith('(') and item.endswith(')'):
+                    value[i] = ast.literal_eval(item)
+        # If the value is a string matching the criteria, convert it to a tuple
+        elif isinstance(value, str) and value.startswith('(') and value.endswith(')'):
+            d[key] = ast.literal_eval(value)
+
+    return d
