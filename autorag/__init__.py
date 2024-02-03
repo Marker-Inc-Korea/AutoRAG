@@ -22,7 +22,7 @@ embedding_models = {
     'openai_ada': OpenAIEmbedding(model=OpenAIEmbeddingModelType.ADA),
     'openai_davinci': OpenAIEmbedding(model=OpenAIEmbeddingModelType.DAVINCI),
     'openai_curie': OpenAIEmbedding(model=OpenAIEmbeddingModelType.CURIE),
-    # you can change your own model in this way.
+    # you can use your own model in this way.
     'huggingface_baai_bge_small': HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5"),
     'huggingface_cointegrated_rubert_tiny2': HuggingFaceEmbedding(model_name="cointegrated/rubert-tiny2"),
 }
