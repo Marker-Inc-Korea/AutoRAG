@@ -8,6 +8,7 @@ import chromadb
 import pandas as pd
 
 from autorag import embedding_models
+from autorag.support import get_support_modules
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 import logging
@@ -68,7 +69,20 @@ def retrieval_node(func):
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, **kwargs)
         elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
-            ids, scores = func(**kwargs)
+            if 'ids' in kwargs and 'scores' in kwargs:
+                ids, scores = func(**kwargs)
+            else:
+                if not ('target_modules' in kwargs and 'target_module_params' in kwargs):
+                    raise ValueError(
+                        f"If there are no ids and scores specified, target_modules and target_module_params must be specified for using {func.__name__}.")
+                target_modules = kwargs.pop('target_modules')
+                target_module_params = kwargs.pop('target_module_params')
+                result_dfs = list(map(lambda x: get_support_modules(x[0])(**x[1], project_dir=project_dir,
+                                                                          previous_result=previous_result),
+                                      zip(target_modules, target_module_params)))
+                ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), result_dfs))
+                scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), result_dfs))
+                ids, scores = func(ids=ids, scores=scores, **kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
 
@@ -122,3 +136,8 @@ def evenly_distribute_passages(ids: List[List[str]], scores: List[List[float]], 
             new_scores.extend(scores[i][:avg_len])
 
     return new_ids, new_scores
+
+
+def run_retrieval_modules(project_dir: str, previous_result: pd.DataFrame,
+                          module_name: str, module_params: Dict) -> pd.DataFrame:
+    return
