@@ -20,6 +20,22 @@ autorag.nodes.retrieval.bm25 module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.retrieval.hybrid\_cc module
+-----------------------------------------
+
+.. automodule:: autorag.nodes.retrieval.hybrid_cc
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+autorag.nodes.retrieval.hybrid\_rrf module
+------------------------------------------
+
+.. automodule:: autorag.nodes.retrieval.hybrid_rrf
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.retrieval.run module
 ----------------------------------
 
