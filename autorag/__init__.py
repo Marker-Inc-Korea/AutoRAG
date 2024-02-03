@@ -5,7 +5,8 @@ import sys
 
 from rich.logging import RichHandler
 
-from llama_index.embeddings import OpenAIEmbedding, HuggingFaceEmbedding, InstructorEmbedding, OptimumEmbedding
+from llama_index.embeddings import OpenAIEmbedding, HuggingFaceEmbedding
+from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.llms import OpenAI, Anthropic, AzureOpenAI, HuggingFaceLLM, LangChainLLM, GradientBaseModelLLM, \
     GradientModelAdapterLLM, LiteLLM, LlamaCPP, OpenAILike, OpenLLM, PaLM, PredibaseLLM, Replicate, Xinference
 
@@ -16,12 +17,14 @@ with open(version_path, 'r') as f:
     __version__ = f.read().strip()
 
 embedding_models = {
-    'openai': OpenAIEmbedding(),
-    # You can write your own model in this way.
+    'openai': OpenAIEmbedding(),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
+    'openai_babbage': OpenAIEmbedding(model=OpenAIEmbeddingModelType.BABBAGE),
+    'openai_ada': OpenAIEmbedding(model=OpenAIEmbeddingModelType.ADA),
+    'openai_davinci': OpenAIEmbedding(model=OpenAIEmbeddingModelType.DAVINCI),
+    'openai_curie': OpenAIEmbedding(model=OpenAIEmbeddingModelType.CURIE),
+    # you can change your own model in this way.
     'huggingface_baai_bge_small': HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5"),
     'huggingface_cointegrated_rubert_tiny2': HuggingFaceEmbedding(model_name="cointegrated/rubert-tiny2"),
-    'instructor_hkunlp': InstructorEmbedding(model_name="hkunlp/instructor-base"),
-    'optimum_baai_bge_small': OptimumEmbedding.create_and_save_optimum_model("BAAI/bge-small-en-v1.5", "./bge_onnx"),
 }
 
 generator_models = {
