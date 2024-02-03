@@ -1,0 +1,4 @@
+node_type,best_module_filename,best_module_name,best_module_params,best_execution_time
+retrieval,0.parquet,bm25,{'top_k': 10},0.0915938854217529
+passage_reranker,0.parquet,tart,{'top_k': 5},5.316191506385803
+passage_compressor,0.parquet,tree_summarize,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'}",0.4078188896179199
