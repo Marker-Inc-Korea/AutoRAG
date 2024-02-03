@@ -140,7 +140,7 @@ def test_evaluator_cli(evaluator):
 
 def start_trial_full(evaluator):
     """
-    Function names doesn't start with 'test' because full test takes too long time.
+    Function name doesn't start with 'test' because full test takes too long time.
     """
     evaluator.start_trial(os.path.join(resource_dir, 'full.yaml'))
     # full path check
@@ -158,10 +158,11 @@ def start_trial_full(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion', "1.parquet"))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion', '2.parquet'))
     # 2. retrieve_node_line
-    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
-    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
-    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
-    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', '1.parquet'))
+    retrieval_node_line_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line')
+    assert os.path.exists(retrieval_node_line_path)
+    retrieval_node_path = os.path.join(retrieval_node_line_path, 'retrieval')
+    assert os.path.exists(retrieval_node_path)
+    assert all([os.path.exists(os.path.join(retrieval_node_path, f'{i}.parquet')) for i in range(8)])
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker', '0.parquet'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'passage_reranker', '1.parquet'))

@@ -48,6 +48,14 @@ def test_fetch_contents():
     assert len(find_contents) == len(search_rows)
     assert list(itertools.chain.from_iterable(find_contents)) == search_rows['contents'].tolist()
 
+    corpus_data = pd.DataFrame({
+        'doc_id': ['doc1', 'doc2', 'doc3'],
+        'contents': ['apple', 'banana', 'cherry'],
+    })
+    find_contents = fetch_contents(corpus_data, [['doc3', 'doc1'], ['doc2']])
+    assert find_contents[0] == ['cherry', 'apple']
+    assert find_contents[1] == ['banana']
+
 
 def test_find_best_result_path():
     # Create a temporary directory
