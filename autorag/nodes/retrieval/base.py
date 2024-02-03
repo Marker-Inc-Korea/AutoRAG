@@ -8,7 +8,6 @@ import chromadb
 import pandas as pd
 
 from autorag import embedding_models
-from autorag.strategy import select_best_average
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 import logging
@@ -42,7 +41,7 @@ def retrieval_node(func):
             assert bm25_path is not None, "bm25_path must be specified for using bm25 retrieval."
             assert os.path.exists(bm25_path), f"bm25_path {bm25_path} does not exist. Please ingest first."
         elif func.__name__ == "vectordb":
-            # check if chroma_path and file exists
+            # check if chroma_path and file exist
             chroma_path = os.path.join(resources_dir, 'chroma')
             embedding_model_str = kwargs.pop("embedding_model")
             assert chroma_path is not None, "chroma_path must be specified for using vectordb retrieval."
@@ -68,7 +67,7 @@ def retrieval_node(func):
                 raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, **kwargs)
-        elif func.__name__ == "hybrid_rrf":
+        elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
             ids, scores = func(**kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
