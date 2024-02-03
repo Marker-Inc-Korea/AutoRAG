@@ -2,7 +2,10 @@ from typing import Tuple, List
 
 import pandas as pd
 
+from autorag.nodes.retrieval import retrieval_node
 
+
+@retrieval_node
 def hybrid_cc(
         ids: Tuple,
         scores: Tuple,

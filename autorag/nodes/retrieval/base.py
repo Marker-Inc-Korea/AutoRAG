@@ -68,7 +68,7 @@ def retrieval_node(func):
                 raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, **kwargs)
-        elif func.__name__ == "hybrid_rrf":
+        elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
             ids, scores = func(**kwargs)
         else:
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
