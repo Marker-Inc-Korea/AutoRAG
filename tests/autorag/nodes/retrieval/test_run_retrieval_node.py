@@ -87,6 +87,16 @@ def test_run_retrieval_node(node_line_dir):
     assert summary_df['filename'].nunique() == len(summary_df)
     assert len(summary_df[summary_df['is_best'] == True]) == 1
 
+    # test summary_df hybrid retrieval convert well
+    assert all(summary_df['module_params'].apply(lambda x: 'ids' not in x))
+    assert all(summary_df['module_params'].apply(lambda x: 'scores' not in x))
+    hybrid_summary_df = summary_df[summary_df['module_name'].str.contains('hybrid')]
+    assert all(hybrid_summary_df['module_params'].apply(lambda x: 'target_modules' in x))
+    assert all(hybrid_summary_df['module_params'].apply(lambda x: 'target_module_params' in x))
+    assert all(hybrid_summary_df['module_params'].apply(lambda x: x['target_modules'] == ('bm25', 'vectordb')))
+    assert all(hybrid_summary_df['module_params'].apply(
+        lambda x: x['target_module_params'] == [{'top_k': 4}, {'top_k': 4, 'embedding_model': 'openai'}]))
+
     # test the best file is saved properly
     best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]
     best_path = os.path.join(node_line_dir, "retrieval", f'best_{best_filename}')
