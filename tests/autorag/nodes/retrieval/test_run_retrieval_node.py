@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from llama_index import OpenAIEmbedding
 
-from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf
+from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf, hybrid_cc
 from autorag.nodes.retrieval.run import run_retrieval_node, select_result_for_hybrid, get_ids_and_scores
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
@@ -42,11 +42,13 @@ def node_line_dir():
 
 
 def test_run_retrieval_node(node_line_dir):
-    modules = [bm25, vectordb, hybrid_rrf]
+    modules = [bm25, vectordb, hybrid_rrf, hybrid_cc, hybrid_cc]
     module_params = [
         {'top_k': 4},
         {'top_k': 4, 'embedding_model': 'openai'},
-        {'top_k': 4, 'rrf_k': 2, 'target_modules': ('bm25', 'vectordb')}
+        {'top_k': 4, 'rrf_k': 2, 'target_modules': ('bm25', 'vectordb')},
+        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7)},
+        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.5, 0.5)},
     ]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
@@ -69,7 +71,7 @@ def test_run_retrieval_node(node_line_dir):
     summary_df = load_summary_file(summary_path)
     assert set(summary_df.columns) == {'filename', 'retrieval_f1', 'retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
-    assert len(summary_df) == 3
+    assert len(summary_df) == 5
     assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['retrieval_f1'][0] == bm25_top_k_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][0] == bm25_top_k_df['retrieval_recall'].mean()
@@ -79,6 +81,11 @@ def test_run_retrieval_node(node_line_dir):
     # assert average times
     assert summary_df['execution_time'][0] + summary_df['execution_time'][1] == pytest.approx(
         summary_df['execution_time'][2])
+    assert summary_df['execution_time'][0] + summary_df['execution_time'][1] == pytest.approx(
+        summary_df['execution_time'][3])
+
+    assert summary_df['filename'].nunique() == len(summary_df)
+    assert len(summary_df[summary_df['is_best'] == True]) == 1
 
     # test the best file is saved properly
     best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]

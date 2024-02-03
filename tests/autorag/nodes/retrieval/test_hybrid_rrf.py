@@ -95,3 +95,4 @@ def test_hybrid_rrf_node(pseudo_project_dir, pseudo_node_dir):
     assert set(result_df.columns) == {'retrieved_contents', 'retrieved_ids', 'retrieve_scores'}
     assert set(result_df['retrieved_ids'].tolist()[0]) == {'id-9', 'id-3', 'id-2'}
     assert result_df['retrieve_scores'].tolist()[0] == pytest.approx([0.5, 0.5, 1 / 3])
+    assert set(result_df['retrieved_contents'].tolist()[0]) == {'doc-9', 'doc-3', 'doc-2'}

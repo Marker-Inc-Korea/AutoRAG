@@ -38,7 +38,7 @@ def run_retrieval_node(modules: List[Callable],
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    def run_and_save(input_modules, input_module_params):
+    def run_and_save(input_modules, input_module_params, filename_start: int):
         result, execution_times = zip(*map(lambda task: measure_speed(
             task[0], project_dir=project_dir, previous_result=previous_result, **task[1]),
                                            zip(input_modules, input_module_params)))
@@ -50,7 +50,8 @@ def run_retrieval_node(modules: List[Callable],
         result = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics')), result))
 
         # save results to folder
-        filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'), range(len(input_modules))))
+        filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'),
+                             range(filename_start, filename_start + len(input_modules))))
         list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(result, filepaths)))  # execute save to parquet
         filename_list = list(map(lambda x: os.path.basename(x), filepaths))
 
@@ -66,11 +67,13 @@ def run_retrieval_node(modules: List[Callable],
         return result, average_times, summary_df
 
     # run retrieval modules except hybrid
-    hybrid_module_names = ['hybrid_rrf']
+    hybrid_module_names = ['hybrid_rrf', 'hybrid_cc']
     non_hybrid_modules, non_hybrid_module_params = zip(*filter(lambda x: x[0].__name__ not in hybrid_module_names,
                                                                zip(modules, module_params)))
+    filename_first = 0
     non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = run_and_save(non_hybrid_modules,
-                                                                               non_hybrid_module_params)
+                                                                               non_hybrid_module_params, filename_first)
+    filename_first += len(non_hybrid_modules)
 
     if any([module.__name__ in hybrid_module_names for module in modules]):
         hybrid_modules, hybrid_module_params = zip(*filter(lambda x: x[0].__name__ in hybrid_module_names,
@@ -80,7 +83,8 @@ def run_retrieval_node(modules: List[Callable],
         ids_scores = list(map(lambda x: get_ids_and_scores(save_dir, x), target_filenames))
         hybrid_module_params = list(map(lambda x: {**x[0], **x[1]}, zip(hybrid_module_params, ids_scores)))
         real_hybrid_times = list(map(lambda filename: get_hybrid_execution_times(save_dir, filename), target_filenames))
-        hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params)
+        hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params, filename_first)
+        filename_first += len(hybrid_modules)
         hybrid_times = real_hybrid_times.copy()
         hybrid_summary_df['execution_time'] = hybrid_times
     else:
@@ -101,7 +105,8 @@ def run_retrieval_node(modules: List[Callable],
     summary['is_best'] = summary['filename'] == selected_filename
 
     # save the result files
-    best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'), index=False)
+    best_result.to_parquet(os.path.join(save_dir, f'best_{os.path.splitext(selected_filename)[0]}.parquet'),
+                           index=False)
     summary.to_csv(os.path.join(save_dir, 'summary.csv'), index=False)
     return best_result
 
@@ -132,6 +137,7 @@ def select_result_for_hybrid(node_dir: str, target_modules: Tuple) -> List[str]:
     :param target_modules: The name of the target modules.
     :return: A list of filenames.
     """
+
     def select_best_among_module(df: pd.DataFrame, module_name: str):
         modules_summary = df.loc[lambda row: row['module_name'] == module_name]
         if len(modules_summary) == 1:
