@@ -81,12 +81,15 @@ def run_retrieval_node(modules: List[Callable],
         target_modules = list(map(lambda x: x.pop('target_modules'), hybrid_module_params))
         target_filenames = list(map(lambda x: select_result_for_hybrid(save_dir, x), target_modules))
         ids_scores = list(map(lambda x: get_ids_and_scores(save_dir, x), target_filenames))
+        target_module_params = list(map(lambda x: get_module_params(save_dir, x), target_filenames))
         hybrid_module_params = list(map(lambda x: {**x[0], **x[1]}, zip(hybrid_module_params, ids_scores)))
         real_hybrid_times = list(map(lambda filename: get_hybrid_execution_times(save_dir, filename), target_filenames))
-        hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params, filename_first)
+        hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
+                                                                       filename_first)
         filename_first += len(hybrid_modules)
         hybrid_times = real_hybrid_times.copy()
         hybrid_summary_df['execution_time'] = hybrid_times
+        hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
     else:
         hybrid_results, hybrid_times, hybrid_summary_df = [], [], pd.DataFrame()
 
@@ -156,6 +159,26 @@ def select_result_for_hybrid(node_dir: str, target_modules: Tuple) -> List[str]:
     best_results = list(map(lambda module_name: select_best_among_module(summary_df, module_name), target_modules))
     best_filenames = list(map(lambda df: df['filename'], best_results))
     return best_filenames
+
+
+def get_module_params(node_dir: str, filenames: List[str]) -> List[Dict]:
+    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
+    best_results = summary_df[summary_df['filename'].isin(filenames)]
+    module_params = best_results['module_params'].tolist()
+    return module_params
+
+
+def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_module_params) -> pd.DataFrame:
+    def delete_ids_scores(x):
+        del x['ids']
+        del x['scores']
+        return x
+
+    summary_df['module_params'] = summary_df['module_params'].apply(delete_ids_scores)
+    summary_df['new_params'] = [{'target_modules': x, 'target_module_params': y} for x, y in zip(target_modules, target_module_params)]
+    summary_df['module_params'] = summary_df.apply(lambda row: {**row['module_params'], **row['new_params']}, axis=1)
+    summary_df = summary_df.drop(columns=['new_params'])
+    return summary_df
 
 
 def get_ids_and_scores(node_dir: str, filenames: List[str]) -> Dict:
