@@ -1,7 +1,7 @@
 import logging
 import os
 import uuid
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 import pandas as pd
 import uvicorn
@@ -15,17 +15,36 @@ from autorag.utils.util import load_summary_file
 logger = logging.getLogger("AutoRAG")
 
 
-def summary_df_to_yaml(summary_df: pd.DataFrame) -> Dict:
+def extract_node_line_names(config_dict: Dict) -> List[str]:
+    """
+    Extract node line names with the given config dictionary order.
+
+    :param config_dict: The yaml configuration dict for the pipeline.
+        You can load this to access trail_folder/config.yaml.
+    :return: The list of node line names.
+        It is the order of the node line names in the pipeline.
+    """
+    return [node_line['node_line_name'] for node_line in config_dict['node_lines']]
+
+
+def summary_df_to_yaml(summary_df: pd.DataFrame, config_dict: Dict) -> Dict:
     """
     Convert trial summary dataframe to config yaml file.
 
-    :param summary_df:
+    :param summary_df: The trial summary dataframe of the evaluated trial.
+    :param config_dict: The yaml configuration dict for the pipeline.
+        You can load this to access trail_folder/config.yaml.
     :return: Dictionary of config yaml file.
         You can save this dictionary to yaml file.
     """
+
     # summary_df columns : 'node_line_name', 'node_type', 'best_module_filename',
     #                      'best_module_name', 'best_module_params', 'best_execution_time'
-    grouped = summary_df.groupby('node_line_name')
+    node_line_names = extract_node_line_names(config_dict)
+    summary_df['categorical_node_line_name'] = pd.Categorical(summary_df['node_line_name'], categories=node_line_names,
+                                                              ordered=True)
+    summary_df = summary_df.sort_values(by='categorical_node_line_name')
+    grouped = summary_df.groupby('categorical_node_line_name')
 
     node_lines = [
         {
@@ -62,7 +81,10 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
     if not os.path.exists(summary_path):
         raise ValueError(f"summary.csv does not exist in {trial_path}.")
     trial_summary_df = load_summary_file(summary_path, dict_columns=['best_module_params'])
-    yaml_dict = summary_df_to_yaml(trial_summary_df)
+    config_yaml_path = os.path.join(trial_path, 'config.yaml')
+    with open(config_yaml_path, 'r') as f:
+        config_dict = yaml.safe_load(f)
+    yaml_dict = summary_df_to_yaml(trial_summary_df, config_dict)
     if output_path is not None:
         with open(output_path, 'w') as f:
             yaml.dump(yaml_dict, f)
@@ -70,9 +92,9 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
 
 
 class Runner:
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, project_dir: Optional[str] = None):
         self.config = config
-        self.project_dir = os.getcwd()
+        self.project_dir = os.getcwd() if project_dir is None else project_dir
         self.app = FastAPI()
         self.__add_api_route()
 
@@ -98,14 +120,15 @@ class Runner:
         """
         Load Runner from evaluated trial folder.
         Must already be evaluated using Evaluator class.
+        It sets the project_dir as the parent directory of the trial folder.
 
         :param trial_path: The path of the trial folder.
         :return: Initialized Runner.
         """
         config = extract_best_config(trial_path)
-        return cls(config)
+        return cls(config, project_dir=os.path.dirname(trial_path))
 
-    def run(self, query: str, result_column: str = "answer"):
+    def run(self, query: str, result_column: str = "generated_texts"):
         """
         Run the pipeline with query.
         The loaded pipeline must start with a single query,
@@ -113,7 +136,7 @@ class Runner:
 
         :param query: The query of the user.
         :param result_column: The result column name for the answer.
-            Default is `answer`, which is the output of the `generation` and `answer_filter` module.
+            Default is `generated_texts`, which is the output of the `generation` module.
         :return: The result of the pipeline.
         """
         node_lines = self.config['node_lines']
@@ -131,11 +154,15 @@ class Runner:
                 module = node['modules'][0]
                 module_type = module.pop('module_type')
                 module_params = module
-                previous_result = get_support_modules(module_type)(
+                new_result = get_support_modules(module_type)(
                     project_dir=self.project_dir,
                     previous_result=previous_result,
                     **module_params
                 )
+                duplicated_columns = previous_result.columns.intersection(new_result.columns)
+                drop_previous_result = previous_result.drop(columns=duplicated_columns)
+                previous_result = pd.concat([drop_previous_result, new_result], axis=1)
+
         return previous_result[result_column].tolist()[0]
 
     def __add_api_route(self):
