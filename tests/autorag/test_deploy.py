@@ -101,6 +101,8 @@ def pseudo_trial_path():
         trial_path = os.path.join(project_dir, '0')
         os.makedirs(trial_path)
         summary_df.to_csv(os.path.join(trial_path, 'summary.csv'), index=False)
+        with open(os.path.join(trial_path, 'config.yaml'), 'w') as f:
+            yaml.dump(solution_dict, f)
         yield trial_path
 
 
