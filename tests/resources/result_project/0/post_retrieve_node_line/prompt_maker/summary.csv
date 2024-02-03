@@ -1,0 +1,3 @@
+filename,module_name,module_params,execution_time,prompt_maker_bleu,prompt_maker_meteor,prompt_maker_rouge,is_best
+0.parquet,fstring,"{'prompt': ""Question: {query} \n Something to read: {retrieved_contents} \n What's your answer?""}",1.590251922607422e-05,1.6636733643272386,0.19617878214240655,0.13620306912401356,True
+1.parquet,fstring,{'prompt': 'Tell me something about the question: {query} \n\n {retrieved_contents}'},1.3709068298339844e-05,1.5238426214801506,0.20607424405970867,0.11344668545284949,False

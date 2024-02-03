@@ -1,0 +1,7 @@
+filename,module_name,module_params,execution_time,bleu,meteor,rouge,is_best
+0.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k', 'temperature': 0.5}",0.7474181890487671,1.3488214393667497,0.18550806948419113,0.11742198100111201,False
+1.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k', 'temperature': 1.0}",0.8161641120910644,1.0165392872805052,0.17776715325010745,0.09895379077223357,False
+2.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k', 'temperature': 1.5}",5.252310776710511,0.9148817144532571,0.18609771478855594,0.0973768265468204,False
+3.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-1106', 'temperature': 0.5}",0.5803057909011841,1.762720398554091,0.1940362056687498,0.13919412241708834,False
+4.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-1106', 'temperature': 1.0}",0.49162020683288576,1.8799555330736741,0.18963240485810678,0.13692971483831434,False
+5.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-1106', 'temperature': 1.5}",0.47247698307037356,1.9094724081233996,0.19075947373565966,0.1339732261770466,True

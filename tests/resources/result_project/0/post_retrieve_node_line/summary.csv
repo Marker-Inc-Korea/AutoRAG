@@ -1,0 +1,3 @@
+node_type,best_module_filename,best_module_name,best_module_params,best_execution_time
+prompt_maker,0.parquet,fstring,"{'prompt': ""Question: {query} \n Something to read: {retrieved_contents} \n What's your answer?""}",1.590251922607422e-05
+generator,5.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-1106', 'temperature': 1.5}",0.4724769830703735

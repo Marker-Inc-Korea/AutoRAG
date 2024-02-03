@@ -9,7 +9,7 @@ import yaml
 
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
-from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner
+from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner, extract_node_line_names
 from autorag.evaluator import Evaluator, cli
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
@@ -34,8 +34,16 @@ def evaluator():
             pass
 
 
+@pytest.fixture
+def full_config():
+    yaml_path = os.path.join(resource_dir, 'full.yaml')
+    with open(yaml_path, 'r') as f:
+        yaml_dict = yaml.safe_load(f)
+    return yaml_dict
+
+
 summary_df = pd.DataFrame({
-    'node_line_name': ['node_line_1', 'node_line_1', 'node_line_2'],
+    'node_line_name': ['node_line_2', 'node_line_2', 'node_line_1'],
     'node_type': ['retrieval', 'rerank', 'generation'],
     'best_module_filename': ['bm25=>top_k_50.parquet', 'upr=>model_llama-2-havertz_chelsea.parquet',
                              'gpt-4=>top_p_0.9.parquet'],
@@ -46,7 +54,7 @@ summary_df = pd.DataFrame({
 solution_dict = {
     'node_lines': [
         {
-            'node_line_name': 'node_line_1',
+            'node_line_name': 'node_line_2',
             'nodes': [
                 {
                     'node_type': 'retrieval',
@@ -70,7 +78,7 @@ solution_dict = {
             ]
         },
         {
-            'node_line_name': 'node_line_2',
+            'node_line_name': 'node_line_1',
             'nodes': [
                 {
                     'node_type': 'generation',
@@ -93,11 +101,18 @@ def pseudo_trial_path():
         trial_path = os.path.join(project_dir, '0')
         os.makedirs(trial_path)
         summary_df.to_csv(os.path.join(trial_path, 'summary.csv'), index=False)
+        with open(os.path.join(trial_path, 'config.yaml'), 'w') as f:
+            yaml.dump(solution_dict, f)
         yield trial_path
 
 
+def test_extract_node_line_names(full_config):
+    node_line_names = extract_node_line_names(full_config)
+    assert node_line_names == ['pre_retrieve_node_line', 'retrieve_node_line', 'post_retrieve_node_line']
+
+
 def test_summary_df_to_yaml():
-    yaml_dict = summary_df_to_yaml(summary_df)
+    yaml_dict = summary_df_to_yaml(summary_df, solution_dict)
     assert yaml_dict == solution_dict
 
 
@@ -129,6 +144,13 @@ def test_runner(evaluator):
         extract_best_config(os.path.join(os.getcwd(), '0'), yaml_path.name)
         runner = Runner.from_yaml(yaml_path.name)
         runner_test(runner)
+
+
+def test_runner_full(evaluator):
+    runner = Runner.from_trial_folder(os.path.join(resource_dir, 'result_project', '0'))
+    answer = runner.run('What is the best movie in Korea? Have Korea movie ever won Oscar?')
+    assert isinstance(answer, str)
+    assert bool(answer)
 
 
 def test_runner_api_server(evaluator):

@@ -1,0 +1,7 @@
+node_line_name,node_type,best_module_filename,best_module_name,best_module_params,best_execution_time
+pre_retrieve_node_line,query_expansion,0.parquet,query_decompose,"{'llm': 'openai', 'temperature': 0.2}",1.132594919204712
+retrieve_node_line,retrieval,0.parquet,bm25,{'top_k': 10},0.0915938854217529
+retrieve_node_line,passage_reranker,0.parquet,tart,{'top_k': 5},5.316191506385803
+retrieve_node_line,passage_compressor,0.parquet,tree_summarize,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'}",0.4078188896179199
+post_retrieve_node_line,prompt_maker,0.parquet,fstring,"{'prompt': ""Question: {query} \n Something to read: {retrieved_contents} \n What's your answer?""}",1.590251922607422e-05
+post_retrieve_node_line,generator,5.parquet,llama_index_llm,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-1106', 'temperature': 1.5}",0.4724769830703735
