@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "AutoRAG"
 authors = [
-    {name = "Marker-Inc", email = "vkehfdl1@gmail.com"}
+    { name = "Marker-Inc", email = "vkehfdl1@gmail.com" }
 ]
 description = 'Automatically Evaluate RAG pipelines with your own data. Find optimal structure for new RAG product.'
 readme = "README.md"
 requires-python = ">=3.8"
 keywords = ['RAG', 'AutoRAG', 'autorag', 'rag-evaluation', 'evaluation', 'rag-auto', 'AutoML', 'AutoML-RAG']
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
@@ -23,13 +23,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-urls = {Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG"}
+urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version", "dependencies"]
 
 [tool.setuptools.dynamic]
-version = {file = ["VERSION"]}
-dependencies = {file = ["requirements.txt"]}
+version = { file = ["autorag/VERSION"] }
+dependencies = { file = ["requirements.txt"] }
 
+[tool.setuptools]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
