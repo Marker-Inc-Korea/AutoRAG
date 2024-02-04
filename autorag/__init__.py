@@ -46,7 +46,7 @@ generator_models = {
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"
 logging.basicConfig(
-    level="NOTSET",
+    level="INFO",
     format=rich_format,
     handlers=[RichHandler(rich_tracebacks=True)]
 )
