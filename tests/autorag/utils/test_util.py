@@ -1,3 +1,4 @@
+import asyncio
 import itertools
 import os
 import pathlib
@@ -5,10 +6,12 @@ import tempfile
 
 import pandas as pd
 import pytest
+from llama_index.core.llms.types import CompletionResponse
+from llama_index.llms import MockLLM
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, load_summary_file, result_to_dataframe, \
-    make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict
+    make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -225,3 +228,15 @@ def test_convert_string_to_tuple_in_dict():
             }
         }
     }
+
+
+def test_process_batch():
+    prompts = [str(i) for i in range(1000)]
+    results = [CompletionResponse(text=prompt) for prompt in prompts]
+    mock_llm = MockLLM()
+
+    tasks = [mock_llm.acomplete(prompt) for prompt in prompts]
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(process_batch(tasks, batch_size=64))
+
+    assert result == results
