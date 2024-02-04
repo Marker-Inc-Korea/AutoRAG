@@ -8,6 +8,7 @@ from llama_index.prompts.utils import is_chat_model
 from llama_index.response_synthesizers import TreeSummarize
 
 from autorag.nodes.passagecompressor.base import passage_compressor_node
+from autorag.utils.util import process_batch
 
 
 @passage_compressor_node
@@ -20,6 +21,7 @@ def tree_summarize(queries: List[str],
                    chat_prompt: Optional[str] = None,
                    context_window: Optional[int] = None,
                    num_output: int = 1,
+                   batch: int = 16,
                    ) -> List[str]:
     """
     Recursively merge retrieved texts and summarizes them in a bottom-up fashion.
@@ -45,6 +47,9 @@ def tree_summarize(queries: List[str],
         Default is None. When it is None, it will use a llama index default context window.
     :param num_output: The amount of summarization output.
         Default is 1.
+    :param batch: The batch size for llm.
+        Set low if you face some errors.
+        Default is 16.
     :return: The list of compressed texts.
     """
     if prompt is not None and not is_chat_model(llm):
@@ -61,5 +66,5 @@ def tree_summarize(queries: List[str],
                                use_async=True)
     tasks = [summarizer.aget_response(query, content) for query, content in zip(queries, contents)]
     loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
+    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
     return results
