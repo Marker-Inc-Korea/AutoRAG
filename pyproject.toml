@@ -27,7 +27,7 @@ urls = {Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG"}
 dynamic = ["version", "dependencies"]
 
 [tool.setuptools.dynamic]
-version = {file = ["VERSION"]}
+version = {file = ["autorag/VERSION"]}
 dependencies = {file = ["requirements.txt"]}
 
 

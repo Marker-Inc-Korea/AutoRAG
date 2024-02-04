@@ -10,8 +10,7 @@ from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.llms import OpenAI, Anthropic, AzureOpenAI, HuggingFaceLLM, LangChainLLM, GradientBaseModelLLM, \
     GradientModelAdapterLLM, LiteLLM, LlamaCPP, OpenAILike, OpenLLM, PaLM, PredibaseLLM, Replicate, Xinference
 
-root_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-version_path = os.path.join(root_path, 'VERSION')
+version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'VERSION')
 
 with open(version_path, 'r') as f:
     __version__ = f.read().strip()
