@@ -31,6 +31,7 @@ def passage_compressor_node(func):
             param_dict = dict(filter(lambda x: x[0] in param_list, kwargs.items()))
             kwargs_dict = dict(filter(lambda x: x[0] not in param_list, kwargs.items()))
             llm_name = kwargs_dict.pop('llm')
+            batch_size = kwargs_dict.pop('batch', 16)
             llm = make_llm(llm_name, kwargs_dict)
             result = func(
                 queries=queries,
@@ -38,6 +39,7 @@ def passage_compressor_node(func):
                 scores=retrieve_scores,
                 ids=retrieved_ids,
                 llm=llm,
+                batch=batch_size,
                 **param_dict
             )
         else:
