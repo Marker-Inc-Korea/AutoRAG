@@ -87,7 +87,7 @@ async def query_decompose_pure(query: str, llm: BaseLLM,
     if prompt == "":
         prompt = decompose_prompt
     full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
-    answer = llm.complete(full_prompt)
+    answer = await llm.acomplete(full_prompt)
     if answer.text == "the question needs no decomposition.":
         return [query]
     try:

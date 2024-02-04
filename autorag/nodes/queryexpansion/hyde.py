@@ -36,5 +36,5 @@ async def hyde_pure(query: str, llm: BaseLLM,
     if prompt is "":
         prompt = hyde_prompt
     full_prompt = prompt + f"\nQuestion: {query}\nPassage:"
-    hyde_answer = llm.complete(full_prompt)
+    hyde_answer = await llm.acomplete(full_prompt)
     return [hyde_answer.text]
