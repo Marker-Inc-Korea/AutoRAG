@@ -27,7 +27,7 @@ def passage_compressor_node(func):
         retrieve_scores = previous_result['retrieve_scores'].tolist()
 
         if func.__name__ == 'tree_summarize':
-            param_list = ['prompt', 'chat_prompt', 'context_window', 'num_output']
+            param_list = ['prompt', 'chat_prompt', 'context_window', 'num_output', 'batch']
             param_dict = dict(filter(lambda x: x[0] in param_list, kwargs.items()))
             kwargs_dict = dict(filter(lambda x: x[0] not in param_list, kwargs.items()))
             llm_name = kwargs_dict.pop('llm')
