@@ -10,7 +10,7 @@ project = 'AutoRAG'
 copyright = '2024, Marker-Inc'
 author = 'Marker-Inc'
 
-with open('../../VERSION') as f:
+with open('../../autorag/VERSION') as f:
     version = f.read().strip()
 
 # -- General configuration ---------------------------------------------------
