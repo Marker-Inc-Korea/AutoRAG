@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import functools
 import itertools
 import os
@@ -200,3 +201,22 @@ def convert_string_to_tuple_in_dict(d):
             d[key] = ast.literal_eval(value)
 
     return d
+
+
+async def process_batch(tasks, batch_size: int = 64) -> List[Any]:
+    """
+    Processes tasks in batches asynchronously.
+
+    :param tasks: A list of no-argument functions or coroutines to be executed.
+    :param batch_size: The number of tasks to process in a single batch.
+        Default is 64.
+    :return: A list of results from the processed tasks.
+    """
+    results = []
+
+    for i in range(0, len(tasks), batch_size):
+        batch = tasks[i:i + batch_size]
+        batch_results = await asyncio.gather(*batch)
+        results.extend(batch_results)
+
+    return results

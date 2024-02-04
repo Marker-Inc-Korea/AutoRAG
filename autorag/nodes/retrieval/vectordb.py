@@ -7,11 +7,13 @@ from llama_index.embeddings import BaseEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
+from autorag.utils.util import process_batch
 
 
 @retrieval_node
 def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collection,
-             embedding_model: BaseEmbedding) -> Tuple[List[List[str]], List[List[float]]]:
+             embedding_model: BaseEmbedding,
+             batch: int = 128) -> Tuple[List[List[str]], List[List[float]]]:
     """
     VectorDB retrieval function.
     You have to get chroma collection that is already ingested.
@@ -22,6 +24,9 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     :param top_k: The number of passages to be retrieved.
     :param collection: A chroma collection instance that will be used to retrieve passages.
     :param embedding_model: An embedding model instance that will be used to embed queries.
+    :param batch: The number of queries to be processed in parallel.
+        This is used to prevent API error at the query embedding.
+        Default is 128.
 
     :return: The 2-d list contains a list of passage ids that retrieved from vectordb and 2-d list of its scores.
         It will be a length of queries. And each element has a length of top_k.
@@ -32,7 +37,7 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     # run async vector_db_pure function
     tasks = [vectordb_pure(input_queries, top_k, collection, embedding_model) for input_queries in queries]
     loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
+    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
     id_result = list(map(lambda x: x[0], results))
     score_result = list(map(lambda x: x[1], results))
     return id_result, score_result

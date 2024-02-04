@@ -4,6 +4,7 @@ from typing import List
 from llama_index.llms.llm import BaseLLM
 
 from autorag.nodes.queryexpansion.base import query_expansion_node
+from autorag.utils.util import process_batch
 
 decompose_prompt = """Decompose a question in self-contained sub-questions. Use \"The question needs no decomposition\" when no decomposition is needed.
 
@@ -54,19 +55,22 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 
 @query_expansion_node
 def query_decompose(queries: List[str], llm: BaseLLM,
-                    prompt: str = decompose_prompt) -> List[List[str]]:
+                    prompt: str = decompose_prompt,
+                    batch: int = 16) -> List[List[str]]:
     """
     decompose query to little piece of questions.
     :param queries: List[str], queries to decompose.
     :param llm: BaseLLM, language model to use.
     :param prompt: str, prompt to use for query decomposition.
         default prompt comes from Visconde's StrategyQA few-shot prompt.
+    :param batch: int, batch size for llm.
+        Default is 16.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
     # Run async query_decompose_pure function
     tasks = [query_decompose_pure(query, llm, prompt) for query in queries]
     loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
+    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
     return results
 
 
@@ -83,7 +87,7 @@ async def query_decompose_pure(query: str, llm: BaseLLM,
     if prompt == "":
         prompt = decompose_prompt
     full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
-    answer = llm.complete(full_prompt)
+    answer = await llm.acomplete(full_prompt)
     if answer.text == "the question needs no decomposition.":
         return [query]
     try:

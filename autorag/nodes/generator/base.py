@@ -34,6 +34,7 @@ def generator_node(func):
             if llm not in generator_models:
                 raise ValueError(f"{llm} is not a valid llm name. Please check the llm name."
                                  "You can check valid llm names from autorag.generator_models.")
+            batch = kwargs.pop('batch', 16)
             llm_instance = generator_models[llm](**kwargs)
-            return func(prompts=prompts, llm=llm_instance)
+            return func(prompts=prompts, llm=llm_instance, batch=batch)
     return wrapper
