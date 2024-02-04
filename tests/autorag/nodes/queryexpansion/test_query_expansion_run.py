@@ -78,7 +78,7 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['module_name'][0] == "query_decompose"
-    assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2}
+    assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2, 'batch': 7}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True  # is_best is np.bool_
     # test the best file is saved properly
@@ -95,7 +95,7 @@ def test_run_query_expansion_node(node_line_dir):
 
     generator_models['mock'] = MockLLM
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "mock"}]
+    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
@@ -113,7 +113,7 @@ def test_run_query_expansion_node_default(node_line_dir):
 
     generator_models['mock'] = MockLLM
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2}, {'llm': "mock"}]
+    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
     strategies = {
         'metrics': metrics
     }
