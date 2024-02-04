@@ -68,28 +68,37 @@ def run_retrieval_node(modules: List[Callable],
 
     # run retrieval modules except hybrid
     hybrid_module_names = ['hybrid_rrf', 'hybrid_cc']
-    non_hybrid_modules, non_hybrid_module_params = zip(*filter(lambda x: x[0].__name__ not in hybrid_module_names,
-                                                               zip(modules, module_params)))
     filename_first = 0
-    non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = run_and_save(non_hybrid_modules,
-                                                                               non_hybrid_module_params, filename_first)
-    filename_first += len(non_hybrid_modules)
+    if any([module.__name__ not in hybrid_module_names for module in modules]):
+        non_hybrid_modules, non_hybrid_module_params = zip(*filter(lambda x: x[0].__name__ not in hybrid_module_names,
+                                                                   zip(modules, module_params)))
+        non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = run_and_save(non_hybrid_modules,
+                                                                                   non_hybrid_module_params, filename_first)
+        filename_first += len(non_hybrid_modules)
+    else:
+        non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = [], [], pd.DataFrame()
 
     if any([module.__name__ in hybrid_module_names for module in modules]):
         hybrid_modules, hybrid_module_params = zip(*filter(lambda x: x[0].__name__ in hybrid_module_names,
                                                            zip(modules, module_params)))
-        target_modules = list(map(lambda x: x.pop('target_modules'), hybrid_module_params))
-        target_filenames = list(map(lambda x: select_result_for_hybrid(save_dir, x), target_modules))
-        ids_scores = list(map(lambda x: get_ids_and_scores(save_dir, x), target_filenames))
-        target_module_params = list(map(lambda x: get_module_params(save_dir, x), target_filenames))
-        hybrid_module_params = list(map(lambda x: {**x[0], **x[1]}, zip(hybrid_module_params, ids_scores)))
-        real_hybrid_times = list(map(lambda filename: get_hybrid_execution_times(save_dir, filename), target_filenames))
-        hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
-                                                                       filename_first)
-        filename_first += len(hybrid_modules)
-        hybrid_times = real_hybrid_times.copy()
-        hybrid_summary_df['execution_time'] = hybrid_times
-        hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
+        if all(['target_module_params' in x for x in hybrid_module_params]):
+            # If target_module_params are already given, run hybrid retrieval directly
+            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
+                                                                           filename_first)
+            filename_first += len(hybrid_modules)
+        else:
+            target_modules = list(map(lambda x: x.pop('target_modules'), hybrid_module_params))
+            target_filenames = list(map(lambda x: select_result_for_hybrid(save_dir, x), target_modules))
+            ids_scores = list(map(lambda x: get_ids_and_scores(save_dir, x), target_filenames))
+            target_module_params = list(map(lambda x: get_module_params(save_dir, x), target_filenames))
+            hybrid_module_params = list(map(lambda x: {**x[0], **x[1]}, zip(hybrid_module_params, ids_scores)))
+            real_hybrid_times = list(map(lambda filename: get_hybrid_execution_times(save_dir, filename), target_filenames))
+            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
+                                                                           filename_first)
+            filename_first += len(hybrid_modules)
+            hybrid_times = real_hybrid_times.copy()
+            hybrid_summary_df['execution_time'] = hybrid_times
+            hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
     else:
         hybrid_results, hybrid_times, hybrid_summary_df = [], [], pd.DataFrame()
 
@@ -161,11 +170,11 @@ def select_result_for_hybrid(node_dir: str, target_modules: Tuple) -> List[str]:
     return best_filenames
 
 
-def get_module_params(node_dir: str, filenames: List[str]) -> List[Dict]:
+def get_module_params(node_dir: str, filenames: List[str]) -> Tuple[Dict]:
     summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
     best_results = summary_df[summary_df['filename'].isin(filenames)]
     module_params = best_results['module_params'].tolist()
-    return module_params
+    return tuple(module_params)
 
 
 def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_module_params) -> pd.DataFrame:
