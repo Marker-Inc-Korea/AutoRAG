@@ -35,6 +35,12 @@ def query_expansion_node(func):
         else:
             prompt = ""
 
+        # pop batch from kwargs
+        if "batch" in kwargs.keys():
+            batch = kwargs.pop("batch")
+        else:
+            batch = 16
+
         # set llm model for query expansion
         if llm_str in generator_models:
             llm = generator_models[llm_str](**kwargs)
@@ -43,7 +49,7 @@ def query_expansion_node(func):
             raise KeyError(f"llm_str {llm_str} does not exist.")
 
         # run query expansion function
-        expanded_queries = func(queries=queries, llm=llm, prompt=prompt)
+        expanded_queries = func(queries=queries, llm=llm, prompt=prompt, batch=batch)
 
         return expanded_queries
 
