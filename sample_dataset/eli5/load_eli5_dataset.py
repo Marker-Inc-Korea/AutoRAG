@@ -13,7 +13,8 @@ def load_eli5_dataset(save_path):
 
     # load dataset
     corpus_dataset = load_dataset(file_path, "corpus")['train'].to_pandas()
-    qa_dataset = load_dataset(file_path, "qa")['train'].to_pandas()
+    qa_train_dataset = load_dataset(file_path, "qa")['train'].to_pandas()
+    qa_test_dataset = load_dataset(file_path, "qa")['test'].to_pandas()
 
     # save data
     if os.path.exists(os.path.join(save_path, "corpus.parquet")) is True:
@@ -21,7 +22,8 @@ def load_eli5_dataset(save_path):
     if os.path.exists(os.path.join(save_path, "qa.parquet")) is True:
         raise ValueError("qa.parquet already exists")
     corpus_dataset.to_parquet(os.path.join(save_path, "corpus.parquet"))
-    qa_dataset.to_parquet(os.path.join(save_path, "qa.parquet"))
+    qa_train_dataset.to_parquet(os.path.join(save_path, "qa_train.parquet"))
+    qa_test_dataset.to_parquet(os.path.join(save_path, "qa_test.parquet"))
 
 
 if __name__ == '__main__':
