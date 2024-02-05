@@ -13,6 +13,8 @@ AutoRAG documentation
 
    install.md
    tutorial.md
+   troubleshooting.md
+   local_model.md
 
 .. toctree::
    :maxdepth: 2
