@@ -23,8 +23,3 @@ If you run the script without the `--save_path` argument, the dataset will be sa
 python ./sample_dataset/triviaqa/load_triviaqa_dataset.py
 ```
 This behavior allows for a straightforward execution without needing to specify a path, making it convenient for quick tests or when working directly within the target directory.
-
-### 3. Utilizing the if __name__ == "__main__" block
-If the Python file contains an `if __name__ == "__main__":` block, executing the file directly will trigger any code within this block. 
-
-This block can include function calls for loading or processing the dataset, which will execute when the file is run directly.
