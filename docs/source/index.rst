@@ -22,6 +22,7 @@ AutoRAG documentation
    :hidden:
 
    data_creation/tutorial.md
+   data_creation/data_format.md
 
 
 .. toctree::
