@@ -95,7 +95,7 @@ def test_run_retrieval_node(node_line_dir):
     assert all(hybrid_summary_df['module_params'].apply(lambda x: 'target_module_params' in x))
     assert all(hybrid_summary_df['module_params'].apply(lambda x: x['target_modules'] == ('bm25', 'vectordb')))
     assert all(hybrid_summary_df['module_params'].apply(
-        lambda x: x['target_module_params'] == [{'top_k': 4}, {'top_k': 4, 'embedding_model': 'openai'}]))
+        lambda x: x['target_module_params'] == ({'top_k': 4}, {'top_k': 4, 'embedding_model': 'openai'})))
 
     # test the best file is saved properly
     best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]
@@ -181,3 +181,48 @@ def test_select_result_for_hybrid(pseudo_node_dir):
     assert scores[1] == [[0.5, 0.6, 0.7],
                          [0.5, 0.6, 0.7],
                          [0.5, 0.6, 0.7]]
+
+
+def test_run_retrieval_node_only_hybrid(node_line_dir):
+    modules = [hybrid_cc]
+    module_params = [
+        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7),
+         'target_module_params': ({'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})},
+    ]
+    project_dir = pathlib.PurePath(node_line_dir).parent.parent
+    qa_path = os.path.join(project_dir, "data", "qa.parquet")
+    strategies = {
+        'metrics': ['retrieval_f1', 'retrieval_recall'],
+    }
+    previous_result = pd.read_parquet(qa_path)
+    best_result = run_retrieval_node(modules, module_params, previous_result, node_line_dir, strategies)
+    assert os.path.exists(os.path.join(node_line_dir, "retrieval"))
+    expect_columns = ['qid', 'query', 'retrieval_gt', 'generation_gt',
+                      'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1', 'retrieval_recall']
+    assert all([expect_column in best_result.columns for expect_column in expect_columns])
+    # test summary feature
+    summary_path = os.path.join(node_line_dir, "retrieval", "summary.csv")
+    single_result_path = os.path.join(node_line_dir, "retrieval", "0.parquet")
+    assert os.path.exists(single_result_path)
+    single_result_df = pd.read_parquet(single_result_path)
+    assert os.path.exists(summary_path)
+    summary_df = load_summary_file(summary_path)
+    assert set(summary_df.columns) == {'filename', 'retrieval_f1', 'retrieval_recall',
+                                       'module_name', 'module_params', 'execution_time', 'is_best'}
+    assert len(summary_df) == 1
+    assert summary_df['filename'][0] == "0.parquet"
+    assert summary_df['retrieval_f1'][0] == single_result_df['retrieval_f1'].mean()
+    assert summary_df['retrieval_recall'][0] == single_result_df['retrieval_recall'].mean()
+    assert summary_df['module_name'][0] == "hybrid_cc"
+    assert summary_df['module_params'][0] == {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7),
+         'target_module_params': ({'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})}
+    assert summary_df['execution_time'][0] > 0
+    assert summary_df['is_best'][0] == True
+    assert summary_df['filename'].nunique() == len(summary_df)
+
+    # test the best file is saved properly
+    best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]
+    best_path = os.path.join(node_line_dir, "retrieval", f'best_{best_filename}')
+    assert os.path.exists(best_path)
+    best_df = pd.read_parquet(best_path)
+    assert all([expect_column in best_df.columns for expect_column in expect_columns])
