@@ -66,7 +66,7 @@ For evaluation, you need to prepare just three files.
 
 There is a template for your evaluation data for using AutoRAG.
 Check out the evaluation data rule at [here]().
-Plus, you can get example datasets for testing AutoRAG at [here]().
+Plus, you can get example datasets for testing AutoRAG at [here](./sample_dataset).
 
 ### Evaluate your data to various RAG modules
 
