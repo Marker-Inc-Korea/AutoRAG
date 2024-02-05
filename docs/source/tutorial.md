@@ -63,10 +63,12 @@ evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='
 evaluator.start_trial('your/path/to/config.yaml')
 ```
 
-Once it is done, you can see several files and folders created in your current directory.
+Once it is done, you can see several files and folders created in your current directory.  
 These files and folders contain all information about the evaluation results and the best RAG pipeline for your data.
 
-![Example of project folder structure](./_static/project_folder_example.png)
+<p align="center">
+	<img src="./_static/project_folder_example.png" alt="Example of project folder structure">
+</p>
 
 The First thing you can see might be a folder named after number, which is 3 in the above image. 
 This is the trial folder that contains all results that you run above.
@@ -108,4 +110,48 @@ It will evaluate your test dataset with the found RAG pipeline.
 
 ## Deploy your optimal RAG pipeline
 
+You can use a found optimal RAG pipeline right away with extracted yaml file.
 
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run('your question')
+```
+
+Or you can run this pipeline as an API server.
+Check out API endpoint at [here]().
+
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run_api_server()
+```
+
+```bash
+autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+```
+
+```{hint}
+Why don't you share your work and evaluation results with others?
+You can simply share your yaml file, or `summary.csv` file.
+With that, you can share whole RAG pipeline and evaluation results to others.
+
+Feel free to share your work at our [Discord](https://discord.gg/P4DYXfmSAs) channel!
+```
+
+
+And that's it! 
+You successfully found the optimal RAG pipeline for your dataset and deployed it.
+Now, you can make your custom config file, write better config yaml file, 
+and evaluate it again and again for better result.
+
+Or just launch new RAG product with your saved time with AutoRAG!
+
+```{admonition} Next Step
+- Learn about evaluation data creation at [here](data_creation/tutorial.md)
+- Learn how to use result files more effectively at [here](data_creation/data_format.md)
+- Learn how AutoRAG find the optimal RAG pipeline at [here](optimization/optimization.md)
+- Write your custom config yaml file at [here](optimization/custom_config.md)
+```
