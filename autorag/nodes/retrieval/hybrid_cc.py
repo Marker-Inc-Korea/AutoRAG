@@ -55,8 +55,9 @@ def hybrid_cc(
 
 def cc_pure(ids: Tuple, scores: Tuple, weights: Tuple, top_k: int) -> Tuple[
     List[str], List[float]]:
-    df = pd.concat([pd.Series(dict(zip(_id, score))) for _id, score in zip(ids, scores)], axis=1, join="inner")
+    df = pd.concat([pd.Series(dict(zip(_id, score))) for _id, score in zip(ids, scores)], axis=1)
     normalized_scores = (df - df.min()) / (df.max() - df.min())
+    normalized_scores = normalized_scores.fillna(0)
     normalized_scores['weighted_sum'] = normalized_scores.mul(weights).sum(axis=1)
     normalized_scores = normalized_scores.sort_values(by='weighted_sum', ascending=False)
     return normalized_scores.index.tolist()[:top_k], normalized_scores['weighted_sum'][:top_k].tolist()
