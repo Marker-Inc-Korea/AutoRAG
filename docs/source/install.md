@@ -22,6 +22,25 @@ You can get your API key at [here](https://platform.openai.com/account/api-keys)
 export OPENAI_API_KEY="sk-...your-api-key..."
 ```
 
+Or, as an alternative, you can set env variable using .env file.
+
+```bash
+pip install python-dotenv
+```
+
+Then, make .env file at your root folder like below.
+```dotenv
+OPENAI_API_KEY=sk-...your-api-key...
+```
+
+And when you try to run AutoRAG, you can use below code to load .env file.
+
+```python
+from dotenv import load_dotenv
+
+load_dotenv()
+```
+
 And you are ready to use AutoRAG!
 
 
