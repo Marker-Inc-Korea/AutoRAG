@@ -16,6 +16,16 @@ def test_cc_pure():
     assert result_id == ['id-1', 'id-4', 'id-2']
 
 
+def test_cc_non_overlap():
+    sample_ids = (['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
+                  ['id-6', 'id-4', 'id-3', 'id-7', 'id-2'])
+    sample_scores = ([5, 3, 1, 0.4, 0.2], [6, 2, 1, 0.5, 0.1])
+    result_id, result_scores = cc_pure(sample_ids, sample_scores,
+                                       weights=(0.3, 0.7), top_k=3)
+    assert result_scores == pytest.approx([0.7, 0.3, 0.23792372])
+    assert result_id == ['id-6', 'id-1', 'id-4']
+
+
 def test_hybrid_cc():
     sample_ids = ([
                       ['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
@@ -58,7 +68,7 @@ def test_hybrid_cc_node(pseudo_project_dir, pseudo_node_dir):
                  ['id-1', 'id-2', 'id-3', 'id-4', 'id-5']],
                 [['id-1', 'id-4', 'id-3', 'id-5', 'id-2'],
                  ['id-1', 'id-4', 'id-3', 'id-5', 'id-2']]
-        ),
+                ),
         'scores': ([[5, 3, 1, 0.4, 0.2], [5, 3, 1, 0.4, 0.2]],
                    [[6, 2, 1, 0.5, 0.1], [6, 2, 1, 0.5, 0.1]]),
         'top_k': 3,
