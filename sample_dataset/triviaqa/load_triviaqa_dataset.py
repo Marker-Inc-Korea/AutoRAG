@@ -22,7 +22,7 @@ def load_triviaqa_dataset(save_path):
     if os.path.exists(os.path.join(save_path, "qa.parquet")) is True:
         raise ValueError("qa.parquet already exists")
     corpus_dataset.to_parquet(os.path.join(save_path, "corpus.parquet"), index=False)
-    qa_train_dataset.to_parquet(os.path.join(save_path, "qa.parquet"), index=False)
+    qa_train_dataset.to_parquet(os.path.join(save_path, "qa_train.parquet"), index=False)
     qa_test_dataset.to_parquet(os.path.join(save_path, "qa_test.parquet"), index=False)
 
 
