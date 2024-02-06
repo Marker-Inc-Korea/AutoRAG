@@ -26,7 +26,7 @@ def tree_summarize(queries: List[str],
     """
     Recursively merge retrieved texts and summarizes them in a bottom-up fashion.
     This function is a wrapper for llama_index.response_synthesizers.TreeSummarize.
-    For more information, visit https://docs.llamaindex.ai/en/stable/examples/response_synthesizers/tree_summarize.html.
+    For more information, visit https://docs.llamaindex.ai/en/latest/examples/response_synthesizers/tree_summarize.html.
 
     :param queries: The queries for retrieved passages.
     :param contents: The contents of retrieved passages.
