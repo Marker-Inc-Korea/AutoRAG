@@ -2,10 +2,12 @@ import os.path
 import pathlib
 import shutil
 import subprocess
+import tempfile
 
 import pandas as pd
 import pytest
 
+from autorag.deploy import extract_best_config
 from autorag.evaluator import Evaluator
 from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf
 from autorag.nodes.retrieval.run import run_retrieval_node
@@ -20,6 +22,24 @@ resource_dir = os.path.join(root_dir, 'resources')
 @pytest.fixture
 def evaluator():
     evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                          os.path.join(resource_dir, 'corpus_data_sample.parquet'))
+    yield evaluator
+    paths_to_remove = ['0', 'data', 'resources', 'trial.json']
+
+    for path in paths_to_remove:
+        full_path = os.path.join(os.getcwd(), path)
+        try:
+            if os.path.isdir(full_path):
+                shutil.rmtree(full_path)
+            else:
+                os.remove(full_path)
+        except FileNotFoundError:
+            pass
+
+
+@pytest.fixture
+def test_evaluator():
+    evaluator = Evaluator(os.path.join(resource_dir, 'qa_test_data_sample.parquet'),
                           os.path.join(resource_dir, 'corpus_data_sample.parquet'))
     yield evaluator
     paths_to_remove = ['0', 'data', 'resources', 'trial.json']
@@ -98,7 +118,7 @@ def test_start_trial(evaluator):
     # test node line summary
     node_line_summary_path = os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.csv')
     assert os.path.exists(node_line_summary_path)
-    node_line_summary_df = load_summary_file(node_line_summary_path,["best_module_params"])
+    node_line_summary_df = load_summary_file(node_line_summary_path, ["best_module_params"])
     assert len(node_line_summary_df) == 1
     assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename',
                                                  'best_module_name', 'best_module_params', 'best_execution_time'}
@@ -180,3 +200,28 @@ def start_trial_full(evaluator):
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '3.parquet'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '4.parquet'))
     assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator', '5.parquet'))
+
+
+def test_test_data_evaluate(test_evaluator):
+    trial_folder = os.path.join(resource_dir, 'result_project', '0')
+    with tempfile.NamedTemporaryFile(mode="w+t", suffix=".yaml") as yaml_file:
+        extract_best_config(trial_folder, yaml_file.name)
+        test_evaluator.start_trial(yaml_file.name)
+
+    assert os.path.exists(os.path.join(os.getcwd(), '0'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'data'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'resources'))
+    assert os.path.exists(os.path.join(os.getcwd(), 'trial.json'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'config.yaml'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'retrieval', 'best_0.parquet'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'retrieve_node_line', 'summary.csv'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'pre_retrieve_node_line', 'query_expansion', "0.parquet"))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'prompt_maker'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'post_retrieve_node_line', 'generator'))
+    assert os.path.exists(os.path.join(os.getcwd(), '0', 'summary.csv'))
