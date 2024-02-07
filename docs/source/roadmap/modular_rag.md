@@ -29,7 +29,7 @@ And here comes Modular RAG.
 
 Modular RAG has cycles and modules, so it can decide the next step to deliver the best answer to the user.
 
-```{admonation} Want to know more about Modular RAG?
+```{admonition} Want to know more about Modular RAG?
 - Recommend to read the survey [paper](https://arxiv.org/abs/2312.10997v1).
 ```
 
