@@ -9,7 +9,8 @@ import yaml
 
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
-from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner, extract_node_line_names
+from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner, extract_node_line_names, \
+    extract_node_strategy
 from autorag.evaluator import Evaluator, cli
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
@@ -58,6 +59,9 @@ solution_dict = {
             'nodes': [
                 {
                     'node_type': 'retrieval',
+                    'strategy': {
+                        'metrics': ['retrieval_f1', 'retrieval_recall', 'retrieval_precision'],
+                    },
                     'modules': [
                         {
                             'module_type': 'bm25',
@@ -67,6 +71,10 @@ solution_dict = {
                 },
                 {
                     'node_type': 'rerank',
+                    'strategy': {
+                        'metrics': ['retrieval_f1', 'retrieval_recall', 'retrieval_precision'],
+                        'speed_threshold': 10,
+                    },
                     'modules': [
                         {
                             'module_type': 'upr',
@@ -82,6 +90,9 @@ solution_dict = {
             'nodes': [
                 {
                     'node_type': 'generation',
+                    'strategy': {
+                        'metrics': ['bleu', 'rouge'],
+                    },
                     'modules': [
                         {
                             'module_type': 'gpt-4',
@@ -109,6 +120,18 @@ def pseudo_trial_path():
 def test_extract_node_line_names(full_config):
     node_line_names = extract_node_line_names(full_config)
     assert node_line_names == ['pre_retrieve_node_line', 'retrieve_node_line', 'post_retrieve_node_line']
+
+
+def test_extract_node_strategy(full_config):
+    node_strategies = extract_node_strategy(full_config)
+    assert set(list(node_strategies.keys())) == {
+        'query_expansion', 'retrieval', 'passage_reranker', 'passage_compressor',
+        'prompt_maker', 'generator'
+    }
+    assert node_strategies['retrieval'] == {
+        'metrics': ['retrieval_f1', 'retrieval_recall', 'retrieval_precision'],
+        'speed_threshold': 10,
+    }
 
 
 def test_summary_df_to_yaml():

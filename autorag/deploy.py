@@ -27,6 +27,20 @@ def extract_node_line_names(config_dict: Dict) -> List[str]:
     return [node_line['node_line_name'] for node_line in config_dict['node_lines']]
 
 
+def extract_node_strategy(config_dict: Dict) -> Dict:
+    """
+    Extract node strategies with the given config dictionary.
+    The return value is a dictionary of node type and its strategy.
+
+    :param config_dict: The yaml configuration dict for the pipeline.
+        You can load this to access trail_folder/config.yaml.
+    :return: Key is node_type and value is strategy dict.
+    """
+    return {node['node_type']: node.get('strategy', {})
+            for node_line in config_dict['node_lines']
+            for node in node_line['nodes']}
+
+
 def summary_df_to_yaml(summary_df: pd.DataFrame, config_dict: Dict) -> Dict:
     """
     Convert trial summary dataframe to config yaml file.
@@ -41,6 +55,12 @@ def summary_df_to_yaml(summary_df: pd.DataFrame, config_dict: Dict) -> Dict:
     # summary_df columns : 'node_line_name', 'node_type', 'best_module_filename',
     #                      'best_module_name', 'best_module_params', 'best_execution_time'
     node_line_names = extract_node_line_names(config_dict)
+    node_strategies = extract_node_strategy(config_dict)
+    strategy_df = pd.DataFrame({
+        'node_type': list(node_strategies.keys()),
+        'strategy': list(node_strategies.values())
+    })
+    summary_df = summary_df.merge(strategy_df, on='node_type', how='left')
     summary_df['categorical_node_line_name'] = pd.Categorical(summary_df['node_line_name'], categories=node_line_names,
                                                               ordered=True)
     summary_df = summary_df.sort_values(by='categorical_node_line_name')
@@ -52,6 +72,7 @@ def summary_df_to_yaml(summary_df: pd.DataFrame, config_dict: Dict) -> Dict:
             'nodes': [
                 {
                     'node_type': row['node_type'],
+                    'strategy': row['strategy'],
                     'modules': [{
                         'module_type': row['best_module_name'],
                         **row['best_module_params']
