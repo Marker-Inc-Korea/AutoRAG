@@ -16,7 +16,7 @@ So, for users who want to make a good evaluation dataset,
 we provide a detailed guide at [here](data_creation/tutorial.md).
 
 For users who want to use a pre-made evaluation dataset,
-we provide example datasets at [here]().
+we provide example datasets at [here](data_creation/data_format.md#samples).
 
 Also, you can check out sample datasets at [huggingface](https://huggingface.co/collections/MarkrAI/autorag-evaluation-datasets-65c0ee87d673dcc686bd14b8).
 You can download it manually using huggingface datasets library.
@@ -45,7 +45,7 @@ Download `starter.yaml` file to your local environment, and you are ready to go.
 
 ```{admonition} Write custom config yaml file
 If you want to write your own custom config yaml file for detailed configuration and experiment,
-check out the []() section.
+check out the [optimization](optimization/optimization.md) section.
 ```
 
 Run below code at CLI, then AutoRAG automatically evaluate your dataset and find the best RAG pipeline for your dataset.
@@ -77,7 +77,7 @@ The number is the trial number, and you can check when you run the evaluation at
 And the most important file is `summary.csv` files. 
 You can check out which module and parameters are the best for your dataset.
 And there are lots of details inside node line and node folders.
-You can find out more information about folder structure and result files at [here]().
+You can find out more information about folder structure and result files at [here](structure.md).
 
 
 ## Extract pipeline and evaluate test dataset

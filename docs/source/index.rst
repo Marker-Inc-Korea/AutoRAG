@@ -40,10 +40,10 @@ AutoRAG supports
 
 
 In our documentation, we will guide you through the process of `installation <install.md>`__ and `tutorial <tutorial.md>`__ for AutoRAG starter.
-After you find your first RAG pipeline with AutoRAG, you can learn how to read result files at `here <>`__.
+After you find your first RAG pipeline with AutoRAG, you can learn how to read result files at `here <optimization/folder_structure.md>`__.
 
 And do you want to get the ultimate performance RAG pipeline?
-Learn how make great evaluation dataset with your own raw documents at `here <>`__.
+Learn how make great evaluation dataset with your own raw documents at `here <data_creation/tutorial.md>`__.
 
 Also, you can learn how to set various experiment configurations at `optimization <optimization/optimization.md>`__ guide.
 
@@ -86,6 +86,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    :hidden:
 
    optimization/optimization.md
+   optimization/custom_config.md
    optimization/folder_structure.md
 
 .. toctree::

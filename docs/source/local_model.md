@@ -1,6 +1,6 @@
 # Configure LLM & Embedding models
 
-### Index
+## Index
 
 - [Configure the LLM model](#configure-the-llm-model)
     - [Modules that use LLM model](#modules-that-use-llm-model)
@@ -17,10 +17,10 @@
 
 Most of the modules that using LLM model can take `llm` parameter to specify the LLM model.
 
-- [hyde]()
-- [query_decompose]()
-- [tree_summarize]()
-- [llama_index_llm]()
+- [hyde](nodes/query_expansion/hyde.md)
+- [query_decompose](nodes/query_expansion/query_decompose.md)
+- [tree_summarize](nodes/passage_compressor/tree_summarize.md)
+- [llama_index_llm](nodes/generator/llama_index_llm.md)
 
 ### Supporting LLM models
 
@@ -92,7 +92,7 @@ Plus, it must follow LlamaIndex LLM's interface.
 
 Modules that using embedding model can take `embedding_model` parameter to specify the LLM model.
 
-- [vectordb]()
+- [vectordb](nodes/retrieval/vectordb.md)
 
 ### Supporting Embedding models
 
