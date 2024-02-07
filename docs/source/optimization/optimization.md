@@ -1,3 +1,3 @@
 # How optimization works
 
-![Sundae](../resources/samsung_sundae.jpeg)
+![Sundae](../_static/samsung_sundae.jpeg)

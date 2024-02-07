@@ -1,1 +1,157 @@
 # Tutorial
+
+```{tip}
+Before start this tutorial, make sure you installed AutoRAG.
+To install it, please check [Installation](install.md).
+```
+
+## Prepare Evaluation Dataset
+
+First, you have to prepare an evaluation dataset for your RAG pipeline.
+Making a good evaluation dataset is the key to getting a good RAG pipeline.
+So, you need to focus on the quality of your evaluation dataset. 
+Once you have it, the optimal RAG pipeline can be found using AutoRAG easily.
+
+So, for users who want to make a good evaluation dataset, 
+we provide a detailed guide at [here](data_creation/tutorial.md).
+
+For users who want to use a pre-made evaluation dataset,
+we provide example datasets at [here]().
+
+Also, you can check out sample datasets at [huggingface](https://huggingface.co/collections/MarkrAI/autorag-evaluation-datasets-65c0ee87d673dcc686bd14b8).
+You can download it manually using huggingface datasets library.
+
+```{attention}
+Don't forget to split train and test dataset.
+It is common mistake to not split dataset, but it will occur overfitting issue.
+We highly recommend you to optimize RAG pipeline with train dataset, and evaluate whole pipeline with test dataset later.
+```
+
+After you prepare your evaluation dataset, please keep in mind the path to your dataset.
+
+```{admonition} Note: Dataset Format
+Make sure there are two evaluation datasets, qa dataset and corpus dataset.
+And you must save it as parquet format.
+If you don't know about specific columns and data types, check out the [Data Format]() section. 
+```
+
+## Find Optimal RAG Pipeline
+
+Let's find an optimal RAG pipeline with AutoRAG! 
+After you prepare your evaluation dataset, you need to have a config yaml file.
+There are few pre-made config yaml files at [here]().
+We highly recommend using pre-made config yaml files for starter.
+Download `starter.yaml` file to your local environment, and you are ready to go.
+
+```{admonition} Write custom config yaml file
+If you want to write your own custom config yaml file for detailed configuration and experiment,
+check out the []() section.
+```
+
+Run below code at CLI, then AutoRAG automatically evaluate your dataset and find the best RAG pipeline for your dataset.
+
+```bash
+autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
+```
+
+Or you can use python code like below.
+
+```python
+from autorag.evaluator import Evaluator
+
+evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
+evaluator.start_trial('your/path/to/config.yaml')
+```
+
+Once it is done, you can see several files and folders created in your current directory.  
+These files and folders contain all information about the evaluation results and the best RAG pipeline for your data.
+
+<p align="center">
+	<img src="./_static/project_folder_example.png" alt="Example of project folder structure">
+</p>
+
+The First thing you can see might be a folder named after number, which is 3 in the above image. 
+This is the trial folder that contains all results that you run above.
+The number is the trial number, and you can check when you run the evaluation at `trial.json` file.
+
+And the most important file is `summary.csv` files. 
+You can check out which module and parameters are the best for your dataset.
+And there are lots of details inside node line and node folders.
+You can find out more information about folder structure and result files at [here]().
+
+
+## Extract pipeline and evaluate test dataset
+
+Now, it's time to evaluate test dataset with a found RAG pipeline. For this, you can extract the optimal pipeline and save it to new config yaml file.
+
+You can use the below code. 
+Remind that your trial folder is in the directory you run the `Evaluator`. 
+And the trial folder name is number, like 0, 1, 2, 3, and so on.
+
+```python
+from autorag.deploy import extract_best_config
+
+pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
+```
+
+You can check out your pipeline yaml file at `your/path/to/pipeline.yaml`.
+And then, run evaluation with test dataset again.
+
+```{caution}
+Run evaluation to another folder.
+Running evaluation with another dataset in same folder can cause serious malfunction. 
+```
+
+```bash
+autorag evaluate --config your/path/to/pipeline.yaml --qa_data_path your/path/to/qa_test.parquet --corpus_data_path your/path/to/corpus_test.parquet
+```
+
+It will evaluate your test dataset with the found RAG pipeline.
+
+## Deploy your optimal RAG pipeline
+
+You can use a found optimal RAG pipeline right away with extracted yaml file.
+
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run('your question')
+```
+
+Or you can run this pipeline as an API server.
+Check out API endpoint at [here]().
+
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run_api_server()
+```
+
+```bash
+autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+```
+
+```{hint}
+Why don't you share your work and evaluation results with others?
+You can simply share your yaml file, or `summary.csv` file.
+With that, you can share whole RAG pipeline and evaluation results to others.
+
+Feel free to share your work at our [Discord](https://discord.gg/P4DYXfmSAs) channel!
+```
+
+
+And that's it! 
+You successfully found the optimal RAG pipeline for your dataset and deployed it.
+Now, you can make your custom config file, write better config yaml file, 
+and evaluate it again and again for better result.
+
+Or just launch new RAG product with your saved time with AutoRAG!
+
+```{admonition} Next Step
+- Learn about evaluation data creation at [here](data_creation/tutorial.md)
+- Learn how to use result files more effectively at [here](data_creation/data_format.md)
+- Learn how AutoRAG find the optimal RAG pipeline at [here](optimization/optimization.md)
+- Write your custom config yaml file at [here](optimization/custom_config.md)
+```

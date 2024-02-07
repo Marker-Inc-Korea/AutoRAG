@@ -3,8 +3,62 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+########################
 AutoRAG documentation
-===================================
+########################
+
+RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
+
+
+🤷‍♂️ Why AutoRAG?
+************************************
+
+There are numerous RAG pipelines and modules out there,
+but you don’t know what pipeline is great for “your own data” and "your own use-case."
+Making and evaluating all RAG modules is very time-consuming and hard to do.
+But without it, you will never know which RAG pipeline is the best for your own use-case.
+
+That's where **AutoRAG** comes in.
+
+🤸‍♂️ How can AutoRAG helps?
+************************************
+
+AutoRAG is a tool for finding optimal RAG pipeline for “your data.”
+You can evaluate various RAG modules automatically with your own evaluation data,
+and find the best RAG pipeline for your own use-case.
+
+AutoRAG supports
+
+- **Data Creation**: Create RAG evaluation data with your own raw documents.
+- **Optimization**: Automatically run experiments to find the best RAG pipeline for your own data.
+- **Deployment**: Deploy the best RAG pipeline with single yaml file. Supports FastAPI server as well.
+
+🏃‍♂️ Getting Started
+************************************
+
+``pip install AutoRAG``
+
+
+In our documentation, we will guide you through the process of `installation <install.md>`__ and `tutorial <tutorial.md>`__ for AutoRAG starter.
+After you find your first RAG pipeline with AutoRAG, you can learn how to read result files at `here <>`__.
+
+And do you want to get the ultimate performance RAG pipeline?
+Learn how make great evaluation dataset with your own raw documents at `here <>`__.
+
+Also, you can learn how to set various experiment configurations at `optimization <optimization/optimization.md>`__ guide.
+
+Of course, you can use your own local LLM or embedding model with AutoRAG. Go to `here <local_model.md>`__ to learn how to use your own model with AutoRAG.
+
+If you face any trouble? Check out our `troubleshooting <troubleshooting.md>`__ guide.
+Also, feel free to ask your question at our `github issue <https://github.com/Marker-Inc-Korea/AutoRAG/issues>`__ or `Discord <https://discord.gg/P4DYXfmSAs>`__ channel.
+
+
+👨‍👩‍👧‍👦 Ecosystem
+************************************
+* Github Repo : https://github.com/Marker-Inc-Korea/AutoRAG
+* PyPI : https://pypi.org/project/AutoRAG/
+* Discord : https://discord.gg/P4DYXfmSAs
+
 
 .. toctree::
    :maxdepth: 1
@@ -13,6 +67,8 @@ AutoRAG documentation
 
    install.md
    tutorial.md
+   troubleshooting.md
+   local_model.md
 
 .. toctree::
    :maxdepth: 2
@@ -20,6 +76,7 @@ AutoRAG documentation
    :hidden:
 
    data_creation/tutorial.md
+   data_creation/data_format.md
 
 
 .. toctree::
@@ -35,6 +92,13 @@ AutoRAG documentation
    :hidden:
 
    modules/index.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Roadmap
+   :hidden:
+
+   roadmap/modular_rag.md
 
 .. toctree::
    :maxdepth: 1

@@ -1,11 +1,10 @@
 # AutoRAG
 
-RAG AutoML tool for automatically find optimal RAG pipeline for your date.
+RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
-[![Release Notes](https://img.shields.io/github/release/Marker-Inc-Korea/AutoRAG)](https://github.com/Marker-Inc-Korea/AutoRAG/releases)
-[![Downloads](https://static.pepy.tech/badge/AutoRAG)](https://pepy.tech/project/AutoRAG)
+Explore our [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
 
-[Document](https://marker-inc-korea.github.io/AutoRAG/)
+Plus, join our [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 # Introduction
 
