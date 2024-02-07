@@ -1,19 +1,18 @@
 # 2. Retrieval
 
 ### 🔎 **Definition**
-The retrieval process involves using queries to fetch relevant content, identifiers (IDs), and scores from a corpus. This is a fundamental operation in information retrieval systems, where the aim is to find the most relevant information based on the user's query.
+The retrieval process involves using queries to fetch relevant content, identifiers (IDs), and scores from a corpus. This is a fundamental operation in RAG, where the aim is to find the most relevant information based on the user's query.
 
 ## 🔢 **Parameters**
 
 ### **Overview**
-This document serves as a guide for configuring parameters, strategies, and the `Config.yaml` file for various nodes within a system. It focuses particularly on the query expansion node but also provides insights applicable to other nodes.
+This document serves as a guide for configuring parameters, strategies, and the YAML file for various nodes within a system.
 
 ### **Node Parameters**
 **Top_k**
-- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be considered or processed further. This parameter is critical in scenarios where only a subset of the best results is required from a larger set.
+- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be retrieved from corpus.
 
-### **Strategy**
-#### **Key Parameters**:
+### **Strategy Parameters**
 1. **Metrics**:  
    - **Types**: `retrieval_f1`, `retrieval_recall`, `retrieval_precision`
    ```{admonition} Purpose
@@ -21,7 +20,7 @@ This document serves as a guide for configuring parameters, strategies, and the 
    ```
 
 2. **Speed Threshold**:
-   - **Description**: This optional parameter can be applied to all nodes to ensure that the processing time for a method does not exceed a predefined threshold. It is vital for maintaining the efficiency of the system.
+   - **Description**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized.
 
 ### Example config.yaml file
 ```yaml

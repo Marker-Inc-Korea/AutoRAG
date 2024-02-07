@@ -1,30 +1,27 @@
 # 5. Prompt Maker
 
 ### 🔎 **Definition**
-**Prompt Maker** is a feature that compresses contents which have been retrieved and gone through a reranking process. This compression step is crucial for preparing the data to be efficiently processed by large language models (LLMs).
-
-### 🤸 **Benefits**
-The primary benefit of reranking is the enhanced prioritization of high-relevance contents. By performing a subsequent evaluation, reranking ensures that the most pertinent information is more accessible, improving the overall quality and relevance of the retrieved data. This process significantly aids in sifting through potentially vast amounts of information to highlight what is most useful for the query at hand.
+**Prompt Maker** is a module that makes a prompt from user query and retrieved contents.
 
 ## 🔢 **Parameters**
 ### **Overview**:
-This document serves as a guide for configuring parameters, strategies, and the `Config.yaml` file for various nodes within a system. It focuses particularly on the query expansion node but also provides insights applicable to other nodes.
+This document serves as a guide for configuring parameters, strategies, and the config YAML file for various nodes within a system.
 ### **Node Parameters**
-- **Not Applicable (N/A):** There are no direct node parameters specified for the query expansion node, indicating a focus on strategy-based configuration.
+- **None** 
 ### **Strategy**
-**Performance Evaluation**: Like the Query_expansion node, the Prompt Maker node's performance cannot be measured by the result alone. 
-So, we evaluate the prompt, which is the result of the Prompt Maker node, using the Generator(llm). 
-Therefore, the strategy sets the parameters needed to evaluate the answer of the Generator(LLM).
+**Performance Evaluation**: Like the query_expansion node, the Prompt Maker node's performance cannot be measured by the result alone. 
+So, we evaluate the prompt, which is the result of the Prompt Maker node, using the generator (LLM). 
+Therefore, the strategy sets the parameters needed to evaluate the answer of the generator (LLM).
 ```{tip}
 Please refer to the parameter of [Generator Node](../generator/generator.md) for more details.
 ```
 
-#### **Key Parameters**:
+#### **Parameters**:
 
-1. **Metrics**: Metrics such as `bleu`,`meteor`, and `rouge` are used to evaluate the performance of the prompt maker process through its impact on generator(llm) outcomes.
-2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized. This ensures efficiency and performance considerations are prioritized.
-3. **Genrator Modules**: The prompt maker node can utilize all modules and module parameters from the generator node, including:
-   - [llama_index_llm](../generator/llama_index_llm.md): with `llm` and `Additional LLM Parameters`(optional) parameters
+1. **Metrics**: Metrics such as `bleu`,`meteor`, and `rouge` are used to evaluate the performance of the prompt maker process through its impact on generator (llm) outcomes.
+2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized.
+3. **Generator Modules**: The prompt maker node can utilize all modules and module parameters from the generator node, including:
+   - [llama_index_llm](../generator/llama_index_llm.md): with `llm` and additional llm parameters
 
 ### Example config.yaml file
 ```yaml

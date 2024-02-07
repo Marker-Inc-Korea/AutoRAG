@@ -23,21 +23,26 @@
 
 
 ## Project
-In a project, you experiment with only one dataset.
+In a project, you have to do experiment with only one dataset.
 The project folder is where the user runs from.
     
 ![project_folders](../_static/project_folders.png)
         
 ### trial
+
+Trial means a single run of the experiment.
+Each trial can be run with different settings using different config yaml files.
+If there are multiple trail folders, it means you ran experiments more than once. 
+We recommend running multiple trials on the same data with different settings to find the best RAG pipeline.
         
-This will contain the results of a single run of the yaml file. If there are multiple of these, it means you ran multiple experiments. Consider running multiple trials on the same data.
-        
-The folder names are determined by the number of trials run. The first trial folder is named `0`, the second trial folder is named `1`, and so on.
+The folder names are determined by the number of trials run. 
+The first trial folder is named `0`, the second trial folder is named `1`, and so on.
+You can check this out at the [trial.json](#trialjson) file, too.
         
 ![trial_folder](../_static/trial_folder.png)
         
 #### config.yaml
-The yaml file we used for this experiment
+The yaml file you used for this trial.
 ```{Tip}
 You can see a sample full [config.yaml](sample_full_config.yaml).
 ```
@@ -45,7 +50,8 @@ You can see a sample full [config.yaml](sample_full_config.yaml).
 Full trial summary csv file
 
 
-Node lines, selected modules, files and parameters used by the selected modules, and the time it took to process one row.
+There are node lines, selected modules, files and parameters used by the selected modules, 
+and the time it took to process in one row.
     
 ![trail_summary](../_static/trial_summary.png)
     
@@ -59,14 +65,20 @@ Node lines, selected modules, files and parameters used by the selected modules,
 
 Contains the best modules and settings selected from each node.
 You can see the node, the selected modules, their files and parameters used, and the time it took to process a row.
-        
+
+```{seealso}
+Need to know what to do with Node Line?
+Check out [Roadmap to Modular RAG](../roadmap/modular_rag.md).
+```
+
         
 ##### query_expansion
 Node names belonging to the node_line
         
 ![node_folder](../_static/node_folder.png)
         
-Depending on the module and module params, you can run different experiments on a node. The following photo shows three experiments on a node.
+Depending on the module and module params, you can run different experiments on a node. 
+The following image shows three experiments on a node.
         
 - 0.parquet
 - 1.parquet
@@ -74,7 +86,7 @@ Depending on the module and module params, you can run different experiments on 
 - best_(index).parquet ⇒ Top results on a node
 
 ```{tip}
-In the picture, the first result is the best of the three experiments, so the file is named best_0
+In the image, the first result is the best of the three experiments, so the best file name is best_0.
 ```
 
   
@@ -86,9 +98,9 @@ Results for each node. All attempts and evaluation metric results are recorded.
 #### retrieve_node_line
 
 ```{attention}
-It is organized in the same format as above. It would be too long to explain it all, so we won't explain it here.
+All other node lines and nodes are organized in the same format as above. 
+It would be too long to explain it all, but we hope you understand the structure.
 ```
-
     
 ### data
 
@@ -97,7 +109,8 @@ It is organized in the same format as above. It would be too long to explain it 
 - corpus.parquet ⇒ corpus dataset
 - qa.parquet ⇒ qa dataset
   ```{tip}
-  QA data can exist only as qa.parquet, but it is recommended to split it into train and test for more accurate optimization. See the following() for how to build a qa dataset and corpus dataset.
+  QA data can exist only as qa.parquet, but it is recommended to split it into train and test for more accurate optimization. 
+  Check out [here](../data_creation/tutorial.md) for how to build a qa dataset and corpus dataset.
   ```
 
 ### resources

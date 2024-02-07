@@ -1,26 +1,26 @@
 # 6. Generator
 
 ### 🔎 **Definition**
-**`Generator Node`:** A component within a system that allows for experimentation with various Large Language Models (LLMs). This node is designed to facilitate the testing and evaluation of different LLMs to determine the most effective model for specific tasks or data sets.
+A node that allows for experimentation with various Large Language Models (LLMs). This node is designed to facilitate the testing and evaluation of different LLMs to determine the most effective model for specific tasks or data sets.
 
 ## 🔢 **Parameters**
 
 ### **Overview**
-This document serves as a guide for configuring parameters, strategies, and the `Config.yaml` file for various nodes within a system. It focuses particularly on the query expansion node but also provides insights applicable to other nodes.
+This document serves as a guide for configuring parameters, strategies, and the config YAML file for various nodes within a system
 
 ### **Node Parameters**
-- **Not Applicable (N/A):** There are no direct node parameters specified for the query expansion node, indicating a focus on strategy-based configuration.
+- **None** 
 
-### **Strategy**
-#### **Key Parameters**:
+### **Strategy Parameters**
 1. **Metrics**:  
    - **Types**: `bleu`, `meteor`, `rouge`
    ```{admonition} Purpose
-   These metrics are used to evaluate the performance of language models by comparing model-generated text to human reference texts, assessing translation quality, summarization, and understanding
+   These metrics are used to evaluate the performance of language models by comparing model-generated text to ground truth texts.
+   We are planning to add more metrics to evaluate generation performance.
    ```
 
 2. **Speed Threshold**:
-   - **Description**: This optional parameter can be applied to all nodes to ensure that the processing time for a method does not exceed a predefined threshold. It is vital for maintaining the efficiency of the system.
+   - **Description**: This optional parameter can be applied to all nodes to ensure that the processing time for a method does not exceed a predefined threshold.
 
 ### Example config.yaml file
 ```yaml

@@ -5,21 +5,19 @@ Reranking is a process applied after the initial retrieval of contents. It invol
 
 
 ### 🤸 **Benefits**
-The primary benefit of reranking is the enhanced prioritization of high-relevance contents. By performing a subsequent evaluation, reranking ensures that the most pertinent information is more accessible, improving the overall quality and relevance of the retrieved data. This process significantly aids in sifting through potentially vast amounts of information to highlight what is most useful for the query at hand.
+The primary benefit of reranking is the enhanced prioritization of high-relevance contents. By performing a subsequent evaluation, reranking ensures that the most pertinent information is more accessible, improving the overall quality and relevance of the retrieved data.
 
 ## 🔢 **Parameters**
 ### **Overview**:
-This document serves as a guide for configuring parameters, strategies, and the `Config.yaml` file for various nodes within a system. It focuses particularly on the query expansion node but also provides insights applicable to other nodes.
+This document serves as a guide for configuring parameters, strategies, and the config YAML file for various nodes within a system.
 ### **Node Parameters**
 **Top_k**
-- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be considered or processed further. This parameter is critical in scenarios where only a subset of the best results is required from a larger set.
+- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be result passage size.
 
-### **Strategy**
-
-#### **Key Parameters**:
+### **Strategy Parameters**
 1. **Metrics**: The performance of the reranker is evaluated using metrics such as `retrieval_f1`, `retrieval_recall`, and `retrieval_precision`. These metrics assess the effectiveness of the reranking process in identifying the most relevant content.
 
-2. **Speed Threshold**: An optional parameter that can be set to ensure the reranking process does not exceed a predefined processing time threshold. This parameter helps balance the trade-off between reranking accuracy and system performance.
+2. **Speed Threshold**: An optional parameter that can be set to ensure the reranking process does not exceed a predefined processing time threshold.
 
 
 ### Example config.yaml file
@@ -35,7 +33,7 @@ node_lines:
     modules:
       - module_type: tart
       - module_type: monot5
-      - module_type: UPR
+      - module_type: upr
 ```
 
 #### Supported Modules

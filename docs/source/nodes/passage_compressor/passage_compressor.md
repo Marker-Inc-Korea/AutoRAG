@@ -1,7 +1,7 @@
 # 4. Passage_Compressor
 
 ### 🔎 **Definition**
-The Passage Compressor is designed to optimize the process of handling retrieved contents that have undergone a reranking process. It compresses the contents before they are input into a language model (LLM), significantly reducing the amount of token usage.
+Passage compressor module compresses the contents before they are input into a language model (LLM), reducing the amount of token usage.
 
 ### 🤸 **Benefits**
 - **Efficiency in Token Usage:** By compressing the contents prior to their entry into a language model, the Passage Compressor significantly reduces the number of tokens required. This efficiency is crucial for large-scale applications where token usage can quickly accumulate, potentially leading to higher computational costs and slower processing times.
@@ -11,12 +11,10 @@ The Passage Compressor is designed to optimize the process of handling retrieved
 
 ## 🔢 **Parameters**
 ### **Overview**:
-This document serves as a guide for configuring parameters, strategies, and the `Config.yaml` file for various nodes within a system. It focuses particularly on the query expansion node but also provides insights applicable to other nodes.
+This document serves as a guide for configuring parameters, strategies, and the config YAML file for various nodes within a system.
 ### **Node Parameters**
-- **Not Applicable (N/A):** There are no direct node parameters specified for the query expansion node, indicating a focus on strategy-based configuration.
-### **Strategy**
-
-#### **Key Parameters**:
+- **None** 
+### **Strategy Parameters**
 1. **Metrics**: The use of specialized metrics such as `retrieval_token_f1`, `retrieval_token_recall`, and `retrieval_token_precision` is crucial. These metrics are tailored to evaluate the efficiency of the passage compressor in optimizing the token-level relevance of retrieved content.
    ```{admonition} Purpose
    These metrics specifically address the need to calculate the F1 score, recall, and precision at the token level for evaluating the passage compressor's performance. This approach is distinct from the metrics used for evaluating other nodes like the retrieval node, query expansion node, and passage reranker node, underscoring the unique focus of the passage compressor on token-level content relevance.
