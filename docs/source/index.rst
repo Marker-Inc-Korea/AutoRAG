@@ -67,6 +67,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
 
    install.md
    tutorial.md
+   structure.md
    troubleshooting.md
    local_model.md
 
@@ -85,13 +86,20 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    :hidden:
 
    optimization/optimization.md
+   optimization/folder_structure.md
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Available Modules
+   :maxdepth: 3
+   :caption: Nodes & Modules
    :hidden:
 
-   modules/index.md
+   nodes/index.md
+   nodes/query_expansion/query_expansion.md
+   nodes/retrieval/retrieval.md
+   nodes/passage_reranker/passage_reranker.md
+   nodes/passage_compressor/passage_compressor.md
+   nodes/prompt_maker/prompt_maker.md
+   nodes/generator/generator.md
 
 .. toctree::
    :maxdepth: 1
