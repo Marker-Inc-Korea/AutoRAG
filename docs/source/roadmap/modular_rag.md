@@ -21,10 +21,10 @@ It is more powerful than Naive RAG, but still it is not perfect.
 The main problem of Advanced RAG is that it still doesn't have **cycles**. Why are cycles important?
 
 For example, the LLM model generates answer, but it has hallucination about facts. 
-If that answer delivers to the user, the user get wrong information, and it occurs the bad user experience.
+If that answer delivers to the user, the user gets wrong information, and it occurs the bad user experience.
 To prevent this, we need to check the answer's fatefulness.
 And if there is a hallucination, you can ask generator to re-generate answer or retrieve document chunk again.
-In DAG paradigm like Naive RAG & Advance RAG, it is impossible to do that because they don't have cycles.
+In a DAG paradigm like Naive RAG & Advance RAG, it is impossible to do that because they don't have cycles.
 And here comes Modular RAG.
 
 Modular RAG has cycles and modules, so it can decide the next step to deliver the best answer to the user.
