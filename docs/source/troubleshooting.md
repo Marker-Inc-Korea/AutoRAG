@@ -66,3 +66,31 @@ When you using OpenAILike model (like VLLM openai server), you can put api_base 
 In this way, you can use both OpenAI model and custom model.
 ```
 
+### Error while running LLM
+
+It is common you face OOM (Out of Memory) error or out of rate limit error while running LLM.
+In this case, we suggest you adjusting batch size.
+
+1. Adjust batch size
+You can adjust batch size at our config yaml file. 
+All modules that using LLM model can get `batch` as module parameter.
+
+For example, using `batch` at `llama_index_llm` module:
+
+```yaml
+      modules:
+        - module_type: llama_index_llm
+          llm: openai
+          model: [gpt-3.5-turbo-16k, gpt-3.5-turbo-1106]
+          temperature: [0.5, 1.0, 1.5]
+          batch: 4
+```
+
+See? You can put `batch` parameter to `llama_index_llm` module.
+
+```{tip}
+We recommend setting batch under 3 when you are using openai model.
+In our experiment, it occurred rate limit error when the batch size was 4.
+(Check out your tier and limit error at [here](https://platform.openai.com/account/limits).)
+```
+
