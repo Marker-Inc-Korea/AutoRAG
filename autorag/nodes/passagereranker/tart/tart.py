@@ -33,8 +33,9 @@ def tart(queries: List[str], contents_list: List[List[str]],
     model_name = "facebook/tart-full-flan-t5-xl"
     model = EncT5ForSequenceClassification.from_pretrained(model_name)
     tokenizer = EncT5Tokenizer.from_pretrained(model_name)
+    device = ("cuda" if torch.cuda.is_available() else "cpu")
     # Run async tart_rerank_pure function
-    tasks = [tart_pure(query, contents, scores, ids, top_k, model, tokenizer, instruction) \
+    tasks = [tart_pure(query, contents, scores, ids, top_k, model, tokenizer, instruction, device) \
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
@@ -45,7 +46,7 @@ def tart(queries: List[str], contents_list: List[List[str]],
 
 
 async def tart_pure(query: str, contents: List[str], scores: List[float],
-                    ids: List[str], top_k: int, model, tokenizer, instruction: str) \
+                    ids: List[str], top_k: int, model, tokenizer, instruction: str, device: str) \
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using Tart.
@@ -58,6 +59,9 @@ async def tart_pure(query: str, contents: List[str], scores: List[float],
     :param instruction: The instruction for reranking.
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
+    if device == 'cuda':
+        model = model.to(device)
+
     instruction_queries: List[str] = ['{0} [SEP] {1}'.format(instruction, query) for _ in range(len(contents))]
     features = tokenizer(instruction_queries, contents, padding=True, truncation=True, return_tensors="pt")
     with torch.no_grad():
