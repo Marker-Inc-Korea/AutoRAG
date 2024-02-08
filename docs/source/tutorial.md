@@ -147,7 +147,7 @@ You successfully found the optimal RAG pipeline for your dataset and deployed it
 Now, you can make your custom config file, write better config yaml file, 
 and evaluate it again and again for better result.
 
-Or just launch new RAG product with your saved time with AutoRAG!
+Or just launch a new RAG product with your saved time with AutoRAG!
 
 ```{admonition} Next Step
 - Learn about evaluation data creation at [here](data_creation/tutorial.md)
