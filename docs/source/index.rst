@@ -86,8 +86,8 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    :hidden:
 
    optimization/optimization.md
-   optimization/custom_config.md
    optimization/folder_structure.md
+   optimization/custom_config.md
 
 .. toctree::
    :maxdepth: 3
