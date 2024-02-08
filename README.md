@@ -18,7 +18,7 @@ Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
   - [4. Share your RAG pipeline](#4-share-your-rag-pipeline)
   - [+ Config yaml file](#-create-your-own-config-yaml-file)
 - [Supporting RAG modules](#supporting-nodes--modules)
-- [Roadmap](#-roadmap)
+- [Roadmap](#roadmap)
 - [Contribution](#contribution)
 
 # Introduction
@@ -212,7 +212,7 @@ node_lines:
 
 
 
-# 🛣️ Roadmap
+# 🛣Roadmap
 
 - [ ] Policy Module for modular RAG pipeline
 - [ ] Visualize evaluation result
