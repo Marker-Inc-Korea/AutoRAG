@@ -41,8 +41,11 @@ The format for qa data can be found [qa data format](data_format.md#qa-dataset)
 ```python
 from guidance import models
 import pandas as pd
+from autorag.data.qacreation.simple import generate_simple_qa_dataset, generate_qa_row
 
-qa_dataset = generate_simple_qa_dataset(corpus_data=pd.read_parquet("path/to/corpus_data"), llm=models.OpenAI("gpt-3.5-turbo"), output_filepath="path/to/qa_dataset.parquet", generate_row_function=generate_qa_row)
+corpus_df = pd.read_parquet("path/to/corpus_data")
+llm = models.OpenAI("gpt-3.5-turbo")
+qa_dataset = generate_simple_qa_dataset(corpus_data=corpus_df, llm=llm, output_filepath="path/to/qa_dataset.parquet", generate_row_function=generate_qa_row)
 ```
 `generate_simple_qa_dataset` is a function designed to generate one **query** and one **generation_gt** per passage of corpus_data.
 
@@ -59,8 +62,10 @@ Here is the example of `generate_row_function` using guidance.
 
 ```python
 import guidance
+from guidance import models, gen
+
 # Example for LLM API  
-def generate_qa_row(llm: models.Model, corpus_data_row, **kwargs):
+def generate_qa_row(llm: models.Model, corpus_data_row):
     temp_llm = llm
 
     # make template and synthetic data with guidance 
