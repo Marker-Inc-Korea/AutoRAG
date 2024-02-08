@@ -3,9 +3,9 @@
 ## Index
 
 1. [Overview](#overview)
-2. [Raw data to Corpus data](#raw-data-to-corpus-data)
-3. [Corpus data to Qa data](#corpus-data-to-qa_data)
-4. [Create Custom Function](#create-custom-function)
+2. [Raw data to Corpus data](#make-corpus-data-from-raw-documents)
+3. [Corpus data to Qa data](#make-qa-data-from-corpus-data)
+4. [Create Custom Function](#use-custom-data-creation-function)
 
 
 ## Overview
@@ -20,58 +20,53 @@ The following guide covers how to use LLM to create data in a form that AutoRAG 
 
 AutoRAG aims to work with Python’s ‘primitive data types’ for scalability and convenience.
 
-Therefore, in order to use AutoRAG, you need to convert your raw data into `corpus data`  and `qa data` , which are the data types used by AutoRAG.
+Therefore, to use AutoRAG, you need to convert your raw data into `corpus data`  and `qa data` to our [data format](./data_format.md).
 
 
-## raw data to corpus data
-1. chunking with loaders such as lama_index, LangChain, etc.
-2. make it into corpus data using util's datatype converter (based on llama_index).
+## Make corpus data from raw documents
+1. Load your raw data to texts with loaders such as lama_index, LangChain, etc.
+2. Chunk the texts into passages. Use Langchain, LlamaIndex, etc.
+3. Make it into corpus data using util's datatype converter (based on llama_index).
 
 ```{tip}
 The format for corpus data can be found [corpus data format](data_format.md#corpus-dataset)
 ```
 
-## corpus data to qa_data
+## Make qa data from corpus data
 
 ```{tip}
-The format for corpus data can be found [qa data format](data_format.md#qa-dataset)
+The format for qa data can be found [qa data format](data_format.md#qa-dataset)
 ```
 
 ```python
-from ragdatacreation.qageneration.simple from ragdatacreation.qageneration.simple import generate_simple_qa_dataset, generate_qa_row
-
 from guidance import models
 import pandas as pd
 
 qa_dataset = generate_simple_qa_dataset(corpus_data=pd.read_parquet("path/to/corpus_data"), llm=models.OpenAI("gpt-3.5-turbo"), output_filepath="path/to/qa_dataset.parquet", generate_row_function=generate_qa_row)
 ```
-
-`generate_simple_qa_dataset` is a function designed to generate one **query**, one **generation_gt** per passage of corpus_data 
+`generate_simple_qa_dataset` is a function designed to generate one **query** and one **generation_gt** per passage of corpus_data.
 
 ```{admonition} What is passage?
-passage: chunked units from raw data
+Passage is chunked units from raw data.
 ```
 
-
-### parameters
-- `corpus`: pd.DataFrame,
-- `llm`: guidance.models.model
-- `output_filepath`: str
-
-## Create Custom Function
+## Use custom data creation function
 You can change `generate_row_function`  to a custom function to use different templates.
 
-The output of `generate_row_function`  should be in the form of a **dictionary**  containing `query`  and `generation_gt` .
+The output of `generate_row_function`  should be in the form of a **dictionary**  containing `query`  and `generation_gt`.
+
+Here is the example of `generate_row_function` using guidance.
 
 ```python
+import guidance
 # Example for LLM API  
 def generate_qa_row(llm: models.Model, corpus_data_row, **kwargs):
     temp_llm = llm
 
-    # make templete and synthetic data with guidance 
+    # make template and synthetic data with guidance 
     with guidance.user():
         temp_llm += f"""
-    You have to found a passge to solve "the problem". 
+    You have to found a passage to solve "the problem". 
     You need to build a clean and clear set of (problem, passage, answer) in json format 
     so that you don't have to ask about "the problem" again.
     problem need to end with question mark("?").
@@ -101,5 +96,3 @@ def generate_qa_row(llm: models.Model, corpus_data_row, **kwargs):
     }
     return response
 ```
-
-Easily create your own custom functions with guidance syntax that provides superior control and efficiency.
