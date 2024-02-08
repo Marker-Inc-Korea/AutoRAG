@@ -226,8 +226,8 @@ node_lines:
 
 # Contribution
 
-We are developing AutoRAG as open-source. Feel free to contribute to this project.
+We are developing AutoRAG as open-source. 
 
-If you want to contribute to this project, please check out the [Contribution Guide](CONTRIBUTING.md).
+So this project welcomes contributions and suggestions. Feel free to contribute to this project. 
 
 Plus, check out our detailed documentation at [here](https://marker-inc-korea.github.io/AutoRAG/index.html).
