@@ -103,7 +103,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    nodes/generator/generator.md
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: Deploy
    :hidden:
 
