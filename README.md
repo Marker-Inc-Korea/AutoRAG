@@ -4,28 +4,7 @@ RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
 Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
 
-Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
-
-# Introduction
-
-There are numerous RAG pipelines and modules out there,
-but you don’t know what pipeline is great for “your own data” and "your own use-case."
-Making and evaluating all RAG modules is very time-consuming and hard to do.
-But without it, you will never know which RAG pipeline is the best for your own use-case.
-
-AutoRAG is a tool for finding optimal RAG pipeline for “your data.”
-You can evaluate various RAG modules automatically with your own evaluation data,
-and find the best RAG pipeline for your own use-case.
-
-AutoRAG supports a simple way to evaluate numerous RAG module combinations.
-Try now and find the best RAG pipeline for your own use-case.
-
-# ⚡ Quick Install
-
-```bash
-pip install AutoRAG
-```
-
+  Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 # 📑 Index
 
 - [Introduction](#introduction)
@@ -33,14 +12,35 @@ pip install AutoRAG
 - [Index](#-index)
 - [Strengths](#-strengths)
 - [QuickStart](#-quickstart)
-    - [1. Prepare your evaluation data](#1-prepare-your-evaluation-data)
-    - [2. Evaluate your data to various RAG modules](#2-evaluate-your-data-to-various-rag-modules)
-    - [3. Use a found optimal RAG pipeline](#3-use-a-found-optimal-rag-pipeline)
-    - [4. Share your RAG pipeline](#4-share-your-rag-pipeline)
-    - [+ Config yaml file](#-create-your-own-config-yaml-file)
+  - [1. Prepare your evaluation data](#1-prepare-your-evaluation-data)
+  - [2. Evaluate your data to various RAG modules](#2-evaluate-your-data-to-various-rag-modules)
+  - [3. Use a found optimal RAG pipeline](#3-use-a-found-optimal-rag-pipeline)
+  - [4. Share your RAG pipeline](#4-share-your-rag-pipeline)
+  - [+ Config yaml file](#-create-your-own-config-yaml-file)
 - [Supporting RAG modules](#supporting-nodes--modules)
 - [Roadmap](#-roadmap)
 - [Contribution](#contribution)
+
+# Introduction
+
+  There are numerous RAG pipelines and modules out there,
+  but you don’t know what pipeline is great for “your own data” and "your own use-case."
+  Making and evaluating all RAG modules is very time-consuming and hard to do.
+  But without it, you will never know which RAG pipeline is the best for your own use-case.
+
+  AutoRAG is a tool for finding optimal RAG pipeline for “your data.”
+  You can evaluate various RAG modules automatically with your own evaluation data,
+  and find the best RAG pipeline for your own use-case.
+
+  AutoRAG supports a simple way to evaluate numerous RAG module combinations.
+  Try now and find the best RAG pipeline for your own use-case.
+
+# ⚡ Quick Install
+
+```bash
+pip install AutoRAG
+```
+
 
 # 💪 Strengths
 
@@ -70,6 +70,7 @@ For evaluation, you need to prepare just three files.
 
 There is a template for your evaluation data for using AutoRAG.
 
+- Check out how to make evaluation data at [here](https://marker-inc-korea.github.io/AutoRAG/data_creation/tutorial.html).
 - Check out the evaluation data rule at [here](https://marker-inc-korea.github.io/AutoRAG/data_creation/data_format.html).
 - Plus, you can get example datasets for testing AutoRAG at [here](./sample_dataset).
 
@@ -101,7 +102,7 @@ you can check `summary.csv` file that summarizes the evaluation results and the 
 
 For more details, you can check out how the folder structure looks like at [here](https://marker-inc-korea.github.io/AutoRAG/optimization/folder_structure.html).
 
-### 3.  Use a found optimal RAG pipeline
+### 3. Use a found optimal RAG pipeline
 
 You can use a found optimal RAG pipeline right away.
 It needs just a few lines of code, and you are ready to use!
