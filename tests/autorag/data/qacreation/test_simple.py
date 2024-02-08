@@ -6,7 +6,7 @@ import os
 import pathlib
 
 from autorag.data.qacreation.simple import generate_simple_qa_dataset, generate_qa_row
-from autorag.utils.preprocess import validate_qa_dataset
+from autorag.utils.preprocess import validate_qa_dataset, validate_corpus_dataset
 from autorag.data.utils.llamaindex import get_file_metadata, llama_documents_to_parquet
 
 from llama_index import SimpleDirectoryReader
@@ -43,6 +43,8 @@ def test_generate_simple_qa_dataset(load_dir, output_filedir):
     )
     llama_documents_to_parquet(llama_documents=documents, output_filepath=os.path.join(load_dir, load_file_name))
     assert os.path.exists(os.path.join(load_dir, load_file_name))
+    corpus_data = pd.read_parquet(os.path.join(load_dir, load_file_name))
+    validate_corpus_dataset(corpus_data)
 
     qa_dataset = generate_simple_qa_dataset(corpus_data=pd.read_parquet(os.path.join(load_dir, load_file_name)),
                                             llm=models.OpenAI("gpt-3.5-turbo"),

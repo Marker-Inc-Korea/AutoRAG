@@ -78,8 +78,8 @@ def generate_simple_qa_dataset(llm: models.Model, corpus_data: pd.DataFrame,
         qa_data_lst.append({
             'qid': str(uuid.uuid4()),
             'query': response["query"],
-            'retrieval_gt': list(list(corpus_data_row["doc_id"])),
-            'generation_gt': list(response["generation_gt"]),
+            'retrieval_gt': [[corpus_data_row["doc_id"]]],
+            'generation_gt': [response["generation_gt"]],
             'metadata': corpus_data_row["metadata"]
         })
 
