@@ -39,7 +39,7 @@ If you don't know about specific columns and data types, check out the [Data For
 
 Let's find an optimal RAG pipeline with AutoRAG! 
 After you prepare your evaluation dataset, you need to have a config yaml file.
-There are few pre-made config yaml files at [here]().
+There are few pre-made config yaml files at our GitHub repo `sample_config` folder.
 We highly recommend using pre-made config yaml files for starter.
 Download `starter.yaml` file to your local environment, and you are ready to go.
 
