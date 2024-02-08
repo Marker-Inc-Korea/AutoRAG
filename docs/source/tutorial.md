@@ -32,7 +32,7 @@ After you prepare your evaluation dataset, please keep in mind the path to your 
 ```{admonition} Note: Dataset Format
 Make sure there are two evaluation datasets, qa dataset and corpus dataset.
 And you must save it as parquet format.
-If you don't know about specific columns and data types, check out the [Data Format]() section. 
+If you don't know about specific columns and data types, check out the [Data Format](data_creation/data_format.md) section. 
 ```
 
 ## Find Optimal RAG Pipeline
@@ -120,7 +120,7 @@ runner.run('your question')
 ```
 
 Or you can run this pipeline as an API server.
-Check out API endpoint at [here]().
+Check out API endpoint at [here](deploy/api_endpoint.md).
 
 ```python
 from autorag.deploy import Runner

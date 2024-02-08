@@ -104,6 +104,13 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
 
 .. toctree::
    :maxdepth: 1
+   :caption: Deploy
+   :hidden:
+
+   deploy/api_endpoint.md
+
+.. toctree::
+   :maxdepth: 1
    :caption: Roadmap
    :hidden:
 
