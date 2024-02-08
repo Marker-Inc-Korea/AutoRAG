@@ -8,12 +8,13 @@ import uuid
 
 from typing import Callable
 
-def generate_qa_row(llm: models.Model, corpus_data_row, **kwargs):
-    ## this sample code to generate rag dataset using OpenAI chat model
+
+def generate_qa_row(llm: models.Model, corpus_data_row):
     """
+    this sample code to generate rag dataset using OpenAI chat model
+
     :param llm: guidance model
     :param corpus_data_row: need "contents" column
-    :param kwargs: additional arguments the function use. This func has **kwargs input because it is an example.
     :return: should to be dict which has "query", "generation_gt" columns at least.
     """
     temp_llm = llm
@@ -60,7 +61,7 @@ def generate_simple_qa_dataset(llm: models.Model, corpus_data: pd.DataFrame,
     :param corpus_data: pd.DataFrame. refer to the basic structure
     :param output_filepath: file_dir must exist, filepath must not exist. file extension must be .parquet
     :param generate_row_function: input(llm, corpus_data_row, kwargs) output(dict[columns contain "query" and "generation_gt"])
-    :param kwargs: if generate_row_function require more args, use kwargs
+    :param kwargs: if generate_row_function requires more args, use kwargs
     :return: qa_dataset as pd.DataFrame
     """
     output_file_dir = pathlib.PurePath(output_filepath).parent
@@ -80,7 +81,7 @@ def generate_simple_qa_dataset(llm: models.Model, corpus_data: pd.DataFrame,
             'retrieval_gt': list(list(corpus_data_row["doc_id"])),
             'generation_gt': list(response["generation_gt"]),
             'metadata': corpus_data_row["metadata"]
-            })
+        })
 
     qa_dataset = pd.DataFrame(qa_data_lst)
     qa_dataset.to_parquet(output_filepath, index=False)
