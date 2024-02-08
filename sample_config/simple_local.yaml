@@ -1,0 +1,27 @@
+# This config YAML file does not contain any optimization.
+node_lines:
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 3
+      modules:
+        - module_type: vectordb
+          embedding_model: huggingface_baai_bge_small
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: fstring
+          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    - node_type: generator
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: llama_index_llm
+          llm: vllm
+          model: mistralai/Mistral-7B-Instruct-v0.2
+          batch: 8

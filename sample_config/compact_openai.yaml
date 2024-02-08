@@ -1,0 +1,52 @@
+# In this yaml, we do not use tree_summarize for accuracy
+# And did not use monoT5, because it can take too long.
+node_lines:
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 20
+      modules:
+        - module_type: bm25
+        - module_type: vectordb
+          embedding_model: openai
+        - module_type: hybrid_rrf
+          target_modules: ('bm25', 'vectordb')
+          rrf_k: [3, 5, 10]
+        - module_type: hybrid_cc
+          target_modules: ('bm25', 'vectordb')
+          weights:
+            - (0.5, 0.5)
+            - (0.3, 0.7)
+            - (0.7, 0.3)
+    - node_type: passage_reranker
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 3
+      modules:
+        - module_type: tart
+        - module_type: upr
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu, meteor, rouge]
+        generator_modules:
+          - module_type: llama_index_llm
+            llm: openai
+            batch: 2
+      modules:
+        - module_type: fstring
+          prompt:
+            - "Answer to given questions with the following passage: {retrieved_contents} \n\n Question: {query} \n\n Answer:"
+            - "There is a passages related to user question. Please response carefully to the following question. \n\n Passage: {retrieved_contents} \n\n Question: {query} \n\n Answer the question. Think step by step." # Zero-shot CoT prompt
+            - "{retrieved_contents} \n\n Read the passage carefully, and answer this question. \n\n Question: {query} \n\n Answer the question. Be concise." # concise prompt
+    - node_type: generator
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: llama_index_llm
+          llm: openai
+          temperature: [0.1, 0.5, 1.1]
+          batch: 2

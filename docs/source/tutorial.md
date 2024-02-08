@@ -16,7 +16,7 @@ So, for users who want to make a good evaluation dataset,
 we provide a detailed guide at [here](data_creation/tutorial.md).
 
 For users who want to use a pre-made evaluation dataset,
-we provide example datasets at [here]().
+we provide example datasets at [here](data_creation/data_format.md#samples).
 
 Also, you can check out sample datasets at [huggingface](https://huggingface.co/collections/MarkrAI/autorag-evaluation-datasets-65c0ee87d673dcc686bd14b8).
 You can download it manually using huggingface datasets library.
@@ -32,20 +32,20 @@ After you prepare your evaluation dataset, please keep in mind the path to your 
 ```{admonition} Note: Dataset Format
 Make sure there are two evaluation datasets, qa dataset and corpus dataset.
 And you must save it as parquet format.
-If you don't know about specific columns and data types, check out the [Data Format]() section. 
+If you don't know about specific columns and data types, check out the [Data Format](data_creation/data_format.md) section. 
 ```
 
 ## Find Optimal RAG Pipeline
 
 Let's find an optimal RAG pipeline with AutoRAG! 
 After you prepare your evaluation dataset, you need to have a config yaml file.
-There are few pre-made config yaml files at [here]().
+There are few pre-made config yaml files at our GitHub repo `sample_config` folder.
 We highly recommend using pre-made config yaml files for starter.
 Download `starter.yaml` file to your local environment, and you are ready to go.
 
 ```{admonition} Write custom config yaml file
 If you want to write your own custom config yaml file for detailed configuration and experiment,
-check out the []() section.
+check out the [optimization](optimization/optimization.md) section.
 ```
 
 Run below code at CLI, then AutoRAG automatically evaluate your dataset and find the best RAG pipeline for your dataset.
@@ -77,7 +77,7 @@ The number is the trial number, and you can check when you run the evaluation at
 And the most important file is `summary.csv` files. 
 You can check out which module and parameters are the best for your dataset.
 And there are lots of details inside node line and node folders.
-You can find out more information about folder structure and result files at [here]().
+You can find out more information about folder structure and result files at [here](structure.md).
 
 
 ## Extract pipeline and evaluate test dataset
@@ -120,7 +120,7 @@ runner.run('your question')
 ```
 
 Or you can run this pipeline as an API server.
-Check out API endpoint at [here]().
+Check out API endpoint at [here](deploy/api_endpoint.md).
 
 ```python
 from autorag.deploy import Runner
@@ -147,7 +147,7 @@ You successfully found the optimal RAG pipeline for your dataset and deployed it
 Now, you can make your custom config file, write better config yaml file, 
 and evaluate it again and again for better result.
 
-Or just launch new RAG product with your saved time with AutoRAG!
+Or just launch a new RAG product with your saved time with AutoRAG!
 
 ```{admonition} Next Step
 - Learn about evaluation data creation at [here](data_creation/tutorial.md)

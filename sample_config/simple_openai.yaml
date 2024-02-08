@@ -1,0 +1,26 @@
+node_lines:
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 3
+      modules:
+        - module_type: vectordb
+          embedding_model: openai
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: fstring
+          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    - node_type: generator
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: llama_index_llm
+          llm: openai
+          model: [gpt-3.5-turbo-16k, gpt-4]
+          batch: 2
