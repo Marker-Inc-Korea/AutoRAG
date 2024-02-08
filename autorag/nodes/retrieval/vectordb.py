@@ -16,8 +16,8 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
              batch: int = 128) -> Tuple[List[List[str]], List[List[float]]]:
     """
     VectorDB retrieval function.
-    You have to get chroma collection that is already ingested.
-    You have to get embedding model that is already used in ingest.
+    You have to get a chroma collection that is already ingested.
+    You have to get an embedding model that is already used in ingesting.
 
     :param queries: 2-d list of query strings.
         Each element of the list is a query strings of each row.
@@ -80,5 +80,7 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
     contents = corpus_data['contents'].tolist()
 
     # embed corpus
-    embedded_contents = embedding_model._get_text_embeddings(contents)
-    collection.add(ids=ids, embeddings=embedded_contents)
+    batch = 128
+    for i in range(0, len(contents), batch):
+        embedded_contents = embedding_model._get_text_embeddings(contents[i:i + batch])
+        collection.add(ids=ids[i:i + batch], embeddings=embedded_contents)
