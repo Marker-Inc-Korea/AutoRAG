@@ -1,6 +1,15 @@
 autorag.data package
 ====================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   autorag.data.qacreation
+   autorag.data.utils
+
 Module contents
 ---------------
 
