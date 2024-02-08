@@ -33,6 +33,7 @@ def get_file_metadata(file_path: str) -> Dict:
         ).strftime("%Y-%m-%d"),
     }
 
+
 def llama_documents_to_parquet(llama_documents: List[LlamaDocument],
                                output_filepath: str):
     """
