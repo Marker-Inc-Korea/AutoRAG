@@ -118,6 +118,9 @@ def calculate_likelihood(query: str, contents: List[str],
         question_tensor = question_tensor.cuda()
     question_tensor = torch.repeat_interleave(question_tensor, len(contents), dim=0)
 
+    if device == 'cuda':
+        model = model.to(device)
+
     sharded_nll_list = []
 
     # calculate log likelihood
