@@ -1,16 +1,17 @@
 import functools
 import warnings
-from typing import List, Callable
+from typing import List, Callable, Union, Dict
 
 import pandas as pd
 
-from autorag.evaluate.metric.generation import bleu, meteor, rouge
+from autorag.evaluate.metric.generation import bleu, meteor, rouge, sem_score
+from autorag.evaluate.util import cast_metrics
 
 GENERATION_METRIC_FUNC_DICT = {func.__name__: func for func in
-                               [bleu, meteor, rouge]}
+                               [bleu, meteor, rouge, sem_score]}
 
 
-def evaluate_generation(generation_gt: List[List[str]], metrics: List[str]):
+def evaluate_generation(generation_gt: List[List[str]], metrics: Union[List[str], List[Dict]]):
     def decorator_evaluate_generation(func: Callable):
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> pd.DataFrame:
@@ -27,13 +28,15 @@ def evaluate_generation(generation_gt: List[List[str]], metrics: List[str]):
                 raise ValueError("Input func must return string list as generated answer at the first return value.")
 
             metric_scores = {}
-            for metric in metrics:
-                if metric not in GENERATION_METRIC_FUNC_DICT:
-                    warnings.warn(f"metric {metric} is not in supported metrics: {GENERATION_METRIC_FUNC_DICT.keys()}"
-                                  f"{metric} will be ignored.")
+            metric_names, metric_params = cast_metrics(metrics)
+
+            for metric_name, metric_param in zip(metric_names, metric_params):
+                if metric_name not in GENERATION_METRIC_FUNC_DICT:
+                    warnings.warn(f"metric {metric_name} is not in supported metrics: {GENERATION_METRIC_FUNC_DICT.keys()}"
+                                  f"{metric_name} will be ignored.")
                 else:
-                    metric_scores[metric] = GENERATION_METRIC_FUNC_DICT[metric](
-                        generation_gt=generation_gt, generations=generated_str)
+                    metric_scores[metric_name] = GENERATION_METRIC_FUNC_DICT[metric_name](
+                        generation_gt=generation_gt, generations=generated_str, **metric_param)
 
             metric_result_df = pd.DataFrame(metric_scores)
             execution_result_df = pd.DataFrame({
