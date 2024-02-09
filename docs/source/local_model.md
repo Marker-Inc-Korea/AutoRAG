@@ -99,15 +99,16 @@ Modules that using embedding model can take `embedding_model` parameter to speci
 As default, we support OpenAI embedding models and some of the local models.
 To change the embedding model, you can change the `embedding_model` parameter to the following values:
 
-|                             Embedding Model Type                              |       embedding_model parameter       |
-|:-----------------------------------------------------------------------------:|:-------------------------------------:|
-|                           Default openai embedding                            |                openai                 |
-|                           openai babbage embedding                            |            openai_babbage             |
-|                             openai ada embedding                              |              openai_ada               |
-|                           openai davinci embedding                            |            openai_davinci             |
-|                            openai curie embedding                             |             openai_curie              |
-|    [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)    |      huggingface_baai_bge_small       |
-| [cointegrated/rubert-tiny2](https://huggingface.co/cointegrated/rubert-tiny2) | huggingface_cointegrated_rubert_tiny2 |
+|                                           Embedding Model Type                                            |       embedding_model parameter       |
+|:---------------------------------------------------------------------------------------------------------:|:-------------------------------------:|
+|                                         Default openai embedding                                          |                openai                 |
+|                                         openai babbage embedding                                          |            openai_babbage             |
+|                                           openai ada embedding                                            |              openai_ada               |
+|                                         openai davinci embedding                                          |            openai_davinci             |
+|                                          openai curie embedding                                           |             openai_curie              |
+|                  [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)                  |      huggingface_baai_bge_small       |
+|               [cointegrated/rubert-tiny2](https://huggingface.co/cointegrated/rubert-tiny2)               | huggingface_cointegrated_rubert_tiny2 |
+| [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) |     huggingface_all_mpnet_base_v2     |
 
 For example, if you want to use OpenAI curie embedding model, you can set `embedding_model` parameter to `openai_curie`.
 
@@ -130,7 +131,7 @@ Because the embedding model is initialized at the beginning of the AutoRAG progr
 
 You can add more embedding models for AutoRAG.
 You can add it by simply calling `autorag.embedding_models` and add new key and value.
-For example, 
+For example,
 if you want to add `[KoSimCSE](https://huggingface.co/BM-K/KoSimCSE-roberta-multitask)` model for Korean embedding,
 execute the following code.
 
@@ -142,7 +143,6 @@ autorag.generator_models['kosimcse'] = HuggingFaceEmbedding("BM-K/KoSimCSE-rober
 ```
 
 Then you can use `kosimcse` at config yaml file.
-
 
 ```{caution}
 When you add new LLM model, you should add instance of the `BaseEmbedding` class from LlamaIndex.
