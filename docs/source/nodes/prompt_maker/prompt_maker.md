@@ -30,7 +30,7 @@ node_lines:
   nodes:
     - node_type: prompt_maker
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics: [bleu, meteor, rouge, sem_score]
         speed_threshold: 10
         generator_modules:
           - module_type: llama_index_llm

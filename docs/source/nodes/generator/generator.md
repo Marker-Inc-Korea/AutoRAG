@@ -13,11 +13,21 @@ This document serves as a guide for configuring parameters, strategies, and the 
 
 ### **Strategy Parameters**
 1. **Metrics**:  
-   - **Types**: `bleu`, `meteor`, `rouge`
+   - **Types**: `bleu`, `meteor`, `rouge`, `sem_score`
    ```{admonition} Purpose
    These metrics are used to evaluate the performance of language models by comparing model-generated text to ground truth texts.
    We are planning to add more metrics to evaluate generation performance.
    ```
+   
+   ```{admonition} sem_score
+   Sem_score is a metric that evaluates the semantic similarity between ground truth and llm generation.
+   It is quite simple, but effective to evaluate LLM systems.
+   
+   Since it uses embedding model, you can specify the embedding model name at config YAML file.
+   Since AutoRAG v0.0.6, we support dictionary at strategy.
+   You can check out this feature at the example config.yaml file below.
+   ```
+   
 
 2. **Speed Threshold**:
    - **Description**: This optional parameter can be applied to all nodes to ensure that the processing time for a method does not exceed a predefined threshold.
@@ -28,7 +38,11 @@ This document serves as a guide for configuring parameters, strategies, and the 
   nodes:
     - node_type: generator
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics:
+           - metric_name: bleu
+           - metric_name: meteor
+           - metric_name: sem_score
+             embedding_model: openai
         speed_threshold: 10
       modules:
         - module_type: llama_index_llm
