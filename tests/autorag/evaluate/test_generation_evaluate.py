@@ -22,7 +22,7 @@ pseudo_tokens = list(map(lambda x: tokenizer.tokenize(x), pseudo_generations))
 pseudo_log_probs = list(map(lambda x: [0.1] * len(x), pseudo_tokens))
 
 
-@evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'rouge'])
+@evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'rouge', 'sem_score'])
 def pseudo_generation():
     return pseudo_generations
 
@@ -32,12 +32,18 @@ def pseudo_generation_with_log_probs():
     return pseudo_generations, pseudo_tokens, pseudo_log_probs
 
 
+@evaluate_generation(generation_gt=generation_gts, metrics=[{'metric_name': 'bleu'}, {'metric_name': 'sem_score',
+                                                                                      'embedding_model': 'openai'}])
+def pseudo_generation_dict_metrics():
+    return pseudo_generations
+
+
 def test_evaluate_generation():
     result_df = pseudo_generation()
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 3
-    assert len(result_df.columns) == 4
-    assert set(result_df.columns) == {'generated_texts', 'bleu', 'meteor', 'rouge'}
+    assert len(result_df.columns) == 5
+    assert set(result_df.columns) == {'generated_texts', 'bleu', 'meteor', 'rouge', 'sem_score'}
 
     with pytest.warns():
         result_df_log_probs = pseudo_generation_with_log_probs()
@@ -50,9 +56,16 @@ def test_evaluate_generation():
     assert result_df_log_probs['generated_texts'].tolist() == pseudo_generations
     assert result_df_log_probs['generated_tokens'].tolist() == pseudo_tokens
     assert result_df_log_probs['generated_log_probs'].tolist() == pseudo_log_probs
+
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(result_df['bleu'].tolist(), [51.1507, 23.5783, 100.0]))))
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(result_df['meteor'].tolist(), [0.853462, 0.5859375, 1.0]))))
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(result_df['rouge'].tolist(), [0.909, 0.35714, 1.0]))))
+
+    result_df = pseudo_generation_dict_metrics()
+    assert isinstance(result_df, pd.DataFrame)
+    assert len(result_df) == 3
+    assert len(result_df.columns) == 3
+    assert set(result_df.columns) == {'generated_texts', 'bleu', 'sem_score'}

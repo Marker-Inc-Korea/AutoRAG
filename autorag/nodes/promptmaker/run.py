@@ -1,7 +1,7 @@
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Optional
+from typing import List, Callable, Dict, Optional, Union
 
 import pandas as pd
 
@@ -144,7 +144,7 @@ def evaluate_one_prompt_maker_node(generator_funcs: List[Callable],
                                    generator_params: List[Dict],
                                    prompts: List[str],
                                    generation_gt: List[List[str]],
-                                   metrics: List[str],
+                                   metrics: Union[List[str], List[Dict]],
                                    project_dir) -> pd.DataFrame:
     input_df = pd.DataFrame({'prompts': prompts})
     generator_results = list(map(lambda x: x[0](project_dir=project_dir, previous_result=input_df, **x[1]),
@@ -158,7 +158,7 @@ def evaluate_one_prompt_maker_node(generator_funcs: List[Callable],
 
 def evaluate_generator_result(result_df: pd.DataFrame,
                               generation_gt: List[List[str]],
-                              metrics: List[str]) -> pd.DataFrame:
+                              metrics: Union[List[str], List[Dict]]) -> pd.DataFrame:
     @evaluate_generation(generation_gt=generation_gt, metrics=metrics)
     def evaluate(df):
         return df['generated_texts'].tolist()
