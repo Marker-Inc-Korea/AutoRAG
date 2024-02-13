@@ -30,20 +30,9 @@ To change the LLM model type, you can change the `llm` parameter to the followin
 |     LLM Model Type      |      llm parameter      |
 |:-----------------------:|:-----------------------:|
 |         OpenAI          |         openai          |
-|        Anthropic        |        anthropic        |
-|       AzureOpenAI       |       azureopenai       |
 |     HuggingFaceLLM      |     huggingfacellm      |
-|      LangChainLLM       |      langchainllm       |
-|  GradientBaseModelLLM   |  gradientbasemodelllm   |
-| GradientModelAdapterLLM | gradientmodeladapterllm |
-|         LiteLLM         |         litellm         |
-|        LlamaCPP         |        llamacpp         |
 |       OpenAILike        |       openailike        |
-|         OpenLLM         |         openllm         |
-|          PaLM           |          palm           |
-|      PredibaseLLM       |      predibasellm       |
-|        Replicate        |        replicate        |
-|       Xinference        |       xinference        |
+
 
 For example, if you want to use `OpenAILike` model, you can set `llm` parameter to `openailike`.
 
@@ -71,9 +60,16 @@ You can add more LLM models for AutoRAG.
 You can add it by simply calling `autorag.generator_models` and add new key and value.
 For example, if you want to add `MockLLM` model for testing, execute the following code.
 
+```{attention}
+It was major update for LlamaIndex to v0.10.0. 
+The integration of llms must be installed to different packages.
+So, before add your model, you should find and install the right package for your model.
+You can find the package at [here](https://pretty-sodium-5e0.notion.site/ce81b247649a44e4b6b35dfb24af28a6?v=53b3c2ced7bb4c9996b81b83c9f01139).
+```
+
 ```python
 import autorag
-from llama_index.llms import MockLLM
+from llama_index.legacy.llms import MockLLM
 
 autorag.generator_models['mockllm'] = MockLLM
 ```
@@ -137,7 +133,7 @@ execute the following code.
 
 ```python
 import autorag
-from llama_index.embeddings import HuggingFaceEmbedding
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 autorag.generator_models['kosimcse'] = HuggingFaceEmbedding("BM-K/KoSimCSE-roberta-multitask")
 ```
