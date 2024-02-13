@@ -2,7 +2,6 @@ import functools
 from typing import List
 
 import pandas as pd
-import swifter  # do not delete this line
 
 
 def retrieval_metric(func):
