@@ -6,21 +6,8 @@ import sys
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
-from llama_index.llms.anthropic import Anthropic
-from llama_index.llms.azure_openai import AzureOpenAI
-from llama_index.llms.gradient import GradientBaseModelLLM
-from llama_index.llms.gradient import GradientModelAdapterLLM
 from llama_index.llms.huggingface import HuggingFaceLLM
-from llama_index.llms.langchain import LangChainLLM
-from llama_index.llms.litellm import LiteLLM
-from llama_index.llms.llama_cpp import LlamaCPP
 from llama_index.llms.openai import OpenAI
-from llama_index.llms.openai_like import OpenAILike
-from llama_index.llms.openllm import OpenLLM
-from llama_index.llms.palm import PaLM
-from llama_index.llms.predibase import PredibaseLLM
-from llama_index.llms.replicate import Replicate
-from llama_index.llms.xinference import Xinference
 from rich.logging import RichHandler
 
 version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'VERSION')
@@ -42,20 +29,7 @@ embedding_models = {
 
 generator_models = {
     'openai': OpenAI,
-    'anthropic': Anthropic,
-    'azureopenai': AzureOpenAI,
     'huggingfacellm': HuggingFaceLLM,
-    'langchainllm': LangChainLLM,
-    'gradientbasemodelllm': GradientBaseModelLLM,
-    'gradientmodeladapterllm': GradientModelAdapterLLM,
-    'litellm': LiteLLM,
-    'llamacpp': LlamaCPP,
-    'openailike': OpenAILike,
-    'openllm': OpenLLM,
-    'palm': PaLM,
-    'predibasellm': PredibaseLLM,
-    'replicate': Replicate,
-    'xinference': Xinference,
 }
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"

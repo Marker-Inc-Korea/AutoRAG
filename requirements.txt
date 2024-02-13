@@ -15,7 +15,7 @@ rouge_score  # for rouge score
 rich  # for pretty logging
 chromadb==0.4.9 # for vectordb retrieval
 click  # for cli
-fastapi>=0.109.2  # for api server
+fastapi  # for api server
 uvicorn  # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
@@ -29,16 +29,4 @@ llama-index-embeddings-openai
 llama-index-embeddings-huggingface
 # LLMs
 llama-index-llms-openai
-llama-index-llms-anthropic
-llama-index-llms-azure-openai
 llama-index-llms-huggingface
-llama-index-llms-langchain
-llama-index-llms-gradient
-llama-index-llms-litellm
-llama-index-llms-llama-cpp
-llama-index-llms-openai-like
-llama-index-llms-openllm
-llama-index-llms-palm
-llama-index-llms-predibase
-llama-index-llms-replicate
-llama-index-llms-xinference
