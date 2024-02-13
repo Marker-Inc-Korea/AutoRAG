@@ -9,7 +9,6 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-import swifter
 
 from autorag.utils.util import normalize_string
 
