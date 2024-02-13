@@ -1,7 +1,7 @@
 import asyncio
 from typing import List
 
-from llama_index.core.llms.llm import BaseLLM
+from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.nodes.queryexpansion.base import query_expansion_node
 from autorag.utils.util import process_batch
@@ -10,13 +10,13 @@ hyde_prompt = "Please write a passage to answer the question"
 
 
 @query_expansion_node
-def hyde(queries: List[str], llm: BaseLLM,
+def hyde(queries: List[str], llm: LLMPredictorType,
          prompt: str = hyde_prompt,
          batch: int = 16) -> List[List[str]]:
     """
     HyDE, which inspired by "Precise Zero-shot Dense Retrieval without Relevance Labels" (https://arxiv.org/pdf/2212.10496.pdf)
-    LLM model creates hypothetical passage.
-    And then, retrieve passages using hypothetical passage as query.
+    LLM model creates a hypothetical passage.
+    And then, retrieve passages using hypothetical passage as a query.
     :param queries: List[str], queries to retrieve.
     :param llm: llm to use for hypothetical passage generation.
     :param prompt: prompt to use when generating hypothetical passage
@@ -31,7 +31,7 @@ def hyde(queries: List[str], llm: BaseLLM,
     return results
 
 
-async def hyde_pure(query: str, llm: BaseLLM,
+async def hyde_pure(query: str, llm: LLMPredictorType,
                     prompt: str = hyde_prompt) -> List[str]:
     if prompt is "":
         prompt = hyde_prompt

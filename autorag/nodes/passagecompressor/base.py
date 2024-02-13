@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Union, Dict
 
 import pandas as pd
-from llama_index.core.llms.base import BaseLLM
+from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag import generator_models
 from autorag.utils import result_to_dataframe
@@ -48,7 +48,7 @@ def passage_compressor_node(func):
     return wrapper
 
 
-def make_llm(llm_name: str, kwargs: Dict) -> BaseLLM:
+def make_llm(llm_name: str, kwargs: Dict) -> LLMPredictorType:
     if llm_name not in generator_models:
         raise KeyError(f"{llm_name} is not supported. "
                        "You can add it manually by calling autorag.generator_models.")

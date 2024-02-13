@@ -1,7 +1,7 @@
 import asyncio
 from typing import List
 
-from llama_index.core.llms.llm import BaseLLM
+from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.nodes.queryexpansion.base import query_expansion_node
 from autorag.utils.util import process_batch
@@ -54,13 +54,13 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 
 
 @query_expansion_node
-def query_decompose(queries: List[str], llm: BaseLLM,
+def query_decompose(queries: List[str], llm: LLMPredictorType,
                     prompt: str = decompose_prompt,
                     batch: int = 16) -> List[List[str]]:
     """
     decompose query to little piece of questions.
     :param queries: List[str], queries to decompose.
-    :param llm: BaseLLM, language model to use.
+    :param llm: LLMPredictorType, language model to use.
     :param prompt: str, prompt to use for query decomposition.
         default prompt comes from Visconde's StrategyQA few-shot prompt.
     :param batch: int, batch size for llm.
@@ -74,15 +74,15 @@ def query_decompose(queries: List[str], llm: BaseLLM,
     return results
 
 
-async def query_decompose_pure(query: str, llm: BaseLLM,
+async def query_decompose_pure(query: str, llm: LLMPredictorType,
                                prompt: str = decompose_prompt) -> List[str]:
     """
     decompose query to little piece of questions.
     :param query: str, query to decompose.
-    :param llm: BaseLLM, language model to use.
+    :param llm: LLMPredictorType, language model to use.
     :param prompt: str, prompt to use for query decomposition.
         default prompt comes from Visconde's StrategyQA few-shot prompt.
-    :return: List[str], list of decomposed query. Return input query if query is not decomposable.
+    :return: List[str], list of a decomposed query. Return input query if query is not decomposable.
     """
     if prompt == "":
         prompt = decompose_prompt
