@@ -8,6 +8,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.llms.openai import OpenAI
+from llama_index.llms.openai_like import OpenAILike
 from rich.logging import RichHandler
 
 version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'VERSION')
@@ -30,6 +31,7 @@ embedding_models = {
 generator_models = {
     'openai': OpenAI,
     'huggingfacellm': HuggingFaceLLM,
+    'openailike': OpenAILike,
 }
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"

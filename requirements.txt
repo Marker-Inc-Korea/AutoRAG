@@ -30,3 +30,4 @@ llama-index-embeddings-huggingface
 # LLMs
 llama-index-llms-openai
 llama-index-llms-huggingface
+llama-index-llms-openai-like
