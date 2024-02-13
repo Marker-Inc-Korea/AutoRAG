@@ -1,11 +1,11 @@
 import asyncio
 from typing import List, Optional
 
-from llama_index.core import PromptTemplate, ServiceContext
-from llama_index.core.llms.base import BaseLLM
+from llama_index.core import PromptTemplate
 from llama_index.core.prompts import PromptType
 from llama_index.core.prompts.utils import is_chat_model
 from llama_index.core.response_synthesizers import TreeSummarize
+from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.nodes.passagecompressor.base import passage_compressor_node
 from autorag.utils.util import process_batch
@@ -16,11 +16,9 @@ def tree_summarize(queries: List[str],
                    contents: List[List[str]],
                    scores,
                    ids,
-                   llm: BaseLLM,
+                   llm: LLMPredictorType,
                    prompt: Optional[str] = None,
                    chat_prompt: Optional[str] = None,
-                   context_window: Optional[int] = None,
-                   num_output: int = 1,
                    batch: int = 16,
                    ) -> List[str]:
     """
@@ -43,10 +41,6 @@ def tree_summarize(queries: List[str],
         If you want to use normal prompt, you should pass prompt instead.
         At prompt, you must specify where to put 'context_str' and 'query_str'.
         Default is None. When it is None, it will use llama index default chat prompt.
-    :param context_window: The context window size for summarization.
-        Default is None. When it is None, it will use a llama index default context window.
-    :param num_output: The amount of summarization output.
-        Default is 1.
     :param batch: The batch size for llm.
         Set low if you face some errors.
         Default is 16.
@@ -58,11 +52,8 @@ def tree_summarize(queries: List[str],
         summary_template = PromptTemplate(chat_prompt, prompt_type=PromptType.SUMMARY)
     else:
         summary_template = None
-    llm_context = ServiceContext.from_defaults(llm=llm,
-                                               context_window=context_window,
-                                               num_output=num_output)
-    summarizer = TreeSummarize(summary_template=summary_template,
-                               service_context=llm_context,
+    summarizer = TreeSummarize(llm=llm,
+                               summary_template=summary_template,
                                use_async=True)
     tasks = [summarizer.aget_response(query, content) for query, content in zip(queries, contents)]
     loop = asyncio.get_event_loop()
