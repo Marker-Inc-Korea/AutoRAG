@@ -4,7 +4,7 @@ from typing import List, Optional
 import evaluate
 import pandas as pd
 import sacrebleu
-from llama_index.core.embeddings.base import BaseEmbedding
+from llama_index.core.embeddings import BaseEmbedding
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity

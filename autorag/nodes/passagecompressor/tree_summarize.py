@@ -1,11 +1,11 @@
 import asyncio
 from typing import List, Optional
 
-from llama_index import PromptTemplate, ServiceContext
-from llama_index.llms.base import BaseLLM
-from llama_index.prompts import PromptType
-from llama_index.prompts.utils import is_chat_model
-from llama_index.response_synthesizers import TreeSummarize
+from llama_index.core import PromptTemplate, ServiceContext
+from llama_index.core.llms.base import BaseLLM
+from llama_index.core.prompts import PromptType
+from llama_index.core.prompts.utils import is_chat_model
+from llama_index.core.response_synthesizers import TreeSummarize
 
 from autorag.nodes.passagecompressor.base import passage_compressor_node
 from autorag.utils.util import process_batch

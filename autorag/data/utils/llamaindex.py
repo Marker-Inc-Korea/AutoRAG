@@ -1,14 +1,13 @@
+import mimetypes
 import os
 import pathlib
-import mimetypes
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
-
-from llama_index.schema import Document as LlamaDocument
+from llama_index.core.schema import Document as LlamaDocument
 
 
 def get_file_metadata(file_path: str) -> Dict:

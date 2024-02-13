@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Union, Dict
 
 import pandas as pd
-from llama_index.llms.base import BaseLLM
+from llama_index.core.llms.base import BaseLLM
 
 from autorag import generator_models
 from autorag.utils import result_to_dataframe

@@ -5,13 +5,12 @@ from datetime import datetime
 import chromadb
 import pandas as pd
 import pytest
-from llama_index import OpenAIEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
+from autorag.nodes.retrieval import hybrid_rrf
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.hybrid_rrf import rrf_pure
-from autorag.nodes.retrieval import hybrid_rrf
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
-from tests.autorag.nodes.retrieval.test_run_retrieval_node import pseudo_node_dir
 
 
 def test_hybrid_rrf():

@@ -1,7 +1,7 @@
 import asyncio
 from typing import List
 
-from llama_index.llms.llm import BaseLLM
+from llama_index.core.llms.llm import BaseLLM
 
 from autorag.nodes.queryexpansion.base import query_expansion_node
 from autorag.utils.util import process_batch

@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Tuple
 
-from llama_index.llms.base import BaseLLM
+from llama_index.core.llms.base import BaseLLM
 from transformers import AutoTokenizer
 
 from autorag.nodes.generator.base import generator_node

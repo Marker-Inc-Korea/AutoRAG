@@ -6,8 +6,8 @@ import tempfile
 
 import pandas as pd
 import pytest
-from llama_index.core.llms.types import CompletionResponse
-from llama_index.llms import MockLLM
+from llama_index.core.llms import CompletionResponse
+from llama_index.legacy.llms import MockLLM
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, load_summary_file, result_to_dataframe, \
