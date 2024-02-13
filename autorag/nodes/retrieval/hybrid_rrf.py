@@ -1,7 +1,6 @@
 from typing import List, Tuple
 
 import pandas as pd
-import swifter
 
 from autorag.nodes.retrieval import retrieval_node
 

@@ -1,19 +1,21 @@
-import os
 import logging
 import logging.config
+import os
 import sys
-
-from rich.logging import RichHandler
 
 from llama_index.embeddings import OpenAIEmbedding, HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.llms import OpenAI, Anthropic, AzureOpenAI, HuggingFaceLLM, LangChainLLM, GradientBaseModelLLM, \
     GradientModelAdapterLLM, LiteLLM, LlamaCPP, OpenAILike, OpenLLM, PaLM, PredibaseLLM, Replicate, Xinference
+from rich.logging import RichHandler
+from swifter import set_defaults
 
 version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'VERSION')
 
 with open(version_path, 'r') as f:
     __version__ = f.read().strip()
+
+set_defaults(allow_dask_on_strings=True)
 
 embedding_models = {
     'openai': OpenAIEmbedding(),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
