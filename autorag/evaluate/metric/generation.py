@@ -5,6 +5,7 @@ import evaluate
 import pandas as pd
 import sacrebleu
 from llama_index.core.embeddings.base import BaseEmbedding
+import swifter
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
