@@ -3,7 +3,7 @@ pandas
 tqdm
 tiktoken  # for counting token
 openai>=1.0.0
-llama-index>=0.9.32
+llama-index>=0.10.1
 rank_bm25  # for bm25 retrieval
 transformers
 swifter  # for parallel pandas apply
@@ -21,3 +21,4 @@ uvicorn  # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
 guidance # for qa data creation
+llama-index-core>=0.10.1
