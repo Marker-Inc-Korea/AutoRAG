@@ -3,10 +3,12 @@ import logging.config
 import os
 import sys
 
-from llama_index.embeddings import OpenAIEmbedding, HuggingFaceEmbedding
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
-from llama_index.llms import OpenAI, Anthropic, AzureOpenAI, HuggingFaceLLM, LangChainLLM, GradientBaseModelLLM, \
-    GradientModelAdapterLLM, LiteLLM, LlamaCPP, OpenAILike, OpenLLM, PaLM, PredibaseLLM, Replicate, Xinference
+from llama_index.llms.huggingface import HuggingFaceLLM
+from llama_index.llms.openai import OpenAI
+from llama_index.llms.openai_like import OpenAILike
 from rich.logging import RichHandler
 from swifter import set_defaults
 
@@ -31,20 +33,8 @@ embedding_models = {
 
 generator_models = {
     'openai': OpenAI,
-    'anthropic': Anthropic,
-    'azureopenai': AzureOpenAI,
     'huggingfacellm': HuggingFaceLLM,
-    'langchainllm': LangChainLLM,
-    'gradientbasemodelllm': GradientBaseModelLLM,
-    'gradientmodeladapterllm': GradientModelAdapterLLM,
-    'litellm': LiteLLM,
-    'llamacpp': LlamaCPP,
     'openailike': OpenAILike,
-    'openllm': OpenLLM,
-    'palm': PaLM,
-    'predibasellm': PredibaseLLM,
-    'replicate': Replicate,
-    'xinference': Xinference,
 }
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"

@@ -1,5 +1,5 @@
 import pandas as pd
-from llama_index.llms import OpenAI
+from llama_index.llms.openai import OpenAI
 
 from autorag.nodes.generator import llama_index_llm
 

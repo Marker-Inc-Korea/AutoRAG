@@ -4,11 +4,11 @@ import shutil
 
 import pandas as pd
 import pytest
-from llama_index.llms import MockLLM
+from llama_index.legacy.llms import MockLLM
 
 from autorag import generator_models
-from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion import query_decompose, hyde
+from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 from autorag.nodes.retrieval import bm25
 from autorag.utils.util import load_summary_file

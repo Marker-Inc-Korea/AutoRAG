@@ -5,7 +5,7 @@ from datetime import datetime
 import chromadb
 import pandas as pd
 import pytest
-from llama_index import OpenAIEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import hybrid_rrf
 from autorag.nodes.retrieval.bm25 import bm25_ingest

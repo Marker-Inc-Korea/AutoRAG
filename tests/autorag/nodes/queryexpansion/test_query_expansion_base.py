@@ -1,16 +1,13 @@
 import os
 import pathlib
-
 import shutil
 
-import pytest
-import pandas as pd
-
 import chromadb
-from llama_index.embeddings import OpenAIEmbedding
+import pandas as pd
+import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
-
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 project_dir = os.path.join(root_dir, "resources", "sample_project")

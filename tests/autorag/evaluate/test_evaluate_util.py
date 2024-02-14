@@ -1,4 +1,4 @@
-from llama_index import OpenAIEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.evaluate.util import cast_metrics
 

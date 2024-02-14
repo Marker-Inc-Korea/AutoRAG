@@ -6,7 +6,7 @@ import tempfile
 import chromadb
 import pandas as pd
 import pytest
-from llama_index import OpenAIEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf, hybrid_cc
 from autorag.nodes.retrieval.run import run_retrieval_node, select_result_for_hybrid, get_ids_and_scores

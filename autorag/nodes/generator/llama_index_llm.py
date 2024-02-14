@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Tuple
 
-from llama_index.llms.base import BaseLLM
+from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 from transformers import AutoTokenizer
 
 from autorag.nodes.generator.base import generator_node
@@ -9,7 +9,7 @@ from autorag.utils.util import process_batch
 
 
 @generator_node
-def llama_index_llm(prompts: List[str], llm: BaseLLM, batch: int = 16) -> Tuple[List[str], List[List[int]], List[List[float]]]:
+def llama_index_llm(prompts: List[str], llm: LLMPredictorType, batch: int = 16) -> Tuple[List[str], List[List[int]], List[List[float]]]:
     """
     Llama Index LLM module.
     It gets the LLM instance from llama index, and returns generated text by the input prompt.

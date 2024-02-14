@@ -2,11 +2,10 @@ import os
 import pathlib
 import shutil
 
-import pytest
-import pandas as pd
-
 import chromadb
-from llama_index.embeddings import OpenAIEmbedding
+import pandas as pd
+import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import vectordb
 from autorag.nodes.retrieval.vectordb import vectordb_ingest

@@ -1,7 +1,8 @@
 from typing import List
 
 import pandas as pd
-from llama_index.llms import OpenAI, MockLLM
+from llama_index.legacy.llms import MockLLM
+from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
 from autorag.nodes.passagecompressor import tree_summarize

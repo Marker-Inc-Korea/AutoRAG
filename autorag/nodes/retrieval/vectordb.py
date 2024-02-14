@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import chromadb
 import pandas as pd
-from llama_index.embeddings import BaseEmbedding
+from llama_index.core.embeddings import BaseEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset

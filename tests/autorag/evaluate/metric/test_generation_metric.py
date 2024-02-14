@@ -1,5 +1,5 @@
 import pytest
-from llama_index import OpenAIEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.evaluate.metric.generation import bleu, meteor, rouge, sem_score
 
