@@ -21,20 +21,11 @@ resource_dir = os.path.join(root_dir, 'resources')
 
 @pytest.fixture
 def evaluator():
-    evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
-                          os.path.join(resource_dir, 'corpus_data_sample.parquet'))
-    yield evaluator
-    paths_to_remove = ['0', 'data', 'resources', 'trial.json']
-
-    for path in paths_to_remove:
-        full_path = os.path.join(os.getcwd(), path)
-        try:
-            if os.path.isdir(full_path):
-                shutil.rmtree(full_path)
-            else:
-                os.remove(full_path)
-        except FileNotFoundError:
-            pass
+    with tempfile.TemporaryDirectory() as project_dir:
+        evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                              os.path.join(resource_dir, 'corpus_data_sample.parquet'),
+                              project_dir)
+        yield evaluator
 
 
 @pytest.fixture
@@ -58,11 +49,11 @@ def test_evaluator():
 def test_evaluator_init(evaluator):
     validate_qa_dataset(evaluator.qa_data)
     validate_corpus_dataset(evaluator.corpus_data)
-    loaded_qa_data = pd.read_parquet(os.path.join(os.getcwd(), 'data', 'qa.parquet'))
-    loaded_corpus_data = pd.read_parquet(os.path.join(os.getcwd(), 'data', 'corpus.parquet'))
+    project_dir = evaluator.project_dir
+    loaded_qa_data = pd.read_parquet(os.path.join(project_dir, 'data', 'qa.parquet'))
+    loaded_corpus_data = pd.read_parquet(os.path.join(project_dir, 'data', 'corpus.parquet'))
     assert evaluator.qa_data.equals(loaded_qa_data)
     assert evaluator.corpus_data.equals(loaded_corpus_data)
-    assert evaluator.project_dir == os.getcwd()
 
 
 def test_load_node_line(evaluator):
