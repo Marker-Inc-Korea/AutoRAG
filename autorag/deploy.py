@@ -120,12 +120,14 @@ class Runner:
         self.__add_api_route()
 
     @classmethod
-    def from_yaml(cls, yaml_path: str):
+    def from_yaml(cls, yaml_path: str, project_dir: Optional[str] = None):
         """
         Load Runner from yaml file.
         Must be extracted yaml file from evaluated trial using extract_best_config method.
 
         :param yaml_path: The path of the yaml file.
+        :param project_dir: The path of the project directory.
+            Default is the current directory.
         :return: Initialized Runner.
         """
         with open(yaml_path, 'r') as f:
@@ -134,7 +136,7 @@ class Runner:
             except yaml.YAMLError as exc:
                 logger.error(exc)
                 raise exc
-        return cls(config)
+        return cls(config, project_dir=project_dir)
 
     @classmethod
     def from_trial_folder(cls, trial_path: str):
