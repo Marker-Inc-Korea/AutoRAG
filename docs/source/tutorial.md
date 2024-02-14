@@ -79,6 +79,9 @@ You can check out which module and parameters are the best for your dataset.
 And there are lots of details inside node line and node folders.
 You can find out more information about folder structure and result files at [here](structure.md).
 
+```{admonition} Want to specify project folder?
+You can specify project directory with `--project_dir` option or project_dir parameter.
+```
 
 ## Extract pipeline and evaluate test dataset
 
@@ -131,6 +134,10 @@ runner.run_api_server()
 
 ```bash
 autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+```
+
+```{admonition} Want to specify project folder?
+You can specify project directory with `--project_dir` option or project_dir parameter.
 ```
 
 ```{hint}
