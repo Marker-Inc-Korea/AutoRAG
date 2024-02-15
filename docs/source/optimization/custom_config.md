@@ -106,5 +106,28 @@ So you have to write the tuple like you are writing a tuple in the python code.
 
 ## Use environment variable in the yaml file
 
-We are planning to make this feature later. 
-See [here](https://github.com/Marker-Inc-Korea/AutoRAG/issues/131).
+It becomes easier to manage the api key or other secrets using environment variables.
+You can use environment variables in the yaml file directly. 
+
+```yaml
+node_lines:
+  - node_line_name: node_line_1
+    nodes:
+      - node_type: retrieval
+        top_k: 10
+        strategy:
+          metrics: [sem_score]
+        modules:
+          - module_type: vectordb
+            embedding_model: openai
+            api_key: ${OPENAI_API_KEY} 
+```
+
+Look the `api_key` parameter. You can use environment variable directly in the yaml file.
+
+Use '${}' to use environment variable in the yaml file.
+
+```{tip}
+If there is no environment variable, it returns a empty string. 
+It can occur unintended action, so you have to set the environment variable before you run the AutoRAG.
+```

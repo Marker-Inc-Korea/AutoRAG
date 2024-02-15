@@ -141,6 +141,7 @@ def test_extract_best_config(pseudo_trial_path):
 
 
 def test_runner(evaluator):
+    os.environ['BM25'] = 'bm25'
     evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
     project_dir = evaluator.project_dir
 
@@ -168,6 +169,7 @@ def test_runner_full(evaluator):
 
 
 def test_runner_api_server(evaluator):
+    os.environ['BM25'] = 'bm25'
     project_dir = evaluator.project_dir
     import nest_asyncio
     nest_asyncio.apply()
