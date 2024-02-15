@@ -1,7 +1,10 @@
+from unittest.mock import patch, AsyncMock
+
 import pandas as pd
 from llama_index.llms.openai import OpenAI
 
 from autorag.nodes.generator import llama_index_llm
+from tests.mock import mock_openai_acomplete
 
 prompts = [
     "Who is the strongest Avenger?",
@@ -29,7 +32,9 @@ def check_generated_log_probs(log_probs):
     assert all(all(log_prob == 0.5 for log_prob in log_prob_list) for log_prob_list in log_probs)
 
 
-def test_llama_index_llm():
+@patch.object(OpenAI, 'acomplete', new_callable=AsyncMock)
+def test_llama_index_llm(mock_openai):
+    mock_openai.side_effect = mock_openai_acomplete
     llama_index_llm_original = llama_index_llm.__wrapped__
     answers, tokens, log_probs = llama_index_llm_original(prompts, OpenAI())
     check_generated_texts(answers)
@@ -38,7 +43,9 @@ def test_llama_index_llm():
     assert all(len(tokens[i]) == len(log_probs[i]) for i in range(len(tokens)))
 
 
-def test_llama_index_llm_node():
+@patch.object(OpenAI, 'acomplete', new_callable=AsyncMock)
+def test_llama_index_llm_node(mock_openai):
+    mock_openai.side_effect = mock_openai_acomplete
     previous_result = pd.DataFrame(
         {
             'prompts': prompts,
