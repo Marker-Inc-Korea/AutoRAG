@@ -1,11 +1,13 @@
+from unittest.mock import patch, AsyncMock
+
 from llama_index.llms.openai import OpenAI
 
 from autorag.nodes.queryexpansion import query_decompose
 from tests.autorag.nodes.queryexpansion.test_query_expansion_base import project_dir, previous_result, \
     base_query_expansion_node_test, ingested_vectordb_node
+from tests.mock import mock_openai_acomplete
 
-
-sample_query = ["Which group has more members, Newjeans or Espa?", "Which group has more members, STAYC or Espa?"]
+sample_query = ["Which group has more members, Newjeans or Aespa?", "Which group has more members, STAYC or Aespa?"]
 
 
 def test_query_decompose():
@@ -17,7 +19,9 @@ def test_query_decompose():
     assert isinstance(result[0][0], str)
 
 
-def test_query_decompose_node(ingested_vectordb_node):
+@patch.object(OpenAI, 'acomplete', new_callable=AsyncMock)
+def test_query_decompose_node(mock_openai, ingested_vectordb_node):
+    mock_openai.side_effect = mock_openai_acomplete
     result_df = query_decompose(project_dir=project_dir, previous_result=previous_result,
                                 llm="openai", temperature=0.2)
     base_query_expansion_node_test(result_df)
