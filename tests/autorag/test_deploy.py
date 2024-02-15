@@ -8,9 +8,10 @@ import yaml
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
+from autorag.cli import cli
 from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner, extract_node_line_names, \
     extract_node_strategy
-from autorag.evaluator import Evaluator, cli
+from autorag.evaluator import Evaluator
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
