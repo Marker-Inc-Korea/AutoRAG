@@ -94,3 +94,12 @@ In our experiment, it occurred rate limit error when the batch size was 4.
 (Check out your tier and limit error at [here](https://platform.openai.com/account/limits).)
 ```
 
+### The length or row is different from the original data
+
+When the length of result is different from the original data, it is often caused by the index.
+
+You must reset the index of your dataset before running AutoRAG.
+
+```python
+df = df.reset_index(drop=True)
+```
