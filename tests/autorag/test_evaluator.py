@@ -47,6 +47,7 @@ def test_evaluator_init(evaluator):
 
 
 def test_load_node_line(evaluator):
+    os.environ['BM25'] = 'bm25'
     node_lines = Evaluator._load_node_lines(os.path.join(resource_dir, 'simple.yaml'))
     assert 'retrieve_node_line' in list(node_lines.keys())
     assert node_lines['retrieve_node_line'] is not None
@@ -72,6 +73,7 @@ def test_load_node_line(evaluator):
 
 
 def test_start_trial(evaluator):
+    os.environ['BM25'] = 'bm25'
     evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
     project_dir = evaluator.project_dir
     assert os.path.exists(os.path.join(project_dir, '0'))
