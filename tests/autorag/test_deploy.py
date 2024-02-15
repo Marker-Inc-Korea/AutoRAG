@@ -1,14 +1,13 @@
 import os
 import pathlib
-import shutil
 import tempfile
 
 import pandas as pd
 import pytest
 import yaml
-
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
+
 from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner, extract_node_line_names, \
     extract_node_strategy
 from autorag.evaluator import Evaluator, cli
@@ -19,20 +18,11 @@ resource_dir = os.path.join(root_dir, 'resources')
 
 @pytest.fixture
 def evaluator():
-    evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
-                          os.path.join(resource_dir, 'corpus_data_sample.parquet'))
-    yield evaluator
-    paths_to_remove = ['0', 'data', 'resources', 'trial.json']
-
-    for path in paths_to_remove:
-        full_path = os.path.join(os.getcwd(), path)
-        try:
-            if os.path.isdir(full_path):
-                shutil.rmtree(full_path)
-            else:
-                os.remove(full_path)
-        except FileNotFoundError:
-            pass
+    with tempfile.TemporaryDirectory() as project_dir:
+        evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                              os.path.join(resource_dir, 'corpus_data_sample.parquet'),
+                              project_dir=project_dir)
+        yield evaluator
 
 
 @pytest.fixture
@@ -152,6 +142,7 @@ def test_extract_best_config(pseudo_trial_path):
 
 def test_runner(evaluator):
     evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
+    project_dir = evaluator.project_dir
 
     def runner_test(runner: Runner):
         answer = runner.run('What is the best movie in Korea? Have Korea movie ever won Oscar?',
@@ -160,12 +151,12 @@ def test_runner(evaluator):
         assert isinstance(answer, list)
         assert isinstance(answer[0], str)
 
-    runner = Runner.from_trial_folder(os.path.join(os.getcwd(), '0'))
+    runner = Runner.from_trial_folder(os.path.join(project_dir, '0'))
     runner_test(runner)
 
     with tempfile.NamedTemporaryFile(suffix='yaml', mode='w+t') as yaml_path:
-        extract_best_config(os.path.join(os.getcwd(), '0'), yaml_path.name)
-        runner = Runner.from_yaml(yaml_path.name)
+        extract_best_config(os.path.join(project_dir, '0'), yaml_path.name)
+        runner = Runner.from_yaml(yaml_path.name, project_dir=project_dir)
         runner_test(runner)
 
 
@@ -177,10 +168,11 @@ def test_runner_full(evaluator):
 
 
 def test_runner_api_server(evaluator):
+    project_dir = evaluator.project_dir
     import nest_asyncio
     nest_asyncio.apply()
     evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
-    runner = Runner.from_trial_folder(os.path.join(os.getcwd(), '0'))
+    runner = Runner.from_trial_folder(os.path.join(project_dir, '0'))
 
     client = TestClient(runner.app)
 

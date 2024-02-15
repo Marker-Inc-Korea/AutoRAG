@@ -3,16 +3,16 @@ import logging
 import os
 import shutil
 from datetime import datetime
-from typing import List, Dict
 from itertools import chain
+from typing import List, Dict, Optional
 
 import chromadb
 import click
 import pandas as pd
 import yaml
 
-from autorag.deploy import Runner
 from autorag import embedding_models
+from autorag.deploy import Runner
 from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
@@ -25,7 +25,17 @@ logger = logging.getLogger("AutoRAG")
 
 
 class Evaluator:
-    def __init__(self, qa_data_path: str, corpus_data_path: str):
+    def __init__(self, qa_data_path: str, corpus_data_path: str, project_dir: Optional[str] = None):
+        """
+        Initialize an Evaluator object.
+
+        :param qa_data_path: The path to the QA dataset.
+            Must be parquet file.
+        :param corpus_data_path: The path to the corpus dataset.
+            Must be parquet file.
+        :param project_dir: The path to the project directory.
+            Default is the current directory.
+        """
         # validate data paths
         if not os.path.exists(qa_data_path):
             raise ValueError(f"QA data path {qa_data_path} does not exist.")
@@ -39,18 +49,19 @@ class Evaluator:
         self.corpus_data = pd.read_parquet(corpus_data_path)
         self.qa_data = cast_qa_dataset(self.qa_data)
         self.corpus_data = cast_corpus_dataset(self.corpus_data)
+        self.project_dir = project_dir if project_dir is not None else os.getcwd()
+        if not os.path.exists(self.project_dir):
+            os.makedirs(self.project_dir)
 
         # copy dataset to project directory
-        if not os.path.exists(os.path.join(os.getcwd(), 'data')):
-            os.makedirs(os.path.join(os.getcwd(), 'data'))
-        qa_path_in_project = os.path.join(os.getcwd(), 'data', 'qa.parquet')
+        if not os.path.exists(os.path.join(self.project_dir, 'data')):
+            os.makedirs(os.path.join(self.project_dir, 'data'))
+        qa_path_in_project = os.path.join(self.project_dir, 'data', 'qa.parquet')
         if not os.path.exists(qa_path_in_project):
             shutil.copy(qa_data_path, qa_path_in_project)
-        corpus_path_in_project = os.path.join(os.getcwd(), 'data', 'corpus.parquet')
+        corpus_path_in_project = os.path.join(self.project_dir, 'data', 'corpus.parquet')
         if not os.path.exists(corpus_path_in_project):
             shutil.copy(corpus_data_path, corpus_path_in_project)
-
-        self.project_dir = os.getcwd()
 
     def start_trial(self, yaml_path: str):
         trial_name = self.__get_new_trial_name()
@@ -174,12 +185,13 @@ def cli():
 @click.option('--config', '-c', help='Path to config yaml file. Must be yaml or yml file.', type=str)
 @click.option('--qa_data_path', help='Path to QA dataset. Must be parquet file.', type=str)
 @click.option('--corpus_data_path', help='Path to corpus dataset. Must be parquet file.', type=str)
-def evaluate(config, qa_data_path, corpus_data_path):
+@click.option('--project_dir', help='Path to project directory.', type=str, default=None)
+def evaluate(config, qa_data_path, corpus_data_path, project_dir):
     if not config.endswith('.yaml') and not config.endswith('.yml'):
         raise ValueError(f"Config file {config} is not a parquet file.")
     if not os.path.exists(config):
         raise ValueError(f"Config file {config} does not exist.")
-    evaluator = Evaluator(qa_data_path, corpus_data_path)
+    evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir=project_dir)
     evaluator.start_trial(config)
     logger.info('Evaluation complete.')
 
@@ -188,8 +200,9 @@ def evaluate(config, qa_data_path, corpus_data_path):
 @click.option('--config_path', type=str, help='Path to extracted config yaml file.')
 @click.option('--host', type=str, default='0.0.0.0', help='Host address')
 @click.option('--port', type=int, default=8000, help='Port number')
-def run_api(config_path, host, port):
-    runner = Runner.from_yaml(config_path)
+@click.option('--project_dir', help='Path to project directory.', type=str, default=None)
+def run_api(config_path, host, port, project_dir):
+    runner = Runner.from_yaml(config_path, project_dir=project_dir)
     logger.info(f"Running API server at {host}:{port}...")
     runner.run_api_server(host, port)
 
