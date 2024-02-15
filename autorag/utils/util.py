@@ -1,16 +1,15 @@
+import ast
 import asyncio
 import functools
 import itertools
+import logging
 import os
-from copy import deepcopy
 import re
 import string
+from copy import deepcopy
 from typing import List, Callable, Dict, Optional, Any, Collection
-import ast
 
 import pandas as pd
-
-import logging
 
 logger = logging.getLogger("AutoRAG")
 
@@ -198,6 +197,35 @@ def convert_string_to_tuple_in_dict(d):
         elif isinstance(value, str) and value.startswith('(') and value.endswith(')'):
             d[key] = ast.literal_eval(value)
 
+    return d
+
+
+def convert_env_in_dict(d: Dict):
+    """
+    Recursively converts environment variable string in a dictionary to actual environment variable.
+
+    :param d: The dictionary to convert.
+    :return: The converted dictionary.
+    """
+    env_pattern = re.compile(r".*?\${(.*?)}.*?")
+
+    def convert_env(val: str):
+        matches = env_pattern.findall(val)
+        for match in matches:
+            val = val.replace(f"${{{match}}}", os.environ.get(match, ""))
+        return val
+
+    for key, value in d.items():
+        if isinstance(value, dict):
+            convert_env_in_dict(value)
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    convert_env_in_dict(item)
+                elif isinstance(item, str):
+                    value[i] = convert_env(item)
+        elif isinstance(value, str):
+            d[key] = convert_env(value)
     return d
 
 

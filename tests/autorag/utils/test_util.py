@@ -11,7 +11,8 @@ from llama_index.legacy.llms import MockLLM
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import find_best_result_path, load_summary_file, result_to_dataframe, \
-    make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch
+    make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
+    convert_env_in_dict
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -227,6 +228,47 @@ def test_convert_string_to_tuple_in_dict():
                 'nested_key5': ('thirteen', 14, 15)
             }
         }
+    }
+
+
+def test_convert_env_in_dict():
+    os.environ['ENV_VAR1'] = 'value1'
+    os.environ['ENV_VAR2'] = 'value2'
+    os.environ['ENV_VAR3'] = 'value3'
+    data = {
+        'key1': 'value1',
+        'key2': [
+            'value1',
+            '${ENV_VAR1}',
+        ],
+        'key3': '${ENV_VAR2}',
+        'key4': {
+            'key5': 'value1',
+            'key6': '${ENV_VAR3}',
+            'key7': [
+                'value1',
+                '${ENV_VAR4}',
+            ]
+        },
+        'prompt': 'This is a prompt with ${ENV_VAR1} and ${ENV_VAR2}.'
+    }
+    result = convert_env_in_dict(data)
+    assert result == {
+        'key1': 'value1',
+        'key2': [
+            'value1',
+            'value1',
+        ],
+        'key3': 'value2',
+        'key4': {
+            'key5': 'value1',
+            'key6': 'value3',
+            'key7': [
+                'value1',
+                '',
+            ]
+        },
+        'prompt': 'This is a prompt with value1 and value2.'
     }
 
 
