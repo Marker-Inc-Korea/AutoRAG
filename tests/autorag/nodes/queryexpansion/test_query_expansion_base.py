@@ -1,6 +1,6 @@
 import os
 import pathlib
-import shutil
+import tempfile
 
 import chromadb
 import pandas as pd
@@ -23,19 +23,17 @@ embedding_model = OpenAIEmbedding()
 
 @pytest.fixture
 def ingested_vectordb_node():
-    node_chroma_path = os.path.join(resource_path, "sample_project", "resources", "chroma")
-    node_db = chromadb.PersistentClient(path=node_chroma_path)
-    node_collection = node_db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
+    with tempfile.TemporaryDirectory() as node_chroma_path:
+        node_db = chromadb.PersistentClient(path=node_chroma_path)
+        node_collection = node_db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
 
-    node_test_corpus_path = os.path.join(resource_path, "sample_project", "data", "corpus.parquet")
-    sample_project_corpus_df = pd.read_parquet(path=node_test_corpus_path)
+        node_test_corpus_path = os.path.join(resource_path, "sample_project", "data", "corpus.parquet")
+        sample_project_corpus_df = pd.read_parquet(path=node_test_corpus_path)
 
-    vectordb_ingest(node_collection, sample_project_corpus_df, embedding_model)
+        vectordb_ingest(node_collection, sample_project_corpus_df, embedding_model)
 
-    assert node_collection.count() == 30
-    yield node_collection
-    if os.path.exists(node_chroma_path):
-        shutil.rmtree(node_chroma_path)
+        assert node_collection.count() == 30
+        yield node_collection
 
 
 def base_query_expansion_node_test(result_df):

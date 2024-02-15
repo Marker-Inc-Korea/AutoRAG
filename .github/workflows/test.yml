@@ -24,9 +24,9 @@ jobs:
         sudo pip install -e .
     - name: Install dependencies
       run: |
-        sudo pip install pytest
+        sudo pip install pytest pytest-xdist
     - name: Run tests
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
-        sudo pytest tests/
+        sudo pytest -n auto tests/

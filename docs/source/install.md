@@ -80,7 +80,7 @@ log_cli_level=INFO
 After that, you can run tests with pytest.
 
 ```bash
-python -m pytest
+python -m pytest -n auto
 ```
 
 After this, please check out our documentation for contributors. 

@@ -1,6 +1,7 @@
 import os
 import pathlib
 import pickle
+import tempfile
 
 import pytest
 
@@ -17,10 +18,9 @@ with open(bm25_path, 'rb') as r:
 
 @pytest.fixture
 def ingested_bm25_path():
-    path = os.path.join(root_dir, "resources", "test_bm25_ingested.pkl")
-    bm25_ingest(path, corpus_df)
-    yield path
-    os.remove(path)
+    with tempfile.NamedTemporaryFile(suffix='.pkl', mode='w+b') as path:
+        bm25_ingest(path.name, corpus_df)
+        yield path.name
 
 
 def test_bm25_retrieval():
