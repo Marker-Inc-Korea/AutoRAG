@@ -1,6 +1,5 @@
 import os.path
 import pathlib
-import shutil
 import tempfile
 
 import pandas as pd
@@ -8,8 +7,6 @@ import pytest
 
 from autorag.nodes.passagereranker import monot5
 from autorag.nodes.passagereranker.run import run_passage_reranker_node
-from autorag.nodes.retrieval import bm25
-from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.utils.util import load_summary_file
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent

@@ -19,26 +19,24 @@ resources_dir = os.path.join(root_dir, "resources")
 
 @pytest.fixture
 def node_line_dir():
-    test_project_dir = os.path.join(resources_dir, "test_project")
-    sample_project_dir = os.path.join(resources_dir, "sample_project")
-    # copy & paste all folders and files in sample_project folder
-    shutil.copytree(sample_project_dir, test_project_dir)
+    with tempfile.TemporaryDirectory() as test_project_dir:
+        sample_project_dir = os.path.join(resources_dir, "sample_project")
+        # copy & paste all folders and files in sample_project folder
+        shutil.copytree(sample_project_dir, test_project_dir, dirs_exist_ok=True)
 
-    chroma_path = os.path.join(test_project_dir, "resources", "chroma")
-    os.makedirs(chroma_path)
-    db = chromadb.PersistentClient(path=chroma_path)
-    collection = db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
-    corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
-    corpus_df = pd.read_parquet(corpus_path)
-    vectordb_ingest(collection, corpus_df, OpenAIEmbedding())
+        chroma_path = os.path.join(test_project_dir, "resources", "chroma")
+        os.makedirs(chroma_path)
+        db = chromadb.PersistentClient(path=chroma_path)
+        collection = db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
+        corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
+        corpus_df = pd.read_parquet(corpus_path)
+        vectordb_ingest(collection, corpus_df, OpenAIEmbedding())
 
-    test_trail_dir = os.path.join(test_project_dir, "test_trial")
-    os.makedirs(test_trail_dir)
-    node_line_dir = os.path.join(test_trail_dir, "test_node_line")
-    os.makedirs(node_line_dir)
-    yield node_line_dir
-    # teardown
-    shutil.rmtree(test_project_dir)
+        test_trail_dir = os.path.join(test_project_dir, "test_trial")
+        os.makedirs(test_trail_dir)
+        node_line_dir = os.path.join(test_trail_dir, "test_node_line")
+        os.makedirs(node_line_dir)
+        yield node_line_dir
 
 
 def test_run_retrieval_node(node_line_dir):
