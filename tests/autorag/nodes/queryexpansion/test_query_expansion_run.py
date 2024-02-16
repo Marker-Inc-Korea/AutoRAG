@@ -1,6 +1,7 @@
 import os.path
 import pathlib
 import shutil
+import tempfile
 
 import pandas as pd
 import pytest
@@ -28,21 +29,18 @@ sample_expanded_queries = [
 metrics = ['retrieval_f1', 'retrieval_recall']
 
 
-
 @pytest.fixture
 def node_line_dir():
-    project_dir = os.path.join(resources_dir, "test_project")
-    sample_project_dir = os.path.join(resources_dir, "sample_project")
-    # copy & paste all folders and files in sample_project folder
-    shutil.copytree(sample_project_dir, project_dir)
+    with tempfile.TemporaryDirectory() as project_dir:
+        sample_project_dir = os.path.join(resources_dir, "sample_project")
+        # copy & paste all folders and files in sample_project folder
+        shutil.copytree(sample_project_dir, project_dir, dirs_exist_ok=True)
 
-    test_trail_dir = os.path.join(project_dir, "test_trial")
-    os.makedirs(test_trail_dir)
-    node_line_dir = os.path.join(test_trail_dir, "test_node_line")
-    os.makedirs(node_line_dir)
-    yield node_line_dir
-    # teardown
-    shutil.rmtree(project_dir)
+        test_trail_dir = os.path.join(project_dir, "test_trial")
+        os.makedirs(test_trail_dir)
+        node_line_dir = os.path.join(test_trail_dir, "test_node_line")
+        os.makedirs(node_line_dir)
+        yield node_line_dir
 
 
 def test_evaluate_one_prompt_maker_node(node_line_dir):
