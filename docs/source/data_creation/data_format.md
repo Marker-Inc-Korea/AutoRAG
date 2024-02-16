@@ -134,6 +134,11 @@ If you don't have any metadata, you can put an empty dictionary.
 It will create a default metadata for you. (like `last_modified_datetime` with `datetime.now()`)
 ```
 
+```{attention}
+Please check that you reset the indicies of your dataset files.
+If not, it can occur unexpected behavior.
+```
+
 ## Samples
 
 Looking for an example of dataset? 

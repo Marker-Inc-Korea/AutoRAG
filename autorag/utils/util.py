@@ -48,15 +48,6 @@ def result_to_dataframe(column_names: List[str]):
     return decorator_result_to_dataframe
 
 
-def find_best_result_path(node_dir: str) -> str:
-    """
-    Find the best result filepath from node directory.
-    :param node_dir: The directory of the node.
-    :return: The filepath of the best result.
-    """
-    return list(filter(lambda x: x.endswith(".parquet") and x.startswith("best_"), os.listdir(node_dir)))[0]
-
-
 def load_summary_file(summary_path: str,
                       dict_columns: Optional[List[str]] = None) -> pd.DataFrame:
     """
