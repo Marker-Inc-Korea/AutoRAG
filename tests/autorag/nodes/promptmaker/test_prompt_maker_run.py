@@ -19,7 +19,7 @@ sample_generation_gt = [
     ['Hello from space. Hi! This is the world speaking.'],
     ['Hello, Do you know the world without war?', 'Hi, I am dreaming about the world without any war.']
 ]
-metrics = ['bleu', 'rouge']
+metrics = [{'metric_name': 'bleu'}, {'metric_name': 'rouge'}]
 previous_result = pd.DataFrame({
     'query': ['What is the war?', 'Who is John Lennon?'],
     'retrieved_contents': [['War is horrible.', 'War is bad.'],
