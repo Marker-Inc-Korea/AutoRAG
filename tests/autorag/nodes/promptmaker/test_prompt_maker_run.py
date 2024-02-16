@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from autorag.evaluate.util import cast_metrics
 from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.promptmaker import fstring
 from autorag.nodes.promptmaker.run import evaluate_generator_result, evaluate_one_prompt_maker_node, \
@@ -31,7 +32,8 @@ previous_result = pd.DataFrame({
 def test_evaluate_generator_result():
     sample_df = pd.DataFrame({'generated_texts': sample_generated_texts})
     result_df = evaluate_generator_result(sample_df, sample_generation_gt, metrics)
-    assert all(metric_name in result_df.columns for metric_name in metrics)
+    metric_names, _ = cast_metrics(metrics)
+    assert all(metric_name in result_df.columns for metric_name in metric_names)
     assert len(result_df) == len(sample_generated_texts)
 
 
@@ -42,8 +44,9 @@ def test_evaluate_one_prompt_maker_node():
     project_dir = '_'
     best_result = evaluate_one_prompt_maker_node(generator_funcs, generator_params, prompts, sample_generation_gt,
                                                  metrics, project_dir)
+    metric_names, _ = cast_metrics(metrics)
     assert isinstance(best_result, pd.DataFrame)
-    assert all(metric_name in best_result.columns for metric_name in metrics)
+    assert all(metric_name in best_result.columns for metric_name in metric_names)
     assert len(best_result) == len(prompts)
 
 
@@ -156,11 +159,11 @@ def test_summary_metric_name_at_threshold_cutoff():
         'execution_time': [1, 2],
     })
     filenames = ['filename_2']
-
+    metric_names, _ = cast_metrics(metrics)
     evaluation_df = pd.DataFrame({
         'filename': filenames,
         **{f'prompt_maker_{metric_name}': list(map(lambda x: x[metric_name].mean(), evaluation_results))
-           for metric_name in metrics}
+           for metric_name in metric_names}
     })
     summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
 
