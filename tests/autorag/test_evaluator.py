@@ -128,6 +128,7 @@ def test_start_trial(evaluator):
 
 
 def test_evaluator_cli():
+    os.environ['BM25'] = 'bm25'
     with tempfile.TemporaryDirectory() as project_dir:
         result = subprocess.run(['autorag', 'evaluate', '--config', os.path.join(resource_dir, 'simple.yaml'),
                                  '--qa_data_path', os.path.join(resource_dir, 'qa_data_sample.parquet'),
