@@ -87,8 +87,8 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
         existing_ids = set(existing_ids_response['ids'])  # Assuming 'ids' is the key in the response
 
         # Filter contents and ids for those not existing in the collection
-        new_contents = [content for j, content in enumerate(contents[i:i + batch]) if ids[j + i] not in existing_ids]
-        new_ids = [id for id in ids[i:i + batch] if id not in existing_ids]
+        new_ids = list(filter(lambda id: id not in existing_ids, ids[i:i + batch]))
+        new_contents = [contents[i + j] for j, id in enumerate(ids[i:i + batch]) if id in new_ids]
 
         # Only proceed if there are new contents to embed
         if new_contents:
