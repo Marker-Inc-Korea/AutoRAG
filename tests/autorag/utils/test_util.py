@@ -7,12 +7,12 @@ import tempfile
 import pandas as pd
 import pytest
 from llama_index.core.llms import CompletionResponse
-from llama_index.legacy.llms import MockLLM
 
 from autorag.utils import fetch_contents
-from autorag.utils.util import find_best_result_path, load_summary_file, result_to_dataframe, \
+from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
     convert_env_in_dict
+from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -59,27 +59,6 @@ def test_fetch_contents():
     find_contents = fetch_contents(corpus_data, [['doc3', 'doc1'], ['doc2']])
     assert find_contents[0] == ['cherry', 'apple']
     assert find_contents[1] == ['banana']
-
-
-def test_find_best_result_path():
-    # Create a temporary directory
-    with tempfile.TemporaryDirectory() as tmpdirname:
-        # Set up the test files
-        paths = [
-            "best_result.parquet",
-            "average_result.parquet",
-            "worst_result.parquet",
-            "best_other.txt"
-        ]
-        for file_name in paths:
-            with open(os.path.join(tmpdirname, file_name), 'w') as f:
-                f.write("test data")
-
-        # Run the function under test
-        best_path = find_best_result_path(tmpdirname)
-
-        # Check that the function returns the correct path
-        assert best_path == "best_result.parquet"
 
 
 def test_load_summary_file(summary_path):

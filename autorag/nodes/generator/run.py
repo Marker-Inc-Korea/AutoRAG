@@ -1,10 +1,11 @@
 import os
 import pathlib
-from typing import Callable, List, Dict
+from typing import Callable, List, Dict, Union
 
 import pandas as pd
 
 from autorag.evaluate import evaluate_generation
+from autorag.evaluate.util import cast_metrics
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 
 
@@ -44,7 +45,8 @@ def run_generator_node(modules: List[Callable],
                                         zip(modules, module_params)))
     average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
-    if strategies.get('metrics') is None:
+    metric_names, metric_params = cast_metrics(strategies.get('metrics'))
+    if metric_names is None or len(metric_names) <= 0:
         raise ValueError("You must at least one metrics for generator evaluation.")
     results = list(map(lambda result: evaluate_generator_node(result, generation_gt, strategies.get('metrics')), results))
 
@@ -58,13 +60,13 @@ def run_generator_node(modules: List[Callable],
         'module_name': list(map(lambda module: module.__name__, modules)),
         'module_params': module_params,
         'execution_time': average_times,
-        **{metric: list(map(lambda x: x[metric].mean(), results)) for metric in strategies.get('metrics')}
+        **{metric: list(map(lambda x: x[metric].mean(), results)) for metric in metric_names}
     })
 
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best_average(results, metric_names, filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add 'is_best' column at summary file
@@ -77,7 +79,7 @@ def run_generator_node(modules: List[Callable],
     return best_result
 
 
-def evaluate_generator_node(result_df: pd.DataFrame, generation_gt, metrics):
+def evaluate_generator_node(result_df: pd.DataFrame, generation_gt, metrics: Union[List[str], List[Dict]]):
     @evaluate_generation(generation_gt=generation_gt, metrics=metrics)
     def evaluate_generation_module(df: pd.DataFrame):
         return df['generated_texts'].tolist(), df['generated_tokens'].tolist(), df['generated_log_probs'].tolist()

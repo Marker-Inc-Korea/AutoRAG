@@ -47,7 +47,7 @@ def test_run_generator_node(node_line_dir):
     module_params = [{'llm': 'openai', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8},
                      {'llm': 'openai', 'temperature': 1.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8}]
     strategies = {
-        'metrics': ['bleu', 'meteor', 'rouge'],
+        'metrics': [{'metric_name': 'bleu'}, {'metric_name': 'meteor'}, {'metric_name': 'rouge'}],
         'speed_threshold': 5,
     }
     best_result = run_generator_node(modules, module_params, previous_df, node_line_dir, strategies)

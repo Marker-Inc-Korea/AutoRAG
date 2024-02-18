@@ -6,10 +6,11 @@ from typing import List, Callable, Dict, Optional, Union
 import pandas as pd
 
 from autorag.evaluate import evaluate_generation
-from autorag.support import get_support_modules
+from autorag.evaluate.util import cast_metrics
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.support import get_support_modules
 from autorag.utils import validate_qa_dataset
-from autorag.utils.util import make_combinations, explode, replace_value_in_dict
+from autorag.utils.util import make_combinations, explode
 
 
 def run_prompt_maker_node(modules: List[Callable],
@@ -52,8 +53,6 @@ def run_prompt_maker_node(modules: List[Callable],
     average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
     # save results to folder
-    pseudo_module_params = list(map(lambda x: replace_value_in_dict(x[1], 'prompt', str(x[0])),
-                                    enumerate(module_params)))
     filepaths = list(map(lambda x: os.path.join(node_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
     filenames = list(map(lambda x: os.path.basename(x), filepaths))
@@ -65,6 +64,8 @@ def run_prompt_maker_node(modules: List[Callable],
         'module_params': module_params,
         'execution_time': average_times,
     })
+
+    metric_names, metric_params = cast_metrics(strategies.get('metrics'))
 
     # Run evaluation when there are more than one module.
     if len(modules) > 1:
@@ -79,7 +80,7 @@ def run_prompt_maker_node(modules: List[Callable],
                                                      filenames)
 
         # run metrics before filtering
-        if general_strategy.get('metrics') is None:
+        if metric_names is None or len(metric_names) <= 0:
             raise ValueError("You must at least one metrics for prompt maker evaluation.")
 
         # get generator modules from strategy
@@ -99,14 +100,14 @@ def run_prompt_maker_node(modules: List[Callable],
         evaluation_df = pd.DataFrame({
             'filename': filenames,
             **{f'prompt_maker_{metric_name}': list(map(lambda x: x[metric_name].mean(), evaluation_results))
-               for metric_name in general_strategy['metrics']}
+               for metric_name in metric_names}
         })
         summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
 
-        best_result, best_filename = select_best_average(evaluation_results, general_strategy['metrics'], filenames)
+        best_result, best_filename = select_best_average(evaluation_results, metric_names, filenames)
         # change metric name columns to prompt_maker_metric_name
         best_result = best_result.rename(columns={
-            metric_name: f'prompt_maker_{metric_name}' for metric_name in strategies['metrics']})
+            metric_name: f'prompt_maker_{metric_name}' for metric_name in metric_names})
         best_result = best_result.drop(columns=['generated_texts'])
     else:
         best_result, best_filename = results[0], filenames[0]
@@ -151,7 +152,8 @@ def evaluate_one_prompt_maker_node(generator_funcs: List[Callable],
                                  zip(generator_funcs, generator_params)))
     evaluation_results = list(map(lambda x: evaluate_generator_result(x[0], generation_gt, metrics),
                                   zip(generator_results, generator_funcs)))
-    best_result, _ = select_best_average(evaluation_results, metrics)
+    metric_names = list(map(lambda x: x['metric_name'], metrics)) if isinstance(metrics[0], dict) else metrics
+    best_result, _ = select_best_average(evaluation_results, metric_names)
     best_result = pd.concat([input_df, best_result], axis=1)
     return best_result  # it has 'generated_texts' column
 

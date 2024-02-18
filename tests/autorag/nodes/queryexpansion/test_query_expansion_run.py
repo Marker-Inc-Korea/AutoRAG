@@ -1,12 +1,11 @@
 import os.path
 import pathlib
 import shutil
+import tempfile
 
 import pandas as pd
 import pytest
-from llama_index.legacy.llms import MockLLM
 
-from autorag import generator_models
 from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
@@ -28,21 +27,18 @@ sample_expanded_queries = [
 metrics = ['retrieval_f1', 'retrieval_recall']
 
 
-
 @pytest.fixture
 def node_line_dir():
-    project_dir = os.path.join(resources_dir, "test_project")
-    sample_project_dir = os.path.join(resources_dir, "sample_project")
-    # copy & paste all folders and files in sample_project folder
-    shutil.copytree(sample_project_dir, project_dir)
+    with tempfile.TemporaryDirectory() as project_dir:
+        sample_project_dir = os.path.join(resources_dir, "sample_project")
+        # copy & paste all folders and files in sample_project folder
+        shutil.copytree(sample_project_dir, project_dir, dirs_exist_ok=True)
 
-    test_trail_dir = os.path.join(project_dir, "test_trial")
-    os.makedirs(test_trail_dir)
-    node_line_dir = os.path.join(test_trail_dir, "test_node_line")
-    os.makedirs(node_line_dir)
-    yield node_line_dir
-    # teardown
-    shutil.rmtree(project_dir)
+        test_trail_dir = os.path.join(project_dir, "test_trial")
+        os.makedirs(test_trail_dir)
+        node_line_dir = os.path.join(test_trail_dir, "test_node_line")
+        os.makedirs(node_line_dir)
+        yield node_line_dir
 
 
 def test_evaluate_one_prompt_maker_node(node_line_dir):
@@ -93,9 +89,8 @@ def test_run_query_expansion_node(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
-    generator_models['mock'] = MockLLM
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
+    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "openai"}]
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
@@ -111,9 +106,8 @@ def test_run_query_expansion_node_default(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
-    generator_models['mock'] = MockLLM
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
+    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "openai"}]
     strategies = {
         'metrics': metrics
     }

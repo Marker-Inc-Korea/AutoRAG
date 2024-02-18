@@ -44,4 +44,4 @@ testpaths = ["tests"]
 addopts = ["--import-mode=importlib"] # default is prepend
 
 [project.entry-points.console_scripts]
-autorag = "autorag.evaluator:cli"
+autorag = "autorag.cli:cli"

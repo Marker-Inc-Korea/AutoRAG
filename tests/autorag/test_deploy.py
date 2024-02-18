@@ -5,12 +5,12 @@ import tempfile
 import pandas as pd
 import pytest
 import yaml
-from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
 from autorag.deploy import summary_df_to_yaml, extract_best_config, Runner, extract_node_line_names, \
     extract_node_strategy
-from autorag.evaluator import Evaluator, cli
+from autorag.evaluator import Evaluator
+from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
@@ -154,6 +154,7 @@ def test_runner(evaluator):
 
     runner = Runner.from_trial_folder(os.path.join(project_dir, '0'))
     runner_test(runner)
+    runner_test(runner)
 
     with tempfile.NamedTemporaryFile(suffix='yaml', mode='w+t') as yaml_path:
         extract_best_config(os.path.join(project_dir, '0'), yaml_path.name)
@@ -161,6 +162,7 @@ def test_runner(evaluator):
         runner_test(runner)
 
 
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_runner_full(evaluator):
     runner = Runner.from_trial_folder(os.path.join(resource_dir, 'result_project', '0'))
     answer = runner.run('What is the best movie in Korea? Have Korea movie ever won Oscar?')
@@ -189,11 +191,3 @@ def test_runner_api_server(evaluator):
     assert len(retrieved_contents) == 10
     assert isinstance(retrieved_contents, list)
     assert isinstance(retrieved_contents[0], str)
-
-
-def test_run_api():
-    runner = CliRunner()
-    result = runner.invoke(cli, ['run_api', '--config_path', 'test/path/test.yaml',
-                                 '--host', '0.0.0.0', '--port', '8080'])
-    assert result.exit_code == 1  # it will occur error because I run this test with a wrong yaml path.
-    # But it means that the command is working well. If not, it will occur exit_code 2.

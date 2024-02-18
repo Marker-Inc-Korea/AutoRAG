@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Union, List, Dict, Tuple, Any
 
 from autorag import embedding_models
@@ -10,15 +11,16 @@ def cast_metrics(metrics: Union[List[str], List[Dict]]) -> Tuple[List[str], List
     :param metrics: List of string or dictionary.
     :return: The list of metric names and dictionary list of metric parameters.
     """
-    if not isinstance(metrics, list):
+    metrics_copy = deepcopy(metrics)
+    if not isinstance(metrics_copy, list):
         raise ValueError("metrics must be a list of string or dictionary.")
-    if isinstance(metrics[0], str):
-        return metrics, [{} for _ in metrics]
-    elif isinstance(metrics[0], dict):
+    if isinstance(metrics_copy[0], str):
+        return metrics_copy, [{} for _ in metrics_copy]
+    elif isinstance(metrics_copy[0], dict):
         # pop 'metric_name' key from dictionary
-        metric_names = list(map(lambda x: x.pop('metric_name'), metrics))
+        metric_names = list(map(lambda x: x.pop('metric_name'), metrics_copy))
         metric_params = [dict(map(lambda x, y: cast_embedding_model(x, y), metric.keys(), metric.values())) for metric
-                         in metrics]
+                         in metrics_copy]
         return metric_names, metric_params
     else:
         raise ValueError("metrics must be a list of string or dictionary.")

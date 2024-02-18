@@ -61,3 +61,8 @@ def test_vectordb_node(project_dir_for_vectordb_node):
     result_df = vectordb(project_dir=project_dir_for_vectordb_node, previous_result=previous_result, top_k=4,
                          embedding_model="openai")
     base_retrieval_node_test(result_df)
+
+
+def test_duplicate_id_ingest(ingested_vectordb):
+    vectordb_ingest(ingested_vectordb, corpus_df, embedding_model)
+    assert ingested_vectordb.count() == 5
