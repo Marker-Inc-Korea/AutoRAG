@@ -154,6 +154,7 @@ def test_runner(evaluator):
 
     runner = Runner.from_trial_folder(os.path.join(project_dir, '0'))
     runner_test(runner)
+    runner_test(runner)
 
     with tempfile.NamedTemporaryFile(suffix='yaml', mode='w+t') as yaml_path:
         extract_best_config(os.path.join(project_dir, '0'), yaml_path.name)
