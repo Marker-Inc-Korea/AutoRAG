@@ -4,9 +4,9 @@ from typing import List, Tuple
 import torch
 import torch.nn.functional as F
 
+from autorag.nodes.passagereranker.base import passage_reranker_node
 from autorag.nodes.passagereranker.tart.modeling_enc_t5 import EncT5ForSequenceClassification
 from autorag.nodes.passagereranker.tart.tokenization_enc_t5 import EncT5Tokenizer
-from autorag.nodes.passagereranker.base import passage_reranker_node
 
 
 @passage_reranker_node
@@ -33,7 +33,7 @@ def tart(queries: List[str], contents_list: List[List[str]],
     model_name = "facebook/tart-full-flan-t5-xl"
     model = EncT5ForSequenceClassification.from_pretrained(model_name)
     tokenizer = EncT5Tokenizer.from_pretrained(model_name)
-    device = ("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Run async tart_rerank_pure function
     tasks = [tart_pure(query, contents, scores, ids, top_k, model, tokenizer, instruction, device) \
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
@@ -46,7 +46,7 @@ def tart(queries: List[str], contents_list: List[List[str]],
 
 
 async def tart_pure(query: str, contents: List[str], scores: List[float],
-                    ids: List[str], top_k: int, model, tokenizer, instruction: str, device: str) \
+                    ids: List[str], top_k: int, model, tokenizer, instruction: str, device) \
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using Tart.
@@ -54,16 +54,19 @@ async def tart_pure(query: str, contents: List[str], scores: List[float],
     :param contents: The list of contents to rerank
     :param scores: The list of scores retrieved from the initial ranking
     :param ids: The list of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
     :param model: The Tart model to use for reranking
     :param tokenizer: The tokenizer to use for the model
     :param instruction: The instruction for reranking.
+    :param device: The device to run the model on (GPU if available, otherwise CPU)
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    if device == 'cuda':
-        model = model.to(device)
+    model = model.to(device)
 
     instruction_queries: List[str] = ['{0} [SEP] {1}'.format(instruction, query) for _ in range(len(contents))]
     features = tokenizer(instruction_queries, contents, padding=True, truncation=True, return_tensors="pt")
+    features = features.to(device)
+
     with torch.no_grad():
         scores = model(**features).logits
         normalized_scores = [float(score[1]) for score in F.softmax(scores, dim=1)]
