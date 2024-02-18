@@ -1,6 +1,6 @@
 import os
 import shutil
-import sysconfig
+import sys
 
 import torch.cuda
 
@@ -21,13 +21,12 @@ def is_github_action() -> bool:
 
 
 def main():
-    tests_dir = os.path.join(sysconfig.get_path('purelib'), 'tests')
-    print(is_github_action())
-    print(sysconfig.get_path('purelib'))
-    if os.path.exists(tests_dir):
-        shutil.rmtree(tests_dir)
-    else:
-        print("Directory does not exist")
+    paths = sys.path
+    for path in paths:
+        tests_dir = os.path.join(path, 'tests')
+        if os.path.exists(tests_dir):
+            print(f"Deleting {tests_dir}")
+            shutil.rmtree(tests_dir)
 
 
 if __name__ == "__main__":
