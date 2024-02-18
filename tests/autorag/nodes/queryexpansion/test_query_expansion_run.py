@@ -5,9 +5,7 @@ import tempfile
 
 import pandas as pd
 import pytest
-from llama_index.legacy.llms import MockLLM
 
-from autorag import generator_models
 from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
@@ -91,9 +89,8 @@ def test_run_query_expansion_node(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
-    generator_models['mock'] = MockLLM
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
+    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "openai"}]
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
@@ -109,9 +106,8 @@ def test_run_query_expansion_node_default(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
-    generator_models['mock'] = MockLLM
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
+    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "openai"}]
     strategies = {
         'metrics': metrics
     }

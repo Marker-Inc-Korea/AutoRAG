@@ -8,25 +8,28 @@ on:
     branches:
       - main
 
+env:
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Upgrade pip
-      run: |
-        sudo python3 -m pip install --upgrade pip
-    - name: Install gcc
-      run: |
-        sudo apt-get install gcc
-    - name: Install AutoRAG
-      run: |
-        sudo pip install -e .
-    - name: Install dependencies
-      run: |
-        sudo pip install pytest pytest-xdist
-    - name: Run tests
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      run: |
-        sudo pytest -n auto tests/
+      - uses: actions/checkout@v3
+      - name: Upgrade pip
+        run: |
+          python3 -m pip install --upgrade pip
+      - name: Install gcc
+        run: |
+          sudo apt-get install gcc
+      - name: Install AutoRAG
+        run: |
+          pip install -e .
+      - name: Install dependencies
+        run: |
+          pip install pytest pytest-xdist
+      - name: delete tests package
+        run: python3 tests/delete_tests.py
+      - name: Run tests
+        run: |
+          python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/
