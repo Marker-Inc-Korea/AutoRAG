@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+from copy import deepcopy
 from typing import Optional, Dict, List
 
 import pandas as pd
@@ -162,7 +163,7 @@ class Runner:
             Default is `generated_texts`, which is the output of the `generation` module.
         :return: The result of the pipeline.
         """
-        node_lines = self.config['node_lines']
+        node_lines = deepcopy(self.config['node_lines'])
         previous_result = pd.DataFrame({
             'qid': str(uuid.uuid4()),
             'query': [query],
