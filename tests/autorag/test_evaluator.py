@@ -145,7 +145,8 @@ def test_evaluator_cli():
         assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
 
 
-def start_trial_full(evaluator):
+@pytest.mark.skip(reason="This test is too slow")
+def test_start_trial_full(evaluator):
     """
     Function name doesn't start with 'test' because full test takes too long time.
     """

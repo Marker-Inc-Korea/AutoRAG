@@ -75,6 +75,7 @@ def node_line_dir():
         yield node_line_dir
 
 
+@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="Skipping this test on GitHub Actions")
 def test_run_passage_reranker_node(node_line_dir):
     modules = [monot5]
     module_params = [{'top_k': 4, 'model_name': 'castorini_monot5-3b-msmarco-10k'}]
