@@ -1,12 +1,12 @@
 import os
 import shutil
-from distutils.sysconfig import get_python_lib
+import sysconfig
 
 
 def main():
-    tests_dir = os.path.join(get_python_lib(), 'tests')
-    print(f"Github Actions: {os.getenv('GITHUB_ACTIONS')}")
-    print(get_python_lib())
+    tests_dir = os.path.join(sysconfig.get_path('purelib'), 'tests')
+    print(f"Github Actions: {os.getenv('CI')}")
+    print(sysconfig.get_path('purelib'))
     if os.path.exists(tests_dir):
         shutil.rmtree(tests_dir)
     else:
