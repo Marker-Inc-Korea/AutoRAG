@@ -29,7 +29,7 @@ jobs:
         run: |
           pip install pytest pytest-xdist
       - name: delete tests package
-        run: sudo python3 tests/delete_tests.py
+        run: python3 tests/delete_tests.py
       - name: Run tests
         run: |
           python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/
