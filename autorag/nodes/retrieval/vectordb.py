@@ -82,5 +82,15 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
     # embed corpus
     batch = 128
     for i in range(0, len(contents), batch):
-        embedded_contents = embedding_model._get_text_embeddings(contents[i:i + batch])
-        collection.add(ids=ids[i:i + batch], embeddings=embedded_contents)
+        # Query the collection to check if IDs already exist
+        existing_ids_response = collection.get(ids=ids[i:i + batch])
+        existing_ids = set(existing_ids_response['ids'])  # Assuming 'ids' is the key in the response
+
+        # Filter contents and ids for those not existing in the collection
+        new_contents = [content for j, content in enumerate(contents[i:i + batch]) if ids[j + i] not in existing_ids]
+        new_ids = [id for id in ids[i:i + batch] if id not in existing_ids]
+
+        # Only proceed if there are new contents to embed
+        if new_contents:
+            embedded_contents = embedding_model._get_text_embeddings(new_contents)
+            collection.add(ids=new_ids, embeddings=embedded_contents)
