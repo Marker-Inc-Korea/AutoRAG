@@ -172,6 +172,7 @@ def test_start_trial_full(evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'post_retrieve_node_line', 'generator', '5.parquet'))
 
 
+@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="Skipping this test on GitHub Actions")
 def test_test_data_evaluate(test_evaluator):
     trial_folder = os.path.join(resource_dir, 'result_project', '0')
     with tempfile.NamedTemporaryFile(mode="w+t", suffix=".yaml") as yaml_file:

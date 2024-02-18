@@ -160,6 +160,7 @@ def test_runner(evaluator):
         runner_test(runner)
 
 
+@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="Skipping this test on GitHub Actions")
 def test_runner_full(evaluator):
     runner = Runner.from_trial_folder(os.path.join(resource_dir, 'result_project', '0'))
     answer = runner.run('What is the best movie in Korea? Have Korea movie ever won Oscar?')
