@@ -19,7 +19,7 @@ fastapi  # for api server
 uvicorn  # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
-# guidance # for qa data creation
+guidance # for qa data creation
 
 ### LlamaIndex ###
 llama-index>=0.10.1
