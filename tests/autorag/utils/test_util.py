@@ -7,12 +7,12 @@ import tempfile
 import pandas as pd
 import pytest
 from llama_index.core.llms import CompletionResponse
-from llama_index.legacy.llms import MockLLM
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
     convert_env_in_dict
+from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 
@@ -59,7 +59,6 @@ def test_fetch_contents():
     find_contents = fetch_contents(corpus_data, [['doc3', 'doc1'], ['doc2']])
     assert find_contents[0] == ['cherry', 'apple']
     assert find_contents[1] == ['banana']
-
 
 
 def test_load_summary_file(summary_path):
