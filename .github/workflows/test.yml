@@ -29,4 +29,4 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       run: |
-        sudo pytest -n auto tests/
+        sudo pytest -o log_cli=true --log-cli-level=INFO -n auto tests/
