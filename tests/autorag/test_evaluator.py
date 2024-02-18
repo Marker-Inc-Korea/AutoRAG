@@ -12,6 +12,7 @@ from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
 from autorag.utils.util import load_summary_file
+from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, 'resources')
@@ -172,7 +173,7 @@ def test_start_trial_full(evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'post_retrieve_node_line', 'generator', '5.parquet'))
 
 
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="Skipping this test on GitHub Actions")
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_test_data_evaluate(test_evaluator):
     trial_folder = os.path.join(resource_dir, 'result_project', '0')
     with tempfile.NamedTemporaryFile(mode="w+t", suffix=".yaml") as yaml_file:

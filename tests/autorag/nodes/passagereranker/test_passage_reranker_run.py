@@ -8,6 +8,7 @@ import pytest
 from autorag.nodes.passagereranker import monot5
 from autorag.nodes.passagereranker.run import run_passage_reranker_node
 from autorag.utils.util import load_summary_file
+from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -75,7 +76,7 @@ def node_line_dir():
         yield node_line_dir
 
 
-@pytest.mark.skipif(os.getenv('GITHUB_ACTIONS') == 'true', reason="Skipping this test on GitHub Actions")
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_run_passage_reranker_node(node_line_dir):
     modules = [monot5]
     module_params = [{'top_k': 4, 'model_name': 'castorini_monot5-3b-msmarco-10k'}]
