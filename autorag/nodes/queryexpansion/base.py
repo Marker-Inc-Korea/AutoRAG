@@ -1,14 +1,12 @@
 import functools
+import logging
 from pathlib import Path
 from typing import List, Union
 
 import pandas as pd
 
 from autorag import generator_models
-
 from autorag.utils import result_to_dataframe, validate_qa_dataset
-
-import logging
 
 logger = logging.getLogger("AutoRAG")
 
@@ -25,6 +23,9 @@ def query_expansion_node(func):
         # find queries columns
         assert "query" in previous_result.columns, "previous_result must have query column."
         queries = previous_result["query"].tolist()
+
+        if func.__name__ == "pass_query_expansion":
+            return func(queries=queries)
 
         # set module parameters
         llm_str = kwargs.pop("llm")
