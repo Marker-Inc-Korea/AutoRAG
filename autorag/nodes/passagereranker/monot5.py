@@ -75,7 +75,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
 
 
 async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top_k: int,
-                       ids: List[str], model, tokenizer, token_false_id, token_true_id)\
+                       ids: List[str], model, device, tokenizer, token_false_id, token_true_id)\
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using MonoT5.
@@ -85,6 +85,7 @@ async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top
     :param scores: The list of scores retrieved from the initial ranking
     :param ids: The list of ids retrieved from the initial ranking
     :param model: The MonoT5 model to use for reranking
+    :param device: The device to run the model on (GPU if available, otherwise CPU)
     :param tokenizer: The tokenizer to use for the model
     :param token_false_id: The id of the token used by the model to represent a false prediction
     :param token_true_id: The id of the token used by the model to represent a true prediction
