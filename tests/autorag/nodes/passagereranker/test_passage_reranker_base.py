@@ -16,7 +16,7 @@ contents_example = [["NomaDamas is Great Team", "Paris is the capital of France.
                     ["i am hungry", "LA is a country in the United States.", "Newjeans has 5 members."]]
 ko_queries_example = ["프랑스의 수도는 어디인가요?",
                       "뉴진스의 멤버는 몇 명인가요?"]
-ko_contents_example = [["마커AI는 멋지 회사입니다.", "프랑스의 수도는 파리 입니다.", "아스날은 축구를 못합니다."],
+ko_contents_example = [["마커AI는 멋진 회사입니다.", "프랑스의 수도는 파리 입니다.", "아스날은 축구를 못합니다."],
                         ["배고파요", "LA는 미국의 도시입니다.", "뉴진스의 멤버는 5명 입니다."]]
 ids_example = [[str(uuid4()) for _ in range(len(contents_example[0]))],
                [str(uuid4()) for _ in range(len(contents_example[1]))]]
