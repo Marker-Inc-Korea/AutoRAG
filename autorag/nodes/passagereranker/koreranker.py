@@ -32,7 +32,7 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     # Run async ko_rerank_pure function
-    tasks = [koreranker_pure(query, contents, scores, ids, top_k, model, tokenizer)
+    tasks = [koreranker_pure(query, contents, scores, ids, top_k, model, tokenizer, device)
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
@@ -44,7 +44,7 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
 
 async def koreranker_pure(query: str, contents: List[str],
                           scores: List[float], ids: List[str],
-                          top_k: int, model, tokenizer) \
+                          top_k: int, model, tokenizer, device) \
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using ko-reranker.
@@ -56,12 +56,14 @@ async def koreranker_pure(query: str, contents: List[str],
     :param top_k: The number of passages to be retrieved
     :param model: The ko-reranker model to use for reranking
     :param tokenizer: The tokenizer to use for the model
+    :param device: The device to run the model on (GPU if available, otherwise CPU)
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-
     input_pairs = [[query, content] for content in contents]
+    inputs = tokenizer(input_pairs, padding=True, truncation=True, return_tensors='pt', max_length=512)
+    inputs = inputs.to(device)
+
     with torch.no_grad():
-        inputs = tokenizer(input_pairs, padding=True, truncation=True, return_tensors='pt', max_length=512)
         scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
         scores = exp_normalize(scores.numpy())
 
