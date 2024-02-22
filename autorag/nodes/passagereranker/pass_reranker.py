@@ -15,4 +15,3 @@ def pass_reranker(queries: List[str], contents_list: List[List[str]],
     scores_list = list(map(lambda x: x[:top_k], scores_list))
     ids_list = list(map(lambda x: x[:top_k], ids_list))
     return contents_list, ids_list, scores_list
-    
