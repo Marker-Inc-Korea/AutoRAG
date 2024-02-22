@@ -48,6 +48,7 @@ node_lines:
           - module_type: vectordb
             embedding_model: openai
       modules:
+        - module_type: pass_query_expansion
         - module_type: query_decompose
           llm: openai
           temperature: [0.2, 1.0]
@@ -56,6 +57,11 @@ node_lines:
           max_token: 64
 ```
 
+```{admonition} What is pass_query_expansion?
+Its purpose is to test the performance that 'not using' any query expansion module.
+Because it can be the better option that not using query expansion node.
+So with this module, you can automatically test the performance of the retrieval without using any query expansion module.
+```
 
 #### Supported Modules
 

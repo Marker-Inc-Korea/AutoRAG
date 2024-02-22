@@ -148,6 +148,7 @@ def test_start_trial_full(evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'pre_retrieve_node_line', 'query_expansion', "0.parquet"))
     assert os.path.exists(os.path.join(project_dir, '0', 'pre_retrieve_node_line', 'query_expansion', "1.parquet"))
     assert os.path.exists(os.path.join(project_dir, '0', 'pre_retrieve_node_line', 'query_expansion', '2.parquet'))
+    assert os.path.exists(os.path.join(project_dir, '0', 'pre_retrieve_node_line', 'query_expansion', '3.parquet'))
     # 2. retrieve_node_line
     retrieval_node_line_path = os.path.join(project_dir, '0', 'retrieve_node_line')
     assert os.path.exists(retrieval_node_line_path)
@@ -157,8 +158,10 @@ def test_start_trial_full(evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker', '0.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker', '1.parquet'))
+    assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker', '2.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_compressor'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_compressor', '0.parquet'))
+    assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_compressor', '1.parquet'))
     # 3. post_retrieve_node_line
     assert os.path.exists(os.path.join(project_dir, '0', 'post_retrieve_node_line'))
     assert os.path.exists(os.path.join(project_dir, '0', 'post_retrieve_node_line', 'prompt_maker'))

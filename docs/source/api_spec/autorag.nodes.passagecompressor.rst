@@ -12,6 +12,14 @@ autorag.nodes.passagecompressor.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagecompressor.pass\_compressor module
+-------------------------------------------------------
+
+.. automodule:: autorag.nodes.passagecompressor.pass_compressor
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagecompressor.run module
 ------------------------------------------
 
