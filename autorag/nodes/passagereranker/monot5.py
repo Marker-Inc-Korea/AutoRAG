@@ -1,8 +1,7 @@
+import asyncio
 from typing import List, Tuple
 
 import torch
-import asyncio
-
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
@@ -38,6 +37,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using MonoT5.
+
     :param queries: The list of queries to use for reranking
     :param contents_list: The list of lists of contents to rerank
     :param scores_list: The list of lists of scores retrieved from the initial ranking
@@ -62,6 +62,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     token_true_id = tokenizer.convert_tokens_to_ids(token_true)
     # Determine the device to run the model on (GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     # Run async mono_t5_rerank_pure function
     tasks = [mono_t5_pure(query, contents, scores, top_k, ids, model, device, tokenizer, token_false_id, token_true_id) \
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
@@ -78,6 +79,7 @@ async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using MonoT5.
+
     :param query: The query to use for reranking
     :param contents: The list of contents to rerank
     :param scores: The list of scores retrieved from the initial ranking
@@ -89,7 +91,6 @@ async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top
     :param token_true_id: The id of the token used by the model to represent a true prediction
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    model.to(device)
 
     # Format the input for the model by combining each content with the query
     input_texts = [f'Query: {query} Document: {content}' for content in contents]
