@@ -5,9 +5,7 @@ More details can be found [here](https://huggingface.co/Dongjin-kr/ko-reranker).
 
 
 ## **Module Parameters**
-(Optional) `instruction`
-- Specifies instructions for the reranking process. 
-- default is `Find passage to answer given question`
+- **Not Applicable (N/A):** There are no direct module parameters specified for the `ko-reranker` module.
 
 ## **Example config.yaml**
 ```yaml
