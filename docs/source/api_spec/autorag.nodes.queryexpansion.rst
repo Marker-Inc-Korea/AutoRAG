@@ -20,6 +20,14 @@ autorag.nodes.queryexpansion.hyde module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.queryexpansion.pass\_query\_expansion module
+----------------------------------------------------------
+
+.. automodule:: autorag.nodes.queryexpansion.pass_query_expansion
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.queryexpansion.query\_decompose module
 ----------------------------------------------------
 

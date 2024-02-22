@@ -11,6 +11,7 @@ node_lines:
           - module_type: vectordb
             embedding_model: openai
       modules:
+        - module_type: pass_query_expansion
         - module_type: query_decompose
           llm: openai
           temperature: [0.2, 1.0]
@@ -43,6 +44,7 @@ node_lines:
         speed_threshold: 10
       top_k: 5
       modules:
+        - module_type: pass_reranker
         - module_type: tart
         - module_type: monot5
     - node_type: passage_compressor
@@ -50,6 +52,7 @@ node_lines:
         metrics: [retrieval_token_f1, retrieval_token_recall, retrieval_token_precision]
         speed_threshold: 10
       modules:
+        - module_type: pass_compressor
         - module_type: tree_summarize
           llm: openai
           model: gpt-3.5-turbo-16k

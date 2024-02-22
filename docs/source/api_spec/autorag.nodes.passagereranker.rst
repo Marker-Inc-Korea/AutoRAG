@@ -36,6 +36,14 @@ autorag.nodes.passagereranker.monot5 module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.pass\_reranker module
+---------------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.pass_reranker
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.run module
 ----------------------------------------
 

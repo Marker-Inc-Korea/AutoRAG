@@ -40,10 +40,13 @@ def passage_compressor_node(func):
                 llm=llm,
                 **param_dict
             )
+            result = list(map(lambda x: [x], result))
+        elif func.__name__ == 'pass_compressor':
+            result = func(contents=retrieved_contents)
         else:
             raise ValueError(f"{func.__name__} is not supported in passage compressor node.")
 
-        return list(map(lambda x: [x], result))
+        return result
 
     return wrapper
 
