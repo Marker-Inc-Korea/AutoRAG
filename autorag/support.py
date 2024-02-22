@@ -1,6 +1,5 @@
-
-from typing import Callable, Dict
 import importlib
+from typing import Callable, Dict
 
 
 def dynamically_find_function(key: str, target_dict: Dict) -> Callable:
@@ -27,6 +26,7 @@ def get_support_modules(module_name: str) -> Callable:
         'upr': ('autorag.nodes.passagereranker', 'upr'),
         'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
         'hybrid_cc': ('autorag.nodes.retrieval', 'hybrid_cc'),
+        'pass_reranker': ('autorag.nodes.passagereranker', 'pass_reranker'),
     }
     return dynamically_find_function(module_name, support_modules)
 
