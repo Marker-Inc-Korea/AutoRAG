@@ -18,6 +18,8 @@ class MockLLM(CustomLLM):
             messages_to_prompt: Optional[Callable[[Sequence[ChatMessage]], str]] = None,
             completion_to_prompt: Optional[Callable[[str], str]] = None,
             pydantic_program_mode: PydanticProgramMode = PydanticProgramMode.DEFAULT,
+            temperature: float = 0.1,
+            top_p: float = 1.0,
     ) -> None:
         super().__init__(
             max_tokens=max_tokens,
@@ -71,7 +73,3 @@ class MockLLM(CustomLLM):
                 )
 
         return gen_response(self.max_tokens) if self.max_tokens else gen_prompt()
-
-
-async def mock_openai_acomplete(prompt: str, **kwargs):
-    return CompletionResponse(text=prompt)
