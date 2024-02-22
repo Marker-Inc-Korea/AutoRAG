@@ -20,6 +20,14 @@ autorag.nodes.passagereranker.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.koreranker module
+-----------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.koreranker
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.monot5 module
 -------------------------------------------
 

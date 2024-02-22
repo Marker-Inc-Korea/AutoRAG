@@ -12,6 +12,16 @@ from autorag.nodes.passagereranker.base import passage_reranker_node
 def koreranker(queries: List[str], contents_list: List[List[str]],
                scores_list: List[List[float]], ids_list: List[List[str]],
                top_k: int) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+    """
+    Rerank a list of contents based on their relevance to a query using ko-reranker.
+    ko-reranker is a reranker based on korean (https://huggingface.co/Dongjin-kr/ko-reranker).
+    :param queries: The list of queries to use for reranking
+    :param contents_list: The list of lists of contents to rerank
+    :param scores_list: The list of lists of scores retrieved from the initial ranking
+    :param ids_list: The list of lists of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
+    :return: tuple of lists containing the reranked contents, ids, and scores
+    """
     model_path = "Dongjin-kr/ko-reranker"
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
@@ -34,6 +44,18 @@ async def koreranker_pure(query: str, contents: List[str],
                           scores: List[float], ids: List[str],
                           top_k: int, model, tokenizer, device) \
         -> Tuple[List[str], List[str], List[float]]:
+    """
+    Rerank a list of contents based on their relevance to a query using ko-reranker.
+    :param query: The query to use for reranking
+    :param contents: The list of contents to rerank
+    :param scores: The list of scores retrieved from the initial ranking
+    :param ids: The list of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
+    :param model: The ko-reranker model to use for reranking
+    :param tokenizer: The tokenizer to use for the model
+    :param device: The device to run the model on (GPU if available, otherwise CPU)
+    :return: tuple of lists containing the reranked contents, ids, and scores
+    """
     model.to(device)
 
     input_pairs = [[query, content] for content in contents]
@@ -42,10 +64,10 @@ async def koreranker_pure(query: str, contents: List[str],
         scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
         scores = exp_normalize(scores.numpy())
 
-    # Convert the scores to float
+    # Convert scores type to float
     scores = scores.astype(float)
 
-    # Create a list of tuples pairing each content with its relevance probability
+    # Create a list of tuples pairing each content with its relevance score
     content_ids_scores = list(zip(contents, ids, scores))
 
     # Sort the list of pairs based on the relevance score in descending order
