@@ -28,6 +28,7 @@ def get_support_modules(module_name: str) -> Callable:
         'hybrid_cc': ('autorag.nodes.retrieval', 'hybrid_cc'),
         'pass_reranker': ('autorag.nodes.passagereranker', 'pass_reranker'),
         'pass_query_expansion': ('autorag.nodes.queryexpansion', 'pass_query_expansion'),
+        'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
     }
     return dynamically_find_function(module_name, support_modules)
 
