@@ -32,9 +32,16 @@ node_lines:
       metrics: [retrieval_token_f1, retrieval_token_recall, retrieval_token_precision]
       speed_threshold: 10
     modules:
+      - module_type: pass_compressor
       - module_type: tree_summarize
         llm: openai
         model: gpt-3.5-turbo-16k
+```
+
+```{admonition} What is pass_compressor?
+Its purpose is to test the performance that 'not using' any passage compressor module.
+Because it can be the better option that not using passage compressor node.
+So with this module, you can automatically test the performance without using any passage compressor module.
 ```
 
 
