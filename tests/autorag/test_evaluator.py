@@ -129,9 +129,6 @@ def test_start_trial(evaluator):
 
 @pytest.mark.skip(reason="This test is too slow")
 def test_start_trial_full(evaluator):
-    """
-    Function name doesn't start with 'test' because full test takes too long time.
-    """
     evaluator.start_trial(os.path.join(resource_dir, 'full.yaml'))
     project_dir = evaluator.project_dir
     # full path check

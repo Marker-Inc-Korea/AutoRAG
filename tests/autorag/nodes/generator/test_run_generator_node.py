@@ -4,9 +4,11 @@ import tempfile
 import pandas as pd
 import pytest
 
+from autorag import generator_models
 from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.generator.run import run_generator_node
 from autorag.utils.util import load_summary_file
+from tests.mock import MockLLM
 
 qa_df = pd.DataFrame({
     'qid': ['id-1', 'id-2', 'id-3'],
@@ -43,9 +45,10 @@ def node_line_dir():
 
 
 def test_run_generator_node(node_line_dir):
+    generator_models['mock'] = MockLLM
     modules = [llama_index_llm, llama_index_llm]
-    module_params = [{'llm': 'openai', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8},
-                     {'llm': 'openai', 'temperature': 1.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8}]
+    module_params = [{'llm': 'mock', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8},
+                     {'llm': 'mock', 'temperature': 1.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8}]
     strategies = {
         'metrics': [{'metric_name': 'bleu'}, {'metric_name': 'meteor'}, {'metric_name': 'rouge'}],
         'speed_threshold': 5,
@@ -63,7 +66,7 @@ def test_run_generator_node(node_line_dir):
                       'is_best'}
     assert set(summary_df.columns) == expect_columns
     assert len(summary_df) == 2
-    assert summary_df['module_params'][0] == {'llm': 'openai', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128,
+    assert summary_df['module_params'][0] == {'llm': 'mock', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128,
                                               'batch': 8}
 
     first_path = os.path.join(node_line_dir, "generator", "0.parquet")
