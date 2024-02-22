@@ -65,7 +65,8 @@ async def koreranker_pure(query: str, contents: List[str],
 
     with torch.no_grad():
         scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
-        scores = exp_normalize(scores.numpy())
+        scores_np = scores.cpu().numpy()
+        scores = exp_normalize(scores_np)
 
     # Convert scores type to float
     scores = scores.astype(float)
