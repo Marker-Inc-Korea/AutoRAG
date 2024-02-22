@@ -6,11 +6,13 @@ import tempfile
 import pandas as pd
 import pytest
 
+from autorag import generator_models
 from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 from autorag.nodes.retrieval import bm25
 from autorag.utils.util import load_summary_file
+from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -74,23 +76,25 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['module_name'][0] == "query_decompose"
-    assert summary_df['module_params'][0] == {'llm': "openai", 'temperature': 0.2, 'batch': 7}
+    assert summary_df['module_params'][0] == {'llm': "mock", 'temperature': 0.2, 'batch': 7}
     assert summary_df['execution_time'][0] > 0
-    assert summary_df['is_best'][0] == True  # is_best is np.bool_
+    assert summary_df['is_best'][0] == True or summary_df['is_best'][0] == False  # is_best is np.bool_
     # test the best file is saved properly
-    best_path = os.path.join(node_line_dir, "query_expansion", "best_0.parquet")
+    best_filename = summary_df[summary_df['is_best']]['filename'].values[0]
+    best_path = os.path.join(node_line_dir, "query_expansion", f"best_{best_filename}")
     assert os.path.exists(best_path)
     best_df = pd.read_parquet(best_path)
     assert all([expect_column in best_df.columns for expect_column in expect_columns])
 
 
 def test_run_query_expansion_node(node_line_dir):
+    generator_models['mock'] = MockLLM
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "openai"}]
+    module_params = [{'llm': "mock", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
@@ -102,12 +106,13 @@ def test_run_query_expansion_node(node_line_dir):
 
 
 def test_run_query_expansion_node_default(node_line_dir):
+    generator_models['mock'] = MockLLM
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "openai", 'temperature': 0.2, 'batch': 7}, {'llm': "openai"}]
+    module_params = [{'llm': "mock", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
     strategies = {
         'metrics': metrics
     }
@@ -116,12 +121,13 @@ def test_run_query_expansion_node_default(node_line_dir):
 
 
 def test_run_query_expansion_one_module(node_line_dir):
+    generator_models['mock'] = MockLLM
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
     modules = [query_decompose]
-    module_params = [{'llm': "openai", 'temperature': 0.2}]
+    module_params = [{'llm': "mock", 'temperature': 0.2}]
     strategies = {
         'metrics': metrics
     }

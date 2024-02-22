@@ -1,7 +1,8 @@
 import pandas as pd
-from llama_index.llms.openai import OpenAI
 
+from autorag import generator_models
 from autorag.nodes.generator import llama_index_llm
+from tests.mock import MockLLM
 
 prompts = [
     "Who is the strongest Avenger?",
@@ -31,7 +32,7 @@ def check_generated_log_probs(log_probs):
 
 def test_llama_index_llm():
     llama_index_llm_original = llama_index_llm.__wrapped__
-    answers, tokens, log_probs = llama_index_llm_original(prompts, OpenAI())
+    answers, tokens, log_probs = llama_index_llm_original(prompts, MockLLM())
     check_generated_texts(answers)
     check_generated_tokens(tokens)
     check_generated_log_probs(log_probs)
@@ -39,12 +40,13 @@ def test_llama_index_llm():
 
 
 def test_llama_index_llm_node():
+    generator_models['mock'] = MockLLM
     previous_result = pd.DataFrame(
         {
             'prompts': prompts,
             'qid': ['id-1', 'id-2', 'id-3']
         })
-    result_df = llama_index_llm(project_dir='.', previous_result=previous_result, llm='openai',
+    result_df = llama_index_llm(project_dir='.', previous_result=previous_result, llm='mock',
                                 temperature=0.5, top_p=0.9)
     check_generated_texts(result_df['generated_texts'].tolist())
     check_generated_tokens(result_df['generated_tokens'].tolist())

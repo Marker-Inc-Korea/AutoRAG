@@ -18,6 +18,7 @@ class MockLLM(CustomLLM):
             messages_to_prompt: Optional[Callable[[Sequence[ChatMessage]], str]] = None,
             completion_to_prompt: Optional[Callable[[str], str]] = None,
             pydantic_program_mode: PydanticProgramMode = PydanticProgramMode.DEFAULT,
+            **kwargs: Any,
     ) -> None:
         super().__init__(
             max_tokens=max_tokens,

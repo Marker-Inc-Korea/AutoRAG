@@ -5,12 +5,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from autorag import generator_models
 from autorag.evaluate.util import cast_metrics
 from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.promptmaker import fstring
 from autorag.nodes.promptmaker.run import evaluate_generator_result, evaluate_one_prompt_maker_node, \
     run_prompt_maker_node
 from autorag.utils.util import load_summary_file
+from tests.mock import MockLLM
 
 prompts = ['Hello, Do you know the world without war?',
            'Hi, I am dreaming about the world without any war.']
@@ -38,9 +40,10 @@ def test_evaluate_generator_result():
 
 
 def test_evaluate_one_prompt_maker_node():
+    generator_models['mock'] = MockLLM
     generator_funcs = [llama_index_llm, llama_index_llm]
-    generator_params = [{'llm': 'openai', 'model': 'gpt-3.5-turbo'},
-                        {'llm': 'openai', 'model': 'gpt-3.5-turbo-1106'}]
+    generator_params = [{'llm': 'mock', 'model': 'gpt-3.5-turbo'},
+                        {'llm': 'mock', 'model': 'gpt-3.5-turbo-1106'}]
     project_dir = '_'
     best_result = evaluate_one_prompt_maker_node(generator_funcs, generator_params, prompts, sample_generation_gt,
                                                  metrics, project_dir)
@@ -90,6 +93,7 @@ def check_summary_df(node_line_dir):
 
 
 def test_run_prompt_maker_node(node_line_dir):
+    generator_models['mock'] = MockLLM
     modules = [fstring, fstring]
     params = [{'prompt': 'Tell me something about the question: {query} \n\n {retrieved_contents}'},
               {'prompt': 'Question: {query} \n Something to read: {retrieved_contents} \n What\'s your answer?'}]
@@ -98,7 +102,7 @@ def test_run_prompt_maker_node(node_line_dir):
         'speed_threshold': 5,
         'generator_modules': [{
             'module_type': 'llama_index_llm',
-            'llm': 'openai',
+            'llm': 'mock',
             'model': ['gpt-3.5-turbo', 'gpt-3.5-turbo-1106'],
         }]
     }

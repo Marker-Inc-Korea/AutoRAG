@@ -5,9 +5,11 @@ import tempfile
 import pandas as pd
 import pytest
 
+from autorag import generator_models
 from autorag.nodes.passagecompressor import tree_summarize
 from autorag.nodes.passagecompressor.run import run_passage_compressor_node
 from autorag.utils.util import load_summary_file
+from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -74,9 +76,10 @@ def node_line_dir():
 
 
 def test_run_passage_compressor_node(node_line_dir):
+    generator_models['mock'] = MockLLM
     modules = [tree_summarize, tree_summarize]
-    module_params = [{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k', 'batch': 4},
-                     {'llm': 'openai', 'model': 'gpt-3.5-turbo'}]
+    module_params = [{'llm': 'mock', 'model': 'gpt-3.5-turbo-16k', 'batch': 4},
+                     {'llm': 'mock', 'model': 'gpt-3.5-turbo'}]
     strategies = {
         'metrics': ['retrieval_token_f1', 'retrieval_token_precision'],
         'speed_threshold': 5,
@@ -99,12 +102,12 @@ def test_run_passage_compressor_node(node_line_dir):
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "0.parquet"
-    assert summary_df['passage_compressor_retrieval_token_f1'][0] ==pytest.approx(single_result_df[
-        'retrieval_token_f1'].mean())
+    assert summary_df['passage_compressor_retrieval_token_f1'][0] == pytest.approx(single_result_df[
+                                                                                       'retrieval_token_f1'].mean())
     assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(single_result_df[
-        'retrieval_token_precision'].mean())
+                                                                                              'retrieval_token_precision'].mean())
     assert summary_df['module_name'][0] == "tree_summarize"
-    assert summary_df['module_params'][0] == {'llm': 'openai', 'model': 'gpt-3.5-turbo-16k', 'batch': 4}
+    assert summary_df['module_params'][0] == {'llm': 'mock', 'model': 'gpt-3.5-turbo-16k', 'batch': 4}
     assert summary_df['execution_time'][0] > 0
     # test the best file is saved properly
     best_path = summary_df[summary_df['is_best']]['filename'].values[0]
