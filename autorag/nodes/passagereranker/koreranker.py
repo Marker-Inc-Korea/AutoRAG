@@ -15,6 +15,7 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
     """
     Rerank a list of contents based on their relevance to a query using ko-reranker.
     ko-reranker is a reranker based on korean (https://huggingface.co/Dongjin-kr/ko-reranker).
+
     :param queries: The list of queries to use for reranking
     :param contents_list: The list of lists of contents to rerank
     :param scores_list: The list of lists of scores retrieved from the initial ranking
@@ -29,8 +30,9 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
 
     # Determine the device to run the model on (GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     # Run async ko_rerank_pure function
-    tasks = [koreranker_pure(query, contents, scores, ids, top_k, model, tokenizer, device)
+    tasks = [koreranker_pure(query, contents, scores, ids, top_k, model, tokenizer)
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
@@ -42,10 +44,11 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
 
 async def koreranker_pure(query: str, contents: List[str],
                           scores: List[float], ids: List[str],
-                          top_k: int, model, tokenizer, device) \
+                          top_k: int, model, tokenizer) \
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using ko-reranker.
+
     :param query: The query to use for reranking
     :param contents: The list of contents to rerank
     :param scores: The list of scores retrieved from the initial ranking
@@ -53,10 +56,8 @@ async def koreranker_pure(query: str, contents: List[str],
     :param top_k: The number of passages to be retrieved
     :param model: The ko-reranker model to use for reranking
     :param tokenizer: The tokenizer to use for the model
-    :param device: The device to run the model on (GPU if available, otherwise CPU)
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    model.to(device)
 
     input_pairs = [[query, content] for content in contents]
     with torch.no_grad():
