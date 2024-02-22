@@ -16,6 +16,14 @@ Subpackages
 Submodules
 ----------
 
+autorag.cli module
+------------------
+
+.. automodule:: autorag.cli
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.deploy module
 ---------------------
 
