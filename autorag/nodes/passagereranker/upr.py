@@ -1,9 +1,9 @@
+import asyncio
 from typing import List, Tuple
 
-import asyncio
 import torch
-
 from transformers import T5Tokenizer, T5ForConditionalGeneration
+
 from autorag.nodes.passagereranker.base import passage_reranker_node
 
 
@@ -19,6 +19,7 @@ def upr(queries: List[str], contents_list: List[List[str]],
     UPR is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
     The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
     The default model is t5-large.
+
     :param queries: The list of queries to use for reranking
     :param contents_list: The list of lists of contents to rerank
     :param scores_list: The list of lists of scores retrieved from the initial ranking
@@ -68,14 +69,18 @@ async def upr_pure(query: str, contents: List[str], scores: List[float],
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using UPR.
+
     :param query: The query to use for reranking
     :param contents: The list of contents to rerank
     :param scores: The list of scores retrieved from the initial ranking
     :param ids: The list of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
     :param model: The UPR model to use for reranking
     :param device: The device to run the model on (GPU if available, otherwise CPU)
     :param tokenizer: The tokenizer to use for the model
     :param shard_size: The shard size for the model.
+    :param prefix_prompt: The prefix prompt for the language model that generates question for reranking.
+    :param suffix_prompt: The suffix prompt for the language model that generates question for reranking.
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
     indexes, scores = calculate_likelihood(query, contents, prefix_prompt, suffix_prompt,

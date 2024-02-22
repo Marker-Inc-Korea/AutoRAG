@@ -19,6 +19,7 @@ def tart(queries: List[str], contents_list: List[List[str]],
     TART is a reranker based on TART (https://github.com/facebookresearch/tart).
     You can rerank the passages with the instruction using TARTReranker.
     The default model is facebook/tart-full-flan-t5-xl.
+
     :param queries: The list of queries to use for reranking
     :param contents_list: The list of lists of contents to rerank
     :param scores_list: The list of lists of scores retrieved from the initial ranking
@@ -34,6 +35,7 @@ def tart(queries: List[str], contents_list: List[List[str]],
     model = EncT5ForSequenceClassification.from_pretrained(model_name)
     tokenizer = EncT5Tokenizer.from_pretrained(model_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
     # Run async tart_rerank_pure function
     tasks = [tart_pure(query, contents, scores, ids, top_k, model, tokenizer, instruction, device) \
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
@@ -50,6 +52,7 @@ async def tart_pure(query: str, contents: List[str], scores: List[float],
         -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using Tart.
+
     :param query: The query to use for reranking
     :param contents: The list of contents to rerank
     :param scores: The list of scores retrieved from the initial ranking
@@ -61,7 +64,6 @@ async def tart_pure(query: str, contents: List[str], scores: List[float],
     :param device: The device to run the model on (GPU if available, otherwise CPU)
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    model = model.to(device)
 
     instruction_queries: List[str] = ['{0} [SEP] {1}'.format(instruction, query) for _ in range(len(contents))]
     features = tokenizer(instruction_queries, contents, padding=True, truncation=True, return_tensors="pt")
