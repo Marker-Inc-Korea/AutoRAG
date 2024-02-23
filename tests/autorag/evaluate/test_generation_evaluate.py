@@ -22,7 +22,7 @@ pseudo_tokens = list(map(lambda x: tokenizer.tokenize(x), pseudo_generations))
 pseudo_log_probs = list(map(lambda x: [0.1] * len(x), pseudo_tokens))
 
 
-@evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'rouge', 'sem_score'])
+@evaluate_generation(generation_gt=generation_gts, metrics=['bleu', 'meteor', 'rouge', 'sem_score', 'g_eval'])
 def pseudo_generation():
     return pseudo_generations
 
@@ -42,8 +42,8 @@ def test_evaluate_generation():
     result_df = pseudo_generation()
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 3
-    assert len(result_df.columns) == 5
-    assert set(result_df.columns) == {'generated_texts', 'bleu', 'meteor', 'rouge', 'sem_score'}
+    assert len(result_df.columns) == 6
+    assert set(result_df.columns) == {'generated_texts', 'bleu', 'meteor', 'rouge', 'sem_score', 'g_eval'}
 
     with pytest.warns():
         result_df_log_probs = pseudo_generation_with_log_probs()
