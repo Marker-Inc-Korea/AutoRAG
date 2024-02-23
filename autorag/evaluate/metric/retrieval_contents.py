@@ -8,7 +8,6 @@ from collections import Counter
 from typing import List
 
 import numpy as np
-import pandas as pd
 
 from autorag.utils.util import normalize_string
 
@@ -16,9 +15,7 @@ from autorag.utils.util import normalize_string
 def retrieval_contents_metric(func):
     @functools.wraps(func)
     def wrapper(gt_contents: List[List[str]], pred_contents: List[List[str]]) -> List[float]:
-        df = pd.DataFrame({'gt': gt_contents, 'pred': pred_contents})
-        df[func.__name__] = df.swifter.apply(lambda x: func(x['gt'], x['pred']), axis=1)
-        return df[func.__name__].tolist()
+        return list(map(lambda x: func(x[0], x[1]), zip(gt_contents, pred_contents)))
 
     return wrapper
 
