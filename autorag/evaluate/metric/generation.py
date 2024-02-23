@@ -119,13 +119,18 @@ def g_eval(generation_gt: List[str], pred: str,
            model: str = 'gpt-4-0125-preview',
            ) -> float:
     """
+    Calculate G-Eval score.
+    G-eval is a metric that uses high-performance LLM model to evaluate generation performance.
+    It evaluates the generation result by coherence, consistency, fluency, and relevance.
+    It uses only 'openai' model, and we recommend to use gpt-4 for evaluation accuracy.
 
-
-    :param generation_gt:
-    :param pred:
-    :param metrics:
+    :param generation_gt: A list of ground truth.
+    :param pred: Model generation.
+    :param metrics: A list of metrics to use for evaluation.
+        Default is all metrics, which is ['coherence', 'consistency', 'fluency', 'relevance'].
     :param model: OpenAI model name.
-    :return:
+        Default is 'gpt-4-0125-preview'.
+    :return: G-Eval score.
     """
     available_metrics = ['coherence', 'consistency', 'fluency', 'relevance']
     if metrics is None:
