@@ -13,7 +13,7 @@ This document serves as a guide for configuring parameters, strategies, and the 
 
 ### **Strategy Parameters**
 1. **Metrics**:  
-   - **Types**: `bleu`, `meteor`, `rouge`, `sem_score`
+   - **Types**: `bleu`, `meteor`, `rouge`, `sem_score`, `g_eval`
    ```{admonition} Purpose
    These metrics are used to evaluate the performance of language models by comparing model-generated text to ground truth texts.
    We are planning to add more metrics to evaluate generation performance.
@@ -43,6 +43,9 @@ This document serves as a guide for configuring parameters, strategies, and the 
            - metric_name: meteor
            - metric_name: sem_score
              embedding_model: openai
+           - metric_name: g_eval
+             metrics: [consistency, fluency, relevance, coherence]
+             model: gpt-4
         speed_threshold: 10
       modules:
         - module_type: llama_index_llm
