@@ -60,7 +60,13 @@ node_lines:
   nodes:
     - node_type: prompt_maker
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+          - metric_name: g_eval
         speed_threshold: 10
         generator_modules:
           - module_type: llama_index_llm
@@ -78,6 +84,7 @@ node_lines:
           - metric_name: rouge
           - metric_name: sem_score
             embedding_model: openai
+          - metric_name: g_eval
         speed_threshold: 10
       modules:
         - module_type: llama_index_llm

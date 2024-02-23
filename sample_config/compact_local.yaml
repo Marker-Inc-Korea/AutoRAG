@@ -32,7 +32,7 @@ node_lines:
   nodes:
     - node_type: prompt_maker
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics: [bleu, meteor, rouge, sem_score]
         generator_modules:
           - module_type: llama_index_llm
             llm: vllm
@@ -46,7 +46,7 @@ node_lines:
             - "{retrieved_contents} \n\n Read the passage carefully, and answer this question. \n\n Question: {query} \n\n Answer the question. Be concise." # concise prompt
     - node_type: generator
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics: [bleu, meteor, rouge, sem_score]
       modules:
         - module_type: llama_index_llm
           llm: vllm
