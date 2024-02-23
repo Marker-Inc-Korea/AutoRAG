@@ -1,10 +1,11 @@
 import functools
+import os
 from typing import List, Optional
 
 import evaluate
-import pandas as pd
 import sacrebleu
 from llama_index.core.embeddings import BaseEmbedding
+from openai import OpenAI
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
@@ -24,9 +25,8 @@ def generation_metric(func):
         :return: A list of computed metric scores.
         """
         # make generation_gt and generations to pd dataframe
-        df = pd.DataFrame({'gt': generation_gt, 'pred': generations})
-        df[func.__name__] = df.swifter.apply(lambda x: func(x['gt'], x['pred'], **kwargs), axis=1)
-        return df[func.__name__].tolist()
+        result = list(map(lambda x: func(x[0], x[1], **kwargs), zip(generation_gt, generations)))
+        return result
 
     return wrapper
 
@@ -48,9 +48,8 @@ def huggingface_evaluate(instance, key: str,
         return max(list(map(
             lambda x: instance.compute(predictions=[pred], references=[x])[key], gt)))
 
-    df = pd.DataFrame({'gt': generation_gt, 'pred': generations})
-    df[key] = df.swifter.apply(lambda x: compute_score(x['gt'], x['pred']), axis=1)
-    return df[key].tolist()
+    result = list(map(lambda x: compute_score(x[0], x[1]), zip(generation_gt, generations)))
+    return result
 
 
 @generation_metric
@@ -112,3 +111,73 @@ def sem_score(generation_gt: List[str], pred: str, embedding_model: Optional[Bas
     # calculate cosine similarity
     similarity_scores: List[float] = list(map(lambda x: calculate_cosine_similarity(x, pred_embedding), gt_embeddings))
     return max(similarity_scores)
+
+
+@generation_metric
+def g_eval(generation_gt: List[str], pred: str,
+           metrics: Optional[List[str]] = None,
+           model: str = 'gpt-4-0125-preview',
+           ) -> float:
+    """
+
+
+    :param generation_gt:
+    :param pred:
+    :param metrics:
+    :param model: OpenAI model name.
+    :return:
+    """
+    available_metrics = ['coherence', 'consistency', 'fluency', 'relevance']
+    if metrics is None:
+        metrics = available_metrics
+    else:
+        assert len(metrics) > 0, "metrics must be a list of string"
+        metrics = [metric for metric in metrics if metric in available_metrics]
+
+    current_path = os.path.dirname(os.path.realpath(__file__))
+    prompt_path = os.path.join(current_path, 'g_eval_prompts')
+    g_eval_prompts = {
+        "coherence": open(os.path.join(prompt_path, "coh_detailed.txt")).read(),
+        "consistency": open(os.path.join(prompt_path, "con_detailed.txt")).read(),
+        "fluency": open(os.path.join(prompt_path, "flu_detailed.txt")).read(),
+        "relevance": open(os.path.join(prompt_path, "rel_detailed.txt")).read(),
+    }
+
+    client = OpenAI()
+
+    def g_eval_score(prompt: str, gen_gt: List[str], pred: str):
+        scores = []
+        for gt in gen_gt:
+            input_prompt = prompt.replace('{{Document}}', gt).replace('{{Summary}}', pred)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": input_prompt}
+                ],
+                logprobs=True,
+                top_logprobs=5,
+                temperature=0,
+                max_tokens=2,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                n=20,
+            )
+            if '(1-3):' in prompt:
+                scores.append(get_g_eval_score(response, max_score=3))
+            else:
+                scores.append(get_g_eval_score(response))
+        return max(scores)
+
+    def get_g_eval_score(responses, max_score: int = 5) -> int:
+        target_tokens = {str(i): 0 for i in range(1, max_score + 1)}
+        for choice in responses.choices:
+            first_top_log_probs = choice.logprobs.content[0].top_logprobs
+            for i, top_log_prob in enumerate(list(map(lambda x: x.token, first_top_log_probs))):
+                if top_log_prob in target_tokens:
+                    target_tokens[top_log_prob] += (5 - i)
+
+        return int(max(target_tokens, key=target_tokens.get))
+
+    g_eval_scores = list(map(lambda x: g_eval_score(g_eval_prompts[x], generation_gt, pred), metrics))
+    return sum(g_eval_scores) / len(g_eval_scores)

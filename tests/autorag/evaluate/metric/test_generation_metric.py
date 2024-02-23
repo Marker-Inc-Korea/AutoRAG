@@ -1,7 +1,8 @@
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.evaluate.metric.generation import bleu, meteor, rouge, sem_score
+from autorag.evaluate.metric.generation import bleu, meteor, rouge, sem_score, g_eval
+from tests.delete_tests import is_github_action
 
 generation_gts = [
     ['The dog had bit the man.', 'The man had bitten the dog.'],
@@ -26,7 +27,7 @@ def base_test_generation_metrics(func, solution, **kwargs):
 
 
 def test_bleu():
-    base_test_generation_metrics(bleu,  [51.1507, 23.5783, 100.0])
+    base_test_generation_metrics(bleu, [51.1507, 23.5783, 100.0])
 
 
 def test_meteor():
@@ -43,3 +44,13 @@ def test_sem_score():
 
 def test_sem_score_other_model():
     base_test_generation_metrics(sem_score, [0.9888, 0.9394, 1.0], embedding_model=OpenAIEmbedding())
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+def test_g_eval_fluency():
+    base_test_generation_metrics(g_eval, [3.0, 2.0, 2.0], metrics=['fluency'], model='gpt-3.5-turbo')
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+def test_g_eval_full():
+    base_test_generation_metrics(g_eval, [4.25, 2.5, 4.25], model='gpt-3.5-turbo')
