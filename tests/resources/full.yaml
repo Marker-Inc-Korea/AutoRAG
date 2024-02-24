@@ -60,7 +60,14 @@ node_lines:
   nodes:
     - node_type: prompt_maker
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+          - metric_name: g_eval
+            model: gpt-3.5-turbo
         speed_threshold: 10
         generator_modules:
           - module_type: llama_index_llm
@@ -72,7 +79,14 @@ node_lines:
                    "Question: {query} \n Something to read: {retrieved_contents} \n What's your answer?"]
     - node_type: generator
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+          - metric_name: g_eval
+            model: gpt-3.5-turbo
         speed_threshold: 10
       modules:
         - module_type: llama_index_llm

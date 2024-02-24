@@ -32,7 +32,12 @@ node_lines:
   nodes:
     - node_type: prompt_maker
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
         generator_modules:
           - module_type: llama_index_llm
             llm: openai
@@ -45,7 +50,13 @@ node_lines:
             - "{retrieved_contents} \n\n Read the passage carefully, and answer this question. \n\n Question: {query} \n\n Answer the question. Be concise." # concise prompt
     - node_type: generator
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+          - metric_name: g_eval
       modules:
         - module_type: llama_index_llm
           llm: openai
