@@ -1,10 +1,13 @@
 import streamlit as st
 
+from autorag.deploy import Runner
+
+
+def get_runner(yaml_path: str, project_dir: str):
+    return Runner.from_yaml(yaml_path, project_dir=project_dir)
+
 
 def set_initial_state():
-    ###########
-    # General #
-    ###########
     if "messages" not in st.session_state:
         st.session_state["messages"] = [
             {
@@ -32,3 +35,27 @@ def set_page_header():
     st.caption(
         "Input a question and get an answer from the given documents. "
     )
+
+
+def chat_box(runner: Runner):
+    if query := st.chat_input("How can I help?"):
+        # Add the user input to messages state
+        st.session_state["messages"].append({"role": "user", "content": query})
+        with st.chat_message("user"):
+            st.markdown(query)
+
+        # Generate llama-index stream with user input
+        with st.chat_message("assistant"):
+            with st.spinner("Processing..."):
+                response = runner.run(query)
+
+        # Add the final response to messages state
+        st.session_state["messages"].append({"role": "assistant", "content": response})
+
+
+def run_web_server(yaml_path: str, project_dir: str):
+    runner = get_runner(yaml_path, project_dir)
+    set_initial_state()
+    set_page_config()
+    set_page_header()
+    chat_box(runner)

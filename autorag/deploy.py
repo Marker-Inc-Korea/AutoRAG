@@ -5,7 +5,6 @@ from copy import deepcopy
 from typing import Optional, Dict, List
 
 import pandas as pd
-import streamlit as st
 import uvicorn
 import yaml
 from fastapi import FastAPI
@@ -13,7 +12,6 @@ from pydantic import BaseModel
 
 from autorag.support import get_support_modules
 from autorag.utils.util import load_summary_file
-from autorag.web import set_initial_state, set_page_config, set_page_header
 
 logger = logging.getLogger("AutoRAG")
 
@@ -225,28 +223,6 @@ class Runner:
         """
         logger.info(f"Run api server at {host}:{port}")
         uvicorn.run(self.app, host=host, port=port, **kwargs)
-
-    def run_web_server(self):
-        logger.info("Run web server")
-        set_initial_state()
-        set_page_config()
-        set_page_header()
-        self.__web_chat()
-
-    def __web_chat(self):
-        if query := st.chat_input("How can I help?"):
-            # Add the user input to messages state
-            st.session_state["messages"].append({"role": "user", "content": query})
-            with st.chat_message("user"):
-                st.markdown(query)
-
-            # Generate llama-index stream with user input
-            with st.chat_message("assistant"):
-                with st.spinner("Processing..."):
-                    response = self.run(query)
-
-            # Add the final response to messages state
-            st.session_state["messages"].append({"role": "assistant", "content": response})
 
 
 class RunnerInput(BaseModel):
