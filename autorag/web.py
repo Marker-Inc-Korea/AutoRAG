@@ -63,3 +63,7 @@ def run_web_server(yaml_path, project_dir):
     set_page_config()
     set_page_header()
     chat_box(runner)
+
+
+if __name__ == "__main__":
+    run_web_server()
