@@ -48,7 +48,7 @@ def chat_box(runner: Runner):
         # Generate llama-index stream with user input
         with st.chat_message("assistant"):
             with st.spinner("Processing..."):
-                response = runner.run(query)
+                response = st.write(runner.run(query))
 
         # Add the final response to messages state
         st.session_state["messages"].append({"role": "assistant", "content": response})
@@ -58,6 +58,8 @@ def chat_box(runner: Runner):
 @click.option("--yaml_path", type=str, help="Path to the YAML file.")
 @click.option("--project_dir", type=str, help="Path to the project directory.")
 def run_web_server(yaml_path, project_dir):
+    import nest_asyncio
+    nest_asyncio.apply()
     runner = get_runner(yaml_path, project_dir)
     set_initial_state()
     set_page_config()
