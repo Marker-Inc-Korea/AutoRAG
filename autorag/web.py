@@ -1,3 +1,4 @@
+import click
 import streamlit as st
 
 from autorag.deploy import Runner
@@ -53,7 +54,10 @@ def chat_box(runner: Runner):
         st.session_state["messages"].append({"role": "assistant", "content": response})
 
 
-def run_web_server(yaml_path: str, project_dir: str):
+@click.command()
+@click.option("--yaml_path", type=str, help="Path to the YAML file.")
+@click.option("--project_dir", type=str, help="Path to the project directory.")
+def run_web_server(yaml_path, project_dir):
     runner = get_runner(yaml_path, project_dir)
     set_initial_state()
     set_page_config()
