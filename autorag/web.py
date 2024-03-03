@@ -1,3 +1,5 @@
+from typing import Optional
+
 import click
 import streamlit as st
 
@@ -57,7 +59,7 @@ def chat_box(runner: Runner):
 @click.command()
 @click.option("--yaml_path", type=str, help="Path to the YAML file.")
 @click.option("--project_dir", type=str, help="Path to the project directory.")
-def run_web_server(yaml_path, project_dir):
+def run_web_server(yaml_path, project_dir: Optional[str] = None):
     import nest_asyncio
     nest_asyncio.apply()
     runner = get_runner(yaml_path, project_dir)

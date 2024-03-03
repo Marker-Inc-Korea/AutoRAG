@@ -140,6 +140,17 @@ autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8
 You can specify project directory with `--project_dir` option or project_dir parameter.
 ```
 
+Or you can run this pipeline as a web.
+Check out web server at [here](deploy/web.md).
+
+```bash
+streamlit run ./autorag/web.py -- --yaml_path your/path/to/pipeline.yaml
+```
+
+```{admonition} Want to specify project folder?
+You can specify project directory with `--project_dir` option or project_dir parameter.
+```
+
 ```{hint}
 Why don't you share your work and evaluation results with others?
 You can simply share your yaml file, or `summary.csv` file.
