@@ -15,9 +15,9 @@ You can specify project directory with `--project_dir` option or project_dir par
 autorag run_web --yaml_path your/path/to/pipeline.yaml --project_dir your/project/directory
 ```
 
-### 2. Use project directory
+### 2. Use trial path
 ```bash
-autorag run_web --yaml_path your/path/to/pipeline.yaml
+autorag run_web --trial_path your/path/to/trial
 ```
 
 ### Web Interface example

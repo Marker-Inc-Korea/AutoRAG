@@ -33,4 +33,4 @@ llama-index-llms-huggingface
 llama-index-llms-openai-like
 
 # WebUI
-streamlit~=1.31.1
+streamlit
