@@ -1,0 +1,40 @@
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+  - node_type: retrieval
+    modules:
+    - module_type: vectordb
+      embedding_model: openai
+      top_k: 3
+    strategy:
+      metrics:
+      - retrieval_f1
+      - retrieval_recall
+      - retrieval_precision
+- node_line_name: post_retrieve_node_line
+  nodes:
+  - node_type: prompt_maker
+    modules:
+    - module_type: fstring
+      prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    strategy:
+      generator_modules:
+      - batch: 2
+        llm: openai
+        module_type: llama_index_llm
+      metrics:
+      - bleu
+      - meteor
+      - rouge
+  - node_type: generator
+    modules:
+    - batch: 2
+      llm: openai
+      model: gpt-3.5-turbo-16k
+      module_type: llama_index_llm
+    strategy:
+      metrics:
+      - metric_name: bleu
+      - metric_name: meteor
+      - embedding_model: openai
+        metric_name: sem_score

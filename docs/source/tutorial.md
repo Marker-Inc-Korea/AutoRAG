@@ -113,6 +113,8 @@ It will evaluate your test dataset with the found RAG pipeline.
 
 ## Deploy your optimal RAG pipeline
 
+### 1. Run as a CLI
+
 You can use a found optimal RAG pipeline right away with extracted yaml file.
 
 ```python
@@ -122,7 +124,10 @@ runner = Runner.from_yaml('your/path/to/pipeline.yaml')
 runner.run('your question')
 ```
 
-Or you can run this pipeline as an API server.
+### 2. Run as an API server
+
+You can run this pipeline as an API server.
+
 Check out API endpoint at [here](deploy/api_endpoint.md).
 
 ```python
@@ -134,6 +139,21 @@ runner.run_api_server()
 
 ```bash
 autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+```
+
+```{admonition} Want to specify project folder?
+You can specify project directory with `--project_dir` option or project_dir parameter.
+```
+
+### 3. Run as a Web Interface
+
+you can run this pipeline as a web interface.
+
+Check out web interface at [here](deploy/web.md).
+
+
+```bash
+autorag run_web --yaml_path your/path/to/pipeline.yaml
 ```
 
 ```{admonition} Want to specify project folder?
