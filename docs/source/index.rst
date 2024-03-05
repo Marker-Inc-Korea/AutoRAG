@@ -108,6 +108,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    :hidden:
 
    deploy/api_endpoint.md
+   deploy/web.md
 
 .. toctree::
    :maxdepth: 1
