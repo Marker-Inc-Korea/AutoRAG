@@ -1,0 +1,47 @@
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+  - node_type: retrieval
+    modules:
+    - module_type: vectordb
+      embedding_model: openai
+    top_k: 3
+    strategy:
+      metrics:
+      - retrieval_f1
+      - retrieval_recall
+      - retrieval_precision
+  - node_type: passage_reranker
+    modules:
+    - module_type: koreranker
+    - module_type: pass_reranker
+    strategy:
+      metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+    top_k: 3
+- node_line_name: post_retrieve_node_line
+  nodes:
+  - modules:
+    - module_type: fstring
+      prompt: "주어진 passage만을 이용하여 question에 따라 답하시오 passage: {retrieved_contents} \n\n Question: {query} \n\n Answer:"
+    node_type: prompt_maker
+    strategy:
+      generator_modules:
+      - batch: 2
+        llm: openai
+        module_type: llama_index_llm
+      metrics:
+      - bleu
+      - meteor
+      - rouge
+  - modules:
+    - batch: 2
+      llm: openai
+      model: gpt-4
+      module_type: llama_index_llm
+    node_type: generator
+    strategy:
+      metrics:
+      - metric_name: bleu
+      - metric_name: meteor
+      - embedding_model: openai
+        metric_name: sem_score
