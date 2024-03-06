@@ -36,5 +36,7 @@ def generator_node(func):
                                  "You can check valid llm names from autorag.generator_models.")
             batch = kwargs.pop('batch', 16)
             llm_instance = generator_models[llm](**kwargs)
-            return func(prompts=prompts, llm=llm_instance, batch=batch)
+            result = func(prompts=prompts, llm=llm_instance, batch=batch)
+            del llm_instance
+            return result
     return wrapper

@@ -40,6 +40,7 @@ def passage_compressor_node(func):
                 llm=llm,
                 **param_dict
             )
+            del llm
             result = list(map(lambda x: [x], result))
         elif func.__name__ == 'pass_compressor':
             result = func(contents=retrieved_contents)

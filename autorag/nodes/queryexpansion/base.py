@@ -51,10 +51,7 @@ def query_expansion_node(func):
 
         # run query expansion function
         expanded_queries = func(queries=queries, llm=llm, prompt=prompt, batch=batch)
-
+        del llm
         return expanded_queries
 
     return wrapper
-
-
-
