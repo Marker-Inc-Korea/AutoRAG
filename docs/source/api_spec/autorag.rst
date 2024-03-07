@@ -64,6 +64,14 @@ autorag.support module
    :undoc-members:
    :show-inheritance:
 
+autorag.web module
+------------------
+
+.. automodule:: autorag.web
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
