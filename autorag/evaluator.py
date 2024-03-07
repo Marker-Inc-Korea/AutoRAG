@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 
 import chromadb
 import pandas as pd
+import torch
 import yaml
 
 from autorag import embedding_models
@@ -129,6 +130,8 @@ class Evaluator:
                 vectordb_ingest(collection, self.corpus_data, embedding_model)
                 logger.info(f'VectorDB corpus embedding complete with {embedding_model_str}.')
                 del embedding_model
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
         else:
             logger.info('No ingestion needed.')
 

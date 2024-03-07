@@ -7,6 +7,7 @@ from typing import List, Union, Tuple, Dict
 
 import chromadb
 import pandas as pd
+import torch
 
 from autorag import embedding_models
 from autorag.support import get_support_modules
@@ -68,6 +69,8 @@ def retrieval_node(func):
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, **kwargs)
             del embedding_model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
             if 'ids' in kwargs and 'scores' in kwargs:
                 ids, scores = func(**kwargs)

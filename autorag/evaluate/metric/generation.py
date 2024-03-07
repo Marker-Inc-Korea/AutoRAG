@@ -4,6 +4,7 @@ from typing import List, Optional
 
 import evaluate
 import sacrebleu
+import torch
 from llama_index.core.embeddings import BaseEmbedding
 from openai import OpenAI
 
@@ -113,6 +114,8 @@ def sem_score(generation_gt: List[str], pred: str, embedding_model: Optional[Bas
     pred_embedding = embedding_model.get_text_embedding(pred)
 
     del embedding_model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     # calculate cosine similarity
     similarity_scores: List[float] = list(map(lambda x: calculate_cosine_similarity(x, pred_embedding), gt_embeddings))
