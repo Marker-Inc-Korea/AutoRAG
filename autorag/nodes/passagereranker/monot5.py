@@ -71,6 +71,12 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     content_result = list(map(lambda x: x[0], results))
     id_result = list(map(lambda x: x[1], results))
     score_result = list(map(lambda x: x[2], results))
+
+    del model
+    del tokenizer
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     return content_result, id_result, score_result
 
 

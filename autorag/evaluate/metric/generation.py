@@ -71,7 +71,9 @@ def meteor(generation_gt: List[List[str]], generations: List[str]) -> List[float
     :return: A list of computed metric scores.
     """
     meteor_instance = evaluate.load("meteor")
-    return huggingface_evaluate(meteor_instance, 'meteor', generation_gt, generations)
+    result = huggingface_evaluate(meteor_instance, 'meteor', generation_gt, generations)
+    del meteor_instance
+    return result
 
 
 def rouge(generation_gt: List[List[str]], generations: List[str]) -> List[float]:
@@ -85,7 +87,9 @@ def rouge(generation_gt: List[List[str]], generations: List[str]) -> List[float]
     :return: A list of computed metric scores.
     """
     rouge_instance = evaluate.load("rouge")
-    return huggingface_evaluate(rouge_instance, 'rougeL', generation_gt, generations)
+    result = huggingface_evaluate(rouge_instance, 'rougeL', generation_gt, generations)
+    del rouge_instance
+    return result
 
 
 @generation_metric
