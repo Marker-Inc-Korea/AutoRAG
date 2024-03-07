@@ -125,33 +125,46 @@ def rouge(generation_gt: List[List[str]], generations: List[str],
     return result
 
 
-@generation_metric
-def sem_score(generation_gt: List[str], pred: str, embedding_model: Optional[BaseEmbedding] = None) -> float:
+def sem_score(generation_gt: List[List[str]], generations: List[str],
+              embedding_model: Optional[BaseEmbedding] = None,
+              batch: int = os.cpu_count()) -> List[float]:
     """
     Compute sem score between generation gt and pred with cosine similarity.
 
     :param generation_gt: A list of ground truth.
-        Must be list of string.
-        It will get the max of cosine similarity between generation_gt and pred.
-    :param pred: Model prediction.
+            Must be 2-d list of string.
+            Because it can be a multiple ground truth.
+            It will get the max of cosine similarity between generation_gt and pred.
+    :param generations: A list of generations that LLM generated.
     :param embedding_model: Embedding model to use for compute cosine similarity.
         Default is all-mpnet-base-v2 embedding model.
         The paper used this embedding model.
-    :return: Sem score between generation_gt and pred.
+    :param batch: The batch size for processing.
+        Default is your cpu count.
+    :return: A list of computed metric scores.
     """
     if embedding_model is None:
         embedding_model = embedding_models['huggingface_all_mpnet_base_v2']
 
-    gt_embeddings = embedding_model.get_text_embedding_batch(generation_gt)
-    pred_embedding = embedding_model.get_text_embedding(pred)
+    async def compute(gt: List[str], pred: str, embedding_model: BaseEmbedding) -> float:
+        # embedding
+        gt_embeddings = embedding_model.get_text_embedding_batch(gt)
+        pred_embedding = embedding_model.get_text_embedding(pred)
+
+        # calculate cosine similarity
+        similarity_scores: List[float] = list(
+            map(lambda x: calculate_cosine_similarity(x, pred_embedding), gt_embeddings))
+        return max(similarity_scores)
+
+    tasks = [compute(gt, pred, embedding_model) for gt, pred in zip(generation_gt, generations)]
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
     del embedding_model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    # calculate cosine similarity
-    similarity_scores: List[float] = list(map(lambda x: calculate_cosine_similarity(x, pred_embedding), gt_embeddings))
-    return max(similarity_scores)
+    return result
 
 
 @generation_metric
