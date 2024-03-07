@@ -3,6 +3,7 @@ import logging.config
 import os
 import sys
 
+import transformers
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
@@ -53,3 +54,5 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 
 sys.excepthook = handle_exception
+
+transformers.logging.set_verbosity_error()
