@@ -128,6 +128,7 @@ class Evaluator:
                     raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
                 vectordb_ingest(collection, self.corpus_data, embedding_model)
                 logger.info(f'VectorDB corpus embedding complete with {embedding_model_str}.')
+                del embedding_model
         else:
             logger.info('No ingestion needed.')
 

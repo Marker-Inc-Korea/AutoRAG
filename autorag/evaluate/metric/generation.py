@@ -112,6 +112,8 @@ def sem_score(generation_gt: List[str], pred: str, embedding_model: Optional[Bas
     gt_embeddings = embedding_model.get_text_embedding_batch(generation_gt)
     pred_embedding = embedding_model.get_text_embedding(pred)
 
+    del embedding_model
+
     # calculate cosine similarity
     similarity_scores: List[float] = list(map(lambda x: calculate_cosine_similarity(x, pred_embedding), gt_embeddings))
     return max(similarity_scores)
