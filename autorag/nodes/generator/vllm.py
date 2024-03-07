@@ -4,11 +4,8 @@ from copy import deepcopy
 from typing import List, Tuple
 
 import torch
-from vllm.outputs import RequestOutput
-from vllm.sequence import SampleLogprobs
 
 from autorag.nodes.generator.base import generator_node
-from vllm import LLM, SamplingParams
 
 
 @generator_node
@@ -25,6 +22,13 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
         The second element is a list of generated text's token ids.
         The third element is a list of generated text's log probs.
     """
+    try:
+        from vllm.outputs import RequestOutput
+        from vllm.sequence import SampleLogprobs
+        from vllm import LLM, SamplingParams
+    except ImportError:
+        raise ImportError("Please install vllm library. You can install it by running `pip install vllm`.")
+
     input_kwargs = deepcopy(kwargs)
     vllm_model = make_vllm_instance(llm, input_kwargs)
 
@@ -42,6 +46,7 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
 
 
 def make_vllm_instance(llm: str, input_args):
+    from vllm import LLM
     model_from_args = input_args.pop('model', None)
     model = llm if model_from_args is None else model_from_args
     init_params = inspect.signature(LLM.__init__).parameters.values()
