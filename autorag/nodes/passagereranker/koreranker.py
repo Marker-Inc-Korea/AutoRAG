@@ -43,6 +43,7 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
     del model
     del tokenizer
     if torch.cuda.is_available():
+        torch.cuda.synchronize()
         torch.cuda.empty_cache()
 
     return content_result, id_result, score_result
