@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import os
 from typing import List, Optional
@@ -7,9 +8,12 @@ import sacrebleu
 import torch
 from llama_index.core.embeddings import BaseEmbedding
 from openai import OpenAI
+from rouge_score import tokenizers
+from rouge_score.rouge_scorer import RougeScorer
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.utils.util import process_batch
 
 
 def generation_metric(func):
@@ -77,7 +81,11 @@ def meteor(generation_gt: List[List[str]], generations: List[str]) -> List[float
     return result
 
 
-def rouge(generation_gt: List[List[str]], generations: List[str]) -> List[float]:
+def rouge(generation_gt: List[List[str]], generations: List[str],
+          rouge_type: Optional[str] = 'rougeL',
+          use_stemmer: bool = False,
+          split_summaries: bool = False,
+          batch: int = os.cpu_count()) -> List[float]:
     """
     Compute rouge score for generation.
 
@@ -85,10 +93,34 @@ def rouge(generation_gt: List[List[str]], generations: List[str]) -> List[float]
             Must be 2-d list of string.
             Because it can be a multiple ground truth.
     :param generations: A list of generations that LLM generated.
+    :param rouge_type: A rouge type to use for evaluation.
+        Default is 'RougeL'.
+        Choose between rouge1, rouge2, rougeL, and rougeLSum.
+        - rouge1: unigram (1-gram) based scoring.
+        - rouge2: bigram (2-gram) based scoring.
+        - rougeL: Longest Common Subsequence based scoring.
+        - rougeLSum: splits text using "\n"
+    :param use_stemmer: Bool indicating whether Porter stemmer should be used to
+        strip word suffixes to improve matching. This arg is used in the
+        DefaultTokenizer, but other tokenizers might or might not choose to
+        use this. Default is False.
+    :param split_summaries: Whether to add newlines between sentences for rougeLsum.
+        Default is False.
+    :param batch: The batch size for processing.
+        Default is your cpu count.
     :return: A list of computed metric scores.
     """
-    rouge_instance = evaluate.load("rouge")
-    result = huggingface_evaluate(rouge_instance, 'rougeL', generation_gt, generations)
+    rouge_instance = RougeScorer(rouge_types=[rouge_type], use_stemmer=use_stemmer,
+                                 split_summaries=split_summaries,
+                                 tokenizer=tokenizers.DefaultTokenizer(use_stemmer))
+
+    async def compute(gt: List[str], pred: str) -> float:
+        return rouge_instance.score_multi(targets=gt, prediction=pred)[rouge_type].fmeasure
+
+    tasks = [compute(gt, pred) for gt, pred in zip(generation_gt, generations)]
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+
     del rouge_instance
     return result
 
