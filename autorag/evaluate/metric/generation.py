@@ -1,3 +1,4 @@
+import asyncio
 import functools
 import os
 from typing import List, Optional
@@ -11,6 +12,7 @@ from rouge_score.rouge_scorer import RougeScorer
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.utils.util import process_batch
 
 
 def generation_metric(func):
@@ -81,7 +83,8 @@ def meteor(generation_gt: List[List[str]], generations: List[str]) -> List[float
 def rouge(generation_gt: List[List[str]], generations: List[str],
           rouge_type: Optional[str] = 'rougeL',
           use_stemmer: bool = False,
-          split_summaries: bool = False) -> List[float]:
+          split_summaries: bool = False,
+          batch: int = os.cpu_count()) -> List[float]:
     """
     Compute rouge score for generation.
 
@@ -102,13 +105,21 @@ def rouge(generation_gt: List[List[str]], generations: List[str],
         use this. Default is False.
     :param split_summaries: Whether to add newlines between sentences for rougeLsum.
         Default is False.
+    :param batch: The batch size for processing.
+        Default is your cpu count.
     :return: A list of computed metric scores.
     """
     rouge_instance = RougeScorer(rouge_types=[rouge_type], use_stemmer=use_stemmer,
                                  split_summaries=split_summaries,
                                  tokenizer=tokenizers.DefaultTokenizer(use_stemmer))
-    result = list(map(lambda x: rouge_instance.score_multi(targets=x[0], prediction=x[1])[rouge_type].fmeasure,
-                      zip(generation_gt, generations)))
+
+    async def compute(gt: List[str], pred: str) -> float:
+        return rouge_instance.score_multi(targets=gt, prediction=pred)[rouge_type].fmeasure
+
+    tasks = [compute(gt, pred) for gt, pred in zip(generation_gt, generations)]
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+
     del rouge_instance
     return result
 
