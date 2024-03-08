@@ -140,7 +140,7 @@ def sem_score(generation_gt: List[List[str]], generations: List[str],
         Default is all-mpnet-base-v2 embedding model.
         The paper used this embedding model.
     :param batch: The batch size for processing.
-        Default is your cpu count.
+        Default is 128
     :return: A list of computed metric scores.
     """
     if embedding_model is None:
