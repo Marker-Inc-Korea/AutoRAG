@@ -146,19 +146,19 @@ def sem_score(generation_gt: List[List[str]], generations: List[str],
     if embedding_model is None:
         embedding_model = embedding_models['huggingface_all_mpnet_base_v2']
 
-    async def compute(gt: List[str], pred: str, embedding_model: BaseEmbedding) -> float:
-        # embedding
-        gt_embeddings = embedding_model.get_text_embedding_batch(gt)
-        pred_embedding = embedding_model.get_text_embedding(pred)
+    result = []
 
-        # calculate cosine similarity
-        similarity_scores: List[float] = list(
-            map(lambda x: calculate_cosine_similarity(x, pred_embedding), gt_embeddings))
-        return max(similarity_scores)
+    for i in range(0, len(generation_gt), batch):
+        gt_batch = generation_gt[i:i + batch]
+        pred_batch = generations[i:i + batch]
 
-    tasks = [compute(gt, pred, embedding_model) for gt, pred in zip(generation_gt, generations)]
-    loop = asyncio.get_event_loop()
-    result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+        embedded_gt = list(map(lambda gt: embedding_model._get_text_embeddings(gt), gt_batch))
+        embedded_pred = embedding_model._get_text_embeddings(pred_batch)
+
+        for gt, pred in zip(embedded_gt, embedded_pred):
+            similarity_scores: List[float] = list(
+                map(lambda x: calculate_cosine_similarity(x, pred), gt))
+            result.append(max(similarity_scores))
 
     del embedding_model
     if torch.cuda.is_available():
