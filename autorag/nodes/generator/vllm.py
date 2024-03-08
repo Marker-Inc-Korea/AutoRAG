@@ -6,7 +6,9 @@ from typing import List, Tuple
 import torch
 
 from autorag.nodes.generator.base import generator_node
+import logging
 
+logger = logging.getLogger("AutoRAG")
 
 @generator_node
 def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[int]], List[List[float]]]:
@@ -39,14 +41,15 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
 
     generate_params = SamplingParams(**input_kwargs)
     results: List[RequestOutput] = vllm_model.generate(prompts, generate_params)
-    flatten_outputs = list(itertools.chain.from_iterable(list(map(lambda x: x.outputs, results))))
-    generated_texts = list(map(lambda x: x.text, flatten_outputs))
-    generated_token_ids = list(map(lambda x: x.token_ids, flatten_outputs))
-    log_probs: List[SampleLogprobs] = list(map(lambda x: x.logprobs, flatten_outputs))
+    generated_texts  = list(map(lambda x: x.outputs[0].text, results))
+    generated_token_ids = list(map(lambda x: x.outputs[0].token_ids, results))
+    log_probs: List[SampleLogprobs] = list(map(lambda x: x.outputs[0].logprobs, results))
+    logger.info(generated_texts)
     generated_log_probs = list(map(lambda x: list(map(
-        lambda y: y[0][y[1]].logprob, x
+        lambda y: y[0][y[1]], zip(x[0], x[1])
     )), zip(log_probs, generated_token_ids)))
     destroy_vllm_instance(vllm_model)
+    logger.info(generated_texts)
     return generated_texts, generated_token_ids, generated_log_probs
 
 
