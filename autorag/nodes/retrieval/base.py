@@ -1,4 +1,5 @@
 import functools
+import logging
 import os
 import pickle
 from pathlib import Path
@@ -6,12 +7,11 @@ from typing import List, Union, Tuple, Dict
 
 import chromadb
 import pandas as pd
+import torch
 
 from autorag import embedding_models
 from autorag.support import get_support_modules
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
-
-import logging
 
 logger = logging.getLogger("AutoRAG")
 
@@ -68,6 +68,9 @@ def retrieval_node(func):
                 raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
             ids, scores = func(queries=queries, collection=chroma_collection,
                                embedding_model=embedding_model, **kwargs)
+            del embedding_model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
             if 'ids' in kwargs and 'scores' in kwargs:
                 ids, scores = func(**kwargs)
