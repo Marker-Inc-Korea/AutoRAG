@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from autorag.nodes.generator import vllm
@@ -7,8 +8,14 @@ from tests.autorag.nodes.generator.test_generator_base import (prompts, check_ge
 
 @pytest.mark.skip(reason="vllm have to run with CUDA supported device.")
 def test_vllm():
+    previous_result = pd.DataFrame(
+        {
+            'prompts': prompts,
+            'qid': ['id-1', 'id-2', 'id-3']
+        })
     answers, tokens, log_probs = vllm(
-        prompts, llm='facebook/opt-125m', max_tokens=5, temperature=0.5,
+        project_dir='.', previous_result=previous_result,
+        llm='facebook/opt-125m', max_tokens=5, temperature=0.5,
     )
     check_generated_texts(answers)
     check_generated_tokens(tokens)
