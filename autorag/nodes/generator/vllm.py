@@ -13,6 +13,8 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
     """
     Vllm module.
     It gets the VLLM instance, and returns generated texts by the input prompt.
+    You can set logprobs to get the log probs of the generated text.
+    Default logprobs is 1.
 
     :param prompts: A list of prompts.
     :param llm: Model name of vLLM.
@@ -32,6 +34,9 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
     input_kwargs = deepcopy(kwargs)
     vllm_model = make_vllm_instance(llm, input_kwargs)
 
+    if 'logprobs' not in input_kwargs:
+        input_kwargs['logprobs'] = 1
+
     generate_params = SamplingParams(**input_kwargs)
     results: List[RequestOutput] = vllm_model.generate(prompts, generate_params)
     flatten_outputs = list(itertools.chain.from_iterable(list(map(lambda x: x.outputs, results))))
@@ -39,8 +44,8 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
     generated_token_ids = list(map(lambda x: x.token_ids, flatten_outputs))
     log_probs: List[SampleLogprobs] = list(map(lambda x: x.logprobs, flatten_outputs))
     generated_log_probs = list(map(lambda x: list(map(
-        lambda y: y[0].logprob, x
-    )), log_probs))
+        lambda y: y[0][y[1]].logprob, x
+    )), zip(log_probs, generated_token_ids)))
     destroy_vllm_instance(vllm_model)
     return generated_texts, generated_token_ids, generated_log_probs
 
