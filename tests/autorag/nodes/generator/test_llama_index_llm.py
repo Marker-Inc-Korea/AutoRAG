@@ -2,32 +2,9 @@ import pandas as pd
 
 from autorag import generator_models
 from autorag.nodes.generator import llama_index_llm
+from tests.autorag.nodes.generator.test_generator_base import (prompts, check_generated_texts, check_generated_tokens,
+                                                               check_generated_log_probs)
 from tests.mock import MockLLM
-
-prompts = [
-    "Who is the strongest Avenger?",
-    "Who is the best soccer player in the world?",
-    "Who is the president of the United States?",
-]
-
-
-def check_generated_texts(generated_texts):
-    assert len(generated_texts) == len(prompts)
-    assert isinstance(generated_texts[0], str)
-    assert all(bool(text) is True for text in generated_texts)
-
-
-def check_generated_tokens(tokens):
-    assert len(tokens) == len(prompts)
-    assert isinstance(tokens[0], list)
-    assert isinstance(tokens[0][0], int)
-
-
-def check_generated_log_probs(log_probs):
-    assert len(log_probs) == len(prompts)
-    assert isinstance(log_probs[0], list)
-    assert isinstance(log_probs[0][0], float)
-    assert all(all(log_prob == 0.5 for log_prob in log_prob_list) for log_prob_list in log_probs)
 
 
 def test_llama_index_llm():
@@ -36,6 +13,7 @@ def test_llama_index_llm():
     check_generated_texts(answers)
     check_generated_tokens(tokens)
     check_generated_log_probs(log_probs)
+    assert all(all(log_prob == 0.5 for log_prob in log_prob_list) for log_prob_list in log_probs)
     assert all(len(tokens[i]) == len(log_probs[i]) for i in range(len(tokens)))
 
 
