@@ -126,8 +126,7 @@ def rouge(generation_gt: List[List[str]], generations: List[str],
 
 
 def sem_score(generation_gt: List[List[str]], generations: List[str],
-              embedding_model: Optional[BaseEmbedding] = None,
-              batch: int = os.cpu_count()) -> List[float]:
+              embedding_model: Optional[BaseEmbedding] = None) -> List[float]:
     """
     Compute sem score between generation gt and pred with cosine similarity.
 
@@ -139,15 +138,13 @@ def sem_score(generation_gt: List[List[str]], generations: List[str],
     :param embedding_model: Embedding model to use for compute cosine similarity.
         Default is all-mpnet-base-v2 embedding model.
         The paper used this embedding model.
-    :param batch: The batch size for processing.
-        Default is your cpu count.
     :return: A list of computed metric scores.
     """
     if embedding_model is None:
         embedding_model = embedding_models['huggingface_all_mpnet_base_v2']
 
     result = []
-
+    batch = 128
     for i in range(0, len(generation_gt), batch):
         gt_batch = generation_gt[i:i + batch]
         pred_batch = generations[i:i + batch]
