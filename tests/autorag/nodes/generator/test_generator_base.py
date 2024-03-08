@@ -4,6 +4,7 @@ prompts = [
     "Who is the president of the United States?",
 ]
 
+
 def check_generated_texts(generated_texts):
     assert len(generated_texts) == len(prompts)
     assert isinstance(generated_texts[0], str)
