@@ -1,10 +1,12 @@
 import pandas as pd
+import pytest
 
 from autorag.nodes.generator import vllm
 from tests.autorag.nodes.generator.test_generator_base import (prompts, check_generated_texts, check_generated_tokens,
                                                                check_generated_log_probs)
 
 
+@pytest.mark.skip(reason="This test needs CUDA enabled machine with vllm installed.")
 def test_vllm():
     previous_result = pd.DataFrame(
         {
