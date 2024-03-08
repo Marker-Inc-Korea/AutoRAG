@@ -37,7 +37,7 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
     flatten_outputs = list(itertools.chain.from_iterable(list(map(lambda x: x.outputs, results))))
     generated_texts = list(map(lambda x: x.text, flatten_outputs))
     generated_token_ids = list(map(lambda x: x.token_ids, flatten_outputs))
-    log_probs: List[SampleLogprobs] = list(map(lambda x: x.log_probs, flatten_outputs))
+    log_probs: List[SampleLogprobs] = list(map(lambda x: x.logprobs, flatten_outputs))
     generated_log_probs = list(map(lambda x: list(map(
         lambda y: y[0].logprob, x
     )), log_probs))
