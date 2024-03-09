@@ -34,10 +34,8 @@ node_lines:
       strategy:
         metrics: [bleu, meteor, rouge, sem_score]
         generator_modules:
-          - module_type: llama_index_llm
-            llm: vllm
-            batch: 8
-            model: mistralai/Mistral-7B-Instruct-v0.2
+          - module_type: vllm
+            llm: mistralai/Mistral-7B-Instruct-v0.2
       modules:
         - module_type: fstring
           prompt:
@@ -48,8 +46,6 @@ node_lines:
       strategy:
         metrics: [bleu, meteor, rouge, sem_score]
       modules:
-        - module_type: llama_index_llm
-          llm: vllm
-          model: mistralai/Mistral-7B-Instruct-v0.2
+        - module_type: vllm
+          llm: mistralai/Mistral-7B-Instruct-v0.2
           temperature: [0.1, 0.5, 1.1]
-          batch: 8
