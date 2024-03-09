@@ -4,7 +4,7 @@ The `vllm` module is generator that using [vllm](https://blog.vllm.ai/2023/06/20
 
 ## Why use vllm module?
 
-`vllm` can generate new texts really fast. Its speed is more than 10x faster than huggingface transformers library.
+`vllm` can generate new texts really fast. Its speed is more than 10x faster than a huggingface transformers library.
 
 You can use `vllm` model with [llama_index_llm module](./llama_index_llm.md), but it is really slow because LlamaIndex
 does not optimize for processing many prompts at once.
