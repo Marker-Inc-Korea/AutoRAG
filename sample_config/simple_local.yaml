@@ -21,7 +21,5 @@ node_lines:
       strategy:
         metrics: [bleu, meteor, rouge]
       modules:
-        - module_type: llama_index_llm
-          llm: vllm
-          model: mistralai/Mistral-7B-Instruct-v0.2
-          batch: 8
+        - module_type: vllm
+          llm: mistralai/Mistral-7B-Instruct-v0.2
