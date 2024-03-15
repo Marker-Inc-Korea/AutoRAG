@@ -62,6 +62,7 @@ node_lines:
       strategy:
         metrics:
           - metric_name: bleu
+            lowercase: true
           - metric_name: meteor
           - metric_name: rouge
           - metric_name: sem_score
