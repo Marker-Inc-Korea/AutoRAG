@@ -31,7 +31,7 @@ def test_bleu():
 
 
 def test_meteor():
-    base_test_generation_metrics(meteor, [0.853462, 0.5859375, 1.0])
+    base_test_generation_metrics(meteor, [0.454033, 0.2985435, 0.64077828], alpha=0.85, beta=0.2, gamma=0.6)
 
 
 def test_rouge():

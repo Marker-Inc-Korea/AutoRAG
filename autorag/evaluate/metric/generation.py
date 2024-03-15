@@ -37,7 +37,8 @@ def generation_metric(func):
 
 
 def huggingface_evaluate(instance, key: str,
-                         generation_gt: List[List[str]], generations: List[str]) -> List[float]:
+                         generation_gt: List[List[str]], generations: List[str],
+                         **kwargs) -> List[float]:
     """
     Compute huggingface evaluate metric.
 
@@ -46,12 +47,13 @@ def huggingface_evaluate(instance, key: str,
     :param generation_gt: A list of ground truth.
         Must be 2-d list of string.
     :param generations: A list of generations that LLM generated.
+    :param kwargs: The additional arguments for metric function.
     :return: The list of scores.
     """
 
     def compute_score(gt: List[str], pred: str) -> float:
         return max(list(map(
-            lambda x: instance.compute(predictions=[pred], references=[x])[key], gt)))
+            lambda x: instance.compute(predictions=[pred], references=[x], **kwargs)[key], gt)))
 
     result = list(map(lambda x: compute_score(x[0], x[1]), zip(generation_gt, generations)))
     return result
@@ -65,7 +67,10 @@ def bleu(gt: List[str], pred: str, **kwargs) -> float:
     return sacrebleu.sentence_bleu(pred, gt, **kwargs).score
 
 
-def meteor(generation_gt: List[List[str]], generations: List[str]) -> List[float]:
+def meteor(generation_gt: List[List[str]], generations: List[str],
+           alpha: float = 0.9,
+           beta: float = 3.0,
+           gamma: float = 0.5) -> List[float]:
     """
     Compute meteor score for generation.
 
@@ -73,10 +78,18 @@ def meteor(generation_gt: List[List[str]], generations: List[str]) -> List[float
             Must be 2-d list of string.
             Because it can be a multiple ground truth.
     :param generations: A list of generations that LLM generated.
+    :param alpha: Parameter for controlling relative weights of precision and recall.
+        Default is 0.9.
+    :param beta: Parameter for controlling shape of penalty as a
+        function of as a function of fragmentation.
+        Default is 3.0.
+    :param gamma: Relative weight assigned to fragmentation penalty.
+        Default is 0.5.
     :return: A list of computed metric scores.
     """
     meteor_instance = evaluate.load("meteor")
-    result = huggingface_evaluate(meteor_instance, 'meteor', generation_gt, generations)
+    result = huggingface_evaluate(meteor_instance, 'meteor', generation_gt, generations,
+                                  alpha=alpha, beta=beta, gamma=gamma)
     del meteor_instance
     return result
 
