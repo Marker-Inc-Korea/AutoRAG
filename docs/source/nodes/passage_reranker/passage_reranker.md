@@ -53,4 +53,5 @@ upr.md
 tart.md
 monot5.md
 koreranker.md
+cohere.md
 ```
