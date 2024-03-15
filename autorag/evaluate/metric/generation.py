@@ -58,11 +58,11 @@ def huggingface_evaluate(instance, key: str,
 
 
 @generation_metric
-def bleu(gt: List[str], pred: str) -> float:
+def bleu(gt: List[str], pred: str, **kwargs) -> float:
     """
     Compute bleu score for generation.
     """
-    return sacrebleu.sentence_bleu(pred, gt).score
+    return sacrebleu.sentence_bleu(pred, gt, **kwargs).score
 
 
 def meteor(generation_gt: List[List[str]], generations: List[str]) -> List[float]:

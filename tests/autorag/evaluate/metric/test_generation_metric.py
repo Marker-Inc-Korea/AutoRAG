@@ -27,7 +27,7 @@ def base_test_generation_metrics(func, solution, **kwargs):
 
 
 def test_bleu():
-    base_test_generation_metrics(bleu, [51.1507, 23.5783, 100.0])
+    base_test_generation_metrics(bleu, [51.1507, 23.5783, 100.0], lowercase=True)
 
 
 def test_meteor():
