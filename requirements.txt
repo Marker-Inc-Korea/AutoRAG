@@ -20,6 +20,7 @@ uvicorn  # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
 guidance # for qa data creation
+cohere>=5.0.0a9 # for cohere services
 
 ### LlamaIndex ###
 llama-index>=0.10.1
