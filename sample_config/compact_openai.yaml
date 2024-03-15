@@ -28,6 +28,7 @@ node_lines:
         - module_type: pass_reranker
         - module_type: tart
         - module_type: upr
+        - module_type: cohere_reranker
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: prompt_maker
