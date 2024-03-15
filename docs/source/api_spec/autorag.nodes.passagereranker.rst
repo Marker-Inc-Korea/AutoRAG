@@ -20,6 +20,14 @@ autorag.nodes.passagereranker.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.cohere module
+-------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.cohere
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.koreranker module
 -----------------------------------------------
 
