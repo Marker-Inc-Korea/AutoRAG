@@ -1,4 +1,5 @@
 import asyncio
+import os.path
 import pickle
 from typing import List, Dict, Tuple
 
@@ -94,9 +95,24 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
+    ids = corpus_data['doc_id'].tolist()
+    contents = corpus_data['contents'].tolist()
+
+    if os.path.getsize(corpus_path) > 0:
+        # Load the BM25 corpus if it exists and get the passage ids
+        with open(corpus_path, 'rb') as r:
+            bm25_corpus = pickle.load(r)
+        stored_passage_ids = bm25_corpus['passage_id']
+        # Filter ids and contents for those not existing in the BM25 corpus
+        new_ids = [passage_id for passage_id in ids if passage_id not in stored_passage_ids]
+        new_contents = [contents[i] for i, passage_id in enumerate(ids) if passage_id in new_ids]
+    else:
+        new_ids = ids
+        new_contents = contents
+
     tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
     tasks = list(
-        map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(corpus_data['contents'], corpus_data['doc_id'])))
+        map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(new_contents, new_ids)))
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(asyncio.gather(*tasks))
     tokenized_corpus, passage_ids = zip(*results)
