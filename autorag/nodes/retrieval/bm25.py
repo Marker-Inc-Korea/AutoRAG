@@ -1,5 +1,5 @@
 import asyncio
-import os.path
+import os
 import pickle
 from typing import List, Dict, Tuple
 
@@ -95,11 +95,12 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
+
     ids = corpus_data['doc_id'].tolist()
     contents = corpus_data['contents'].tolist()
 
+    # Load the BM25 corpus if it exists and get the passage ids
     if os.path.getsize(corpus_path) > 0:
-        # Load the BM25 corpus if it exists and get the passage ids
         with open(corpus_path, 'rb') as r:
             bm25_corpus = pickle.load(r)
         stored_passage_ids = bm25_corpus['passage_id']
