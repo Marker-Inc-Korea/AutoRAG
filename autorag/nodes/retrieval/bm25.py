@@ -110,18 +110,19 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         new_ids = ids
         new_contents = contents
 
-    tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
-    tasks = list(
-        map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(new_contents, new_ids)))
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
-    tokenized_corpus, passage_ids = zip(*results)
-    bm25_dict = {
-        'tokens': list(tokenized_corpus),
-        'passage_id': list(passage_ids),
-    }
-    with open(corpus_path, 'wb') as w:
-        pickle.dump(bm25_dict, w)
+    if new_ids:
+        tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
+        tasks = list(
+            map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(new_contents, new_ids)))
+        loop = asyncio.get_event_loop()
+        results = loop.run_until_complete(asyncio.gather(*tasks))
+        tokenized_corpus, passage_ids = zip(*results)
+        bm25_dict = {
+            'tokens': list(tokenized_corpus),
+            'passage_id': list(passage_ids),
+        }
+        with open(corpus_path, 'wb') as w:
+            pickle.dump(bm25_dict, w)
 
 
 async def bm25_tokenize(queries: List[str], passage_id: str, tokenizer) -> Tuple[List[int], str]:

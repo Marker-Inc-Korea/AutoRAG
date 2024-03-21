@@ -55,3 +55,10 @@ def test_bm25_ingest(ingested_bm25_path):
         for _id in id_list:
             assert isinstance(_id, str)
             assert _id in ['doc1', 'doc2', 'doc3', 'doc4', 'doc5']
+
+
+def test_duplicate_id_bm25_ingest(ingested_bm25_path):
+    bm25_ingest(ingested_bm25_path, corpus_df)
+    with open(ingested_bm25_path, 'rb') as r:
+        corpus = pickle.load(r)
+    assert len(corpus['tokens']) == len(corpus['passage_id']) == 5
