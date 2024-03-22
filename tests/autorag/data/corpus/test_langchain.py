@@ -1,11 +1,10 @@
-import os
 import tempfile
 
-import pandas as pd
 import pytest
 from langchain_core.documents import Document
 
 from autorag.data.corpus import langchain_documents_to_parquet
+from tests.autorag.data.corpus.test_base import validate_corpus
 
 
 @pytest.fixture
@@ -16,15 +15,5 @@ def parquet_filepath():
 
 def test_llama_documents_to_parquet(parquet_filepath):
     documents = [Document(page_content='test text', metadata={'key': 'value'}) for _ in range(5)]
-
     result_df = langchain_documents_to_parquet(documents, parquet_filepath, upsert=True)
-
-    assert isinstance(result_df, pd.DataFrame)
-    assert 'doc_id' in result_df.columns
-    assert 'contents' in result_df.columns
-    assert 'metadata' in result_df.columns
-    assert os.path.exists(parquet_filepath)
-
-    assert ['test text'] * 5 == result_df['contents'].tolist()
-    assert all(['last_modified_datetime' in metadata for metadata in result_df['metadata'].tolist()])
-    assert all([isinstance(doc_id, str) for doc_id in result_df['doc_id'].tolist()])
+    validate_corpus(result_df, 5, parquet_filepath)
