@@ -35,3 +35,7 @@ llama-index-llms-openai-like
 
 # WebUI
 streamlit
+
+
+### Langchain ###
+langchain-core>=0.1.6

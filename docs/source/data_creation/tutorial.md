@@ -27,7 +27,33 @@ Therefore, to use AutoRAG, you need to convert your raw data into `corpus data` 
 ## Make corpus data from raw documents
 1. Load your raw data to texts with loaders such as lama_index, LangChain, etc.
 2. Chunk the texts into passages. Use Langchain, LlamaIndex, etc.
-3. Make it into corpus data using util's datatype converter (based on llama_index).
+3. Make it into corpus data to use converter functions.
+   There are converter functions for llama index `Document`, `TextNode`, and Langchain `Document` objects,
+   which is `llama_document_to_parquet`, `llama_text_node_to_parquet`, and `langchain_document_to_parquet`.
+
+- Use Llama Index
+
+```python
+from llama_index.core import SimpleDirectoryReader
+from llama_index.core.node_parser import TokenTextSplitter
+from autorag.data.corpus import llama_text_node_to_parquet
+
+documents = SimpleDirectoryReader('your_dir_path').load_data()
+nodes = TokenTextSplitter().get_nodes_from_documents(documents=documents, chunk_size=512, chunk_overlap=128)
+corpus_df = llama_text_node_to_parquet(nodes, 'path/to/corpus.parquet')
+```
+
+- Use LangChain
+
+```python
+from langchain_community.document_loaders import DirectoryLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from autorag.data.corpus import langchain_documents_to_parquet
+
+documents = DirectoryLoader('your_dir_path', glob='**/*.md').load_data()
+documents = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=128).split_documents(documents)
+corpus_df = langchain_documents_to_parquet(documents, 'path/to/corpus.parquet')
+```
 
 ```{tip}
 The format for corpus data can be found [corpus data format](data_format.md#corpus-dataset)

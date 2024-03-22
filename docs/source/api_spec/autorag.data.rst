@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   autorag.data.corpus
    autorag.data.qacreation
    autorag.data.utils
 

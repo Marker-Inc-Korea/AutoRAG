@@ -237,3 +237,17 @@ async def process_batch(tasks, batch_size: int = 64) -> List[Any]:
         results.extend(batch_results)
 
     return results
+
+
+def save_parquet_safe(df: pd.DataFrame, filepath: str,
+                      upsert: bool = False):
+    output_file_dir = os.path.dirname(filepath)
+    if not os.path.isdir(output_file_dir):
+        raise NotADirectoryError(f"directory {output_file_dir} not found.")
+    if not filepath.endswith("parquet"):
+        raise NameError(f'file path: {filepath}  filename extension need to be ".parquet"')
+    if os.path.exists(filepath) and not upsert:
+        raise FileExistsError(f"file {filepath} already exists."
+                              "Set upsert True if you want to overwrite the file.")
+
+    df.to_parquet(filepath, index=False)
