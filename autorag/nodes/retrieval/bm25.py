@@ -99,11 +99,16 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
     ids = corpus_data['doc_id'].tolist()
     contents = corpus_data['contents'].tolist()
 
+    # Initialize bm25_corpus
+    bm25_corpus = pd.DataFrame()
+
     # Load the BM25 corpus if it exists and get the passage ids
-    if os.path.getsize(corpus_path) > 0:
+    if os.path.exists(corpus_path) and os.path.getsize(corpus_path) > 0:
         with open(corpus_path, 'rb') as r:
-            bm25_corpus = pickle.load(r)
-        stored_passage_ids = bm25_corpus['passage_id']
+            corpus = pickle.load(r)
+            bm25_corpus = pd.DataFrame.from_dict(corpus)
+        stored_passage_rows = bm25_corpus[bm25_corpus['passage_id'].isin(ids)]
+        stored_passage_ids = stored_passage_rows['passage_id'].tolist()
         # Filter ids and contents for those not existing in the BM25 corpus
         new_ids = [passage_id for passage_id in ids if passage_id not in stored_passage_ids]
         new_contents = [contents[i] for i, passage_id in enumerate(ids) if passage_id in new_ids]
@@ -118,10 +123,18 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         loop = asyncio.get_event_loop()
         results = loop.run_until_complete(asyncio.gather(*tasks))
         tokenized_corpus, passage_ids = zip(*results)
-        bm25_dict = {
+
+        new_bm25_corpus = pd.DataFrame({
             'tokens': list(tokenized_corpus),
             'passage_id': list(passage_ids),
-        }
+        })
+
+        if not bm25_corpus.empty:
+            bm25_corpus_updated = pd.concat([bm25_corpus, new_bm25_corpus], ignore_index=True)
+            bm25_dict = bm25_corpus_updated.to_dict()
+        else:
+            bm25_dict = new_bm25_corpus.to_dict()
+
         with open(corpus_path, 'wb') as w:
             pickle.dump(bm25_dict, w)
 

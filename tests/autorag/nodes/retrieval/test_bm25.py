@@ -2,7 +2,9 @@ import os
 import pathlib
 import pickle
 import tempfile
+from datetime import datetime
 
+import pandas as pd
 import pytest
 
 from autorag.nodes.retrieval import bm25
@@ -58,7 +60,12 @@ def test_bm25_ingest(ingested_bm25_path):
 
 
 def test_duplicate_id_bm25_ingest(ingested_bm25_path):
-    bm25_ingest(ingested_bm25_path, corpus_df)
+    new_doc_id = ["doc4", "doc5", "doc6", "doc7", "doc8"]
+    new_contents = ["This is a test document 4.", "This is a test document 5.", "This is a test document 6.",
+                    "This is a test document 7.", "This is a test document 8."]
+    new_metadata = [{'datetime': datetime.now()} for _ in range(5)]
+    new_corpus_df = pd.DataFrame({"doc_id": new_doc_id, "contents": new_contents, "metadata": new_metadata})
+    bm25_ingest(ingested_bm25_path, new_corpus_df)
     with open(ingested_bm25_path, 'rb') as r:
         corpus = pickle.load(r)
-    assert len(corpus['tokens']) == len(corpus['passage_id']) == 5
+    assert len(corpus['tokens']) == len(corpus['passage_id']) == 8
