@@ -28,6 +28,14 @@ autorag.nodes.generator.run module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.generator.vllm module
+-----------------------------------
+
+.. automodule:: autorag.nodes.generator.vllm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

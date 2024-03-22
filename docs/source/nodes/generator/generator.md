@@ -61,4 +61,5 @@ This document serves as a guide for configuring parameters, strategies, and the 
 maxdepth: 1
 ---
 llama_index_llm.md
+vllm.md
 ```

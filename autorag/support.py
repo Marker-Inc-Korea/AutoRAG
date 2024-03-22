@@ -20,6 +20,7 @@ def get_support_modules(module_name: str) -> Callable:
         'vectordb': ('autorag.nodes.retrieval', 'vectordb'),
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
+        'vllm': ('autorag.nodes.generator', 'vllm'),
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),
@@ -30,6 +31,7 @@ def get_support_modules(module_name: str) -> Callable:
         'pass_reranker': ('autorag.nodes.passagereranker', 'pass_reranker'),
         'pass_query_expansion': ('autorag.nodes.queryexpansion', 'pass_query_expansion'),
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
+        'cohere_reranker': ('autorag.nodes.passagereranker', 'cohere_reranker'),
     }
     return dynamically_find_function(module_name, support_modules)
 
