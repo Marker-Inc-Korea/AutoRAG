@@ -1,0 +1,12 @@
+Generate question and answer pairs for the given passage.
+
+Passage:
+{{text}}
+
+Number of questions to generate: {{num_questions}}
+
+Example:
+[Q]: What do you do?
+[A]: I am hungry.
+
+Result:
