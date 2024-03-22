@@ -131,9 +131,9 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
 
         if not bm25_corpus.empty:
             bm25_corpus_updated = pd.concat([bm25_corpus, new_bm25_corpus], ignore_index=True)
-            bm25_dict = bm25_corpus_updated.to_dict()
+            bm25_dict = bm25_corpus_updated.to_dict('list')
         else:
-            bm25_dict = new_bm25_corpus.to_dict()
+            bm25_dict = new_bm25_corpus.to_dict('list')
 
         with open(corpus_path, 'wb') as w:
             pickle.dump(bm25_dict, w)
