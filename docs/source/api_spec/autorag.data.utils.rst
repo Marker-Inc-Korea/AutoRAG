@@ -4,10 +4,10 @@ autorag.data.utils package
 Submodules
 ----------
 
-autorag.data.utils.llamaindex module
-------------------------------------
+autorag.data.utils.util module
+------------------------------
 
-.. automodule:: autorag.data.utils.llamaindex
+.. automodule:: autorag.data.utils.util
    :members:
    :undoc-members:
    :show-inheritance:
