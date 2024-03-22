@@ -7,8 +7,9 @@ import pytest
 from guidance import models
 from llama_index.core import SimpleDirectoryReader
 
+from autorag.data.corpus.llama_index import llama_documents_to_parquet
 from autorag.data.qacreation.simple import generate_simple_qa_dataset, generate_qa_row
-from autorag.data.utils.llamaindex import get_file_metadata, llama_documents_to_parquet
+from autorag.data.utils.util import get_file_metadata
 from autorag.utils.preprocess import validate_qa_dataset, validate_corpus_dataset
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
