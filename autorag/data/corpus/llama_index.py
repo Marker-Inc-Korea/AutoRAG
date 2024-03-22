@@ -4,6 +4,7 @@ from typing import List, Optional
 import pandas as pd
 from llama_index.core import Document
 
+from autorag.data.utils.util import add_essential_metadata
 from autorag.utils.util import save_parquet_safe
 
 
@@ -27,7 +28,7 @@ def llama_documents_to_parquet(llama_documents: List[Document],
     doc_lst = list(map(lambda doc: {
         'doc_id': str(uuid.uuid4()),
         'contents': doc.text,
-        'metadata': doc.metadata
+        'metadata': add_essential_metadata(doc.metadata)
     }, llama_documents))
     processed_df = pd.DataFrame(doc_lst)
 

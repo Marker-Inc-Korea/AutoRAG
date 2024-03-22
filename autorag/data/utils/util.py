@@ -26,3 +26,9 @@ def get_file_metadata(file_path: str) -> Dict:
             Path(file_path).stat().st_atime
         ).strftime("%Y-%m-%d"),
     }
+
+
+def add_essential_metadata(metadata: Dict) -> Dict:
+    if 'last_modified_datetime' not in metadata:
+        metadata['last_modified_datetime'] = datetime.now()
+    return metadata
