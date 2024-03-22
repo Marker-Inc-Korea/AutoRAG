@@ -4,8 +4,9 @@
 
 1. [Overview](#overview)
 2. [Raw data to Corpus data](#make-corpus-data-from-raw-documents)
-3. [Corpus data to Qa data](#make-qa-data-from-corpus-data)
-4. [Create Custom Function](#use-custom-data-creation-function)
+3. [Corpus data to QA data](#make-qa-data-from-corpus-data)
+4. [Use custom prompt](#use-custom-prompt)
+5. [Use multiple prompts](#use-multiple-prompts)
 
 
 ## Overview
@@ -39,65 +40,77 @@ The format for qa data can be found [qa data format](data_format.md#qa-dataset)
 ```
 
 ```python
-from guidance import models
-import pandas as pd
-from autorag.data.qacreation.simple import generate_simple_qa_dataset, generate_qa_row
+from llama_index.llms.openai import OpenAI
+from autorag.data.qacreation import generate_qa_llama_index
 
-corpus_df = pd.read_parquet("path/to/corpus_data")
-llm = models.OpenAI("gpt-3.5-turbo")
-qa_dataset = generate_simple_qa_dataset(corpus_data=corpus_df, llm=llm, output_filepath="path/to/qa_dataset.parquet", generate_row_function=generate_qa_row)
+contents = ['content1', 'content2', 'content3']  # You can load your corpus contents to string list
+llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+result = generate_qa_llama_index(llm, contents, question_num_per_content=1)
 ```
-`generate_simple_qa_dataset` is a function designed to generate one **query** and one **generation_gt** per passage of corpus_data.
+
+`generate_qa_llama_index` is a function designed to generate **questions** and its **generation_gt** per content.
+You can set the number of questions per content by changing `question_num_per_content` parameter.
 
 ```{admonition} What is passage?
 Passage is chunked units from raw data.
 ```
 
-## Use custom data creation function
-You can change `generate_row_function`  to a custom function to use different templates.
+## Use custom prompt
 
-The output of `generate_row_function`  should be in the form of a **dictionary**  containing `query`  and `generation_gt`.
+You can use custom prompt to generate qa data.
+The prompt must contains two placeholders:
 
-Here is the example of `generate_row_function` using guidance.
+- {{text}}: The content string
+- {{num_questions}}: The number of questions to generate
 
 ```python
-import guidance
-from guidance import models, gen
+from llama_index.llms.openai import OpenAI
+from autorag.data.qacreation import generate_qa_llama_index
 
-# Example for LLM API  
-def generate_qa_row(llm: models.Model, corpus_data_row):
-    temp_llm = llm
+prompt = """
+Generate question and answer pairs for the given passage.
 
-    # make template and synthetic data with guidance 
-    with guidance.user():
-        temp_llm += f"""
-    You have to found a passage to solve "the problem". 
-    You need to build a clean and clear set of (problem, passage, answer) in json format 
-    so that you don't have to ask about "the problem" again.
-    problem need to end with question mark("?").
-    The process of approaching the answer based on the information of the given passage 
-    must be clearly and neatly displayed in the answer.\n
-    \n
-   "passage": {corpus_data_row["contents"]}\n
-   "problem": 
-    """
+Passage:
+{{text}}
 
-    with guidance.assistant():
-        temp_llm += gen('query', stop="?")
-    with guidance.user():
-        temp_llm += f"""
-        "answer":
-        """
-    with guidance.assistant():
-        temp_llm += gen('generation_gt')
-        
-    # add metadata in the function
-    corpus_data_row["metadata"]["qa_generation"] = "simple"
-        
-    # make response dictionary
-    response = {
-        "query": temp_llm["query"],
-        "generation_gt": temp_llm["generation_gt"]
-    }
-    return response
+Number of questions to generate: {{num_questions}}
+
+Example:
+[Q]: What is this?
+[A]: This is a sample question.
+
+Result:
+"""
+
+contents = ['content1', 'content2', 'content3']  # You can load your corpus contents to string list
+llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+result = generate_qa_llama_index(llm, contents, prompt=prompt, question_num_per_content=1)
+```
+
+## Use multiple prompts
+
+If you want to generate different types of question and answer pairs, you can use multiple prompts.
+From now, we support distributing multiple prompts by randomly based on the ratio of each prompt.
+It means that the prompt will be selected by ratio per passage.
+
+For this, you must provide a dictionary.
+The dictionary must have the key, which is the prompt text file path, and the value which is the ratio of the prompt.
+
+```python 
+from llama_index.llms.openai import OpenAI
+from autorag.data.qacreation import generate_qa_llama_index_by_ratio
+
+ratio_dict = {
+    'prompt1.txt': 1,
+    'prompt2.txt': 2,
+    'prompt3.txt': 3
+}
+
+contents = [f'content{i}' for i in range(6)]  # You can load your corpus contents to string list
+llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+result = generate_qa_llama_index_by_ratio(llm, contents, ratio_dict, question_num_per_content=1, batch=6)
+```
+
+```{warning}
+Remeber all prompts must have the placeholders `{{text}}` and `{{num_questions}}`.
 ```
