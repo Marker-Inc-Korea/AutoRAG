@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from llama_index.core import Document
 
-from autorag.data.corpus.llama_index import llama_documents_to_parquet
+from autorag.data.corpus import llama_documents_to_parquet
 
 
 @pytest.fixture
