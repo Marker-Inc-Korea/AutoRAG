@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pickle
 from typing import List, Dict, Tuple
 
@@ -94,20 +95,41 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
-    tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
-    tasks = list(
-        map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(corpus_data['contents'], corpus_data['doc_id'])))
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
-    tokenized_corpus, passage_ids = zip(*results)
-    bm25_dict = {
-        'tokens': list(tokenized_corpus),
-        'passage_id': list(passage_ids),
-    }
-    with open(corpus_path, 'wb') as w:
-        pickle.dump(bm25_dict, w)
+    ids = corpus_data['doc_id'].tolist()
+
+    # Initialize bm25_corpus
+    bm25_corpus = pd.DataFrame()
+
+    # Load the BM25 corpus if it exists and get the passage ids
+    if os.path.exists(corpus_path) and os.path.getsize(corpus_path) > 0:
+        with open(corpus_path, 'rb') as r:
+            corpus = pickle.load(r)
+            bm25_corpus = pd.DataFrame.from_dict(corpus)
+        duplicated_passage_rows = bm25_corpus[bm25_corpus['passage_id'].isin(ids)]
+        new_passage = corpus_data[~corpus_data['doc_id'].isin(duplicated_passage_rows['passage_id'])]
+    else:
+        new_passage = corpus_data
+
+    if not new_passage.empty:
+        tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
+        results = new_passage.swifter.apply(lambda x: bm25_tokenize(x['contents'], x['doc_id'], tokenizer), axis=1)
+        tokenized_corpus, passage_ids = zip(*results)
+
+        new_bm25_corpus = pd.DataFrame({
+            'tokens': list(tokenized_corpus),
+            'passage_id': list(passage_ids),
+        })
+
+        if not bm25_corpus.empty:
+            bm25_corpus_updated = pd.concat([bm25_corpus, new_bm25_corpus], ignore_index=True)
+            bm25_dict = bm25_corpus_updated.to_dict('list')
+        else:
+            bm25_dict = new_bm25_corpus.to_dict('list')
+
+        with open(corpus_path, 'wb') as w:
+            pickle.dump(bm25_dict, w)
 
 
-async def bm25_tokenize(queries: List[str], passage_id: str, tokenizer) -> Tuple[List[int], str]:
+def bm25_tokenize(queries: List[str], passage_id: str, tokenizer) -> Tuple[List[int], str]:
     tokenized_queries = tokenizer(queries).input_ids
     return tokenized_queries, passage_id
