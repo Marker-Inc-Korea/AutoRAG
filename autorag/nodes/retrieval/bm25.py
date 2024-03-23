@@ -95,9 +95,7 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
-
     ids = corpus_data['doc_id'].tolist()
-    contents = corpus_data['contents'].tolist()
 
     # Initialize bm25_corpus
     bm25_corpus = pd.DataFrame()
@@ -107,19 +105,16 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         with open(corpus_path, 'rb') as r:
             corpus = pickle.load(r)
             bm25_corpus = pd.DataFrame.from_dict(corpus)
-        stored_passage_rows = bm25_corpus[bm25_corpus['passage_id'].isin(ids)]
-        stored_passage_ids = stored_passage_rows['passage_id'].tolist()
-        # Filter ids and contents for those not existing in the BM25 corpus
-        new_ids = [passage_id for passage_id in ids if passage_id not in stored_passage_ids]
-        new_contents = [contents[i] for i, passage_id in enumerate(ids) if passage_id in new_ids]
+        duplicated_passage_rows = bm25_corpus[bm25_corpus['passage_id'].isin(ids)]
+        new_passage = corpus_data[~corpus_data['doc_id'].isin(duplicated_passage_rows['passage_id'])]
     else:
-        new_ids = ids
-        new_contents = contents
+        new_passage = corpus_data
 
-    if new_ids:
+    if not new_passage.empty:
         tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
         tasks = list(
-            map(lambda x: bm25_tokenize(x[0], x[1], tokenizer), zip(new_contents, new_ids)))
+            map(lambda x: bm25_tokenize(x[0], x[1], tokenizer),
+                zip(new_passage['contents'], new_passage['doc_id'])))
         loop = asyncio.get_event_loop()
         results = loop.run_until_complete(asyncio.gather(*tasks))
         tokenized_corpus, passage_ids = zip(*results)
