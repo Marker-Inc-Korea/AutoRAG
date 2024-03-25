@@ -5,6 +5,10 @@ Before start this tutorial, make sure you installed AutoRAG.
 To install it, please check [Installation](install.md).
 ```
 
+```{admonition} Colab Tutorial
+Do you use Colab? You can check out Colab tutorial at [here](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing).
+```
+
 ## Prepare Evaluation Dataset
 
 First, you have to prepare an evaluation dataset for your RAG pipeline.

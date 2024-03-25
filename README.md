@@ -5,6 +5,9 @@ RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
 
   Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
+
+=> [Colab Tutorial](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+
 # 📑 Index
 
 - [Introduction](#introduction)
