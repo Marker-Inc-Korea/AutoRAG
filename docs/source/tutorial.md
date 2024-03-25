@@ -87,12 +87,35 @@ You can find out more information about folder structure and result files at [he
 You can specify project directory with `--project_dir` option or project_dir parameter.
 ```
 
+### ❗Restart a trial if an error occurs during the trial
+
+If an error occurs during the trial, you can restart the trial.
+
+If you had issues with the `config.yaml` file, you can modify the `config.yaml` file in the trail folder and run the
+code below.
+
+```python
+from autorag.evaluator import Evaluator
+
+evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
+evaluator.restart_trial(tiral_path='your/path/to/trial_path')
+```
+
+```{admonition} What if Trial_Path didn't also create a First Node Line?
+If the First Node Line folder has not been created in the trial path you want to restart,
+start_trial function will be executed instead of restart_trial.
+
+Note that a new trial folder will be created, not a new restart result in that Trial Path.
+```
+
 ## Extract pipeline and evaluate test dataset
 
-Now, it's time to evaluate test dataset with a found RAG pipeline. For this, you can extract the optimal pipeline and save it to new config yaml file.
+Now, it's time to evaluate test dataset with a found RAG pipeline. For this, you can extract the optimal pipeline and
+save it to new config yaml file.
 
-You can use the below code. 
-Remind that your trial folder is in the directory you run the `Evaluator`. 
+You can use the below code.
+
+Remind that your trial folder is in the directory you run the `Evaluator`.
 And the trial folder name is number, like 0, 1, 2, 3, and so on.
 
 ```python

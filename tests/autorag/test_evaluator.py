@@ -1,6 +1,7 @@
 import os.path
 import pathlib
 import tempfile
+from distutils.dir_util import copy_tree
 
 import pandas as pd
 import pytest
@@ -47,7 +48,6 @@ def test_evaluator_init(evaluator):
 
 
 def test_load_node_line(evaluator):
-    os.environ['BM25'] = 'bm25'
     node_lines = Evaluator._load_node_lines(os.path.join(resource_dir, 'simple.yaml'))
     assert 'retrieve_node_line' in list(node_lines.keys())
     assert node_lines['retrieve_node_line'] is not None
@@ -73,7 +73,6 @@ def test_load_node_line(evaluator):
 
 
 def test_start_trial(evaluator):
-    os.environ['BM25'] = 'bm25'
     evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
     project_dir = evaluator.project_dir
     assert os.path.exists(os.path.join(project_dir, '0'))
@@ -199,3 +198,37 @@ def test_test_data_evaluate(test_evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'post_retrieve_node_line', 'prompt_maker'))
     assert os.path.exists(os.path.join(project_dir, '0', 'post_retrieve_node_line', 'generator'))
     assert os.path.exists(os.path.join(project_dir, '0', 'summary.csv'))
+
+
+def base_restart_trial(evaluator, error_folder_path):
+    error_path = os.path.join(evaluator.project_dir, '0')
+    copy_tree(error_folder_path, error_path)
+    evaluator.restart_trial(error_path)
+    assert os.path.exists(os.path.join(error_path, 'summary.csv'))
+    assert os.path.exists(os.path.join(error_path, 'pre_retrieve_node_line'))
+    assert os.path.exists(os.path.join(error_path, 'pre_retrieve_node_line', 'summary.csv'))
+    assert os.path.exists(os.path.join(error_path, 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(error_path, 'retrieve_node_line', 'summary.csv'))
+    assert os.path.exists(os.path.join(error_path, 'post_retrieve_node_line'))
+    assert os.path.exists(os.path.join(error_path, 'post_retrieve_node_line', 'summary.csv'))
+
+
+def test_restart_last_node(evaluator):
+    compressor_error_folder_path = os.path.join(resource_dir, 'result_project', '1')
+    base_restart_trial(evaluator, compressor_error_folder_path)
+
+
+def test_restart_first_node(evaluator):
+    prompt_error_folder_path = os.path.join(resource_dir, 'result_project', '2')
+    base_restart_trial(evaluator, prompt_error_folder_path)
+
+
+def test_restart_leads_start_trial(evaluator):
+    start_error_folder_path = os.path.join(resource_dir, 'result_project')
+    copy_tree(start_error_folder_path, evaluator.project_dir)
+    error_path = os.path.join(evaluator.project_dir, '3')
+    evaluator.restart_trial(error_path)
+    restart_path = os.path.join(evaluator.project_dir, '4')
+    assert os.path.exists(os.path.join(restart_path, 'summary.csv'))
+    assert os.path.exists(os.path.join(restart_path, 'retrieve_node_line'))
+    assert os.path.exists(os.path.join(restart_path, 'retrieve_node_line', 'summary.csv'))

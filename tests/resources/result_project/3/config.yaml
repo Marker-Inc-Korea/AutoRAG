@@ -1,0 +1,15 @@
+# need to delete when there are full modules implemented
+node_lines:
+  - node_line_name: retrieve_node_line
+    nodes:
+      - node_type: retrieval  # represents run_node function
+        strategy: # essential for every node
+          metrics: [ retrieval_f1, retrieval_recall ]
+        top_k: 10 # node param, which adapt to every module in this node.
+        modules:
+          - module_type: ${BM25} # for testing env variable
+          - module_type: vectordb
+            embedding_model: [ openai, openai ]
+          - module_type: hybrid_rrf
+            rrf_k: 5
+            target_modules: ('bm25', 'vectordb') # it will select the best result among each module and fuse it.

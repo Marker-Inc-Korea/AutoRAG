@@ -1,0 +1,3 @@
+filename,module_name,module_params,execution_time,retrieval_f1,retrieval_recall,retrieval_precision,is_best
+0.parquet,bm25,{'top_k': 10},0.09159388542175292,0.18181818181818182,1.0,0.1,True
+1.parquet,vectordb,"{'top_k': 10, 'embedding_model': 'openai'}",0.8834414005279541,0.18181818181818182,1.0,0.1,False
