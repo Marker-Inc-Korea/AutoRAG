@@ -41,10 +41,8 @@ class LazyInit:
 
 embedding_models = {
     'openai': LazyInit(OpenAIEmbedding),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
-    'openai_babbage': LazyInit(OpenAIEmbedding, model=OpenAIEmbeddingModelType.BABBAGE),
-    'openai_ada': LazyInit(OpenAIEmbedding, model=OpenAIEmbeddingModelType.ADA),
-    'openai_davinci': LazyInit(OpenAIEmbedding, model=OpenAIEmbeddingModelType.DAVINCI),
-    'openai_curie': LazyInit(OpenAIEmbedding, model=OpenAIEmbeddingModelType.CURIE),
+    'openai_embed_3_large': LazyInit(OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_LARGE),
+    'openai_embed_3_small': LazyInit(OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_SMALL),
     # you can use your own model in this way.
     'huggingface_baai_bge_small': LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-small-en-v1.5"),
     'huggingface_cointegrated_rubert_tiny2': LazyInit(HuggingFaceEmbedding, model_name="cointegrated/rubert-tiny2"),

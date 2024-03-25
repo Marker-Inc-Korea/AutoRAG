@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import itertools
 import os
 from typing import List, Optional
 
@@ -7,13 +8,14 @@ import evaluate
 import sacrebleu
 import torch
 from llama_index.core.embeddings import BaseEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 from openai import OpenAI
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
-from autorag.utils.util import process_batch
+from autorag.utils.util import process_batch, openai_truncate_by_token
 
 
 def generation_metric(func):
@@ -159,19 +161,30 @@ def sem_score(generation_gt: List[List[str]], generations: List[str],
     if embedding_model is None:
         embedding_model = embedding_models['huggingface_all_mpnet_base_v2']
 
+    embedding_model.embed_batch_size = batch
+
+    openai_embedding_max_length = 8191
+    if isinstance(embedding_model, OpenAIEmbedding):
+        generations = openai_truncate_by_token(generations, openai_embedding_max_length,
+                                               embedding_model.model_name)
+
+    embedded_pred: List[List[float]] = embedding_model.get_text_embedding_batch(generations,
+                                                                                show_progress=True)
+    gt_lengths = list(map(len, generation_gt))
+    flatten_gt = list(itertools.chain.from_iterable(generation_gt))
+    if isinstance(embedding_model, OpenAIEmbedding):
+        flatten_gt = openai_truncate_by_token(flatten_gt, openai_embedding_max_length,
+                                              embedding_model.model_name)
+    embedded_gt_flatten = embedding_model.get_text_embedding_batch(flatten_gt, show_progress=True)
+    # re-group embedded_gt_flatten with gt_lengths
+    iterator = iter(embedded_gt_flatten)
+    embedded_gt: List[List[List[float]]] = [list(itertools.islice(iterator, length)) for length in gt_lengths]
+
     result = []
-
-    for i in range(0, len(generation_gt), batch):
-        gt_batch = generation_gt[i:i + batch]
-        pred_batch = generations[i:i + batch]
-
-        embedded_gt = list(map(lambda gt: embedding_model._get_text_embeddings(gt), gt_batch))
-        embedded_pred = embedding_model._get_text_embeddings(pred_batch)
-
-        for gt, pred in zip(embedded_gt, embedded_pred):
-            similarity_scores: List[float] = list(
-                map(lambda x: calculate_cosine_similarity(x, pred), gt))
-            result.append(max(similarity_scores))
+    for gt, pred in zip(embedded_gt, embedded_pred):
+        similarity_scores: List[float] = list(
+            map(lambda x: calculate_cosine_similarity(x, pred), gt))
+        result.append(max(similarity_scores))
 
     del embedding_model
     if torch.cuda.is_available():
