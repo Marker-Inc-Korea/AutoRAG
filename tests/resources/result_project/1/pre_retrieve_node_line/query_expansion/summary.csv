@@ -1,0 +1,4 @@
+filename,module_name,module_params,execution_time,query_expansion_retrieval_f1,query_expansion_retrieval_recall,query_expansion_retrieval_precision,is_best
+0.parquet,query_decompose,"{'llm': 'openai', 'temperature': 0.2}",1.132594919204712,0.18181818181818182,1.0,0.1,True
+1.parquet,query_decompose,"{'llm': 'openai', 'temperature': 1.0}",1.4752516984939574,0.18181818181818182,1.0,0.1,False
+2.parquet,hyde,"{'llm': 'openai', 'max_token': 64}",5.81134569644928,0.18181818181818182,1.0,0.1,False

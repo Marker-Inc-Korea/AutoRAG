@@ -1,0 +1,2 @@
+filename,module_name,module_params,execution_time,passage_compressor_retrieval_token_f1,passage_compressor_retrieval_token_recall,passage_compressor_retrieval_token_precision,is_best
+0.parquet,tree_summarize,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'}",0.4078188896179199,0.11885133964705256,0.06539894035586487,0.759794298822374,True
