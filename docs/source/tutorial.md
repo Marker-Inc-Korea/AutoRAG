@@ -98,16 +98,45 @@ code below.
 from autorag.evaluator import Evaluator
 
 evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
-evaluator.retart_trial(tiral_path='your/path/to/trial_path')
+evaluator.restart_trial(tiral_path='your/path/to/trial_path')
 ```
 
 ```{admonition} What if Trial_Path didn't also create a First Node Line?
-If the First Node Line folder has not been created in the Trial Path you want to restart,
+If the First Node Line folder has not been created in the trial path you want to restart,
 start_trial function will be executed instead of restart_trial.
 
 Note that a new trial folder will be created, not a new restart result in that Trial Path.
 ```
 
+## Extract pipeline and evaluate test dataset
+
+Now, it's time to evaluate test dataset with a found RAG pipeline. For this, you can extract the optimal pipeline and
+save it to new config yaml file.
+
+You can use the below code.
+
+Remind that your trial folder is in the directory you run the `Evaluator`.
+And the trial folder name is number, like 0, 1, 2, 3, and so on.
+
+```python
+from autorag.deploy import extract_best_config
+
+pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
+```
+
+You can check out your pipeline yaml file at `your/path/to/pipeline.yaml`.
+And then, run evaluation with test dataset again.
+
+```{caution}
+Run evaluation to another folder.
+Running evaluation with another dataset in same folder can cause serious malfunction. 
+```
+
+```bash
+autorag evaluate --config your/path/to/pipeline.yaml --qa_data_path your/path/to/qa_test.parquet --corpus_data_path your/path/to/corpus_test.parquet
+```
+
+It will evaluate your test dataset with the found RAG pipeline.
 
 ## Deploy your optimal RAG pipeline
 
