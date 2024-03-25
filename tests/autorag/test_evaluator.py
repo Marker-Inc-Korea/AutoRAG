@@ -48,7 +48,6 @@ def test_evaluator_init(evaluator):
 
 
 def test_load_node_line(evaluator):
-    os.environ['BM25'] = 'bm25'
     node_lines = Evaluator._load_node_lines(os.path.join(resource_dir, 'simple.yaml'))
     assert 'retrieve_node_line' in list(node_lines.keys())
     assert node_lines['retrieve_node_line'] is not None
@@ -74,7 +73,6 @@ def test_load_node_line(evaluator):
 
 
 def test_start_trial(evaluator):
-    os.environ['BM25'] = 'bm25'
     evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
     project_dir = evaluator.project_dir
     assert os.path.exists(os.path.join(project_dir, '0'))
@@ -203,7 +201,6 @@ def test_test_data_evaluate(test_evaluator):
 
 
 def base_restart_trial(evaluator, error_folder_path):
-    os.environ['BM25'] = 'bm25'
     error_path = os.path.join(evaluator.project_dir, '0')
     copy_tree(error_folder_path, error_path)
     evaluator.restart_trial(error_path)
@@ -227,7 +224,6 @@ def test_restart_first_node(evaluator):
 
 
 def test_restart_leads_start_trial(evaluator):
-    os.environ['BM25'] = 'bm25'
     start_error_folder_path = os.path.join(resource_dir, 'result_project')
     copy_tree(start_error_folder_path, evaluator.project_dir)
     error_path = os.path.join(evaluator.project_dir, '3')
