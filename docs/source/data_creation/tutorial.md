@@ -66,16 +66,22 @@ The format for qa data can be found [qa data format](data_format.md#qa-dataset)
 ```
 
 ```python
+import pandas as pd
 from llama_index.llms.openai import OpenAI
-from autorag.data.qacreation import generate_qa_llama_index
+from autorag.data.qacreation import generate_qa_llama_index, make_single_content_qa
 
-contents = ['content1', 'content2', 'content3']  # You can load your corpus contents to string list
+corpus_df = pd.read_parquet('path/to/corpus.parquet')
 llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
-result = generate_qa_llama_index(llm, contents, question_num_per_content=1)
+qa_df = make_single_content_qa(corpus_df, 50, generate_qa_llama_index, llm=llm, question_num_per_content=1,
+                               output_filepath='path/to/qa.parquet')
 ```
 
 `generate_qa_llama_index` is a function designed to generate **questions** and its **generation_gt** per content.
 You can set the number of questions per content by changing `question_num_per_content` parameter.
+
+And the `make_single_content_qa` function is designed to generate `qa.parquet` file using input function.
+It generates 'single content' qa data, also known as 'single-hop' or 'single-document' QA data.
+Which means it uses only one passage per question for answering the question.
 
 ```{admonition} What is passage?
 Passage is chunked units from raw data.
@@ -90,8 +96,10 @@ The prompt must contains two placeholders:
 - {{num_questions}}: The number of questions to generate
 
 ```python
+import pandas as pd
+
 from llama_index.llms.openai import OpenAI
-from autorag.data.qacreation import generate_qa_llama_index
+from autorag.data.qacreation import generate_qa_llama_index, make_single_content_qa
 
 prompt = """
 Generate question and answer pairs for the given passage.
@@ -108,9 +116,10 @@ Example:
 Result:
 """
 
-contents = ['content1', 'content2', 'content3']  # You can load your corpus contents to string list
+corpus_df = pd.read_parquet('path/to/corpus.parquet')
 llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
-result = generate_qa_llama_index(llm, contents, prompt=prompt, question_num_per_content=1)
+qa_df = make_single_content_qa(corpus_df, content_size=50, qa_creation_func=generate_qa_llama_index,
+                               llm=llm, prompt=prompt, question_num_per_content=1)
 ```
 
 ## Use multiple prompts
@@ -122,9 +131,10 @@ It means that the prompt will be selected by ratio per passage.
 For this, you must provide a dictionary.
 The dictionary must have the key, which is the prompt text file path, and the value which is the ratio of the prompt.
 
-```python 
+```python
+import pandas as pd
 from llama_index.llms.openai import OpenAI
-from autorag.data.qacreation import generate_qa_llama_index_by_ratio
+from autorag.data.qacreation import generate_qa_llama_index_by_ratio, make_single_content_qa
 
 ratio_dict = {
     'prompt1.txt': 1,
@@ -132,9 +142,10 @@ ratio_dict = {
     'prompt3.txt': 3
 }
 
-contents = [f'content{i}' for i in range(6)]  # You can load your corpus contents to string list
+corpus_df = pd.read_parquet('path/to/corpus.parquet')
 llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
-result = generate_qa_llama_index_by_ratio(llm, contents, ratio_dict, question_num_per_content=1, batch=6)
+qa_df = make_single_content_qa(corpus_df, content_size=50, qa_creation_func=generate_qa_llama_index_by_ratio,
+                               llm=llm, prompts_ratio=ratio_dict, question_num_per_content=1, batch=6)
 ```
 
 ```{warning}
