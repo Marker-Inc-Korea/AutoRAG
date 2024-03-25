@@ -195,6 +195,9 @@ class Evaluator:
 
         # Find conflict node line and node
         conflict_line_name, conflict_node_name = self.__find_conflict_point(trial_path, node_line_names, node_lines)
+        node_dir = os.path.join(trial_path, conflict_line_name, conflict_node_name)
+        if os.path.exists(node_dir):
+            shutil.rmtree(node_dir)
 
         # Set remain_nodes and remain_lines
         remain_nodes, completed_node_names, remain_lines, remain_line_names \
@@ -210,11 +213,7 @@ class Evaluator:
             # Get already run node summary and append to summary_lst
             for completed_node_name in completed_node_names:
                 summary_lst = self._append_node_summary(conflict_line_dir, completed_node_name, summary_lst)
-            for i, node in enumerate(remain_nodes):
-                if i == 0:
-                    node_dir = os.path.join(conflict_line_dir, node.node_type)
-                    if os.path.exists(node_dir):
-                        shutil.rmtree(node_dir)
+            for node in remain_nodes:
                 previous_result = node.run(previous_result, conflict_line_dir)
                 summary_lst = self._append_node_summary(conflict_line_dir, node.node_type, summary_lst)
             pd.DataFrame(summary_lst).to_csv(os.path.join(conflict_line_dir, 'summary.csv'), index=False)
