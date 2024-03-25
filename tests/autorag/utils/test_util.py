@@ -6,12 +6,13 @@ import tempfile
 
 import pandas as pd
 import pytest
+import tiktoken
 from llama_index.core.llms import CompletionResponse
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict
+    convert_env_in_dict, openai_truncate_by_token
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -261,3 +262,18 @@ def test_process_batch():
     result = loop.run_until_complete(process_batch(tasks, batch_size=64))
 
     assert result == results
+
+
+def test_openai_truncate_by_token():
+    base_text = "This is a test text."
+    t1 = base_text * 5
+    t2 = base_text * 2000
+    t3 = base_text * 20
+
+    truncated = openai_truncate_by_token([t1, t2, t3], 8192,
+                                         'text-embedding-ada-002')
+    assert len(truncated) == 3
+    assert truncated[0] == base_text * 5
+    assert len(truncated[1]) < len(t2)
+    assert len(tiktoken.encoding_for_model('text-embedding-ada-002').encode(truncated[1])) == 8192
+    assert len(truncated[2]) == len(t3)

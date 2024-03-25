@@ -10,6 +10,7 @@ from copy import deepcopy
 from typing import List, Callable, Dict, Optional, Any, Collection
 
 import pandas as pd
+import tiktoken
 
 logger = logging.getLogger("AutoRAG")
 
@@ -251,3 +252,17 @@ def save_parquet_safe(df: pd.DataFrame, filepath: str,
                               "Set upsert True if you want to overwrite the file.")
 
     df.to_parquet(filepath, index=False)
+
+
+def openai_truncate_by_token(texts: List[str], token_limit: int,
+                             model_name: str):
+    tokenizer = tiktoken.encoding_for_model(model_name)
+
+    def truncate_text(text: str, limit: int, tokenizer):
+        tokens = tokenizer.encode(text)
+        if len(tokens) <= limit:
+            return text
+        truncated_text = tokenizer.decode(tokens[:limit])
+        return truncated_text
+
+    return list(map(lambda x: truncate_text(x, token_limit, tokenizer), texts))
