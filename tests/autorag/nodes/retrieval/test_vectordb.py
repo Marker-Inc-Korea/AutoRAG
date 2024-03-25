@@ -76,3 +76,14 @@ def test_duplicate_id_vectordb_ingest(ingested_vectordb):
     vectordb_ingest(ingested_vectordb, new_corpus_df, embedding_model)
 
     assert ingested_vectordb.count() == 8
+
+
+def test_long_text_vectordb_ingest(ingested_vectordb):
+    new_doc_id = ["doc6", "doc7"]
+    new_contents = ["This is a test" * 20000,
+                    "This is a test" * 40000]
+    new_metadata = [{'datetime': datetime.now()} for _ in range(2)]
+    new_corpus_df = pd.DataFrame({"doc_id": new_doc_id, "contents": new_contents, "metadata": new_metadata})
+    vectordb_ingest(ingested_vectordb, new_corpus_df, embedding_model)
+
+    assert ingested_vectordb.count() == 7
