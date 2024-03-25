@@ -74,23 +74,18 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
     return list(id_result), list(score_result)
 
 
-def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, embedding_model: BaseEmbedding):
+def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, embedding_model: BaseEmbedding,
+                    batch: int = 128):
+    embedding_model.embed_batch_size = batch
     validate_corpus_dataset(corpus_data)
     ids = corpus_data['doc_id'].tolist()
-    contents = corpus_data['contents'].tolist()
 
-    # embed corpus
-    batch = 128
-    for i in range(0, len(contents), batch):
-        # Query the collection to check if IDs already exist
-        existing_ids_response = collection.get(ids=ids[i:i + batch])
-        existing_ids = set(existing_ids_response['ids'])  # Assuming 'ids' is the key in the response
+    # Query the collection to check if IDs already exist
+    existing_ids = set(collection.get(ids=ids)['ids'])  # Assuming 'ids' is the key in the response
+    new_passage = corpus_data[~corpus_data['doc_id'].isin(existing_ids)]
 
-        # Filter contents and ids for those not existing in the collection
-        new_ids = list(filter(lambda id: id not in existing_ids, ids[i:i + batch]))
-        new_contents = [contents[i + j] for j, id in enumerate(ids[i:i + batch]) if id in new_ids]
-
-        # Only proceed if there are new contents to embed
-        if new_contents:
-            embedded_contents = embedding_model._get_text_embeddings(new_contents)
-            collection.add(ids=new_ids, embeddings=embedded_contents)
+    if not new_passage.empty:
+        new_contents = new_passage['contents'].tolist()
+        new_ids = new_passage['doc_id'].tolist()
+        embedded_contents = embedding_model.get_text_embedding_batch(new_contents, show_progress=True)
+        collection.add(ids=new_ids, embeddings=embedded_contents)
