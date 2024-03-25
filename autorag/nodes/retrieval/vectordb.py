@@ -4,10 +4,11 @@ from typing import List, Tuple
 import chromadb
 import pandas as pd
 from llama_index.core.embeddings import BaseEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
-from autorag.utils.util import process_batch
+from autorag.utils.util import process_batch, openai_truncate_by_token
 
 
 @retrieval_node
@@ -86,6 +87,12 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
 
     if not new_passage.empty:
         new_contents = new_passage['contents'].tolist()
+
+        # truncate by token if embedding_model is OpenAIEmbedding
+        if isinstance(embedding_model, OpenAIEmbedding):
+            openai_embedding_limit = 8191
+            new_contents = openai_truncate_by_token(new_contents, openai_embedding_limit, embedding_model.model_name)
+
         new_ids = new_passage['doc_id'].tolist()
         embedded_contents = embedding_model.get_text_embedding_batch(new_contents, show_progress=True)
         collection.add(ids=new_ids, embeddings=embedded_contents)
