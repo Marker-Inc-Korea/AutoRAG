@@ -192,6 +192,7 @@ class Evaluator:
         # If the First Node Line folder hasn't even been created, proceed to start_trial
         if not os.path.exists(os.path.join(trial_path, node_line_names[0])):
             self.start_trial(yaml_path)
+            return None
 
         # Find conflict node line and node
         conflict_line_name, conflict_node_name = self.__find_conflict_point(trial_path, node_line_names, node_lines)
