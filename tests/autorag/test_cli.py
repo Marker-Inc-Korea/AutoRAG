@@ -2,6 +2,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+from distutils.dir_util import copy_tree
 
 from click.testing import CliRunner
 
@@ -35,3 +36,30 @@ def test_run_api():
                                  '--host', '0.0.0.0', '--port', '8080'])
     assert result.exit_code == 1  # it will occur error because I run this test with a wrong yaml path.
     # But it means that the command is working well. If not, it will occur exit_code 2.
+
+
+def test_extract_best_config_cli():
+    with tempfile.TemporaryDirectory() as project_dir:
+        trial_path = os.path.join(resource_dir, 'result_project', '0')
+        output_path = os.path.join(project_dir, 'best.yaml')
+        subprocess.run(['autorag', 'extract_best_config', '--trial_path', trial_path, '--output_path', output_path])
+        assert os.path.exists(output_path)
+
+
+def test_restart_evaluate():
+    with tempfile.TemporaryDirectory() as project_dir:
+        original_path = os.path.join(resource_dir, 'result_project')
+        copy_tree(original_path, project_dir)
+        trial_path = os.path.join(project_dir, '1')
+        subprocess.run(['autorag', 'restart_evaluate', '--trial_path', trial_path])
+        assert os.path.exists(os.path.join(trial_path, 'summary.csv'))
+
+
+def test_restart_evaluate_leads_start_evaluate():
+    with tempfile.TemporaryDirectory() as project_dir:
+        original_path = os.path.join(resource_dir, 'result_project')
+        copy_tree(original_path, project_dir)
+        trial_path = os.path.join(project_dir, '3')
+        subprocess.run(['autorag', 'restart_evaluate', '--trial_path', trial_path])
+        restart_path = os.path.join(project_dir, '4')
+        assert os.path.exists(os.path.join(restart_path, 'summary.csv'))

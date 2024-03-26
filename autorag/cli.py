@@ -1,12 +1,14 @@
 import importlib.resources
 import logging
 import os
+import pathlib
 import subprocess
 from typing import Optional
 
 import click
 
 from autorag.deploy import Runner
+from autorag.deploy import extract_best_config as original_extract_best_config
 from autorag.evaluator import Evaluator
 
 logger = logging.getLogger("AutoRAG")
@@ -67,9 +69,32 @@ def run_web(yaml_path: Optional[str], project_dir: Optional[str], trial_path: Op
         subprocess.run(['streamlit', 'run', web_py_path, '--', '--trial_path', trial_path])
 
 
+@click.command()
+@click.option('--trial_path', type=click.Path(), help='Path to the trial directory.')
+@click.option('--output_path', type=click.Path(), help='Path to the output directory.'
+                                                       ' Must be .yaml or .yml file.')
+def extract_best_config(trial_path: str, output_path: str):
+    original_extract_best_config(trial_path, output_path)
+
+
+@click.command()
+@click.option('--trial_path', help='Path to trial directory.', type=str)
+def restart_evaluate(trial_path):
+    if not os.path.exists(trial_path):
+        raise ValueError(f"trial_path {trial_path} does not exist.")
+    project_dir = pathlib.PurePath(trial_path).parent
+    qa_data_path = os.path.join(project_dir, 'data', 'qa.parquet')
+    corpus_data_path = os.path.join(project_dir, 'data', 'corpus.parquet')
+    evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir)
+    evaluator.restart_trial(trial_path)
+    logger.info('Evaluation complete.')
+
+
 cli.add_command(evaluate, 'evaluate')
 cli.add_command(run_api, 'run_api')
 cli.add_command(run_web, 'run_web')
+cli.add_command(extract_best_config, 'extract_best_config')
+cli.add_command(restart_evaluate, 'restart_evaluate')
 
 if __name__ == '__main__':
     cli()

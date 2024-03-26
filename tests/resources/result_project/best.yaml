@@ -1,0 +1,83 @@
+node_lines:
+  - node_line_name: pre_retrieve_node_line
+    nodes:
+      - modules:
+          - llm: openai
+            module_type: query_decompose
+            temperature: 0.2
+        node_type: query_expansion
+        strategy:
+          metrics:
+            - retrieval_f1
+            - retrieval_recall
+            - retrieval_precision
+          retrieval_modules:
+            - module_type: bm25
+            - embedding_model: openai
+              module_type: vectordb
+          speed_threshold: 10
+          top_k: 10
+  - node_line_name: retrieve_node_line
+    nodes:
+      - modules:
+          - module_type: bm25
+            top_k: 10
+        node_type: retrieval
+        strategy:
+          metrics:
+            - retrieval_f1
+            - retrieval_recall
+            - retrieval_precision
+          speed_threshold: 10
+      - modules:
+          - module_type: tart
+            top_k: 5
+        node_type: passage_reranker
+        strategy:
+          metrics:
+            - retrieval_f1
+            - retrieval_recall
+            - retrieval_precision
+          speed_threshold: 10
+      - modules:
+          - llm: openai
+            model: gpt-3.5-turbo-16k
+            module_type: tree_summarize
+        node_type: passage_compressor
+        strategy:
+          metrics:
+            - retrieval_token_f1
+            - retrieval_token_recall
+            - retrieval_token_precision
+          speed_threshold: 10
+  - node_line_name: post_retrieve_node_line
+    nodes:
+      - modules:
+          - module_type: fstring
+            prompt: "Question: {query} \n Something to read: {retrieved_contents} \n What's\
+        \ your answer?"
+        node_type: prompt_maker
+        strategy:
+          generator_modules:
+            - llm: openai
+              model:
+                - gpt-3.5-turbo-16k
+                - gpt-3.5-turbo-1106
+              module_type: llama_index_llm
+          metrics:
+            - bleu
+            - meteor
+            - rouge
+          speed_threshold: 10
+      - modules:
+          - llm: openai
+            model: gpt-3.5-turbo-1106
+            module_type: llama_index_llm
+            temperature: 1.5
+        node_type: generator
+        strategy:
+          metrics:
+            - bleu
+            - meteor
+            - rouge
+          speed_threshold: 10
