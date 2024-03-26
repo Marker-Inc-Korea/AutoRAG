@@ -2,6 +2,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
+from distutils.dir_util import copy_tree
 
 from click.testing import CliRunner
 
@@ -35,3 +36,12 @@ def test_run_api():
                                  '--host', '0.0.0.0', '--port', '8080'])
     assert result.exit_code == 1  # it will occur error because I run this test with a wrong yaml path.
     # But it means that the command is working well. If not, it will occur exit_code 2.
+
+
+def test_extract_best_config_cli():
+    with tempfile.TemporaryDirectory() as project_dir:
+        trial_path = os.path.join(project_dir, '0')
+        copy_tree(os.path.join(resource_dir, 'result_project', '0'), trial_path)
+        output_path = os.path.join(project_dir, 'best.yaml')
+        subprocess.run(['autorag', 'extract_best_config', '--trial_path', trial_path, '--output_path', output_path])
+        assert os.path.exists(output_path)

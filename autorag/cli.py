@@ -67,9 +67,18 @@ def run_web(yaml_path: Optional[str], project_dir: Optional[str], trial_path: Op
         subprocess.run(['streamlit', 'run', web_py_path, '--', '--trial_path', trial_path])
 
 
+@click.command()
+@click.option('--trial_path', type=click.Path(), help='Path to the trial directory.')
+@click.option('--output_path', type=click.Path(), help='Path to the output directory.')
+def extract_best_config(trial_path: str, output_path: Optional[str]):
+    from autorag.deploy import extract_best_config
+    extract_best_config(trial_path, output_path)
+
+
 cli.add_command(evaluate, 'evaluate')
 cli.add_command(run_api, 'run_api')
 cli.add_command(run_web, 'run_web')
+cli.add_command(extract_best_config, 'extract_best_config')
 
 if __name__ == '__main__':
     cli()
