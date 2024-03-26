@@ -4,6 +4,14 @@ autorag.data.qacreation package
 Submodules
 ----------
 
+autorag.data.qacreation.base module
+-----------------------------------
+
+.. automodule:: autorag.data.qacreation.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.data.qacreation.llama\_index module
 -------------------------------------------
 
