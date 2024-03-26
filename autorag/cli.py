@@ -81,7 +81,7 @@ def extract_best_config(trial_path: str, output_path: str):
 @click.option('--trial_path', help='Path to trial directory.', type=str)
 def restart_evaluate(trial_path):
     if not os.path.exists(trial_path):
-        raise ValueError(f"Config file {trial_path} does not exist.")
+        raise ValueError(f"trial_path {trial_path} does not exist.")
     project_dir = pathlib.PurePath(trial_path).parent
     qa_data_path = os.path.join(project_dir, 'data', 'qa.parquet')
     corpus_data_path = os.path.join(project_dir, 'data', 'corpus.parquet')
