@@ -85,7 +85,7 @@ def restart_evaluate(trial_path):
     project_dir = pathlib.PurePath(trial_path).parent
     qa_data_path = os.path.join(project_dir, 'data', 'qa.parquet')
     corpus_data_path = os.path.join(project_dir, 'data', 'corpus.parquet')
-    evaluator = Evaluator(qa_data_path, corpus_data_path)
+    evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir)
     evaluator.restart_trial(trial_path)
     logger.info('Evaluation complete.')
 
