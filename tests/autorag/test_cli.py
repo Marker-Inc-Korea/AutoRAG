@@ -40,8 +40,16 @@ def test_run_api():
 
 def test_extract_best_config_cli():
     with tempfile.TemporaryDirectory() as project_dir:
-        trial_path = os.path.join(project_dir, '0')
-        copy_tree(os.path.join(resource_dir, 'result_project', '0'), trial_path)
+        trial_path = os.path.join(resource_dir, 'result_project', '0')
         output_path = os.path.join(project_dir, 'best.yaml')
         subprocess.run(['autorag', 'extract_best_config', '--trial_path', trial_path, '--output_path', output_path])
         assert os.path.exists(output_path)
+
+
+def test_restart_evaluate():
+    with tempfile.TemporaryDirectory() as project_dir:
+        original_path = os.path.join(resource_dir, 'result_project')
+        copy_tree(original_path, project_dir)
+        trial_path = os.path.join(project_dir, '1')
+        subprocess.run(['autorag', 'restart_evaluate', '--trial_path', trial_path])
+        assert os.path.exists(os.path.join(trial_path, 'summary.csv'))
