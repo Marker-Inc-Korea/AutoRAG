@@ -72,7 +72,7 @@ def run_web(yaml_path: Optional[str], project_dir: Optional[str], trial_path: Op
 @click.command()
 @click.option('--trial_path', type=click.Path(), help='Path to the trial directory.')
 @click.option('--output_path', type=click.Path(), help='Path to the output directory.')
-def extract_best_config(trial_path: str, output_path: Optional[str]):
+def extract_best_config(trial_path: str, output_path: str):
     original_extract_best_config(trial_path, output_path)
 
 
