@@ -184,7 +184,10 @@ node_lines:
         modules:
           - module_type: bm25
           - module_type: vector
-            embedding_model: [ openai, openai_curie ]
+            embedding_model: [ openai, openai_embed_3_large ]
+          - module_type: hybrid_rrf
+            target_modules: ('bm25', 'vectordb')
+            rrf_k: [ 3, 5, 10 ]
       - node_type: reranker
         strategy:
           metric: retrieval_precision
@@ -203,7 +206,13 @@ node_lines:
             prompt: "This is a news dataset, crawled from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{retrieved_contents}\n\nQ: {query}\nA:"
       - node_type: generator
         strategy:
-          metric: [ bleu, meteor ]
+          metric:
+            - metric_name: meteor
+            - metric_name: rouge
+            - metric_name: sem_score
+              embedding_model: openai
+            - metric_name: g_eval
+              model: gpt-3.5-turbo
         modules:
           - module_type: llama_index_llm
             llm: openai
