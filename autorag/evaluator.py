@@ -58,10 +58,10 @@ class Evaluator:
             os.makedirs(os.path.join(self.project_dir, 'data'))
         qa_path_in_project = os.path.join(self.project_dir, 'data', 'qa.parquet')
         if not os.path.exists(qa_path_in_project):
-            shutil.copy(qa_data_path, qa_path_in_project)
+            self.qa_data.to_parquet(qa_path_in_project, index=False)
         corpus_path_in_project = os.path.join(self.project_dir, 'data', 'corpus.parquet')
         if not os.path.exists(corpus_path_in_project):
-            shutil.copy(corpus_data_path, corpus_path_in_project)
+            self.corpus_data.to_parquet(corpus_path_in_project, index=False)
 
     def start_trial(self, yaml_path: str):
         trial_name = self.__get_new_trial_name()
