@@ -16,7 +16,7 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 ---
 🚨 Youtube Tutorial
 
-[![Youtube Tutorial](https://img.youtube.com/vi/2ojK8xjyXAU/0.jpg)](https://www.youtube.com/watch?v=2ojK8xjyXAU)
+https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
 
 # 📑 Index
 
