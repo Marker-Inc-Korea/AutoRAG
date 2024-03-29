@@ -16,7 +16,7 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 ---
 🚨 Youtube Tutorial
 
-<iframe width="956" height="538" src="https://youtu.be/2ojK8xjyXAU" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+[![Youtube Tutorial](https://img.youtube.com/vi/2ojK8xjyXAU/0.jpg)](https://www.youtube.com/watch?v=2ojK8xjyXAU)
 
 # 📑 Index
 
