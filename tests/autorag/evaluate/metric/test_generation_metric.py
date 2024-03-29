@@ -38,6 +38,7 @@ def test_rouge():
     base_test_generation_metrics(rouge, [0.909, 0.35714, 1.0])
 
 
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions. It use local model")
 def test_sem_score():
     base_test_generation_metrics(sem_score, [0.8798, 0.7952, 1.0])
 
