@@ -5,3 +5,4 @@ myst-parser
 sphinx-inline-tabs
 sphinx-copybutton
 sphinx_design
+sphinxcontrib-googleanalytics
