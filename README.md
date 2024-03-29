@@ -8,6 +8,8 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 => [Colab Tutorial](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 
+=> [Youtube Tutorial](https://youtu.be/2ojK8xjyXAU?si=UNYMXfXu-I1khoIh)
+
 # 📑 Index
 
 - [Introduction](#introduction)
