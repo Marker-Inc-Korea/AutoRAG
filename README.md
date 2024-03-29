@@ -18,6 +18,8 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
 
+_Muted by default, enable sound for voice-over_
+
 # 📑 Index
 
 - [Introduction](#introduction)
