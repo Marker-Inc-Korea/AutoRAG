@@ -14,11 +14,13 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 - [Step 2: Create evaluation dataset](https://colab.research.google.com/drive/1HXjVHCLTaX7mkmZp3IKlEPt0B3jVeHvP#scrollTo=cgFUCuaUZvTr)
 
 ---
-🚨 Youtube Tutorial
+🚨 YouTube Tutorial
 
 https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
 
 _Muted by default, enable sound for voice-over_
+
+You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 # 📑 Index
 
