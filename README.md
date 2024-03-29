@@ -10,7 +10,7 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 📌 Colab Tutorial
 
-- [Step 1: Auto optimize and deploy](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+- [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 - [Step 2: Create evaluation dataset](https://colab.research.google.com/drive/1HXjVHCLTaX7mkmZp3IKlEPt0B3jVeHvP#scrollTo=cgFUCuaUZvTr)
 
 ---
