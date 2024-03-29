@@ -27,6 +27,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_inline_tabs",
+    "sphinxcontrib.googleanalytics",
 ]
 source_suffix = {
     '.rst': 'restructuredtext',
@@ -36,7 +37,7 @@ source_suffix = {
 templates_path = ['_templates']
 exclude_patterns = []
 
-
+googleanalytics_id = 'G-T8ZKQM6RT9'
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
