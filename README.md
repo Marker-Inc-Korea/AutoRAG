@@ -9,12 +9,14 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 ---
 
 📌 Colab Tutorial
+
 - [Step 1: Auto optimize and deploy](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 - [Step 2: Create evaluation dataset](https://colab.research.google.com/drive/1HXjVHCLTaX7mkmZp3IKlEPt0B3jVeHvP#scrollTo=cgFUCuaUZvTr)
 
 ---
 🚨 Youtube Tutorial
-[![Youtube Tutorial](https://img.youtube.com/vi/2ojK8xjyXAU/0.jpg)](https://www.youtube.com/watch?v=2ojK8xjyXAU)
+
+<iframe width="956" height="538" src="https://youtu.be/2ojK8xjyXAU" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 # 📑 Index
 
