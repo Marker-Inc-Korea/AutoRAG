@@ -16,11 +16,19 @@ Therefore, the strategy sets the parameters needed to evaluate the answer of the
 Please refer to the parameter of [Generator Node](../generator/generator.md) for more details.
 ```
 
-#### **Parameters**:
+#### **Strategy Parameters**:
 
 1. **Metrics**: Metrics such as `bleu`,`meteor`, and `rouge` are used to evaluate the performance of the prompt maker process through its impact on generator (llm) outcomes.
 2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized.
-3. **Generator Modules**: The prompt maker node can utilize all modules and module parameters from the generator node, including:
+3. **Token Threshold**: `token_threshold` ensuring that output prompt average token length does not exceed the
+   threshold.
+4. **tokenizer**: Since you don't know what LLM model you will use in the next nodes, you can specify the tokenizer name
+   to use in `token_threshold` strategy.
+   You can use OpenAI model names or Huggingface model names that support `AutoTokenizer`.
+   It will automatically find the tokenizer for the model name you specify.
+   Default is 'gpt2'.
+5. **Generator Modules**: The prompt maker node can use all modules and module parameters from the generator node,
+   including:
    - [llama_index_llm](../generator/llama_index_llm.md): with `llm` and additional llm parameters
 
 ### Example config.yaml file
@@ -32,6 +40,8 @@ node_lines:
       strategy:
         metrics: [bleu, meteor, rouge, sem_score]
         speed_threshold: 10
+        token_threshold: 1000
+        tokenizer: gpt-3.5-turbo
         generator_modules:
           - module_type: llama_index_llm
             llm: openai

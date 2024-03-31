@@ -32,6 +32,15 @@ This document serves as a guide for configuring parameters, strategies, and the 
 2. **Speed Threshold**:
    - **Description**: This optional parameter can be applied to all nodes to ensure that the processing time for a method does not exceed a predefined threshold.
 
+3. **Token Threshold**:
+   - **Description**: This optional parameter ensures that the average token length of the output (LLM's generations)
+     does not exceed the threshold.
+
+```{warning}
+When you use `llama_index` module, the tokenizer will be gpt2 automatically.
+Please refer to the [issue](https://github.com/Marker-Inc-Korea/AutoRAG/issues/259) for more details.
+```
+
 ### Example config.yaml file
 ```yaml
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
@@ -47,6 +56,7 @@ This document serves as a guide for configuring parameters, strategies, and the 
              metrics: [consistency, fluency, relevance, coherence]
              model: gpt-4
         speed_threshold: 10
+        token_threshold: 4000
       modules:
         - module_type: llama_index_llm
           llm: [openai]
