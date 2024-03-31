@@ -147,7 +147,7 @@ def test_run_prompt_maker_one_module(node_line_dir):
     assert os.path.exists(summary_filepath)
     summary_df = load_summary_file(summary_filepath)
     assert set(summary_df) == {
-        'filename', 'module_name', 'module_params', 'execution_time', 'is_best'
+        'filename', 'module_name', 'module_params', 'execution_time', 'is_best', 'average_prompt_token',
     }
     best_filepath = os.path.join(node_line_dir, "prompt_maker", f"best_{summary_df['filename'].values[0]}")
     assert os.path.exists(best_filepath)
