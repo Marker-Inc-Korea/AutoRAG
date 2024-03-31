@@ -45,6 +45,9 @@ def run_generator_node(modules: List[Callable],
                                         zip(modules, module_params)))
     average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
+    # get average token usage
+    token_usages = list(map(lambda x: x['generated_tokens'].apply(len).mean(), results))
+
     metric_names, metric_params = cast_metrics(strategies.get('metrics'))
     if metric_names is None or len(metric_names) <= 0:
         raise ValueError("You must at least one metrics for generator evaluation.")
@@ -60,12 +63,15 @@ def run_generator_node(modules: List[Callable],
         'module_name': list(map(lambda module: module.__name__, modules)),
         'module_params': module_params,
         'execution_time': average_times,
+        'average_output_token': token_usages,
         **{metric: list(map(lambda x: x[metric].mean(), results)) for metric in metric_names}
     })
 
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
+    if strategies.get('token_threshold') is not None:
+        results, filenames = filter_by_threshold(results, token_usages, strategies['token_threshold'], filenames)
     selected_result, selected_filename = select_best_average(results, metric_names, filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
