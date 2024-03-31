@@ -100,6 +100,8 @@ def test_run_prompt_maker_node(node_line_dir):
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
+        'token_threshold': 25,
+        'tokenizer': 'gpt-3.5-turbo',
         'generator_modules': [{
             'module_type': 'llama_index_llm',
             'llm': 'mock',
@@ -109,6 +111,7 @@ def test_run_prompt_maker_node(node_line_dir):
     best_result = run_prompt_maker_node(modules, params, previous_result, node_line_dir, strategies)
     check_best_result(best_result)
     best_filename = check_summary_df(node_line_dir)
+    assert best_filename == '0.parquet'
     best_result_path = os.path.join(node_line_dir, "prompt_maker", f"best_{best_filename}")
     assert os.path.exists(best_result_path)
 

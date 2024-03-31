@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import List, Callable, Dict, Optional, Union
 
 import pandas as pd
+import tokenlog
 
 from autorag.evaluate import evaluate_generation
 from autorag.evaluate.util import cast_metrics
@@ -52,6 +53,13 @@ def run_prompt_maker_node(modules: List[Callable],
         task[0], project_dir=project_dir, previous_result=previous_result, **task[1]), zip(modules, module_params)))
     average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
+    # get average token usage
+    token_usages = []
+    for i, result in enumerate(results):
+        token_logger = tokenlog.getLogger(f"prompt_maker_{i}", strategies.get('tokenizer', 'gpt2'))
+        token_logger.query_batch(result['prompts'].tolist())
+        token_usages.append(token_logger.get_token_usage() / len(result))
+
     # save results to folder
     filepaths = list(map(lambda x: os.path.join(node_dir, f'{x}.parquet'), range(len(modules))))
     list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))  # execute save to parquet
@@ -70,13 +78,18 @@ def run_prompt_maker_node(modules: List[Callable],
     # Run evaluation when there are more than one module.
     if len(modules) > 1:
         # pop general keys from strategies (e.g. metrics, speed_threshold)
-        general_key = ['metrics', 'speed_threshold']
+        general_key = ['metrics', 'speed_threshold', 'token_threshold', 'tokenizer']
         general_strategy = dict(filter(lambda x: x[0] in general_key, strategies.items()))
         extra_strategy = dict(filter(lambda x: x[0] not in general_key, strategies.items()))
 
         # first, filter by threshold if it is enabled.
         if general_strategy.get('speed_threshold') is not None:
             results, filenames = filter_by_threshold(results, average_times, general_strategy['speed_threshold'],
+                                                     filenames)
+
+        # Calculate tokens and save to summary
+        if general_strategy.get('token_threshold') is not None:
+            results, filenames = filter_by_threshold(results, token_usages, general_strategy['token_threshold'],
                                                      filenames)
 
         # run metrics before filtering
