@@ -87,7 +87,7 @@ def check_summary_df(node_line_dir):
     summary_df = load_summary_file(summary_path)
     assert len(summary_df) == len(previous_result)
     assert set(summary_df.columns) == {'filename', 'module_name', 'module_params', 'execution_time',
-                                       'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
+                                       'average_prompt_token', 'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
     best_filename = summary_df[summary_df['is_best']]['filename'].values[0]
     return best_filename
 
@@ -100,6 +100,8 @@ def test_run_prompt_maker_node(node_line_dir):
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
+        'token_threshold': 25,
+        'tokenizer': 'gpt-3.5-turbo',
         'generator_modules': [{
             'module_type': 'llama_index_llm',
             'llm': 'mock',
@@ -109,6 +111,7 @@ def test_run_prompt_maker_node(node_line_dir):
     best_result = run_prompt_maker_node(modules, params, previous_result, node_line_dir, strategies)
     check_best_result(best_result)
     best_filename = check_summary_df(node_line_dir)
+    assert best_filename == '0.parquet'
     best_result_path = os.path.join(node_line_dir, "prompt_maker", f"best_{best_filename}")
     assert os.path.exists(best_result_path)
 
@@ -144,7 +147,7 @@ def test_run_prompt_maker_one_module(node_line_dir):
     assert os.path.exists(summary_filepath)
     summary_df = load_summary_file(summary_filepath)
     assert set(summary_df) == {
-        'filename', 'module_name', 'module_params', 'execution_time', 'is_best'
+        'filename', 'module_name', 'module_params', 'execution_time', 'is_best', 'average_prompt_token',
     }
     best_filepath = os.path.join(node_line_dir, "prompt_maker", f"best_{summary_df['filename'].values[0]}")
     assert os.path.exists(best_filepath)

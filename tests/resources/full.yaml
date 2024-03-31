@@ -70,6 +70,8 @@ node_lines:
           - metric_name: g_eval
             model: gpt-3.5-turbo
         speed_threshold: 10
+        token_threshold: 8000
+        tokenizer: gpt-3.5-turbo
         generator_modules:
           - module_type: llama_index_llm
             llm: openai
@@ -89,6 +91,7 @@ node_lines:
           - metric_name: g_eval
             model: gpt-3.5-turbo
         speed_threshold: 10
+        token_threshold: 2048
       modules:
         - module_type: llama_index_llm
           llm: [openai]

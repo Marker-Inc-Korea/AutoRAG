@@ -48,10 +48,11 @@ def test_run_generator_node(node_line_dir):
     generator_models['mock'] = MockLLM
     modules = [llama_index_llm, llama_index_llm]
     module_params = [{'llm': 'mock', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8},
-                     {'llm': 'mock', 'temperature': 1.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8}]
+                     {'llm': 'mock', 'temperature': 1.5, 'top_p': 0.9, 'max_tokens': 32, 'batch': 8}]
     strategies = {
         'metrics': [{'metric_name': 'bleu'}, {'metric_name': 'meteor'}, {'metric_name': 'rouge'}],
         'speed_threshold': 5,
+        'token_threshold': 64,
     }
     best_result = run_generator_node(modules, module_params, previous_df, node_line_dir, strategies)
     assert os.path.exists(os.path.join(node_line_dir, "generator"))
@@ -63,7 +64,7 @@ def test_run_generator_node(node_line_dir):
     assert os.path.exists(summary_path)
     summary_df = load_summary_file(summary_path)
     expect_columns = {'filename', 'bleu', 'meteor', 'rouge', 'module_name', 'module_params', 'execution_time',
-                      'is_best'}
+                      'average_output_token', 'is_best'}
     assert set(summary_df.columns) == expect_columns
     assert len(summary_df) == 2
     assert summary_df['module_params'][0] == {'llm': 'mock', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128,
