@@ -87,7 +87,7 @@ def check_summary_df(node_line_dir):
     summary_df = load_summary_file(summary_path)
     assert len(summary_df) == len(previous_result)
     assert set(summary_df.columns) == {'filename', 'module_name', 'module_params', 'execution_time',
-                                       'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
+                                       'average_prompt_token', 'prompt_maker_bleu', 'prompt_maker_rouge', 'is_best'}
     best_filename = summary_df[summary_df['is_best']]['filename'].values[0]
     return best_filename
 

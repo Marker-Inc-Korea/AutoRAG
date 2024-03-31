@@ -71,6 +71,7 @@ def run_prompt_maker_node(modules: List[Callable],
         'module_name': list(map(lambda module: module.__name__, modules)),
         'module_params': module_params,
         'execution_time': average_times,
+        'average_prompt_token': token_usages,
     })
 
     metric_names, metric_params = cast_metrics(strategies.get('metrics'))
