@@ -252,7 +252,7 @@ node_lines:
 - [ ] Visualize evaluation result
 - [ ] Visualize config yaml file
 - [ ] More RAG modules support
-- [ ] Token usage strategy
+- [x] Token usage strategy
 - [ ] Multi-modal support
 - [ ] More evaluation metrics
 - [ ] Answer Filtering Module
