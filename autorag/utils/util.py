@@ -266,17 +266,3 @@ def openai_truncate_by_token(texts: List[str], token_limit: int,
         return truncated_text
 
     return list(map(lambda x: truncate_text(x, token_limit, tokenizer), texts))
-
-
-def get_average_token_length(result_df: pd.DataFrame,
-                             token_column: str = "generated_tokens") -> float:
-    """
-    Get average token length from result_df.
-
-    :param result_df: The result dataframe.
-    :param token_column: The column name that contains list of tokens.
-        Default is "generated_tokens".
-    :return: The average token length.
-    """
-    token_lengths = result_df[token_column].apply(len).tolist()
-    return sum(token_lengths) / len(token_lengths)
