@@ -4,9 +4,7 @@ from pathlib import Path
 from typing import List, Union, Tuple
 
 import pandas as pd
-from llama_index.llms.openai import OpenAI
 
-from autorag import generator_models
 from autorag.utils import result_to_dataframe, validate_qa_dataset
 
 logger = logging.getLogger("AutoRAG")
@@ -37,26 +35,8 @@ def passage_reranker_node(func):
         assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
-        if func.__name__ == 'rankgpt':
-            llm_name = kwargs.pop('llm', None)
-            top_k = kwargs.pop('top_k', 3)
-            batch = kwargs.pop('batch', 16)
-            verbose = kwargs.pop('verbose', False)
-            rankgpt_prompt = kwargs.pop('rankgpt_rerank_prompt', None)
-
-            if llm_name is None:
-                llm = OpenAI(model="gpt-3.5-turbo-16k")
-            else:
-                llm = generator_models[llm_name](**kwargs)
-
-            reranked_contents, reranked_ids, reranked_scores \
-                = func(queries=queries, contents_list=contents, scores_list=scores, ids_list=ids, top_k=top_k, llm=llm,
-                       verbose=verbose, rankgpt_rerank_prompt=rankgpt_prompt, batch=batch)
-
-            del llm
-        else:
-            reranked_contents, reranked_ids, reranked_scores \
-                = func(queries=queries, contents_list=contents, scores_list=scores, ids_list=ids, *args, **kwargs)
+        reranked_contents, reranked_ids, reranked_scores \
+            = func(queries=queries, contents_list=contents, scores_list=scores, ids_list=ids, *args, **kwargs)
 
         return reranked_contents, reranked_ids, reranked_scores
 

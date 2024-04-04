@@ -7,7 +7,9 @@ from llama_index.core.llms import LLM
 from llama_index.core.postprocessor.rankGPT_rerank import RankGPTRerank
 from llama_index.core.schema import NodeWithScore, QueryBundle, TextNode
 from llama_index.core.utils import print_text
+from llama_index.llms.openai import OpenAI
 
+from autorag import generator_models
 from autorag.nodes.passagereranker.base import passage_reranker_node
 from autorag.utils.util import process_batch
 
@@ -17,7 +19,7 @@ def rankgpt(queries: List[str], contents_list: List[List[str]],
             scores_list: List[List[float]], ids_list: List[List[str]],
             top_k: int, llm: Optional[LLM] = None, verbose: bool = False,
             rankgpt_rerank_prompt: Optional[str] = None,
-            batch: int = 16) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+            batch: int = 16, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank given context paragraphs using RankGPT.
     Return pseudo scores, since the actual scores are not available on RankGPT.
@@ -40,6 +42,12 @@ def rankgpt(queries: List[str], contents_list: List[List[str]],
     nodes_list = [
         list(map(lambda x: NodeWithScore(node=TextNode(text=x[0]), score=x[1]), zip(content_list, score_list)))
         for content_list, score_list in zip(contents_list, scores_list)]
+    if llm is None:
+        llm = OpenAI(model="gpt-3.5-turbo-16k")
+
+    if not isinstance(llm, LLM):
+        llm = generator_models[llm](**kwargs)
+
     reranker = AsyncRankGPTRerank(top_n=top_k, llm=llm, verbose=verbose, rankgpt_rerank_prompt=rankgpt_rerank_prompt)
 
     tasks = [reranker.async_postprocess_nodes(nodes, query, ids) for nodes, query, ids in
@@ -51,6 +59,7 @@ def rankgpt(queries: List[str], contents_list: List[List[str]],
     id_result = [res[1] for res in rerank_result]
 
     del reranker
+    del llm
 
     return content_result, id_result, score_result
 

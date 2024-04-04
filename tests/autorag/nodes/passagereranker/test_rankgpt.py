@@ -35,3 +35,7 @@ def test_rankgpt_node():
     result_df = rankgpt(project_dir=project_dir, previous_result=previous_result, top_k=top_k,
                         llm='openai', model='gpt-3.5-turbo', temperature=0.5, batch=8, verbose=True)
     base_reranker_node_test(result_df, top_k)
+
+    top_k = 2
+    result_df = rankgpt(project_dir=project_dir, previous_result=previous_result, top_k=top_k, batch=4)
+    base_reranker_node_test(result_df, top_k)
