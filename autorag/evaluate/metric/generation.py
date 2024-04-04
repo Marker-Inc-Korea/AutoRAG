@@ -5,6 +5,7 @@ import os
 from typing import List, Optional
 
 import evaluate
+import pandas as pd
 import sacrebleu
 import torch
 from llama_index.core.embeddings import BaseEmbedding
@@ -266,3 +267,22 @@ def g_eval(generation_gt: List[str], pred: str,
 
     g_eval_scores = list(map(lambda x: g_eval_score(g_eval_prompts[x], generation_gt, pred), metrics))
     return sum(g_eval_scores) / len(g_eval_scores)
+
+
+def bert_score(generation_gt: List[List[str]], generations: List[str],
+               lang: str = 'en',
+               batch: int = 128,
+               n_threads: int = os.cpu_count()) -> List[float]:
+    evaluator = evaluate.load("bertscore")
+
+    df = pd.DataFrame({
+        'reference': generation_gt,
+        'prediction': generations,
+        'lang': lang,
+    })
+
+    df = df.explode('reference', ignore_index=False)
+    df['bert_score'] = evaluator.compute(predictions=df['prediction'].tolist(),
+                                         references=df['reference'].tolist(),
+                                         lang=lang, nthreads=n_threads, batch_size=batch)['f1']
+    return df.groupby(level=0)['bert_score'].max().tolist()
