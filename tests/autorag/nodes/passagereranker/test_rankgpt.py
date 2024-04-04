@@ -4,7 +4,8 @@ from llama_index.core import QueryBundle
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.llms.openai import OpenAI
 
-from autorag.nodes.passagereranker.rankgpt import AsyncRankGPTRerank, rankgpt
+from autorag.nodes.passagereranker import rankgpt
+from autorag.nodes.passagereranker.rankgpt import AsyncRankGPTRerank
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import queries_example, contents_example, \
     scores_example, ids_example, base_reranker_test, project_dir, previous_result, base_reranker_node_test
 
