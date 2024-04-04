@@ -1,12 +1,11 @@
 import functools
+import logging
 from pathlib import Path
 from typing import List, Union, Tuple
 
 import pandas as pd
 
 from autorag.utils import result_to_dataframe, validate_qa_dataset
-
-import logging
 
 logger = logging.getLogger("AutoRAG")
 
@@ -36,8 +35,7 @@ def passage_reranker_node(func):
         assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
-        # run passage reranker function
-        reranked_contents, reranked_ids, reranked_scores\
+        reranked_contents, reranked_ids, reranked_scores \
             = func(queries=queries, contents_list=contents, scores_list=scores, ids_list=ids, *args, **kwargs)
 
         return reranked_contents, reranked_ids, reranked_scores

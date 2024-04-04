@@ -52,6 +52,14 @@ autorag.nodes.passagereranker.pass\_reranker module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.rankgpt module
+--------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.rankgpt
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.run module
 ----------------------------------------
 
