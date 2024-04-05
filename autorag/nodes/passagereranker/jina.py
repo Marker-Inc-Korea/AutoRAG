@@ -17,6 +17,25 @@ def jina_reranker(queries: List[str], contents_list: List[List[str]],
                   model: str = "jina-reranker-v1-base-en",
                   batch: int = 8
                   ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+    """
+    Rerank a list of contents with Jina rerank models.
+    You can get the API key from https://jina.ai/reranker and set it in the environment variable JINAAI_API_KEY.
+
+    :param queries: The list of queries to use for reranking
+    :param contents_list: The list of lists of contents to rerank
+    :param scores_list: The list of lists of scores retrieved from the initial ranking
+    :param ids_list: The list of lists of ids retrieved from the initial ranking
+    :param top_k: The number of passages to be retrieved
+    :param api_key: The API key for Jina rerank.
+        You can set it in the environment variable JINAAI_API_KEY.
+        Or, you can directly set it on the config YAML file using this parameter.
+        Default is env variable "JINAAI_API_KEY".
+    :param model: The model name for Cohere rerank.
+        You can choose between "jina-reranker-v1-base-en" and "jina-colbert-v1-en".
+        Default is "jina-reranker-v1-base-en".
+    :param batch: The number of queries to be processed in a batch
+    :return: Tuple of lists containing the reranked contents, ids, and scores
+    """
     if api_key is None:
         api_key = os.getenv("JINAAI_API_KEY", None)
         if api_key is None:
