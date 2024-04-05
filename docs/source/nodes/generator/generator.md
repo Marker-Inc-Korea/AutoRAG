@@ -13,7 +13,7 @@ This document serves as a guide for configuring parameters, strategies, and the 
 
 ### **Strategy Parameters**
 1. **Metrics**:  
-   - **Types**: `bleu`, `meteor`, `rouge`, `sem_score`, `g_eval`
+   - **Types**: `bleu`, `meteor`, `rouge`, `sem_score`, `g_eval`, `bert_score`
    ```{admonition} Purpose
    These metrics are used to evaluate the performance of language models by comparing model-generated text to ground truth texts.
    We are planning to add more metrics to evaluate generation performance.
@@ -55,6 +55,9 @@ Please refer to the [issue](https://github.com/Marker-Inc-Korea/AutoRAG/issues/2
            - metric_name: g_eval
              metrics: [consistency, fluency, relevance, coherence]
              model: gpt-4
+           - metric_name: bert_score
+             lang: en
+             batch: 64
         speed_threshold: 10
         token_threshold: 4000
       modules:

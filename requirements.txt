@@ -23,6 +23,7 @@ guidance # for qa data creation
 cohere>=5.0.0a9 # for cohere services
 tokenlog>=0.0.2 # for token logging
 aiohttp # for async http requests
+bert_score # for bert score
 
 ### LlamaIndex ###
 llama-index>=0.10.1
