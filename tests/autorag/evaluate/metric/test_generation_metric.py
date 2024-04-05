@@ -20,15 +20,15 @@ generations = [
 ko_generation_gts = [
     ['개가 남자를 물었다.', '남자가 개를 물었다.'],
     ['나는 예술가가 되고 싶었지만, 결국 프로그래머가 되었다.'],
-    ['요즘 예술가가 되려면, AI를 이기야 한다.',
-     '요즘 프로그래머가 되려면, AI를 이기야 한다.',
-     '요즘 변호사가 되려면, AI를 이기야 한다.'],
+    ['요즘 예술가가 되려면, AI를 이겨야 한다.',
+     '요즘 프로그래머가 되려면, AI를 이겨야 한다.',
+     '요즘 변호사가 되려면, AI를 이겨야 한다.'],
 ]
 
 ko_generations = [
     '개가 남자를 물었다.',
     '나는 정말이지 예술가가 되고 싶었지만, 결국 프로그래머가 되었다.',
-    '요즘 세상에서는 예술가가 되려면, AI를 이기야 한다.',
+    '요즘 세상에서는 예술가가 되려면, AI를 이겨야 한다.',
 ]
 
 
@@ -86,4 +86,4 @@ def test_bert_score_en():
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_bert_score_ko():
-    ko_base_test_generation_metrics(bert_score, [0.99999, 0.964654, 0.96465], lang='ko')
+    ko_base_test_generation_metrics(bert_score, [1.0, 0.965312, 0.96309], lang='ko')
