@@ -54,4 +54,6 @@ tart.md
 monot5.md
 koreranker.md
 cohere.md
+rankgpt.md
+jina_reranker.md
 ```
