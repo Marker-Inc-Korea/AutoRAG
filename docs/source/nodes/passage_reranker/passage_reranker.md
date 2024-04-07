@@ -56,4 +56,5 @@ koreranker.md
 cohere.md
 rankgpt.md
 jina_reranker.md
+colbert.md
 ```
