@@ -28,6 +28,14 @@ autorag.nodes.passagereranker.cohere module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.colbert module
+--------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.colbert
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.jina module
 -----------------------------------------
 
