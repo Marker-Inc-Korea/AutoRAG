@@ -15,8 +15,9 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
                      model_name: str = "colbert-ir/colbertv2.0",
                      ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
-    Rerank a list of contents with Cohere rerank models.
-    You can get the API key from https://cohere.com/rerank and set it in the environment variable COHERE_API_KEY.
+    Rerank a list of contents with Colbert rerank models.
+    You can get more information about a Colbert model at https://huggingface.co/colbert-ir/colbertv2.0.
+    It uses BERT-based model, so recommend using CUDA gpu for faster reranking.
 
     :param queries: The list of queries to use for reranking
     :param contents_list: The list of lists of contents to rerank
@@ -24,7 +25,8 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     :param ids_list: The list of lists of ids retrieved from the initial ranking
     :param top_k: The number of passages to be retrieved
     :param batch: The number of queries to be processed in a batch
-    :param model_name: The model name for Cohere rerank.
+        Default is 64.
+    :param model_name: The model name for Colbert rerank.
         You can choose colbert model for reranking.
         Default is "colbert-ir/colbertv2.0".
     :return: Tuple of lists containing the reranked contents, ids, and scores
