@@ -1,4 +1,5 @@
 from .cohere import cohere_reranker
+from .colbert import colbert_reranker
 from .jina import jina_reranker
 from .koreranker import koreranker
 from .monot5 import monot5
