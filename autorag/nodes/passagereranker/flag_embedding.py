@@ -9,11 +9,11 @@ from autorag.utils.util import process_batch
 
 
 @passage_reranker_node
-def sentence_transformer_reranker(queries: List[str], contents_list: List[List[str]],
-                                  scores_list: List[List[float]], ids_list: List[List[str]],
-                                  top_k: int, batch: int = 64, sentence_transformer_max_length: int = 512,
-                                  model_name: str = "cross-encoder/ms-marco-MiniLM-L-2-v2",
-                                  ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
+                            scores_list: List[List[float]], ids_list: List[List[str]],
+                            top_k: int, batch: int = 64, sentence_transformer_max_length: int = 512,
+                            model_name: str = "cross-encoder/ms-marco-MiniLM-L-2-v2",
+                            ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using Sentence Transformer model.
 
@@ -40,6 +40,7 @@ def sentence_transformer_reranker(queries: List[str], contents_list: List[List[s
     id_result = list(map(lambda x: x[1], results))
     score_result = list(map(lambda x: x[2], results))
 
+    del model_name
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 

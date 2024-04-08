@@ -51,7 +51,7 @@ node_lines:
         - module_type: cohere_reranker
         - module_type: rankgpt
         - module_type: jina_reranker
-        - module_type: sentence_transformers_reranker
+        - module_type: sentence_transformer_reranker
     - node_type: passage_compressor
       strategy:
         metrics: [retrieval_token_f1, retrieval_token_recall, retrieval_token_precision]
