@@ -9,11 +9,11 @@ from autorag.utils.util import process_batch
 
 
 @passage_reranker_node
-def sentence_transformer(queries: List[str], contents_list: List[List[str]],
-                         scores_list: List[List[float]], ids_list: List[List[str]],
-                         top_k: int, batch: int = 64, sentence_transformer_max_length: int = 512,
-                         model_name: str = "cross-encoder/ms-marco-MiniLM-L-2-v2",
-                         ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+def sentence_transformer_reranker(queries: List[str], contents_list: List[List[str]],
+                                  scores_list: List[List[float]], ids_list: List[List[str]],
+                                  top_k: int, batch: int = 64, sentence_transformer_max_length: int = 512,
+                                  model_name: str = "cross-encoder/ms-marco-MiniLM-L-2-v2",
+                                  ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using Sentence Transformer model.
 
@@ -32,7 +32,7 @@ def sentence_transformer(queries: List[str], contents_list: List[List[str]],
     model = CrossEncoder(
         model_name, max_length=sentence_transformer_max_length, device=device
     )
-    tasks = [sentence_transformer_pure(query, contents, scores, top_k, ids, model)
+    tasks = [sentence_transformer_reranker_pure(query, contents, scores, top_k, ids, model)
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
@@ -47,8 +47,8 @@ def sentence_transformer(queries: List[str], contents_list: List[List[str]],
     return content_result, id_result, score_result
 
 
-async def sentence_transformer_pure(query: str, contents: List[str], scores: List[float], top_k: int,
-                                    ids: List[str], model) -> Tuple[List[str], List[str], List[float]]:
+async def sentence_transformer_reranker_pure(query: str, contents: List[str], scores: List[float], top_k: int,
+                                             ids: List[str], model) -> Tuple[List[str], List[str], List[float]]:
     """
     Rerank a list of contents based on their relevance to a query using Sentence Transformer model.
 
