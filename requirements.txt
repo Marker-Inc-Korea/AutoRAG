@@ -24,6 +24,8 @@ cohere>=5.0.0a9 # for cohere services
 tokenlog>=0.0.2 # for token logging
 aiohttp # for async http requests
 bert_score # for bert score
+sentence-transformers # for sentence transformers
+FlagEmbedding # for flag embeddings
 
 ### LlamaIndex ###
 llama-index>=0.10.1
