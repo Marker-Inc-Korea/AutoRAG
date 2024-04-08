@@ -56,6 +56,7 @@ koreranker.md
 cohere.md
 rankgpt.md
 jina_reranker.md
+colbert.md
 sentence_transformer_reranker.md
 flag_embedding_reranker.md
 ```

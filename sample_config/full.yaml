@@ -51,6 +51,7 @@ node_lines:
         - module_type: cohere_reranker
         - module_type: rankgpt
         - module_type: jina_reranker
+        - module_type: colbert_reranker
         - module_type: sentence_transformer_reranker
         - module_type: flag_embedding_reranker
     - node_type: passage_compressor
