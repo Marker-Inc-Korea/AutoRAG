@@ -20,14 +20,6 @@ autorag.nodes.retrieval.bm25 module
    :undoc-members:
    :show-inheritance:
 
-autorag.nodes.retrieval.deep\_memory module
--------------------------------------------
-
-.. automodule:: autorag.nodes.retrieval.deep_memory
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 autorag.nodes.retrieval.hybrid\_cc module
 -----------------------------------------
 
