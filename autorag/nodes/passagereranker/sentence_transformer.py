@@ -40,6 +40,7 @@ def sentence_transformer_reranker(queries: List[str], contents_list: List[List[s
     id_result = list(map(lambda x: x[1], results))
     score_result = list(map(lambda x: x[2], results))
 
+    del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
