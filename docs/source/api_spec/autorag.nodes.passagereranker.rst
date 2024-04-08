@@ -76,6 +76,14 @@ autorag.nodes.passagereranker.run module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.sentence\_transformer module
+----------------------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.sentence_transformer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.upr module
 ----------------------------------------
 
