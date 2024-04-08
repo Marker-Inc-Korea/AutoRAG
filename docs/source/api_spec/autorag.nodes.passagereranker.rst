@@ -28,6 +28,14 @@ autorag.nodes.passagereranker.cohere module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.flag\_embedding module
+----------------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.flag_embedding
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.jina module
 -----------------------------------------
 
