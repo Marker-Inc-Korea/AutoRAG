@@ -32,6 +32,7 @@ def get_support_modules(module_name: str) -> Callable:
         'cohere_reranker': ('autorag.nodes.passagereranker', 'cohere_reranker'),
         'rankgpt': ('autorag.nodes.passagereranker', 'rankgpt'),
         'jina_reranker': ('autorag.nodes.passagereranker', 'jina_reranker'),
+        'colbert_reranker': ('autorag.nodes.passagereranker', 'colbert_reranker'),
         'sentence_transformer_reranker': ('autorag.nodes.passagereranker', 'sentence_transformer_reranker'),
         # passage_compressor
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
