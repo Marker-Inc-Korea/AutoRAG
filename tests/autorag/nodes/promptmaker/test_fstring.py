@@ -1,12 +1,5 @@
-import pandas as pd
-
 from autorag.nodes.promptmaker import fstring
-
-prompt = "Answer this question: {query} \n\n {retrieved_contents}"
-queries = ["What is the capital of Japan?", "What is the capital of China?"]
-retrieved_contents = [
-    ["Tokyo is the capital of Japan.", "Tokyo, the capital of Japan, is a huge metropolitan city."],
-    ["Beijing is the capital of China.", "Beijing, the capital of China, is a huge metropolitan city."]]
+from tests.autorag.nodes.promptmaker.test_prompt_maker_base import prompt, queries, retrieved_contents, previous_result
 
 
 def test_fstring():
@@ -19,10 +12,6 @@ def test_fstring():
 
 
 def test_fstring_node():
-    previous_result = pd.DataFrame({
-        "query": queries,
-        "retrieved_contents": retrieved_contents
-    })
     result = fstring(project_dir="pseudo_project_dir",
                      previous_result=previous_result,
                      prompt=prompt)

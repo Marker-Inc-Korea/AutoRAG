@@ -20,6 +20,14 @@ autorag.nodes.promptmaker.fstring module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.promptmaker.long\_context\_reorder module
+-------------------------------------------------------
+
+.. automodule:: autorag.nodes.promptmaker.long_context_reorder
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.promptmaker.run module
 ------------------------------------
 

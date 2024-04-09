@@ -23,6 +23,10 @@ def prompt_maker_node(func):
 
         if func.__name__ == 'fstring':
             return func(prompt, query, retrieved_contents)
+        elif func.__name__ == 'long_context_reorder':
+            assert "retrieve_scores" in previous_result.columns, "previous_result must have retrieve_scores column."
+            retrieve_scores = previous_result["retrieve_scores"].tolist()
+            return func(prompt, query, retrieved_contents, retrieve_scores)
         else:
             raise NotImplementedError(f"Module {func.__name__} is not implemented or not supported.")
 
