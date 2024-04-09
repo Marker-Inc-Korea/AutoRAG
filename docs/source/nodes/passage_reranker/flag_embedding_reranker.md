@@ -15,5 +15,5 @@ passage reranking.
 ```yaml
 - module_type: flag_embedding_reranker
   batch: 32
-  model_name: "BAAI/bge-reranker-large"
+  model_name: BAAI/bge-reranker-large
 ```
