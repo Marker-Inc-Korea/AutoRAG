@@ -1,5 +1,6 @@
 from .cohere import cohere_reranker
 from .colbert import colbert_reranker
+from .flag_embedding import flag_embedding_reranker
 from .jina import jina_reranker
 from .koreranker import koreranker
 from .monot5 import monot5
