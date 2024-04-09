@@ -40,6 +40,7 @@ def get_support_modules(module_name: str) -> Callable:
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
         # prompt_maker
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
+        'long_context_reorder': ('autorag.nodes.promptmaker', 'long_context_reorder'),
         # generator
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
         'vllm': ('autorag.nodes.generator', 'vllm'),
