@@ -43,6 +43,9 @@ sample_scores_3 = ([
                        [7, 3, 2, 1.5, 1.1],
                    ])
 
+sample_ids_non_overlap = (['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
+                          ['id-6', 'id-4', 'id-3', 'id-7', 'id-2'])
+
 previous_result = pd.DataFrame({
     'qid': ['query-1', 'query-2', 'query-3'],
     'query': ['query-1', 'query-2', 'query-3'],
