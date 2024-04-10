@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 import pandas as pd
 
@@ -8,8 +8,27 @@ from autorag.nodes.retrieval.base import retrieval_node
 
 @retrieval_node
 def hybrid_rsf(ids: Tuple, scores: Tuple, top_k: int,
-               dist_based: Optional[bool] = False,
                weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
+    """
+    Hybrid RSF function.
+    RSF (Relative Score Fusion) is a method to combine multiple retrieval results based on their relative scores.
+    It is uniquer than other retrieval modules, because it does not really execute retrieval,
+    but just fuse the results of other retrieval functions.
+    So you have to run more than two retrieval modules before running this function.
+    And collect ids and scores result from each retrieval module.
+    Make it as tuple and input it to this function.
+
+    :param ids: The tuple of ids that you want to fuse.
+        The length of this must be the same as the length of scores.
+    :param scores: The retrieve scores that you want to fuse.
+        The length of this must be the same as the length of ids.
+    :param top_k: The number of passages to be retrieved.
+    :param weights: Weight for each retrieval result.
+        Default is (0.5, 0.5).
+        You must set its length as the same as the length of ids and scores.
+        Plus, the sum of the weights must be 1.
+    :return: The tuple of ids and fused scores that fused by RSF.
+    """
     assert len(ids) == len(scores), "The length of ids and scores must be the same."
     assert len(ids) > 1, "You must input more than one retrieval results."
     assert top_k > 0, "top_k must be greater than 0."
@@ -24,28 +43,22 @@ def hybrid_rsf(ids: Tuple, scores: Tuple, top_k: int,
     def rsf_pure_apply(row):
         ids_tuple = tuple(row[[f'id_{i}' for i in range(len(ids))]].values)
         scores_tuple = tuple(row[[f'score_{i}' for i in range(len(scores))]].values)
-        return pd.Series(rsf_pure(ids_tuple, scores_tuple, top_k, dist_based, weights))
+        return pd.Series(rsf_pure(ids_tuple, scores_tuple, top_k, weights))
 
     df[['rsf_id', 'rsf_score']] = df.apply(rsf_pure_apply, axis=1)
     return df['rsf_id'].tolist(), df['rsf_score'].tolist()
 
 
 def rsf_pure(ids: Tuple, scores: Tuple, top_k: int,
-             dist_based: Optional[bool] = False, weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
+             weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
     # Initialize min and max scores for scaling
     min_max_scores = {}
     for i, score_list in enumerate(scores):
         if not score_list:
             min_max_scores[i] = (0.0, 0.0)
             continue
-        if dist_based:
-            mean_score = sum(score_list) / len(score_list)
-            std_dev = (sum((x - mean_score) ** 2 for x in score_list) / len(score_list)) ** 0.5
-            min_score = mean_score - 3 * std_dev
-            max_score = mean_score + 3 * std_dev
-        else:
-            min_score = min(score_list)
-            max_score = max(score_list)
+        min_score = min(score_list)
+        max_score = max(score_list)
         min_max_scores[i] = (min_score, max_score)
 
     # Scale scores and apply weights
