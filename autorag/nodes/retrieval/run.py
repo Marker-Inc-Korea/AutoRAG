@@ -67,7 +67,7 @@ def run_retrieval_node(modules: List[Callable],
         return result, average_times, summary_df
 
     # run retrieval modules except hybrid
-    hybrid_module_names = ['hybrid_rrf', 'hybrid_cc']
+    hybrid_module_names = ['hybrid_rrf', 'hybrid_cc', 'hybrid_rsf']
     filename_first = 0
     if any([module.__name__ not in hybrid_module_names for module in modules]):
         non_hybrid_modules, non_hybrid_module_params = zip(*filter(lambda x: x[0].__name__ not in hybrid_module_names,

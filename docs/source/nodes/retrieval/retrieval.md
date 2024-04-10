@@ -56,4 +56,5 @@ bm25.md
 vectordb.md
 hybrid_rrf.md
 hybrid_cc.md
+hybrid_rsf.md
 ```
