@@ -1,6 +1,6 @@
 # Flag Embedding LLM Reranker
 
-The `flag embedding reranker` module is a reranker using BAAI LLM-based-Reranker model for
+The `flag embedding llm reranker` module is a reranker using BAAI LLM-based-Reranker model for
 passage reranking.
 
 ## **Module Parameters**
