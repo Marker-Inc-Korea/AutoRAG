@@ -28,9 +28,8 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
         Default is "BAAI/bge-reranker-large"
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = FlagReranker(
-        model_name, use_fp16=use_fp16, device=device
+        model_name_or_path=model_name, use_fp16=use_fp16
     )
     tasks = [flag_embedding_reranker_pure(query, contents, scores, top_k, ids, model)
              for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
