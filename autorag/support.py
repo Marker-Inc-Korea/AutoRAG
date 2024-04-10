@@ -36,6 +36,7 @@ def get_support_modules(module_name: str) -> Callable:
         'colbert_reranker': ('autorag.nodes.passagereranker', 'colbert_reranker'),
         'sentence_transformer_reranker': ('autorag.nodes.passagereranker', 'sentence_transformer_reranker'),
         'flag_embedding_reranker': ('autorag.nodes.passagereranker', 'flag_embedding_reranker'),
+        'time_reranker': ('autorag.nodes.passagereranker', 'time_reranker'),
         # passage_filter
         'similarity_threshold_cutoff': ('autorag.nodes.passagefilter', 'similarity_threshold_cutoff'),
         # passage_compressor
