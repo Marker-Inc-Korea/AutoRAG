@@ -44,3 +44,10 @@ def base_passage_filter_test(contents, ids, scores):
     assert all([len(c) > 0 for c in contents])
     assert all([len(i) > 0 for i in ids])
     assert all([len(s) > 0 for s in scores])
+
+
+def base_passage_filter_node_test(result_df):
+    assert all([column_name in result_df.columns for column_name in
+                ["retrieved_contents", "retrieved_ids", "retrieve_scores"]])
+    base_passage_filter_test(result_df['retrieved_contents'].tolist(), result_df['retrieved_ids'].tolist(),
+                             result_df['retrieve_scores'].tolist())
