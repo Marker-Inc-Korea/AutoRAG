@@ -8,4 +8,5 @@ from .pass_reranker import pass_reranker
 from .rankgpt import rankgpt
 from .sentence_transformer import sentence_transformer_reranker
 from .tart.tart import tart
+from .time_reranker import time_reranker
 from .upr import upr
