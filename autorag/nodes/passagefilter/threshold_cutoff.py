@@ -18,6 +18,8 @@ def similarity_threshold_cutoff(queries: List[str], contents_list: List[List[str
     """
     Re-calculate each content's similarity with the query and filter out the contents that are below the threshold.
     If all contents are filtered, keep the only one highest similarity content.
+    This is a filter and does not override scores.
+    The output of scores is not coming from query-content similarity.
 
     :param queries: The list of queries to use for filtering
     :param contents_list: The list of lists of contents to filter
@@ -34,7 +36,8 @@ def similarity_threshold_cutoff(queries: List[str], contents_list: List[List[str
     query_embeddings = embedding_model.get_text_embedding_batch(queries)
 
     content_lengths = list(map(len, contents_list))
-    content_embeddings_flatten = embedding_model.get_text_embedding_batch(itertools.chain.from_iterable(contents_list))
+    content_embeddings_flatten = embedding_model.get_text_embedding_batch(list(
+        itertools.chain.from_iterable(contents_list)))
     content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
 
     remain_indices = list(map(lambda x: similarity_threshold_cutoff_pure(x[0], x[1], threshold),
