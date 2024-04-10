@@ -38,6 +38,7 @@ def similarity_threshold_cutoff_pure(query_embedding: str,
                                      threshold: float) -> List[int]:
     """
     Return indices that have to remain.
+    Return at least one index if there is nothing to remain.
 
     :param query_embedding: Query embedding
     :param content_embeddings: Each content embedding
@@ -47,4 +48,7 @@ def similarity_threshold_cutoff_pure(query_embedding: str,
 
     similarities = np.array(list(map(lambda x: calculate_cosine_similarity(query_embedding, x),
                                      content_embeddings)))
-    return np.where(similarities >= threshold)[0].tolist()
+    result = np.where(similarities >= threshold)[0].tolist()
+    if len(result) > 0:
+        return result
+    return [np.argmax(similarities)]
