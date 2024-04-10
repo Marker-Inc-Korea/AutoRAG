@@ -9,9 +9,10 @@ from tests.delete_tests import is_github_action
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_flag_embedding_llm_reranker():
     top_k = 3
-    original_flag_embedding = flag_embedding_llm_reranker.__wrapped__
+    original_flag_llm_embedding = flag_embedding_llm_reranker.__wrapped__
     contents_result, id_result, score_result \
-        = original_flag_embedding(queries_example, contents_example, scores_example, ids_example, top_k)
+        = original_flag_llm_embedding(queries_example, contents_example, scores_example, ids_example, top_k,
+                                      use_fp16=True)
     base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
