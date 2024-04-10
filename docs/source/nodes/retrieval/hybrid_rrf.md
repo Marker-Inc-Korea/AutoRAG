@@ -4,7 +4,9 @@ The `hybrid_rrf` module is designed to retrieve passages from multiple retrieval
 The `hybrid_rrf` module is tailored for retrieving passages from multiple sources of information. It utilizes the Reciprocal Rank Fusion (RRF) algorithm to calculate final similarity scores. This calculation is based on the ranking of passages in each retrieval, effectively combining retrieval scores from different sources.
 
 ## ❗ Hybird additional explanation
-By default, `hybrid_rrf` and `hybrid_cc` are designed to be used without writing target_module_params. Other modules listed in target_modules must be included in the config YAML file, and hybrid is calculated based on the best of the results from those modules.
+
+By default, `hybrid` is designed to be used without writing target_module_params. Other modules listed in target_modules
+must be included in the config YAML file, and hybrid is calculated based on the best of the results from those modules.
 
 Once evaluated to find the optimal pipeline, extracting the pipeline creates a parameter called target_module_params. This helps the hybrid work even if you don't include other modules, which is useful in test dataset evaluation and deployment situations.
 

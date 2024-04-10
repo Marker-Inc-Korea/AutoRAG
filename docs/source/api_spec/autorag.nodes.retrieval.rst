@@ -36,6 +36,14 @@ autorag.nodes.retrieval.hybrid\_rrf module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.retrieval.hybrid\_rsf module
+------------------------------------------
+
+.. automodule:: autorag.nodes.retrieval.hybrid_rsf
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.retrieval.run module
 ----------------------------------
 
