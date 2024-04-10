@@ -24,6 +24,7 @@ def get_support_modules(module_name: str) -> Callable:
         'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
         'hybrid_cc': ('autorag.nodes.retrieval', 'hybrid_cc'),
         'hybrid_rsf': ('autorag.nodes.retrieval', 'hybrid_rsf'),
+        'hybrid_dbsf': ('autorag.nodes.retrieval', 'hybrid_dbsf'),
         # passage_reranker
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),

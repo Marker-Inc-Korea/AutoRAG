@@ -1,17 +1,17 @@
-from collections import defaultdict
 from typing import List, Tuple
 
 import pandas as pd
 
 from autorag.nodes.retrieval.base import retrieval_node
+from autorag.nodes.retrieval.hybrid_rsf import score_fusion
 
 
 @retrieval_node
-def hybrid_rsf(ids: Tuple, scores: Tuple, top_k: int,
-               weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
+def hybrid_dbsf(ids: Tuple, scores: Tuple, top_k: int,
+                weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
     """
-    Hybrid RSF function.
-    RSF (Relative Score Fusion) is a method to combine multiple retrieval results based on their relative scores.
+    Hybrid DBSF function.
+    DBSF (Distribution Based Score Fusion) is a method to combine multiple retrieval results based on their distribution.
     It is uniquer than other retrieval modules, because it does not really execute retrieval,
     but just fuse the results of other retrieval functions.
     So you have to run more than two retrieval modules before running this function.
@@ -27,7 +27,7 @@ def hybrid_rsf(ids: Tuple, scores: Tuple, top_k: int,
         Default is (0.5, 0.5).
         You must set its length as the same as the length of ids and scores.
         Plus, the sum of the weights must be 1.
-    :return: The tuple of ids and fused scores that fused by RSF.
+    :return: The tuple of ids and fused scores that fused by DBSF.
     """
     assert len(ids) == len(scores), "The length of ids and scores must be the same."
     assert len(ids) > 1, "You must input more than one retrieval results."
@@ -40,57 +40,31 @@ def hybrid_rsf(ids: Tuple, scores: Tuple, top_k: int,
     df = pd.concat([id_df, score_df], axis=1)
 
     # Apply relative score fusion
-    def rsf_pure_apply(row):
+    def dbsf_pure_apply(row):
         ids_tuple = tuple(row[[f'id_{i}' for i in range(len(ids))]].values)
         scores_tuple = tuple(row[[f'score_{i}' for i in range(len(scores))]].values)
-        return pd.Series(rsf_pure(ids_tuple, scores_tuple, top_k, weights))
+        return pd.Series(dbsf_pure(ids_tuple, scores_tuple, top_k, weights))
 
-    df[['rsf_id', 'rsf_score']] = df.apply(rsf_pure_apply, axis=1)
-    return df['rsf_id'].tolist(), df['rsf_score'].tolist()
+    df[['dbsf_id', 'dbsf_score']] = df.apply(dbsf_pure_apply, axis=1)
+    return df['dbsf_id'].tolist(), df['dbsf_score'].tolist()
 
 
-def rsf_pure(ids: Tuple, scores: Tuple, top_k: int,
-             weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
-    min_max_scores = rsf_min_max_scores(scores)
+def dbsf_pure(ids: Tuple, scores: Tuple, top_k: int,
+              weights: Tuple = (0.5, 0.5)) -> Tuple[List[str], List[float]]:
+    min_max_scores = dbsf_min_max_scores(scores)
     top_ids, top_scores = score_fusion(ids, scores, top_k, min_max_scores, weights)
     return top_ids, top_scores
 
 
-def rsf_min_max_scores(scores: Tuple):
+def dbsf_min_max_scores(scores: Tuple):
     min_max_scores = {}
     for i, score_list in enumerate(scores):
         if not score_list:
             min_max_scores[i] = (0.0, 0.0)
             continue
-        min_score = min(score_list)
-        max_score = max(score_list)
+        mean_score = sum(score_list) / len(score_list)
+        std_dev = (sum((x - mean_score) ** 2 for x in score_list) / len(score_list)) ** 0.5
+        min_score = mean_score - 3 * std_dev
+        max_score = mean_score + 3 * std_dev
         min_max_scores[i] = (min_score, max_score)
     return min_max_scores
-
-
-def score_fusion(ids: Tuple, scores: Tuple, top_k: int, min_max_scores,
-                 weights: Tuple = (0.5, 0.5)):
-    scaled_scores = []
-    for i, (score_list, weight) in enumerate(zip(scores, weights)):
-        scaled_score_list = []
-        min_score, max_score = min_max_scores[i]
-        for score in score_list:
-            if max_score == min_score:
-                scaled_score = 1.0 if max_score > 0 else 0.0
-            else:
-                scaled_score = (score - min_score) / (max_score - min_score)
-            scaled_score *= weight
-            scaled_score_list.append(scaled_score)
-        scaled_scores.append(scaled_score_list)
-
-    # Fuse scores
-    fused_scores_dict = defaultdict(float)
-    for score_list, id_list in zip(scaled_scores, ids):
-        for score, doc_id in zip(score_list, id_list):
-            fused_scores_dict[doc_id] += score
-
-    # Sort by fused scores and select top_k
-    sorted_items = sorted(fused_scores_dict.items(), key=lambda item: item[1], reverse=True)[:top_k]
-    top_ids, top_scores = zip(*sorted_items) if sorted_items else ([], [])
-
-    return list(top_ids), list(top_scores)

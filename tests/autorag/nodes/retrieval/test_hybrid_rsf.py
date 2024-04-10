@@ -1,5 +1,6 @@
-from autorag.nodes.retrieval import hybrid_rsf
+import pytest
 
+from autorag.nodes.retrieval import hybrid_rsf
 from tests.autorag.nodes.retrieval.test_hybrid_base import (sample_ids, sample_scores, base_hybrid_weights_node_test,
                                                             pseudo_project_dir)
 
@@ -14,4 +15,5 @@ def test_hybrid_rsf():
 
 
 def test_hybrid_rsf_node(pseudo_project_dir):
-    base_hybrid_weights_node_test(hybrid_rsf, pseudo_project_dir)
+    retrieve_scores = pytest.approx([1.0, 0.23792372, 0.175])
+    base_hybrid_weights_node_test(hybrid_rsf, pseudo_project_dir, retrieve_scores)
