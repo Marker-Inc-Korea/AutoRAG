@@ -266,3 +266,12 @@ def openai_truncate_by_token(texts: List[str], token_limit: int,
         return truncated_text
 
     return list(map(lambda x: truncate_text(x, token_limit, tokenizer), texts))
+
+
+def reconstruct_list(flat_list: List[Any], lengths: List[int]) -> List[List[Any]]:
+    result = []
+    start = 0
+    for length in lengths:
+        result.append(flat_list[start:start + length])
+        start += length
+    return result

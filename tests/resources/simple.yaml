@@ -13,3 +13,10 @@ node_lines:
         - module_type: hybrid_rrf
           rrf_k: 5
           target_modules: ('bm25', 'vectordb') # it will select the best result among each module and fuse it.
+    - node_type: passage_filter
+      strategy:
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+        speed_threshold: 5
+      modules:
+        - module_type: similarity_threshold_cutoff
+          threshold: 0.85

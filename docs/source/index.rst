@@ -101,6 +101,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    nodes/passage_compressor/passage_compressor.md
    nodes/prompt_maker/prompt_maker.md
    nodes/generator/generator.md
+   nodes/passage_filter/passage_filter.md
 
 .. toctree::
    :maxdepth: 2

@@ -53,7 +53,7 @@ def test_load_node_line(evaluator):
     assert node_lines['retrieve_node_line'] is not None
     nodes = node_lines['retrieve_node_line']
     assert isinstance(nodes, list)
-    assert len(nodes) == 1
+    assert len(nodes) == 2
     node = nodes[0]
     assert isinstance(node, Node)
     assert node.node_type == 'retrieval'
@@ -70,6 +70,7 @@ def test_load_node_line(evaluator):
     assert node.modules[2].module_param == {
         'rrf_k': 5, 'target_modules': ('bm25', 'vectordb')
     }
+    assert nodes[1].node_type == 'passage_filter'
 
 
 def test_start_trial(evaluator):
@@ -82,6 +83,7 @@ def test_start_trial(evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'config.yaml'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval'))
+    assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_filter'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval', '1.parquet'))
     expect_each_result_columns = ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_f1',
@@ -102,7 +104,7 @@ def test_start_trial(evaluator):
     node_line_summary_path = os.path.join(project_dir, '0', 'retrieve_node_line', 'summary.csv')
     assert os.path.exists(node_line_summary_path)
     node_line_summary_df = load_summary_file(node_line_summary_path, ["best_module_params"])
-    assert len(node_line_summary_df) == 1
+    assert len(node_line_summary_df) == 2
     assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename',
                                                  'best_module_name', 'best_module_params', 'best_execution_time'}
     assert node_line_summary_df['node_type'][0] == 'retrieval'
@@ -115,7 +117,7 @@ def test_start_trial(evaluator):
     trial_summary_path = os.path.join(project_dir, '0', 'summary.csv')
     assert os.path.exists(trial_summary_path)
     trial_summary_df = load_summary_file(trial_summary_path, ["best_module_params"])
-    assert len(trial_summary_df) == 1
+    assert len(trial_summary_df) == 2
     assert set(trial_summary_df.columns) == {'node_line_name', 'node_type', 'best_module_filename',
                                              'best_module_name', 'best_module_params', 'best_execution_time'}
     assert trial_summary_df['node_line_name'][0] == 'retrieve_node_line'
@@ -155,6 +157,8 @@ def test_start_trial_full(evaluator):
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker', '0.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker', '1.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_reranker', '2.parquet'))
+    assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_filter'))
+    assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_filter', '0.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_compressor'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_compressor', '0.parquet'))
     assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'passage_compressor', '1.parquet'))
