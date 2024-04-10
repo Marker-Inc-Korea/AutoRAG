@@ -9,6 +9,7 @@ Subpackages
 
    autorag.nodes.generator
    autorag.nodes.passagecompressor
+   autorag.nodes.passagefilter
    autorag.nodes.passagereranker
    autorag.nodes.promptmaker
    autorag.nodes.queryexpansion
