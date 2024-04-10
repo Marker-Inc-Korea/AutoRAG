@@ -15,6 +15,20 @@ def similarity_threshold_cutoff(queries: List[str], contents_list: List[List[str
                                 threshold: float, embedding_model: BaseEmbedding,
                                 batch: int = 128,
                                 ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+    """
+    Re-calculate each content's similarity with the query and filter out the contents that are below the threshold.
+    If all contents are filtered, keep the only one highest similarity content.
+
+    :param queries: The list of queries to use for filtering
+    :param contents_list: The list of lists of contents to filter
+    :param scores_list: The list of lists of scores retrieved
+    :param ids_list: The list of lists of ids retrieved
+    :param threshold: The threshold to cut off
+    :param embedding_model: The embedding model to use for calculating similarity
+    :param batch: The number of queries to be processed in a batch
+        Default is 128.
+    :return: Tuple of lists containing the filtered contents, ids, and scores
+    """
     # Embedding using batch
     embedding_model.embed_batch_size = batch
     query_embeddings = embedding_model.get_text_embedding_batch(queries)
