@@ -60,6 +60,7 @@ node_lines:
         - module_type: colbert_reranker
         - module_type: sentence_transformer_reranker
         - module_type: flag_embedding_reranker
+        - module_type: time_reranker
     - node_type: passage_filter
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
