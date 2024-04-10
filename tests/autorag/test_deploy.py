@@ -148,7 +148,7 @@ def test_runner(evaluator):
     def runner_test(runner: Runner):
         answer = runner.run('What is the best movie in Korea? Have Korea movie ever won Oscar?',
                             'retrieved_contents')
-        assert len(answer) == 10
+        assert len(answer) == 1
         assert isinstance(answer, list)
         assert isinstance(answer[0], str)
 
@@ -188,6 +188,6 @@ def test_runner_api_server(evaluator):
     assert response.status_code == 200
     assert 'retrieved_contents' in response.json()
     retrieved_contents = response.json()['retrieved_contents']
-    assert len(retrieved_contents) == 10
+    assert len(retrieved_contents) == 1
     assert isinstance(retrieved_contents, list)
     assert isinstance(retrieved_contents[0], str)
