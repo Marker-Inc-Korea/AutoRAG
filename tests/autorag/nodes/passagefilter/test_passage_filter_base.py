@@ -29,10 +29,6 @@ previous_result['retrieve_scores'] = scores_example
 previous_result['retrieval_f1'] = f1_example
 previous_result['retrieval_recall'] = recall_example
 
-corpus_df = pd.DataFrame({
-
-})
-
 
 def base_passage_filter_test(contents, ids, scores):
     assert len(contents) == len(ids) == len(scores) == 2
