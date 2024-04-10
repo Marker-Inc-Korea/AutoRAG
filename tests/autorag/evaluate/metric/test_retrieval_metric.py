@@ -8,7 +8,9 @@ retrieval_gt = [
     [['test-1', 'test-2'], ['test-3']],
     [['test-4', 'test-5'], ['test-6', 'test-7'], ['test-8']],
     [['test-9', 'test-10']],
-    [['test-11'], ['test-12'], ['test-13']]
+    [['test-11'], ['test-12'], ['test-13']],
+    [['test-14']],
+    [['test-15']],
 ]
 
 pred = [
@@ -16,25 +18,27 @@ pred = [
     ['test-6', 'pred-5', 'pred-6', 'pred-7'],  # recall: 1/3, precision: 0.25, f1: 2/7
     ['test-9', 'pred-0', 'pred-8', 'pred-9'],  # recall: 1.0, precision: 0.25, f1: 2/5
     ['test-13', 'test-12', 'pred-10', 'pred-11'],  # recall: 2/3, precision: 0.5, f1: 4/7
+    ['test-14', 'pred-12'],  # recall: 1.0, precision: 0.5, f1: 2/3
+    ['pred-13'],  # recall: 0.0, precision: 0.0, f1: 0.0
 ]
 
 
 def test_retrieval_f1():
-    solution = [0.5, 2 / 7, 2 / 5, 4 / 7]
+    solution = [0.5, 2 / 7, 2 / 5, 4 / 7, 2 / 3, 0.0]
     result = retrieval_f1(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert math.isclose(gt, res, rel_tol=1e-4)
 
 
 def test_retrieval_recall():
-    solution = [0.5, 1 / 3, 1, 2 / 3]
+    solution = [0.5, 1 / 3, 1, 2 / 3, 1, 0.0]
     result = retrieval_recall(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_precision():
-    solution = [0.5, 0.25, 0.25, 0.5]
+    solution = [0.5, 0.25, 0.25, 0.5, 0.5, 0.0]
     result = retrieval_precision(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
