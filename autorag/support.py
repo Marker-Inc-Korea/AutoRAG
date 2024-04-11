@@ -59,6 +59,7 @@ def get_support_nodes(node_name: str) -> Callable:
         'retrieval': ('autorag.nodes.retrieval.run', 'run_retrieval_node'),
         'generator': ('autorag.nodes.generator.run', 'run_generator_node'),
         'prompt_maker': ('autorag.nodes.promptmaker.run', 'run_prompt_maker_node'),
+        'passage_filter': ('autorag.nodes.passagefilter.run', 'run_passage_filter_node'),
         'passage_compressor': ('autorag.nodes.passagecompressor.run', 'run_passage_compressor_node'),
         'passage_reranker': ('autorag.nodes.passagereranker.run', 'run_passage_reranker_node'),
     }
