@@ -1,1 +1,2 @@
+from .percentile_cutoff import similarity_percentile_cutoff
 from .threshold_cutoff import similarity_threshold_cutoff
