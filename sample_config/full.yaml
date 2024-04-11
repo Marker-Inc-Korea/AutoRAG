@@ -67,6 +67,7 @@ node_lines:
         - module_type: sentence_transformer_reranker
         - module_type: flag_embedding_reranker
         - module_type: flag_embedding_llm_reranker
+        - module_type: time_reranker
     - node_type: passage_filter
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
@@ -74,7 +75,8 @@ node_lines:
       modules:
         - module_type: similarity_threshold_cutoff
           threshold: 0.85
-        - module_type: time_reranker
+        - module_type: time_filter
+          threshold: 2015-01-01
     - node_type: passage_filter
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]

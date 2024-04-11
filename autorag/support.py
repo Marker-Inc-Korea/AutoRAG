@@ -41,6 +41,7 @@ def get_support_modules(module_name: str) -> Callable:
         'time_reranker': ('autorag.nodes.passagereranker', 'time_reranker'),
         # passage_filter
         'similarity_threshold_cutoff': ('autorag.nodes.passagefilter', 'similarity_threshold_cutoff'),
+        'time_filter': ('autorag.nodes.passagefilter', 'time_filter'),
         # passage_compressor
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),

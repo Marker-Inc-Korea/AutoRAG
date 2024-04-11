@@ -28,6 +28,14 @@ autorag.nodes.passagefilter.threshold\_cutoff module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagefilter.time module
+---------------------------------------
+
+.. automodule:: autorag.nodes.passagefilter.time
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
