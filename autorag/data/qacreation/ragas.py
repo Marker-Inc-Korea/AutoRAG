@@ -21,17 +21,20 @@ def generate_qa_ragas(corpus_df: pd.DataFrame,
                       **kwargs
                       ) -> pd.DataFrame:
     """
-
+    QA dataset generation using RAGAS.
     Returns qa dataset dataframe.
 
-    :param corpus_df:
-    :param test_size:
-    :param distributions:
-    :param generator_llm:
-    :param critic_llm:
-    :param embedding_model:
-    :param kwargs:
-    :return:
+    :param corpus_df: Corpus dataframe.
+    :param test_size: Number of queries to generate.
+    :param distributions: Distributions of different types of questions.
+        Default is "simple is 0.5, multi_context is 0.4, and reasoning is 0.1."
+        Each type of questions refers to Ragas evolution types.
+    :param generator_llm: Generator language model from Langchain.
+    :param critic_llm: Critic language model from Langchain.
+    :param embedding_model: Embedding model from Langchain.
+    :param kwargs: The additional option to pass to the 'generate_with_langchain_docs' method.
+        You can input 'with_debugging_logs', 'is_async', 'raise_exceptions', and 'run_config'.
+    :return: QA dataset dataframe.
     """
     if generator_llm is None:
         generator_llm = ChatOpenAI(model="gpt-3.5-turbo-16k")
