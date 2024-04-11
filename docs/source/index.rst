@@ -78,6 +78,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
 
    data_creation/tutorial.md
    data_creation/data_format.md
+   data_creation/ragas.md
 
 
 .. toctree::
