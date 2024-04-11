@@ -8,11 +8,11 @@ logger = logging.getLogger("AutoRAG")
 
 
 @passage_filter_node
-def time_filter(contents_list: List[List[str]],
-                scores_list: List[List[float]], ids_list: List[List[str]],
-                time_list: List[List[datetime]],
-                threshold: str,
-                ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+def recency_filter(contents_list: List[List[str]],
+                   scores_list: List[List[float]], ids_list: List[List[str]],
+                   time_list: List[List[datetime]],
+                   threshold: str,
+                   ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Filter out the contents that are below the threshold datetime.
     If all contents are filtered, keep the only one recency content.

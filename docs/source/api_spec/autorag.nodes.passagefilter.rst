@@ -12,6 +12,14 @@ autorag.nodes.passagefilter.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagefilter.recency module
+------------------------------------------
+
+.. automodule:: autorag.nodes.passagefilter.recency
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagefilter.run module
 --------------------------------------
 
@@ -24,14 +32,6 @@ autorag.nodes.passagefilter.threshold\_cutoff module
 ----------------------------------------------------
 
 .. automodule:: autorag.nodes.passagefilter.threshold_cutoff
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-autorag.nodes.passagefilter.time module
----------------------------------------
-
-.. automodule:: autorag.nodes.passagefilter.time
    :members:
    :undoc-members:
    :show-inheritance:

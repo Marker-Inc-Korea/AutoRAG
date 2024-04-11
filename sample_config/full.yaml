@@ -75,7 +75,7 @@ node_lines:
       modules:
         - module_type: similarity_threshold_cutoff
           threshold: 0.85
-        - module_type: time_filter
+        - module_type: recency_filter
           threshold: 2015-01-01
     - node_type: passage_filter
       strategy:

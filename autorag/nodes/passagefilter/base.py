@@ -34,7 +34,7 @@ def passage_filter_node(func):
         assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
-        if func.__name__ == 'time_filter':
+        if func.__name__ == 'recency_filter':
             corpus_df = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
             metadatas = fetch_contents(corpus_df, ids, column_name='metadata')
             times = [[time['last_modified_datetime'] for time in time_list] for time_list in metadatas]

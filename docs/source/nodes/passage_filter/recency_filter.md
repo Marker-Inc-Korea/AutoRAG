@@ -1,4 +1,4 @@
-# Time Filter
+# Recency Filter
 
 This module is inspired by
 LlamaIndex ['Recency Filtering'](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/RecencyPostprocessorDemo/)
@@ -16,13 +16,13 @@ Plus, the value of the metadata must be `datetime.datetime` object.
 ## **Module Parameters**
 
 - **threshold** : The threshold value to filter out the contents.
-  If the time is later than threshold,, the content will be filtered out.
+  If the time is later than threshold, the content will be filtered out.
   This is essential to run the module, so you have to set this parameter.
 
 ## **Example config.yaml**
 
 ```yaml
 modules:
-  - module_type: time_filter
+  - module_type: recency_filter
     threshold: 2015-01-01
 ```
