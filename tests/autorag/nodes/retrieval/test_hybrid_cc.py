@@ -29,4 +29,5 @@ def test_hybrid_cc():
 
 
 def test_hybrid_cc_node(pseudo_project_dir):
-    base_hybrid_weights_node_test(hybrid_cc, pseudo_project_dir)
+    retrieve_scores = [1.0, 0.23792372, 0.175]
+    base_hybrid_weights_node_test(hybrid_cc, pseudo_project_dir, retrieve_scores)
