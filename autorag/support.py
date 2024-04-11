@@ -61,6 +61,5 @@ def get_support_nodes(node_name: str) -> Callable:
         'prompt_maker': ('autorag.nodes.promptmaker.run', 'run_prompt_maker_node'),
         'passage_compressor': ('autorag.nodes.passagecompressor.run', 'run_passage_compressor_node'),
         'passage_reranker': ('autorag.nodes.passagereranker.run', 'run_passage_reranker_node'),
-        'passage_filter': ('autorag.nodes.passagefilter.run', 'run_passage_filter_node'),
     }
     return dynamically_find_function(node_name, support_nodes)
