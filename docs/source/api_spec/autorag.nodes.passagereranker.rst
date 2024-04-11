@@ -108,6 +108,14 @@ autorag.nodes.passagereranker.sentence\_transformer module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.time\_reranker module
+---------------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.time_reranker
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.upr module
 ----------------------------------------
 
