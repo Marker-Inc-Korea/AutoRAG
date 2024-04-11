@@ -68,7 +68,7 @@ def similarity_percentile_cutoff_pure(query_embedding: str,
                                       scores_list: List[float],
                                       percentile: float) -> Tuple[List[str], List[str], List[float]]:
     """
-    Tuple of lists containing the filtered contents, ids, and scores
+    Return tuple of lists containing the filtered contents, ids, and scores
 
     :param query_embedding: Query embedding
     :param content_embeddings: Each content embedding
