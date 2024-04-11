@@ -54,6 +54,23 @@ The most frequently used parameters are `model`, `max_token`, and `temperature`.
 Please check what you can set for the model parameter
 at [LlamaIndex LLM](https://docs.llamaindex.ai/en/latest/api_reference/llms.html).
 
+📌 Of course, you can use `custom LLM` hosted privately!
+
+You can put any parameters from LlamaIndex `OpenAILike` LLM class.
+
+```yaml
+nodes:
+  - node_line_name: node_line_1
+    nodes:
+      - node_type: generator
+        modules:
+          - module_type: llama_index_llm
+            llm: openailike
+            model: mistralai/Mistral-7B-Instruct-v0.2
+            api_base: your_api_base
+            api_key: your_api_key
+```
+
 ### Add more LLM models
 
 You can add more LLM models for AutoRAG.
