@@ -56,8 +56,6 @@ The most frequently used parameters are `model`, `max_token`, and `temperature`.
 Please check what you can set for the model parameter
 at [LlamaIndex LLM](https://docs.llamaindex.ai/en/latest/api_reference/llms.html).
 
-
-
 ### Add more LLM models
 
 You can add more LLM models for AutoRAG.
