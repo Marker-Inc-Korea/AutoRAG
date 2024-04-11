@@ -34,8 +34,15 @@ node_lines:
           metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
           speed_threshold: 5
         modules:
+          - module_type: pass_passage_filter
           - module_type: similarity_threshold_cutoff
             threshold: 0.85
+```
+
+```{admonition} What is pass_passage_filter?
+Its purpose is to test the performance that 'not using' any passage filter module.
+Because it can be the better option that not using passage filter node.
+So with this module, you can automatically test the performance without using any passage filter module.
 ```
 
 ```{toctree}
