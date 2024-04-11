@@ -94,11 +94,11 @@ def pseudo_project_dir():
         yield project_dir
 
 
-def base_hybrid_weights_node_test(hybrid_func, pseudo_project_dir):
+def base_hybrid_weights_node_test(hybrid_func, pseudo_project_dir, retrieve_scores):
     result = hybrid_func(project_dir=pseudo_project_dir, previous_result=previous_result, **modules_with_weights)
     assert len(result) == 2
     assert isinstance(result, pd.DataFrame)
     assert set(result.columns) == {'retrieved_contents', 'retrieved_ids', 'retrieve_scores'}
     assert result['retrieved_ids'].tolist()[0] == ['id-1', 'id-4', 'id-2']
-    assert result['retrieve_scores'].tolist()[0] == pytest.approx([1.0, 0.23792372, 0.175])
+    assert result['retrieve_scores'].tolist()[0] == pytest.approx(retrieve_scores)
     assert result['retrieved_contents'].tolist()[0] == ['doc-1', 'doc-4', 'doc-2']

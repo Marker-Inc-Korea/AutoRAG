@@ -28,6 +28,14 @@ autorag.nodes.retrieval.hybrid\_cc module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.retrieval.hybrid\_dbsf module
+-------------------------------------------
+
+.. automodule:: autorag.nodes.retrieval.hybrid_dbsf
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.retrieval.hybrid\_rrf module
 ------------------------------------------
 

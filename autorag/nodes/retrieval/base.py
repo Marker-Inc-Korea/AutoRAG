@@ -71,7 +71,7 @@ def retrieval_node(func):
             del embedding_model
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        elif func.__name__ in ["hybrid_rrf", "hybrid_cc", "hybrid_rsf"]:
+        elif func.__name__ in ["hybrid_rrf", "hybrid_cc", "hybrid_rsf", "hybrid_dbsf"]:
             if 'ids' in kwargs and 'scores' in kwargs:
                 ids, scores = func(**kwargs)
             else:
