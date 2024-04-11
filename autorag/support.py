@@ -24,6 +24,7 @@ def get_support_modules(module_name: str) -> Callable:
         'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
         'hybrid_cc': ('autorag.nodes.retrieval', 'hybrid_cc'),
         'hybrid_rsf': ('autorag.nodes.retrieval', 'hybrid_rsf'),
+        'hybrid_dbsf': ('autorag.nodes.retrieval', 'hybrid_dbsf'),
         # passage_reranker
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),
@@ -36,6 +37,7 @@ def get_support_modules(module_name: str) -> Callable:
         'colbert_reranker': ('autorag.nodes.passagereranker', 'colbert_reranker'),
         'sentence_transformer_reranker': ('autorag.nodes.passagereranker', 'sentence_transformer_reranker'),
         'flag_embedding_reranker': ('autorag.nodes.passagereranker', 'flag_embedding_reranker'),
+        'flag_embedding_llm_reranker': ('autorag.nodes.passagereranker', 'flag_embedding_llm_reranker'),
         # passage_filter
         'similarity_threshold_cutoff': ('autorag.nodes.passagefilter', 'similarity_threshold_cutoff'),
         # passage_compressor
@@ -57,8 +59,8 @@ def get_support_nodes(node_name: str) -> Callable:
         'retrieval': ('autorag.nodes.retrieval.run', 'run_retrieval_node'),
         'generator': ('autorag.nodes.generator.run', 'run_generator_node'),
         'prompt_maker': ('autorag.nodes.promptmaker.run', 'run_prompt_maker_node'),
+        'passage_filter': ('autorag.nodes.passagefilter.run', 'run_passage_filter_node'),
         'passage_compressor': ('autorag.nodes.passagecompressor.run', 'run_passage_compressor_node'),
         'passage_reranker': ('autorag.nodes.passagereranker.run', 'run_passage_reranker_node'),
-        'passage_filter': ('autorag.nodes.passagefilter.run', 'run_passage_filter_node'),
     }
     return dynamically_find_function(node_name, support_nodes)
