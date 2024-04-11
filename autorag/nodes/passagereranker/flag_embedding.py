@@ -15,7 +15,7 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
                             model_name: str = "BAAI/bge-reranker-large",
                             ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
-    Rerank a list of contents based on their relevance to a query using BAAI Reranker model.
+    Rerank a list of contents based on their relevance to a query using BAAI normal-Reranker model.
 
     :param queries: The list of queries to use for reranking
     :param contents_list: The list of lists of contents to rerank
@@ -24,7 +24,7 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
     :param top_k: The number of passages to be retrieved
     :param batch: The number of queries to be processed in a batch
     :param use_fp16: Whether to use fp16 for inference
-    :param model_name: The name of the BAAI Reranker model name.
+    :param model_name: The name of the BAAI Reranker normal-model name.
         Default is "BAAI/bge-reranker-large"
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
