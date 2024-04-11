@@ -33,19 +33,7 @@ def similarity_threshold_cutoff(queries: List[str], contents_list: List[List[str
         Default is 128.
     :return: Tuple of lists containing the filtered contents, ids, and scores
     """
-    if embedding_model is None:
-        embedding_model = embedding_models['openai']
-    else:
-        embedding_model = embedding_models[embedding_model]
-
-    # Embedding using batch
-    embedding_model.embed_batch_size = batch
-    query_embeddings = embedding_model.get_text_embedding_batch(queries)
-
-    content_lengths = list(map(len, contents_list))
-    content_embeddings_flatten = embedding_model.get_text_embedding_batch(list(
-        itertools.chain.from_iterable(contents_list)))
-    content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
+    query_embeddings, content_embeddings = embedding_query_content(queries, contents_list, embedding_model, batch)
 
     remain_indices = list(map(lambda x: similarity_threshold_cutoff_pure(x[0], x[1], threshold),
                               zip(query_embeddings, content_embeddings)))
@@ -80,3 +68,21 @@ def similarity_threshold_cutoff_pure(query_embedding: str,
     if len(result) > 0:
         return result
     return [np.argmax(similarities)]
+
+
+def embedding_query_content(queries: List[str], contents_list: List[List[str]],
+                            embedding_model: Optional[str] = None, batch: int = 128):
+    if embedding_model is None:
+        embedding_model = embedding_models['openai']
+    else:
+        embedding_model = embedding_models[embedding_model]
+
+    # Embedding using batch
+    embedding_model.embed_batch_size = batch
+    query_embeddings = embedding_model.get_text_embedding_batch(queries)
+
+    content_lengths = list(map(len, contents_list))
+    content_embeddings_flatten = embedding_model.get_text_embedding_batch(list(
+        itertools.chain.from_iterable(contents_list)))
+    content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
+    return query_embeddings, content_embeddings

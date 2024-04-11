@@ -1,13 +1,11 @@
-import itertools
 from typing import List, Tuple, Optional
 
 import numpy as np
 import torch.cuda
 
-from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import passage_filter_node
-from autorag.utils.util import reconstruct_list
+from autorag.nodes.passagefilter.threshold_cutoff import embedding_query_content
 
 
 @passage_filter_node
@@ -33,19 +31,7 @@ def similarity_percentile_cutoff(queries: List[str], contents_list: List[List[st
         Default is 128.
     :return: Tuple of lists containing the filtered contents, ids, and scores
     """
-    if embedding_model is None:
-        embedding_model = embedding_models['openai']
-    else:
-        embedding_model = embedding_models[embedding_model]
-
-    # Embedding using batch
-    embedding_model.embed_batch_size = batch
-    query_embeddings = embedding_model.get_text_embedding_batch(queries)
-
-    content_lengths = list(map(len, contents_list))
-    content_embeddings_flatten = embedding_model.get_text_embedding_batch(list(
-        itertools.chain.from_iterable(contents_list)))
-    content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
+    query_embeddings, content_embeddings = embedding_query_content(queries, contents_list, embedding_model, batch)
 
     results = list(map(lambda x: similarity_percentile_cutoff_pure(x[0], x[1], x[2], x[3], x[4], percentile),
                        zip(query_embeddings, content_embeddings, contents_list, ids_list, scores_list)))
