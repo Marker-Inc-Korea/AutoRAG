@@ -18,7 +18,7 @@ def similarity_percentile_cutoff(queries: List[str], contents_list: List[List[st
                                  ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Re-calculate each content's similarity with the query and filter out the contents that are below the content's
-    length times percentile If This is a filter and does not override scores. The output of scores is not coming from
+    length times percentile. If This is a filter and does not override scores. The output of scores is not coming from
     query-content similarity.
     If the value of content's length times percentile is less than 1, keep the only one highest similarity content.
 
