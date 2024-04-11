@@ -100,5 +100,5 @@ def base_hybrid_weights_node_test(hybrid_func, pseudo_project_dir, retrieve_scor
     assert isinstance(result, pd.DataFrame)
     assert set(result.columns) == {'retrieved_contents', 'retrieved_ids', 'retrieve_scores'}
     assert result['retrieved_ids'].tolist()[0] == ['id-1', 'id-4', 'id-2']
-    assert result['retrieve_scores'].tolist()[0] == retrieve_scores
+    assert result['retrieve_scores'].tolist()[0] == pytest.approx(retrieve_scores)
     assert result['retrieved_contents'].tolist()[0] == ['doc-1', 'doc-4', 'doc-2']

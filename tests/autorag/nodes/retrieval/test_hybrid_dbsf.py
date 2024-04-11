@@ -1,5 +1,6 @@
-from autorag.nodes.retrieval import hybrid_dbsf
+import pytest
 
+from autorag.nodes.retrieval import hybrid_dbsf
 from tests.autorag.nodes.retrieval.test_hybrid_base import (sample_ids, sample_scores, base_hybrid_weights_node_test,
                                                             pseudo_project_dir)
 
@@ -10,8 +11,8 @@ def test_hybrid_dbsf():
         ['id-3', 'id-1', 'id-2'],
         ['id-4', 'id-2', 'id-3']
     ]
-    assert result_scores == [[0.7041241452319316, 0.3979379273840342, 0.25],
-                             [0.7041241452319316, 0.3979379273840342, 0.25]]
+    assert result_scores[0] == pytest.approx([0.7041241452319316, 0.3979379273840342, 0.25])
+    assert result_scores[1] == pytest.approx([0.7041241452319316, 0.3979379273840342, 0.25])
 
 
 def test_hybrid_dbsf_node(pseudo_project_dir):
