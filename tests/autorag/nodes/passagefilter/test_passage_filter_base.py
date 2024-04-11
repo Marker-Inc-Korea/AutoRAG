@@ -1,8 +1,11 @@
 import os
 import pathlib
+import tempfile
+from datetime import datetime
 from uuid import uuid4
 
 import pandas as pd
+import pytest
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 project_dir = os.path.join(root_dir, "resources", "sample_project")
@@ -16,6 +19,8 @@ contents_example = [["NomaDamas is Great Team", "Paris is the capital of France.
                      "Paris is one of the capital from France. Isn't it?"],
                     ["i am hungry", "LA is a country in the United States.", "Newjeans has 5 members.",
                      "Danielle is one of the members of Newjeans."]]
+time_list = [[datetime(2021, 1, 1), datetime(2021, 1, 20), datetime(2021, 1, 3), datetime(2021, 9, 3)],
+             [datetime(2021, 3, 1), datetime(2022, 3, 1), datetime(2030, 1, 1), datetime(2021, 1, 1)]]
 ids_example = [[str(uuid4()) for _ in range(len(contents_example[0]))],
                [str(uuid4()) for _ in range(len(contents_example[1]))]]
 scores_example = [[0.1, 0.8, 0.1, 0.5], [0.1, 0.2, 0.7, 0.3]]
@@ -28,6 +33,23 @@ previous_result['retrieved_ids'] = ids_example
 previous_result['retrieve_scores'] = scores_example
 previous_result['retrieval_f1'] = f1_example
 previous_result['retrieval_recall'] = recall_example
+
+
+@pytest.fixture
+def project_dir_with_corpus():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        data_dir = os.path.join(temp_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        qa_data.to_parquet(os.path.join(data_dir, "qa.parquet"), index=False)
+        new_rows = pd.DataFrame({
+            'doc_id': ids_example[0] + ids_example[1],
+            'contents': contents_example[0] + contents_example[1],
+            'metadata': list(map(lambda x: {'last_modified_datetime': x}, time_list[0])) + list(
+                map(lambda x: {'last_modified_datetime': x}, time_list[1]))
+        })
+        new_corpus = pd.concat([corpus_data, new_rows], ignore_index=True, axis=0)
+        new_corpus.to_parquet(os.path.join(data_dir, "corpus.parquet"), index=False)
+        yield temp_dir
 
 
 def base_passage_filter_test(contents, ids, scores):
