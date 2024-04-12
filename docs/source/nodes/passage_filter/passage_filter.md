@@ -50,5 +50,6 @@ So with this module, you can automatically test the performance without using an
 maxdepth: 1
 ---
 similarity_threshold_cutoff.md
+similarity_percentile_cutoff.md
 recency_filter.md
 ```
