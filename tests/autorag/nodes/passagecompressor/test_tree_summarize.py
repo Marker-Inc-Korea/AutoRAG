@@ -52,14 +52,16 @@ def test_tree_summarize_custom_prompt_chat():
     assert 'What is the capital of France?' in result[0]
 
 
-def test_tree_summarize_node():
-    generator_models['mock'] = MockLLM
-    df = pd.DataFrame({
+df = pd.DataFrame({
         'query': queries,
         'retrieved_contents': retrieved_contents,
         'retrieved_ids': [['id-1', 'id-2', 'id-3'], ['id-4', 'id-5', 'id-6']],
         'retrieve_scores': [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
     })
+
+
+def test_tree_summarize_node():
+    generator_models['mock'] = MockLLM
     result = tree_summarize(
         "project_dir",
         df,

@@ -52,4 +52,5 @@ So with this module, you can automatically test the performance without using an
 maxdepth: 1
 ---
 tree_summarize.md
+refine.md
 ```
