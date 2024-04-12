@@ -3,6 +3,7 @@ import logging
 import os
 import pathlib
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -46,9 +47,9 @@ def run_api(config_path, host, port, project_dir):
 
 
 @click.command()
-@click.option('--yaml_path', type=click.Path(), help='Path to the YAML file.')
-@click.option('--project_dir', type=click.Path(), help='Path to the project directory.')
-@click.option('--trial_path', type=click.Path(), help='Path to the trial directory.')
+@click.option('--yaml_path', type=click.Path(path_type=Path), help='Path to the YAML file.')
+@click.option('--project_dir', type=click.Path(path_type=Path), help='Path to the project directory.')
+@click.option('--trial_path', type=click.Path(path_type=Path), help='Path to the trial directory.')
 def run_web(yaml_path: Optional[str], project_dir: Optional[str], trial_path: Optional[str]):
     try:
         with importlib.resources.path('autorag', 'web.py') as web_path:
