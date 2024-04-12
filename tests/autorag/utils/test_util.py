@@ -3,6 +3,7 @@ import itertools
 import os
 import pathlib
 import tempfile
+from datetime import datetime
 
 import pandas as pd
 import pytest
@@ -56,10 +57,18 @@ def test_fetch_contents():
     corpus_data = pd.DataFrame({
         'doc_id': ['doc1', 'doc2', 'doc3'],
         'contents': ['apple', 'banana', 'cherry'],
+        'metadata': [{'last_modified_datetime': datetime(2022, 1, 1, 0, 0, 0)},
+                     {'last_modified_datetime': datetime(2022, 1, 2, 0, 0, 0)},
+                     {'last_modified_datetime': datetime(2022, 1, 3, 0, 0, 0)}]
     })
     find_contents = fetch_contents(corpus_data, [['doc3', 'doc1'], ['doc2']])
     assert find_contents[0] == ['cherry', 'apple']
     assert find_contents[1] == ['banana']
+
+    find_metadatas = fetch_contents(corpus_data, [['doc3', 'doc1'], ['doc2']], 'metadata')
+    assert find_metadatas[0] == [{'last_modified_datetime': datetime(2022, 1, 3, 0, 0, 0)},
+                                 {'last_modified_datetime': datetime(2022, 1, 1, 0, 0, 0)}]
+    assert find_metadatas[1] == [{'last_modified_datetime': datetime(2022, 1, 2, 0, 0, 0)}]
 
 
 def test_load_summary_file(summary_path):

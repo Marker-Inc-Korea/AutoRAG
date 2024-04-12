@@ -38,6 +38,7 @@ def get_support_modules(module_name: str) -> Callable:
         'sentence_transformer_reranker': ('autorag.nodes.passagereranker', 'sentence_transformer_reranker'),
         'flag_embedding_reranker': ('autorag.nodes.passagereranker', 'flag_embedding_reranker'),
         'flag_embedding_llm_reranker': ('autorag.nodes.passagereranker', 'flag_embedding_llm_reranker'),
+        'time_reranker': ('autorag.nodes.passagereranker', 'time_reranker'),
         # passage_filter
         'pass_passage_filter': ('autorag.nodes.passagefilter', 'pass_passage_filter'),
         'similarity_threshold_cutoff': ('autorag.nodes.passagefilter', 'similarity_threshold_cutoff'),
