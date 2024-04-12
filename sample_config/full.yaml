@@ -76,8 +76,6 @@ node_lines:
         - module_type: pass_passage_filter
         - module_type: similarity_threshold_cutoff
           threshold: 0.85
-        - module_type: similarity_threshold_cutoff
-          threshold: 0.85
         - module_type: recency_filter
           threshold: 2015-01-01
     - node_type: passage_compressor
