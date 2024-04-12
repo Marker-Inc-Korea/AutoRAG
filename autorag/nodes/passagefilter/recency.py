@@ -38,10 +38,17 @@ def recency_filter(contents_list: List[List[str]],
 
         return list(remain_contents), list(remain_ids), list(remain_scores)
 
-    try:
-        datetime_threshold = datetime.strptime(threshold, "%Y-%m-%d")
-    except ValueError:
-        logger.info("threshold date format is incorrect, should be YYYY-MM-DD")
+    def parse_threshold(threshold_str):
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(threshold_str, fmt)
+            except ValueError:
+                continue
+        logger.info("threshold date format is incorrect, should be YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
+        return None
+
+    datetime_threshold = parse_threshold(threshold)
+    if datetime_threshold is None:
         return contents_list, ids_list, scores_list
 
     remain_contents_list, remain_ids_list, remain_scores_list = zip(

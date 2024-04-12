@@ -19,7 +19,7 @@ Plus, the value of the metadata must be `datetime.datetime` object.
   If the time is later than threshold, the content will be filtered out.
   This is essential to run the module, so you have to set this parameter.
 
-  🚨 **threshold** format is `YYYY-MM-DD`🚨
+  🚨 **threshold** format should be `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`🚨
 
 ## **Example config.yaml**
 

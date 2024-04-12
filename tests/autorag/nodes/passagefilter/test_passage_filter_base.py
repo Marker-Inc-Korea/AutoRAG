@@ -19,8 +19,10 @@ contents_example = [["NomaDamas is Great Team", "Paris is the capital of France.
                      "Paris is one of the capital from France. Isn't it?"],
                     ["i am hungry", "LA is a country in the United States.", "Newjeans has 5 members.",
                      "Danielle is one of the members of Newjeans."]]
-time_list = [[datetime(2021, 1, 1), datetime(2021, 1, 20), datetime(2021, 1, 3), datetime(2021, 9, 3)],
-             [datetime(2021, 3, 1), datetime(2022, 3, 1), datetime(2030, 1, 1), datetime(2021, 1, 1)]]
+time_list = [[datetime(2015, 1, 1), datetime(2021, 9, 3),
+              datetime(2022, 3, 5, 12, 30), datetime(2022, 3, 5, 12, 45, 00)],
+             [datetime(2015, 1, 1), datetime(2021, 1, 1),
+              datetime(2022, 3, 5, 12, 40), datetime(2022, 3, 5, 12, 45, 00)]]
 ids_example = [[str(uuid4()) for _ in range(len(contents_example[0]))],
                [str(uuid4()) for _ in range(len(contents_example[1]))]]
 scores_example = [[0.1, 0.8, 0.1, 0.5], [0.1, 0.2, 0.7, 0.3]]
