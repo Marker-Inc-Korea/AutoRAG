@@ -51,4 +51,5 @@ maxdepth: 1
 ---
 similarity_threshold_cutoff.md
 similarity_percentile_cutoff.md
+ner_pii_masking.md
 ```

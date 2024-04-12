@@ -11,7 +11,7 @@ def ner_pii_masking(contents_list: List[List[str]],
                     ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Mask PII in the contents using NER.
-    Uses HF transformers model.
+    Use a Hugging Face NER model for PII Masking
 
     :param contents_list: The list of lists of contents to filter
     :param scores_list: The list of lists of scores retrieved
