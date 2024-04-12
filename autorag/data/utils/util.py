@@ -2,7 +2,10 @@ import mimetypes
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
+
+import pandas as pd
+from langchain_core.documents import Document
 
 
 def get_file_metadata(file_path: str) -> Dict:
@@ -32,3 +35,11 @@ def add_essential_metadata(metadata: Dict) -> Dict:
     if 'last_modified_datetime' not in metadata:
         metadata['last_modified_datetime'] = datetime.now()
     return metadata
+
+
+def corpus_df_to_langchain_documents(corpus_df: pd.DataFrame) -> List[Document]:
+    page_contents = corpus_df['contents'].tolist()
+    ids = corpus_df['doc_id'].tolist()
+    metadatas = corpus_df['metadata'].tolist()
+    return list(map(lambda x: Document(page_content=x[0], metadata={'filename': x[1], **x[2]}),
+                    zip(page_contents, ids, metadatas)))
