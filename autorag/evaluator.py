@@ -23,6 +23,16 @@ from autorag.utils.util import load_summary_file, convert_string_to_tuple_in_dic
 
 logger = logging.getLogger("AutoRAG")
 
+ascii_art = """
+                _        _____            _____ 
+     /\        | |      |  __ \     /\   / ____|
+    /  \  _   _| |_ ___ | |__) |   /  \ | |  __ 
+   / /\ \| | | | __/ _ \|  _  /   / /\ \| | |_ |
+  / ____ \ |_| | || (_) | | \ \  / ____ \ |__| |
+ /_/    \_\__,_|\__\___/|_|  \_\/_/    \_\_____|
+                                                
+"""
+
 
 class Evaluator:
     def __init__(self, qa_data_path: str, corpus_data_path: str, project_dir: Optional[str] = None):
@@ -64,6 +74,8 @@ class Evaluator:
             self.corpus_data.to_parquet(corpus_path_in_project, index=False)
 
     def start_trial(self, yaml_path: str):
+        logger.info(ascii_art)
+
         trial_name = self.__get_new_trial_name()
         self.__make_trial_dir(trial_name)
 
@@ -174,6 +186,7 @@ class Evaluator:
         return node_line_dict
 
     def restart_trial(self, trial_path: str):
+        logger.info(ascii_art)
         # Check if trial_path exists
         if not os.path.exists(trial_path):
             raise ValueError(f"Trial path {trial_path} does not exist.")
