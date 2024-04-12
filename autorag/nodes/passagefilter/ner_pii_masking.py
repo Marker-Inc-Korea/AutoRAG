@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Tuple
 
 from transformers import pipeline
@@ -20,16 +21,21 @@ def ner_pii_masking(contents_list: List[List[str]],
     """
     model = pipeline("ner", grouped_entities=True)
 
-    masked_contents_list = list(
-        map(lambda contents: list(map(lambda content: mask_pii(model, content), contents)), contents_list))
+    tasks = [mask_pii(model, contents) for contents in contents_list]
+    loop = asyncio.get_event_loop()
+    results = loop.run_until_complete(asyncio.gather(*tasks))
+    masked_contents_list = list(results)
 
     return masked_contents_list, ids_list, scores_list
 
 
-def mask_pii(model, text: str) -> str:
-    new_text = text
-    response = model(text)
-    for entry in response:
-        entity_group_tag = f"[{entry['entity_group']}_{entry['start']}]"
-        new_text = new_text.replace(entry["word"], entity_group_tag).strip()
-    return new_text
+async def mask_pii(model, contents: List[str]) -> List[str]:
+    new_contents_list = []
+    for content in contents:
+        new_contents = content
+        response = model(content)
+        for entry in response:
+            entity_group_tag = f"[{entry['entity_group']}_{entry['start']}]"
+            new_contents = new_contents.replace(entry["word"], entity_group_tag).strip()
+        new_contents_list.append(new_contents)
+    return new_contents_list
