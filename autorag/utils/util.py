@@ -15,9 +15,10 @@ import tiktoken
 logger = logging.getLogger("AutoRAG")
 
 
-def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]]) -> List[List[str]]:
+def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]],
+                   column_name: str = 'contents') -> List[List[Any]]:
     flat_ids = itertools.chain.from_iterable(ids)
-    contents = list(map(lambda x: corpus_data.loc[lambda row: row['doc_id'] == x]['contents'].values[0], flat_ids))
+    contents = list(map(lambda x: corpus_data.loc[lambda row: row['doc_id'] == x][column_name].values[0], flat_ids))
 
     result = []
     idx = 0
