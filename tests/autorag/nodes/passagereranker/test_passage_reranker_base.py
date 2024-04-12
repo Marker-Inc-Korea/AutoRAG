@@ -1,8 +1,11 @@
 import os
 import pathlib
+import tempfile
+from datetime import datetime
 from uuid import uuid4
 
 import pandas as pd
+import pytest
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 project_dir = os.path.join(root_dir, "resources", "sample_project")
@@ -17,7 +20,9 @@ contents_example = [["NomaDamas is Great Team", "Paris is the capital of France.
 ko_queries_example = ["프랑스의 수도는 어디인가요?",
                       "뉴진스의 멤버는 몇 명인가요?"]
 ko_contents_example = [["마커AI는 멋진 회사입니다.", "프랑스의 수도는 파리 입니다.", "아스날은 축구를 못합니다."],
-                        ["배고파요", "LA는 미국의 도시입니다.", "뉴진스의 멤버는 5명 입니다."]]
+                       ["배고파요", "LA는 미국의 도시입니다.", "뉴진스의 멤버는 5명 입니다."]]
+time_list = [[datetime(2021, 1, 1), datetime(2021, 1, 20), datetime(2021, 1, 3)],
+             [datetime(2021, 3, 1), datetime(2022, 3, 1), datetime(2030, 1, 1)]]
 ids_example = [[str(uuid4()) for _ in range(len(contents_example[0]))],
                [str(uuid4()) for _ in range(len(contents_example[1]))]]
 scores_example = [[0.1, 0.8, 0.1], [0.1, 0.2, 0.7]]
@@ -66,3 +71,20 @@ def base_reranker_node_test(result_df, top_k, use_ko=False):
     ids = result_df["retrieved_ids"].tolist()
     scores = result_df["retrieve_scores"].tolist()
     base_reranker_test(contents, ids, scores, top_k, use_ko)
+
+
+@pytest.fixture
+def project_dir_with_corpus():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        data_dir = os.path.join(temp_dir, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        qa_data.to_parquet(os.path.join(data_dir, "qa.parquet"), index=False)
+        new_rows = pd.DataFrame({
+            'doc_id': ids_example[0] + ids_example[1],
+            'contents': contents_example[0] + contents_example[1],
+            'metadata': list(map(lambda x: {'last_modified_datetime': x}, time_list[0])) + list(
+                map(lambda x: {'last_modified_datetime': x}, time_list[1]))
+        })
+        new_corpus = pd.concat([corpus_data, new_rows], ignore_index=True, axis=0)
+        new_corpus.to_parquet(os.path.join(data_dir, "corpus.parquet"), index=False)
+        yield temp_dir
