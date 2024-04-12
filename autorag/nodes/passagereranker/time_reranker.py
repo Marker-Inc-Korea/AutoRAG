@@ -9,6 +9,19 @@ def time_reranker(contents_list: List[List[str]],
                   scores_list: List[List[float]], ids_list: List[List[str]],
                   top_k: int, time_list: List[List[datetime]]
                   ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+    """
+    Rerank the passages based on merely the datetime of the passage.
+    It uses 'last_modified_datetime' key in the corpus metadata,
+    so the metadata should be in the format of {'last_modified_datetime': datetime.datetime} at the corpus data file.
+
+    :param contents_list: The list of lists of contents
+    :param scores_list: The list of lists of scores from the initial ranking
+    :param ids_list: The list of lists of ids
+    :param top_k: The number of passages to be retrieved after reranking
+    :param time_list: The metadata list of lists of datetime.datetime
+        It automatically extracts the 'last_modified_datetime' key from the metadata in the corpus data.
+    :return: The reranked contents, ids, and scores
+    """
     def sort_row(contents, scores, ids, time, top_k):
         combined = list(zip(contents, scores, ids, time))
         combined.sort(key=lambda x: x[3], reverse=True)

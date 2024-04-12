@@ -45,6 +45,8 @@ nodes:
           - module_type: llama_index_llm
             llm: openailike
             model: mistralai/Mistral-7B-Instruct-v0.2
+            api_base: your_api_base
+            api_key: your_api_key
 ```
 
 At the above example, you can see `model` parameter.
