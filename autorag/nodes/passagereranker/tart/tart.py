@@ -1,3 +1,4 @@
+from itertools import chain
 from typing import List, Tuple
 
 import torch
@@ -6,7 +7,7 @@ import torch.nn.functional as F
 from autorag.nodes.passagereranker.base import passage_reranker_node
 from autorag.nodes.passagereranker.tart.modeling_enc_t5 import EncT5ForSequenceClassification
 from autorag.nodes.passagereranker.tart.tokenization_enc_t5 import EncT5Tokenizer
-from autorag.utils.util import make_batch, sort_and_select_top_k
+from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
 
 
 @passage_reranker_node
@@ -38,13 +39,11 @@ def tart(queries: List[str], contents_list: List[List[str]],
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
 
-    features = []
-    for query, contents in zip(queries, contents_list):
-        instruction_query = ['{} [SEP] {}'.format(instruction, query)] * len(contents)
-        feature = tokenizer(instruction_query, contents, padding=True, truncation=True, return_tensors="pt").to(device)
-        features.append(feature)
+    nested_list = [[['{} [SEP] {}'.format(instruction, query)] * len(contents)] for query, contents in
+                   zip(queries, contents_list)]
 
-    rerank_scores = tart_run_model(features, model=model, batch_size=batch)
+    rerank_scores = flatten_apply(tart_run_model, nested_list, model=model, batch_size=batch,
+                                  tokenizer=tokenizer, device=device, contents_list=contents_list)
 
     sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
@@ -56,13 +55,17 @@ def tart(queries: List[str], contents_list: List[List[str]],
     return sorted_contents, sorted_ids, sorted_scores
 
 
-def tart_run_model(features, model, batch_size: int):
-    batch_features = make_batch(features, batch_size)
+def tart_run_model(input_texts, contents_list, model, batch_size: int, tokenizer, device):
+    batch_input_texts = make_batch(input_texts, batch_size)
+    batch_contents_list = make_batch(contents_list, batch_size)
     results = []
-    for batch_feature in batch_features:
-        for feature in batch_feature:
-            with torch.no_grad():
-                pred_scores = model(**feature).logits
-                normalized_scores = [float(score[1]) for score in F.softmax(pred_scores, dim=1)]
-            results.append(normalized_scores)
+    for batch_texts, batch_contents in zip(batch_input_texts, batch_contents_list):
+        flattened_batch_texts = list(chain.from_iterable(batch_texts))
+        flattened_batch_contents = list(chain.from_iterable(batch_contents))
+        feature = tokenizer(flattened_batch_texts, flattened_batch_contents, padding=True, truncation=True,
+                            return_tensors="pt").to(device)
+        with torch.no_grad():
+            pred_scores = model(**feature).logits
+            normalized_scores = [float(score[1]) for score in F.softmax(pred_scores, dim=1)]
+        results.append(normalized_scores)
     return results
