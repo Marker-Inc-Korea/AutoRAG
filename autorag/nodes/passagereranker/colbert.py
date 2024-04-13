@@ -1,11 +1,10 @@
-import asyncio
 from typing import List, Tuple
 
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import make_batch, sort_and_select_top_k
 
 
 @passage_reranker_node
@@ -35,26 +34,29 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     model = AutoModel.from_pretrained(model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    # Run async cohere_rerank_pure function
-    tasks = [get_colbert_score(query, document, model, tokenizer) for query, document, ids in
-             zip(queries, contents_list, ids_list)]
-    loop = asyncio.get_event_loop()
-    score_results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+    rerank_scores = colbert_run_model(queries, contents_list, model, tokenizer, batch_size=batch)
+
+    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
     del model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-    def rerank_results(contents, ids, scores, top_k):
-        reranked_content, reranked_id, reranked_score = zip(
-            *sorted(zip(contents, ids, scores), key=lambda x: x[2], reverse=True))
-        return list(reranked_content)[:top_k], list(reranked_id)[:top_k], list(reranked_score)[:top_k]
-
-    reranked_contents_list, reranked_ids_list, reranked_scores_list = zip(*list(map(
-        rerank_results, contents_list, ids_list, score_results, [top_k] * len(contents_list))))
-    return list(reranked_contents_list), list(reranked_ids_list), list(reranked_scores_list)
+    return sorted_contents, sorted_ids, sorted_scores
 
 
-async def get_colbert_score(query: str, content_list: List[str],
-                            model, tokenizer) -> List[float]:
+def colbert_run_model(queries, contents_list, model, tokenizer, batch_size: int):
+    batch_queries_list = make_batch(queries, batch_size)
+    batch_contents_list = make_batch(contents_list, batch_size)
+
+    results = list(map(lambda pair: get_colbert_score(*pair, model, tokenizer),
+                       zip(sum(batch_queries_list, []), sum(batch_contents_list, []))))
+
+    return results
+
+
+def get_colbert_score(query: str, content_list: List[str],
+                      model, tokenizer) -> List[float]:
     query_encoding = tokenizer(query, return_tensors="pt")
     query_embedding = model(**query_encoding).last_hidden_state
     rerank_score_list = []

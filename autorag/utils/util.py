@@ -310,3 +310,18 @@ def sort_by_scores(row, reverse=True):
     results = sorted(zip(row['contents'], row['ids'], row['scores']), key=lambda x: x[2], reverse=reverse)
     reranked_contents, reranked_ids, reranked_scores = zip(*results)
     return list(reranked_contents), list(reranked_ids), list(reranked_scores)
+
+
+def sort_and_select_top_k(contents_list, ids_list, scores_list, top_k):
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': scores_list,
+    })
+
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    df['contents'] = df['contents'].apply(lambda x: x[:top_k])
+    df['ids'] = df['ids'].apply(lambda x: x[:top_k])
+    df['scores'] = df['scores'].apply(lambda x: x[:top_k])
+
+    return df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
