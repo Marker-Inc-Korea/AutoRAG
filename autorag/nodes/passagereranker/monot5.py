@@ -1,10 +1,10 @@
-import asyncio
 from typing import List, Tuple
 
 import torch
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
+from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
 
 prediction_tokens = {
     'castorini/monot5-base-msmarco': ['▁false', '▁true'],
@@ -33,7 +33,8 @@ prediction_tokens = {
 @passage_reranker_node
 def monot5(queries: List[str], contents_list: List[List[str]],
            scores_list: List[List[float]], ids_list: List[List[str]],
-           top_k: int, model_name: str = 'castorini/monot5-3b-msmarco-10k') \
+           top_k: int, model_name: str = 'castorini/monot5-3b-msmarco-10k',
+           batch: int = 64, ) \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using MonoT5.
@@ -48,6 +49,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
             If there is a '/' in the model name parameter,
             when we create the file to store the results, the path will be twisted because of the '/'.
             Therefore, it will be received as '_' instead of '/'.
+    :param batch: The number of queries to be processed in a batch
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
     # replace '_' to '/'
@@ -61,72 +63,41 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     token_false_id = tokenizer.convert_tokens_to_ids(token_false)
     token_true_id = tokenizer.convert_tokens_to_ids(token_true)
     # Determine the device to run the model on (GPU if available, otherwise CPU)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     # Run async mono_t5_rerank_pure function
-    tasks = [mono_t5_pure(query, contents, scores, top_k, ids, model, device, tokenizer, token_false_id, token_true_id) \
-             for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
-    content_result = list(map(lambda x: x[0], results))
-    id_result = list(map(lambda x: x[1], results))
-    score_result = list(map(lambda x: x[2], results))
+
+    nested_list = [list(map(lambda x: [f'Query: {query} Document: {x}'], content_list))
+                   for query, content_list in zip(queries, contents_list)]
+
+    rerank_scores = flatten_apply(monot5_run_model, nested_list, model=model, batch_size=batch, tokenizer=tokenizer,
+                                  device=device, token_false_id=token_false_id, token_true_id=token_true_id)
+
+    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
     del model
     del tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return content_result, id_result, score_result
+    return sorted_contents, sorted_ids, sorted_scores
 
 
-async def mono_t5_pure(query: str, contents: List[str], scores: List[float], top_k: int,
-                       ids: List[str], model, device, tokenizer, token_false_id, token_true_id)\
-        -> Tuple[List[str], List[str], List[float]]:
-    """
-    Rerank a list of contents based on their relevance to a query using MonoT5.
+def monot5_run_model(input_texts, model, batch_size: int, tokenizer, device, token_false_id, token_true_id):
+    batch_input_texts = make_batch(input_texts, batch_size)
+    results = []
+    for batch_texts in batch_input_texts:
+        input_encodings = tokenizer(batch_texts, padding=True, truncation=True, max_length=512, return_tensors='pt').to(
+            device)
+        with torch.no_grad():
+            outputs = model.generate(input_ids=input_encodings['input_ids'],
+                                     attention_mask=input_encodings['attention_mask'],
+                                     output_scores=True,
+                                     return_dict_in_generate=True)
 
-    :param query: The query to use for reranking
-    :param contents: The list of contents to rerank
-    :param scores: The list of scores retrieved from the initial ranking
-    :param ids: The list of ids retrieved from the initial ranking
-    :param model: The MonoT5 model to use for reranking
-    :param device: The device to run the model on (GPU if available, otherwise CPU)
-    :param tokenizer: The tokenizer to use for the model
-    :param token_false_id: The id of the token used by the model to represent a false prediction
-    :param token_true_id: The id of the token used by the model to represent a true prediction
-    :return: tuple of lists containing the reranked contents, ids, and scores
-    """
-
-    # Format the input for the model by combining each content with the query
-    input_texts = [f'Query: {query} Document: {content}' for content in contents]
-    # Tokenize the input texts and prepare for model input
-    input_encodings = tokenizer(input_texts, padding=True, truncation=True, max_length=512, return_tensors='pt').to(
-        device)
-
-    # Generate model predictions without updating model weights
-    with torch.no_grad():
-        outputs = model.generate(input_ids=input_encodings['input_ids'],
-                                 attention_mask=input_encodings['attention_mask'],
-                                 output_scores=True,
-                                 return_dict_in_generate=True)
-
-    # Extract logits for the 'false' and 'true' tokens from the model's output
-    logits = outputs.scores[-1][:, [token_false_id, token_true_id]]
-    # Calculate the softmax probability of the 'true' token
-    probs = torch.nn.functional.softmax(logits, dim=-1)[:, 1]  # Get the probability of the 'true' token
-
-    # Create a list of tuples pairing each content with its relevance probability
-    content_ids_probs = list(zip(contents, ids, probs.tolist()))
-
-    # Sort the list of pairs based on the relevance score in descending order
-    sorted_content_ids_probs = sorted(content_ids_probs, key=lambda x: x[2], reverse=True)
-
-    # crop with top_k
-    if len(contents) < top_k:
-        top_k = len(contents)
-    sorted_content_ids_probs = sorted_content_ids_probs[:top_k]
-
-    content_result, id_result, score_result = zip(*sorted_content_ids_probs)
-
-    return list(content_result), list(id_result), list(score_result)
+        # Extract logits for the 'false' and 'true' tokens from the model's output
+        logits = outputs.scores[-1][:, [token_false_id, token_true_id]]
+        # Calculate the softmax probability of the 'true' token
+        probs = torch.nn.functional.softmax(logits, dim=-1)[:, 1]
+        results.extend(probs.tolist())
+    return results
