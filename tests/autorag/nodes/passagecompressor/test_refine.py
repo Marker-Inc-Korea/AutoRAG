@@ -2,7 +2,8 @@ import pandas as pd
 
 from autorag import generator_models
 from autorag.nodes.passagecompressor.refine import refine
-from tests.autorag.nodes.passagecompressor.test_tree_summarize import queries, retrieved_contents, check_result, df
+from tests.autorag.nodes.passagecompressor.test_base_passage_compressor import (queries, retrieved_contents,
+                                                                                check_result, df)
 from tests.mock import MockLLM
 
 
