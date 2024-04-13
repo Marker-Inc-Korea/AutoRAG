@@ -66,8 +66,6 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     # Determine the device to run the model on (GPU if available, otherwise CPU)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
-    # Run async mono_t5_rerank_pure function
-
     nested_list = [list(map(lambda x: [f'Query: {query} Document: {x}'], content_list))
                    for query, content_list in zip(queries, contents_list)]
 
