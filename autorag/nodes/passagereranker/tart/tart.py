@@ -67,5 +67,5 @@ def tart_run_model(input_texts, contents_list, model, batch_size: int, tokenizer
         with torch.no_grad():
             pred_scores = model(**feature).logits
             normalized_scores = [float(score[1]) for score in F.softmax(pred_scores, dim=1)]
-        results.append(normalized_scores)
+        results.extend(normalized_scores)
     return results
