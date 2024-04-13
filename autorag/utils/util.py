@@ -241,6 +241,13 @@ async def process_batch(tasks, batch_size: int = 64) -> List[Any]:
     return results
 
 
+def make_batch(elems: List[Any], batch_size: int) -> List[List[Any]]:
+    """
+    Make a batch of elems with batch_size.
+    """
+    return [elems[i:i + batch_size] for i in range(0, len(elems), batch_size)]
+
+
 def save_parquet_safe(df: pd.DataFrame, filepath: str,
                       upsert: bool = False):
     output_file_dir = os.path.dirname(filepath)
