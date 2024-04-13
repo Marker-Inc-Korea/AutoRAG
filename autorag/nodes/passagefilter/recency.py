@@ -44,7 +44,8 @@ def recency_filter(contents_list: List[List[str]],
                 return datetime.strptime(threshold_str, fmt)
             except ValueError:
                 continue
-        logger.info("threshold date format is incorrect, should be YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
+        logger.info("threshold date format is incorrect, "
+                    "should be YYYY-MM-DD or YYYY-MM-DD HH:MM:SS or YYYY-MM-DD HH:MM")
         return None
 
     datetime_threshold = parse_threshold(threshold)
