@@ -276,3 +276,45 @@ def reconstruct_list(flat_list: List[Any], lengths: List[int]) -> List[List[Any]
         result.append(flat_list[start:start + length])
         start += length
     return result
+
+
+def flatten_apply(func: Callable, nested_list: List[List[Any]], **kwargs) -> List[List[Any]]:
+    """
+    This function flattens the input list and applies the function to the elements.
+    After that, it reconstructs the list to the original shape.
+    Its speciality is that the first dimension length of the list can be different from each other.
+
+    :param func: The function that applies to the flattened list.
+    :param nested_list: The nested list to be flattened.
+    :return: The list that is reconstructed after applying the function.
+    """
+    df = pd.DataFrame({'col1': nested_list})
+    df = df.explode('col1')
+    df['result'] = func(df['col1'].tolist(), **kwargs)
+    return df.groupby(level=0, sort=False)['result'].apply(list).tolist()
+
+
+def sort_by_scores(row, reverse=True):
+    """
+    Sorts each row by 'scores' column.
+    The input column names must be 'contents', 'ids', and 'scores'.
+    And its elements must be list type.
+    """
+    results = sorted(zip(row['contents'], row['ids'], row['scores']), key=lambda x: x[2], reverse=reverse)
+    reranked_contents, reranked_ids, reranked_scores = zip(*results)
+    return list(reranked_contents), list(reranked_ids), list(reranked_scores)
+
+
+def sort_and_select_top_k(contents_list, ids_list, scores_list, top_k):
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': scores_list,
+    })
+
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    df['contents'] = df['contents'].apply(lambda x: x[:top_k])
+    df['ids'] = df['ids'].apply(lambda x: x[:top_k])
+    df['scores'] = df['scores'].apply(lambda x: x[:top_k])
+
+    return df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
