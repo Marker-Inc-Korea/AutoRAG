@@ -1,3 +1,4 @@
+from itertools import chain
 from typing import List, Tuple
 
 import torch
@@ -87,7 +88,9 @@ def monot5_run_model(input_texts, model, batch_size: int, tokenizer, device, tok
     batch_input_texts = make_batch(input_texts, batch_size)
     results = []
     for batch_texts in batch_input_texts:
-        input_encodings = tokenizer(batch_texts, padding=True, truncation=True, max_length=512, return_tensors='pt').to(
+        flattened_batch_texts = list(chain.from_iterable(batch_texts))
+        input_encodings = tokenizer(flattened_batch_texts, padding=True, truncation=True, max_length=512,
+                                    return_tensors='pt').to(
             device)
         with torch.no_grad():
             outputs = model.generate(input_ids=input_encodings['input_ids'],
