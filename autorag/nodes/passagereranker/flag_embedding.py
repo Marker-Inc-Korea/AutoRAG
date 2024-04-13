@@ -4,7 +4,7 @@ import torch
 from FlagEmbedding import FlagReranker
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, sort_and_select_top_k
+from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
 
 
 @passage_reranker_node
@@ -30,6 +30,8 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
     model = FlagReranker(
         model_name_or_path=model_name, use_fp16=use_fp16
     )
+    nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
+    rerank_scores = flatten_apply(flag_embedding_run_model, nested_list, model=model, batch_size=batch)
     sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
     del model
@@ -39,11 +41,11 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
     return sorted_contents, sorted_ids, sorted_scores
 
 
-def get_flag_embedding_run_model(input_texts, model, batch_size: int):
+def flag_embedding_run_model(input_texts, model, batch_size: int):
     batch_input_texts = make_batch(input_texts, batch_size)
     results = []
     for batch_texts in batch_input_texts:
         with torch.no_grad():
             pred_scores = model.compute_score(sentence_pairs=batch_texts)
-        results.extend(pred_scores.tolist())
+        results.extend(pred_scores)
     return results
