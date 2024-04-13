@@ -39,7 +39,7 @@ def tart(queries: List[str], contents_list: List[List[str]],
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
 
-    nested_list = [[['{} [SEP] {}'.format(instruction, query)] * len(contents)] for query, contents in
+    nested_list = [[['{} [SEP] {}'.format(instruction, query)] for _ in contents] for query, contents in
                    zip(queries, contents_list)]
 
     rerank_scores = flatten_apply(tart_run_model, nested_list, model=model, batch_size=batch,
