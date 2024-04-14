@@ -12,6 +12,14 @@ autorag.nodes.passagefilter.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagefilter.pass\_passage\_filter module
+--------------------------------------------------------
+
+.. automodule:: autorag.nodes.passagefilter.pass_passage_filter
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagefilter.percentile\_cutoff module
 -----------------------------------------------------
 
