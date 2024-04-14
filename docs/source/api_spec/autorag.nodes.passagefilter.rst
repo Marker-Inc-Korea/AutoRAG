@@ -20,6 +20,14 @@ autorag.nodes.passagefilter.percentile\_cutoff module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagefilter.recency module
+------------------------------------------
+
+.. automodule:: autorag.nodes.passagefilter.recency
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagefilter.run module
 --------------------------------------
 
