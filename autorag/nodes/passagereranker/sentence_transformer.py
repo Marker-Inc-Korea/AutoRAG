@@ -1,11 +1,10 @@
-import asyncio
 from typing import List, Tuple
 
 import torch
 from sentence_transformers import CrossEncoder
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import flatten_apply, make_batch, sort_and_select_top_k
+from autorag.utils.util import flatten_apply, make_batch, select_top_k
 
 
 @passage_reranker_node
@@ -36,7 +35,7 @@ def sentence_transformer_reranker(queries: List[str], contents_list: List[List[s
     nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
     rerank_scores = flatten_apply(sentence_transformer_run_model, nested_list, model=model, batch_size=batch)
 
-    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    sorted_contents, sorted_ids, sorted_scores = select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
     del model
     if torch.cuda.is_available():
