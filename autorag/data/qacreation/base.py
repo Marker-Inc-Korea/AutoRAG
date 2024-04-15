@@ -1,9 +1,12 @@
+import logging
 import uuid
 from typing import Callable, Optional
 
 import pandas as pd
 
 from autorag.utils.util import save_parquet_safe
+
+logger = logging.getLogger("AutoRAG")
 
 
 def make_single_content_qa(corpus_df: pd.DataFrame,
@@ -33,6 +36,11 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
     :return: QA dataset dataframe.
         You can save this as parquet file to use at AutoRAG.
     """
+    assert content_size > 0, "content_size must be greater than 0."
+    if content_size > len(corpus_df):
+        logger.warning(f"content_size {content_size} is larger than the corpus size {len(corpus_df)}. "
+                       "Setting content_size to the corpus size.")
+        content_size = len(corpus_df)
     sampled_corpus = corpus_df.sample(n=content_size, random_state=random_state)
     sampled_corpus = sampled_corpus.reset_index(drop=True)
 
