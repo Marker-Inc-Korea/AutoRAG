@@ -26,7 +26,7 @@ def passage_compressor_node(func):
         retrieved_ids = previous_result['retrieved_ids'].tolist()
         retrieve_scores = previous_result['retrieve_scores'].tolist()
 
-        if func.__name__ == 'tree_summarize':
+        if func.__name__ in ['tree_summarize', 'refine']:
             param_list = ['prompt', 'chat_prompt', 'context_window', 'num_output', 'batch']
             param_dict = dict(filter(lambda x: x[0] in param_list, kwargs.items()))
             kwargs_dict = dict(filter(lambda x: x[0] not in param_list, kwargs.items()))
