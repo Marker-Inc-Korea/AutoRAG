@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Pool
 from typing import List, Tuple
 
 import torch
@@ -62,13 +62,12 @@ def upr(queries: List[str], contents_list: List[List[str]],
     return sorted_contents, sorted_ids, sorted_scores
 
 
-def process_single_query(query: str, contents: List[str], prefix_prompt: str, suffix_prompt: str, tokenizer, device,
-                         model, shard_size: int) -> List[float]:
-    # Load the model in the function to ensure it's loaded in each process
+def process_single_query(args) -> List[float]:
+    query, contents, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size = args
+
     if device == 'cuda':
         model = model.to(device)
 
-    # The rest of the function remains mostly unchanged, just ensure model is loaded and moved to the correct device
     prompts = [f"{prefix_prompt} {content} {suffix_prompt}" for content in contents]
     context_tokens = tokenizer(prompts, padding='longest', max_length=512, pad_to_multiple_of=8, truncation=True,
                                return_tensors='pt')
@@ -95,14 +94,16 @@ def process_single_query(query: str, contents: List[str], prefix_prompt: str, su
         avg_nll = torch.sum(nll, dim=1)
         sharded_nll_list.append(avg_nll)
 
-    return list(map(lambda x: -float(x), sharded_nll_list[0]))
+    results = list(map(lambda x: -float(x), sharded_nll_list[0]))
+    return results
 
 
 def parallel_process_upr(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
                          tokenizer, device, model, shard_size: int) -> List[List[float]]:
-    with ProcessPoolExecutor() as executor:
-        futures = [
-            executor.submit(process_single_query, query, content, prefix_prompt, suffix_prompt, tokenizer, device,
-                            model, shard_size) for query, content in zip(queries, contents)]
-        results = [future.result() for future in futures]
+    args_list = [(query, content, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size)
+                 for query, content in zip(queries, contents)]
+
+    with Pool(processes=4) as pool:  # Adjust the number of processes as needed
+        results = pool.map(process_single_query, args_list)
+
     return results
