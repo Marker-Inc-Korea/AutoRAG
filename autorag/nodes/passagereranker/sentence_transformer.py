@@ -1,11 +1,11 @@
-import asyncio
 from typing import List, Tuple
 
+import pandas as pd
 import torch
 from sentence_transformers import CrossEncoder
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import flatten_apply, make_batch, sort_by_scores
 
 
 @passage_reranker_node
@@ -28,52 +28,37 @@ def sentence_transformer_reranker(queries: List[str], contents_list: List[List[s
         Default is "cross-encoder/ms-marco-MiniLM-L-2-v2"
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = CrossEncoder(
         model_name, max_length=sentence_transformer_max_length, device=device
     )
-    tasks = [sentence_transformer_reranker_pure(query, contents, scores, top_k, ids, model)
-             for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
-    content_result = list(map(lambda x: x[0], results))
-    id_result = list(map(lambda x: x[1], results))
-    score_result = list(map(lambda x: x[2], results))
+
+    nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
+    rerank_scores = flatten_apply(sentence_transformer_run_model, nested_list, model=model, batch_size=batch)
+
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    df['contents'] = df['contents'].apply(lambda x: x[:top_k])
+    df['ids'] = df['ids'].apply(lambda x: x[:top_k])
+    df['scores'] = df['scores'].apply(lambda x: x[:top_k])
 
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return content_result, id_result, score_result
+    return df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
 
 
-async def sentence_transformer_reranker_pure(query: str, contents: List[str], scores: List[float], top_k: int,
-                                             ids: List[str], model) -> Tuple[List[str], List[str], List[float]]:
-    """
-    Rerank a list of contents based on their relevance to a query using Sentence Transformer model.
-
-    :param query: The query to use for reranking
-    :param contents: The list of contents to rerank
-    :param scores: The list of scores retrieved from the initial ranking
-    :param ids: The list of ids retrieved from the initial ranking
-    :param top_k: The number of passages to be retrieved
-    :param model: The name of the Sentence Transformer model to use for reranking
-    :return: tuple of lists containing the reranked contents, ids, and scores
-    """
-    input_texts = [(query, content) for content in contents]
-    with torch.no_grad():
-        pred_scores = model.predict(sentences=input_texts, apply_softmax=True)
-
-    content_ids_probs = list(zip(contents, ids, pred_scores.tolist()))
-
-    # Sort the list of pairs based on the relevance score in descending order
-    sorted_content_ids_probs = sorted(content_ids_probs, key=lambda x: x[2], reverse=True)
-
-    # crop with top_k
-    if len(contents) < top_k:
-        top_k = len(contents)
-    sorted_content_ids_probs = sorted_content_ids_probs[:top_k]
-
-    content_result, id_result, score_result = zip(*sorted_content_ids_probs)
-
-    return list(content_result), list(id_result), list(score_result)
+def sentence_transformer_run_model(input_texts, model, batch_size: int):
+    batch_input_texts = make_batch(input_texts, batch_size)
+    results = []
+    for batch_texts in batch_input_texts:
+        with torch.no_grad():
+            pred_scores = model.predict(sentences=batch_texts, apply_softmax=True)
+        results.extend(pred_scores.tolist())
+    return results
