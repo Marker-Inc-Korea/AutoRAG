@@ -1,10 +1,11 @@
 import functools
+import os
 from pathlib import Path
 from typing import Union, Tuple, List
 
 import pandas as pd
 
-from autorag.utils import result_to_dataframe, validate_qa_dataset
+from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents
 
 
 # same with passage filter from now
@@ -33,8 +34,15 @@ def passage_filter_node(func):
         assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
-        filtered_contents, filtered_ids, filtered_scores = func(queries=queries, contents_list=contents,
-                                                                scores_list=scores, ids_list=ids, *args, **kwargs)
+        if func.__name__ == 'recency_filter':
+            corpus_df = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
+            metadatas = fetch_contents(corpus_df, ids, column_name='metadata')
+            times = [[time['last_modified_datetime'] for time in time_list] for time_list in metadatas]
+            filtered_contents, filtered_ids, filtered_scores \
+                = func(contents_list=contents, scores_list=scores, ids_list=ids, time_list=times, *args, **kwargs)
+        else:
+            filtered_contents, filtered_ids, filtered_scores = func(queries=queries, contents_list=contents,
+                                                                    scores_list=scores, ids_list=ids, *args, **kwargs)
 
         return filtered_contents, filtered_ids, filtered_scores
 
