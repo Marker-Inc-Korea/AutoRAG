@@ -51,7 +51,7 @@ def upr(queries: List[str], contents_list: List[List[str]],
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     rerank_scores = parallel_process_upr(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
-                                         device, model, shard_size)
+                                         device, model, shard_size, batch)
 
     sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
@@ -99,11 +99,11 @@ def process_single_query(args) -> List[float]:
 
 
 def parallel_process_upr(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
-                         tokenizer, device, model, shard_size: int) -> List[List[float]]:
+                         tokenizer, device, model, shard_size: int, batch: int) -> List[List[float]]:
     args_list = [(query, content, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size)
                  for query, content in zip(queries, contents)]
 
-    with Pool(processes=4) as pool:  # Adjust the number of processes as needed
+    with Pool(processes=batch) as pool:  # Adjust the number of processes as needed
         results = pool.map(process_single_query, args_list)
 
     return results
