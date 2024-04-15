@@ -1,10 +1,11 @@
 from typing import List, Tuple
 
 import torch
+from torch.multiprocessing import Pool, set_start_method
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import select_top_k, flatten_apply, make_batch
+from autorag.utils.util import select_top_k
 
 
 @passage_reranker_node
@@ -49,11 +50,8 @@ def upr(queries: List[str], contents_list: List[List[str]],
                                                        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    nested_list = [list(map(lambda x: [query, f"{prefix_prompt} {x} {suffix_prompt}"], content_list))
-                   for query, content_list in zip(queries, contents_list)]
-
-    rerank_scores = flatten_apply(upr_run_model, nested_list, model=model, tokenizer=tokenizer, batch_size=batch,
-                                  device=device, shard_size=shard_size)
+    rerank_scores = parallel_process_upr(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
+                                         device, model, shard_size, batch)
 
     sorted_contents, sorted_ids, sorted_scores = select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
@@ -64,46 +62,59 @@ def upr(queries: List[str], contents_list: List[List[str]],
     return sorted_contents, sorted_ids, sorted_scores
 
 
-def upr_run_model(input_texts, model, tokenizer, device, batch_size: int, shard_size: int):
-    batch_input_texts = make_batch(input_texts, batch_size)
-    results = []
+def process_single_query(args) -> List[float]:
+    query, contents, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size = args
 
-    for batch_texts in batch_input_texts:
-        flattened_batch_queries, flattened_batch_prompts = map(list, zip(*batch_texts))
+    if device == 'cuda':
+        model = model.to(device)
 
-        # tokenize contexts and instruction prompts
-        context_tokens = tokenizer(flattened_batch_prompts,
-                                   padding='longest',
-                                   max_length=512,
-                                   pad_to_multiple_of=8,
-                                   truncation=True,
-                                   return_tensors='pt')
-        context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
-        if device == 'cuda':
-            context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
+    prompts = [f"{prefix_prompt} {content} {suffix_prompt}" for content in contents]
+    context_tokens = tokenizer(prompts, padding='longest', max_length=512, pad_to_multiple_of=8, truncation=True,
+                               return_tensors='pt')
+    context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
+    if device == 'cuda':
+        context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
 
-        question_tokens = tokenizer(flattened_batch_queries,
-                                    padding='longest',
-                                    max_length=512,
-                                    pad_to_multiple_of=8,
-                                    truncation=True,
-                                    return_tensors='pt')
-        question_tensor = question_tokens.input_ids
-        if device == 'cuda':
-            question_tensor = question_tensor.cuda()
+    question_tokens = tokenizer([query], max_length=128, truncation=True, return_tensors='pt')
+    question_tensor = question_tokens.input_ids
+    if device == 'cuda':
+        question_tensor = question_tensor.cuda()
+    question_tensor = torch.repeat_interleave(question_tensor, len(contents), dim=0)
 
-            # calculate log likelihood
-        for i in range(0, len(context_tensor), shard_size):
-            encoder_tensor_view = context_tensor[i: i + shard_size]
-            attention_mask_view = context_attention_mask[i: i + shard_size]
-            decoder_tensor_view = question_tensor[i: i + shard_size]
-            with torch.no_grad():
-                logits = model(input_ids=encoder_tensor_view,
-                               attention_mask=attention_mask_view,
-                               labels=decoder_tensor_view).logits
-            log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
-            nll = -log_softmax.gather(2, decoder_tensor_view.unsqueeze(2)).squeeze(2)
+    sharded_nll_list = []
+    for i in range(0, len(context_tensor), shard_size):
+        encoder_tensor_view = context_tensor[i: i + shard_size]
+        attention_mask_view = context_attention_mask[i: i + shard_size]
+        decoder_tensor_view = question_tensor[i: i + shard_size]
+        with torch.no_grad():
+            logits = model(input_ids=encoder_tensor_view, attention_mask=attention_mask_view,
+                           labels=decoder_tensor_view).logits
+        log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
+        nll = -log_softmax.gather(2, decoder_tensor_view.unsqueeze(2)).squeeze(2)
+        avg_nll = torch.sum(nll, dim=1)
+        sharded_nll_list.append(avg_nll)
 
-            avg_nll = torch.sum(nll, dim=1)
-            results.append(avg_nll)
+    results = list(map(lambda x: -float(x), sharded_nll_list[0]))
+    return results
+
+
+def parallel_process_upr(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
+                         tokenizer, device, model, shard_size: int, batch: int) -> List[List[float]]:
+    try:
+        set_start_method('spawn')
+    except RuntimeError:
+        pass
+
+    # Prepare the model for multiprocessing
+    model.share_memory()
+
+    # Create a list of arguments for each task
+    args_list = [(query, content, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size)
+                 for query, content in zip(queries, contents)]
+
+    # Use torch.multiprocessing.Pool instead of the multiprocessing.Pool
+    # This ensures better compatibility with PyTorch, especially for CUDA operations
+    with Pool(processes=batch) as pool:
+        results = pool.map(process_single_query, args_list)
+
     return results
