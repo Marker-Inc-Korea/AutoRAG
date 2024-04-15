@@ -9,7 +9,7 @@ def dynamically_find_function(key: str, target_dict: Dict) -> Callable:
         func = getattr(module, func_name)
         return func
     else:
-        raise KeyError(f"Key {key} is not supported.")
+        raise KeyError(f"Input module or node {key} is not supported.")
 
 
 def get_support_modules(module_name: str) -> Callable:
