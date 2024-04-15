@@ -1,10 +1,11 @@
+from itertools import chain
 from typing import List, Tuple
 
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, sort_and_select_top_k
+from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
 
 
 @passage_reranker_node
@@ -34,7 +35,11 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     model = AutoModel.from_pretrained(model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    rerank_scores = colbert_run_model(queries, contents_list, model, tokenizer, batch_size=batch)
+    nested_list = [list(map(lambda x: [x], content_list)) for content_list in contents_list]
+    new_queries = list(map(lambda query, content_list: [query] * len(content_list), queries, contents_list))
+
+    rerank_scores = flatten_apply(colbert_run_model, nested_list, queries=new_queries, model=model,
+                                  tokenizer=tokenizer, batch_size=batch, device=device)
 
     sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
@@ -45,35 +50,35 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     return sorted_contents, sorted_ids, sorted_scores
 
 
-def colbert_run_model(queries, contents_list, model, tokenizer, batch_size: int):
+def colbert_run_model(contents_list, queries, model, tokenizer, device, batch_size: int):
     batch_queries_list = make_batch(queries, batch_size)
     batch_contents_list = make_batch(contents_list, batch_size)
+    results = []
 
-    results = list(map(lambda pair: get_colbert_score(*pair, model, tokenizer),
-                       zip(sum(batch_queries_list, []), sum(batch_contents_list, []))))
+    for batch_queries, batch_contents in zip(batch_queries_list, batch_contents_list):
+        flattened_batch_queries: List[str] = list(chain.from_iterable(batch_queries))
+        flattened_batch_contents: List[str] = list(chain.from_iterable(batch_contents))
 
-    return results
+        # Tokenize both queries and contents together
+        feature = tokenizer(flattened_batch_queries, flattened_batch_contents, padding=True, truncation=True,
+                            return_tensors="pt").to(device)
 
+        # Process the combined feature through the model in one go
+        outputs = model(**feature)
+        last_hidden_state = outputs.last_hidden_state
 
-def get_colbert_score(query: str, content_list: List[str],
-                      model, tokenizer) -> List[float]:
-    query_encoding = tokenizer(query, return_tensors="pt")
-    query_embedding = model(**query_encoding).last_hidden_state
-    rerank_score_list = []
+        # Split the embeddings back into query and content parts
+        num_queries = len(flattened_batch_queries)
+        query_embedding, content_embedding = last_hidden_state.split(
+            [num_queries, last_hidden_state.size(1) - num_queries], dim=1)
 
-    for document_text in content_list:
-        document_encoding = tokenizer(
-            document_text, return_tensors="pt", truncation=True, max_length=512
-        )
-        document_embedding = model(**document_encoding).last_hidden_state
-
+        # Calculate cosine similarity between query and content embeddings
         sim_matrix = torch.nn.functional.cosine_similarity(
-            query_embedding.unsqueeze(2), document_embedding.unsqueeze(1), dim=-1
+            query_embedding.unsqueeze(2), content_embedding.unsqueeze(1), dim=-1
         )
 
         # Take the maximum similarity for each query token (across all document tokens)
-        # sim_matrix shape: [batch_size, query_length, doc_length]
         max_sim_scores, _ = torch.max(sim_matrix, dim=2)
-        rerank_score_list.append(torch.mean(max_sim_scores, dim=1))
+        results.extend(torch.mean(max_sim_scores, dim=1))
 
-    return list(map(float, rerank_score_list))
+    return list(map(float, results))
