@@ -1,11 +1,11 @@
-from itertools import chain
+from concurrent.futures import ProcessPoolExecutor
 from typing import List, Tuple
 
 import torch
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
+from autorag.utils.util import sort_and_select_top_k
 
 
 @passage_reranker_node
@@ -50,13 +50,8 @@ def upr(queries: List[str], contents_list: List[List[str]],
                                                        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    nested_list = [list(map(lambda x: [f"{prefix_prompt} {x} {suffix_prompt}"], content_list))
-                   for query, content_list in zip(queries, contents_list)]
-
-    new_queries = list(map(lambda query, content_list: [query] * len(content_list), queries, contents_list))
-
-    rerank_scores = flatten_apply(upr_run_model, nested_list, queries=new_queries, model=model,
-                                  tokenizer=tokenizer, batch_size=batch, device=device, shard_size=shard_size)
+    rerank_scores = calculate_likelihood_parallel(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
+                                                  device, model, shard_size)
 
     sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
@@ -67,109 +62,48 @@ def upr(queries: List[str], contents_list: List[List[str]],
     return sorted_contents, sorted_ids, sorted_scores
 
 
-def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int, shard_size: int):
-    batch_queries_list = make_batch(queries, batch_size)
-    batch_prompts_list = make_batch(prompts, batch_size)
+def process_single_query(query: str, contents: List[str], prefix_prompt: str, suffix_prompt: str, tokenizer, device,
+                         model, shard_size: int) -> List[float]:
+    # Load the model in the function to ensure it's loaded in each process
+    if device == 'cuda':
+        model = model.to(device)
 
-    for batch_queries, batch_prompts in zip(batch_queries_list, batch_prompts_list):
-        flattened_batch_queries: List[str] = list(chain.from_iterable(batch_queries))
-        flattened_batch_prompts: List[str] = list(chain.from_iterable(batch_prompts))
-
-        # tokenize contexts and instruction prompts
-        context_tokens = tokenizer(flattened_batch_prompts,
-                                   padding='longest',
-                                   max_length=512,
-                                   pad_to_multiple_of=8,
-                                   truncation=True,
-                                   return_tensors='pt')
-        context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
-        if device == 'cuda':
-            context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
-
-        # tokenize queries
-        query_tokens = tokenizer(flattened_batch_queries,
-                                 padding='longest',
-                                 max_length=512,
-                                 pad_to_multiple_of=8,
-                                 truncation=True,
-                                 return_tensors='pt')
-        query_tensor = query_tokens.input_ids
-        if device == 'cuda':
-            query_tensor = query_tensor.cuda()
-        if device == 'cuda':
-            model = model.to(device)
-
-        sharded_nll_list = []
-
-        # calculate log likelihood
-        for i in range(0, len(context_tensor), shard_size):
-            encoder_tensor_view = context_tensor[i: i + shard_size]
-            attention_mask_view = context_attention_mask[i: i + shard_size]
-            decoder_tensor_view = query_tensor[i: i + shard_size]
-            with torch.no_grad():
-                logits = model(input_ids=encoder_tensor_view,
-                               attention_mask=attention_mask_view,
-                               labels=decoder_tensor_view).logits
-
-            log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
-            nll = -log_softmax.gather(2, decoder_tensor_view.unsqueeze(2)).squeeze(2)
-
-            avg_nll = torch.sum(nll, dim=1)
-            sharded_nll_list.append(avg_nll)
-
-        results = list(map(lambda x: -float(x), torch.cat(sharded_nll_list)))
-
-        return results
-
-
-def calculate_likelihood(query: str, contents: List[str],
-                         prefix_prompt: str, suffix_prompt: str,
-                         tokenizer, device, model, shard_size: int):
-    # create prompts
+    # The rest of the function remains mostly unchanged, just ensure model is loaded and moved to the correct device
     prompts = [f"{prefix_prompt} {content} {suffix_prompt}" for content in contents]
-
-    # tokenize contexts and instruction prompts
-    context_tokens = tokenizer(prompts,
-                               padding='longest',
-                               max_length=512,
-                               pad_to_multiple_of=8,
-                               truncation=True,
+    context_tokens = tokenizer(prompts, padding='longest', max_length=512, pad_to_multiple_of=8, truncation=True,
                                return_tensors='pt')
     context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
     if device == 'cuda':
         context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
 
-    # tokenize question
-    question_tokens = tokenizer([query],
-                                max_length=128,
-                                truncation=True,
-                                return_tensors='pt')
+    question_tokens = tokenizer([query], max_length=128, truncation=True, return_tensors='pt')
     question_tensor = question_tokens.input_ids
     if device == 'cuda':
         question_tensor = question_tensor.cuda()
     question_tensor = torch.repeat_interleave(question_tensor, len(contents), dim=0)
 
-    if device == 'cuda':
-        model = model.to(device)
-
     sharded_nll_list = []
-
-    # calculate log likelihood
     for i in range(0, len(context_tensor), shard_size):
         encoder_tensor_view = context_tensor[i: i + shard_size]
         attention_mask_view = context_attention_mask[i: i + shard_size]
         decoder_tensor_view = question_tensor[i: i + shard_size]
         with torch.no_grad():
-            logits = model(input_ids=encoder_tensor_view,
-                           attention_mask=attention_mask_view,
+            logits = model(input_ids=encoder_tensor_view, attention_mask=attention_mask_view,
                            labels=decoder_tensor_view).logits
-
         log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
         nll = -log_softmax.gather(2, decoder_tensor_view.unsqueeze(2)).squeeze(2)
-
         avg_nll = torch.sum(nll, dim=1)
         sharded_nll_list.append(avg_nll)
 
     results = list(map(lambda x: -float(x), sharded_nll_list[0]))
+    return results
 
+
+def calculate_likelihood_parallel(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
+                                  tokenizer, device, model, shard_size: int) -> List[List[float]]:
+    with ProcessPoolExecutor() as executor:
+        futures = [
+            executor.submit(process_single_query, query, content, prefix_prompt, suffix_prompt, tokenizer, device,
+                            model, shard_size) for query, content in zip(queries, contents)]
+        results = [future.result() for future in futures]
     return results
