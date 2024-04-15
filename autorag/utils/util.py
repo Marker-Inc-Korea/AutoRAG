@@ -312,7 +312,7 @@ def sort_by_scores(row, reverse=True):
     return list(reranked_contents), list(reranked_ids), list(reranked_scores)
 
 
-def sort_and_select_top_k(contents_list, ids_list, scores_list, top_k):
+def select_top_k(contents_list, ids_list, scores_list, top_k):
     df = pd.DataFrame({
         'contents': contents_list,
         'ids': ids_list,
