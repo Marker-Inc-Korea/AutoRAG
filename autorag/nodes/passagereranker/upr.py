@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import torch
+from click.core import F
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
@@ -77,7 +78,7 @@ def upr_run_model(input_texts, model, tokenizer, device, batch_size: int, shard_
                                    max_length=512,
                                    pad_to_multiple_of=8,
                                    truncation=True,
-                                   return_tensors='pt')
+                                   return_tensors='pt').to(device)
         context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
         if device == 'cuda':
             context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
@@ -87,17 +88,20 @@ def upr_run_model(input_texts, model, tokenizer, device, batch_size: int, shard_
                                     max_length=512,
                                     pad_to_multiple_of=8,
                                     truncation=True,
-                                    return_tensors='pt')
+                                    return_tensors='pt').to(device)
         question_tensor = question_tokens.input_ids
         if device == 'cuda':
             question_tensor = question_tensor.cuda()
 
-            # calculate log likelihood
-            for i in range(0, len(context_tensor), shard_size):
-                encoder_tensor_view = context_tensor[i: i + shard_size]
-                attention_mask_view = context_attention_mask[i: i + shard_size]
-                decoder_tensor_view = question_tensor[i: i + shard_size]
-                with torch.no_grad():
-                    logits = model(input_ids=encoder_tensor_view,
-                                   attention_mask=attention_mask_view,
-                                   labels=decoder_tensor_view).logits
+        # calculate log likelihood
+        for i in range(0, len(context_tensor), shard_size):
+            encoder_tensor_view = context_tensor[i: i + shard_size]
+            attention_mask_view = context_attention_mask[i: i + shard_size]
+            decoder_tensor_view = question_tensor[i: i + shard_size]
+            with torch.no_grad():
+                logits = model(input_ids=encoder_tensor_view,
+                               attention_mask=attention_mask_view,
+                               labels=decoder_tensor_view).logits
+            normalized_scores = [float(score[1]) for score in F.softmax(logits, dim=1)]
+            results.extend(normalized_scores)
+    return results
