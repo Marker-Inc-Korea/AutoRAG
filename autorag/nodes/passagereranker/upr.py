@@ -87,7 +87,7 @@ def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int, s
             context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
 
         # tokenize queries
-        query_tokens = tokenizer(flattened_batch_queries,
+        query_tokens = tokenizer(flattened_batch_queries[:3],
                                  padding='longest',
                                  max_length=512,
                                  pad_to_multiple_of=8,
@@ -96,6 +96,16 @@ def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int, s
         query_tensor = query_tokens.input_ids
         if device == 'cuda':
             query_tensor = query_tensor.cuda()
+
+        question_tokens = tokenizer([flattened_batch_queries[0]],
+                                    max_length=128,
+                                    truncation=True,
+                                    return_tensors='pt')
+        question_tensor = question_tokens.input_ids
+        if device == 'cuda':
+            question_tensor = question_tensor.cuda()
+        question_tensor = torch.repeat_interleave(question_tensor, 3, dim=0)
+
 
         if device == 'cuda':
             model = model.to(device)
