@@ -5,7 +5,7 @@ import torch
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import sort_and_select_top_k
+from autorag.utils.util import select_top_k
 
 
 @passage_reranker_node
@@ -53,7 +53,7 @@ def upr(queries: List[str], contents_list: List[List[str]],
     rerank_scores = parallel_process_upr(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
                                          device, model, shard_size, batch)
 
-    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    sorted_contents, sorted_ids, sorted_scores = select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
     del model
     if torch.cuda.is_available():
