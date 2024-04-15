@@ -1,10 +1,10 @@
-import asyncio
 from typing import List, Tuple
 
 import torch
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
+from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
 
 
 @passage_reranker_node
@@ -12,7 +12,8 @@ def upr(queries: List[str], contents_list: List[List[str]],
         scores_list: List[List[float]], ids_list: List[List[str]],
         top_k: int, shard_size: int = 16, use_bf16: bool = False,
         prefix_prompt: str = "Passage: ",
-        suffix_prompt: str = "Please write a question based on this passage.") \
+        suffix_prompt: str = "Please write a question based on this passage.",
+        batch: int = 64) \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using UPR.
@@ -38,6 +39,7 @@ def upr(queries: List[str], contents_list: List[List[str]],
         Default is "Please write a question based on this passage.".
         The suffix prompt provides a cue or a closing instruction to the language model,
             signaling how to conclude the generated text or what format to follow at the end.
+    :param batch: The number of queries to be processed in a batch
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
     # Load the tokenizer and model
@@ -45,27 +47,32 @@ def upr(queries: List[str], contents_list: List[List[str]],
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name,
                                                        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
-    # Determine the device to run the model on (GPU if available, otherwise CPU)
-    device = ("cuda" if torch.cuda.is_available() else "cpu")
-    # Run async upr_rerank_pure function
-    tasks = [upr_pure(query, contents, scores,
-                      ids, top_k, model, device, tokenizer,
-                      shard_size, prefix_prompt, suffix_prompt)
-             for query, contents, scores, ids in
-             zip(queries, contents_list, scores_list, ids_list)]
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    content_result = list(map(lambda x: x[0], results))
-    id_result = list(map(lambda x: x[1], results))
-    score_result = list(map(lambda x: x[2], results))
+    nested_list = [list(map(lambda x: [f"{prefix_prompt} {x} {suffix_prompt}"], content_list))
+                   for query, content_list in zip(queries, contents_list)]
+
+    new_queries = list(map(lambda query, content_list: [query] * len(content_list), queries, contents_list))
+
+    rerank_scores = flatten_apply(upr_run_model, nested_list, queries=new_queries, model=model,
+                                  tokenizer=tokenizer, batch_size=batch, device=device)
+
+    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
     del model
-    del tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return content_result, id_result, score_result
+    return sorted_contents, sorted_ids, sorted_scores
+
+
+def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int):
+    batch_prompts_list = make_batch(prompts, batch_size)
+    results = []
+
+    for batch_prompts in batch_prompts_list:
+        pass
+
 
 
 async def upr_pure(query: str, contents: List[str], scores: List[float],
