@@ -70,12 +70,12 @@ def upr(queries: List[str], contents_list: List[List[str]],
 def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int, shard_size: int):
     batch_queries_list = make_batch(queries, batch_size)
     batch_prompts_list = make_batch(prompts, batch_size)
-    results = []
 
     for batch_queries, batch_prompts in zip(batch_queries_list, batch_prompts_list):
         flattened_batch_queries: List[str] = list(chain.from_iterable(batch_queries))
         flattened_batch_prompts: List[str] = list(chain.from_iterable(batch_prompts))
 
+        # tokenize contexts and instruction prompts
         context_tokens = tokenizer(flattened_batch_prompts,
                                    padding='longest',
                                    max_length=512,
@@ -86,24 +86,27 @@ def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int, s
         if device == 'cuda':
             context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
 
-        # tokenize question
-        question_tokens = tokenizer(flattened_batch_queries,
-                                    max_length=128,
-                                    truncation=True,
-                                    return_tensors='pt')
-        question_tensor = question_tokens.input_ids
+        # tokenize queries
+        query_tokens = tokenizer(flattened_batch_queries,
+                                 padding='longest',
+                                 max_length=512,
+                                 pad_to_multiple_of=8,
+                                 truncation=True,
+                                 return_tensors='pt')
+        query_tensor = query_tokens.input_ids
         if device == 'cuda':
-            question_tensor = question_tensor.cuda()
-        question_tensor = torch.repeat_interleave(question_tensor, len(flattened_batch_prompts), dim=0)
+            query_tensor = query_tensor.cuda()
 
         if device == 'cuda':
             model = model.to(device)
+
+        sharded_nll_list = []
 
         # calculate log likelihood
         for i in range(0, len(context_tensor), shard_size):
             encoder_tensor_view = context_tensor[i: i + shard_size]
             attention_mask_view = context_attention_mask[i: i + shard_size]
-            decoder_tensor_view = question_tensor[i: i + shard_size]
+            decoder_tensor_view = query_tensor[i: i + shard_size]
             with torch.no_grad():
                 logits = model(input_ids=encoder_tensor_view,
                                attention_mask=attention_mask_view,
@@ -113,17 +116,16 @@ def upr_run_model(prompts, queries, model, tokenizer, device, batch_size: int, s
             nll = -log_softmax.gather(2, decoder_tensor_view.unsqueeze(2)).squeeze(2)
 
             avg_nll = torch.sum(nll, dim=1)
-            results.extend(avg_nll)
+            sharded_nll_list.append(avg_nll)
 
-        results = list(map(lambda x: -float(x), results))
+        results = list(map(lambda x: -float(x), torch.cat(sharded_nll_list)))
 
         return results
 
 
 def calculate_likelihood(query: str, contents: List[str],
                          prefix_prompt: str, suffix_prompt: str,
-                         tokenizer, device, model, shard_size: int)\
-        -> tuple[List[int], List[float]]:
+                         tokenizer, device, model, shard_size: int):
     # create prompts
     prompts = [f"{prefix_prompt} {content} {suffix_prompt}" for content in contents]
 
