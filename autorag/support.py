@@ -43,9 +43,11 @@ def get_support_modules(module_name: str) -> Callable:
         'pass_passage_filter': ('autorag.nodes.passagefilter', 'pass_passage_filter'),
         'similarity_threshold_cutoff': ('autorag.nodes.passagefilter', 'similarity_threshold_cutoff'),
         'similarity_percentile_cutoff': ('autorag.nodes.passagefilter', 'similarity_percentile_cutoff'),
+        'recency_filter': ('autorag.nodes.passagefilter', 'recency_filter'),
         # passage_compressor
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
+        'refine': ('autorag.nodes.passagecompressor', 'refine'),
         # prompt_maker
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'long_context_reorder': ('autorag.nodes.promptmaker', 'long_context_reorder'),

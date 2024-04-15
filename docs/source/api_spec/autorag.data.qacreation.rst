@@ -20,6 +20,14 @@ autorag.data.qacreation.llama\_index module
    :undoc-members:
    :show-inheritance:
 
+autorag.data.qacreation.ragas module
+------------------------------------
+
+.. automodule:: autorag.data.qacreation.ragas
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.data.qacreation.simple module
 -------------------------------------
 
