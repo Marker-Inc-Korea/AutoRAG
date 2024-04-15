@@ -50,8 +50,8 @@ def upr(queries: List[str], contents_list: List[List[str]],
                                                        torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    rerank_scores = calculate_likelihood_parallel(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
-                                                  device, model, shard_size)
+    rerank_scores = parallel_process_upr(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
+                                         device, model, shard_size)
 
     sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
 
@@ -95,12 +95,11 @@ def process_single_query(query: str, contents: List[str], prefix_prompt: str, su
         avg_nll = torch.sum(nll, dim=1)
         sharded_nll_list.append(avg_nll)
 
-    results = list(map(lambda x: -float(x), sharded_nll_list[0]))
-    return results
+    return list(map(lambda x: -float(x), sharded_nll_list[0]))
 
 
-def calculate_likelihood_parallel(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
-                                  tokenizer, device, model, shard_size: int) -> List[List[float]]:
+def parallel_process_upr(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
+                         tokenizer, device, model, shard_size: int) -> List[List[float]]:
     with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(process_single_query, query, content, prefix_prompt, suffix_prompt, tokenizer, device,
