@@ -47,7 +47,8 @@ def test_refine_node():
             'prompts': prompts,
             'qid': ['id-1', 'id-2', 'id-3']
         })
-    result_df = refine(project_dir='.', previous_result=previous_result, llm='mock')
+    result_df = refine(project_dir='.', previous_result=previous_result, llm='mock',
+                       temperature=0.5, top_p=0.9)
     check_generated_texts(result_df['generated_texts'].tolist())
     check_generated_tokens(result_df['generated_tokens'].tolist())
     check_generated_log_probs(result_df['generated_log_probs'].tolist())

@@ -47,10 +47,11 @@ def generator_node(func):
                 raise ValueError(f"{llm} is not a valid llm name. Please check the llm name."
                                  "You can check valid llm names from autorag.generator_models.")
             batch = kwargs.pop('batch', 16)
+            prompt = kwargs.pop('prompt', None)
             llm_instance = generator_models[llm](**kwargs)
             queries = previous_result['query'].tolist()
             retrieved_contents = previous_result['retrieved_contents'].tolist()
-            return func(queries=queries, contents=retrieved_contents, llm=llm_instance, batch=batch)
+            return func(queries=queries, contents=retrieved_contents, llm=llm_instance, batch=batch, prompt=prompt)
         else:
             raise ValueError(f"{func.__name__} is not a valid generator node name. "
                              "Please check the generator node name.")
