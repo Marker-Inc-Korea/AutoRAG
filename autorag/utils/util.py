@@ -312,16 +312,8 @@ def sort_by_scores(row, reverse=True):
     return list(reranked_contents), list(reranked_ids), list(reranked_scores)
 
 
-def select_top_k(contents_list, ids_list, scores_list, top_k):
-    df = pd.DataFrame({
-        'contents': contents_list,
-        'ids': ids_list,
-        'scores': scores_list,
-    })
-
-    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
-    df['contents'] = df['contents'].apply(lambda x: x[:top_k])
-    df['ids'] = df['ids'].apply(lambda x: x[:top_k])
-    df['scores'] = df['scores'].apply(lambda x: x[:top_k])
-
-    return df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
+def select_top_k(row, top_k: int):
+    row['contents'] = row['contents'].apply(lambda x: x[:top_k])
+    row['ids'] = row['ids'].apply(lambda x: x[:top_k])
+    row['scores'] = row['scores'].apply(lambda x: x[:top_k])
+    return row['contents'].tolist(), row['ids'].tolist(), row['scores'].tolist()

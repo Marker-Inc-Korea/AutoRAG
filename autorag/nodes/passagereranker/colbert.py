@@ -1,10 +1,11 @@
 from typing import List, Tuple
 
+import pandas as pd
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, select_top_k, flatten_apply
+from autorag.utils.util import make_batch, select_top_k, flatten_apply, sort_by_scores
 
 
 @passage_reranker_node
@@ -38,8 +39,13 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
 
     rerank_scores = flatten_apply(colbert_run_model, nested_list, model=model,
                                   tokenizer=tokenizer, batch_size=batch, device=device)
-
-    sorted_contents, sorted_ids, sorted_scores = select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    sorted_contents, sorted_ids, sorted_scores = select_top_k(df, top_k)
 
     del model
     if torch.cuda.is_available():
