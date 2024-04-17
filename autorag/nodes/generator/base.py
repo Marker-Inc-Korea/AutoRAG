@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Union, Tuple, List
 
 import pandas as pd
+from transformers import AutoTokenizer
 
 from autorag import generator_models
 from autorag.utils import result_to_dataframe
@@ -41,8 +42,24 @@ def generator_node(func):
             return result
         elif func.__name__ == 'vllm':
             return func(prompts=prompts, llm=llm, **kwargs)
+        elif func.__name__ == 'refine':
+            if llm not in generator_models:
+                raise ValueError(f"{llm} is not a valid llm name. Please check the llm name."
+                                 "You can check valid llm names from autorag.generator_models.")
+            batch = kwargs.pop('batch', 16)
+            llm_instance = generator_models[llm](**kwargs)
+            queries = previous_result['query'].tolist()
+            retrieved_contents = previous_result['retrieved_contents'].tolist()
+            return func(queries=queries, contents=retrieved_contents, llm=llm_instance, batch=batch)
         else:
             raise ValueError(f"{func.__name__} is not a valid generator node name. "
                              "Please check the generator node name.")
 
     return wrapper
+
+
+def get_tokens_log(generated_texts):
+    tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
+    tokenized_ids = tokenizer(generated_texts).data['input_ids']
+    pseudo_log_probs = list(map(lambda x: [0.5] * len(x), tokenized_ids))
+    return tokenized_ids, pseudo_log_probs

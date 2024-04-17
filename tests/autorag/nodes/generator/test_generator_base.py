@@ -4,6 +4,12 @@ prompts = [
     "Who is the president of the United States?",
 ]
 
+retrieved_contents = [
+    ["Paris is the capital of France.", "France is a country in Europe.", "France is a member of the EU."],
+    ["The meaning of life is 42.", "The meaning of life is to be happy.", "The meaning of life is to be kind."],
+    ["Joe Biden is the president of the United States.", "I am katarina", "I am hungry"]
+]
+
 
 def check_generated_texts(generated_texts):
     assert len(generated_texts) == len(prompts)

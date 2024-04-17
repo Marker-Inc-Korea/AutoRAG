@@ -2,9 +2,8 @@ import asyncio
 from typing import List, Tuple
 
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
-from transformers import AutoTokenizer
 
-from autorag.nodes.generator.base import generator_node
+from autorag.nodes.generator.base import generator_node, get_tokens_log
 from autorag.utils.util import process_batch
 
 
@@ -30,7 +29,5 @@ def llama_index_llm(prompts: List[str], llm: LLMPredictorType, batch: int = 16) 
     results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
     generated_texts = list(map(lambda x: x.text, results))
-    tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
-    tokenized_ids = tokenizer(generated_texts).data['input_ids']
-    pseudo_log_probs = list(map(lambda x: [0.5] * len(x), tokenized_ids))
+    tokenized_ids, pseudo_log_probs = get_tokens_log(generated_texts)
     return generated_texts, tokenized_ids, pseudo_log_probs
