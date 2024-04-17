@@ -1,5 +1,4 @@
 import pandas as pd
-from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
 from autorag.nodes.generator.refine import refine
@@ -9,7 +8,7 @@ from tests.mock import MockLLM
 
 
 def test_refine_default():
-    llm = OpenAI()
+    llm = MockLLM()
     answers, tokens, log_probs = refine.__wrapped__(prompts, retrieved_contents, llm)
     check_generated_texts(answers)
     check_generated_tokens(tokens)
@@ -19,7 +18,7 @@ def test_refine_default():
 
 
 def test_refine_structured_answer_filtering():
-    llm = OpenAI()
+    llm = MockLLM()
     answers, tokens, log_probs = refine.__wrapped__(prompts, retrieved_contents, llm, structured_answer_filtering=True)
     check_generated_texts(answers)
     check_generated_tokens(tokens)
