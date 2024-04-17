@@ -47,13 +47,13 @@ def get_support_modules(module_name: str) -> Callable:
         # passage_compressor
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
-        'refine': ('autorag.nodes.passagecompressor', 'refine'),
         # prompt_maker
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'long_context_reorder': ('autorag.nodes.promptmaker', 'long_context_reorder'),
         # generator
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
         'vllm': ('autorag.nodes.generator', 'vllm'),
+        'refine': ('autorag.nodes.generator', 'refine'),
     }
     return dynamically_find_function(module_name, support_modules)
 

@@ -87,9 +87,6 @@ node_lines:
         - module_type: tree_summarize
           llm: openai
           model: gpt-3.5-turbo-16k
-        - module_type: refine
-          llm: openai
-          model: gpt-3.5-turbo-16k
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: prompt_maker
@@ -128,3 +125,9 @@ node_lines:
           llm: [openai]
           model: [gpt-3.5-turbo-16k, gpt-3.5-turbo-1106]
           temperature: [0.5, 1.0, 1.5]
+        - module_type: refine
+          llm: [ openai ]
+          model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
+          temperature: [ 0.5, 1.0, 1.5 ]
+          structured_answer_filtering: [ True, False ]
+          prompt: [ None, "Tell me something about the question and refine your answer: {query} \n\n {retrieved_contents}" ]
