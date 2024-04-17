@@ -87,13 +87,13 @@ git remote add upstream https://github.com/Marker-Inc-Korea/AutoRAG.git
   > upstream  https://github.com/Marker-Inc-Korea/AutoRAG.git (fetch)
   > upstream  https://github.com/Marker-Inc-Korea/AutoRAG.git (push)
 ```
-3. To update your local copy with remote changes, run the following: (This will give you an exact copy of the current remote. You should not have any local changes on your master branch, if you do, use rebase instead).
+3. To update your local copy with remote changes, run the following: (This will give you an exact copy of the current remote. You should not have any local changes on your main branch, if you do, use rebase instead).
 ```
 git fetch upstream
 git checkout main
 git merge upstream/main
 ```
-4. Push these merged changes to the master branch on your fork. Ensure to pull in upstream changes regularly to keep your forked repository up to date.
+4. Push these merged changes to the main branch on your fork. Ensure to pull in upstream changes regularly to keep your forked repository up to date.
 ```
 git push origin main
 ```
@@ -117,7 +117,7 @@ After your pull request is merged, you can safely delete your branch and pull th
 ```
 git push origin --delete branch-name
 ```
-2. Checkout the master branch.
+2. Checkout the main branch.
 ```
 git checkout main
 ```
@@ -125,7 +125,7 @@ git checkout main
 ```
 git branch -D branch-name
 ```
-4. Update your master branch with the latest upstream version.
+4. Update your main branch with the latest upstream version.
 ```
 git pull upstream main
 ```
