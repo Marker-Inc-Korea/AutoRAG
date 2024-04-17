@@ -6,7 +6,8 @@ from typing import List, Union, Tuple
 
 import pandas as pd
 
-from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents, get_cosine_similarity_scores
+from autorag.utils import (result_to_dataframe, validate_qa_dataset, fetch_contents, get_cosine_similarity_scores,
+                           sort_by_scores)
 
 logger = logging.getLogger("AutoRAG")
 
@@ -32,11 +33,20 @@ def passage_augmenter_node(func):
         corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
         all_ids_list = corpus_data['doc_id'].tolist()
 
-        augmented_ids = func(ids_list=ids, all_ids_list=all_ids_list, *args, **kwargs)
+        ids = func(ids_list=ids, all_ids_list=all_ids_list, *args, **kwargs)
 
-        augmented_contents = fetch_contents(corpus_data, augmented_ids)
+        contents = fetch_contents(corpus_data, ids)
 
-        augmented_scores = get_cosine_similarity_scores(queries, augmented_contents)
+        scores = get_cosine_similarity_scores(queries, contents)
+
+        df = pd.DataFrame({
+            'contents': contents,
+            'ids': ids,
+            'scores': scores,
+        })
+        df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+        augmented_contents, augmented_ids, augmented_scores = \
+            df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
 
         return augmented_contents, augmented_ids, augmented_scores
 
