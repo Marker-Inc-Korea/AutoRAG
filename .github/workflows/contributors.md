@@ -1,5 +1,10 @@
 # Getting Started
 
+Thank you so much for your consideration of contributing to AutoRAG open source project, and a big welcome! Users in our community are the ones who make it a reality—people just like you.
+
+By reading and adhering to these principles, we can ensure that the contribution process is simple and efficient for all parties. Additionally, it conveys your agreement to honour the developers' time as they oversee and work on these open-source projects. We will respect you in return by taking care of your problem, evaluating your changes, and assisting you in completing your pull requests.
+
+
 - View the [README](https://github.com/Marker-Inc-Korea/AutoRAG/blob/main/README.md) or [watch this video](https://youtu.be/2ojK8xjyXAU?si=nJz-IgrXFaMiyyW5) to get your development environment up and running. 
 - Learn how to [format pull requests](#submitting-a-pull-request).
 - Read how to [rebase/merge upstream branches](#configuring-remotes).
