@@ -10,7 +10,19 @@ def prev_next_augmenter(ids_list: List[List[str]],
                         mode: str = 'next'
                         ) -> List[List[str]]:
     """
+    Add passages before and/or after the retrieved passage.
+    For more information, visit https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/PrevNextPostprocessorDemo/.
 
+    :param ids_list: The list of lists of ids retrieved
+    :param all_ids_list: The list of all ids in the corpus
+    :param num_passages: The number of passages to add before and after the retrieved passage
+        Default is 1.
+    :param mode: The mode of augmentation
+        'prev': add passages before the retrieved passage
+        'next': add passages after the retrieved passage
+        'both': add passages before and after the retrieved passage
+        Default is 'next'.
+    :return: The list of lists of augmented ids
     """
     if mode not in ['prev', 'next', 'both']:
         raise ValueError(f"mode must be 'prev' or 'next', but got {mode}")
