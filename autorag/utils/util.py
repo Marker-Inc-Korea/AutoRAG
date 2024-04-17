@@ -312,8 +312,7 @@ def sort_by_scores(row, reverse=True):
     return list(reranked_contents), list(reranked_ids), list(reranked_scores)
 
 
-def select_top_k(row, top_k: int):
-    row['contents'] = row['contents'].apply(lambda x: x[:top_k])
-    row['ids'] = row['ids'].apply(lambda x: x[:top_k])
-    row['scores'] = row['scores'].apply(lambda x: x[:top_k])
-    return row['contents'].tolist(), row['ids'].tolist(), row['scores'].tolist()
+def select_top_k(row, column_names: List[str], top_k: int):
+    for column_name in column_names:
+        row[column_name] = row[column_name].apply(lambda x: x[:top_k])
+    return row

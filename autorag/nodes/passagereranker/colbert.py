@@ -45,13 +45,13 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
         'scores': rerank_scores,
     })
     df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
-    sorted_contents, sorted_ids, sorted_scores = select_top_k(df, top_k)
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return sorted_contents, sorted_ids, sorted_scores
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
 def colbert_run_model(contents_list, model, tokenizer, device, batch_size: int):
