@@ -1,10 +1,12 @@
-import asyncio
 import os
 import pathlib
+import re
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from llama_index.llms.openai import OpenAI
+from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.core.llms import MockLLM
 
 from autorag.data.qacreation.llama_index import async_qa_gen_llama_index, generate_qa_llama_index_by_ratio, \
     generate_qa_llama_index
@@ -28,10 +30,18 @@ def contents():
     yield df['passage'].tolist()[:6]
 
 
-def test_async_qa_gen_llama_index():
-    result = asyncio.run(async_qa_gen_llama_index(content, llm=OpenAI(model="gpt-3.5-turbo",
-                                                                      temperature=1.0),
-                                                  prompt=sample_prompt, question_num=3))
+async def acomplete_qa_creation(self, messages, **kwargs):
+    pattern = r'Number of questions to generate: (\d+)'
+    matches = re.findall(pattern, messages)
+    num_questions = int(matches[-1])
+    return CompletionResponse(text=
+                              "[Q]: Is this the test question?\n[A]: Yes, this is the test answer." * num_questions)
+
+
+@patch.object(MockLLM, "acomplete", acomplete_qa_creation)
+@pytest.mark.asyncio()
+async def test_async_qa_gen_llama_index():
+    result = await async_qa_gen_llama_index(content, llm=MockLLM(), prompt=sample_prompt, question_num=3)
     assert len(result) == 3
     for res in result:
         assert "query" in res
@@ -40,19 +50,21 @@ def test_async_qa_gen_llama_index():
         assert bool(res['generation_gt'])
 
 
+@patch.object(MockLLM, "acomplete", acomplete_qa_creation)
 def test_qa_gen_llama_index(contents):
-    llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+    llm = MockLLM()
     result = generate_qa_llama_index(llm, contents, sample_prompt)
     check_multi_qa_gen(result)
 
 
+@patch.object(MockLLM, "acomplete", acomplete_qa_creation)
 def test_qa_gen_llama_index_by_ratio(contents):
     ratio_dict = {
         str(os.path.join(prompt_dir, "prompt1.txt")): 1,
         str(os.path.join(prompt_dir, "prompt2.txt")): 2,
         str(os.path.join(prompt_dir, "prompt3.txt")): 3,
     }
-    llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+    llm = MockLLM()
     result = generate_qa_llama_index_by_ratio(llm, contents, ratio_dict, batch=8)
     check_multi_qa_gen(result)
 
