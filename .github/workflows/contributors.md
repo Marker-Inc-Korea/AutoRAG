@@ -1,6 +1,6 @@
 # Getting Started
 
-- View the [README](../README.md) or [watch this video](https://youtu.be/2ojK8xjyXAU?si=nJz-IgrXFaMiyyW5) to get your development environment up and running. 
+- View the [README](https://github.com/Marker-Inc-Korea/AutoRAG/blob/main/README.md) or [watch this video](https://youtu.be/2ojK8xjyXAU?si=nJz-IgrXFaMiyyW5) to get your development environment up and running. 
 - Learn how to [format pull requests](#submitting-a-pull-request).
 - Read how to [rebase/merge upstream branches](#configuring-remotes).
 - Follow our [code of conduct](CODE_OF_CONDUCT.md).
