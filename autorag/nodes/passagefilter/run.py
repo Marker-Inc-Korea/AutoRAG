@@ -22,7 +22,7 @@ def run_passage_filter_node(modules: List[Callable],
         Could be retrieval, reranker, passage filter modules result.
         It means it must contain 'query', 'retrieved_contents', 'retrieved_ids', 'retrieve_scores' columns.
     :param node_line_dir: This node line's directory.
-    :param strategies: Strategies for passage reranker node.
+    :param strategies: Strategies for passage filter node.
         In this node, we use 'retrieval_f1', 'retrieval_recall' and 'retrieval_precision'.
         You can skip evaluation when you use only one module and a module parameter.
     :return: The best result dataframe with previous result columns.
@@ -38,7 +38,7 @@ def run_passage_filter_node(modules: List[Callable],
 
     # run metrics before filtering
     if strategies.get('metrics') is None:
-        raise ValueError("You must at least one metrics for passage_reranker evaluation.")
+        raise ValueError("You must at least one metrics for passage_filter evaluation.")
     results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics')), results))
 
     # save results to folder
