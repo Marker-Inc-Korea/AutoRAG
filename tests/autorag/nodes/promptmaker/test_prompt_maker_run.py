@@ -1,9 +1,12 @@
 import os
 import tempfile
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
+from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
 from autorag.evaluate.util import cast_metrics
@@ -119,6 +122,11 @@ def test_run_prompt_maker_node(node_line_dir):
     assert os.path.exists(os.path.join(node_line_dir, "prompt_maker", "1.parquet"))
 
 
+async def acomplete_qa_creation(*args, **kwargs):
+    return CompletionResponse(text="This is the test answer.")
+
+
+@patch.object(OpenAI, "acomplete", acomplete_qa_creation)
 def test_run_prompt_maker_node_default(node_line_dir):
     modules = [fstring, fstring]
     params = [{'prompt': 'Tell me something about the question: {query} \n\n {retrieved_contents}'},
