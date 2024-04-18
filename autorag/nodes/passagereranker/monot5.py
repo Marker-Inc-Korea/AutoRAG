@@ -1,11 +1,12 @@
 from itertools import chain
 from typing import List, Tuple
 
+import pandas as pd
 import torch
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
+from autorag.utils.util import make_batch, sort_by_scores, flatten_apply, select_top_k
 
 prediction_tokens = {
     'castorini/monot5-base-msmarco': ['▁false', '▁true'],
@@ -72,14 +73,20 @@ def monot5(queries: List[str], contents_list: List[List[str]],
     rerank_scores = flatten_apply(monot5_run_model, nested_list, model=model, batch_size=batch, tokenizer=tokenizer,
                                   device=device, token_false_id=token_false_id, token_true_id=token_true_id)
 
-    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
     del tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return sorted_contents, sorted_ids, sorted_scores
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
 def monot5_run_model(input_texts, model, batch_size: int, tokenizer, device, token_false_id, token_true_id):
