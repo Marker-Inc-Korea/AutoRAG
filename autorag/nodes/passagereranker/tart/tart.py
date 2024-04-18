@@ -1,13 +1,14 @@
 from itertools import chain
 from typing import List, Tuple
 
+import pandas as pd
 import torch
 import torch.nn.functional as F
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
 from autorag.nodes.passagereranker.tart.modeling_enc_t5 import EncT5ForSequenceClassification
 from autorag.nodes.passagereranker.tart.tokenization_enc_t5 import EncT5Tokenizer
-from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
+from autorag.utils.util import make_batch, sort_by_scores, flatten_apply, select_top_k
 
 
 @passage_reranker_node
@@ -45,14 +46,20 @@ def tart(queries: List[str], contents_list: List[List[str]],
     rerank_scores = flatten_apply(tart_run_model, nested_list, model=model, batch_size=batch,
                                   tokenizer=tokenizer, device=device, contents_list=contents_list)
 
-    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
     del tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return sorted_contents, sorted_ids, sorted_scores
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
 def tart_run_model(input_texts, contents_list, model, batch_size: int, tokenizer, device):
