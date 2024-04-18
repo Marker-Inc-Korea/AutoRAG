@@ -1,5 +1,11 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
+from openai.resources.chat import Completions
+from openai.types.chat import ChatCompletion, ChatCompletionMessage, ChatCompletionTokenLogprob
+from openai.types.chat.chat_completion import Choice, ChoiceLogprobs
+from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from transformers import AutoTokenizer
 
 from autorag.evaluate.generation import evaluate_generation
@@ -38,6 +44,32 @@ def pseudo_generation_dict_metrics():
     return pseudo_generations
 
 
+def mock_g_eval_openai_create(*args, **kwargs):
+    sample_choice = Choice(finish_reason="stop", index=0,
+                           message=ChatCompletionMessage(
+                               content="2",
+                               role="assistant",
+                           ),
+                           logprobs=ChoiceLogprobs(
+                               content=[
+                                   ChatCompletionTokenLogprob(token="2",
+                                                              logprob=2.8,
+                                                              top_logprobs=[
+                                                                  TopLogprob(token="2", logprob=2.8),
+                                                              ])
+                               ],
+                           ))
+    if 'n' not in kwargs.keys():
+        n = 1
+    else:
+        n = kwargs['n']
+    return ChatCompletion(id='_id',
+                          choices=[sample_choice] * n,
+                          created=1713363661, model=kwargs['model'],
+                          object="chat.completion")
+
+
+@patch.object(Completions, 'create', mock_g_eval_openai_create)
 def test_evaluate_generation():
     result_df = pseudo_generation()
     assert isinstance(result_df, pd.DataFrame)
