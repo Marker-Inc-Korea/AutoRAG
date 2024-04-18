@@ -31,9 +31,13 @@ def get_file_metadata(file_path: str) -> Dict:
     }
 
 
-def add_essential_metadata(metadata: Dict) -> Dict:
+def add_essential_metadata(metadata: Dict, prev_id: str, next_id: str) -> Dict:
     if 'last_modified_datetime' not in metadata:
         metadata['last_modified_datetime'] = datetime.now()
+    if 'prev_id' not in metadata:
+        metadata['prev_id'] = prev_id
+    if 'next_id' not in metadata:
+        metadata['next_id'] = next_id
     return metadata
 
 

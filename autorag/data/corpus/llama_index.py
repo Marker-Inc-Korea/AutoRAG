@@ -26,11 +26,16 @@ def llama_documents_to_parquet(llama_documents: List[Document],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-    doc_lst = list(map(lambda doc: {
-        'doc_id': str(uuid.uuid4()),
-        'contents': doc.text,
-        'metadata': add_essential_metadata(doc.metadata)
-    }, llama_documents))
+    doc_ids = [str(uuid.uuid4()) for _ in llama_documents]
+    doc_lst = [
+        {
+            'doc_id': doc_id,
+            'contents': doc.text,
+            'metadata': add_essential_metadata(doc.metadata, prev_id, next_id)
+        }
+        for doc, doc_id, prev_id, next_id in zip(llama_documents, doc_ids, [None] + doc_ids[:-1], doc_ids[1:] + [None])
+    ]
+
     processed_df = pd.DataFrame(doc_lst)
 
     if output_filepath is not None:
@@ -57,11 +62,15 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
     :return: Corpus data as pd.DataFrame
     """
 
-    corpus_df = pd.DataFrame(list(map(lambda node: {
-        'doc_id': node.node_id,
-        'contents': node.text,
-        'metadata': add_essential_metadata(node.metadata)
-    }, text_nodes)))
+    node_ids = [node.node_id for node in text_nodes]
+    corpus_df = pd.DataFrame([
+        {
+            'doc_id': node_id,
+            'contents': node.text,
+            'metadata': add_essential_metadata(node.metadata, prev_id, next_id)
+        }
+        for node, node_id, prev_id, next_id in zip(text_nodes, node_ids, [None] + node_ids[:-1], node_ids[1:] + [None])
+    ])
 
     if output_filepath is not None:
         save_parquet_safe(corpus_df, output_filepath, upsert=upsert)
