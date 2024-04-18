@@ -1,13 +1,18 @@
 import functools
+import itertools
 import logging
 import os
 from pathlib import Path
 from typing import List, Union, Tuple
 
+import numpy as np
 import pandas as pd
+import torch
 
-from autorag.utils import (result_to_dataframe, validate_qa_dataset, fetch_contents, get_cosine_similarity_scores,
-                           sort_by_scores)
+from autorag import embedding_models
+from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores
+from autorag.utils.util import reconstruct_list
 
 logger = logging.getLogger("AutoRAG")
 
@@ -33,12 +38,22 @@ def passage_augmenter_node(func):
         corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
         all_ids_list = corpus_data['doc_id'].tolist()
 
+        # get augmented ids
         ids = func(ids_list=ids, all_ids_list=all_ids_list, *args, **kwargs)
 
+        # fetch contents from corpus to use augmented ids
         contents = fetch_contents(corpus_data, ids)
 
-        scores = get_cosine_similarity_scores(queries, contents)
+        # set embedding model for getting scores
+        embedding_model_str = kwargs.pop("embedding_model", 'openai')
+        query_embeddings, contents_embeddings = embedding_query_content(queries, contents, embedding_model_str,
+                                                                        batch=128)
 
+        # get scores from calculated cosine similarity
+        scores = [np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
+                  for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
+
+        # sort by scores
         df = pd.DataFrame({
             'contents': contents,
             'ids': ids,
@@ -51,3 +66,22 @@ def passage_augmenter_node(func):
         return augmented_contents, augmented_ids, augmented_scores
 
     return wrapper
+
+
+def embedding_query_content(queries: List[str], contents_list: List[List[str]],
+                            embedding_model: str, batch: int = 128):
+    embedding_model = embedding_models[embedding_model]
+
+    # Embedding using batch
+    embedding_model.embed_batch_size = batch
+    query_embeddings = embedding_model.get_text_embedding_batch(queries)
+
+    content_lengths = list(map(len, contents_list))
+    content_embeddings_flatten = embedding_model.get_text_embedding_batch(list(
+        itertools.chain.from_iterable(contents_list)))
+    content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
+
+    del embedding_model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return query_embeddings, content_embeddings

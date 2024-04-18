@@ -11,8 +11,6 @@ from typing import List, Callable, Dict, Optional, Any, Collection
 
 import pandas as pd
 import tiktoken
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 logger = logging.getLogger("AutoRAG")
 
@@ -312,13 +310,3 @@ def sort_by_scores(row, reverse=True):
     results = sorted(zip(row['contents'], row['ids'], row['scores']), key=lambda x: x[2], reverse=reverse)
     reranked_contents, reranked_ids, reranked_scores = zip(*results)
     return list(reranked_contents), list(reranked_ids), list(reranked_scores)
-
-
-def get_cosine_similarity_scores(queries: List[str], contents_list: List[List[str]]) -> List[List[float]]:
-    vectorizer = TfidfVectorizer()
-    results = []
-    for query, content_list in zip(queries, contents_list):
-        tfidf_matrix = vectorizer.fit_transform([query] + content_list)
-        cosine_scores = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:])
-        results.append(cosine_scores.flatten().tolist())
-    return results

@@ -13,7 +13,7 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token, get_cosine_similarity_scores
+    convert_env_in_dict, openai_truncate_by_token
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -286,12 +286,3 @@ def test_openai_truncate_by_token():
     assert len(truncated[1]) < len(t2)
     assert len(tiktoken.encoding_for_model('text-embedding-ada-002').encode(truncated[1])) == 8192
     assert len(truncated[2]) == len(t3)
-
-
-def test_get_cosine_similarity_scores():
-    queries = ['one', 'two', 'three']
-    contents = [["one", "content"], ["two", "content"], ["three", "content"]]
-    results = get_cosine_similarity_scores(queries, contents)
-    assert len(results) == 3
-    assert isinstance(results[0], list)
-    assert isinstance(results[0][0], float)
