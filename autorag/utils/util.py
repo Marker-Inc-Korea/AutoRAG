@@ -310,3 +310,9 @@ def sort_by_scores(row, reverse=True):
     results = sorted(zip(row['contents'], row['ids'], row['scores']), key=lambda x: x[2], reverse=reverse)
     reranked_contents, reranked_ids, reranked_scores = zip(*results)
     return list(reranked_contents), list(reranked_ids), list(reranked_scores)
+
+
+def select_top_k(df, column_names: List[str], top_k: int):
+    for column_name in column_names:
+        df[column_name] = df[column_name].apply(lambda x: x[:top_k])
+    return df

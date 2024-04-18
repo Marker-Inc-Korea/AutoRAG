@@ -5,7 +5,7 @@ import torch
 from sentence_transformers import CrossEncoder
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import flatten_apply, make_batch, sort_by_scores
+from autorag.utils.util import flatten_apply, make_batch, select_top_k, sort_by_scores
 
 
 @passage_reranker_node
@@ -41,17 +41,14 @@ def sentence_transformer_reranker(queries: List[str], contents_list: List[List[s
         'ids': ids_list,
         'scores': rerank_scores,
     })
-
     df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
-    df['contents'] = df['contents'].apply(lambda x: x[:top_k])
-    df['ids'] = df['ids'].apply(lambda x: x[:top_k])
-    df['scores'] = df['scores'].apply(lambda x: x[:top_k])
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
 def sentence_transformer_run_model(input_texts, model, batch_size: int):
