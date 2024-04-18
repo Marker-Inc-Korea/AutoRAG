@@ -4,3 +4,4 @@ twine
 build
 setuptools-scm
 pytest-xdist
+pytest-asyncio
