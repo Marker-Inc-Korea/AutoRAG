@@ -22,9 +22,7 @@ Remember that this is an inclusive community, committed to creating a safe, posi
 
 ### The best ways to report issues or make requests for improvements are as follows:
 - Please explore the issue tracker before submitting an issue. There may already be an issue for your issue, and the conversation may have made remedies readily apparent.
-- When creating the problem, adhere to the problem Template.
-- If there are any, including screenshots (especially for UI-related concerns).
-- Include mockups for UI improvements or procedures to obtain a clear understanding.
+- When creating the problem, include the screenshots also.
 
 ### Best Practices for getting assigned to work on an Issue/Enhancement:
 - If you would like to work on an issue, inform in the issue ticket by commenting on it.
