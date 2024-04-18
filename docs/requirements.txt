@@ -6,3 +6,4 @@ sphinx-inline-tabs
 sphinx-copybutton
 sphinx_design
 sphinxcontrib-googleanalytics
+sphinx-sitemap
