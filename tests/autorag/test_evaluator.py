@@ -2,9 +2,12 @@ import os.path
 import pathlib
 import tempfile
 from distutils.dir_util import copy_tree
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.llms.openai import OpenAI
 
 from autorag.deploy import extract_best_config
 from autorag.evaluator import Evaluator
@@ -217,11 +220,22 @@ def base_restart_trial(evaluator, error_folder_path):
     assert os.path.exists(os.path.join(error_path, 'post_retrieve_node_line', 'summary.csv'))
 
 
+async def mock_acomplete(self, messages, **kwargs):
+    return CompletionResponse(text=messages)
+
+
+async def mock_apredict(self, prompt, **kwargs):
+    return prompt.format(**kwargs)
+
+
+@patch.object(OpenAI, "acomplete", mock_acomplete)
+@patch.object(OpenAI, "apredict", mock_apredict)
 def test_restart_last_node(evaluator):
     compressor_error_folder_path = os.path.join(resource_dir, 'result_project', '1')
     base_restart_trial(evaluator, compressor_error_folder_path)
 
 
+@patch.object(OpenAI, "acomplete", mock_acomplete)
 def test_restart_first_node(evaluator):
     prompt_error_folder_path = os.path.join(resource_dir, 'result_project', '2')
     base_restart_trial(evaluator, prompt_error_folder_path)
