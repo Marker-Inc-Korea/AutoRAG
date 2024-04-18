@@ -10,7 +10,7 @@ import sacrebleu
 import torch
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
-from openai import OpenAI
+from openai import AsyncOpenAI
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 
@@ -194,25 +194,39 @@ def sem_score(generation_gt: List[List[str]], generations: List[str],
     return result
 
 
-@generation_metric
-def g_eval(generation_gt: List[str], pred: str,
+def g_eval(generation_gt: List[List[str]], generations: List[str],
            metrics: Optional[List[str]] = None,
            model: str = 'gpt-4-0125-preview',
-           ) -> float:
+           batch_size: int = 8) -> List[float]:
     """
-    Calculate G-Eval score.
-    G-eval is a metric that uses high-performance LLM model to evaluate generation performance.
-    It evaluates the generation result by coherence, consistency, fluency, and relevance.
-    It uses only 'openai' model, and we recommend to use gpt-4 for evaluation accuracy.
+        Calculate G-Eval score.
+        G-eval is a metric that uses high-performance LLM model to evaluate generation performance.
+        It evaluates the generation result by coherence, consistency, fluency, and relevance.
+        It uses only 'openai' model, and we recommend to use gpt-4 for evaluation accuracy.
 
-    :param generation_gt: A list of ground truth.
-    :param pred: Model generation.
-    :param metrics: A list of metrics to use for evaluation.
-        Default is all metrics, which is ['coherence', 'consistency', 'fluency', 'relevance'].
-    :param model: OpenAI model name.
-        Default is 'gpt-4-0125-preview'.
-    :return: G-Eval score.
+        :param generation_gt: A list of ground truth.
+            Must be 2-d list of string.
+            Because it can be a multiple ground truth.
+            It will get the max of g_eval score.
+        :param generations: A list of generations that LLM generated.
+        :param metrics: A list of metrics to use for evaluation.
+            Default is all metrics, which is ['coherence', 'consistency', 'fluency', 'relevance'].
+        :param model: OpenAI model name.
+            Default is 'gpt-4-0125-preview'.
+        :param batch_size: The batch size for processing.
+            Default is 8.
+        :return: G-Eval score.
     """
+    loop = asyncio.get_event_loop()
+    tasks = [async_g_eval(gt, pred, metrics, model) for gt, pred in zip(generation_gt, generations)]
+    result = loop.run_until_complete(process_batch(tasks, batch_size=batch_size))
+    return result
+
+
+async def async_g_eval(generation_gt: List[str], pred: str,
+                       metrics: Optional[List[str]] = None,
+                       model: str = 'gpt-4-0125-preview',
+                       ) -> float:
     available_metrics = ['coherence', 'consistency', 'fluency', 'relevance']
     if metrics is None:
         metrics = available_metrics
@@ -229,13 +243,13 @@ def g_eval(generation_gt: List[str], pred: str,
         "relevance": open(os.path.join(prompt_path, "rel_detailed.txt")).read(),
     }
 
-    client = OpenAI()
+    client = AsyncOpenAI()
 
-    def g_eval_score(prompt: str, gen_gt: List[str], pred: str):
+    async def g_eval_score(prompt: str, gen_gt: List[str], pred: str):
         scores = []
         for gt in gen_gt:
             input_prompt = prompt.replace('{{Document}}', gt).replace('{{Summary}}', pred)
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": input_prompt}
@@ -265,7 +279,7 @@ def g_eval(generation_gt: List[str], pred: str,
 
         return int(max(target_tokens, key=target_tokens.get))
 
-    g_eval_scores = list(map(lambda x: g_eval_score(g_eval_prompts[x], generation_gt, pred), metrics))
+    g_eval_scores = await asyncio.gather(*(g_eval_score(g_eval_prompts[x], generation_gt, pred) for x in metrics))
     return sum(g_eval_scores) / len(g_eval_scores)
 
 

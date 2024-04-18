@@ -1,11 +1,11 @@
-from itertools import chain
 from typing import List, Tuple
 
+import pandas as pd
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, sort_and_select_top_k, flatten_apply
+from autorag.utils.util import make_batch, select_top_k, flatten_apply, sort_by_scores
 
 
 @passage_reranker_node
@@ -35,29 +35,31 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     model = AutoModel.from_pretrained(model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    nested_list = [list(map(lambda x: [x], content_list)) for content_list in contents_list]
-    new_queries = list(map(lambda query, content_list: [query] * len(content_list), queries, contents_list))
+    nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
 
-    rerank_scores = flatten_apply(colbert_run_model, nested_list, queries=new_queries, model=model,
+    rerank_scores = flatten_apply(colbert_run_model, nested_list, model=model,
                                   tokenizer=tokenizer, batch_size=batch, device=device)
-
-    sorted_contents, sorted_ids, sorted_scores = sort_and_select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return sorted_contents, sorted_ids, sorted_scores
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
-def colbert_run_model(contents_list, queries, model, tokenizer, device, batch_size: int):
-    batch_queries_list = make_batch(queries, batch_size)
+def colbert_run_model(contents_list, model, tokenizer, device, batch_size: int):
     batch_contents_list = make_batch(contents_list, batch_size)
     results = []
 
-    for batch_queries, batch_contents in zip(batch_queries_list, batch_contents_list):
-        flattened_batch_queries: List[str] = list(chain.from_iterable(batch_queries))
-        flattened_batch_contents: List[str] = list(chain.from_iterable(batch_contents))
+    for batch_contents in batch_contents_list:
+        flattened_batch_queries, flattened_batch_contents = map(list, zip(*batch_contents))
 
         # Tokenize both queries and contents together
         feature = tokenizer(flattened_batch_queries, flattened_batch_contents, padding=True, truncation=True,
