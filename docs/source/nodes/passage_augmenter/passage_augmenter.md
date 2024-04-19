@@ -11,7 +11,10 @@ The primary benefit of passage augmenter is that allows users to fetch additiona
 
 ## **Node Parameters**
 
-There are no node parameters for passage augmenter.
+**embedding_model**
+
+- **Description**: The embedding model name to be used for calculating the cosine similarity between the query and the
+  augmented passages.
 
 ### Example config.yaml file
 
@@ -23,6 +26,7 @@ node_lines:
         strategy:
           metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
           speed_threshold: 5
+        embedding_model: openai
         modules:
           - module_type: pass_passage_augmenter
           - module_type: prev_next_augmenter
