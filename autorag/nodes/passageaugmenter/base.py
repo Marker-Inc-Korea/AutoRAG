@@ -36,11 +36,18 @@ def passage_augmenter_node(func):
         ids = previous_result["retrieved_ids"].tolist()
 
         corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
-        slim_corpus_df = corpus_df[["doc_id", "metadata"]]
-        slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
 
-        # get augmented ids
-        ids = func(ids_list=ids, corpus_df=slim_corpus_df, *args, **kwargs)
+        if func.__name__ == 'prev_next_augmenter':
+            slim_corpus_df = corpus_df[["doc_id", "metadata"]]
+            slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
+
+            mode = kwargs.pop("mode", 'next')
+            num_passages = kwargs.pop("num_passages", 1)
+
+            # get augmented ids
+            ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
+        else:
+            ids = func(ids_list=ids, *args, **kwargs)
 
         # fetch contents from corpus to use augmented ids
         contents = fetch_contents(corpus_df, ids)
