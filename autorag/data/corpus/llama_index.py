@@ -1,9 +1,10 @@
 import uuid
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Dict
 
 import pandas as pd
 from llama_index.core import Document
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import TextNode, NodeRelationship
 
 from autorag.data.utils.util import add_essential_metadata
 from autorag.utils.util import save_parquet_safe
@@ -62,17 +63,25 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
     :return: Corpus data as pd.DataFrame
     """
 
-    node_ids = [node.node_id for node in text_nodes]
-    corpus_df = pd.DataFrame([
-        {
-            'doc_id': node_id,
-            'contents': node.text,
-            'metadata': add_essential_metadata(node.metadata, prev_id, next_id)
-        }
-        for node, node_id, prev_id, next_id in zip(text_nodes, node_ids, [None] + node_ids[:-1], node_ids[1:] + [None])
-    ])
+    corpus_df = pd.DataFrame(list(map(lambda node: {
+        'doc_id': node.node_id,
+        'contents': node.text,
+        'metadata': llama_text_node_add_essential_metadata(node.metadata, node.relationships)
+    }, text_nodes)))
 
     if output_filepath is not None:
         save_parquet_safe(corpus_df, output_filepath, upsert=upsert)
 
     return corpus_df
+
+
+def llama_text_node_add_essential_metadata(metadata: Dict, relationships: Dict) -> Dict:
+    if 'last_modified_datetime' not in metadata:
+        metadata['last_modified_datetime'] = datetime.now()
+    prev_node_info = relationships.get(NodeRelationship.PREVIOUS, None)
+    if prev_node_info:
+        metadata['prev_id'] = prev_node_info.node_id
+    next_node_info = relationships.get(NodeRelationship.NEXT, None)
+    if next_node_info:
+        metadata['next_id'] = next_node_info.node_id
+    return metadata
