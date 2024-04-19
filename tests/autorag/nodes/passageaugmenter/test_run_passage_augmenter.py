@@ -49,8 +49,8 @@ def test_run_passage_augmenter_node(node_line_dir):
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 1
     assert summary_df['filename'][0] == "0.parquet"
-    assert summary_df['passage_augmenter_retrieval_f1'][0] == result_df['retrieval_f1'].mean()
-    assert summary_df['passage_augmenter_retrieval_recall'][0] == result_df['retrieval_recall'].mean()
+    assert summary_df['passage_augmenter_retrieval_f1'][0] == pytest.approx(result_df['retrieval_f1'].mean())
+    assert summary_df['passage_augmenter_retrieval_recall'][0] == pytest.approx(result_df['retrieval_recall'].mean())
     assert summary_df['module_name'][0] == "prev_next_augmenter"
     assert summary_df['module_params'][0] == {'num_passages': 1}
     assert summary_df['execution_time'][0] > 0
