@@ -44,4 +44,5 @@ So with this module, you can automatically test the performance without using an
 maxdepth: 1
 ---
 prev_next_augmenter.md
+recursive_chunk.md
 ```
