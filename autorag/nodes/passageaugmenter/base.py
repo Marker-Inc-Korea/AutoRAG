@@ -46,11 +46,11 @@ def passage_augmenter_node(func):
 
             # get augmented ids
             ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
+            # fetch contents from corpus to use augmented ids
+            contents = fetch_contents(corpus_df, ids)
         else:
-            ids = func(ids_list=ids, *args, **kwargs)
-
-        # fetch contents from corpus to use augmented ids
-        contents = fetch_contents(corpus_df, ids)
+            contents = fetch_contents(corpus_df, ids)
+            ids, contents = func(ids_list=ids, contents_list=contents, *args, **kwargs)
 
         # set embedding model for getting scores
         embedding_model_str = kwargs.pop("embedding_model", 'openai')

@@ -2,20 +2,32 @@ from typing import List, Tuple
 
 from llama_index.core.node_parser import SentenceSplitter
 
-from autorag.nodes.retrieval.base import retrieval_node
+from autorag.nodes.passageaugmenter.base import passage_augmenter_node
 
 
-@retrieval_node
-def recursive_chunk(queries: List[List[str]],
-                    ids: List[List[str]],
+@passage_augmenter_node
+def recursive_chunk(ids_list: List[List[str]],
                     contents_list: List[List[str]],
                     sub_chunk_sizes: List[int] = [128, 256, 512],
                     chunk_overlap: int = 20,
-                    ) -> Tuple[List[List[str]], List[List[float]]]:
+                    ) -> Tuple[List[List[str]], List[List[str]]]:
     sub_sentence_splitters = [SentenceSplitter(chunk_size=c, chunk_overlap=chunk_overlap) for c in sub_chunk_sizes]
-    for sub_sentence_splitter in sub_sentence_splitters:
-        for contents in contents_list:
-            for content in contents:
-                split_result = sub_sentence_splitter.split_text(content)
-            # Metric은 어떻게 측정하지 ..? 새롭게 embedding이 들어가면 id도 새로..?
-            # 1. qa retrieval_gt에 id를 추가한다.
+    augmented_ids, augmented_contents = [], []
+
+    for ids, contents in zip(ids_list, contents_list):
+        sublist_ids, split_contents = recursive_chunk_pure(ids, contents, sub_sentence_splitters)
+        augmented_contents.append(split_contents)
+        augmented_ids.append(sublist_ids)
+
+    return augmented_ids, augmented_contents
+
+
+def recursive_chunk_pure(ids: List[str], contents: List[str], sub_sentence_splitters: List[SentenceSplitter]) -> Tuple[
+    List[str], List[str]]:
+    sublist_ids, split_contents = [], []
+    for id_, content in zip(ids, contents):
+        for sub_sentence_splitter in sub_sentence_splitters:
+            split_results = sub_sentence_splitter.split_text(content)
+            split_contents.extend(split_results)
+            sublist_ids.extend([id_] * len(split_results))
+    return sublist_ids, split_contents
