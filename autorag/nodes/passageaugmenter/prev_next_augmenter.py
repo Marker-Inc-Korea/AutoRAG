@@ -9,7 +9,7 @@ from autorag.nodes.passageaugmenter.base import passage_augmenter_node
 def prev_next_augmenter(ids_list: List[List[str]],
                         corpus_df: pd.DataFrame,
                         num_passages: int = 1,
-                        mode: str = 'next'
+                        mode: str = 'both'
                         ) -> List[List[str]]:
     """
     Add passages before and/or after the retrieved passage.

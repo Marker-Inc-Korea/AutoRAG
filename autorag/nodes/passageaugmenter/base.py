@@ -41,7 +41,7 @@ def passage_augmenter_node(func):
             slim_corpus_df = corpus_df[["doc_id", "metadata"]]
             slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
 
-            mode = kwargs.pop("mode", 'next')
+            mode = kwargs.pop("mode", 'both')
             num_passages = kwargs.pop("num_passages", 1)
 
             # get augmented ids
