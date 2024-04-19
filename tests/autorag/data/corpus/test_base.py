@@ -13,4 +13,6 @@ def validate_corpus(result_df: pd.DataFrame, length: int, parquet_filepath):
 
     assert ['test text'] * length == result_df['contents'].tolist()
     assert all(['last_modified_datetime' in metadata for metadata in result_df['metadata'].tolist()])
+    assert all(['prev_id' in metadata for metadata in result_df['metadata'].tolist()])
+    assert all(['next_id' in metadata for metadata in result_df['metadata'].tolist()])
     assert all([isinstance(doc_id, str) for doc_id in result_df['doc_id'].tolist()])

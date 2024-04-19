@@ -25,6 +25,8 @@ def get_support_modules(module_name: str) -> Callable:
         'hybrid_cc': ('autorag.nodes.retrieval', 'hybrid_cc'),
         'hybrid_rsf': ('autorag.nodes.retrieval', 'hybrid_rsf'),
         'hybrid_dbsf': ('autorag.nodes.retrieval', 'hybrid_dbsf'),
+        # passage_augmenter
+        'prev_next_augmenter': ('autorag.nodes.passageaugmenter', 'prev_next_augmenter'),
         # passage_reranker
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),
@@ -67,5 +69,6 @@ def get_support_nodes(node_name: str) -> Callable:
         'passage_filter': ('autorag.nodes.passagefilter.run', 'run_passage_filter_node'),
         'passage_compressor': ('autorag.nodes.passagecompressor.run', 'run_passage_compressor_node'),
         'passage_reranker': ('autorag.nodes.passagereranker.run', 'run_passage_reranker_node'),
+        'passage_augmenter': ('autorag.nodes.passageaugmenter.run', 'run_passage_augmenter_node'),
     }
     return dynamically_find_function(node_name, support_nodes)

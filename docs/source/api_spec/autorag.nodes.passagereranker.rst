@@ -60,6 +60,14 @@ autorag.nodes.passagereranker.jina module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.just\_lab module
+----------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.just_lab
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.koreranker module
 -----------------------------------------------
 
