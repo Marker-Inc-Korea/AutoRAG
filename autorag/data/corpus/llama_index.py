@@ -78,10 +78,10 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
 def llama_text_node_add_essential_metadata(metadata: Dict, relationships: Dict) -> Dict:
     if 'last_modified_datetime' not in metadata:
         metadata['last_modified_datetime'] = datetime.now()
-    prev_node_info = relationships.get(NodeRelationship.PREVIOUS, None)
-    if prev_node_info:
-        metadata['prev_id'] = prev_node_info.node_id
-    next_node_info = relationships.get(NodeRelationship.NEXT, None)
-    if next_node_info:
-        metadata['next_id'] = next_node_info.node_id
+    prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
+    if prev_node:
+        metadata['prev_id'] = prev_node.node_id
+    next_node = relationships.get(NodeRelationship.NEXT, None)
+    if next_node:
+        metadata['next_id'] = next_node.node_id
     return metadata
