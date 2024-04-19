@@ -1,11 +1,13 @@
 from typing import List
 
+import pandas as pd
+
 from autorag.nodes.passageaugmenter.base import passage_augmenter_node
 
 
 @passage_augmenter_node
 def prev_next_augmenter(ids_list: List[List[str]],
-                        all_ids_list: List[str],
+                        corpus_df: pd.DataFrame,
                         num_passages: int = 1,
                         mode: str = 'next'
                         ) -> List[List[str]]:
@@ -14,7 +16,7 @@ def prev_next_augmenter(ids_list: List[List[str]],
     For more information, visit https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/PrevNextPostprocessorDemo/.
 
     :param ids_list: The list of lists of ids retrieved
-    :param all_ids_list: The list of all ids in the corpus
+    :param corpus_df: The corpus dataframe
     :param num_passages: The number of passages to add before and after the retrieved passage
         Default is 1.
     :param mode: The mode of augmentation
@@ -25,28 +27,31 @@ def prev_next_augmenter(ids_list: List[List[str]],
     :return: The list of lists of augmented ids
     """
     if mode not in ['prev', 'next', 'both']:
-        raise ValueError(f"mode must be 'prev' or 'next', but got {mode}")
+        raise ValueError(f"mode must be 'prev', 'next', or 'both', but got {mode}")
 
-    augmented_ids = []
-
-    id_index_map = {id_: idx for idx, id_ in enumerate(all_ids_list)}
-
-    for sublist in ids_list:
-        new_sublist = []
-        for id_ in sublist:
-            if id_ in id_index_map:
-                idx = id_index_map[id_]
-
-                if mode == 'prev' or mode == 'both':
-                    start_idx = max(0, idx - num_passages)
-                    new_sublist.extend(all_ids_list[start_idx:idx])
-
-                new_sublist.append(id_)
-
-                if mode == 'next' or mode == 'both':
-                    end_idx = min(len(all_ids_list), idx + 1 + num_passages)
-                    new_sublist.extend(all_ids_list[idx + 1:end_idx])
-
-        augmented_ids.append(new_sublist)
+    augmented_ids = [(lambda ids: prev_next_augmenter_pure(ids, corpus_df, mode, num_passages))(ids) for ids in
+                     ids_list]
 
     return augmented_ids
+
+
+def prev_next_augmenter_pure(ids: List[str], corpus_df: pd.DataFrame, mode: str, num_passages: int):
+    def fetch_id_sequence(start_id, key):
+        sequence = []
+        current_id = start_id
+        for _ in range(num_passages):
+            current_id = corpus_df.loc[corpus_df['doc_id'] == current_id]['metadata'].values[0].get(key)
+            if current_id is None:
+                break
+            sequence.append(current_id)
+        return sequence
+
+    augmented_group = []
+    for id_ in ids:
+        current_ids = [id_]
+        if mode in ['prev', 'both']:
+            current_ids = fetch_id_sequence(id_, 'prev_id')[::-1] + current_ids
+        if mode in ['next', 'both']:
+            current_ids += fetch_id_sequence(id_, 'next_id')
+        augmented_group.extend(current_ids)
+    return augmented_group

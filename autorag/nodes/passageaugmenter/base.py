@@ -12,7 +12,7 @@ import torch
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
 from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores
-from autorag.utils.util import reconstruct_list
+from autorag.utils.util import reconstruct_list, filter_dict_keys
 
 logger = logging.getLogger("AutoRAG")
 
@@ -35,14 +35,15 @@ def passage_augmenter_node(func):
         assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
-        corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
-        all_ids_list = corpus_data['doc_id'].tolist()
+        corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+        slim_corpus_df = corpus_df[["doc_id", "metadata"]]
+        slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
 
         # get augmented ids
-        ids = func(ids_list=ids, all_ids_list=all_ids_list, *args, **kwargs)
+        ids = func(ids_list=ids, corpus_df=slim_corpus_df, *args, **kwargs)
 
         # fetch contents from corpus to use augmented ids
-        contents = fetch_contents(corpus_data, ids)
+        contents = fetch_contents(corpus_df, ids)
 
         # set embedding model for getting scores
         embedding_model_str = kwargs.pop("embedding_model", 'openai')

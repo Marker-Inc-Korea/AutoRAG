@@ -3,10 +3,6 @@ import pathlib
 
 import pandas as pd
 
-ids_list = [['2'], ['3'], ['0', '6']]
-
-all_ids_list = [str(i) for i in range(7)]
-
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 project_dir = os.path.join(root_dir, "resources", "sample_project")
 qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
@@ -24,3 +20,5 @@ previous_result = pd.DataFrame({
     'retrieval_f1': [0.4, 1.0],
     'retrieval_recall': [1.0, 0.3]
 })
+doc_id_list = corpus_data["doc_id"].tolist()
+ids_list = [[doc_id_list[1]], [doc_id_list[3]], [doc_id_list[0], doc_id_list[29]]]

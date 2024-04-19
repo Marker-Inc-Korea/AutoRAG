@@ -1,27 +1,35 @@
 from autorag.nodes.passageaugmenter import prev_next_augmenter
 
-from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import ids_list, all_ids_list, project_dir, \
-    previous_result, corpus_data
+from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import ids_list, project_dir, \
+    previous_result, corpus_data, doc_id_list
 
 
 def test_prev_next_augmenter_next():
-    results = prev_next_augmenter.__wrapped__(ids_list, all_ids_list, num_passages=1, mode='next')
-    assert results == [['2', '3'], ['3', '4'], ['0', '1', '6']]
+    results = prev_next_augmenter.__wrapped__(ids_list, corpus_data, num_passages=1, mode='next')
+    assert results == [[doc_id_list[1], doc_id_list[2]],
+                       [doc_id_list[3], doc_id_list[4]],
+                       [doc_id_list[0], doc_id_list[1], doc_id_list[29]]]
 
 
 def test_prev_next_augmenter_prev():
-    results = prev_next_augmenter.__wrapped__(ids_list, all_ids_list, num_passages=1, mode='prev')
-    assert results == [['1', '2'], ['2', '3'], ['0', '5', '6']]
+    results = prev_next_augmenter.__wrapped__(ids_list, corpus_data, num_passages=1, mode='prev')
+    assert results == [[doc_id_list[0], doc_id_list[1]],
+                       [doc_id_list[2], doc_id_list[3]],
+                       [doc_id_list[0], doc_id_list[28], doc_id_list[29]]]
 
 
 def test_prev_next_augmenter_both():
-    results = prev_next_augmenter.__wrapped__(ids_list, all_ids_list, num_passages=1, mode='both')
-    assert results == [['1', '2', '3'], ['2', '3', '4'], ['0', '1', '5', '6']]
+    results = prev_next_augmenter.__wrapped__(ids_list, corpus_data, num_passages=1, mode='both')
+    assert results == [[doc_id_list[0], doc_id_list[1], doc_id_list[2]],
+                       [doc_id_list[2], doc_id_list[3], doc_id_list[4]],
+                       [doc_id_list[0], doc_id_list[1], doc_id_list[28], doc_id_list[29]]]
 
 
 def test_prev_next_augmenter_multi_passages():
-    results = prev_next_augmenter.__wrapped__(ids_list, all_ids_list, num_passages=3, mode='prev')
-    assert results == [['0', '1', '2'], ['0', '1', '2', '3'], ['0', '3', '4', '5', '6']]
+    results = prev_next_augmenter.__wrapped__(ids_list, corpus_data, num_passages=3, mode='prev')
+    assert results == [[doc_id_list[0], doc_id_list[1]],
+                       [doc_id_list[0], doc_id_list[1], doc_id_list[2], doc_id_list[3]],
+                       [doc_id_list[0], doc_id_list[26], doc_id_list[27], doc_id_list[28], doc_id_list[29]]]
 
 
 def test_prev_next_augmenter_node():

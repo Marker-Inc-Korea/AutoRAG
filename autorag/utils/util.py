@@ -316,3 +316,13 @@ def select_top_k(df, column_names: List[str], top_k: int):
     for column_name in column_names:
         df[column_name] = df[column_name].apply(lambda x: x[:top_k])
     return df
+
+
+def filter_dict_keys(dict_, keys: List[str]):
+    result = {}
+    for key in keys:
+        if key in dict_:
+            result[key] = dict_[key]
+        else:
+            raise KeyError(f"Key '{key}' not found in dictionary.")
+    return result
