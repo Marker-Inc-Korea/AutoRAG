@@ -66,7 +66,7 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
     corpus_df = pd.DataFrame(list(map(lambda node: {
         'doc_id': node.node_id,
         'contents': node.text,
-        'metadata': llama_text_node_add_essential_metadata(node.metadata, node.relationships)
+        'metadata': add_essential_metadata_llama_text_node(node.metadata, node.relationships)
     }, text_nodes)))
 
     if output_filepath is not None:
@@ -75,7 +75,7 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
     return corpus_df
 
 
-def llama_text_node_add_essential_metadata(metadata: Dict, relationships: Dict) -> Dict:
+def add_essential_metadata_llama_text_node(metadata: Dict, relationships: Dict) -> Dict:
     if 'last_modified_datetime' not in metadata:
         metadata['last_modified_datetime'] = datetime.now()
     prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
