@@ -62,7 +62,6 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-
     corpus_df = pd.DataFrame(list(map(lambda node: {
         'doc_id': node.node_id,
         'contents': node.text,
@@ -78,10 +77,16 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
 def add_essential_metadata_llama_text_node(metadata: Dict, relationships: Dict) -> Dict:
     if 'last_modified_datetime' not in metadata:
         metadata['last_modified_datetime'] = datetime.now()
-    prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
-    if prev_node:
-        metadata['prev_id'] = prev_node.node_id
-    next_node = relationships.get(NodeRelationship.NEXT, None)
-    if next_node:
-        metadata['next_id'] = next_node.node_id
+
+    if 'prev_id' not in metadata:
+        if NodeRelationship.PREVIOUS in relationships:
+            prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
+            if prev_node:
+                metadata['prev_id'] = prev_node.node_id
+
+    if 'next_id' not in metadata:
+        if NodeRelationship.NEXT in relationships:
+            next_node = relationships.get(NodeRelationship.NEXT, None)
+            if next_node:
+                metadata['next_id'] = next_node.node_id
     return metadata

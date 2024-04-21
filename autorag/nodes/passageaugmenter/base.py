@@ -11,7 +11,8 @@ import torch
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
-from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores
+from autorag.utils import (result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores,
+                           validate_corpus_dataset, cast_corpus_dataset)
 from autorag.utils.util import reconstruct_list, filter_dict_keys
 
 logger = logging.getLogger("AutoRAG")
@@ -36,8 +37,10 @@ def passage_augmenter_node(func):
         ids = previous_result["retrieved_ids"].tolist()
 
         corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+        validate_corpus_dataset(corpus_df)
 
         if func.__name__ == 'prev_next_augmenter':
+            corpus_df = cast_corpus_dataset(corpus_df)
             slim_corpus_df = corpus_df[["doc_id", "metadata"]]
             slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
 
