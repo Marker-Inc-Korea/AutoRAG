@@ -1,12 +1,12 @@
-import asyncio
 from typing import List, Tuple
 
+import pandas as pd
 import torch
 from FlagEmbedding import FlagLLMReranker
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.nodes.passagereranker.flag_embedding import flag_embedding_reranker_pure
-from autorag.utils.util import process_batch
+from autorag.nodes.passagereranker.flag_embedding import flag_embedding_run_model
+from autorag.utils.util import flatten_apply, sort_by_scores, select_top_k
 
 
 @passage_reranker_node
@@ -32,16 +32,19 @@ def flag_embedding_llm_reranker(queries: List[str], contents_list: List[List[str
     model = FlagLLMReranker(
         model_name_or_path=model_name, use_fp16=use_fp16
     )
-    tasks = [flag_embedding_reranker_pure(query, contents, scores, top_k, ids, model)
-             for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
-    content_result = list(map(lambda x: x[0], results))
-    id_result = list(map(lambda x: x[1], results))
-    score_result = list(map(lambda x: x[2], results))
+    nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
+    rerank_scores = flatten_apply(flag_embedding_run_model, nested_list, model=model, batch_size=batch)
+
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return content_result, id_result, score_result
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
