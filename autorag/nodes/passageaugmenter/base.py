@@ -13,7 +13,7 @@ from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
 from autorag.utils import (result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores,
                            validate_corpus_dataset, cast_corpus_dataset)
-from autorag.utils.util import reconstruct_list, filter_dict_keys
+from autorag.utils.util import reconstruct_list, filter_dict_keys, select_top_k
 
 logger = logging.getLogger("AutoRAG")
 
@@ -53,11 +53,12 @@ def passage_augmenter_node(func):
             ids = func(ids_list=ids, *args, **kwargs)
 
         # fetch contents from corpus to use augmented ids
-        contents = fetch_contents(corpus_df, ids)
+        augmented_contents = fetch_contents(corpus_df, ids)
 
         # set embedding model for getting scores
         embedding_model_str = kwargs.pop("embedding_model", 'openai')
-        query_embeddings, contents_embeddings = embedding_query_content(queries, contents, embedding_model_str,
+        query_embeddings, contents_embeddings = embedding_query_content(queries, augmented_contents,
+                                                                        embedding_model_str,
                                                                         batch=128)
 
         # get scores from calculated cosine similarity
@@ -66,15 +67,17 @@ def passage_augmenter_node(func):
 
         # sort by scores
         df = pd.DataFrame({
-            'contents': contents,
+            'contents': augmented_contents,
             'ids': ids,
             'scores': scores,
         })
         df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
-        augmented_contents, augmented_ids, augmented_scores = \
-            df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
 
-        return augmented_contents, augmented_ids, augmented_scores
+        # select by num_contents
+        num_contents = len(corpus_df['contents'].tolist())
+        results = select_top_k(df, ['contents', 'ids', 'scores'], num_contents)
+
+        return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
     return wrapper
 
