@@ -54,6 +54,7 @@ node_lines:
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
         speed_threshold: 5
+      top_k: 5
       embedding_model: openai
       modules:
         - module_type: pass_passage_augmenter
