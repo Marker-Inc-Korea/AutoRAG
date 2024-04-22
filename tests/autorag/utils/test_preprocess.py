@@ -22,7 +22,7 @@ def corpus_df():
     return pd.DataFrame({
         'doc_id': ['doc1', 'doc2', 'doc3'],
         'contents': ['content1', 'content2', 'content3'],
-        'metadata': [{'prev_id': None, 'next_id': None}, {'test_key': 'test_value'},
+        'metadata': [{'prev_id': None, 'next_id': 'doc2'}, {'test_key': 'test_value'},
                      {'last_modified_datetime': datetime(2022, 12, 1, 3, 4, 5)}]
     })
 
@@ -70,8 +70,8 @@ def test_cast_corpus_dataset(corpus_df):
     casted_df = cast_corpus_dataset(corpus_df)
     assert all('last_modified_datetime' in x for x in casted_df['metadata'])
     assert casted_df['metadata'].iloc[0]['prev_id'] is None
-    assert casted_df['metadata'].iloc[0]['next_id'] is None
+    assert casted_df['metadata'].iloc[0]['next_id'] == 'doc2'
     assert casted_df['metadata'].iloc[1]['test_key'] == 'test_value'
-    assert casted_df['metadata'].iloc[1]['prev_id'] == 'doc1'
-    assert casted_df['metadata'].iloc[1]['next_id'] == 'doc3'
+    assert casted_df['metadata'].iloc[1]['prev_id'] is None
+    assert casted_df['metadata'].iloc[1]['next_id'] is None
     assert casted_df['metadata'].iloc[2]['last_modified_datetime'] == datetime(2022, 12, 1, 3, 4, 5)

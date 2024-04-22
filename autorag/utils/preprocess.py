@@ -69,18 +69,17 @@ def cast_corpus_dataset(df: pd.DataFrame):
     assert sum(df['metadata'].apply(lambda x: x.get('last_modified_datetime') is not None)) == len(df), \
         "Every metadata must have a datetime key."
 
-    def make_prev_next_id_metadata(row, prev_doc_id, next_doc_id):
-        metadata = row['metadata']
-        if metadata is None or metadata == {}:
-            return {'prev_id': prev_doc_id, 'next_id': next_doc_id}
-        metadata.setdefault('prev_id', prev_doc_id)
-        metadata.setdefault('next_id', next_doc_id)
-        return metadata
+    def make_prev_next_id_metadata(x, id_type: str):
+        if x is None or x == {}:
+            return {id_type: None}
+        elif x.get(id_type) is None:
+            return {**x, id_type: None}
+        else:
+            return x
 
-    temp_prev_df = pd.DataFrame({'prev_doc_id': df['doc_id'].shift(1)})
-    temp_next_df = pd.DataFrame({'next_doc_id': df['doc_id'].shift(-1)})
-    df['metadata'] = df.apply(lambda row: make_prev_next_id_metadata(row, temp_prev_df.loc[row.name, 'prev_doc_id'],
-                                                                     temp_next_df.loc[row.name, 'next_doc_id']), axis=1)
+    df['metadata'] = df['metadata'].apply(lambda x: make_prev_next_id_metadata(x, 'prev_id'))
+    df['metadata'] = df['metadata'].apply(lambda x: make_prev_next_id_metadata(x, 'next_id'))
+
     # check every metadata have a prev_id, next_id key
     assert all('prev_id' in metadata for metadata in df['metadata']), "Every metadata must have a prev_id key."
     assert all('next_id' in metadata for metadata in df['metadata']), "Every metadata must have a next_id key."
