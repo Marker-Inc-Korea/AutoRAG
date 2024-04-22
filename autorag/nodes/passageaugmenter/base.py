@@ -11,8 +11,9 @@ import torch
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
-from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores
-from autorag.utils.util import reconstruct_list, filter_dict_keys
+from autorag.utils import (result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores,
+                           validate_corpus_dataset, cast_corpus_dataset)
+from autorag.utils.util import reconstruct_list, filter_dict_keys, select_top_k
 
 logger = logging.getLogger("AutoRAG")
 
@@ -36,42 +37,51 @@ def passage_augmenter_node(func):
         ids = previous_result["retrieved_ids"].tolist()
 
         corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+        validate_corpus_dataset(corpus_df)
+
+        # get top_k
+        top_k = kwargs.pop("top_k")
+        assert top_k <= len(ids[0][0]), ("The number of top_k must be same or less than the number of retrieved "
+                                         "passages.")
 
         if func.__name__ == 'prev_next_augmenter':
+            corpus_df = cast_corpus_dataset(corpus_df)
             slim_corpus_df = corpus_df[["doc_id", "metadata"]]
             slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
 
-            mode = kwargs.pop("mode", 'next')
+            mode = kwargs.pop("mode", 'both')
             num_passages = kwargs.pop("num_passages", 1)
 
             # get augmented ids
-            ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
+            augmented_ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
         else:
-            ids = func(ids_list=ids, *args, **kwargs)
+            augmented_ids = func(ids_list=ids, **kwargs)
 
         # fetch contents from corpus to use augmented ids
-        contents = fetch_contents(corpus_df, ids)
+        augmented_contents = fetch_contents(corpus_df, augmented_ids)
 
         # set embedding model for getting scores
         embedding_model_str = kwargs.pop("embedding_model", 'openai')
-        query_embeddings, contents_embeddings = embedding_query_content(queries, contents, embedding_model_str,
-                                                                        batch=128)
+        query_embeddings, contents_embeddings = embedding_query_content(queries, augmented_contents,
+                                                                        embedding_model_str, batch=128)
 
         # get scores from calculated cosine similarity
-        scores = [np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
-                  for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
+        augmented_scores = [
+            np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
+            for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
 
         # sort by scores
         df = pd.DataFrame({
-            'contents': contents,
-            'ids': ids,
-            'scores': scores,
+            'contents': augmented_contents,
+            'ids': augmented_ids,
+            'scores': augmented_scores,
         })
         df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
-        augmented_contents, augmented_ids, augmented_scores = \
-            df['contents'].tolist(), df['ids'].tolist(), df['scores'].tolist()
 
-        return augmented_contents, augmented_ids, augmented_scores
+        # select by top_k
+        results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
+
+        return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
     return wrapper
 

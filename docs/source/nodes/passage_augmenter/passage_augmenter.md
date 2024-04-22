@@ -11,6 +11,12 @@ The primary benefit of passage augmenter is that allows users to fetch additiona
 
 ## **Node Parameters**
 
+**Top_k**
+
+- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be retrieved
+  from corpus.
+- 📌 **Note**: The number of `top_k` must be same or less than the number of "`retrieval`node parameter `top_k`".
+
 **embedding_model**
 
 - **Description**: The embedding model name to be used for calculating the cosine similarity between the query and the
@@ -27,6 +33,7 @@ node_lines:
           metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
           speed_threshold: 5
         embedding_model: openai
+        top_k: 5
         modules:
           - module_type: pass_passage_augmenter
           - module_type: prev_next_augmenter

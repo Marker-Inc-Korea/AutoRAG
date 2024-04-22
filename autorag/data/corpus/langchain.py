@@ -25,16 +25,12 @@ def langchain_documents_to_parquet(langchain_documents: List[Document],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-    doc_ids = [str(uuid.uuid4()) for _ in langchain_documents]
-    corpus_df = pd.DataFrame([
-        {
-            'doc_id': doc_id,
-            'contents': doc.page_content,
-            'metadata': add_essential_metadata(doc.metadata, prev_id, next_id)
-        }
-        for doc, doc_id, prev_id, next_id in
-        zip(langchain_documents, doc_ids, [None] + doc_ids[:-1], doc_ids[1:] + [None])
-    ])
+
+    corpus_df = pd.DataFrame(list(map(lambda doc: {
+        'doc_id': str(uuid.uuid4()),
+        'contents': doc.page_content,
+        'metadata': add_essential_metadata(doc.metadata)
+    }, langchain_documents)))
 
     if output_filepath is not None:
         save_parquet_safe(corpus_df, output_filepath, upsert=upsert)

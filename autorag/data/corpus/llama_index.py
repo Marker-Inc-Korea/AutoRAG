@@ -1,9 +1,10 @@
 import uuid
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Optional, Dict
 
 import pandas as pd
 from llama_index.core import Document
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import TextNode, NodeRelationship
 
 from autorag.data.utils.util import add_essential_metadata
 from autorag.utils.util import save_parquet_safe
@@ -26,15 +27,12 @@ def llama_documents_to_parquet(llama_documents: List[Document],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-    doc_ids = [str(uuid.uuid4()) for _ in llama_documents]
-    doc_lst = [
-        {
-            'doc_id': doc_id,
-            'contents': doc.text,
-            'metadata': add_essential_metadata(doc.metadata, prev_id, next_id)
-        }
-        for doc, doc_id, prev_id, next_id in zip(llama_documents, doc_ids, [None] + doc_ids[:-1], doc_ids[1:] + [None])
-    ]
+
+    doc_lst = pd.DataFrame(list(map(lambda doc: {
+        'doc_id': str(uuid.uuid4()),
+        'contents': doc.text,
+        'metadata': add_essential_metadata(doc.metadata)
+    }, llama_documents)))
 
     processed_df = pd.DataFrame(doc_lst)
 
@@ -61,18 +59,31 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-
-    node_ids = [node.node_id for node in text_nodes]
-    corpus_df = pd.DataFrame([
-        {
-            'doc_id': node_id,
-            'contents': node.text,
-            'metadata': add_essential_metadata(node.metadata, prev_id, next_id)
-        }
-        for node, node_id, prev_id, next_id in zip(text_nodes, node_ids, [None] + node_ids[:-1], node_ids[1:] + [None])
-    ])
+    corpus_df = pd.DataFrame(list(map(lambda node: {
+        'doc_id': node.node_id,
+        'contents': node.text,
+        'metadata': add_essential_metadata_llama_text_node(node.metadata, node.relationships)
+    }, text_nodes)))
 
     if output_filepath is not None:
         save_parquet_safe(corpus_df, output_filepath, upsert=upsert)
 
     return corpus_df
+
+
+def add_essential_metadata_llama_text_node(metadata: Dict, relationships: Dict) -> Dict:
+    if 'last_modified_datetime' not in metadata:
+        metadata['last_modified_datetime'] = datetime.now()
+
+    if 'prev_id' not in metadata:
+        if NodeRelationship.PREVIOUS in relationships:
+            prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
+            if prev_node:
+                metadata['prev_id'] = prev_node.node_id
+
+    if 'next_id' not in metadata:
+        if NodeRelationship.NEXT in relationships:
+            next_node = relationships.get(NodeRelationship.NEXT, None)
+            if next_node:
+                metadata['next_id'] = next_node.node_id
+    return metadata
