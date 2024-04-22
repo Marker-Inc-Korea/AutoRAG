@@ -27,15 +27,12 @@ def llama_documents_to_parquet(llama_documents: List[Document],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-    doc_ids = [str(uuid.uuid4()) for _ in llama_documents]
-    doc_lst = [
-        {
-            'doc_id': doc_id,
-            'contents': doc.text,
-            'metadata': add_essential_metadata(doc.metadata, prev_id, next_id)
-        }
-        for doc, doc_id, prev_id, next_id in zip(llama_documents, doc_ids, [None] + doc_ids[:-1], doc_ids[1:] + [None])
-    ]
+
+    doc_lst = pd.DataFrame(list(map(lambda doc: {
+        'doc_id': str(uuid.uuid4()),
+        'contents': doc.text,
+        'metadata': add_essential_metadata(doc.metadata)
+    }, llama_documents)))
 
     processed_df = pd.DataFrame(doc_lst)
 
