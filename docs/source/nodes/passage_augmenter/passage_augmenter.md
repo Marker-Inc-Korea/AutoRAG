@@ -33,6 +33,7 @@ node_lines:
           metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
           speed_threshold: 5
         embedding_model: openai
+        top_k: 5
         modules:
           - module_type: pass_passage_augmenter
           - module_type: prev_next_augmenter
