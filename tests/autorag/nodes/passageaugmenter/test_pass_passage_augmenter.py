@@ -4,7 +4,7 @@ from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import pro
 
 
 def test_pass_passage_augmenter():
-    result_df = pass_passage_augmenter(project_dir=project_dir, previous_result=previous_result)
+    result_df = pass_passage_augmenter(project_dir=project_dir, previous_result=previous_result, top_k=2)
     contents = result_df["retrieved_contents"].tolist()
     ids = result_df["retrieved_ids"].tolist()
     scores = result_df["retrieve_scores"].tolist()
