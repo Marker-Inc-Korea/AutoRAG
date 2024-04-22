@@ -41,6 +41,8 @@ def passage_augmenter_node(func):
 
         # get top_k
         top_k = kwargs.pop("top_k")
+        assert top_k <= len(ids[0][0]), ("The number of top_k must be same or less than the number of retrieved "
+                                         "passages.")
 
         if func.__name__ == 'prev_next_augmenter':
             corpus_df = cast_corpus_dataset(corpus_df)
