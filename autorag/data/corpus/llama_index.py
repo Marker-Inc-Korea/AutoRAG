@@ -27,15 +27,12 @@ def llama_documents_to_parquet(llama_documents: List[Document],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-    doc_ids = [str(uuid.uuid4()) for _ in llama_documents]
-    doc_lst = [
-        {
-            'doc_id': doc_id,
-            'contents': doc.text,
-            'metadata': add_essential_metadata(doc.metadata, prev_id, next_id)
-        }
-        for doc, doc_id, prev_id, next_id in zip(llama_documents, doc_ids, [None] + doc_ids[:-1], doc_ids[1:] + [None])
-    ]
+
+    doc_lst = pd.DataFrame(list(map(lambda doc: {
+        'doc_id': str(uuid.uuid4()),
+        'contents': doc.text,
+        'metadata': add_essential_metadata(doc.metadata)
+    }, llama_documents)))
 
     processed_df = pd.DataFrame(doc_lst)
 
@@ -62,7 +59,6 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
         Default is False.
     :return: Corpus data as pd.DataFrame
     """
-
     corpus_df = pd.DataFrame(list(map(lambda node: {
         'doc_id': node.node_id,
         'contents': node.text,
@@ -78,10 +74,16 @@ def llama_text_node_to_parquet(text_nodes: List[TextNode],
 def add_essential_metadata_llama_text_node(metadata: Dict, relationships: Dict) -> Dict:
     if 'last_modified_datetime' not in metadata:
         metadata['last_modified_datetime'] = datetime.now()
-    prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
-    if prev_node:
-        metadata['prev_id'] = prev_node.node_id
-    next_node = relationships.get(NodeRelationship.NEXT, None)
-    if next_node:
-        metadata['next_id'] = next_node.node_id
+
+    if 'prev_id' not in metadata:
+        if NodeRelationship.PREVIOUS in relationships:
+            prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
+            if prev_node:
+                metadata['prev_id'] = prev_node.node_id
+
+    if 'next_id' not in metadata:
+        if NodeRelationship.NEXT in relationships:
+            next_node = relationships.get(NodeRelationship.NEXT, None)
+            if next_node:
+                metadata['next_id'] = next_node.node_id
     return metadata
