@@ -11,12 +11,12 @@ def test_recursive_chunk():
 
 
 def test_recursive_chunk_node():
-    result_df = recursive_chunk(project_dir=project_dir, previous_result=previous_result)
+    result_df = recursive_chunk(project_dir=project_dir, previous_result=previous_result, top_k=3)
     contents = result_df["retrieved_contents"].tolist()
     ids = result_df["retrieved_ids"].tolist()
     scores = result_df["retrieve_scores"].tolist()
     assert len(contents) == len(ids) == len(scores) == 2
-    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 46
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 3
     for content_list, id_list, score_list in zip(contents, ids, scores):
         for i, (content, _id, score) in enumerate(zip(content_list, id_list, score_list)):
             assert isinstance(content, str)
