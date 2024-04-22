@@ -39,6 +39,9 @@ def passage_augmenter_node(func):
         corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
         validate_corpus_dataset(corpus_df)
 
+        # get top_k
+        top_k = kwargs.pop("top_k")
+
         if func.__name__ == 'prev_next_augmenter':
             corpus_df = cast_corpus_dataset(corpus_df)
             slim_corpus_df = corpus_df[["doc_id", "metadata"]]
@@ -48,34 +51,33 @@ def passage_augmenter_node(func):
             num_passages = kwargs.pop("num_passages", 1)
 
             # get augmented ids
-            ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
+            augmented_ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
         else:
-            ids = func(ids_list=ids, *args, **kwargs)
+            augmented_ids = func(ids_list=ids, **kwargs)
 
         # fetch contents from corpus to use augmented ids
-        augmented_contents = fetch_contents(corpus_df, ids)
+        augmented_contents = fetch_contents(corpus_df, augmented_ids)
 
         # set embedding model for getting scores
         embedding_model_str = kwargs.pop("embedding_model", 'openai')
         query_embeddings, contents_embeddings = embedding_query_content(queries, augmented_contents,
-                                                                        embedding_model_str,
-                                                                        batch=128)
+                                                                        embedding_model_str, batch=128)
 
         # get scores from calculated cosine similarity
-        scores = [np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
-                  for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
+        augmented_scores = [
+            np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
+            for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
 
         # sort by scores
         df = pd.DataFrame({
             'contents': augmented_contents,
-            'ids': ids,
-            'scores': scores,
+            'ids': augmented_ids,
+            'scores': augmented_scores,
         })
         df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
 
-        # select by num_contents
-        num_contents = len(corpus_df['contents'].tolist())
-        results = select_top_k(df, ['contents', 'ids', 'scores'], num_contents)
+        # select by top_k
+        results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
         return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 

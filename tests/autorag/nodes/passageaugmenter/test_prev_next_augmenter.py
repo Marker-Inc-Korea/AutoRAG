@@ -33,12 +33,12 @@ def test_prev_next_augmenter_multi_passages():
 
 
 def test_prev_next_augmenter_node():
-    result_df = prev_next_augmenter(project_dir=project_dir, previous_result=previous_result, mode='next')
+    result_df = prev_next_augmenter(project_dir=project_dir, previous_result=previous_result, mode='next', top_k=3)
     contents = result_df["retrieved_contents"].tolist()
     ids = result_df["retrieved_ids"].tolist()
     scores = result_df["retrieve_scores"].tolist()
     assert len(contents) == len(ids) == len(scores) == 2
-    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 4
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 3
     for content_list, id_list, score_list in zip(contents, ids, scores):
         for i, (content, _id, score) in enumerate(zip(content_list, id_list, score_list)):
             assert isinstance(content, str)
