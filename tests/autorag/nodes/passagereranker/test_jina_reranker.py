@@ -32,6 +32,15 @@ def test_jina_reranker():
     base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
+def test_jina_reranker_batch():
+    top_k = 3
+    batch = 2
+    original_jina_reranker = jina_reranker.__wrapped__
+    contents_result, id_result, score_result \
+        = original_jina_reranker(queries_example, contents_example, scores_example, ids_example, top_k, batch=batch)
+    base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
 def test_jina_reranker_node():
     top_k = 1
     result_df = jina_reranker(project_dir=project_dir, previous_result=previous_result, top_k=top_k)
