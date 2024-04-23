@@ -44,3 +44,24 @@ def retrieval_precision(gt: List[List[str]], pred: List[str]):
     hits = sum(any(pred_id in gt_set for gt_set in gt_sets) for pred_id in pred_set)
     precision = hits / len(pred) if len(pred) > 0 else 0.0
     return precision
+
+
+@retrieval_metric
+def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
+    """
+    Compute Mean Reciprocal Rank (MRR) for retrieval.
+
+    :param gt: 2-d list of ground truth ids.
+        It contains and/or connections between ids.
+    :param pred: Prediction ids.
+    :return: The MRR score.
+    """
+    ranks = []
+    for g in gt:
+        rank = float('inf')
+        for p in pred:
+            if p in g:
+                rank = min(rank, pred.index(p) + 1)
+        if rank != float('inf'):
+            ranks.append(1 / rank)
+    return sum(ranks) / len(ranks) if ranks else 0.0
