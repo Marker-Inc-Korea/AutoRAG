@@ -17,6 +17,16 @@ def test_monot5():
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+def test_monot5_batch_one():
+    top_k = 1
+    batch = 1
+    original_monot5 = monot5.__wrapped__
+    contents_result, id_result, score_result \
+        = original_monot5(queries_example, contents_example, scores_example, ids_example, top_k, batch=batch)
+    base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_monot5_node():
     top_k = 1
     result_df = monot5(project_dir=project_dir, previous_result=previous_result, top_k=top_k)
