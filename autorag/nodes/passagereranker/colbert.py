@@ -26,11 +26,14 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     :param top_k: The number of passages to be retrieved
     :param batch: The number of queries to be processed in a batch
         Default is 64.
+        The batch size must always be greater than 1.
     :param model_name: The model name for Colbert rerank.
         You can choose colbert model for reranking.
         Default is "colbert-ir/colbertv2.0".
     :return: Tuple of lists containing the reranked contents, ids, and scores
     """
+    assert batch > 1, "Batch size must be greater than 1"
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AutoModel.from_pretrained(model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -55,14 +58,14 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
 
 
 def colbert_run_model(contents_list, model, tokenizer, device, batch_size: int):
-    batch_contents_list = make_batch(contents_list, batch_size)
+    flattened_queries, flattened_contents = map(list, zip(*contents_list))
+    batch_queries = make_batch(flattened_queries, batch_size)
+    batch_contents = make_batch(flattened_contents, batch_size)
     results = []
 
-    for batch_contents in batch_contents_list:
-        flattened_batch_queries, flattened_batch_contents = map(list, zip(*batch_contents))
-
+    for batch_queries, batch_contents in zip(batch_queries, batch_contents):
         # Tokenize both queries and contents together
-        feature = tokenizer(flattened_batch_queries, flattened_batch_contents, padding=True, truncation=True,
+        feature = tokenizer(batch_queries, batch_contents, padding=True, truncation=True,
                             return_tensors="pt").to(device)
 
         # Process the combined feature through the model in one go
@@ -70,7 +73,7 @@ def colbert_run_model(contents_list, model, tokenizer, device, batch_size: int):
         last_hidden_state = outputs.last_hidden_state
 
         # Split the embeddings back into query and content parts
-        num_queries = len(flattened_batch_queries)
+        num_queries = len(batch_queries)
         query_embedding, content_embedding = last_hidden_state.split(
             [num_queries, last_hidden_state.size(1) - num_queries], dim=1)
 
