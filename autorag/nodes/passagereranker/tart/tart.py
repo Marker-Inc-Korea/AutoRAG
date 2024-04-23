@@ -63,13 +63,13 @@ def tart(queries: List[str], contents_list: List[List[str]],
 
 
 def tart_run_model(input_texts, contents_list, model, batch_size: int, tokenizer, device):
-    batch_input_texts = make_batch(input_texts, batch_size)
-    batch_contents_list = make_batch(contents_list, batch_size)
+    flattened_texts = list(chain.from_iterable(input_texts))
+    flattened_contents = list(chain.from_iterable(contents_list))
+    batch_input_texts = make_batch(flattened_texts, batch_size)
+    batch_contents_list = make_batch(flattened_contents, batch_size)
     results = []
     for batch_texts, batch_contents in zip(batch_input_texts, batch_contents_list):
-        flattened_batch_texts = list(chain.from_iterable(batch_texts))
-        flattened_batch_contents = list(chain.from_iterable(batch_contents))
-        feature = tokenizer(flattened_batch_texts, flattened_batch_contents, padding=True, truncation=True,
+        feature = tokenizer(batch_texts, batch_contents, padding=True, truncation=True,
                             return_tensors="pt").to(device)
         with torch.no_grad():
             pred_scores = model(**feature).logits
