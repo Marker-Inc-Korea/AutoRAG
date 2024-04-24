@@ -25,13 +25,11 @@ def flag_embedding_llm_reranker(queries: List[str], contents_list: List[List[str
     :param top_k: The number of passages to be retrieved
     :param batch: The number of queries to be processed in a batch
         Default is 64.
-        The batch size must always be greater than 1.
     :param use_fp16: Whether to use fp16 for inference
     :param model_name: The name of the BAAI Reranker LLM-based-model name.
         Default is "BAAI/bge-reranker-v2-gemma"
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    assert batch > 1, "Batch size must be greater than 1"
 
     model = FlagLLMReranker(
         model_name_or_path=model_name, use_fp16=use_fp16

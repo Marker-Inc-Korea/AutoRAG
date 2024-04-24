@@ -17,6 +17,17 @@ def test_flag_embedding_llm_reranker():
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+def test_flag_embedding_llm_reranker_batch_one():
+    top_k = 3
+    batch = 1
+    original_flag_embedding_llm = flag_embedding_llm_reranker.__wrapped__
+    contents_result, id_result, score_result \
+        = original_flag_embedding_llm(queries_example, contents_example, scores_example, ids_example, top_k, batch,
+                                      use_fp16=True)
+    base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_flag_embedding_llm_reranker_batch():
     top_k = 3
     batch = 2

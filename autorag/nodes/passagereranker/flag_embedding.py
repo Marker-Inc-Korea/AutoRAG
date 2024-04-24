@@ -24,13 +24,11 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
     :param top_k: The number of passages to be retrieved
     :param batch: The number of queries to be processed in a batch
         Default is 64.
-        The batch size must always be greater than 1.
     :param use_fp16: Whether to use fp16 for inference
     :param model_name: The name of the BAAI Reranker normal-model name.
         Default is "BAAI/bge-reranker-large"
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
-    assert batch > 1, "Batch size must be greater than 1"
 
     model = FlagReranker(
         model_name_or_path=model_name, use_fp16=use_fp16
@@ -59,5 +57,8 @@ def flag_embedding_run_model(input_texts, model, batch_size: int):
     for batch_texts in batch_input_texts:
         with torch.no_grad():
             pred_scores = model.compute_score(sentence_pairs=batch_texts)
-        results.extend(pred_scores)
+        if batch_size == 1:
+            results.append(pred_scores)
+        else:
+            results.extend(pred_scores)
     return results
