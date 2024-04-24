@@ -62,5 +62,6 @@ def test_recency_filter_seconds():
 
 def test_recency_filter_node(project_dir_with_corpus):
     result_df = recency_filter(
-        project_dir=project_dir_with_corpus, previous_result=previous_result, threshold="2021-06-30")
+        project_dir=project_dir_with_corpus, previous_result=previous_result,
+        threshold=datetime(2021, 6, 30))
     base_passage_filter_node_test(result_df)
