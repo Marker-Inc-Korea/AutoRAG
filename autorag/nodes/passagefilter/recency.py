@@ -26,7 +26,7 @@ def recency_filter(contents_list: List[List[str]],
     :return: Tuple of lists containing the filtered contents, ids, and scores
     """
     if not isinstance(threshold, datetime):
-        return contents_list, ids_list, scores_list
+        raise ValueError(f"Threshold should be a datetime object, but got {type(threshold)}")
 
     def sort_row(contents, scores, ids, time, _datetime_threshold):
         combined = list(zip(contents, scores, ids, time))

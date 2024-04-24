@@ -32,19 +32,6 @@ def test_recency_filter_all_filtered():
     base_passage_filter_test(contents_result, id_result, score_result)
 
 
-def test_recency_filter_wrong_threshold():
-    original_recency_filter = recency_filter.__wrapped__
-    contents_result, id_result, score_result = original_recency_filter \
-        (contents_example, scores_example, ids_example, time_list, threshold="havertz")
-    assert id_result[0] == ids_example[0]
-    assert id_result[1] == ids_example[1]
-    assert contents_result[0] == contents_example[0]
-    assert contents_result[1] == contents_example[1]
-    assert score_result[0] == scores_example[0]
-    assert score_result[1] == scores_example[1]
-    base_passage_filter_test(contents_result, id_result, score_result)
-
-
 def test_recency_filter_minutes():
     original_recency_filter = recency_filter.__wrapped__
     contents_result, id_result, score_result = original_recency_filter \
