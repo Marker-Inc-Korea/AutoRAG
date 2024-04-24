@@ -12,9 +12,9 @@ def test_cohere_reranker():
     base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
-def test_cohere_reranker_batch():
+def test_cohere_reranker_batch_one():
     top_k = 3
-    batch = 2
+    batch = 1
     original_cohere_reranker = cohere_reranker.__wrapped__
     contents_result, id_result, score_result \
         = original_cohere_reranker(queries_example, contents_example, scores_example, ids_example, top_k, batch=batch)
