@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime
-from typing import List, Tuple
+from datetime import datetime, date
+from typing import List, Tuple, Union
 
 from autorag.nodes.passagefilter.base import passage_filter_node
 
@@ -11,7 +11,7 @@ logger = logging.getLogger("AutoRAG")
 def recency_filter(contents_list: List[List[str]],
                    scores_list: List[List[float]], ids_list: List[List[str]],
                    time_list: List[List[datetime]],
-                   threshold: datetime,
+                   threshold: Union[datetime, date],
                    ) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Filter out the contents that are below the threshold datetime.
@@ -25,8 +25,16 @@ def recency_filter(contents_list: List[List[str]],
     :param threshold: The threshold to cut off
     :return: Tuple of lists containing the filtered contents, ids, and scores
     """
-    if not isinstance(threshold, datetime):
+    if not (isinstance(threshold, datetime) or isinstance(threshold, date)):
         raise ValueError(f"Threshold should be a datetime object, but got {type(threshold)}")
+
+    if not isinstance(threshold, datetime):
+        threshold = datetime.combine(threshold, datetime.min.time())
+
+    time_list = [
+        list(map(lambda t: datetime.combine(t, datetime.min.time()) if not isinstance(t, datetime) else t, time))
+        for time in time_list
+    ]
 
     def sort_row(contents, scores, ids, time, _datetime_threshold):
         combined = list(zip(contents, scores, ids, time))
