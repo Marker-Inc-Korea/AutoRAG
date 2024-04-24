@@ -15,7 +15,7 @@ previous_result = pd.DataFrame({
                       [doc_id_list[5], doc_id_list[7]]],
     'retrieved_contents': [['Paris is the capital of France.', 'Paris is one of the capital from France. Isn\'t it?'],
                            ['Newjeans has 5 members.', 'Danielle is one of the members of Newjeans.']],
-    'retrieve_scores': [[0.1, 0.8], [0.1, 0.2]],
+    'retrieve_scores': [[0.8, 0.1], [0.2, 0.1]],
     'retrieval_gt': [1, 1],
     'generation_gt': ['answer', 'answer'],
     'retrieval_f1': [0.4, 1.0],
