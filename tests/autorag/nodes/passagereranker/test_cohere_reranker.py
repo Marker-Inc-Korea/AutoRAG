@@ -12,6 +12,15 @@ def test_cohere_reranker():
     base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
+def test_cohere_reranker_batch_one():
+    top_k = 3
+    batch = 1
+    original_cohere_reranker = cohere_reranker.__wrapped__
+    contents_result, id_result, score_result \
+        = original_cohere_reranker(queries_example, contents_example, scores_example, ids_example, top_k, batch=batch)
+    base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
 def test_cohere_node():
     top_k = 1
     result_df = cohere_reranker(project_dir=project_dir, previous_result=previous_result, top_k=top_k)
