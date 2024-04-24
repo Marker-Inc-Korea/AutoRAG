@@ -31,6 +31,16 @@ def test_rankgpt_reranker():
     base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
+def test_rankgpt_reranker_batch_one():
+    top_k = 3
+    batch = 1
+    original_rankgpt_reranker = rankgpt.__wrapped__
+    contents_result, id_result, score_result \
+        = original_rankgpt_reranker(queries_example, contents_example, scores_example, ids_example, top_k,
+                                    llm=OpenAI(model="gpt-3.5-turbo-16k"), batch=batch)
+    base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
 def test_rankgpt_node():
     top_k = 1
     result_df = rankgpt(project_dir=project_dir, previous_result=previous_result, top_k=top_k,
