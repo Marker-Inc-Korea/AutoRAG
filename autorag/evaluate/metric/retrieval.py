@@ -5,7 +5,13 @@ from typing import List
 def retrieval_metric(func):
     @functools.wraps(func)
     def wrapper(retrieval_gt: List[List[List[str]]], pred_ids: List[List[str]]) -> List[float]:
-        return [func(gt, pred) for gt, pred in zip(retrieval_gt, pred_ids) if gt != [[]]]
+        results = []
+        for gt, pred in zip(retrieval_gt, pred_ids):
+            if gt == [[]]:
+                results.append(None)
+            else:
+                results.append(func(gt, pred))
+        return results
 
     return wrapper
 
