@@ -17,14 +17,27 @@ logger = logging.getLogger("AutoRAG")
 
 def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]],
                    column_name: str = 'contents') -> List[List[Any]]:
-    flat_ids = itertools.chain.from_iterable(ids)
-    contents = list(map(lambda x: corpus_data.loc[lambda row: row['doc_id'] == x][column_name].values[0], flat_ids))
+    flat_ids = [item for sublist in ids for item in (sublist if sublist else [None])]
+
+    contents = []
+    for id_ in flat_ids:
+        if id_ is None:
+            contents.append(None)
+        else:
+            result = corpus_data[corpus_data['doc_id'] == id_]
+            if result.empty:
+                raise ValueError(f"doc_id: {id_} not found in corpus_data.")
+            else:
+                contents.append(result[column_name].iloc[0])
 
     result = []
     idx = 0
     for sublist in ids:
         result.append(contents[idx:idx + len(sublist)])
-        idx += len(sublist)
+        if len(sublist) == 0:
+            idx += 1
+        else:
+            idx += len(sublist)
 
     return result
 
