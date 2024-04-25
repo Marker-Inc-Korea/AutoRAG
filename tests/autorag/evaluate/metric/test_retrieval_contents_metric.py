@@ -35,7 +35,7 @@ def test_retrieval_token_f1():
     assert f1 == pytest.approx(0.797979, rel=0.001)
 
     result_f1 = retrieval_token_f1(gt_contents=gt, pred_contents=pred)
-    assert result_f1 == pytest.approx([0.38333, 0.797979], rel=0.001)
+    assert result_f1 == pytest.approx([0.38333, 0.797979, None], rel=0.001)
 
 
 def test_retrieval_token_precision():
