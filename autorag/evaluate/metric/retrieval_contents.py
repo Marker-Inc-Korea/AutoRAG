@@ -15,7 +15,13 @@ from autorag.utils.util import normalize_string
 def retrieval_contents_metric(func):
     @functools.wraps(func)
     def wrapper(gt_contents: List[List[str]], pred_contents: List[List[str]]) -> List[float]:
-        return [func(gt, pred) for gt, pred in zip(gt_contents, pred_contents) if gt != []]
+        results = []
+        for gt, pred in zip(gt_contents, pred_contents):
+            if gt == []:
+                results.append(None)
+            else:
+                results.append(func(gt, pred))
+        return results
 
     return wrapper
 
