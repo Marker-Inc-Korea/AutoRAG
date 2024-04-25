@@ -25,8 +25,8 @@ resource_dir = os.path.join(root_dir, 'resources')
 @pytest.fixture
 def evaluator():
     with tempfile.TemporaryDirectory() as project_dir:
-        evaluator = Evaluator(os.path.join(resource_dir, 'sionic_qa.parquet'),
-                              os.path.join(resource_dir, 'sionic_corpus.parquet'),
+        evaluator = Evaluator(os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                              os.path.join(resource_dir, 'corpus_data_sample.parquet'),
                               project_dir)
         yield evaluator
 
@@ -77,7 +77,7 @@ def test_load_node_line(evaluator):
 
 
 def test_start_trial(evaluator):
-    evaluator.start_trial(os.path.join(resource_dir, 'sionic.yaml'))
+    evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
     project_dir = evaluator.project_dir
     assert os.path.exists(os.path.join(project_dir, '0'))
     assert os.path.exists(os.path.join(project_dir, 'data'))
