@@ -5,11 +5,13 @@ from autorag.evaluate.metric.retrieval_contents import single_token_f1, retrieva
 
 gt = [
     ['Enough for drinking water', 'Just looking for a water bottle'],
-    ['Do you want to buy some?']
+    ['Do you want to buy some?'],
+    []
 ]
 pred = [
     ['Enough for mixing water', 'I want to do a nothing', 'Just looking is a very healthy'],
-    ['Do you want to buy some?', 'I want to buy some', 'I want to buy some water']
+    ['Do you want to buy some?', 'I want to buy some', 'I want to buy some water'],
+    ['Who is son? He is great player in the world']
 ]
 
 
