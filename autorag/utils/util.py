@@ -17,29 +17,23 @@ logger = logging.getLogger("AutoRAG")
 
 def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]],
                    column_name: str = 'contents') -> List[List[Any]]:
-    flat_ids = [item for sublist in ids for item in (sublist if sublist else [None])]
+    def fetch_contents_pure(ids: List[str], corpus_data: pd.DataFrame, column_name: str):
+        return list(map(lambda x: fetch_one_content(corpus_data, x, column_name), ids))
 
-    contents = []
-    for id_ in flat_ids:
-        if id_ is None:
-            contents.append(None)
-        else:
-            result = corpus_data[corpus_data['doc_id'] == id_]
-            if result.empty:
-                raise ValueError(f"doc_id: {id_} not found in corpus_data.")
-            else:
-                contents.append(result[column_name].iloc[0])
-
-    result = []
-    idx = 0
-    for sublist in ids:
-        result.append(contents[idx:idx + len(sublist)])
-        if len(sublist) == 0:
-            idx += 1
-        else:
-            idx += len(sublist)
-
+    result = flatten_apply(fetch_contents_pure, ids, corpus_data=corpus_data, column_name=column_name)
     return result
+
+
+def fetch_one_content(corpus_data: pd.DataFrame, id_: str,
+                      column_name: str = 'contents') -> Any:
+    if isinstance(id_, str):
+        fetch_result = corpus_data[corpus_data['doc_id'] == id_]
+        if fetch_result.empty:
+            raise ValueError(f"doc_id: {id_} not found in corpus_data.")
+        else:
+            return fetch_result[column_name].iloc[0]
+    else:
+        return None
 
 
 def result_to_dataframe(column_names: List[str]):
