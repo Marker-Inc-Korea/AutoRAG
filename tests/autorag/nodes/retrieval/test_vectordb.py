@@ -2,7 +2,9 @@ import os
 import pathlib
 import shutil
 import tempfile
+import uuid
 from datetime import datetime
+from unittest.mock import patch
 
 import chromadb
 import pandas as pd
@@ -29,6 +31,15 @@ def ingested_vectordb():
         vectordb_ingest(collection, corpus_df, embedding_model)
 
         assert collection.count() == 5
+        yield collection
+
+
+@pytest.fixture
+def empty_chromadb():
+    with tempfile.TemporaryDirectory() as chroma_path:
+        db = chromadb.PersistentClient(path=chroma_path)
+        collection = db.create_collection(name="test_vectordb_retrieval", metadata={"hnsw:space": "cosine"})
+
         yield collection
 
 
@@ -88,3 +99,18 @@ def test_long_text_vectordb_ingest(ingested_vectordb):
     vectordb_ingest(ingested_vectordb, new_corpus_df, embedding_model)
 
     assert ingested_vectordb.count() == 7
+
+
+def mock_get_text_embedding_batch(self, texts, **kwargs):
+    return [[3.0, 4.1, 3.2] for _ in range(len(texts))]
+
+
+@patch.object(OpenAIEmbedding, 'get_text_embedding_batch', mock_get_text_embedding_batch)
+def test_long_ids_ingest(empty_chromadb):
+    embedding_model = OpenAIEmbedding()
+    content_df = pd.DataFrame({
+        'doc_id': [str(uuid.uuid4()) for _ in range(100_000)],
+        'contents': ['havertz' for _ in range(100_000)],
+        'metadata': [{'last_modified_datetime': datetime.now()} for _ in range(100_000)],
+    })
+    vectordb_ingest(empty_chromadb, content_df, embedding_model)
