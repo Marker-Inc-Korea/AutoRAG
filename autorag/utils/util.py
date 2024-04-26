@@ -27,6 +27,8 @@ def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]],
 def fetch_one_content(corpus_data: pd.DataFrame, id_: str,
                       column_name: str = 'contents') -> Any:
     if isinstance(id_, str):
+        if id_ in ['', ""]:
+            return None
         fetch_result = corpus_data[corpus_data['doc_id'] == id_]
         if fetch_result.empty:
             raise ValueError(f"doc_id: {id_} not found in corpus_data.")
