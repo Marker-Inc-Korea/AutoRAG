@@ -5,11 +5,15 @@ from autorag.evaluate.metric.retrieval_contents import single_token_f1, retrieva
 
 gt = [
     ['Enough for drinking water', 'Just looking for a water bottle'],
-    ['Do you want to buy some?']
+    ['Do you want to buy some?'],
+    [''],
+    []
 ]
 pred = [
     ['Enough for mixing water', 'I want to do a nothing', 'Just looking is a very healthy'],
-    ['Do you want to buy some?', 'I want to buy some', 'I want to buy some water']
+    ['Do you want to buy some?', 'I want to buy some', 'I want to buy some water'],
+    ['Who is son? He is great player in the world'],
+    ['i love havertz', 'i love kai havertz']
 ]
 
 
@@ -33,14 +37,14 @@ def test_retrieval_token_f1():
     assert f1 == pytest.approx(0.797979, rel=0.001)
 
     result_f1 = retrieval_token_f1(gt_contents=gt, pred_contents=pred)
-    assert result_f1 == pytest.approx([0.38333, 0.797979], rel=0.001)
+    assert result_f1 == pytest.approx([0.38333, 0.797979, None, None], rel=0.001)
 
 
 def test_retrieval_token_precision():
     result_precision = retrieval_token_precision(gt_contents=gt, pred_contents=pred)
-    assert result_precision == pytest.approx([0.383333, 0.8222222], rel=0.001)
+    assert result_precision == pytest.approx([0.383333, 0.8222222, None, None], rel=0.001)
 
 
 def test_retrieval_token_recall():
     result_recall = retrieval_token_recall(gt_contents=gt, pred_contents=pred)
-    assert result_recall == pytest.approx([0.383333, 0.777777], rel=0.001)
+    assert result_recall == pytest.approx([0.383333, 0.777777, None, None], rel=0.001)

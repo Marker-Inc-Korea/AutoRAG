@@ -34,6 +34,9 @@ def run_retrieval_node(modules: List[Callable],
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     retrieval_gt = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))['retrieval_gt'].tolist()
+    retrieval_gt = [[[str(uuid) for uuid in sub_array] if sub_array.size > 0 else [] for sub_array in inner_array]
+                    for inner_array in retrieval_gt]
+
     save_dir = os.path.join(node_line_dir, "retrieval")  # node name
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
