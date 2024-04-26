@@ -17,7 +17,7 @@ def retrieval_contents_metric(func):
     def wrapper(gt_contents: List[List[str]], pred_contents: List[List[str]]) -> List[float]:
         results = []
         for gt, pred in zip(gt_contents, pred_contents):
-            if gt == []:
+            if gt == [] or any(bool(g) is False for g in gt):
                 results.append(None)
             else:
                 results.append(func(gt, pred))

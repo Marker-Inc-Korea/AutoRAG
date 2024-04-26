@@ -1,5 +1,3 @@
-import math
-
 import pytest
 
 from autorag.evaluate.metric import retrieval_f1, retrieval_precision, retrieval_recall
@@ -11,6 +9,7 @@ retrieval_gt = [
     [['test-11'], ['test-12'], ['test-13']],
     [['test-14']],
     [[]],
+    [['']]
 ]
 
 pred = [
@@ -20,25 +19,26 @@ pred = [
     ['test-13', 'test-12', 'pred-10', 'pred-11'],  # recall: 2/3, precision: 0.5, f1: 4/7
     ['test-14', 'pred-12'],  # recall: 1.0, precision: 0.5, f1: 2/3
     ['pred-13'],  # retrieval_gt is empty so not counted
+    ['pred-14']  # retrieval_gt is empty so not counted
 ]
 
 
 def test_retrieval_f1():
-    solution = [0.5, 2 / 7, 2 / 5, 4 / 7, 2 / 3]
+    solution = [0.5, 2 / 7, 2 / 5, 4 / 7, 2 / 3, None, None]
     result = retrieval_f1(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
-        assert math.isclose(gt, res, rel_tol=1e-4)
+        assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_recall():
-    solution = [0.5, 1 / 3, 1, 2 / 3, 1]
+    solution = [0.5, 1 / 3, 1, 2 / 3, 1, None, None]
     result = retrieval_recall(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_precision():
-    solution = [0.5, 0.25, 0.25, 0.5, 0.5]
+    solution = [0.5, 0.25, 0.25, 0.5, 0.5, None, None]
     result = retrieval_precision(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
