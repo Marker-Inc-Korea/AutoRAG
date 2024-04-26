@@ -70,6 +70,14 @@ def test_fetch_contents():
                                  {'last_modified_datetime': datetime(2022, 1, 1, 0, 0, 0)}]
     assert find_metadatas[1] == [{'last_modified_datetime': datetime(2022, 1, 2, 0, 0, 0)}]
 
+    find_empty = fetch_contents(corpus_data, [[], ['doc2']])
+    assert find_empty[0] == [None]
+    assert find_empty[1] == ['banana']
+
+    find_blank = fetch_contents(corpus_data, [[''], ['doc2']])
+    assert find_blank[0] == [None]
+    assert find_blank[1] == ['banana']
+
 
 def test_load_summary_file(summary_path):
     with pytest.raises(ValueError):
