@@ -1,10 +1,12 @@
 from typing import List, Tuple
 
+import numpy as np
+import pandas as pd
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import flatten_apply
+from autorag.utils.util import flatten_apply, sort_by_scores, select_top_k
 
 
 @passage_reranker_node
@@ -35,32 +37,39 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     # get query and content embeddings
-    query_embedding_tensor = get_colbert_embedding_batch(queries, model, tokenizer, batch)
-    query_embedding = torch.cat(query_embedding_tensor, dim=0)
+    query_embedding_list = get_colbert_embedding_batch(queries, model, tokenizer, batch)
     content_embedding_list = flatten_apply(get_colbert_embedding_batch, contents_list, model=model, tokenizer=tokenizer,
                                            batch_size=batch)
 
     del model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-    def rerank_results(contents, ids, scores, top_k):
-        reranked_content, reranked_id, reranked_score = zip(
-            *sorted(zip(contents, ids, scores), key=lambda x: x[2], reverse=True))
-        return list(reranked_content)[:top_k], list(reranked_id)[:top_k], list(reranked_score)[:top_k]
+    df = pd.DataFrame({
+        'ids': ids_list,
+        'query_embedding': query_embedding_list,
+        'contents': contents_list,
+        'content_embedding': content_embedding_list,
+    })
+    temp_df = df.explode('content_embedding')
+    temp_df['score'] = temp_df.apply(lambda x: get_colbert_score(x['query_embedding'], x['content_embedding']), axis=1)
+    df['scores'] = temp_df.groupby(level=0, sort=False)['score'].apply(list).tolist()
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
-    reranked_contents_list, reranked_ids_list, reranked_scores_list = zip(*list(map(
-        rerank_results, contents_list, ids_list, score_results, [top_k] * len(contents_list))))
-    return list(reranked_contents_list), list(reranked_ids_list), list(reranked_scores_list)
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
 def get_colbert_embedding_batch(input_strings: List[str],
-                                model, tokenizer, batch_size: int) -> List[torch.Tensor]:
+                                model, tokenizer, batch_size: int) -> List[np.array]:
     encoding = tokenizer(input_strings, return_tensors="pt", padding=True)
     input_batches = slice_tokenizer_result(encoding, batch_size)
     result_embedding = []
     for encoding in input_batches:
         result_embedding.append(model(**encoding).last_hidden_state)
     total_tensor = torch.cat(result_embedding, dim=0)  # shape [batch_size, token_length, embedding_dim]
-    return list(total_tensor.chunk(total_tensor.size()[0]))
+    tensor_results = list(total_tensor.chunk(total_tensor.size()[0]))
+    return list(map(lambda x: x.detach().numpy(), tensor_results))
 
 
 def slice_tokenizer_result(tokenizer_output, batch_size):
@@ -87,25 +96,11 @@ def slice_tensor(input_tensor, batch_size):
     return tensor_list
 
 
-async def get_colbert_score(query: str, content_list: List[str],
-                            model, tokenizer) -> List[float]:
-    query_encoding = tokenizer(query, return_tensors="pt")
-    query_embedding = model(**query_encoding).last_hidden_state
-    rerank_score_list = []
-
-    for document_text in content_list:
-        document_encoding = tokenizer(
-            document_text, return_tensors="pt", truncation=True, max_length=512
-        )
-        document_embedding = model(**document_encoding).last_hidden_state
-
-        sim_matrix = torch.nn.functional.cosine_similarity(
-            query_embedding.unsqueeze(2), document_embedding.unsqueeze(1), dim=-1
-        )
-
-        # Take the maximum similarity for each query token (across all document tokens)
-        # sim_matrix shape: [batch_size, query_length, doc_length]
-        max_sim_scores, _ = torch.max(sim_matrix, dim=2)
-        rerank_score_list.append(torch.mean(max_sim_scores, dim=1))
-
-    return list(map(float, rerank_score_list))
+def get_colbert_score(query_embedding: np.array, content_embedding: np.array) -> float:
+    query_tensor = torch.tensor(query_embedding)
+    content_tensor = torch.tensor(content_embedding)
+    sim_matrix = torch.nn.functional.cosine_similarity(
+        query_tensor.unsqueeze(2), content_tensor.unsqueeze(1), dim=-1
+    )
+    max_sim_scores, _ = torch.max(sim_matrix, dim=2)
+    return float(torch.mean(max_sim_scores, dim=1))

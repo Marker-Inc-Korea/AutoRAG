@@ -38,7 +38,7 @@ def test_colbert_embedding():
 
     assert isinstance(colbert_embedding, list)
     assert len(colbert_embedding) == len(contents)
-    assert colbert_embedding[0].size() == torch.Size([1, 11, 768])
+    assert colbert_embedding[0].shape == (1, 11, 768)
 
 
 def test_slice_tensor():
