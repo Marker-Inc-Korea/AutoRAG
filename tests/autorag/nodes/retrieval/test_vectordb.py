@@ -109,8 +109,8 @@ def mock_get_text_embedding_batch(self, texts, **kwargs):
 def test_long_ids_ingest(empty_chromadb):
     embedding_model = OpenAIEmbedding()
     content_df = pd.DataFrame({
-        'doc_id': [str(uuid.uuid4()) for _ in range(50_000)],
-        'contents': ['havertz' for _ in range(50_000)],
-        'metadata': [{'last_modified': datetime.now()} for _ in range(50_000)],
+        'doc_id': [str(uuid.uuid4()) for _ in range(100_000)],
+        'contents': ['havertz' for _ in range(100_000)],
+        'metadata': [{'last_modified_datetime': datetime.now()} for _ in range(100_000)],
     })
     vectordb_ingest(empty_chromadb, content_df, embedding_model)
