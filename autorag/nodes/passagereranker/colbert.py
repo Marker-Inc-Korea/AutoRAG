@@ -69,7 +69,10 @@ def get_colbert_embedding_batch(input_strings: List[str],
         result_embedding.append(model(**encoding).last_hidden_state)
     total_tensor = torch.cat(result_embedding, dim=0)  # shape [batch_size, token_length, embedding_dim]
     tensor_results = list(total_tensor.chunk(total_tensor.size()[0]))
-    return list(map(lambda x: x.detach().numpy(), tensor_results))
+    if torch.cuda.is_available():
+        return list(map(lambda x: x.detach().cpu().numpy(), tensor_results))
+    else:
+        return list(map(lambda x: x.detach().numpy(), tensor_results))
 
 
 def slice_tokenizer_result(tokenizer_output, batch_size):
