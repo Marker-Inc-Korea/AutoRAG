@@ -21,6 +21,16 @@ def test_colbert_reranker():
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions because it uses local model.")
+def test_colbert_reranker_long():
+    top_k = 2
+    original_colbert_reranker = colbert_reranker.__wrapped__
+    contents_example[0][0] = contents_example[0][0] * 10000
+    contents_result, id_result, score_result \
+        = original_colbert_reranker(queries_example, contents_example, scores_example, ids_example, top_k, batch=2)
+    base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions because it uses local model.")
 def test_colbert_reranker_one_batch():
     top_k = 2
     original_colbert_reranker = colbert_reranker.__wrapped__
