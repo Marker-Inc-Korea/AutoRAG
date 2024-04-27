@@ -7,6 +7,9 @@ on:
   pull_request:
     branches:
       - main
+  pull_request_target:
+    branches:
+      - main
 
 env:
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -29,7 +32,7 @@ jobs:
           pip install -e .
       - name: Install dependencies
         run: |
-          pip install pytest pytest-xdist
+          pip install pytest pytest-xdist pytest-asyncio
       - name: delete tests package
         run: python3 tests/delete_tests.py
       - name: Run tests

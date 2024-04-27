@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    autorag.nodes.generator
+   autorag.nodes.passageaugmenter
    autorag.nodes.passagecompressor
    autorag.nodes.passagefilter
    autorag.nodes.passagereranker

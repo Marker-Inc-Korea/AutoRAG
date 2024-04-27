@@ -3,6 +3,7 @@ import os.path
 import random
 from typing import Optional, List, Dict, Any
 
+import pandas as pd
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.utils.util import process_batch
@@ -89,14 +90,20 @@ def generate_qa_llama_index_by_ratio(
     prompts = list(map(lambda path: open(path, 'r').read(), prompts_ratio.keys()))
     assert all([validate_llama_index_prompt(prompt) for prompt in prompts])
 
+    content_indices = list(range(len(contents)))
     random.seed(random_state)
-    random.shuffle(contents)
+    random.shuffle(content_indices)
 
-    slice_contents: List[List[str]] = distribute_list_by_ratio(contents, list(prompts_ratio.values()))
+    slice_content_indices: List[List[str]] = distribute_list_by_ratio(content_indices, list(prompts_ratio.values()))
+    temp_df = pd.DataFrame({'idx': slice_content_indices, 'prompt': prompts})
+    temp_df = temp_df.explode('idx', ignore_index=True)
+    temp_df = temp_df.sort_values(by='idx', ascending=True)
+
+    final_df = pd.DataFrame({'content': contents, 'prompt': temp_df['prompt'].tolist()})
+
     tasks = [
         async_qa_gen_llama_index(content, llm, prompt, question_num_per_content, max_retries)
-        for prompt, type_contents in zip(prompts, slice_contents)
-        for content in type_contents
+        for content, prompt in zip(final_df['content'].tolist(), final_df['prompt'].tolist())
     ]
 
     loops = asyncio.get_event_loop()

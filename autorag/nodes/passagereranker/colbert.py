@@ -1,10 +1,11 @@
+import asyncio
 from typing import List, Tuple
 
 import torch
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import make_batch, select_top_k, flatten_apply
+from autorag.utils.util import process_batch
 
 
 @passage_reranker_node
@@ -34,47 +35,43 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     model = AutoModel.from_pretrained(model_name).to(device)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
-
-    rerank_scores = flatten_apply(colbert_run_model, nested_list, model=model,
-                                  tokenizer=tokenizer, batch_size=batch, device=device)
-
-    sorted_contents, sorted_ids, sorted_scores = select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    # Run async cohere_rerank_pure function
+    tasks = [get_colbert_score(query, document, model, tokenizer) for query, document, ids in
+             zip(queries, contents_list, ids_list)]
+    loop = asyncio.get_event_loop()
+    score_results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
     del model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
-    return sorted_contents, sorted_ids, sorted_scores
+    def rerank_results(contents, ids, scores, top_k):
+        reranked_content, reranked_id, reranked_score = zip(
+            *sorted(zip(contents, ids, scores), key=lambda x: x[2], reverse=True))
+        return list(reranked_content)[:top_k], list(reranked_id)[:top_k], list(reranked_score)[:top_k]
+
+    reranked_contents_list, reranked_ids_list, reranked_scores_list = zip(*list(map(
+        rerank_results, contents_list, ids_list, score_results, [top_k] * len(contents_list))))
+    return list(reranked_contents_list), list(reranked_ids_list), list(reranked_scores_list)
 
 
-def colbert_run_model(contents_list, model, tokenizer, device, batch_size: int):
-    batch_contents_list = make_batch(contents_list, batch_size)
-    results = []
+async def get_colbert_score(query: str, content_list: List[str],
+                            model, tokenizer) -> List[float]:
+    query_encoding = tokenizer(query, return_tensors="pt")
+    query_embedding = model(**query_encoding).last_hidden_state
+    rerank_score_list = []
 
-    for batch_contents in batch_contents_list:
-        flattened_batch_queries, flattened_batch_contents = map(list, zip(*batch_contents))
+    for document_text in content_list:
+        document_encoding = tokenizer(
+            document_text, return_tensors="pt", truncation=True, max_length=512
+        )
+        document_embedding = model(**document_encoding).last_hidden_state
 
-        # Tokenize both queries and contents together
-        feature = tokenizer(flattened_batch_queries, flattened_batch_contents, padding=True, truncation=True,
-                            return_tensors="pt").to(device)
-
-        # Process the combined feature through the model in one go
-        outputs = model(**feature)
-        last_hidden_state = outputs.last_hidden_state
-
-        # Split the embeddings back into query and content parts
-        num_queries = len(flattened_batch_queries)
-        query_embedding, content_embedding = last_hidden_state.split(
-            [num_queries, last_hidden_state.size(1) - num_queries], dim=1)
-
-        # Calculate cosine similarity between query and content embeddings
         sim_matrix = torch.nn.functional.cosine_similarity(
-            query_embedding.unsqueeze(2), content_embedding.unsqueeze(1), dim=-1
+            query_embedding.unsqueeze(2), document_embedding.unsqueeze(1), dim=-1
         )
 
         # Take the maximum similarity for each query token (across all document tokens)
+        # sim_matrix shape: [batch_size, query_length, doc_length]
         max_sim_scores, _ = torch.max(sim_matrix, dim=2)
-        results.extend(torch.mean(max_sim_scores, dim=1))
+        rerank_score_list.append(torch.mean(max_sim_scores, dim=1))
 
-    return list(map(float, results))
+    return list(map(float, rerank_score_list))
