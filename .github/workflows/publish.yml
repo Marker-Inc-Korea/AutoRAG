@@ -36,13 +36,14 @@ jobs:
         env:
           ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         run: |
-          if ${ALL_CHANGED_FILES} | grep 'VERSION'; then
-            echo "::set-output name=changed::true"
+          echo "changed=false" >> $GITHUB_ENV
+          if echo "${ALL_CHANGED_FILES}" | grep -q 'VERSION'; then
+            echo "changed=true" >> $GITHUB_ENV
           fi
       - name: Build
-        if: steps.version_changed.outputs.changed == 'true'
+        if: env.changed == 'true'
         run: |
           python -m build
       - name: Publish package distributions to PyPI
-        if: steps.version_changed.outputs.changed == 'true'
+        if: env.changed == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
