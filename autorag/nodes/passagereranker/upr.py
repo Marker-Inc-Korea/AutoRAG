@@ -45,10 +45,11 @@ def upr(queries: List[str], contents_list: List[List[str]],
     """
     # Load the tokenizer and model
     model_name = "t5-large"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForConditionalGeneration.from_pretrained(model_name,
-                                                       torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+                                                       torch_dtype=torch.bfloat16
+                                                       if use_bf16 else torch.float32).to(device)
 
     rerank_scores = parallel_process_upr(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
                                          device, model, shard_size, batch)
