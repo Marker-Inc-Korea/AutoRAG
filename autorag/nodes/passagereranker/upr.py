@@ -1,11 +1,11 @@
 from typing import List, Tuple
 
+import pandas as pd
 import torch
-from torch.multiprocessing import Pool, set_start_method
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import select_top_k
+from autorag.utils.util import select_top_k, flatten_apply, sort_by_scores
 
 
 @passage_reranker_node
@@ -51,71 +51,53 @@ def upr(queries: List[str], contents_list: List[List[str]],
                                                        torch_dtype=torch.bfloat16
                                                        if use_bf16 else torch.float32).to(device)
 
-    rerank_scores = parallel_process_upr(queries, contents_list, prefix_prompt, suffix_prompt, tokenizer,
-                                         device, model, shard_size, batch)
+    prompt_tokens = flatten_apply(make_content_prompt, contents_list,
+                                  prefix_prompt=prefix_prompt, suffix_prompt=suffix_prompt,
+                                  tokenizer=tokenizer)
 
-    sorted_contents, sorted_ids, sorted_scores = select_top_k(contents_list, ids_list, rerank_scores, top_k)
+    df = pd.DataFrame({
+        'query': queries,
+        'contents': contents_list,
+        'ids': ids_list,
+        'prompt_tokens': prompt_tokens,
+    })
+    df['scores'] = df.apply(lambda x: get_upr_score(x['prompt_tokens'], x['query'], model, tokenizer, device), axis=1)
 
     del model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return sorted_contents, sorted_ids, sorted_scores
+    df[['contents', 'ids', 'scores']] = df.apply(lambda x: sort_by_scores(x, reverse=False), axis=1,
+                                                 result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
-def process_single_query(args) -> List[float]:
-    query, contents, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size = args
-
-    if device == 'cuda':
-        model = model.to(device)
-
-    prompts = [f"{prefix_prompt} {content} {suffix_prompt}" for content in contents]
-    context_tokens = tokenizer(prompts, padding='longest', max_length=512, pad_to_multiple_of=8, truncation=True,
-                               return_tensors='pt')
-    context_tensor, context_attention_mask = context_tokens.input_ids, context_tokens.attention_mask
-    if device == 'cuda':
-        context_tensor, context_attention_mask = context_tensor.cuda(), context_attention_mask.cuda()
-
-    question_tokens = tokenizer([query], max_length=128, truncation=True, return_tensors='pt')
-    question_tensor = question_tokens.input_ids
-    if device == 'cuda':
-        question_tensor = question_tensor.cuda()
-    question_tensor = torch.repeat_interleave(question_tensor, len(contents), dim=0)
-
-    sharded_nll_list = []
-    for i in range(0, len(context_tensor), shard_size):
-        encoder_tensor_view = context_tensor[i: i + shard_size]
-        attention_mask_view = context_attention_mask[i: i + shard_size]
-        decoder_tensor_view = question_tensor[i: i + shard_size]
-        with torch.no_grad():
-            logits = model(input_ids=encoder_tensor_view, attention_mask=attention_mask_view,
-                           labels=decoder_tensor_view).logits
-        log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
-        nll = -log_softmax.gather(2, decoder_tensor_view.unsqueeze(2)).squeeze(2)
-        avg_nll = torch.sum(nll, dim=1)
-        sharded_nll_list.append(avg_nll)
-
-    results = list(map(lambda x: -float(x), sharded_nll_list[0]))
-    return results
+def make_content_prompt(contents: List[str], prefix_prompt: str, suffix_prompt: str,
+                        tokenizer):
+    prompts = list(map(lambda content: f"{prefix_prompt} {content} {suffix_prompt}", contents))
+    prompt_token_outputs = tokenizer(prompts, padding='longest',
+                                     max_length=512,
+                                     pad_to_multiple_of=8,
+                                     truncation=True,
+                                     return_tensors='pt')
+    input_id_list = list(prompt_token_outputs['input_ids'].chunk(len(contents), dim=0))
+    attn_mask_list = list(prompt_token_outputs['attention_mask'].chunk(len(contents), dim=0))
+    return list(map(lambda x, y: {'input_ids': x, 'attention_mask': y}, input_id_list, attn_mask_list))
 
 
-def parallel_process_upr(queries: List[str], contents: List[List[str]], prefix_prompt: str, suffix_prompt: str,
-                         tokenizer, device, model, shard_size: int, batch: int) -> List[List[float]]:
-    try:
-        set_start_method('spawn')
-    except RuntimeError:
-        pass
+def get_upr_score(content_tokens: List, query: str,
+                  model, tokenizer, device) -> List[float]:
+    query_token = tokenizer(query, max_length=128, truncation=True, return_tensors='pt')
+    query_input_ids = torch.repeat_interleave(query_token['input_ids'], len(content_tokens), dim=0).to(device)
 
-    # Prepare the model for multiprocessing
-    model.share_memory()
+    # concat list of content tensors
+    content_input_ids = torch.cat(list(map(lambda x: x['input_ids'], content_tokens)), dim=0).to(device)
+    content_attn_mask = torch.cat(list(map(lambda x: x['attention_mask'], content_tokens)), dim=0).to(device)
 
-    # Create a list of arguments for each task
-    args_list = [(query, content, prefix_prompt, suffix_prompt, tokenizer, device, model, shard_size)
-                 for query, content in zip(queries, contents)]
-
-    # Use torch.multiprocessing.Pool instead of the multiprocessing.Pool
-    # This ensures better compatibility with PyTorch, especially for CUDA operations
-    with Pool(processes=batch) as pool:
-        results = pool.map(process_single_query, args_list)
-
-    return results
+    logits = model(input_ids=content_input_ids, attention_mask=content_attn_mask,
+                   labels=query_input_ids).logits
+    log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
+    nll = -log_softmax.gather(2, query_input_ids.unsqueeze(2)).squeeze(2)
+    avg_nll = torch.sum(nll, dim=1)
+    return avg_nll.tolist()
