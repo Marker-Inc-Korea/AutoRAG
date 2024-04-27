@@ -14,28 +14,36 @@ jobs:
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
       id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       # retrieve your distributions here
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
-
+          python-version: '3.10'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install setuptools wheel twine
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
       - name: Check for VERSION file change
         id: version_changed
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
         run: |
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep 'VERSION'; then
-            echo "::set-output name=changed::true"
+          echo "changed=false" >> $GITHUB_ENV
+          if echo "${ALL_CHANGED_FILES}" | grep -q 'VERSION'; then
+            echo "changed=true" >> $GITHUB_ENV
           fi
       - name: Build
-        if: steps.version_changed.outputs.changed == 'true'
+        if: env.changed == 'true'
         run: |
           python -m build
       - name: Publish package distributions to PyPI
-        if: steps.version_changed.outputs.changed == 'true'
+        if: env.changed == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
