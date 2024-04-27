@@ -62,7 +62,8 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
 
 def get_colbert_embedding_batch(input_strings: List[str],
                                 model, tokenizer, batch_size: int) -> List[np.array]:
-    encoding = tokenizer(input_strings, return_tensors="pt", padding=True)
+    encoding = tokenizer(input_strings, return_tensors="pt", padding=True, truncation=True,
+                         max_length=model.config.max_position_embeddings)
     input_batches = slice_tokenizer_result(encoding, batch_size)
     result_embedding = []
     for encoding in input_batches:
