@@ -34,7 +34,7 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AutoModel.from_pretrained(model_name).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name).to(device)
 
     # get query and content embeddings
     query_embedding_list = get_colbert_embedding_batch(queries, model, tokenizer, batch)
