@@ -54,21 +54,26 @@ def passage_augmenter_node(func):
 
             # get augmented ids
             augmented_ids = func(ids_list=ids, corpus_df=slim_corpus_df, mode=mode, num_passages=num_passages)
+
             # fetch contents from corpus to use augmented ids
-            augmented_contents = fetch_contents(corpus_df, ids)
+            augmented_contents = fetch_contents(corpus_df, augmented_ids)
+
+            # set embedding model for getting scores
+            embedding_model_str = kwargs.pop("embedding_model", 'openai')
+            query_embeddings, contents_embeddings = embedding_query_content(queries, augmented_contents,
+                                                                            embedding_model_str, batch=128)
+
+
+            # get scores from calculated cosine similarity
+            augmented_scores = [
+                np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
+                for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
         else:
-            contents = fetch_contents(corpus_df, ids)
-            augmented_ids, augmented_contents = func(ids_list=ids, contents_list=contents, *args, **kwargs)
+            contents = previous_result["retrieved_contents"].tolist()
+            scores = previous_result["retrieve_scores"].tolist()
 
-        # set embedding model for getting scores
-        embedding_model_str = kwargs.pop("embedding_model", 'openai')
-        query_embeddings, contents_embeddings = embedding_query_content(queries, augmented_contents,
-                                                                        embedding_model_str, batch=128)
-
-        # get scores from calculated cosine similarity
-        augmented_scores = [
-            np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()
-            for query_embedding, content_embeddings in zip(query_embeddings, contents_embeddings)]
+            augmented_ids, augmented_contents, augmented_scores = func(ids_list=ids, contents_list=contents,
+                                                                       scores_list=scores, **kwargs)
 
         # sort by scores
         df = pd.DataFrame({
