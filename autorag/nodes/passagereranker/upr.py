@@ -98,8 +98,8 @@ class UPRScorer:
         query_input_ids = torch.repeat_interleave(query_token['input_ids'], len(contents),
                                                   dim=0).to(self.device)
 
-        logits = self.model(input_ids=prompt_token_outputs['input_ids'],
-                            attention_mask=prompt_token_outputs['attention_mask'],
+        logits = self.model(input_ids=prompt_token_outputs['input_ids'].to(self.device),
+                            attention_mask=prompt_token_outputs['attention_mask'].to(self.device),
                             labels=query_input_ids).logits
         log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
         nll = -log_softmax.gather(2, query_input_ids.unsqueeze(2)).squeeze(2)
