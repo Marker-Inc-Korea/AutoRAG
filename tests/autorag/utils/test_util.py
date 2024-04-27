@@ -74,6 +74,10 @@ def test_fetch_contents():
     assert find_empty[0] == [None]
     assert find_empty[1] == ['banana']
 
+    find_blank = fetch_contents(corpus_data, [[''], ['doc2']])
+    assert find_blank[0] == [None]
+    assert find_blank[1] == ['banana']
+
 
 def test_load_summary_file(summary_path):
     with pytest.raises(ValueError):
