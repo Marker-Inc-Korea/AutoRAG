@@ -1,9 +1,12 @@
+import os
+import pathlib
 from datetime import datetime
 
 import pandas as pd
 import pytest
 
-from autorag.utils import validate_qa_dataset, validate_corpus_dataset, cast_qa_dataset, cast_corpus_dataset
+from autorag.utils import (validate_qa_dataset, validate_corpus_dataset, cast_qa_dataset, cast_corpus_dataset,
+                           validate_qa_from_corpus_dataset)
 
 
 @pytest.fixture
@@ -11,7 +14,7 @@ def qa_df():
     return pd.DataFrame({
         'qid': ['id1', 'id2'],
         'query': ['query1', 'query2'],
-        'retrieval_gt': ['answer1', 'answer2'],
+        'retrieval_gt': [[['doc1', 'doc3'], ['doc2']], [[]]],
         'generation_gt': 'answer1',
     })
 
@@ -75,3 +78,21 @@ def test_cast_corpus_dataset(corpus_df):
     assert casted_df['metadata'].iloc[1]['prev_id'] is None
     assert casted_df['metadata'].iloc[1]['next_id'] is None
     assert casted_df['metadata'].iloc[2]['last_modified_datetime'] == datetime(2022, 12, 1, 3, 4, 5)
+
+
+def test_validate_qa_from_corpus_dataset(qa_df, corpus_df):
+    validate_qa_from_corpus_dataset(qa_df, corpus_df)
+
+    with pytest.raises(AssertionError) as excinfo:
+        invalid_df = qa_df.copy()
+        invalid_df.at[0, 'retrieval_gt'] = [['answer1', 'answer2'], ['answer3']]
+        validate_qa_from_corpus_dataset(invalid_df, corpus_df)
+    assert "3 doc_ids in retrieval_gt do not exist in corpus_df." in str(excinfo.value)
+
+    root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
+    project_dir = os.path.join(root_dir, "resources", "sample_project")
+    qa_parquet = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+
+    with pytest.raises(AssertionError) as excinfo:
+        validate_qa_from_corpus_dataset(qa_parquet, corpus_df)
+    assert "10 doc_ids in retrieval_gt do not exist in corpus_df." in str(excinfo.value)

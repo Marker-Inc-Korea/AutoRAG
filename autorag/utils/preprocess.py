@@ -85,3 +85,18 @@ def cast_corpus_dataset(df: pd.DataFrame):
     assert all('next_id' in metadata for metadata in df['metadata']), "Every metadata must have a next_id key."
 
     return df
+
+
+def validate_qa_from_corpus_dataset(qa_df: pd.DataFrame, corpus_df: pd.DataFrame):
+    qa_ids = []
+    for retrieval_gt in qa_df['retrieval_gt'].tolist():
+        if isinstance(retrieval_gt, list) and (retrieval_gt[0] != [] or any(bool(g) is True for g in retrieval_gt)):
+            for gt in retrieval_gt:
+                qa_ids.extend(gt)
+        elif isinstance(retrieval_gt, np.ndarray) and retrieval_gt[0].size > 0:
+            for gt in retrieval_gt:
+                qa_ids.extend(gt)
+
+    no_exist_ids = list(filter(lambda qa_id: corpus_df[corpus_df['doc_id'] == qa_id].empty, qa_ids))
+
+    assert len(no_exist_ids) == 0, f"{len(no_exist_ids)} doc_ids in retrieval_gt do not exist in corpus_df."
