@@ -14,6 +14,7 @@ jobs:
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
       id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
