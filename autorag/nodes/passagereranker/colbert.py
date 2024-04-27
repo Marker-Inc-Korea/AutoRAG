@@ -34,7 +34,7 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AutoModel.from_pretrained(model_name).to(device)
-    tokenizer = AutoTokenizer.from_pretrained(model_name).to(device)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     # get query and content embeddings
     query_embedding_list = get_colbert_embedding_batch(queries, model, tokenizer, batch)
@@ -92,7 +92,8 @@ def slice_tensor(input_tensor, batch_size):
     remainder = input_tensor.size(0) % batch_size
     if remainder:
         tensor_list.append(input_tensor[-remainder:])
-
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    tensor_list = list(map(lambda x: x.to(device), tensor_list))
     return tensor_list
 
 
