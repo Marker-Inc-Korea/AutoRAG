@@ -62,14 +62,17 @@ def colbert_reranker(queries: List[str], contents_list: List[List[str]],
 
 def get_colbert_embedding_batch(input_strings: List[str],
                                 model, tokenizer, batch_size: int) -> List[np.array]:
+
     encoding = tokenizer(input_strings, return_tensors="pt", padding=True, truncation=True,
                          max_length=model.config.max_position_embeddings)
+
     input_batches = slice_tokenizer_result(encoding, batch_size)
     result_embedding = []
     for encoding in input_batches:
         result_embedding.append(model(**encoding).last_hidden_state)
     total_tensor = torch.cat(result_embedding, dim=0)  # shape [batch_size, token_length, embedding_dim]
     tensor_results = list(total_tensor.chunk(total_tensor.size()[0]))
+
     if torch.cuda.is_available():
         return list(map(lambda x: x.detach().cpu().numpy(), tensor_results))
     else:
@@ -96,8 +99,10 @@ def slice_tensor(input_tensor, batch_size):
     remainder = input_tensor.size(0) % batch_size
     if remainder:
         tensor_list.append(input_tensor[-remainder:])
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tensor_list = list(map(lambda x: x.to(device), tensor_list))
+
     return tensor_list
 
 

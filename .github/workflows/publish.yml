@@ -15,12 +15,12 @@ jobs:
       # IMPORTANT: this permission is mandatory for trusted publishing
       id-token: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       # retrieve your distributions here
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
@@ -29,7 +29,7 @@ jobs:
       - name: Check for VERSION file change
         id: version_changed
         run: |
-          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep 'VERSION'; then
+          if git diff --name-only HEAD^ HEAD | grep 'VERSION'; then
             echo "::set-output name=changed::true"
           fi
       - name: Build
