@@ -60,6 +60,9 @@ node_lines:
         - module_type: pass_passage_augmenter
         - module_type: prev_next_augmenter
           mode: next
+        - module_type: recursive_chunk
+          sub_chunk_sizes: [ [ 128, 256, 512 ], [ 128, 256 ] ]
+          chunk_overlap: 20
     - node_type: passage_reranker
       strategy:
         metrics: [retrieval_f1, retrieval_recall, retrieval_precision]

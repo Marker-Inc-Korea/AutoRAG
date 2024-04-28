@@ -22,3 +22,6 @@ previous_result = pd.DataFrame({
     'retrieval_recall': [1.0, 0.3]
 })
 ids_list = [[doc_id_list[1]], [doc_id_list[3]], [doc_id_list[0], doc_id_list[29]]]
+corpus_contents_list = corpus_data["contents"].tolist()
+contents_list = [[corpus_contents_list[1]], [corpus_contents_list[3]],
+                 [corpus_contents_list[0], corpus_contents_list[29]]]

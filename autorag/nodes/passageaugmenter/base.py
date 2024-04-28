@@ -63,6 +63,7 @@ def passage_augmenter_node(func):
             query_embeddings, contents_embeddings = embedding_query_content(queries, augmented_contents,
                                                                             embedding_model_str, batch=128)
 
+
             # get scores from calculated cosine similarity
             augmented_scores = [
                 np.array([calculate_cosine_similarity(query_embedding, x) for x in content_embeddings]).tolist()

@@ -27,6 +27,7 @@ def get_support_modules(module_name: str) -> Callable:
         'hybrid_dbsf': ('autorag.nodes.retrieval', 'hybrid_dbsf'),
         # passage_augmenter
         'prev_next_augmenter': ('autorag.nodes.passageaugmenter', 'prev_next_augmenter'),
+        'recursive_chunk': ('autorag.nodes.passageaugmenter', 'recursive_chunk'),
         # passage_reranker
         'monot5': ('autorag.nodes.passagereranker', 'monot5'),
         'tart': ('autorag.nodes.passagereranker', 'tart'),
