@@ -1,4 +1,5 @@
 import functools
+import math
 from typing import List
 
 
@@ -50,3 +51,14 @@ def retrieval_precision(gt: List[List[str]], pred: List[str]):
     hits = sum(any(pred_id in gt_set for gt_set in gt_sets) for pred_id in pred_set)
     precision = hits / len(pred) if len(pred) > 0 else 0.0
     return precision
+
+
+@retrieval_metric
+def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
+    relevance_scores = {doc_id: 1 if doc_id in gt[0] else 0 for doc_id in pred}
+
+    dcg = sum((2 ** relevance_scores[doc_id] - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
+    ideal_sorted_docs = sorted(relevance_scores.items(), key=lambda item: item[1], reverse=True)
+    idcg = sum((2 ** relevance - 1) / math.log2(i + 2) for i, (_, relevance) in enumerate(ideal_sorted_docs))
+    ndcg = dcg / idcg if idcg > 0 else 0
+    return ndcg
