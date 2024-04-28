@@ -35,7 +35,7 @@ node_lines:
         embedding_model: openai
         top_k: 5
         modules:
-          - module_type: pass_passage_augmenter
+          - module_type: pass_augmenter
           - module_type: prev_next_augmenter
             mode: next
 ```
