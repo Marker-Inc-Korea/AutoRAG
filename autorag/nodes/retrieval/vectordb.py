@@ -3,6 +3,7 @@ from typing import List, Tuple
 
 import chromadb
 import pandas as pd
+from chromadb.utils.batch_utils import create_batches
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
@@ -95,4 +96,8 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
 
         new_ids = new_passage['doc_id'].tolist()
         embedded_contents = embedding_model.get_text_embedding_batch(new_contents, show_progress=True)
-        collection.add(ids=new_ids, embeddings=embedded_contents)
+        input_batches = create_batches(api=collection._client, ids=new_ids, embeddings=embedded_contents)
+        for batch in input_batches:
+            ids = batch[0]
+            embed_content = batch[1]
+            collection.add(ids=ids, embeddings=embed_content)

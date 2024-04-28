@@ -18,7 +18,7 @@ from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.schema import Node
 from autorag.schema.node import module_type_exists, extract_values_from_nodes
-from autorag.utils import cast_qa_dataset, cast_corpus_dataset
+from autorag.utils import cast_qa_dataset, cast_corpus_dataset, validate_qa_from_corpus_dataset
 from autorag.utils.util import load_summary_file, convert_string_to_tuple_in_dict, convert_env_in_dict, explode
 
 logger = logging.getLogger("AutoRAG")
@@ -62,6 +62,8 @@ class Evaluator:
         self.project_dir = project_dir if project_dir is not None else os.getcwd()
         if not os.path.exists(self.project_dir):
             os.makedirs(self.project_dir)
+
+        validate_qa_from_corpus_dataset(self.qa_data, self.corpus_data)
 
         # copy dataset to project directory
         if not os.path.exists(os.path.join(self.project_dir, 'data')):

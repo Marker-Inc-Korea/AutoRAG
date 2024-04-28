@@ -4,14 +4,14 @@ The `UPR` module is a reranker based on paper called "[Improving Passage Retriev
 
 ## **Module Parameters**
 
-Configure the UPR module with parameters like 
-- (Optional)`shard_size` (integer): 
-  - The larger the shard size, the faster the reranking speed.
-          But it will consume more memory and compute power.
-  - Default is `16`.
+Configure the UPR module with parameters like
 - (Optional) `use_bf16` (boolean):
   - Whether to use bfloat16 for the model. 
   - Default is `False`.
+- (Optional) `num_gpus` (int):
+    - Number of GPUs in your machine.
+    - Default is 1.
+    - If you use CPU, just keep this parameter as 1.
 - (Optional) `prefix_prompt` (strings):
   - The prefix prompt serves as the initial context or instruction for the language model.
         It sets the stage for what is expected in the output 
@@ -27,6 +27,8 @@ for customizing the reranking behavior.
 ```yaml
 modules:
   - module_type: upr
-    shard_size: 8
     use_bf16: False
+    num_gpus: 1
+    prefix_prompt: "Passage: "
+    suffix_prompt: "Please write a question based on this passage."
 ```

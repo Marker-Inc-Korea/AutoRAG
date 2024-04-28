@@ -17,16 +17,25 @@ logger = logging.getLogger("AutoRAG")
 
 def fetch_contents(corpus_data: pd.DataFrame, ids: List[List[str]],
                    column_name: str = 'contents') -> List[List[Any]]:
-    flat_ids = itertools.chain.from_iterable(ids)
-    contents = list(map(lambda x: corpus_data.loc[lambda row: row['doc_id'] == x][column_name].values[0], flat_ids))
+    def fetch_contents_pure(ids: List[str], corpus_data: pd.DataFrame, column_name: str):
+        return list(map(lambda x: fetch_one_content(corpus_data, x, column_name), ids))
 
-    result = []
-    idx = 0
-    for sublist in ids:
-        result.append(contents[idx:idx + len(sublist)])
-        idx += len(sublist)
-
+    result = flatten_apply(fetch_contents_pure, ids, corpus_data=corpus_data, column_name=column_name)
     return result
+
+
+def fetch_one_content(corpus_data: pd.DataFrame, id_: str,
+                      column_name: str = 'contents') -> Any:
+    if isinstance(id_, str):
+        if id_ in ['', ""]:
+            return None
+        fetch_result = corpus_data[corpus_data['doc_id'] == id_]
+        if fetch_result.empty:
+            raise ValueError(f"doc_id: {id_} not found in corpus_data.")
+        else:
+            return fetch_result[column_name].iloc[0]
+    else:
+        return None
 
 
 def result_to_dataframe(column_names: List[str]):
@@ -316,3 +325,13 @@ def select_top_k(df, column_names: List[str], top_k: int):
     for column_name in column_names:
         df[column_name] = df[column_name].apply(lambda x: x[:top_k])
     return df
+
+
+def filter_dict_keys(dict_, keys: List[str]):
+    result = {}
+    for key in keys:
+        if key in dict_:
+            result[key] = dict_[key]
+        else:
+            raise KeyError(f"Key '{key}' not found in dictionary.")
+    return result

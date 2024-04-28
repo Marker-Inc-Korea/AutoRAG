@@ -41,7 +41,7 @@ ko_previous_result['query'] = ko_queries_example
 ko_previous_result['retrieved_contents'] = ko_contents_example
 
 
-def base_reranker_test(contents, ids, scores, top_k, use_ko=False):
+def base_reranker_test(contents, ids, scores, top_k, use_ko=False, descending=True):
     assert len(contents) == len(ids) == len(scores) == 2
     assert len(contents[0]) == len(ids[0]) == len(scores[0]) == top_k
     for content_list, id_list, score_list in zip(contents, ids, scores):
@@ -52,8 +52,12 @@ def base_reranker_test(contents, ids, scores, top_k, use_ko=False):
             assert isinstance(content, str)
             assert isinstance(_id, str)
             assert isinstance(score, float)
-        for i in range(1, len(score_list)):
-            assert score_list[i - 1] >= score_list[i]
+        if descending is True:
+            for i in range(1, len(score_list)):
+                assert score_list[i - 1] >= score_list[i]
+        else:
+            for i in range(1, len(score_list)):
+                assert score_list[i - 1] <= score_list[i]
     if use_ko is True:
         assert contents[0][0] == "프랑스의 수도는 파리 입니다."
         assert ids[0][0] in ids_example[0][1]
@@ -66,11 +70,11 @@ def base_reranker_test(contents, ids, scores, top_k, use_ko=False):
         assert ids[1][0] in ids_example[1][2]
 
 
-def base_reranker_node_test(result_df, top_k, use_ko=False):
+def base_reranker_node_test(result_df, top_k, use_ko=False, descending=True):
     contents = result_df["retrieved_contents"].tolist()
     ids = result_df["retrieved_ids"].tolist()
     scores = result_df["retrieve_scores"].tolist()
-    base_reranker_test(contents, ids, scores, top_k, use_ko)
+    base_reranker_test(contents, ids, scores, top_k, use_ko, descending=descending)
 
 
 @pytest.fixture
