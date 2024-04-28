@@ -55,7 +55,9 @@ def retrieval_precision(gt: List[List[str]], pred: List[str]):
 
 @retrieval_metric
 def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
-    relevance_scores = {doc_id: 1 if doc_id in gt[0] else 0 for doc_id in pred}
+    gt_sets = [frozenset(g) for g in gt]
+    pred_set = set(pred)
+    relevance_scores = {pred_id: 1 if any(pred_id in gt_set for gt_set in gt_sets) else 0 for pred_id in pred_set}
 
     dcg = sum((2 ** relevance_scores[doc_id] - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
     ideal_sorted_docs = sorted(relevance_scores.items(), key=lambda item: item[1], reverse=True)
