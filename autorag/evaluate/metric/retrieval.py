@@ -1,4 +1,5 @@
 import functools
+import math
 from typing import List
 
 
@@ -53,21 +54,11 @@ def retrieval_precision(gt: List[List[str]], pred: List[str]):
 
 
 @retrieval_metric
-def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
-    """
-    Compute Mean Reciprocal Rank (MRR) for retrieval.
+def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
+    relevance_scores = {doc_id: 1 if doc_id in gt[0] else 0 for doc_id in pred}
 
-    :param gt: 2-d list of ground truth ids.
-        It contains and/or connections between ids.
-    :param pred: Prediction ids.
-    :return: The MRR score.
-    """
-    ranks = []
-    for g in gt:
-        rank = float('inf')
-        for p in pred:
-            if p in g:
-                rank = min(rank, pred.index(p) + 1)
-        if rank != float('inf'):
-            ranks.append(1 / rank)
-    return sum(ranks) / len(ranks) if ranks else 0.0
+    dcg = sum((2 ** relevance_scores[doc_id] - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
+    ideal_sorted_docs = sorted(relevance_scores.items(), key=lambda item: item[1], reverse=True)
+    idcg = sum((2 ** relevance - 1) / math.log2(i + 2) for i, (_, relevance) in enumerate(ideal_sorted_docs))
+    ndcg = dcg / idcg if idcg > 0 else 0
+    return ndcg
