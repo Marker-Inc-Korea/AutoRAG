@@ -4,6 +4,7 @@ from typing import List, Tuple
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
 from autorag.nodes.passagereranker.tart.modeling_enc_t5 import EncT5ForSequenceClassification
@@ -68,7 +69,7 @@ def tart_run_model(input_texts, contents_list, model, batch_size: int, tokenizer
     batch_input_texts = make_batch(flattened_texts, batch_size)
     batch_contents_list = make_batch(flattened_contents, batch_size)
     results = []
-    for batch_texts, batch_contents in zip(batch_input_texts, batch_contents_list):
+    for batch_texts, batch_contents in tqdm(zip(batch_input_texts, batch_contents_list)):
         feature = tokenizer(batch_texts, batch_contents, padding=True, truncation=True,
                             return_tensors="pt").to(device)
         with torch.no_grad():

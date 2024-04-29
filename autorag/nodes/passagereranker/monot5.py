@@ -3,6 +3,7 @@ from typing import List, Tuple
 
 import pandas as pd
 import torch
+from tqdm import tqdm
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
@@ -92,7 +93,7 @@ def monot5(queries: List[str], contents_list: List[List[str]],
 def monot5_run_model(input_texts, model, batch_size: int, tokenizer, device, token_false_id, token_true_id):
     batch_input_texts = make_batch(input_texts, batch_size)
     results = []
-    for batch_texts in batch_input_texts:
+    for batch_texts in tqdm(batch_input_texts):
         flattened_batch_texts = list(chain.from_iterable(batch_texts))
         input_encodings = tokenizer(flattened_batch_texts, padding=True, truncation=True, max_length=512,
                                     return_tensors='pt').to(
