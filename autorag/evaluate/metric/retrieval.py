@@ -70,15 +70,9 @@ def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
 def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
     """
     Reciprocal Rank (RR) is the reciprocal of the rank of the first relevant item.
-    Mean of RR in whole querys is MRR.
+    Mean of RR in whole queries is MRR.
     """
     # Flatten the ground truth list of lists into a single set of relevant documents
-    relevant_docs = set(doc for sublist in gt for doc in sublist)
+    gt_sets = [frozenset(g) for g in gt]
 
-    # Calculate RR by finding the rank of the first relevant document in the predictions
-    for rank, doc_id in enumerate(pred):
-        if doc_id in relevant_docs:
-            return 1.0 / (rank + 1)
-
-    # If no relevant document is found, return 0
-    return 0.0
+    return next((1.0 / (i + 1) for i, pred_id in enumerate(pred) if any(pred_id in gt_set for gt_set in gt_sets)), 0.0)
