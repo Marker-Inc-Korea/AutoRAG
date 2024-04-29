@@ -1,6 +1,8 @@
 import logging
 from typing import List
 
+import numpy as np
+
 from autorag.nodes.promptmaker.base import prompt_maker_node
 
 logger = logging.getLogger("AutoRAG")
@@ -35,6 +37,8 @@ def long_context_reorder(prompt: str, queries: List[str], retrieved_contents: Li
 
     def long_context_reorder_row(_prompt: str, _query: str, _retrieved_contents: List[str],
                                  _retrieve_scores: List[float]) -> str:
+        if isinstance(_retrieved_contents, np.ndarray):
+            _retrieved_contents = _retrieved_contents.tolist()
         if not len(_retrieved_contents) == len(_retrieve_scores):
             logger.info("If you use a summarizer, the reorder will not proceed.")
             return _prompt.format(query=_query, retrieved_contents="\n\n".join(_retrieved_contents))
