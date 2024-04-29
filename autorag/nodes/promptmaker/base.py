@@ -1,10 +1,13 @@
 import functools
+import logging
 from pathlib import Path
 from typing import List, Union
 
 import pandas as pd
 
 from autorag.utils import result_to_dataframe
+
+logger = logging.getLogger("AutoRAG")
 
 
 def prompt_maker_node(func):
@@ -14,6 +17,7 @@ def prompt_maker_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> List[str]:
+        logger.info(f"Running prompt maker node - {func.__name__} module...")
         # get query and retrieved contents from previous_result
         assert "query" in previous_result.columns, "previous_result must have query column."
         assert "retrieved_contents" in previous_result.columns, "previous_result must have retrieved_contents column."

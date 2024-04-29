@@ -3,6 +3,7 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
@@ -68,7 +69,7 @@ def get_colbert_embedding_batch(input_strings: List[str],
 
     input_batches = slice_tokenizer_result(encoding, batch_size)
     result_embedding = []
-    for encoding in input_batches:
+    for encoding in tqdm(input_batches):
         result_embedding.append(model(**encoding).last_hidden_state)
     total_tensor = torch.cat(result_embedding, dim=0)  # shape [batch_size, token_length, embedding_dim]
     tensor_results = list(total_tensor.chunk(total_tensor.size()[0]))

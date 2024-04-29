@@ -25,6 +25,7 @@ def passage_augmenter_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+        logger.info(f"Running passage augmenter node - {func.__name__} module...")
         validate_qa_dataset(previous_result)
         data_dir = os.path.join(project_dir, "data")
 
