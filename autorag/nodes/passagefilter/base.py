@@ -1,4 +1,5 @@
 import functools
+import logging
 import os
 from pathlib import Path
 from typing import Union, Tuple, List
@@ -6,6 +7,8 @@ from typing import Union, Tuple, List
 import pandas as pd
 
 from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents
+
+logger = logging.getLogger("AutoRAG")
 
 
 # same with passage filter from now
@@ -16,6 +19,7 @@ def passage_filter_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+        logger.info(f"Running passage filter node - {func.__name__} module...")
         validate_qa_dataset(previous_result)
 
         # find queries columns

@@ -18,6 +18,7 @@ def query_expansion_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> List[List[str]]:
+        logger.info(f"Running query expansion node - {func.__name__} module...")
         validate_qa_dataset(previous_result)
 
         # find queries columns
