@@ -12,6 +12,14 @@ autorag.nodes.passageaugmenter.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passageaugmenter.pass\_passage\_augmenter module
+--------------------------------------------------------------
+
+.. automodule:: autorag.nodes.passageaugmenter.pass_passage_augmenter
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passageaugmenter.prev\_next\_augmenter module
 -----------------------------------------------------------
 

@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import datetime
 import functools
 import itertools
 import logging
@@ -80,10 +81,29 @@ def load_summary_file(summary_path: str,
         raise ValueError(f"{dict_columns} must be in summary_df.columns.")
 
     def convert_dict(elem):
-        return ast.literal_eval(elem)
+        try:
+            return ast.literal_eval(elem)
+        except:
+            # convert datetime or date to its object (recency filter)
+            date_object = convert_datetime_string(elem)
+            if date_object is None:
+                raise ValueError(f"Malformed dict received : {elem}\nCan't convert to dict properly")
+            return {'threshold': date_object}
 
     summary_df[dict_columns] = summary_df[dict_columns].applymap(convert_dict)
     return summary_df
+
+
+def convert_datetime_string(s):
+    # Regex to extract datetime arguments from the string
+    m = re.search(r"(datetime|date)(\((\d+)(,\s*\d+)*\))", s)
+    if m:
+        args = ast.literal_eval(m.group(2))
+        if m.group(1) == 'datetime':
+            return datetime.datetime(*args)
+        elif m.group(1) == 'date':
+            return datetime.date(*args)
+    return None
 
 
 def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:

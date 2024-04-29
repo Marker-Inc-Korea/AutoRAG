@@ -3,7 +3,7 @@ import itertools
 import os
 import pathlib
 import tempfile
-from datetime import datetime
+from datetime import datetime, date
 
 import pandas as pd
 import pytest
@@ -13,7 +13,7 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token
+    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -84,6 +84,28 @@ def test_load_summary_file(summary_path):
         load_summary_file(summary_path)
     df = load_summary_file(summary_path, ['best_module_params'])
     assert df.equals(summary_df)
+
+
+def test_load_summary_file_recency_filter():
+    df = pd.DataFrame({
+        'module_name': ['havertz', 'recency_filter'],
+        'module_params': [{'jazz': 'eastsidegunn'},
+                          {'threshold': datetime(2022, 1, 3, 0, 1, 3)}],
+    })
+    with tempfile.NamedTemporaryFile(suffix='.csv') as csv_file:
+        df.to_csv(csv_file.name, index=False)
+        load_df = load_summary_file(csv_file.name)
+        assert load_df.equals(df)
+
+
+def test_convert_datetime_string():
+    datetime_dict = {'threshold': datetime(2022, 1, 3, 0, 0, 3)}
+    date_dict = {'threshold': date(2001, 7, 11)}
+    result1 = convert_datetime_string(str(datetime_dict))
+    result2 = convert_datetime_string(str(date_dict))
+
+    assert result1 == datetime_dict['threshold']
+    assert result2 == date_dict['threshold']
 
 
 def test_result_to_dataframe():
