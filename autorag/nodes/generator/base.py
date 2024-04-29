@@ -1,4 +1,5 @@
 import functools
+import logging
 from pathlib import Path
 from typing import Union, Tuple, List
 
@@ -6,6 +7,8 @@ import pandas as pd
 
 from autorag import generator_models
 from autorag.utils import result_to_dataframe
+
+logger = logging.getLogger("AutoRAG")
 
 
 def generator_node(func):
@@ -28,6 +31,7 @@ def generator_node(func):
         :return: Pandas dataframe that contains generated texts, generated tokens, and generated log probs.
             Each column is "generated_texts", "generated_tokens", and "generated_log_probs".
         """
+        logger.info(f"Running generator node - {func.__name__} module...")
         assert 'prompts' in previous_result.columns, "previous_result must contain prompts column."
         prompts = previous_result['prompts'].tolist()
         if func.__name__ == 'llama_index_llm':

@@ -1,4 +1,5 @@
 import functools
+import logging
 from pathlib import Path
 from typing import List, Union, Dict
 
@@ -8,6 +9,8 @@ from llama_index.core.service_context_elements.llm_predictor import LLMPredictor
 from autorag import generator_models
 from autorag.utils import result_to_dataframe
 
+logger = logging.getLogger("AutoRAG")
+
 
 def passage_compressor_node(func):
     @functools.wraps(func)
@@ -16,6 +19,7 @@ def passage_compressor_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             *args, **kwargs) -> List[List[str]]:
+        logger.info(f"Running generator node - {func.__name__} module...")
         assert all([column in previous_result.columns for column in
                     ['query', 'retrieved_contents', 'retrieved_ids', 'retrieve_scores']]), \
             "previous_result must have retrieved_contents, retrieved_ids, and retrieve_scores columns."

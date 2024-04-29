@@ -53,16 +53,18 @@ def upr(queries: List[str], contents_list: List[List[str]],
     })
     ds = ray.data.from_pandas(df)
 
+    scorer = UPRScorer(suffix_prompt=suffix_prompt, prefix_prompt=prefix_prompt, use_bf16=use_bf16)
+
     if torch.cuda.is_available():
-        score_batch = ds.map_batches(UPRScorer(suffix_prompt=suffix_prompt,
-                                               prefix_prompt=prefix_prompt, use_bf16=use_bf16), batch_size=1,
+        score_batch = ds.map_batches(scorer, batch_size=1,
                                      concurrency=num_gpus, num_gpus=1)
     else:
-        score_batch = ds.map_batches(UPRScorer(suffix_prompt=suffix_prompt,
-                                               prefix_prompt=prefix_prompt, use_bf16=use_bf16),
+        score_batch = ds.map_batches(scorer,
                                      batch_size=1,
                                      concurrency=min(len(df), os.cpu_count()), num_cpus=os.cpu_count())
     scores = score_batch.to_pandas()['output'].tolist()  # converted to a flatten list of scores
+
+    del scorer
 
     explode_df = df.explode('contents')
     explode_df['scores'] = scores
@@ -108,5 +110,6 @@ class UPRScorer:
 
     def __del__(self):
         del self.model
+        del self.tokenizer
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
