@@ -3,6 +3,7 @@ from typing import List, Tuple
 import pandas as pd
 import torch
 from FlagEmbedding import FlagReranker
+from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
 from autorag.utils.util import make_batch, sort_by_scores, flatten_apply, select_top_k
@@ -54,7 +55,7 @@ def flag_embedding_reranker(queries: List[str], contents_list: List[List[str]],
 def flag_embedding_run_model(input_texts, model, batch_size: int):
     batch_input_texts = make_batch(input_texts, batch_size)
     results = []
-    for batch_texts in batch_input_texts:
+    for batch_texts in tqdm(batch_input_texts):
         with torch.no_grad():
             pred_scores = model.compute_score(sentence_pairs=batch_texts)
         if batch_size == 1:
