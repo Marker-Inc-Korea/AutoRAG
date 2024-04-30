@@ -12,6 +12,27 @@ from autorag.utils.util import process_batch
 
 logger = logging.getLogger("AutoRAG")
 
+MAX_TOKEN_DICT = {  # model name : token limit
+    'gpt-4-turbo': 128_000,
+    'gpt-4-turbo-2024-04-09	': 128_000,
+    'gpt-4-turbo-preview': 128_000,
+    'gpt-4-0125-preview': 128_000,
+    'gpt-4-1106-preview': 128_000,
+    'gpt-4-vision-preview': 128_000,
+    'gpt-4-1106-vision-preview': 128_000,
+    'gpt-4': 8_192,
+    'gpt-4-0613': 8_192,
+    'gpt-4-32k': 32_768,
+    'gpt-4-32k-0613': 32_768,
+    'gpt-3.5-turbo-0125': 16_385,
+    'gpt-3.5-turbo': 16_385,
+    'gpt-3.5-turbo-1106': 16_385,
+    'gpt-3.5-turbo-instruct': 4_096,
+    'gpt-3.5-turbo-16k': 16_385,
+    'gpt-3.5-turbo-0613': 4_096,
+    'gpt-3.5-turbo-16k-0613': 16_385,
+}
+
 
 @generator_node
 def openai(prompts: List[str], model: str = "gpt-3.5-turbo", batch: int = 16,
@@ -46,8 +67,15 @@ def openai(prompts: List[str], model: str = "gpt-3.5-turbo", batch: int = 16,
             raise ValueError("OPENAI_API_KEY does not set. "
                              "Please set env variable OPENAI_API_KEY or pass api_key parameter to openai module.")
 
-    client = AsyncOpenAI(api_key=api_key)
     tokenizer = tiktoken.encoding_for_model(model)
+    if truncate:
+        max_token_size = MAX_TOKEN_DICT.get('model')
+        if max_token_size is None:
+            raise ValueError(f"Model {model} does not supported. "
+                             f"Please select the model between {list(MAX_TOKEN_DICT.keys())}")
+        prompts = list(map(lambda prompt: truncate_by_token(prompt, tokenizer, max_token_size), prompts))
+
+    client = AsyncOpenAI(api_key=api_key)
     loop = asyncio.get_event_loop()
     tasks = [get_result(prompt, client, model, tokenizer, **kwargs) for prompt in prompts]
     result = loop.run_until_complete(process_batch(tasks, batch))
@@ -78,3 +106,8 @@ async def get_result(prompt: str, client: AsyncOpenAI, model: str, tokenizer: En
     tokens = tokenizer.encode(choice)
     assert len(tokens) == len(logprobs), "tokens and logprobs size is different."
     return answer, tokens, logprobs
+
+
+def truncate_by_token(prompt: str, tokenizer: Encoding, max_token_size: int):
+    tokens = tokenizer.encode(prompt)
+    return tokenizer.decode(tokens[:max_token_size])
