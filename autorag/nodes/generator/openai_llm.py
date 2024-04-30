@@ -67,6 +67,13 @@ def openai_llm(prompts: List[str], llm: str = "gpt-3.5-turbo", batch: int = 16,
             raise ValueError("OPENAI_API_KEY does not set. "
                              "Please set env variable OPENAI_API_KEY or pass api_key parameter to openai module.")
 
+    if kwargs.get('logprobs') is not None:
+        kwargs.pop('logprobs')
+        logger.warning("parameter logprob does not effective. It always set to True.")
+    if kwargs.get('n') is not None:
+        kwargs.pop('n')
+        logger.warning("parameter n does not effective. It always set to 1.")
+
     tokenizer = tiktoken.encoding_for_model(llm)
     if truncate:
         max_token_size = MAX_TOKEN_DICT.get(llm) - 7  # because of chat token usage
@@ -86,13 +93,6 @@ def openai_llm(prompts: List[str], llm: str = "gpt-3.5-turbo", batch: int = 16,
 
 
 async def get_result(prompt: str, client: AsyncOpenAI, model: str, tokenizer: Encoding, **kwargs):
-    if kwargs.get('logprobs') is not None:
-        kwargs.pop('logprobs')
-        logger.warning("parameter logprob does not effective. It always set to True.")
-    if kwargs.get('n') is not None:
-        kwargs.pop('n')
-        logger.warning("parameter n does not effective. It always set to 1.")
-
     response = await client.chat.completions.create(
         model=model,
         messages=[

@@ -13,7 +13,7 @@ from tests.mock import mock_openai_chat_create
 def test_openai_llm():
     openai_original = openai_llm.__wrapped__
     model = "gpt-3.5-turbo"
-    answers, tokens, log_probs = openai_original(prompts, model, batch=1, temperature=0.5)
+    answers, tokens, log_probs = openai_original(prompts, model, batch=1, temperature=0.5, logprobs=False, n=3)
     check_generated_texts(answers)
     check_generated_tokens(tokens)
     check_generated_log_probs(log_probs)
