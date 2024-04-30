@@ -87,3 +87,19 @@ def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
                 rr_list.append(1.0 / (i + 1))
                 break
     return sum(rr_list) / len(gt_sets) if rr_list else 0.0
+
+
+def retrieval_map(gt: List[List[str]], pred: List[str]) -> float:
+    """
+    Mean Average Precision (MAP) is the mean of Average Precision (AP) for all queries.
+    """
+    gt_sets = [frozenset(g) for g in gt]
+    pred_set = set(pred)
+    ap_list = []
+    num_relevant = 0
+    for i, pred_id in enumerate(pred):
+        if pred_id in pred_set:
+            num_relevant += 1
+            if pred_id in gt_sets:
+                ap_list.append(num_relevant / (i + 1))
+    return sum(ap_list) / len(gt) if ap_list else 0.0
