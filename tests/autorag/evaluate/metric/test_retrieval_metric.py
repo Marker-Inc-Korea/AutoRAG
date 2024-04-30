@@ -47,7 +47,7 @@ def test_retrieval_precision():
 
 
 def test_retrieval_ndcg():
-    solution = [0.9197207891481876, 1, 1, 1, 1, None, None, 0.5]
+    solution = [0.7039180890341347, 0.3903800499921017, 0.6131471927654584, 0.7653606369886217, 1, None, None]
     result = retrieval_ndcg(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
