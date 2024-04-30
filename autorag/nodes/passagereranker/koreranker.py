@@ -37,8 +37,10 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
     model.to(device)
 
     nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
-    rerank_scores = flatten_apply(koreranker_run_model, nested_list, model=model, batch_size=batch,
-                                  tokenizer=tokenizer, device=device)
+    scores_nps = flatten_apply(koreranker_run_model, nested_list, model=model, batch_size=batch,
+                               tokenizer=tokenizer, device=device)
+
+    rerank_scores = list(map(lambda scores: exp_normalize(np.array(scores)).astype(float), scores_nps))
 
     df = pd.DataFrame({
         'contents': contents_list,
@@ -64,11 +66,7 @@ def koreranker_run_model(input_texts, model, tokenizer, device, batch_size: int)
         with torch.no_grad():
             scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
             scores_np = scores.cpu().numpy()
-            scores = exp_normalize(scores_np)
-
-        # Convert scores type to float
-        scores = scores.astype(float)
-        results.extend(scores)
+            results.extend(scores_np)
     return results
 
 
