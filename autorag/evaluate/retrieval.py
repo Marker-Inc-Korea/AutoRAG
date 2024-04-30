@@ -4,7 +4,7 @@ from typing import List, Callable, Any, Tuple
 
 import pandas as pd
 
-from autorag.evaluate.metric import retrieval_recall, retrieval_precision, retrieval_f1
+from autorag.evaluate.metric import retrieval_recall, retrieval_precision, retrieval_f1, retrieval_ndcg
 
 
 def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: List[str]):
@@ -26,6 +26,7 @@ def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: List[str]):
                 retrieval_recall.__name__: retrieval_recall,
                 retrieval_precision.__name__: retrieval_precision,
                 retrieval_f1.__name__: retrieval_f1,
+                retrieval_ndcg.__name__: retrieval_ndcg,
             }
 
             metric_scores = {}
