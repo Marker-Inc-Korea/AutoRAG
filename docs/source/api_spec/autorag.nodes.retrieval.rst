@@ -52,14 +52,6 @@ autorag.nodes.retrieval.hybrid\_rsf module
    :undoc-members:
    :show-inheritance:
 
-autorag.nodes.retrieval.recursive\_chunk module
------------------------------------------------
-
-.. automodule:: autorag.nodes.retrieval.recursive_chunk
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 autorag.nodes.retrieval.run module
 ----------------------------------
 
