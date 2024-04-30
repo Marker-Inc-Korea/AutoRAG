@@ -80,4 +80,10 @@ def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
     # Flatten the ground truth list of lists into a single set of relevant documents
     gt_sets = [frozenset(g) for g in gt]
 
-    return next((1.0 / (i + 1) for i, pred_id in enumerate(pred) if any(pred_id in gt_set for gt_set in gt_sets)), 0.0)
+    rr_list = []
+    for gt_set in gt_sets:
+        for i, pred_id in enumerate(pred):
+            if pred_id in gt_set:
+                rr_list.append(1.0 / (i + 1))
+                break
+    return sum(rr_list) / len(gt_sets) if rr_list else 0.0
