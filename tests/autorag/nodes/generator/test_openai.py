@@ -1,10 +1,15 @@
+from unittest.mock import patch
+
+import openai.resources.chat
 import pandas as pd
 
 from autorag.nodes.generator import openai_llm
 from tests.autorag.nodes.generator.test_generator_base import prompts, check_generated_texts, check_generated_tokens, \
     check_generated_log_probs
+from tests.mock import mock_openai_chat_create
 
 
+@patch.object(openai.resources.chat.completions.AsyncCompletions, 'create', mock_openai_chat_create)
 def test_openai_llm():
     openai_original = openai_llm.__wrapped__
     model = "gpt-3.5-turbo"
@@ -14,6 +19,7 @@ def test_openai_llm():
     check_generated_log_probs(log_probs)
 
 
+@patch.object(openai.resources.chat.completions.AsyncCompletions, 'create', mock_openai_chat_create)
 def test_openai_llm_node():
     previous_result = pd.DataFrame(
         {
@@ -26,6 +32,7 @@ def test_openai_llm_node():
     check_generated_log_probs(result_df['generated_log_probs'].tolist())
 
 
+@patch.object(openai.resources.chat.completions.AsyncCompletions, 'create', mock_openai_chat_create)
 def test_openai_llm_truncate():
     openai_original = openai_llm.__wrapped__
     prompt = [f'havertz on the block and I am {i}th player on the Arsenal.' for i in range(50_000)]
