@@ -8,7 +8,7 @@ from tests.autorag.nodes.generator.test_generator_base import prompts, check_gen
 def test_openai_llm():
     openai_original = openai_llm.__wrapped__
     model = "gpt-3.5-turbo"
-    answers, tokens, log_probs = openai_original(prompts, model, batch=1)
+    answers, tokens, log_probs = openai_original(prompts, model, batch=1, temperature=0.5)
     check_generated_texts(answers)
     check_generated_tokens(tokens)
     check_generated_log_probs(log_probs)
