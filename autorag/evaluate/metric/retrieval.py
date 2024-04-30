@@ -1,4 +1,6 @@
 import functools
+import itertools
+import math
 from typing import List
 
 
@@ -50,3 +52,20 @@ def retrieval_precision(gt: List[List[str]], pred: List[str]):
     hits = sum(any(pred_id in gt_set for gt_set in gt_sets) for pred_id in pred_set)
     precision = hits / len(pred) if len(pred) > 0 else 0.0
     return precision
+
+
+@retrieval_metric
+def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
+    gt_sets = [frozenset(g) for g in gt]
+    pred_set = set(pred)
+    relevance_scores = {pred_id: 1 if any(pred_id in gt_set for gt_set in gt_sets) else 0 for pred_id in pred_set}
+
+    dcg = sum((2 ** relevance_scores[doc_id] - 1) / math.log2(i + 2) for i, doc_id in enumerate(pred))
+
+    len_flatten_gt = len(list(itertools.chain.from_iterable(gt)))
+    len_pred = len(pred)
+    ideal_pred = [1] * min(len_flatten_gt, len_pred) + [0] * max(0, len_pred - len_flatten_gt)
+    idcg = sum(relevance / math.log2(i + 2) for i, relevance in enumerate(ideal_pred))
+
+    ndcg = dcg / idcg if idcg > 0 else 0
+    return ndcg

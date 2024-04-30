@@ -1,6 +1,6 @@
 import pytest
 
-from autorag.evaluate.metric import retrieval_f1, retrieval_precision, retrieval_recall
+from autorag.evaluate.metric import retrieval_f1, retrieval_precision, retrieval_recall, retrieval_ndcg
 
 retrieval_gt = [
     [['test-1', 'test-2'], ['test-3']],
@@ -40,5 +40,12 @@ def test_retrieval_recall():
 def test_retrieval_precision():
     solution = [0.5, 0.25, 0.25, 0.5, 0.5, None, None]
     result = retrieval_precision(retrieval_gt=retrieval_gt, pred_ids=pred)
+    for gt, res in zip(solution, result):
+        assert gt == pytest.approx(res, rel=1e-4)
+
+
+def test_retrieval_ndcg():
+    solution = [0.7039180890341347, 0.3903800499921017, 0.6131471927654584, 0.7653606369886217, 1, None, None]
+    result = retrieval_ndcg(retrieval_gt=retrieval_gt, pred_ids=pred)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
