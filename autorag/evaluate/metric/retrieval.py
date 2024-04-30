@@ -69,3 +69,38 @@ def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
 
     ndcg = dcg / idcg if idcg > 0 else 0
     return ndcg
+
+
+@retrieval_metric
+def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
+    """
+    Reciprocal Rank (RR) is the reciprocal of the rank of the first relevant item.
+    Mean of RR in whole queries is MRR.
+    """
+    # Flatten the ground truth list of lists into a single set of relevant documents
+    gt_sets = [frozenset(g) for g in gt]
+
+    rr_list = []
+    for gt_set in gt_sets:
+        for i, pred_id in enumerate(pred):
+            if pred_id in gt_set:
+                rr_list.append(1.0 / (i + 1))
+                break
+    return sum(rr_list) / len(gt_sets) if rr_list else 0.0
+
+
+@retrieval_metric
+def retrieval_map(gt: List[List[str]], pred: List[str]) -> float:
+    """
+    Mean Average Precision (MAP) is the mean of Average Precision (AP) for all queries.
+    """
+    gt_sets = [frozenset(g) for g in gt]
+
+    ap_list = []
+
+    for gt_set in gt_sets:
+        pred_hits = [1 if pred_id in gt_set else 0 for pred_id in pred]
+        precision_list = [sum(pred_hits[:i + 1]) / (i + 1) for i, hit in enumerate(pred_hits) if hit == 1]
+        ap_list.append(sum(precision_list) / len(precision_list) if precision_list else 0.0)
+
+    return sum(ap_list) / len(gt_sets) if ap_list else 0.0
