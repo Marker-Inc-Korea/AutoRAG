@@ -103,7 +103,7 @@ async def get_result(prompt: str, client: AsyncOpenAI, model: str, tokenizer: En
     choice = response.choices[0]
     answer = choice.message.content
     logprobs = list(map(lambda x: x['logprob'], choice.logprobs.content))
-    tokens = tokenizer.encode(choice)
+    tokens = tokenizer.encode(answer)
     assert len(tokens) == len(logprobs), "tokens and logprobs size is different."
     return answer, tokens, logprobs
 
