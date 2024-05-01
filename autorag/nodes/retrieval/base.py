@@ -41,7 +41,7 @@ def retrieval_node(func):
             # check if bm25_path and file exists
             bm25_tokenizer = kwargs.get('bm25_tokenizer', None)
             if bm25_tokenizer is None:
-                bm25_tokenizer = "port_stemmer"
+                bm25_tokenizer = "porter_stemmer"
             bm25_path = os.path.join(resources_dir, get_bm25_pkl_name(bm25_tokenizer))
             assert bm25_path is not None, "bm25_path must be specified for using bm25 retrieval."
             assert os.path.exists(bm25_path), f"bm25_path {bm25_path} does not exist. Please ingest first."

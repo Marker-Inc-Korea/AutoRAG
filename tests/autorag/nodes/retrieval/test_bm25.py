@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from autorag.nodes.retrieval import bm25
-from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_port_stemmer
+from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test)
 
@@ -40,7 +40,7 @@ def test_bm25_ingest(ingested_bm25_path):
     assert isinstance(corpus['tokens'], list)
     assert isinstance(corpus['passage_id'], list)
     assert isinstance(corpus['tokenizer_name'], str)
-    assert corpus['tokenizer_name'] == 'port_stemmer'
+    assert corpus['tokenizer_name'] == 'porter_stemmer'
     assert len(corpus['tokens']) == len(corpus['passage_id']) == 5
     assert set(corpus['passage_id']) == {'doc1', 'doc2', 'doc3', 'doc4', 'doc5'}
 
@@ -90,13 +90,13 @@ def test_tokenize_ko_wiki():
     assert all(isinstance(x, str) for x in tokenized_list[0])
 
 
-def test_tokenize_port_stemmer():
+def test_tokenize_porter_stemmer():
     texts = [
         "The best baseball team in the world is Kia Tigers.",
         "And for a fortnight there, we were forever. Run into you sometimes, ask about the weather",
         "I walked through the door with you. The air was cold.",
     ]
-    tokenized_list = tokenize_port_stemmer(texts)
+    tokenized_list = tokenize_porter_stemmer(texts)
     assert len(tokenized_list) == len(texts)
     assert isinstance(tokenized_list[0], list)
     assert all(isinstance(x, str) for x in tokenized_list[0])

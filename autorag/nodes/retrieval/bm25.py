@@ -22,7 +22,7 @@ def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
     return [list(map(lambda x: x.form, token_list)) for token_list in tokenized_list]
 
 
-def tokenize_port_stemmer(texts: List[str]) -> List[List[str]]:
+def tokenize_porter_stemmer(texts: List[str]) -> List[List[str]]:
     def tokenize_remove_stopword(text: str, stemmer) -> List[str]:
         text = text.lower()
         words = list(simple_extract_keywords(text))
@@ -34,14 +34,14 @@ def tokenize_port_stemmer(texts: List[str]) -> List[List[str]]:
 
 
 BM25_TOKENIZER = {
-    'port_stemmer': tokenize_port_stemmer,
+    'porter_stemmer': tokenize_porter_stemmer,
     'ko_kiwi': tokenize_ko_kiwi,
     # 'space': #TODO: make space method for chunk each words. (multilingual)
 }
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer: str = 'port_stemmer') -> \
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer: str = 'porter_stemmer') -> \
         Tuple[List[List[str]], List[List[float]]]:
     """
     BM25 retrieval function.
@@ -61,9 +61,9 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer
             }
 
     :param bm25_tokenizer: The tokenizer name that uses to the BM25.
-        It supports 'port_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
+        It supports 'porter_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
         You can pass huggingface tokenizer name.
-        Default is port_stemmer.
+        Default is porter_stemmer.
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
         It will be a length of queries. And each element has a length of top_k.
     """
@@ -129,7 +129,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     return list(id_result), list(score_result)
 
 
-def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, bm25_tokenizer: str = 'port_stemmer'):
+def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, bm25_tokenizer: str = 'porter_stemmer'):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)

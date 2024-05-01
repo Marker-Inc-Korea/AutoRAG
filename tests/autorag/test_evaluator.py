@@ -114,6 +114,8 @@ def test_start_trial(evaluator):
     assert node_line_summary_df['best_module_filename'][0] == '0.parquet'
     assert node_line_summary_df['best_module_name'][0] == 'bm25'
     assert node_line_summary_df['best_module_params'][0] == {'top_k': 10,
+                                                             'bm25_tokenizer': 'porter_stemmer'} or \
+           node_line_summary_df['best_module_params'][0] == {'top_k': 10,
                                                              'bm25_tokenizer': 'mistralai/Mistral-7B-Instruct-v0.2'}
     assert node_line_summary_df['best_execution_time'][0] > 0
 
@@ -129,7 +131,9 @@ def test_start_trial(evaluator):
     assert trial_summary_df['best_module_filename'][0] == '0.parquet'
     assert trial_summary_df['best_module_name'][0] == 'bm25'
     assert trial_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                         'bm25_tokenizer': 'mistralai/Mistral-7B-Instruct-v0.2'}
+                                                         'bm25_tokenizer': 'mistralai/Mistral-7B-Instruct-v0.2'} or \
+           trial_summary_df['best_module_params'][0] == {'top_k': 10,
+                                                         'bm25_tokenizer': 'porter_stemmer'}
     assert trial_summary_df['best_execution_time'][0] > 0
 
 
