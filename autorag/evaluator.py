@@ -107,6 +107,8 @@ class Evaluator:
             logger.info('Embedding BM25 corpus...')
             bm25_tokenizer_list = list(chain.from_iterable(
                 map(lambda nodes: extract_values_from_nodes(nodes, 'bm25_tokenizer'), node_lines.values())))
+            if len(bm25_tokenizer_list) == 0:
+                bm25_tokenizer_list = ['porter_stemmer']
             for bm25_tokenizer in bm25_tokenizer_list:
                 bm25_dir = os.path.join(self.project_dir, 'resources', get_bm25_pkl_name(bm25_tokenizer))
                 if not os.path.exists(os.path.dirname(bm25_dir)):
