@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pickle
+import re
 from typing import List, Dict, Tuple, Callable, Union, Iterable
 
 import numpy as np
@@ -13,6 +14,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
+from autorag.utils.util import normalize_string
 
 
 def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
@@ -33,10 +35,18 @@ def tokenize_porter_stemmer(texts: List[str]) -> List[List[str]]:
     return tokenized_list
 
 
+def tokenize_space(texts: List[str]) -> List[List[str]]:
+    def tokenize_space_text(text: str) -> List[str]:
+        text = normalize_string(text)
+        return re.split(r'\s+', text.strip())
+
+    return list(map(tokenize_space_text, texts))
+
+
 BM25_TOKENIZER = {
     'porter_stemmer': tokenize_porter_stemmer,
     'ko_kiwi': tokenize_ko_kiwi,
-    # 'space': #TODO: make space method for chunk each words. (multilingual)
+    'space': tokenize_space,
 }
 
 

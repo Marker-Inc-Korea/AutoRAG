@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from autorag.nodes.retrieval import bm25
-from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer
+from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer, tokenize_space
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test)
 
@@ -97,6 +97,18 @@ def test_tokenize_porter_stemmer():
         "I walked through the door with you. The air was cold.",
     ]
     tokenized_list = tokenize_porter_stemmer(texts)
+    assert len(tokenized_list) == len(texts)
+    assert isinstance(tokenized_list[0], list)
+    assert all(isinstance(x, str) for x in tokenized_list[0])
+
+
+def test_tokenize_space():
+    texts = [
+        "내 생일 파티에 너만 못 온 그날, 혜진이가 엄청 혼났던 그날, 지원이가 여친이랑 헤어진 그날,,,, What's your ETA?  ",
+        "  The best baseball team in the world is Kia Tigers. 최강 기아 타이거즈 최형우! 최형우!!! 기아의 해결사~   ",
+        " You're my chemical hype boy (ah-ah) \n 내 지난날들은 눈 뜨면 잊는 꿈\nHype boy 너만 원해\nHype boy 내가 전해;",
+    ]
+    tokenized_list = tokenize_space(texts)
     assert len(tokenized_list) == len(texts)
     assert isinstance(tokenized_list[0], list)
     assert all(isinstance(x, str) for x in tokenized_list[0])
