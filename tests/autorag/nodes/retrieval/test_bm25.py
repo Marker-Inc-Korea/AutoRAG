@@ -1,5 +1,3 @@
-import os
-import pathlib
 import pickle
 import tempfile
 from datetime import datetime
@@ -12,11 +10,6 @@ from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test)
 
-root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
-bm25_path = os.path.join(root_dir, "resources", "test_bm25_retrieval.pkl")
-with open(bm25_path, 'rb') as r:
-    bm25_corpus = pickle.load(r)
-
 
 @pytest.fixture
 def ingested_bm25_path():
@@ -25,15 +18,18 @@ def ingested_bm25_path():
         yield path.name
 
 
-def test_bm25_retrieval():
-    top_k = 10
+def test_bm25_retrieval(ingested_bm25_path):
+    with open(ingested_bm25_path, 'rb') as r:
+        bm25_corpus = pickle.load(r)
+    top_k = 3
     original_bm25 = bm25.__wrapped__
     id_result, score_result = original_bm25(queries, top_k=top_k, bm25_corpus=bm25_corpus)
     base_retrieval_test(id_result, score_result, top_k)
 
 
 def test_bm25_node():
-    result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4)
+    result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4,
+                     bm25_tokenizer='gpt2')
     base_retrieval_node_test(result_df)
 
 
@@ -71,6 +67,15 @@ def test_duplicate_id_bm25_ingest(ingested_bm25_path):
     with open(ingested_bm25_path, 'rb') as r:
         corpus = pickle.load(r)
     assert len(corpus['tokens']) == len(corpus['passage_id']) == 8
+
+
+def test_other_method_bm25(ingested_bm25_path):
+    with open(ingested_bm25_path, 'rb') as r:
+        corpus = pickle.load(r)
+    bm25_origin = bm25.__wrapped__
+    with pytest.raises(AssertionError):
+        _, _ = bm25_origin([['What is test document?'], ['What is test document number 2?']],
+                           top_k=1, bm25_corpus=corpus, bm25_tokenizer='gpt2')
 
 
 def test_tokenize_ko_wiki():

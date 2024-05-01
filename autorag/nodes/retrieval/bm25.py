@@ -41,7 +41,7 @@ BM25_TOKENIZER = {
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, tokenizer_name: str = 'port_stemmer') -> \
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer: str = 'port_stemmer') -> \
         Tuple[List[List[str]], List[List[float]]]:
     """
     BM25 retrieval function.
@@ -60,7 +60,7 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, tokenizer_name
                 "passage_id": [], # 2d list of passage_id.
             }
 
-    :param tokenizer_name: The tokenizer name that uses to the BM25.
+    :param bm25_tokenizer: The tokenizer name that uses to the BM25.
         It supports 'port_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
         You can pass huggingface tokenizer name.
         Default is port_stemmer.
@@ -70,9 +70,9 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, tokenizer_name
     # check if bm25_corpus is valid
     assert ("tokens" and "passage_id" in list(bm25_corpus.keys())), \
         "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
-    tokenizer = select_tokenizer(tokenizer_name)
-    assert bm25_corpus['tokenizer_name'] == tokenizer_name, \
-        (f"The bm25 corpus tokenizer is {bm25_corpus['tokenizer_name']}, but your input is {tokenizer_name}. "
+    tokenizer = select_bm25_tokenizer(bm25_tokenizer)
+    assert bm25_corpus['tokenizer_name'] == bm25_tokenizer, \
+        (f"The bm25 corpus tokenizer is {bm25_corpus['tokenizer_name']}, but your input is {bm25_tokenizer}. "
          f"You need to ingest again. Delete bm25 pkl file and re-ingest it.")
     bm25_instance = BM25Okapi(bm25_corpus["tokens"])
     # run async bm25_pure function
@@ -129,7 +129,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     return list(id_result), list(score_result)
 
 
-def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, tokenizer_name: str = 'port_stemmer'):
+def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, bm25_tokenizer: str = 'port_stemmer'):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
@@ -149,7 +149,7 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, tokenizer_name: str
         new_passage = corpus_data
 
     if not new_passage.empty:
-        tokenizer = select_tokenizer(tokenizer_name)
+        tokenizer = select_bm25_tokenizer(bm25_tokenizer)
         if isinstance(tokenizer, PreTrainedTokenizerBase):
             tokenized_corpus = tokenizer(new_passage['contents']).input_ids
         else:
@@ -166,19 +166,14 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, tokenizer_name: str
             bm25_dict = new_bm25_corpus.to_dict('list')
 
         # add tokenizer name to bm25_dict
-        bm25_dict['tokenizer_name'] = tokenizer_name
+        bm25_dict['tokenizer_name'] = bm25_tokenizer
 
         with open(corpus_path, 'wb') as w:
             pickle.dump(bm25_dict, w)
 
 
-def get_bm25_pkl_name(tokenizer_name: str):
-    tokenizer_name = tokenizer_name.replace('/', '')
-    return f'bm25_{tokenizer_name}.pkl'
+def select_bm25_tokenizer(bm25_tokenizer: str) -> Callable[[str], List[Union[int, str]]]:
+    if bm25_tokenizer in list(BM25_TOKENIZER.keys()):
+        return BM25_TOKENIZER[bm25_tokenizer]
 
-
-def select_tokenizer(tokenizer_name: str) -> Callable[[str], List[Union[int, str]]]:
-    if tokenizer_name in list(BM25_TOKENIZER.keys()):
-        return BM25_TOKENIZER[tokenizer_name]
-
-    return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
+    return AutoTokenizer.from_pretrained(bm25_tokenizer, use_fast=False)
