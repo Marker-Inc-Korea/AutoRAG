@@ -1,10 +1,14 @@
+import time
 from typing import Optional, Callable, Sequence, Any
 
+import tiktoken
 from llama_index.core.base.llms.types import ChatMessage, LLMMetadata, CompletionResponseGen
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.llms import CompletionResponse, CustomLLM
 from llama_index.core.llms.callbacks import llm_completion_callback
 from llama_index.core.types import PydanticProgramMode
+from openai.types.chat import ChatCompletion, ChatCompletionMessage, ChatCompletionTokenLogprob
+from openai.types.chat.chat_completion import Choice, ChoiceLogprobs
 
 
 class MockLLM(CustomLLM):
@@ -72,3 +76,41 @@ class MockLLM(CustomLLM):
                 )
 
         return gen_response(self.max_tokens) if self.max_tokens else gen_prompt()
+
+
+async def mock_openai_chat_create(self, messages, model, **kwargs):
+    tokenizer = tiktoken.encoding_for_model(model)
+    tokens = tokenizer.encode(str(messages[0]['content']))
+    if len(tokens) > 16_385:
+        raise ValueError("The maximum number of tokens is 16_385")
+
+    return ChatCompletion(
+        id="test_id",
+        choices=[
+            Choice(
+                finish_reason="stop",
+                index=0,
+                logprobs=ChoiceLogprobs(
+                    content=[
+                        ChatCompletionTokenLogprob(
+                            token='Why',
+                            logprob=-0.445,
+                            top_logprobs=[],
+                        ),
+                        ChatCompletionTokenLogprob(
+                            token=' not',
+                            logprob=-0.223,
+                            top_logprobs=[],
+                        )
+                    ]
+                ),
+                message=ChatCompletionMessage(
+                    content="Why not",
+                    role='assistant',
+                )
+            )
+        ],
+        created=int(time.time()),
+        model=model,
+        object='chat.completion',
+    )

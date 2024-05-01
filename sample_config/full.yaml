@@ -138,3 +138,6 @@ node_lines:
           llm: [openai]
           model: [gpt-3.5-turbo-16k, gpt-3.5-turbo-1106]
           temperature: [0.5, 1.0, 1.5]
+        - module_type: openai_llm
+          llm: gpt-3.5-turbo
+          temperature: 0.8

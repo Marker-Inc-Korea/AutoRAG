@@ -27,7 +27,7 @@ So, we decide to make a standalone module for vllm, for faster generation speed.
 
 ```yaml
 modules:
-  - module_type: llama_index_llm
+  - module_type: vllm
     llm: mistralai/Mistral-7B-Instruct-v0.2
     temperature: [ 0.1, 1.0 ]
     max_tokens: 512
