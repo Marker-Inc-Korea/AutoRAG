@@ -1,15 +1,42 @@
 import asyncio
 import os
 import pickle
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Callable, Union, Iterable
 
 import numpy as np
 import pandas as pd
+from kiwipiepy import Kiwi, Token
+from llama_index.core.indices.keyword_table.utils import simple_extract_keywords
+from nltk import PorterStemmer
 from rank_bm25 import BM25Okapi
 from transformers import AutoTokenizer
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
+
+
+def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
+    texts = list(map(lambda x: x.strip().lower(), texts))
+    kiwi = Kiwi()
+    tokenized_list: Iterable[List[Token]] = kiwi.tokenize(texts)
+    return [list(map(lambda x: x.form, token_list)) for token_list in tokenized_list]
+
+
+def tokenize_port_stemmer(texts: List[str]) -> List[List[str]]:
+    def tokenize_remove_stopword(text: str, stemmer) -> List[str]:
+        text = text.lower()
+        words = list(simple_extract_keywords(text))
+        return [stemmer.stem(word) for word in words]
+
+    stemmer = PorterStemmer()
+    tokenized_list: List[List[str]] = list(map(lambda x: tokenize_remove_stopword(x, stemmer), texts))
+    return tokenized_list
+
+
+BM25_TOKENIZER = {
+    'port_stemmer': tokenize_port_stemmer,
+    'kiwi': tokenize_ko_kiwi,
+}
 
 
 @retrieval_node
@@ -52,8 +79,8 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, tokenizer_name
     return id_result, score_result
 
 
-async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> Tuple[
-        List[str], List[float]]:
+async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> \
+        Tuple[List[str], List[float]]:
     """
     Async BM25 retrieval function.
     Its usage is for async retrieval of bm25 row by row.
@@ -139,3 +166,15 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, tokenizer_name: str
 def bm25_tokenize(queries: List[str], passage_id: str, tokenizer) -> Tuple[List[int], str]:
     tokenized_queries = tokenizer(queries).input_ids
     return tokenized_queries, passage_id
+
+
+def get_bm25_pkl_name(tokenizer_name: str):
+    tokenizer_name = tokenizer_name.replace('/', '')
+    return f'bm25_{tokenizer_name}.pkl'
+
+
+def select_tokenizer(tokenizer_name: str) -> Callable[[str], List[Union[int, str]]]:
+    if tokenizer_name in list(BM25_TOKENIZER.keys()):
+        return BM25_TOKENIZER[tokenizer_name]
+
+    return AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
