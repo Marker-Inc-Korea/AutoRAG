@@ -68,7 +68,7 @@ def test_load_node_line(evaluator):
     assert node.modules[0].module == bm25
     assert node.modules[1].module == vectordb
     assert node.modules[2].module == hybrid_rrf
-    assert node.modules[0].module_param == {}
+    assert node.modules[0].module_param == {'bm25_tokenizer': ['mistralai/Mistral-7B-Instruct-v0.2', 'porter_stemmer']}
     assert node.modules[1].module_param == {'embedding_model': ['openai', 'openai']}
     assert node.modules[2].module_param == {
         'rrf_k': 5, 'target_modules': ('bm25', 'vectordb')
