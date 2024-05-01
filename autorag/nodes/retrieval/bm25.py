@@ -151,9 +151,9 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, bm25_tokenizer: str
     if not new_passage.empty:
         tokenizer = select_bm25_tokenizer(bm25_tokenizer)
         if isinstance(tokenizer, PreTrainedTokenizerBase):
-            tokenized_corpus = tokenizer(new_passage['contents']).input_ids
+            tokenized_corpus = tokenizer(new_passage['contents'].tolist()).input_ids
         else:
-            tokenized_corpus = tokenizer(new_passage['contents'])
+            tokenized_corpus = tokenizer(new_passage['contents'].tolist())
         new_bm25_corpus = pd.DataFrame({
             'tokens': tokenized_corpus,
             'passage_id': new_passage['doc_id'].tolist(),

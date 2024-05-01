@@ -112,7 +112,7 @@ class Evaluator:
                 if not os.path.exists(os.path.dirname(bm25_dir)):
                     os.makedirs(os.path.dirname(bm25_dir))
                 # ingest because bm25 supports update new corpus data
-                bm25_ingest(bm25_dir, self.corpus_data)
+                bm25_ingest(bm25_dir, self.corpus_data, bm25_tokenizer=bm25_tokenizer)
             logger.info('BM25 corpus embedding complete.')
         if any(list(map(lambda nodes: module_type_exists(nodes, 'vectordb'), node_lines.values()))):
             # load embedding_models in nodes
