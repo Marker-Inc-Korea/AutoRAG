@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import openai
 import pandas as pd
 import pytest
 from openai.resources.chat import Completions
@@ -44,7 +45,7 @@ def pseudo_generation_dict_metrics():
     return pseudo_generations
 
 
-def mock_g_eval_openai_create(*args, **kwargs):
+async def mock_g_eval_openai_create(*args, **kwargs):
     sample_choice = Choice(finish_reason="stop", index=0,
                            message=ChatCompletionMessage(
                                content="2",
@@ -69,7 +70,7 @@ def mock_g_eval_openai_create(*args, **kwargs):
                           object="chat.completion")
 
 
-@patch.object(Completions, 'create', mock_g_eval_openai_create)
+@patch.object(openai.resources.chat.completions.AsyncCompletions, 'create', mock_g_eval_openai_create)
 def test_evaluate_generation():
     result_df = pseudo_generation()
     assert isinstance(result_df, pd.DataFrame)
