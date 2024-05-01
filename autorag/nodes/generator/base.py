@@ -43,10 +43,7 @@ def generator_node(func):
             result = func(prompts=prompts, llm=llm_instance, batch=batch)
             del llm_instance
             return result
-        elif func.__name__ == 'vllm':
-            return func(prompts=prompts, llm=llm, **kwargs)
         else:
-            raise ValueError(f"{func.__name__} is not a valid generator node name. "
-                             "Please check the generator node name.")
+            return func(prompts=prompts, llm=llm, **kwargs)
 
     return wrapper

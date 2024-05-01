@@ -20,6 +20,14 @@ autorag.nodes.generator.llama\_index\_llm module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.generator.openai\_llm module
+------------------------------------------
+
+.. automodule:: autorag.nodes.generator.openai_llm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.generator.run module
 ----------------------------------
 
