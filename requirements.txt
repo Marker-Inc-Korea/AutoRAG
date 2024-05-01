@@ -28,6 +28,7 @@ sentence-transformers # for sentence transformer reranker
 FlagEmbedding # for flag embedding reranker
 ragas # evaluation data generation & evaluation
 ray # for parallel processing
+kiwipiepy  # for BM25 Korean tokenizer
 
 ### LlamaIndex ###
 llama-index>=0.10.1
@@ -39,6 +40,8 @@ llama-index-embeddings-huggingface
 llama-index-llms-openai
 llama-index-llms-huggingface
 llama-index-llms-openai-like
+# Retriever
+llama-index-retrievers-bm25
 
 # WebUI
 streamlit

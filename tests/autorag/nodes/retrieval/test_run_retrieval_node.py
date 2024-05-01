@@ -42,7 +42,7 @@ def node_line_dir():
 def test_run_retrieval_node(node_line_dir):
     modules = [bm25, vectordb, hybrid_rrf, hybrid_cc, hybrid_cc]
     module_params = [
-        {'top_k': 4},
+        {'top_k': 4, 'bm25_tokenizer': 'gpt2'},
         {'top_k': 4, 'embedding_model': 'openai'},
         {'top_k': 4, 'rrf_k': 2, 'target_modules': ('bm25', 'vectordb')},
         {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7)},
@@ -74,7 +74,7 @@ def test_run_retrieval_node(node_line_dir):
     assert summary_df['retrieval_f1'][0] == bm25_top_k_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][0] == bm25_top_k_df['retrieval_recall'].mean()
     assert summary_df['module_name'][0] == "bm25"
-    assert summary_df['module_params'][0] == {'top_k': 4}
+    assert summary_df['module_params'][0] == {'top_k': 4, 'bm25_tokenizer': 'gpt2'}
     assert summary_df['execution_time'][0] > 0
     # assert average times
     assert summary_df['execution_time'][0] + summary_df['execution_time'][1] == pytest.approx(
@@ -93,7 +93,8 @@ def test_run_retrieval_node(node_line_dir):
     assert all(hybrid_summary_df['module_params'].apply(lambda x: 'target_module_params' in x))
     assert all(hybrid_summary_df['module_params'].apply(lambda x: x['target_modules'] == ('bm25', 'vectordb')))
     assert all(hybrid_summary_df['module_params'].apply(
-        lambda x: x['target_module_params'] == ({'top_k': 4}, {'top_k': 4, 'embedding_model': 'openai'})))
+        lambda x: x['target_module_params'] == (
+        {'top_k': 4, 'bm25_tokenizer': 'gpt2'}, {'top_k': 4, 'embedding_model': 'openai'})))
 
     # test the best file is saved properly
     best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]

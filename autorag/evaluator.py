@@ -14,6 +14,7 @@ import yaml
 
 from autorag import embedding_models
 from autorag.node_line import run_node_line
+from autorag.nodes.retrieval.base import get_bm25_pkl_name
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.schema import Node
@@ -104,13 +105,16 @@ class Evaluator:
         if any(list(map(lambda nodes: module_type_exists(nodes, 'bm25'), node_lines.values()))):
             # ingest BM25 corpus
             logger.info('Embedding BM25 corpus...')
-            bm25_dir = os.path.join(self.project_dir, 'resources', 'bm25.pkl')
-            if not os.path.exists(os.path.dirname(bm25_dir)):
-                os.makedirs(os.path.dirname(bm25_dir))
-            if os.path.exists(bm25_dir):
-                logger.debug('BM25 corpus already exists.')
-            else:
-                bm25_ingest(bm25_dir, self.corpus_data)
+            bm25_tokenizer_list = list(chain.from_iterable(
+                map(lambda nodes: extract_values_from_nodes(nodes, 'bm25_tokenizer'), node_lines.values())))
+            if len(bm25_tokenizer_list) == 0:
+                bm25_tokenizer_list = ['porter_stemmer']
+            for bm25_tokenizer in bm25_tokenizer_list:
+                bm25_dir = os.path.join(self.project_dir, 'resources', get_bm25_pkl_name(bm25_tokenizer))
+                if not os.path.exists(os.path.dirname(bm25_dir)):
+                    os.makedirs(os.path.dirname(bm25_dir))
+                # ingest because bm25 supports update new corpus data
+                bm25_ingest(bm25_dir, self.corpus_data, bm25_tokenizer=bm25_tokenizer)
             logger.info('BM25 corpus embedding complete.')
         if any(list(map(lambda nodes: module_type_exists(nodes, 'vectordb'), node_lines.values()))):
             # load embedding_models in nodes

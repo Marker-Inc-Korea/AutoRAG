@@ -8,6 +8,7 @@ node_lines:
       top_k: 10 # node param, which adapt to every module in this node.
       modules:
         - module_type: ${BM25} # for testing env variable
+          bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
         - module_type: vectordb
           embedding_model: [openai, openai]
         - module_type: hybrid_rrf

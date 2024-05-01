@@ -1,20 +1,58 @@
 import asyncio
 import os
 import pickle
-from typing import List, Dict, Tuple
+import re
+from typing import List, Dict, Tuple, Callable, Union, Iterable
 
 import numpy as np
 import pandas as pd
+from kiwipiepy import Kiwi, Token
+from llama_index.core.indices.keyword_table.utils import simple_extract_keywords
+from nltk import PorterStemmer
 from rank_bm25 import BM25Okapi
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
+from autorag.utils.util import normalize_string
+
+
+def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
+    texts = list(map(lambda x: x.strip().lower(), texts))
+    kiwi = Kiwi()
+    tokenized_list: Iterable[List[Token]] = kiwi.tokenize(texts)
+    return [list(map(lambda x: x.form, token_list)) for token_list in tokenized_list]
+
+
+def tokenize_porter_stemmer(texts: List[str]) -> List[List[str]]:
+    def tokenize_remove_stopword(text: str, stemmer) -> List[str]:
+        text = text.lower()
+        words = list(simple_extract_keywords(text))
+        return [stemmer.stem(word) for word in words]
+
+    stemmer = PorterStemmer()
+    tokenized_list: List[List[str]] = list(map(lambda x: tokenize_remove_stopword(x, stemmer), texts))
+    return tokenized_list
+
+
+def tokenize_space(texts: List[str]) -> List[List[str]]:
+    def tokenize_space_text(text: str) -> List[str]:
+        text = normalize_string(text)
+        return re.split(r'\s+', text.strip())
+
+    return list(map(tokenize_space_text, texts))
+
+
+BM25_TOKENIZER = {
+    'porter_stemmer': tokenize_porter_stemmer,
+    'ko_kiwi': tokenize_ko_kiwi,
+    'space': tokenize_space,
+}
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[List[str
-]], List[List[float]]]:
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer: str = 'porter_stemmer') -> \
+        Tuple[List[List[str]], List[List[float]]]:
     """
     BM25 retrieval function.
     You have to load a pickle file that is already ingested.
@@ -32,13 +70,20 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
                 "passage_id": [], # 2d list of passage_id.
             }
 
+    :param bm25_tokenizer: The tokenizer name that uses to the BM25.
+        It supports 'porter_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
+        You can pass huggingface tokenizer name.
+        Default is porter_stemmer.
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
         It will be a length of queries. And each element has a length of top_k.
     """
     # check if bm25_corpus is valid
     assert ("tokens" and "passage_id" in list(bm25_corpus.keys())), \
         "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
-    tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
+    tokenizer = select_bm25_tokenizer(bm25_tokenizer)
+    assert bm25_corpus['tokenizer_name'] == bm25_tokenizer, \
+        (f"The bm25 corpus tokenizer is {bm25_corpus['tokenizer_name']}, but your input is {bm25_tokenizer}. "
+         f"You need to ingest again. Delete bm25 pkl file and re-ingest it.")
     bm25_instance = BM25Okapi(bm25_corpus["tokens"])
     # run async bm25_pure function
     tasks = [bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus) for input_queries in queries]
@@ -49,8 +94,8 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
     return id_result, score_result
 
 
-async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> Tuple[
-        List[str], List[float]]:
+async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Okapi, bm25_corpus: Dict) -> \
+        Tuple[List[str], List[float]]:
     """
     Async BM25 retrieval function.
     Its usage is for async retrieval of bm25 row by row.
@@ -71,7 +116,10 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     :return: The tuple contains a list of passage ids that retrieved from bm25 and its scores.
     """
     # I don't make queries operation to async, because queries length might be small, so it will occur overhead.
-    tokenized_queries = tokenizer(queries).input_ids
+    if isinstance(tokenizer, PreTrainedTokenizerBase):
+        tokenized_queries = tokenizer(queries).input_ids
+    else:
+        tokenized_queries = tokenizer(queries)
     id_result = []
     score_result = []
     for query in tokenized_queries:
@@ -91,7 +139,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     return list(id_result), list(score_result)
 
 
-def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
+def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, bm25_tokenizer: str = 'porter_stemmer'):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
@@ -111,13 +159,14 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         new_passage = corpus_data
 
     if not new_passage.empty:
-        tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
-        results = new_passage.swifter.apply(lambda x: bm25_tokenize(x['contents'], x['doc_id'], tokenizer), axis=1)
-        tokenized_corpus, passage_ids = zip(*results)
-
+        tokenizer = select_bm25_tokenizer(bm25_tokenizer)
+        if isinstance(tokenizer, PreTrainedTokenizerBase):
+            tokenized_corpus = tokenizer(new_passage['contents'].tolist()).input_ids
+        else:
+            tokenized_corpus = tokenizer(new_passage['contents'].tolist())
         new_bm25_corpus = pd.DataFrame({
-            'tokens': list(tokenized_corpus),
-            'passage_id': list(passage_ids),
+            'tokens': tokenized_corpus,
+            'passage_id': new_passage['doc_id'].tolist(),
         })
 
         if not bm25_corpus.empty:
@@ -126,10 +175,15 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         else:
             bm25_dict = new_bm25_corpus.to_dict('list')
 
+        # add tokenizer name to bm25_dict
+        bm25_dict['tokenizer_name'] = bm25_tokenizer
+
         with open(corpus_path, 'wb') as w:
             pickle.dump(bm25_dict, w)
 
 
-def bm25_tokenize(queries: List[str], passage_id: str, tokenizer) -> Tuple[List[int], str]:
-    tokenized_queries = tokenizer(queries).input_ids
-    return tokenized_queries, passage_id
+def select_bm25_tokenizer(bm25_tokenizer: str) -> Callable[[str], List[Union[int, str]]]:
+    if bm25_tokenizer in list(BM25_TOKENIZER.keys()):
+        return BM25_TOKENIZER[bm25_tokenizer]
+
+    return AutoTokenizer.from_pretrained(bm25_tokenizer, use_fast=False)

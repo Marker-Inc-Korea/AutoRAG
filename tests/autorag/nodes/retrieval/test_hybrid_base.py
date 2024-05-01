@@ -86,7 +86,7 @@ def pseudo_project_dir():
         corpus_df.to_parquet(os.path.join(project_dir, "data", 'corpus.parquet'))
         resource_dir = os.path.join(project_dir, "resources")
         os.makedirs(resource_dir)
-        bm25_ingest(os.path.join(resource_dir, 'bm25.pkl'), corpus_df)
+        bm25_ingest(os.path.join(resource_dir, 'bm25_porter_stemmer.pkl'), corpus_df)
         chroma_path = os.path.join(resource_dir, 'chroma')
         db = chromadb.PersistentClient(path=chroma_path)
         collection = db.create_collection(name="openai", metadata={"hnsw:space": "cosine"})
