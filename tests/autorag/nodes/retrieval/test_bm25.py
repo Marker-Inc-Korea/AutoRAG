@@ -44,7 +44,7 @@ def test_bm25_ingest(ingested_bm25_path):
     assert isinstance(corpus['tokens'], list)
     assert isinstance(corpus['passage_id'], list)
     assert isinstance(corpus['tokenizer_name'], str)
-    assert corpus['tokenizer_name'] == 'gpt2'
+    assert corpus['tokenizer_name'] == 'port_stemmer'
     assert len(corpus['tokens']) == len(corpus['passage_id']) == 5
     assert set(corpus['passage_id']) == {'doc1', 'doc2', 'doc3', 'doc4', 'doc5'}
 
