@@ -40,9 +40,11 @@ def test_bm25_node():
 def test_bm25_ingest(ingested_bm25_path):
     with open(ingested_bm25_path, 'rb') as r:
         corpus = pickle.load(r)
-    assert set(corpus.keys()) == {'tokens', 'passage_id'}
+    assert set(corpus.keys()) == {'tokens', 'passage_id', 'tokenizer_name'}
     assert isinstance(corpus['tokens'], list)
     assert isinstance(corpus['passage_id'], list)
+    assert isinstance(corpus['tokenizer_name'], str)
+    assert corpus['tokenizer_name'] == 'gpt2'
     assert len(corpus['tokens']) == len(corpus['passage_id']) == 5
     assert set(corpus['passage_id']) == {'doc1', 'doc2', 'doc3', 'doc4', 'doc5'}
 

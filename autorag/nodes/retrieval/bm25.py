@@ -13,7 +13,7 @@ from autorag.utils import validate_corpus_dataset
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[List[str
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, tokenizer_name: str = 'gpt2') -> Tuple[List[List[str
 ]], List[List[float]]]:
     """
     BM25 retrieval function.
@@ -32,13 +32,16 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict) -> Tuple[List[
                 "passage_id": [], # 2d list of passage_id.
             }
 
+    :param tokenizer_name: The tokenizer name that uses to the BM25.
+        It supports only huggingface `AutoTokenizer`. You can pass huggingface tokenizer name.
+        Default is gpt2.
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
         It will be a length of queries. And each element has a length of top_k.
     """
     # check if bm25_corpus is valid
     assert ("tokens" and "passage_id" in list(bm25_corpus.keys())), \
         "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
-    tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
     bm25_instance = BM25Okapi(bm25_corpus["tokens"])
     # run async bm25_pure function
     tasks = [bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus) for input_queries in queries]
@@ -91,7 +94,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     return list(id_result), list(score_result)
 
 
-def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
+def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, tokenizer_name: str = 'gpt2'):
     if not corpus_path.endswith('.pkl'):
         raise ValueError(f"Corpus path {corpus_path} is not a pickle file.")
     validate_corpus_dataset(corpus_data)
@@ -111,7 +114,7 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
         new_passage = corpus_data
 
     if not new_passage.empty:
-        tokenizer = AutoTokenizer.from_pretrained('gpt2', use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
         results = new_passage.swifter.apply(lambda x: bm25_tokenize(x['contents'], x['doc_id'], tokenizer), axis=1)
         tokenized_corpus, passage_ids = zip(*results)
 
@@ -125,6 +128,9 @@ def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame):
             bm25_dict = bm25_corpus_updated.to_dict('list')
         else:
             bm25_dict = new_bm25_corpus.to_dict('list')
+
+        # add tokenizer name to bm25_dict
+        bm25_dict['tokenizer_name'] = tokenizer_name
 
         with open(corpus_path, 'wb') as w:
             pickle.dump(bm25_dict, w)
