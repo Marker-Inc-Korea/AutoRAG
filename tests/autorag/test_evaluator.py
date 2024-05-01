@@ -68,7 +68,7 @@ def test_load_node_line(evaluator):
     assert node.modules[0].module == bm25
     assert node.modules[1].module == vectordb
     assert node.modules[2].module == hybrid_rrf
-    assert node.modules[0].module_param == {'bm25_tokenizer': ['mistralai/Mistral-7B-Instruct-v0.2', 'porter_stemmer']}
+    assert node.modules[0].module_param == {'bm25_tokenizer': ['facebook/opt-125m', 'porter_stemmer']}
     assert node.modules[1].module_param == {'embedding_model': ['openai', 'openai']}
     assert node.modules[2].module_param == {
         'rrf_k': 5, 'target_modules': ('bm25', 'vectordb')
@@ -116,7 +116,7 @@ def test_start_trial(evaluator):
     assert node_line_summary_df['best_module_params'][0] == {'top_k': 10,
                                                              'bm25_tokenizer': 'porter_stemmer'} or \
            node_line_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                             'bm25_tokenizer': 'mistralai/Mistral-7B-Instruct-v0.2'}
+                                                             'bm25_tokenizer': 'facebook/opt-125m'}
     assert node_line_summary_df['best_execution_time'][0] > 0
 
     # test trial summary
@@ -131,7 +131,7 @@ def test_start_trial(evaluator):
     assert trial_summary_df['best_module_filename'][0] == '0.parquet'
     assert trial_summary_df['best_module_name'][0] == 'bm25'
     assert trial_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                         'bm25_tokenizer': 'mistralai/Mistral-7B-Instruct-v0.2'} or \
+                                                         'bm25_tokenizer': 'facebook/opt-125m'} or \
            trial_summary_df['best_module_params'][0] == {'top_k': 10,
                                                          'bm25_tokenizer': 'porter_stemmer'}
     assert trial_summary_df['best_execution_time'][0] > 0
