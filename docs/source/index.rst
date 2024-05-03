@@ -96,7 +96,6 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    :caption: Evaluation Metrics
    :hidden:
 
-   evaluate_metrics/index.md
    evaluate_metrics/retrieval.md
    evaluate_metrics/retrieval_contents.md
    evaluate_metrics/generation.md
