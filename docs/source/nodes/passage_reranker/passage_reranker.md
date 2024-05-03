@@ -1,4 +1,4 @@
-# 3. Passage_Reranker
+# 4. Passage_Reranker
 
 ### 🔎 **Definition**
 Reranking is a process applied after the initial retrieval of contents. It involves reassessing and reordering the contents based on their relevance to the query. This step is crucial in information retrieval systems to refine the results obtained from the first retrieval phase.

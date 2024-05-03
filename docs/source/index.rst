@@ -89,9 +89,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    optimization/optimization.md
    optimization/folder_structure.md
    optimization/custom_config.md
-   optimization/evaluate_metrics/retrieval.md
-   optimization/evaluate_metrics/retrieval_contents.md
-   optimization/evaluate_metrics/generation.md
+   optimization/evaluate_metrics/evaluate_metrics.md
 
 .. toctree::
    :maxdepth: 3
@@ -106,6 +104,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    nodes/prompt_maker/prompt_maker.md
    nodes/generator/generator.md
    nodes/passage_filter/passage_filter.md
+   nodes/passage_augmenter/passage_augmenter.md
 
 .. toctree::
    :maxdepth: 2

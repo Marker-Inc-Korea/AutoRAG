@@ -1,4 +1,4 @@
-# 6. Generator
+# 8. Generator
 
 ### 🔎 **Definition**
 A node that allows for experimentation with various Large Language Models (LLMs). This node is designed to facilitate the testing and evaluation of different LLMs to determine the most effective model for specific tasks or data sets.
