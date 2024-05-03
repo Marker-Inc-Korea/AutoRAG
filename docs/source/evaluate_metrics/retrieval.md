@@ -86,7 +86,7 @@ Therefore, Recall is 1/2 = 0.5.
 
 ***F1 score*** is the harmonic mean of Precision and Recall.
 
-![f1_score](../../_static/f1_score.png)
+![f1_score](../_static/f1_score.png)
 
 ### ✅Apply Basic Example
 
@@ -106,7 +106,7 @@ Therefore, the F1 Score = 2*(0.5*0.5)/(0.5+0.5) = 0.5
 
 ***MRR*** ***(Mean Reciprocal Rank)*** is the average of Reciprocal Rank of the most relevant passage.
 
-![mrr](../../_static/mrr.png)
+![mrr](../_static/mrr.png)
 
 ### ✅Apply Basic Example
 
@@ -138,7 +138,7 @@ average of the averages.
 
 - Calculate in this order: ***Precision*** → ***Average Precision*** → ***Mean Average Precision***
 
-![map](../../_static/map.png)
+![map](../_static/map.png)
 
 ### ✅Apply Basic Example
 
@@ -163,7 +163,7 @@ average of the averages.
 
 - Calculate in this order: ***CG*** → ***DCG*** → ***IDCG*** → ***NDCG***
 
-![ndcg](../../_static/ndcg.png)
+![ndcg](../_static/ndcg.png)
 
 1️⃣**CG** (Cumulated Gain)
 
@@ -183,7 +183,7 @@ the impact of relevance is smaller the further down the ranking you go.
 In DCG, discounted means to reduce the influence of these later rankings, so that the value of the DCG is more
 influenced by the relevance of higher-ranked items and less influenced by the relevance of lower-ranked items.
 
-![dcg](../../_static/dcg.png)
+![dcg](../_static/dcg.png)
 
 3️⃣**IDCG** (Ideal Discounted Cumulated Gain)
 
@@ -195,7 +195,7 @@ related to the model.
 The normalized Discounted Cumulated Gain (nDCG) refers to the normalized DCG, which means that the DCG for the model's
 ranking is divided by the ideal DCG, or IDCG, to give a value between 0 and 1.
 
-![ndcg_formula](../../_static/ndcg_formula.png)
+![ndcg_formula](../_static/ndcg_formula.png)
 
 NDCG = DCG / IDCG
 

@@ -82,14 +82,24 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
 
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
    :caption: Optimization
    :hidden:
 
    optimization/optimization.md
    optimization/folder_structure.md
    optimization/custom_config.md
-   optimization/evaluate_metrics/evaluate_metrics.md
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Evaluation Metrics
+   :hidden:
+   evaluate_metrics/index.md
+   evaluate_metrics/retrieval.md
+   evaluate_metrics/retrieval_contents.md
+   evaluate_metrics/generation.md
+
 
 .. toctree::
    :maxdepth: 3

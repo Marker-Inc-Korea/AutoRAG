@@ -67,7 +67,7 @@ Therefore, Token Recall is `0.777…`, the average of three
 
 F1 score is the harmonic mean of **Precision** and **Recall**.
 
-![f1_score](../../_static/f1_score.png)
+![f1_score](../_static/f1_score.png)
 
 ### ✅Apply Basic Example
 
