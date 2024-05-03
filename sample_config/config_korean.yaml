@@ -5,6 +5,8 @@ node_lines:
     modules:
     - module_type: vectordb
       embedding_model: openai
+    - module_type: bm25
+      bm25_tokenizer: ko_kiwi
     top_k: 3
     strategy:
       metrics:

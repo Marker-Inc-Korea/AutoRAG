@@ -17,6 +17,16 @@ def test_koreranker():
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+def test_koreranker_batch_one():
+    top_k = 1
+    batch = 1
+    original_koreranker = koreranker.__wrapped__
+    contents_result, id_result, score_result \
+        = original_koreranker(ko_queries_example, ko_contents_example, scores_example, ids_example, top_k, batch)
+    base_reranker_test(contents_result, id_result, score_result, top_k, use_ko=True)
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_koreranker_node():
     top_k = 1
     result_df = koreranker(project_dir=project_dir, previous_result=ko_previous_result, top_k=top_k)

@@ -43,7 +43,7 @@ def node_line_dir():
         yield node_line_dir
 
 
-def test_evaluate_one_prompt_maker_node(node_line_dir):
+def test_evaluate_one_query_expansion_node(node_line_dir):
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
@@ -51,7 +51,7 @@ def test_evaluate_one_prompt_maker_node(node_line_dir):
     sample_retrieval_gt = sample_previous_result['retrieval_gt'].tolist()
 
     retrieval_funcs = [bm25, bm25]
-    retrieval_params = [{'top_k': 1}, {'top_k': 2}]
+    retrieval_params = [{'top_k': 1, 'bm25_tokenizer': 'gpt2'}, {'top_k': 2, 'bm25_tokenizer': 'gpt2'}]
     best_result = evaluate_one_query_expansion_node(retrieval_funcs, retrieval_params,
                                                     sample_expanded_queries, sample_retrieval_gt,
                                                     metrics, project_dir, sample_previous_result)
@@ -99,7 +99,7 @@ def test_run_query_expansion_node(node_line_dir):
         'metrics': metrics,
         'speed_threshold': 5,
         'top_k': 4,
-        'retrieval_modules': [{'module_type': 'bm25'}],
+        'retrieval_modules': [{'module_type': 'bm25', 'bm25_tokenizer': 'gpt2'}],
     }
     best_result = run_query_expansion_node(modules, module_params, previous_result, node_line_dir, strategies)
     base_query_expansion_test(best_result, node_line_dir)

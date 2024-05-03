@@ -1,17 +1,19 @@
-import asyncio
 from typing import List, Tuple
 
 import numpy as np
+import pandas as pd
 import torch
+from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
+from autorag.utils.util import make_batch, sort_by_scores, flatten_apply, select_top_k
 
 
 @passage_reranker_node
 def koreranker(queries: List[str], contents_list: List[List[str]],
                scores_list: List[List[float]], ids_list: List[List[str]],
-               top_k: int) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+               top_k: int, batch: int = 64) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using ko-reranker.
     ko-reranker is a reranker based on korean (https://huggingface.co/Dongjin-kr/ko-reranker).
@@ -21,6 +23,8 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
     :param scores_list: The list of lists of scores retrieved from the initial ranking
     :param ids_list: The list of lists of ids retrieved from the initial ranking
     :param top_k: The number of passages to be retrieved
+    :param batch: The number of queries to be processed in a batch
+        Default is 64.
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
     model_path = "Dongjin-kr/ko-reranker"
@@ -31,66 +35,39 @@ def koreranker(queries: List[str], contents_list: List[List[str]],
     # Determine the device to run the model on (GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    # Run async ko_rerank_pure function
-    tasks = [koreranker_pure(query, contents, scores, ids, top_k, model, tokenizer, device)
-             for query, contents, scores, ids in zip(queries, contents_list, scores_list, ids_list)]
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(asyncio.gather(*tasks))
-    content_result = list(map(lambda x: x[0], results))
-    id_result = list(map(lambda x: x[1], results))
-    score_result = list(map(lambda x: x[2], results))
+
+    nested_list = [list(map(lambda x: [query, x], content_list)) for query, content_list in zip(queries, contents_list)]
+    scores_nps = flatten_apply(koreranker_run_model, nested_list, model=model, batch_size=batch,
+                               tokenizer=tokenizer, device=device)
+
+    rerank_scores = list(map(lambda scores: exp_normalize(np.array(scores)).astype(float), scores_nps))
+
+    df = pd.DataFrame({
+        'contents': contents_list,
+        'ids': ids_list,
+        'scores': rerank_scores,
+    })
+    df[['contents', 'ids', 'scores']] = df.apply(sort_by_scores, axis=1, result_type='expand')
+    results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
 
     del model
-    del tokenizer
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    return content_result, id_result, score_result
+    return results['contents'].tolist(), results['ids'].tolist(), results['scores'].tolist()
 
 
-async def koreranker_pure(query: str, contents: List[str],
-                          scores: List[float], ids: List[str],
-                          top_k: int, model, tokenizer, device) \
-        -> Tuple[List[str], List[str], List[float]]:
-    """
-    Rerank a list of contents based on their relevance to a query using ko-reranker.
-
-    :param query: The query to use for reranking
-    :param contents: The list of contents to rerank
-    :param scores: The list of scores retrieved from the initial ranking
-    :param ids: The list of ids retrieved from the initial ranking
-    :param top_k: The number of passages to be retrieved
-    :param model: The ko-reranker model to use for reranking
-    :param tokenizer: The tokenizer to use for the model
-    :param device: The device to run the model on (GPU if available, otherwise CPU)
-    :return: tuple of lists containing the reranked contents, ids, and scores
-    """
-    input_pairs = [[query, content] for content in contents]
-    inputs = tokenizer(input_pairs, padding=True, truncation=True, return_tensors='pt', max_length=512)
-    inputs = inputs.to(device)
-
-    with torch.no_grad():
-        scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
-        scores_np = scores.cpu().numpy()
-        scores = exp_normalize(scores_np)
-
-    # Convert scores type to float
-    scores = scores.astype(float)
-
-    # Create a list of tuples pairing each content with its relevance score
-    content_ids_scores = list(zip(contents, ids, scores))
-
-    # Sort the list of pairs based on the relevance score in descending order
-    sorted_content_ids_scores = sorted(content_ids_scores, key=lambda x: x[2], reverse=True)
-
-    # crop with top_k
-    if len(contents) < top_k:
-        top_k = len(contents)
-    sorted_content_ids_scores = sorted_content_ids_scores[:top_k]
-
-    content_result, id_result, score_result = zip(*sorted_content_ids_scores)
-
-    return list(content_result), list(id_result), list(score_result)
+def koreranker_run_model(input_texts, model, tokenizer, device, batch_size: int):
+    batch_input_texts = make_batch(input_texts, batch_size)
+    results = []
+    for batch_texts in tqdm(batch_input_texts):
+        inputs = tokenizer(batch_texts, padding=True, truncation=True, return_tensors='pt', max_length=512)
+        inputs = inputs.to(device)
+        with torch.no_grad():
+            scores = model(**inputs, return_dict=True).logits.view(-1, ).float()
+            scores_np = scores.cpu().numpy()
+            results.extend(scores_np)
+    return results
 
 
 def exp_normalize(x):
