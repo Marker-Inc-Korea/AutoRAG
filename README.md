@@ -258,7 +258,7 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 - [x] Token usage strategy
 - [ ] Multi-modal support
 - [ ] More evaluation metrics
-- [ ] Answer Filtering Module
+- [x] Answer Filtering Module
 - [x] Restart optimization from previous trial
 
 # Contribution
