@@ -90,7 +90,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    optimization/folder_structure.md
    optimization/custom_config.md
    optimization/evaluate_metrics/retrieval.md
-    optimization/evaluate_metrics/retrieval_contents.md
+   optimization/evaluate_metrics/retrieval_contents.md
    optimization/evaluate_metrics/generation.md
 
 .. toctree::
