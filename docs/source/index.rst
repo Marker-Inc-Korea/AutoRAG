@@ -99,12 +99,12 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    nodes/index.md
    nodes/query_expansion/query_expansion.md
    nodes/retrieval/retrieval.md
+   nodes/passage_augmenter/passage_augmenter.md
    nodes/passage_reranker/passage_reranker.md
+   nodes/passage_filter/passage_filter.md
    nodes/passage_compressor/passage_compressor.md
    nodes/prompt_maker/prompt_maker.md
    nodes/generator/generator.md
-   nodes/passage_filter/passage_filter.md
-   nodes/passage_augmenter/passage_augmenter.md
 
 .. toctree::
    :maxdepth: 2
