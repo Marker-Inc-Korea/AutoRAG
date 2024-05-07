@@ -5,3 +5,4 @@ build
 setuptools-scm
 pytest-xdist
 pytest-asyncio
+aioresponses
