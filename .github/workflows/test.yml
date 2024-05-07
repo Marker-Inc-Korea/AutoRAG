@@ -30,7 +30,7 @@ jobs:
           pip install -e .
       - name: Install dependencies
         run: |
-          pip install pytest pytest-xdist pytest-asyncio
+          pip install -r tests/requirements.txt
       - name: delete tests package
         run: python3 tests/delete_tests.py
       - name: Run tests
