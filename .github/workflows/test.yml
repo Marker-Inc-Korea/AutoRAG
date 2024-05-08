@@ -13,8 +13,6 @@ on:
 
 env:
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-  JINAAI_API_KEY: ${{ secrets.JINAAI_API_KEY }}
 
 jobs:
   build:
@@ -32,7 +30,7 @@ jobs:
           pip install -e .
       - name: Install dependencies
         run: |
-          pip install pytest pytest-xdist pytest-asyncio
+          pip install -r tests/requirements.txt
       - name: delete tests package
         run: python3 tests/delete_tests.py
       - name: Run tests

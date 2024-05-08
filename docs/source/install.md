@@ -61,7 +61,7 @@ pip install -e .
 And then, for testing and documentation build, you need to install some additional packages.
 
 ```bash
-pip install -r dev_requirements.txt
+pip install -r tests/requirements.txt
 pip install -r docs/requirements.txt
 ```
 
