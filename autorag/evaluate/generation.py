@@ -4,11 +4,11 @@ from typing import List, Callable, Union, Dict
 
 import pandas as pd
 
-from autorag.evaluate.metric.generation import bleu, meteor, rouge, sem_score, g_eval, bert_score
+from autorag.evaluate.metric.generation import bleu, meteor, rouge, sem_score, g_eval, bert_score, meta
 from autorag.evaluate.util import cast_metrics
 
 GENERATION_METRIC_FUNC_DICT = {func.__name__: func for func in
-                               [bleu, meteor, rouge, sem_score, g_eval, bert_score]}
+                               [bleu, meteor, rouge, sem_score, g_eval, bert_score, meta]}
 
 
 def evaluate_generation(generation_gt: List[List[str]], metrics: Union[List[str], List[Dict]]):
