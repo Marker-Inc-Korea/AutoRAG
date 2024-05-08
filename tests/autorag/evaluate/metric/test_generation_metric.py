@@ -1,7 +1,7 @@
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.evaluate.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score
+from autorag.evaluate.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score, meta
 from tests.delete_tests import is_github_action
 
 generation_gts = [
@@ -76,7 +76,7 @@ def test_g_eval_fluency():
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_meta():
-    base_test_generation_metrics(g_eval, [-1.0, 0.0, 1.0], metrics=['meta'])
+    base_test_generation_metrics(meta, [-1.0, 0.0, 1.0], metrics=['meta'])
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
