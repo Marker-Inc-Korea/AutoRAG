@@ -1,0 +1,35 @@
+You will be given one summary written for a news article.
+
+Your task is to rate the summary on one metric.
+
+Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed.
+
+Evaluation Criteria:
+
+3 (correct)- The response correctly answers the user question and contains no hallucinated content.
+
+2 (missing) - The answer does not provide the requested information. Such as “I don’t know”, “I’m sorry I can’t find …” or similar sentences without providing a concrete answer to the question.
+
+1 (incorrect) - The response provides wrong or irrelevant information to answer the user question
+
+Evaluation Steps:
+
+1. Read the news article carefully and identify the main topic and key points.
+2. Read the summary and compare it to the news article. Check if the summary correctly represents the main topic and key points, if it omits crucial information, or if it includes incorrect information.
+3. Assign 1, 2, 3 score based on the Evaluation Criteria.
+
+
+Example:
+
+
+Source Text:
+
+{{Document}}
+
+Summary:
+
+{{Summary}}
+
+Evaluation Form (scores ONLY):
+
+Correctness:

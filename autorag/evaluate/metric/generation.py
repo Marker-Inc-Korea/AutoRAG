@@ -227,7 +227,7 @@ async def async_g_eval(generation_gt: List[str], pred: str,
                        metrics: Optional[List[str]] = None,
                        model: str = 'gpt-4-0125-preview',
                        ) -> float:
-    available_metrics = ['coherence', 'consistency', 'fluency', 'relevance']
+    available_metrics = ['coherence', 'consistency', 'fluency', 'relevance', 'meta']
     if metrics is None:
         metrics = available_metrics
     else:
@@ -241,6 +241,7 @@ async def async_g_eval(generation_gt: List[str], pred: str,
         "consistency": open(os.path.join(prompt_path, "con_detailed.txt")).read(),
         "fluency": open(os.path.join(prompt_path, "flu_detailed.txt")).read(),
         "relevance": open(os.path.join(prompt_path, "rel_detailed.txt")).read(),
+        "meta": open(os.path.join(prompt_path, "meta_detailed.txt")).read(),
     }
 
     client = AsyncOpenAI()
@@ -265,6 +266,8 @@ async def async_g_eval(generation_gt: List[str], pred: str,
             )
             if '(1-3):' in prompt:
                 scores.append(get_g_eval_score(response, max_score=3))
+            elif '(missing)' in prompt:
+                scores.append(get_meta_score(response))
             else:
                 scores.append(get_g_eval_score(response))
         return max(scores)
@@ -277,6 +280,19 @@ async def async_g_eval(generation_gt: List[str], pred: str,
                 if top_log_prob in target_tokens:
                     target_tokens[top_log_prob] += (5 - i)
 
+        return int(max(target_tokens, key=target_tokens.get))
+
+    def get_meta_score(responses) -> int:
+        target_tokens = {'-1': 0, '0': 0, '1': 0}
+        for choice in responses.choices:
+            first_top_log_probs = choice.logprobs.content[0].top_logprobs
+            for i, top_log_prob in enumerate(list(map(lambda x: x.token, first_top_log_probs))):
+                if top_log_prob == '3':
+                    target_tokens['1'] += (5 - i)  # Adjusting weight: closer to the top, higher the weight
+                elif top_log_prob == '2':
+                    target_tokens['0'] += (5 - i)
+                elif top_log_prob == '1':
+                    target_tokens['-1'] += (5 - i)
         return int(max(target_tokens, key=target_tokens.get))
 
     g_eval_scores = await asyncio.gather(*(g_eval_score(g_eval_prompts[x], generation_gt, pred) for x in metrics))

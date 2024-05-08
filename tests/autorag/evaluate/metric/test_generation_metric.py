@@ -12,8 +12,8 @@ generation_gts = [
      'To be a lawyer these days, you can overcome by AI.'],
 ]
 generations = [
-    'The dog bit the man.',
-    'It really like to be a programmer, but I think artist is my passion.',
+    'i am a eastsidegunn',
+    'i do not know.',
     'To be a artist these days, you can overcome by AI.',
 ]
 
@@ -72,6 +72,11 @@ def test_sem_score_other_model():
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_g_eval_fluency():
     base_test_generation_metrics(g_eval, [3.0, 2.0, 2.0], metrics=['fluency'], model='gpt-3.5-turbo')
+
+
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+def test_meta():
+    base_test_generation_metrics(g_eval, [-1.0, 0.0, 1.0], metrics=['meta'])
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
