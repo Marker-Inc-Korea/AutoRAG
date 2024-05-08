@@ -240,6 +240,15 @@ node_lines:
 You can check our all supporting Nodes & modules
 at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
 
+# ❗Supporting Evaluation Metrics
+
+You can check our all supporting Evaluation Metrics
+at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+
+- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
+- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+
 # 🛣Roadmap
 
 - [ ] Policy Module for modular RAG pipeline

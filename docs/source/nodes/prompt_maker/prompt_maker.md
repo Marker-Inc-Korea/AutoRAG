@@ -1,4 +1,4 @@
-# 5. Prompt Maker
+# 7. Prompt Maker
 
 ### 🔎 **Definition**
 **Prompt Maker** is a module that makes a prompt from user query and retrieved contents.

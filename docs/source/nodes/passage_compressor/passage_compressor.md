@@ -1,4 +1,4 @@
-# 4. Passage_Compressor
+# 6. Passage_Compressor
 
 ### 🔎 **Definition**
 Passage compressor module compresses the contents before they are input into a language model (LLM), reducing the amount of token usage.
