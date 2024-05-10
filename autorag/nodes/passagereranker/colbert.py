@@ -69,8 +69,9 @@ def get_colbert_embedding_batch(input_strings: List[str],
 
     input_batches = slice_tokenizer_result(encoding, batch_size)
     result_embedding = []
-    for encoding_batch in tqdm(input_batches):
-        result_embedding.append(model(**encoding_batch).last_hidden_state)
+    with torch.no_grad():
+        for encoding_batch in tqdm(input_batches):
+            result_embedding.append(model(**encoding_batch).last_hidden_state)
     total_tensor = torch.cat(result_embedding, dim=0)  # shape [batch_size, token_length, embedding_dim]
     tensor_results = list(total_tensor.chunk(total_tensor.size()[0]))
 
