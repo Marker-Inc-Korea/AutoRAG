@@ -13,6 +13,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from openai import AsyncOpenAI
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
+from transformers import GPT2Tokenizer
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
@@ -352,8 +353,14 @@ async def async_meta(generation_gt: List[str], pred: str,
 
     async def meta_score(prompt: str, gen_gt: List[str], pred: str):
         scores = []
+
+        # truncate pred to 75 bpe token
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        tokens = tokenizer.encode(pred, max_length=75, truncation=True)
+        truncated_pred = tokenizer.decode(tokens)
+
         for gt in gen_gt:
-            input_prompt = prompt.replace('{{Document}}', gt).replace('{{Summary}}', pred)
+            input_prompt = prompt.replace('{{Document}}', gt).replace('{{Summary}}', truncated_pred)
             response = await client.chat.completions.create(
                 model=model,
                 messages=[
