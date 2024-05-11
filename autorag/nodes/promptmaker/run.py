@@ -11,7 +11,7 @@ from autorag.evaluate.util import cast_metrics
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
 from autorag.support import get_support_modules
 from autorag.utils import validate_qa_dataset
-from autorag.utils.util import make_combinations, explode
+from autorag.utils.util import make_combinations, explode, split_dataframe
 
 
 def run_prompt_maker_node(modules: List[Callable],
@@ -106,10 +106,14 @@ def run_prompt_maker_node(modules: List[Callable],
         generation_gt = qa_data['generation_gt'].tolist()
         generation_gt = list(map(lambda x: x.tolist(), generation_gt))
 
-        # run evaluations
-        evaluation_results = list(map(lambda result: evaluate_one_prompt_maker_node(
-            generator_callables, generator_params, result['prompts'].tolist(),
-            generation_gt, general_strategy['metrics'], project_dir), results))
+        all_prompts = []
+        for result in results:
+            all_prompts.extend(result['prompts'].tolist())
+
+        evaluation_result_all = evaluate_one_prompt_maker_node(all_prompts, generator_callables, generator_params,
+                                                               generation_gt * len(results),
+                                                               general_strategy['metrics'], project_dir)
+        evaluation_results = split_dataframe(evaluation_result_all, chunk_size=len(results[0]))
 
         evaluation_df = pd.DataFrame({
             'filename': filenames,
@@ -155,9 +159,9 @@ def make_generator_callable_params(strategy_dict: Dict):
     return explode(modules, param_combinations)
 
 
-def evaluate_one_prompt_maker_node(generator_funcs: List[Callable],
+def evaluate_one_prompt_maker_node(prompts: List[str],
+                                   generator_funcs: List[Callable],
                                    generator_params: List[Dict],
-                                   prompts: List[str],
                                    generation_gt: List[List[str]],
                                    metrics: Union[List[str], List[Dict]],
                                    project_dir) -> pd.DataFrame:
