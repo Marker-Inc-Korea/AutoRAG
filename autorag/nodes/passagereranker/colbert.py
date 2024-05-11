@@ -69,8 +69,9 @@ def get_colbert_embedding_batch(input_strings: List[str],
 
     input_batches = slice_tokenizer_result(encoding, batch_size)
     result_embedding = []
-    for encoding_batch in tqdm(input_batches):
-        result_embedding.append(model(**encoding_batch).last_hidden_state)
+    with torch.no_grad():
+        for encoding_batch in tqdm(input_batches):
+            result_embedding.append(model(**encoding_batch).last_hidden_state)
     total_tensor = torch.cat(result_embedding, dim=0)  # shape [batch_size, token_length, embedding_dim]
     tensor_results = list(total_tensor.chunk(total_tensor.size()[0]))
 
@@ -108,10 +109,12 @@ def slice_tensor(input_tensor, batch_size):
 
 
 def get_colbert_score(query_embedding: np.array, content_embedding: np.array) -> float:
-    query_tensor = torch.tensor(query_embedding)
-    content_tensor = torch.tensor(content_embedding)
-    sim_matrix = torch.nn.functional.cosine_similarity(
-        query_tensor.unsqueeze(2), content_tensor.unsqueeze(1), dim=-1
+    if query_embedding.ndim == 3 and content_embedding.ndim == 3:
+        query_embedding = query_embedding.reshape(-1, query_embedding.shape[-1])
+        content_embedding = content_embedding.reshape(-1, content_embedding.shape[-1])
+
+    sim_matrix = np.dot(query_embedding, content_embedding.T) / (
+            np.linalg.norm(query_embedding, axis=1)[:, np.newaxis] * np.linalg.norm(content_embedding, axis=1)
     )
-    max_sim_scores, _ = torch.max(sim_matrix, dim=2)
-    return float(torch.mean(max_sim_scores, dim=1))
+    max_sim_scores = np.max(sim_matrix, axis=1)
+    return float(np.mean(max_sim_scores))
