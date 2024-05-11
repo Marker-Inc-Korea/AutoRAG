@@ -13,7 +13,7 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string
+    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -316,3 +316,18 @@ def test_openai_truncate_by_token():
     assert len(truncated[1]) < len(t2)
     assert len(tiktoken.encoding_for_model('text-embedding-ada-002').encode(truncated[1])) == 8192
     assert len(truncated[2]) == len(t3)
+
+
+def test_split_dataframe():
+    df = pd.DataFrame({'a': list(range(10)), 'b': list(range(10, 20))})
+
+    df_list_1 = split_dataframe(df, chunk_size=5)
+    assert len(df_list_1) == 2
+    assert len(df_list_1[0]) == 5
+    assert pd.DataFrame({'a': list(range(5)), 'b': list(range(10, 15))}).equals(df_list_1[0])
+
+    df_list_2 = split_dataframe(df, chunk_size=3)
+    assert len(df_list_2) == 4
+    assert len(df_list_2[0]) == 3
+    assert len(df_list_2[-1]) == 1
+    assert pd.DataFrame({'a': list(range(3)), 'b': list(range(10, 13))}).equals(df_list_2[0])
