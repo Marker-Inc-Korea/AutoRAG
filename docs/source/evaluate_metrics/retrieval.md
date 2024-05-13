@@ -22,6 +22,11 @@ following [Dataset Format Docs](https://marker-inc-korea.github.io/AutoRAG/data_
 In the Apply ‘✅Basic Examples’ below, we'll use the following sample gt and result.
 Hopefully you remember them well.
 
+```{tip}
+Looking for retrieval metric that do not need any retrieval ground truth?
+We support [Ragas context precision](https://docs.ragas.io/en/latest/concepts/metrics/context_precision.html) metric also.
+```
+
 ## 1. Precision
 
 ### 📌Definition
