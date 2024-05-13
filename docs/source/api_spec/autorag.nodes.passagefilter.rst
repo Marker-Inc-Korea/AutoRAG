@@ -20,14 +20,6 @@ autorag.nodes.passagefilter.pass\_passage\_filter module
    :undoc-members:
    :show-inheritance:
 
-autorag.nodes.passagefilter.percentile\_cutoff module
------------------------------------------------------
-
-.. automodule:: autorag.nodes.passagefilter.percentile_cutoff
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 autorag.nodes.passagefilter.recency module
 ------------------------------------------
 
@@ -40,6 +32,22 @@ autorag.nodes.passagefilter.run module
 --------------------------------------
 
 .. automodule:: autorag.nodes.passagefilter.run
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+autorag.nodes.passagefilter.similarity\_percentile\_cutoff module
+-----------------------------------------------------------------
+
+.. automodule:: autorag.nodes.passagefilter.similarity_percentile_cutoff
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+autorag.nodes.passagefilter.similarity\_threshold\_cutoff module
+----------------------------------------------------------------
+
+.. automodule:: autorag.nodes.passagefilter.similarity_threshold_cutoff
    :members:
    :undoc-members:
    :show-inheritance:

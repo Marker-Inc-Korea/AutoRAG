@@ -5,7 +5,7 @@ import torch.cuda
 
 from autorag.evaluate.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import passage_filter_node
-from autorag.nodes.passagefilter.threshold_cutoff import embedding_query_content
+from autorag.nodes.passagefilter.similarity_threshold_cutoff import embedding_query_content
 
 
 @passage_filter_node
