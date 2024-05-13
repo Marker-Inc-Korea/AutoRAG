@@ -1,15 +1,15 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict, Optional
 from copy import deepcopy
+from typing import List, Callable, Dict, Optional
 
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
 from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils.util import make_combinations, explode
 from autorag.support import get_support_modules
+from autorag.utils.util import make_combinations, explode
 
 logger = logging.getLogger("AutoRAG")
 
@@ -131,7 +131,9 @@ def evaluate_one_query_expansion_node(retrieval_funcs: List[Callable],
     previous_result['queries'] = expanded_queries
     retrieval_results = list(map(lambda x: x[0](project_dir=project_dir, previous_result=previous_result, **x[1]),
                                  zip(retrieval_funcs, retrieval_params)))
-    evaluation_results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, metrics),
+    evaluation_results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, metrics,
+                                                                    previous_result['query'].tolist(),
+                                                                    previous_result['generation_gt'].tolist()),
                                   retrieval_results))
     best_result, _ = select_best_average(evaluation_results, metrics)
     best_result = pd.concat([previous_result, best_result], axis=1)

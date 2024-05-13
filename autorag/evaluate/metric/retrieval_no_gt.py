@@ -1,5 +1,7 @@
 from typing import List
 
+import numpy as np
+import pandas as pd
 import ragas
 from datasets import Dataset
 from langchain_openai.chat_models import ChatOpenAI
@@ -26,8 +28,10 @@ def cast_generation_gt(generation_gt: List[List[str]]) -> List[str]:
     for gt in generation_gt:
         if isinstance(gt, str):
             result.append(gt)
-        elif isinstance(gt, list):
+        elif isinstance(gt, list) or isinstance(gt, np.ndarray):
             result.append(gt[0])
+        elif isinstance(gt, pd.Series):
+            result.append(gt.iloc[0])
         else:
             raise ValueError(f"Unexpected type of generation gt elements : {type(gt)}")
     return result
