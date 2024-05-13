@@ -13,7 +13,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from openai import AsyncOpenAI
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
-from transformers import GPT2Tokenizer
+from transformers import LlamaTokenizer
 
 from autorag import embedding_models
 from autorag.evaluate.metric.util import calculate_cosine_similarity
@@ -354,10 +354,17 @@ async def async_meta(generation_gt: List[str], pred: str,
     async def meta_score(prompt: str, gen_gt: List[str], pred: str):
         scores = []
 
+        def trim_predictions_to_max_token_length(prediction):
+            """Trims prediction output to 75 tokens"""
+            max_token_length = 75
+            tokenized_prediction = tokenizer.encode(prediction)
+            trimmed_tokenized_prediction = tokenized_prediction[1: max_token_length + 1]
+            trimmed_prediction = tokenizer.decode(trimmed_tokenized_prediction)
+            return trimmed_prediction
+
         # truncate pred to 75 bpe token
-        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        tokens = tokenizer.encode(pred, max_length=75, truncation=True)
-        truncated_pred = tokenizer.decode(tokens)
+        tokenizer = LlamaTokenizer.from_pretrained('fxmarty/tiny-llama-fast-tokenizer')
+        truncated_pred = trim_predictions_to_max_token_length(pred)
 
         for gt in gen_gt:
             input_prompt = prompt.replace('{{Document}}', gt).replace('{{Summary}}', truncated_pred)
