@@ -10,7 +10,7 @@ Filters the contents, scores, and ids based on a **previous result's scores**.
 ## **Module Parameters**
 
 - **threshold** : The threshold value to filter out the contents.
-  If the similarity score is below the threshold, the content will be filtered out.
+  If the score is below the threshold, the content will be filtered out.
   This is essential to run the module, so you have to set this parameter.
 
 ## **Example config.yaml**
