@@ -355,3 +355,8 @@ def filter_dict_keys(dict_, keys: List[str]):
         else:
             raise KeyError(f"Key '{key}' not found in dictionary.")
     return result
+
+
+def split_dataframe(df, chunk_size):
+    num_chunks = len(df) // chunk_size + 1 if len(df) % chunk_size != 0 else len(df) // chunk_size
+    return list(map(lambda x: df[x * chunk_size:(x + 1) * chunk_size], range(num_chunks)))

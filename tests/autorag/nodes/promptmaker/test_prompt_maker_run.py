@@ -48,7 +48,7 @@ def test_evaluate_one_prompt_maker_node():
     generator_params = [{'llm': 'mock', 'model': 'gpt-3.5-turbo'},
                         {'llm': 'mock', 'model': 'gpt-3.5-turbo-1106'}]
     project_dir = '_'
-    best_result = evaluate_one_prompt_maker_node(generator_funcs, generator_params, prompts, sample_generation_gt,
+    best_result = evaluate_one_prompt_maker_node(prompts, generator_funcs, generator_params, sample_generation_gt,
                                                  metrics, project_dir)
     metric_names, _ = cast_metrics(metrics)
     assert isinstance(best_result, pd.DataFrame)
