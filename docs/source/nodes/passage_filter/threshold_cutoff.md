@@ -12,6 +12,8 @@ Filters the contents, scores, and ids based on a **previous result's scores**.
 - **threshold** : The threshold value to filter out the contents.
   If the score is below the threshold, the content will be filtered out.
   This is essential to run the module, so you have to set this parameter.
+- **reverse** : If True, the lower the score, the better.
+  Default is False.
 
 ## **Example config.yaml**
 

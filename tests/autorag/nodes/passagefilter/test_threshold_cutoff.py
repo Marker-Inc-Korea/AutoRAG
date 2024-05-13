@@ -10,6 +10,15 @@ def test_threshold_cutoff():
     base_passage_filter_test(contents, ids, scores)
 
 
+def test_threshold_cutoff_reverse():
+    original_cutoff = threshold_cutoff.__wrapped__
+    contents, ids, scores = original_cutoff(
+        queries_example, contents_example, scores_example, ids_example, threshold=0.4, reverse=True)
+    base_passage_filter_test(contents, ids, scores)
+    assert scores[0] == [0.1, 0.1]
+    assert contents[0] == ["NomaDamas is Great Team", "havertz is suck at soccer"]
+
+
 def test_threshold_cutoff_node():
     result_df = threshold_cutoff(
         project_dir=project_dir, previous_result=previous_result, threshold=0.9)
