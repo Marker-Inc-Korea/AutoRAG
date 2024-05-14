@@ -13,7 +13,7 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe
+    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -331,3 +331,11 @@ def test_split_dataframe():
     assert len(df_list_2[0]) == 3
     assert len(df_list_2[-1]) == 1
     assert pd.DataFrame({'a': list(range(3)), 'b': list(range(10, 13))}).equals(df_list_2[0])
+
+
+def test_find_trial_dir():
+    project_dir = os.path.join(root_dir, "resources", "result_project")
+    trial_dirs = find_trial_dir(project_dir)
+
+    assert len(trial_dirs) == 4
+    assert all(isinstance(int(os.path.basename(path)), int) for path in trial_dirs)

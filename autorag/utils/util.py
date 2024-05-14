@@ -2,6 +2,7 @@ import ast
 import asyncio
 import datetime
 import functools
+import glob
 import itertools
 import logging
 import os
@@ -360,3 +361,14 @@ def filter_dict_keys(dict_, keys: List[str]):
 def split_dataframe(df, chunk_size):
     num_chunks = len(df) // chunk_size + 1 if len(df) % chunk_size != 0 else len(df) // chunk_size
     return list(map(lambda x: df[x * chunk_size:(x + 1) * chunk_size], range(num_chunks)))
+
+
+def find_trial_dir(project_dir: str) -> List[str]:
+    # Pattern to match directories named with numbers
+    pattern = os.path.join(project_dir, '[0-9]*')
+    all_entries = glob.glob(pattern)
+
+    # Filter out only directories
+    trial_dirs = [entry for entry in all_entries if os.path.isdir(entry) and entry.split(os.sep)[-1].isdigit()]
+
+    return trial_dirs
