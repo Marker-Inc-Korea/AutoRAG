@@ -10,6 +10,8 @@ Filter out the contents that are below the content's length times percentile.
 
 - **percentile** : The percentile value to filter out the contents.
   This is essential to run the module, so you have to set this parameter.
+- **reverse** : If True, the lower the score, the better.
+  Default is False.
 
 ## **Example config.yaml**
 
