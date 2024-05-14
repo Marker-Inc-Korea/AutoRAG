@@ -4,6 +4,8 @@ This module is inspired by
 LlamaIndex ['Sentence Embedding Optimizer'](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/OptimizerDemo/).
 Re-calculate each content's similarity with the query and filter out the contents that are below the threshold.
 
+📣 Keeps at least one item per query if all scores are below the threshold.
+
 ## **Module Parameters**
 
 - **threshold** : The threshold value to filter out the contents.
