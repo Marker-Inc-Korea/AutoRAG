@@ -54,3 +54,4 @@ langchain-core>=0.1.6
 panel
 holoviews
 hvplot
+duckdb
