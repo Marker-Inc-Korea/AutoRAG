@@ -372,3 +372,13 @@ def find_trial_dir(project_dir: str) -> List[str]:
     trial_dirs = [entry for entry in all_entries if os.path.isdir(entry) and entry.split(os.sep)[-1].isdigit()]
 
     return trial_dirs
+
+
+def find_node_summary_files(trial_dir: str) -> List[str]:
+    # Find all summary.csv files recursively
+    all_summary_files = glob.glob(os.path.join(trial_dir, '**', 'summary.csv'), recursive=True)
+
+    # Filter out files that are at a lower directory level
+    filtered_files = [f for f in all_summary_files if f.count(os.sep) > trial_dir.count(os.sep) + 2]
+
+    return filtered_files

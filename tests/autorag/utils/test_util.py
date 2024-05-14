@@ -13,7 +13,8 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir
+    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir, \
+    find_node_summary_files
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -339,3 +340,11 @@ def test_find_trial_dir():
 
     assert len(trial_dirs) == 4
     assert all(isinstance(int(os.path.basename(path)), int) for path in trial_dirs)
+
+
+def test_find_node_summary_files():
+    trial_dir = os.path.join(root_dir, "resources", "result_project", "2")
+    node_summary_paths = find_node_summary_files(trial_dir)
+
+    assert len(node_summary_paths) == 4
+    assert all(os.path.basename(path) == 'summary.csv' for path in node_summary_paths)
