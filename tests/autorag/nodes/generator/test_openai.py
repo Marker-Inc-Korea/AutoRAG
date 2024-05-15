@@ -26,7 +26,7 @@ def test_openai_llm_node():
             'prompts': prompts,
             'qid': ['id-1', 'id-2', 'id-3']
         })
-    result_df = openai_llm(project_dir='.', previous_result=previous_result, llm='gpt-3.5-turbo-0125')
+    result_df = openai_llm(project_dir='.', previous_result=previous_result, llm='gpt-4o')
     check_generated_texts(result_df['generated_texts'].tolist())
     check_generated_tokens(result_df['generated_tokens'].tolist())
     check_generated_log_probs(result_df['generated_log_probs'].tolist())

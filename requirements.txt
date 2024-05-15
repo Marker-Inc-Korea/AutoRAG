@@ -1,7 +1,7 @@
 numpy
 pandas
 tqdm
-tiktoken  # for counting token
+tiktoken>=0.7.0  # for counting token
 openai>=1.0.0
 rank_bm25  # for bm25 retrieval
 transformers
