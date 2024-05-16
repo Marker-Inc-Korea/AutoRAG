@@ -3,6 +3,8 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from autorag.utils.util import normalize_unicode
+
 
 def validate_qa_dataset(df: pd.DataFrame):
     columns = ['qid', 'query', 'retrieval_gt', 'generation_gt']
@@ -49,6 +51,8 @@ def cast_qa_dataset(df: pd.DataFrame):
         "query must be string type."
     df['retrieval_gt'] = df['retrieval_gt'].apply(cast_retrieval_gt)
     df['generation_gt'] = df['generation_gt'].apply(cast_generation_gt)
+    df['query'] = df['query'].apply(normalize_unicode)
+    df['generation_gt'] = df['generation_gt'].apply(lambda x: list(map(normalize_unicode, x)))
     return df
 
 
@@ -79,6 +83,19 @@ def cast_corpus_dataset(df: pd.DataFrame):
 
     df['metadata'] = df['metadata'].apply(lambda x: make_prev_next_id_metadata(x, 'prev_id'))
     df['metadata'] = df['metadata'].apply(lambda x: make_prev_next_id_metadata(x, 'next_id'))
+
+    df['contents'] = df['contents'].apply(normalize_unicode)
+
+    def normalize_unicode_metadata(metadata: dict):
+        result = {}
+        for key, value in metadata.items():
+            if isinstance(value, str):
+                result[key] = normalize_unicode(value)
+            else:
+                result[key] = value
+        return result
+
+    df['metadata'] = df['metadata'].apply(normalize_unicode_metadata)
 
     # check every metadata have a prev_id, next_id key
     assert all('prev_id' in metadata for metadata in df['metadata']), "Every metadata must have a prev_id key."
