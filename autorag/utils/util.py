@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import string
+import unicodedata
 from copy import deepcopy
 from typing import List, Callable, Dict, Optional, Any, Collection
 
@@ -382,3 +383,7 @@ def find_node_summary_files(trial_dir: str) -> List[str]:
     filtered_files = [f for f in all_summary_files if f.count(os.sep) > trial_dir.count(os.sep) + 2]
 
     return filtered_files
+
+
+def normalize_unicode(text: str) -> str:
+    return unicodedata.normalize('NFC', text)

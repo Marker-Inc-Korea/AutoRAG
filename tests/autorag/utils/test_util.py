@@ -14,7 +14,7 @@ from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
     convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir, \
-    find_node_summary_files
+    find_node_summary_files, normalize_unicode
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -348,3 +348,18 @@ def test_find_node_summary_files():
 
     assert len(node_summary_paths) == 4
     assert all(os.path.basename(path) == 'summary.csv' for path in node_summary_paths)
+
+
+def test_normalize_unicode():
+    str1 = "전국보행자전용도로표준데이터"
+    str2 = "전국보행자전용도로표준데이터"
+    assert len(str1) == 14
+    assert len(str2) == 34
+    assert str1 != str2
+
+    new_str1 = normalize_unicode(str1)
+    new_str2 = normalize_unicode(str2)
+
+    assert len(new_str1) == 14
+    assert len(new_str2) == 14
+    assert new_str1 == new_str2
