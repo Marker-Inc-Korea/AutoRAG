@@ -1,5 +1,7 @@
 from typing import List, Tuple
 
+import numpy as np
+
 from autorag.nodes.passagefilter.base import passage_filter_node
 
 
@@ -43,11 +45,20 @@ def threshold_cutoff_pure(scores_list: List[float],
         Default is False.
     :return: Indices to remain at the contents
     """
-    if reverse:
-        remain_indices = [i for i, score in enumerate(scores_list) if score <= threshold]
-        default_index = scores_list.index(min(scores_list))
+    if isinstance(scores_list, np.ndarray):
+        if reverse:
+            remain_indices = np.where(scores_list <= threshold)[0]
+            default_index = np.argmin(scores_list)
+        else:
+            remain_indices = np.where(scores_list >= threshold)[0]
+            default_index = np.argmax(scores_list)
     else:
-        remain_indices = [i for i, score in enumerate(scores_list) if score >= threshold]
-        default_index = scores_list.index(max(scores_list))
+        if reverse:
+            remain_indices = [i for i, score in enumerate(scores_list) if score <= threshold]
+            default_index = scores_list.index(min(scores_list))
+        else:
+            remain_indices = [i for i, score in enumerate(scores_list) if score >= threshold]
+            default_index = scores_list.index(max(scores_list))
 
-    return remain_indices if remain_indices else [default_index]
+    return remain_indices.tolist() if isinstance(remain_indices, np.ndarray) and remain_indices.size > 0 else \
+        remain_indices if remain_indices else [default_index]

@@ -13,7 +13,7 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe
+    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, normalize_unicode
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -331,3 +331,18 @@ def test_split_dataframe():
     assert len(df_list_2[0]) == 3
     assert len(df_list_2[-1]) == 1
     assert pd.DataFrame({'a': list(range(3)), 'b': list(range(10, 13))}).equals(df_list_2[0])
+
+
+def test_normalize_unicode():
+    str1 = "전국보행자전용도로표준데이터"
+    str2 = "전국보행자전용도로표준데이터"
+    assert len(str1) == 14
+    assert len(str2) == 34
+    assert str1 != str2
+
+    new_str1 = normalize_unicode(str1)
+    new_str2 = normalize_unicode(str2)
+
+    assert len(new_str1) == 14
+    assert len(new_str2) == 14
+    assert new_str1 == new_str2
