@@ -14,7 +14,7 @@ from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
     convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir, \
-    find_node_summary_files, normalize_unicode
+    find_node_summary_files, normalize_unicode, dict_to_markdown
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -363,3 +363,36 @@ def test_normalize_unicode():
     assert len(new_str1) == 14
     assert len(new_str2) == 14
     assert new_str1 == new_str2
+
+
+def test_dict_to_markdown():
+    data = {
+        "Title": "Sample Document",
+        "Author": "John Doe",
+        "Content": {
+            "Introduction": "This is the introduction.",
+            "Body": [
+                "First point",
+                "Second point",
+                {"Subsection": "Details about the second point"}
+            ],
+            "Conclusion": "This is the conclusion."
+        }
+    }
+    markdown_text = dict_to_markdown(data)
+    result_text = f"""# Title
+Sample Document
+# Author
+John Doe
+# Content
+## Introduction
+This is the introduction.
+## Body
+- First point
+- Second point
+### Subsection
+Details about the second point
+## Conclusion
+This is the conclusion.
+"""
+    assert result_text == markdown_text

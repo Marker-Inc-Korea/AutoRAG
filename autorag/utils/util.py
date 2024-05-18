@@ -387,3 +387,28 @@ def find_node_summary_files(trial_dir: str) -> List[str]:
 
 def normalize_unicode(text: str) -> str:
     return unicodedata.normalize('NFC', text)
+
+
+def dict_to_markdown(d, level=1):
+    """
+    Convert a dictionary to a Markdown formatted string.
+
+    :param d: Dictionary to convert
+    :param level: Current level of heading (used for nested dictionaries)
+    :return: Markdown formatted string
+    """
+    markdown = ""
+    for key, value in d.items():
+        if isinstance(value, dict):
+            markdown += f"{'#' * level} {key}\n"
+            markdown += dict_to_markdown(value, level + 1)
+        elif isinstance(value, list):
+            markdown += f"{'#' * level} {key}\n"
+            for item in value:
+                if isinstance(item, dict):
+                    markdown += dict_to_markdown(item, level + 1)
+                else:
+                    markdown += f"- {item}\n"
+        else:
+            markdown += f"{'#' * level} {key}\n{value}\n"
+    return markdown
