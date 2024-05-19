@@ -9,7 +9,7 @@ import holoviews as hv
 import pandas as pd
 import panel as pn
 
-from autorag.utils.util import dict_to_markdown
+from autorag.utils.util import dict_to_markdown, dict_to_markdown_table
 
 logger = logging.getLogger("AutoRAG")
 
@@ -56,7 +56,7 @@ def make_trial_summary_md(trial_dir):
 
 ### Metric Values
 
-{dict_to_markdown(metric_dict, level=3)}
+{dict_to_markdown_table(metric_dict, key_column_name='metric_name', value_column_name='metric_value')}
 
 """
 

@@ -14,7 +14,7 @@ from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
     convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir, \
-    find_node_summary_files, normalize_unicode, dict_to_markdown
+    find_node_summary_files, normalize_unicode, dict_to_markdown, dict_to_markdown_table
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -396,3 +396,14 @@ Details about the second point
 This is the conclusion.
 """
     assert result_text == markdown_text
+
+
+def test_dict_to_markdown_table():
+    data = {"key1": "value1", "key2": "value2"}
+    result = dict_to_markdown_table(data, 'havertz', 'william')
+    result_text = """| havertz | william |
+| :---: | :-----: |
+| key1 | value1 |
+| key2 | value2 |
+"""
+    assert result == result_text

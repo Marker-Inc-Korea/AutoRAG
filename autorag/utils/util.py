@@ -412,3 +412,21 @@ def dict_to_markdown(d, level=1):
         else:
             markdown += f"{'#' * level} {key}\n{value}\n"
     return markdown
+
+
+def dict_to_markdown_table(data, key_column_name: str, value_column_name: str):
+    # Check if the input is a dictionary
+    if not isinstance(data, dict):
+        raise ValueError("Input must be a dictionary")
+
+    # Create the header of the table
+    header = f"| {key_column_name} | {value_column_name} |\n| :---: | :-----: |\n"
+
+    # Create the rows of the table
+    rows = ""
+    for key, value in data.items():
+        rows += f"| {key} | {value} |\n"
+
+    # Combine header and rows
+    markdown_table = header + rows
+    return markdown_table
