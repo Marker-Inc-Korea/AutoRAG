@@ -36,14 +36,14 @@ node_lines:
         modules:
           - module_type: tart
           - module_type: monot5
-      - node_type: passage_compressor
+      - node_type: passage_filter
         strategy:
-          metrics: [ retrieval_token_f1, retrieval_token_recall, retrieval_token_precision ]
-          speed_threshold: 10
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+          speed_threshold: 5
         modules:
-          - module_type: tree_summarize
-            llm: openai
-            model: gpt-3.5-turbo-16k
+          - module_type: pass_passage_filter
+          - module_type: threshold_cutoff
+            threshold: 0.85
   - node_line_name: post_retrieve_node_line  # Arbitrary node line name
     nodes:
       - node_type: prompt_maker
@@ -52,8 +52,7 @@ node_lines:
           speed_threshold: 10
           generator_modules:
             - module_type: llama_index_llm
-              llm: openai
-              model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
+              llm: mock
         modules:
           - module_type: fstring
             prompt: [ "Tell me something about the question: {query} \n\n {retrieved_contents}",
@@ -64,6 +63,4 @@ node_lines:
           speed_threshold: 10
         modules:
           - module_type: llama_index_llm
-            llm: [ openai ]
-            model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
-            temperature: [ 0.5, 1.0, 1.5 ]
+            llm: [ mock ]
