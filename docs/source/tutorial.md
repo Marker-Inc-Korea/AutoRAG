@@ -117,6 +117,15 @@ start_trial function will be executed instead of restart_trial.
 Note that a new trial folder will be created, not a new restart result in that Trial Path.
 ```
 
+## Run Dashboard to see your trial result!
+
+Up to AutoRAG version 0.2.0, you can use dashboard feature for easily see the results of AutoRAG.
+You can run dashboard just running below command.
+
+```bash
+autorag dashboard --trial_dir /your/path/to/trial_dir
+```
+
 ## Extract pipeline and evaluate test dataset
 
 Now, it's time to evaluate test dataset with a found RAG pipeline. For this, you can extract the optimal pipeline and
