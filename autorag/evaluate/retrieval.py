@@ -6,13 +6,12 @@ import pandas as pd
 
 from autorag.evaluate.metric import (retrieval_recall, retrieval_precision, retrieval_f1, retrieval_ndcg, retrieval_mrr,
                                      retrieval_map)
-from autorag.evaluate.metric.retrieval_no_gt import ragas_context_precision
 from autorag.evaluate.util import cast_metrics
 
 RETRIEVAL_METRIC_FUNC_DICT = {func.__name__: func for func in
                               [retrieval_recall, retrieval_precision, retrieval_f1, retrieval_ndcg, retrieval_mrr,
                                retrieval_map]}
-RETRIEVAL_NO_GT_METRIC_FUNC_DICT = {func.__name__: func for func in [ragas_context_precision]}
+RETRIEVAL_NO_GT_METRIC_FUNC_DICT = {func.__name__: func for func in []}
 
 
 def evaluate_retrieval(retrieval_gt: List[List[List[str]]], metrics: Union[List[str], List[Dict]],

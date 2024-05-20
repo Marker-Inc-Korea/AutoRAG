@@ -1,9 +1,7 @@
 import math
 from typing import Tuple, List
-from unittest.mock import patch
 
 import pandas as pd
-from ragas.metrics import ContextPrecision
 
 from autorag.evaluate import evaluate_retrieval
 
@@ -34,32 +32,26 @@ ids = [
 
 
 @evaluate_retrieval(retrieval_gt=retrieval_gt,
-                    metrics=['retrieval_recall', 'retrieval_precision', 'retrieval_f1', 'ragas_context_precision'],
+                    metrics=['retrieval_recall', 'retrieval_precision', 'retrieval_f1'],
                     queries=queries_example, generation_gt=generation_gt_example)
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     return contents, ids, scores
 
 
 @evaluate_retrieval(retrieval_gt=retrieval_gt,
-                    metrics=[{'metric_name': 'retrieval_recall'}, {'metric_name': 'retrieval_f1'},
-                             {'metric_name': 'ragas_context_precision', 'openai_model_name': 'gpt-3.5-turbo-0125'}],
+                    metrics=[{'metric_name': 'retrieval_recall'}, {'metric_name': 'retrieval_f1'}],
                     queries=queries_example, generation_gt=generation_gt_example)
 def pseudo_retrieval_dict_metric() -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     return contents, ids, scores
 
 
-async def mock_context_precision_ascore(self, row, callbacks, is_async) -> float:
-    return 0.3
-
-
-@patch.object(ContextPrecision, "_ascore", mock_context_precision_ascore)
 def test_evaluate_retrieval():
     result_df = pseudo_retrieval()
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 4
-    assert len(result_df.columns) == 7
+    assert len(result_df.columns) == 6
     assert list(result_df.columns) == ['retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_recall',
-                                       'retrieval_precision', 'retrieval_f1', 'ragas_context_precision']
+                                       'retrieval_precision', 'retrieval_f1']
     recall = result_df['retrieval_recall'].tolist()
     recall_solution = [1, 1, 0, 0.5]
     for pred, sol in zip(recall, recall_solution):
@@ -75,27 +67,16 @@ def test_evaluate_retrieval():
     for pred, sol in zip(f1, f1_solution):
         assert math.isclose(pred, sol, rel_tol=1e-4)
 
-    ragas_context_precision = result_df['ragas_context_precision'].tolist()
-    ragas_context_precision_solution = [0.3] * len(queries_example)
-    for pred, sol in zip(ragas_context_precision, ragas_context_precision_solution):
-        assert math.isclose(pred, sol, rel_tol=1e-7)
 
-
-async def mock_context_precision_ascore_check_model(self, row, callbacks, is_async) -> float:
-    assert self.llm.langchain_llm.model_name == 'gpt-3.5-turbo-0125'
-    return 0.4
-
-
-@patch.object(ContextPrecision, "_ascore", mock_context_precision_ascore_check_model)
 def test_evaluate_retrieval_dict():
     result_df = pseudo_retrieval_dict_metric()
     assert isinstance(result_df, pd.DataFrame)
     assert len(result_df) == 4
-    assert len(result_df.columns) == 6
+    assert len(result_df.columns) == 5
     assert set(result_df.columns) == {'retrieved_contents', 'retrieved_ids', 'retrieve_scores', 'retrieval_recall',
-                                      'retrieval_f1', 'ragas_context_precision'}
+                                      'retrieval_f1'}
 
-    ragas_context_precision = result_df['ragas_context_precision'].tolist()
-    ragas_context_precision_solution = [0.4] * len(queries_example)
-    for pred, sol in zip(ragas_context_precision, ragas_context_precision_solution):
-        assert math.isclose(pred, sol, rel_tol=1e-7)
+    recall = result_df['retrieval_recall'].tolist()
+    recall_solution = [1, 1, 0, 0.5]
+    for pred, sol in zip(recall, recall_solution):
+        assert math.isclose(pred, sol, rel_tol=1e-4)
