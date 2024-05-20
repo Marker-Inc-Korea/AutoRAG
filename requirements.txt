@@ -52,9 +52,6 @@ langchain-core>=0.1.6
 
 # autorag dashboard    
 panel
-holoviews
-hvplot
-duckdb
 seaborn
 ipykernel
 ipywidgets
