@@ -52,8 +52,7 @@ node_lines:
           speed_threshold: 10
           generator_modules:
             - module_type: llama_index_llm
-              llm: openai
-              model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
+              llm: mock
         modules:
           - module_type: fstring
             prompt: [ "Tell me something about the question: {query} \n\n {retrieved_contents}",
@@ -64,6 +63,4 @@ node_lines:
           speed_threshold: 10
         modules:
           - module_type: llama_index_llm
-            llm: [ openai ]
-            model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
-            temperature: [ 0.5, 1.0, 1.5 ]
+            llm: [ mock ]
