@@ -55,3 +55,7 @@ panel
 holoviews
 hvplot
 duckdb
+seaborn
+ipykernel
+ipywidgets
+ipywidgets_bokeh

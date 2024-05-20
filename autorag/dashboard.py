@@ -2,12 +2,14 @@ import ast
 import logging
 import os
 import pathlib
-from typing import Dict
+from typing import Dict, List
 
 import duckdb
 import holoviews as hv
+import matplotlib.pyplot as plt
 import pandas as pd
 import panel as pn
+import seaborn as sns
 
 from autorag.utils.util import dict_to_markdown, dict_to_markdown_table
 
@@ -15,10 +17,21 @@ logger = logging.getLogger("AutoRAG")
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 
-pn.extension('terminal', 'tabulator', 'mathjax', 'vega', console_output='disable', sizing_mode="stretch_width")
+pn.extension('terminal', 'tabulator', 'mathjax', 'vega', 'ipywidgets',
+             console_output='disable', sizing_mode="stretch_width")
 hv.extension('bokeh')
 # DuckDB를 사용하여 CSV 파일 읽기
 con = duckdb.connect(database=':memory:')  # 메모리 데이터베이스 사용
+
+
+def find_node_dir(trial_dir: str) -> List[str]:
+    trial_summary_df = pd.read_csv(os.path.join(trial_dir, 'summary.csv'))
+    result_paths = []
+    for idx, row in trial_summary_df.iterrows():
+        node_line_name = row['node_line_name']
+        node_type = row['node_type']
+        result_paths.append(os.path.join(trial_dir, node_line_name, node_type))
+    return result_paths
 
 
 def get_metric_values(node_summary_df: pd.DataFrame) -> Dict:
@@ -35,24 +48,24 @@ def make_trial_summary_md(trial_dir):
 - Trial Directory : {trial_dir}
 
 """
-    for idx, row in trial_summary_csv.iterrows():
-        node_line_name = row['node_line_name']
-        node_type = row['node_type']
-        node_summary_filepath = os.path.join(trial_dir, node_line_name, node_type, 'summary.csv')
+    node_dirs = find_node_dir(trial_dir)
+    for node_dir in node_dirs:
+        node_summary_filepath = os.path.join(node_dir, 'summary.csv')
+        node_type = os.path.basename(node_dir)
         node_summary_df = pd.read_csv(node_summary_filepath)
+        best_row = node_summary_df.loc[node_summary_df['is_best']].iloc[0]
         metric_dict = get_metric_values(node_summary_df)
-
         markdown_text += f"""---
 
 ## {node_type} best module
 
 ### Module Name
 
-{row['best_module_name']}
+{best_row['module_name']}
 
 ### Module Params
 
-{dict_to_markdown(ast.literal_eval(row['best_module_params']), level=3)}
+{dict_to_markdown(ast.literal_eval(best_row['module_params']), level=3)}
 
 ### Metric Values
 
@@ -63,7 +76,27 @@ def make_trial_summary_md(trial_dir):
     return markdown_text
 
 
-#
+def node_view(node_dir: str):
+    non_metric_column_names = ['filename', 'module_name', 'module_params', 'execution_time', 'average_output_token',
+                               'is_best']
+    summary_df = pd.read_csv(os.path.join(node_dir, 'summary.csv'))
+    df_widget = pn.widgets.DataFrame(summary_df, name='Summary DataFrame')
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    metric_df = summary_df.drop(columns=non_metric_column_names, errors='ignore')
+    sns.stripplot(data=metric_df, ax=ax)
+    strip_plot_pane = pn.pane.Matplotlib(fig, tight=True)
+
+    fig2, ax2 = plt.subplots(figsize=(10, 5))
+    sns.boxplot(data=metric_df, ax=ax2)
+    box_plot_pane = pn.pane.Matplotlib(fig2, tight=True)
+    plot_pane = pn.Row(strip_plot_pane, box_plot_pane)
+
+    layout = pn.Column("## Summary distribution plot", plot_pane, "## Summary DataFrame", df_widget)
+    layout.servable()
+    return layout
+
+
 # df_0_summary = con.execute("SELECT * FROM read_csv_auto('./tests/resources/result_project/0/summary.csv')").df()
 # df_0_summary_result_df = con.execute("SELECT node_line_name as name, best_execution_time FROM df_0_summary").df()
 #
@@ -168,16 +201,6 @@ div.card-margin:nth-child(2) {
 # import yaml
 #
 #
-# def find_yaml_files(directory):
-#     # 모든 YAML 파일의 경로를 찾기
-#     yaml_files = []
-#     for root, dirs, files in os.walk(directory):
-#         for file in files:
-#             if file.endswith('.yaml') or file.endswith('.yml'):
-#                 yaml_files.append(os.path.join(root, file))
-#     return yaml_files
-#
-#
 # def yaml_to_markdown(yaml_files):
 #     markdown_content = ""
 #     for yaml_file in yaml_files:
@@ -224,7 +247,9 @@ def run(trial_dir: str):
     trial_summary_md = make_trial_summary_md(trial_dir=trial_dir)
     trial_summary_tab = pn.pane.Markdown(trial_summary_md, sizing_mode='stretch_width')
 
-    tabs = pn.Tabs(('Summary', trial_summary_tab), dynamic=True)
+    node_views = [(str(os.path.basename(node_dir)), node_view(node_dir)) for node_dir in find_node_dir(trial_dir)]
+
+    tabs = pn.Tabs(('Summary', trial_summary_tab), *node_views, dynamic=True)
 
     template = pn.template.FastListTemplate(site="AutoRAG", title="Dashboard",
                                             # sidebar=[path_input, fileSelector, ],
