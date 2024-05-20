@@ -102,10 +102,10 @@ def test_run_passage_compressor_node(node_line_dir):
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "0.parquet"
-    assert summary_df['passage_compressor_retrieval_token_f1'][0] == pytest.approx(single_result_df[
-                                                                                       'retrieval_token_f1'].mean())
-    assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(single_result_df[
-                                                                                              'retrieval_token_precision'].mean())
+    assert summary_df['passage_compressor_retrieval_token_f1'][0] == pytest.approx(
+        single_result_df['retrieval_token_f1'].mean())
+    assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(
+        single_result_df['retrieval_token_precision'].mean())
     assert summary_df['module_name'][0] == "tree_summarize"
     assert summary_df['module_params'][0] == {'llm': 'mock', 'model': 'gpt-3.5-turbo-16k', 'batch': 4}
     assert summary_df['execution_time'][0] > 0
