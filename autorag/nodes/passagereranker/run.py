@@ -6,7 +6,7 @@ from typing import List, Callable, Dict
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 logger = logging.getLogger("AutoRAG")
 
@@ -70,7 +70,8 @@ def run_passage_reranker_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     # change metric name columns to passage_reranker_metric_name
     selected_result = selected_result.rename(columns={
         metric_name: f'passage_reranker_{metric_name}' for metric_name in strategies['metrics']})

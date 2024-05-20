@@ -80,7 +80,8 @@ def run_passage_compressor_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     new_retrieved_contents = selected_result['retrieved_contents']
     previous_result['retrieved_contents'] = new_retrieved_contents
     selected_result = selected_result.drop(columns=['retrieved_contents'])
