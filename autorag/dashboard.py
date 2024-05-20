@@ -1,7 +1,5 @@
 import ast
-import logging
 import os
-import pathlib
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
@@ -11,10 +9,6 @@ import seaborn as sns
 import yaml
 
 from autorag.utils.util import dict_to_markdown, dict_to_markdown_table
-
-logger = logging.getLogger("AutoRAG")
-
-root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 
 pn.extension('terminal', 'tabulator', 'mathjax', 'ipywidgets',
              console_output='disable', sizing_mode="stretch_width")
@@ -129,4 +123,4 @@ def run(trial_dir: str):
 
     template = pn.template.FastListTemplate(site="AutoRAG", title="Dashboard",
                                             main=[tabs], raw_css=[CSS]).servable()
-    template.show(threaded=True)
+    template.show()
