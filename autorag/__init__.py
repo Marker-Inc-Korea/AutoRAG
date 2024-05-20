@@ -4,6 +4,7 @@ import os
 import sys
 
 import transformers
+from llama_index.core.llms.mock import MockLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
@@ -55,6 +56,7 @@ generator_models = {
     'openai': OpenAI,
     'huggingfacellm': HuggingFaceLLM,
     'openailike': OpenAILike,
+    'mock': MockLLM,
 }
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"
