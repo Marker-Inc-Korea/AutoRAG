@@ -6,7 +6,7 @@ from typing import Callable, List, Dict
 import pandas as pd
 
 from autorag.evaluate.metric import retrieval_token_recall, retrieval_token_precision, retrieval_token_f1
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
 from autorag.utils.util import fetch_contents
 
@@ -76,7 +76,8 @@ def run_passage_compressor_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     new_retrieved_contents = selected_result['retrieved_contents']
     previous_result['retrieved_contents'] = new_retrieved_contents
     selected_result = selected_result.drop(columns=['retrieved_contents'])

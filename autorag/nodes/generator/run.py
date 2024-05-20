@@ -6,7 +6,7 @@ import pandas as pd
 
 from autorag.evaluate import evaluate_generation
 from autorag.evaluate.util import cast_metrics
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 
 def run_generator_node(modules: List[Callable],
@@ -72,7 +72,8 @@ def run_generator_node(modules: List[Callable],
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
     if strategies.get('token_threshold') is not None:
         results, filenames = filter_by_threshold(results, token_usages, strategies['token_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, metric_names, filenames)
+    selected_result, selected_filename = select_best(results, metric_names, filenames,
+                                                     strategies.get('strategy', 'mean'))
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add 'is_best' column at summary file
