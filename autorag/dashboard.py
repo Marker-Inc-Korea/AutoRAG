@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import panel as pn
 import seaborn as sns
+import yaml
 
 from autorag.utils.util import dict_to_markdown, dict_to_markdown_table
 
@@ -201,18 +202,15 @@ div.card-margin:nth-child(2) {
 # import yaml
 #
 #
-# def yaml_to_markdown(yaml_files):
-#     markdown_content = ""
-#     for yaml_file in yaml_files:
-#         with open(yaml_file, 'r', encoding='utf-8') as file:
-#             try:
-#                 # YAML 파일 로드
-#                 content = yaml.safe_load(file)
-#                 # Markdown 문법으로 포맷팅
-#                 markdown_content += f"## {yaml_file.replace(f'{PROJECT_DIR}/', '')}\n```yaml\n{yaml.dump(content, allow_unicode=True)}\n```\n\n"
-#             except yaml.YAMLError as exc:
-#                 print(f"Error in {yaml_file}: {exc}")
-#     return markdown_content
+def yaml_to_markdown(yaml_filepath):
+    markdown_content = ""
+    with open(yaml_filepath, 'r', encoding='utf-8') as file:
+        try:
+            content = yaml.safe_load(file)
+            markdown_content += f"## {os.path.basename(yaml_filepath)}\n```yaml\n{yaml.dump(content, allow_unicode=True)}\n```\n\n"
+        except yaml.YAMLError as exc:
+            print(f"Error in {yaml_filepath}: {exc}")
+    return markdown_content
 #
 #
 # # --TextInput--
@@ -237,9 +235,7 @@ div.card-margin:nth-child(2) {
 # btn_info = pn.widgets.RadioButtonGroup(name='show info', options=['debug', 'info', 'warning'])
 #
 # yaml_files = find_yaml_files(PROJECT_DIR)
-# yamlFileMarkdown = yaml_to_markdown(yaml_files)
-#
-# yamlFile = pn.pane.Markdown(yamlFileMarkdown, sizing_mode='stretch_width')
+
 #
 # tabs = pn.Tabs(('Chart', layout3), ('Config', yamlFile), dynamic=True)
 
@@ -249,7 +245,11 @@ def run(trial_dir: str):
 
     node_views = [(str(os.path.basename(node_dir)), node_view(node_dir)) for node_dir in find_node_dir(trial_dir)]
 
-    tabs = pn.Tabs(('Summary', trial_summary_tab), *node_views, dynamic=True)
+    yaml_file_markdown = yaml_to_markdown(os.path.join(trial_dir, "config.yaml"))
+
+    yaml_file = pn.pane.Markdown(yaml_file_markdown, sizing_mode='stretch_width')
+
+    tabs = pn.Tabs(('Summary', trial_summary_tab), *node_views, ('Used YAML file', yaml_file), dynamic=True)
 
     template = pn.template.FastListTemplate(site="AutoRAG", title="Dashboard",
                                             # sidebar=[path_input, fileSelector, ],
