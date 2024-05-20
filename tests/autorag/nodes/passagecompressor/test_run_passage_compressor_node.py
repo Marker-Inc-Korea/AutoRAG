@@ -17,8 +17,8 @@ qa_data = pd.DataFrame({
     'qid': ['id-1', 'id-2', 'id-3'],
     'query': ['query-1', 'query-2', 'query-3'],
     'retrieval_gt': [
-        [['doc-1'], ['doc-2']],
-        [[]],
+        [['doc-1', 'doc-2']],
+        [['doc-3']],
         [['doc-5'], ['doc-6']],
     ],
     'generation_gt': [['generation-1'], ['generation-2'], ['generation-3']],
