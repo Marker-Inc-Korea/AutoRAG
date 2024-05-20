@@ -6,7 +6,7 @@ from typing import List, Callable, Dict, Tuple
 import pandas as pd
 
 from autorag.evaluate import evaluate_retrieval
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
@@ -116,7 +116,8 @@ def run_retrieval_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add summary.csv 'is_best' column

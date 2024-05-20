@@ -85,6 +85,21 @@ def validate_strategy_inputs(results: List[pd.DataFrame], columns: Iterable[str]
     return results, columns, metadatas
 
 
+def select_best(results: List[pd.DataFrame],
+                columns: Iterable[str],
+                metadatas: Optional[List[Any]] = None,
+                strategy_name: str = 'mean',
+                ) -> Tuple[pd.DataFrame, Any]:
+    strategy_func_dict = {
+        'mean': select_best_average,
+        'rank': select_best_rr,
+    }
+    if strategy_name not in strategy_func_dict:
+        raise ValueError(f'Input strategy name {strategy_name} is not in {strategy_func_dict.keys()}')
+
+    return strategy_func_dict[strategy_name](results, columns, metadatas)
+
+
 def select_best_average(results: List[pd.DataFrame], columns: Iterable[str],
                         metadatas: Optional[List[Any]] = None) -> Tuple[pd.DataFrame, Any]:
     """

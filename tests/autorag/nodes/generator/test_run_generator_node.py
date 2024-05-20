@@ -50,6 +50,7 @@ def test_run_generator_node(node_line_dir):
     module_params = [{'llm': 'mock', 'temperature': 0.5, 'top_p': 0.9, 'max_tokens': 128, 'batch': 8},
                      {'llm': 'mock', 'temperature': 1.5, 'top_p': 0.9, 'max_tokens': 32, 'batch': 8}]
     strategies = {
+        'strategy': 'rank',
         'metrics': [{'metric_name': 'bleu'}, {'metric_name': 'meteor'}, {'metric_name': 'rouge'}],
         'speed_threshold': 5,
         'token_threshold': 64,
