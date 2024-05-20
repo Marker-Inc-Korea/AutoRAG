@@ -1,4 +1,5 @@
 import ast
+import logging
 import os
 from typing import Dict, List
 
@@ -12,6 +13,7 @@ from autorag.utils.util import dict_to_markdown, dict_to_markdown_table
 
 pn.extension('terminal', 'tabulator', 'mathjax', 'ipywidgets',
              console_output='disable', sizing_mode="stretch_width")
+logger = logging.getLogger("AutoRAG")
 
 
 def find_node_dir(trial_dir: str) -> List[str]:
@@ -73,17 +75,21 @@ def node_view(node_dir: str):
     # TODO: add on click listener for pop-up of each file detail.
     # https://panel.holoviz.org/reference/widgets/Tabulator.html
 
-    fig, ax = plt.subplots(figsize=(10, 5))
-    metric_df = summary_df.drop(columns=non_metric_column_names, errors='ignore')
-    sns.stripplot(data=metric_df, ax=ax)
-    strip_plot_pane = pn.pane.Matplotlib(fig, tight=True)
+    try:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        metric_df = summary_df.drop(columns=non_metric_column_names, errors='ignore')
+        sns.stripplot(data=metric_df, ax=ax)
+        strip_plot_pane = pn.pane.Matplotlib(fig, tight=True)
 
-    fig2, ax2 = plt.subplots(figsize=(10, 5))
-    sns.boxplot(data=metric_df, ax=ax2)
-    box_plot_pane = pn.pane.Matplotlib(fig2, tight=True)
-    plot_pane = pn.Row(strip_plot_pane, box_plot_pane)
+        fig2, ax2 = plt.subplots(figsize=(10, 5))
+        sns.boxplot(data=metric_df, ax=ax2)
+        box_plot_pane = pn.pane.Matplotlib(fig2, tight=True)
+        plot_pane = pn.Row(strip_plot_pane, box_plot_pane)
 
-    layout = pn.Column("## Summary distribution plot", plot_pane, "## Summary DataFrame", df_widget)
+        layout = pn.Column("## Summary distribution plot", plot_pane, "## Summary DataFrame", df_widget)
+    except Exception as e:
+        logger.error(f'Skipping make boxplot and stripplot with error {e}')
+        layout = pn.Column("## Summary DataFrame", df_widget)
     layout.servable()
     return layout
 
