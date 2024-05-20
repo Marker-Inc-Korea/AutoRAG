@@ -9,7 +9,7 @@ from ragas.metrics import context_precision
 
 
 def ragas_context_precision(queries: List[str], retrieved_contents: List[List[str]], generation_gt: List[List[str]],
-                            openai_model_name: str = "gpt-4-turbo") -> List[float]:
+                            openai_model_name: str = "gpt-3.5-turbo") -> List[float]:
     generation_gt = cast_generation_gt(generation_gt)
     data_samples = {
         'question': queries,
