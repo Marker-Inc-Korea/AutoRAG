@@ -2,6 +2,7 @@ import functools
 import time
 from typing import List, Iterable, Tuple, Any, Optional, Callable
 
+import numpy as np
 import pandas as pd
 
 
@@ -72,6 +73,18 @@ def filter_by_threshold(results, value, threshold, metadatas=None) -> Tuple[List
     return list(filtered_results), list(filtered_metadatas)
 
 
+def validate_strategy_inputs(results: List[pd.DataFrame], columns: Iterable[str],
+                             metadatas: Optional[List[Any]] = None):
+    if metadatas is None:
+        metadatas = [None] * len(results)
+    assert len(results) == len(metadatas), "results and module_filename must have the same length."
+    assert all([isinstance(result, pd.DataFrame) for result in results]), \
+        "results must be pd.DataFrame."
+    assert all([column in result.columns for result in results for column in columns]), \
+        "columns must be in the columns of results."
+    return results, columns, metadatas
+
+
 def select_best_average(results: List[pd.DataFrame], columns: Iterable[str],
                         metadatas: Optional[List[Any]] = None) -> Tuple[pd.DataFrame, Any]:
     """
@@ -87,13 +100,17 @@ def select_best_average(results: List[pd.DataFrame], columns: Iterable[str],
         The metadata will be returned even if you did not give input 'metadatas' parameter.
     :rtype: Tuple[pd.DataFrame, Any]
     """
-    if metadatas is None:
-        metadatas = [None] * len(results)
-    assert len(results) == len(metadatas), "results and module_filename must have the same length."
-    assert all([isinstance(result, pd.DataFrame) for result in results]), \
-        "results must be pd.DataFrame."
-    assert all([column in result.columns for result in results for column in columns]), \
-        "columns must be in the columns of results."
+    results, columns, metadatas = validate_strategy_inputs(results, columns, metadatas)
     each_average = [df[columns].mean(axis=1).mean() for df in results]
     best_index = each_average.index(max(each_average))
+    return results[best_index], metadatas[best_index]
+
+
+def select_best_rr(results: List[pd.DataFrame], columns: Iterable[str],
+                   metadatas: Optional[List[Any]] = None) -> Tuple[pd.DataFrame, Any]:
+    results, columns, metadatas = validate_strategy_inputs(results, columns, metadatas)
+    each_average_df = pd.DataFrame([df[columns].mean(axis=0).to_dict() for df in results])
+    rank_df = each_average_df.rank(ascending=False)
+    rr_df = rank_df.applymap(lambda x: 1 / x)
+    best_index = np.array(rr_df.sum(axis=1)).argmax()
     return results[best_index], metadatas[best_index]
