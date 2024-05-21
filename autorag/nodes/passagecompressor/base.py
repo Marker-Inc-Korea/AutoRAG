@@ -54,6 +54,7 @@ def passage_compressor_node(func):
                 ids=retrieved_ids,
                 **kwargs
             )
+            result = list(map(lambda x: [x], result))
         elif func.__name__ == 'pass_compressor':
             result = func(contents=retrieved_contents)
         else:
