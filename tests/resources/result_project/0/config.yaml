@@ -15,8 +15,7 @@ node_lines:
           llm: openai
           temperature: [0.2, 1.0]
         - module_type: hyde
-          llm: openai
-          max_token: 64
+          llm: mock
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: retrieval
@@ -42,8 +41,7 @@ node_lines:
         speed_threshold: 10
       modules:
         - module_type: tree_summarize
-          llm: openai
-          model: gpt-3.5-turbo-16k
+          llm: mock
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: prompt_maker
@@ -52,8 +50,7 @@ node_lines:
         speed_threshold: 10
         generator_modules:
           - module_type: llama_index_llm
-            llm: openai
-            model: [gpt-3.5-turbo-16k, gpt-3.5-turbo-1106]
+            llm: mock
       modules:
         - module_type: fstring
           prompt: ["Tell me something about the question: {query} \n\n {retrieved_contents}",
@@ -64,6 +61,4 @@ node_lines:
         speed_threshold: 10
       modules:
         - module_type: llama_index_llm
-          llm: [openai]
-          model: [gpt-3.5-turbo-16k, gpt-3.5-turbo-1106]
-          temperature: [0.5, 1.0, 1.5]
+          llm: mock
