@@ -1,34 +1,35 @@
-numpy
-pandas
-tqdm
+numpy~=1.26.4
+pandas~=2.2.2
+tqdm~=4.66.2
 tiktoken>=0.7.0  # for counting token
 openai>=1.0.0
 rank_bm25  # for bm25 retrieval
-transformers
-swifter  # for parallel pandas apply
-pyyaml  # for yaml file
+transformers~=4.40.1
+swifter~=1.4.0
+pyyaml~=6.0.1
 pyarrow  # for pandas with parquet
 fastparquet  # for pandas with parquet
-sacrebleu  # for bleu score
-evaluate  # for meteor and other scores
+sacrebleu~=2.4.2
+evaluate~=0.4.2
 rouge_score  # for rouge score
-rich  # for pretty logging
+rich~=13.7.1
 chromadb>=0.5.0 # for vectordb retrieval
-click  # for cli
-fastapi  # for api server
-uvicorn  # for api server
-torch  # for monot5 reranker
+click~=8.1.7
+fastapi~=0.110.3
+uvicorn~=0.29.0
+torch~=2.3.0
 sentencepiece  # for monot5 reranker
-guidance # for qa data creation
+guidance~=0.1.13
 cohere>=5.0.0a9 # for cohere services
 tokenlog>=0.0.2 # for token logging
-aiohttp # for async http requests
+aiohttp~=3.9.5
 bert_score # for bert score
 sentence-transformers # for sentence transformer reranker
-FlagEmbedding # for flag embedding reranker
-ragas # evaluation data generation & evaluation
-ray # for parallel processing
-kiwipiepy  # for BM25 Korean tokenizer
+FlagEmbedding~=1.2.9
+ragas~=0.1.7
+ray~=2.12.0
+kiwipiepy~=0.17.1
+llmlingua~=0.2.2 # for longllmlingua
 
 ### LlamaIndex ###
 llama-index>=0.10.1
@@ -44,7 +45,7 @@ llama-index-llms-openai-like
 llama-index-retrievers-bm25
 
 # WebUI
-streamlit
+streamlit~=1.33.0
 
 
 ### Langchain ###
