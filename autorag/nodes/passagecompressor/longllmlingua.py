@@ -44,4 +44,7 @@ def llmlingua_pure(query: str,
     )
     compressed_prompt_txt = compressed_prompt["compressed_prompt"]
 
-    return compressed_prompt_txt
+    # separate out the question and instruction
+    result = '\n\n'.join(compressed_prompt_txt.split("\n\n")[1:-1])
+
+    return result
