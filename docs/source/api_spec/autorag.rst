@@ -24,6 +24,14 @@ autorag.cli module
    :undoc-members:
    :show-inheritance:
 
+autorag.dashboard module
+------------------------
+
+.. automodule:: autorag.dashboard
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.deploy module
 ---------------------
 

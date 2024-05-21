@@ -8,6 +8,7 @@ from typing import Optional
 
 import click
 
+from autorag import dashboard
 from autorag.deploy import Runner
 from autorag.deploy import extract_best_config as original_extract_best_config
 from autorag.evaluator import Evaluator
@@ -71,6 +72,12 @@ def run_web(yaml_path: Optional[str], project_dir: Optional[str], trial_path: Op
 
 
 @click.command()
+@click.option('--trial_dir', type=click.Path(dir_okay=True, file_okay=False, exists=True), required=True)
+def run_dashboard(trial_dir: str):
+    dashboard.run(trial_dir)
+
+
+@click.command()
 @click.option('--trial_path', type=click.Path(), help='Path to the trial directory.')
 @click.option('--output_path', type=click.Path(), help='Path to the output directory.'
                                                        ' Must be .yaml or .yml file.')
@@ -94,6 +101,7 @@ def restart_evaluate(trial_path):
 cli.add_command(evaluate, 'evaluate')
 cli.add_command(run_api, 'run_api')
 cli.add_command(run_web, 'run_web')
+cli.add_command(run_dashboard, 'dashboard')
 cli.add_command(extract_best_config, 'extract_best_config')
 cli.add_command(restart_evaluate, 'restart_evaluate')
 
