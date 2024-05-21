@@ -22,6 +22,7 @@ def longllmlingua(queries: List[str],
     )
     results = [llmlingua_pure(query, contents_, llm_lingua, instructions, target_token, **kwargs)
                for query, contents_ in zip(queries, contents)]
+    del llm_lingua
     return results
 
 

@@ -46,6 +46,14 @@ def passage_compressor_node(func):
             )
             del llm
             result = list(map(lambda x: [x], result))
+        elif func.__name__ == 'longllmlingua':
+            result = func(
+                queries=queries,
+                contents=retrieved_contents,
+                scores=retrieve_scores,
+                ids=retrieved_ids,
+                **kwargs
+            )
         elif func.__name__ == 'pass_compressor':
             result = func(contents=retrieved_contents)
         else:
