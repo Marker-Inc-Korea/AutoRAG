@@ -10,11 +10,11 @@ def test_longllmlingua_default():
     check_result(result)
 
 
-def test_refine_node():
+def test_longllmlingua_node():
     result = longllmlingua(
         "project_dir",
         df,
-        max_tokens=75,
+        target_token=75,
     )
     assert isinstance(result, pd.DataFrame)
     contents = result['retrieved_contents'].tolist()
