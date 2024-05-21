@@ -3,7 +3,17 @@ import time
 import pandas as pd
 import pytest
 
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best_average, select_best_rr
+
+sample_dfs = [
+    pd.DataFrame(
+        {'content': ['a', 'b', 'c'], 'retrieval_f1': [0.1, 0.2, 0.3], 'retrieval_recall': [0.1, 0.2, 0.3]}),
+    pd.DataFrame(
+        {'content': ['d', 'e', 'f'], 'retrieval_f1': [0.2, 0.3, 0.4], 'retrieval_recall': [0.2, 0.3, 0.4]}),
+    pd.DataFrame(
+        {'content': ['g', 'h', 'i'], 'retrieval_f1': [0.3, 0.4, 0.5], 'retrieval_recall': [0.3, 0.4, 0.5]}),
+]
+sample_metadatas = ['a', 'b', 'c']
 
 
 def test_measure_speed():
@@ -36,16 +46,18 @@ def test_avoid_empty_result():
 
 
 def test_select_best_average():
-    sample_dfs = [
-        pd.DataFrame(
-            {'content': ['a', 'b', 'c'], 'retrieval_f1': [0.1, 0.2, 0.3], 'retrieval_recall': [0.1, 0.2, 0.3]}),
-        pd.DataFrame(
-            {'content': ['d', 'e', 'f'], 'retrieval_f1': [0.2, 0.3, 0.4], 'retrieval_recall': [0.2, 0.3, 0.4]}),
-        pd.DataFrame(
-            {'content': ['g', 'h', 'i'], 'retrieval_f1': [0.3, 0.4, 0.5], 'retrieval_recall': [0.3, 0.4, 0.5]}),
-    ]
-    sample_metadatas = ['a', 'b', 'c']
     best_df, best_filename = select_best_average(sample_dfs, ['retrieval_f1', 'retrieval_recall'], sample_metadatas)
+    assert best_df['content'].tolist() == ['g', 'h', 'i']
+    assert best_df['retrieval_f1'].tolist() == [0.3, 0.4, 0.5]
+    assert best_df['retrieval_recall'].tolist() == [0.3, 0.4, 0.5]
+    assert best_filename == 'c'
+
+    best_df, _ = select_best_average(sample_dfs, ['retrieval_f1', 'retrieval_recall'])
+    assert best_df['content'].tolist() == ['g', 'h', 'i']
+
+
+def test_select_best_rr():
+    best_df, best_filename = select_best_rr(sample_dfs, ['retrieval_f1', 'retrieval_recall'], sample_metadatas)
     assert best_df['content'].tolist() == ['g', 'h', 'i']
     assert best_df['retrieval_f1'].tolist() == [0.3, 0.4, 0.5]
     assert best_df['retrieval_recall'].tolist() == [0.3, 0.4, 0.5]
