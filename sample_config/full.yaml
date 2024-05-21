@@ -23,7 +23,8 @@ node_lines:
   nodes:
     - node_type: retrieval
       strategy:
-        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision,
+                   retrieval_ndcg, retrieval_map, retrieval_mrr ]
         speed_threshold: 10
       top_k: 10
       modules:
@@ -87,8 +88,14 @@ node_lines:
         - module_type: pass_passage_filter
         - module_type: similarity_threshold_cutoff
           threshold: 0.85
+        - module_type: similarity_percentile_cutoff
+          percentile: 0.6
         - module_type: recency_filter
           threshold: 2015-01-01
+        - module_type: threshold_cutoff
+          threshold: 0.85
+        - module_type: percentile_cutoff
+          percentile: 0.6
     - node_type: passage_compressor
       strategy:
         metrics: [retrieval_token_f1, retrieval_token_recall, retrieval_token_precision]

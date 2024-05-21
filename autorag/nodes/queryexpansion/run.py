@@ -1,15 +1,15 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict, Optional
 from copy import deepcopy
+from typing import List, Callable, Dict, Optional
 
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils.util import make_combinations, explode
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
+from autorag.utils.util import make_combinations, explode
 
 logger = logging.getLogger("AutoRAG")
 
@@ -93,7 +93,7 @@ def run_query_expansion_node(modules: List[Callable],
         # run evaluation
         evaluation_results = list(map(lambda result: evaluate_one_query_expansion_node(
             retrieval_callables, retrieval_params, result['queries'].tolist(), retrieval_gt,
-            general_strategy['metrics'], project_dir, previous_result), results))
+            general_strategy['metrics'], project_dir, previous_result, strategies.get('strategy', 'mean')), results))
 
         evaluation_df = pd.DataFrame({
             'filename': filenames,
@@ -102,7 +102,8 @@ def run_query_expansion_node(modules: List[Callable],
         })
         summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
 
-        best_result, best_filename = select_best_average(evaluation_results, general_strategy['metrics'], filenames)
+        best_result, best_filename = select_best(evaluation_results, general_strategy['metrics'], filenames,
+                                                 strategies.get('strategy', 'mean'))
         # change metric name columns to query_expansion_metric_name
         best_result = best_result.rename(columns={
             metric_name: f'query_expansion_{metric_name}' for metric_name in strategies['metrics']})
@@ -127,13 +128,16 @@ def evaluate_one_query_expansion_node(retrieval_funcs: List[Callable],
                                       retrieval_gt: List[List[str]],
                                       metrics: List[str],
                                       project_dir,
-                                      previous_result: pd.DataFrame) -> pd.DataFrame:
+                                      previous_result: pd.DataFrame,
+                                      strategy_name: str) -> pd.DataFrame:
     previous_result['queries'] = expanded_queries
     retrieval_results = list(map(lambda x: x[0](project_dir=project_dir, previous_result=previous_result, **x[1]),
                                  zip(retrieval_funcs, retrieval_params)))
-    evaluation_results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, metrics),
+    evaluation_results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, metrics,
+                                                                    previous_result['query'].tolist(),
+                                                                    previous_result['generation_gt'].tolist()),
                                   retrieval_results))
-    best_result, _ = select_best_average(evaluation_results, metrics)
+    best_result, _ = select_best(evaluation_results, metrics, strategy_name=strategy_name)
     best_result = pd.concat([previous_result, best_result], axis=1)
     return best_result
 

@@ -6,7 +6,7 @@ from typing import List, Callable, Dict
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 logger = logging.getLogger("AutoRAG")
 
@@ -20,7 +20,8 @@ def run_passage_augmenter_node(modules: List[Callable],
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
-    retrieval_gt = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))['retrieval_gt'].tolist()
+    qa_df = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+    retrieval_gt = qa_df['retrieval_gt'].tolist()
     retrieval_gt = [[[str(uuid) for uuid in sub_array] if sub_array.size > 0 else [] for sub_array in inner_array]
                     for inner_array in retrieval_gt]
 
@@ -31,7 +32,9 @@ def run_passage_augmenter_node(modules: List[Callable],
     # run metrics before filtering
     if strategies.get('metrics') is None:
         raise ValueError("You must at least one metrics for passage_augmenter evaluation.")
-    results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics')), results))
+    results = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics'),
+                                                         qa_df['query'].tolist(),
+                                                         qa_df['generation_gt'].tolist()), results))
 
     # save results to folder
     save_dir = os.path.join(node_line_dir, "passage_augmenter")  # node name
@@ -53,7 +56,8 @@ def run_passage_augmenter_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     # change metric name columns to passage_augmenter_metric_name
     selected_result = selected_result.rename(columns={
         metric_name: f'passage_augmenter_{metric_name}' for metric_name in strategies['metrics']})

@@ -8,10 +8,10 @@ import tokenlog
 
 from autorag.evaluate import evaluate_generation
 from autorag.evaluate.util import cast_metrics
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils import validate_qa_dataset
-from autorag.utils.util import make_combinations, explode
+from autorag.utils.util import make_combinations, explode, split_dataframe
 
 
 def run_prompt_maker_node(modules: List[Callable],
@@ -106,10 +106,15 @@ def run_prompt_maker_node(modules: List[Callable],
         generation_gt = qa_data['generation_gt'].tolist()
         generation_gt = list(map(lambda x: x.tolist(), generation_gt))
 
-        # run evaluations
-        evaluation_results = list(map(lambda result: evaluate_one_prompt_maker_node(
-            generator_callables, generator_params, result['prompts'].tolist(),
-            generation_gt, general_strategy['metrics'], project_dir), results))
+        all_prompts = []
+        for result in results:
+            all_prompts.extend(result['prompts'].tolist())
+
+        evaluation_result_all = evaluate_one_prompt_maker_node(all_prompts, generator_callables, generator_params,
+                                                               generation_gt * len(results),
+                                                               general_strategy['metrics'], project_dir,
+                                                               strategy_name=strategies.get('strategy', 'mean'))
+        evaluation_results = split_dataframe(evaluation_result_all, chunk_size=len(results[0]))
 
         evaluation_df = pd.DataFrame({
             'filename': filenames,
@@ -118,7 +123,8 @@ def run_prompt_maker_node(modules: List[Callable],
         })
         summary_df = pd.merge(on='filename', left=summary_df, right=evaluation_df, how='left')
 
-        best_result, best_filename = select_best_average(evaluation_results, metric_names, filenames)
+        best_result, best_filename = select_best(evaluation_results, metric_names, filenames,
+                                                 strategies.get('strategy', 'mean'))
         # change metric name columns to prompt_maker_metric_name
         best_result = best_result.rename(columns={
             metric_name: f'prompt_maker_{metric_name}' for metric_name in metric_names})
@@ -155,19 +161,20 @@ def make_generator_callable_params(strategy_dict: Dict):
     return explode(modules, param_combinations)
 
 
-def evaluate_one_prompt_maker_node(generator_funcs: List[Callable],
+def evaluate_one_prompt_maker_node(prompts: List[str],
+                                   generator_funcs: List[Callable],
                                    generator_params: List[Dict],
-                                   prompts: List[str],
                                    generation_gt: List[List[str]],
                                    metrics: Union[List[str], List[Dict]],
-                                   project_dir) -> pd.DataFrame:
+                                   project_dir,
+                                   strategy_name: str) -> pd.DataFrame:
     input_df = pd.DataFrame({'prompts': prompts})
     generator_results = list(map(lambda x: x[0](project_dir=project_dir, previous_result=input_df, **x[1]),
                                  zip(generator_funcs, generator_params)))
     evaluation_results = list(map(lambda x: evaluate_generator_result(x[0], generation_gt, metrics),
                                   zip(generator_results, generator_funcs)))
     metric_names = list(map(lambda x: x['metric_name'], metrics)) if isinstance(metrics[0], dict) else metrics
-    best_result, _ = select_best_average(evaluation_results, metric_names)
+    best_result, _ = select_best(evaluation_results, metric_names, strategy_name=strategy_name)
     best_result = pd.concat([input_df, best_result], axis=1)
     return best_result  # it has 'generated_texts' column
 

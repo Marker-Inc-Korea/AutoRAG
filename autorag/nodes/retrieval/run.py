@@ -6,7 +6,7 @@ from typing import List, Callable, Dict, Tuple
 import pandas as pd
 
 from autorag.evaluate import evaluate_retrieval
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
@@ -33,7 +33,8 @@ def run_retrieval_node(modules: List[Callable],
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
-    retrieval_gt = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))['retrieval_gt'].tolist()
+    qa_df = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+    retrieval_gt = qa_df['retrieval_gt'].tolist()
     retrieval_gt = [[[str(uuid) for uuid in sub_array] if sub_array.size > 0 else [] for sub_array in inner_array]
                     for inner_array in retrieval_gt]
 
@@ -50,7 +51,9 @@ def run_retrieval_node(modules: List[Callable],
         # run metrics before filtering
         if strategies.get('metrics') is None:
             raise ValueError("You must at least one metrics for retrieval evaluation.")
-        result = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics')), result))
+        result = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategies.get('metrics'),
+                                                            qa_df['query'].tolist(),
+                                                            qa_df['generation_gt'].tolist()), result))
 
         # save results to folder
         filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'),
@@ -113,7 +116,8 @@ def run_retrieval_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add summary.csv 'is_best' column
@@ -126,18 +130,21 @@ def run_retrieval_node(modules: List[Callable],
     return best_result
 
 
-def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics) -> pd.DataFrame:
+def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics,
+                            queries: List[str], generation_gt: List[List[str]]) -> pd.DataFrame:
     """
     Evaluate retrieval node from retrieval node result dataframe.
 
     :param result_df: The result dataframe from a retrieval node.
     :param retrieval_gt: Ground truth for retrieval from qa dataset.
     :param metrics: Metric list from input strategies.
+    :param queries: Query list from input strategies.
+    :param generation_gt: Ground truth for generation from qa dataset.
     :return: Return result_df with metrics columns.
         The columns will be 'retrieved_contents', 'retrieved_ids', 'retrieve_scores', and metric names.
     """
 
-    @evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=metrics)
+    @evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=metrics, queries=queries, generation_gt=generation_gt)
     def evaluate_this_module(df: pd.DataFrame):
         return df['retrieved_contents'].tolist(), df['retrieved_ids'].tolist(), df['retrieve_scores'].tolist()
 

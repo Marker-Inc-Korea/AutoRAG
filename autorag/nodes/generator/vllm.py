@@ -42,7 +42,7 @@ def vllm(prompts: List[str], llm: str, **kwargs) -> Tuple[List[str], List[List[i
     generated_token_ids = list(map(lambda x: x.outputs[0].token_ids, results))
     log_probs: List[SampleLogprobs] = list(map(lambda x: x.outputs[0].logprobs, results))
     generated_log_probs = list(map(lambda x: list(map(
-        lambda y: y[0][y[1]], zip(x[0], x[1])
+        lambda y: y[0][y[1]].logprob, zip(x[0], x[1])
     )), zip(log_probs, generated_token_ids)))
     destroy_vllm_instance(vllm_model)
     return generated_texts, generated_token_ids, generated_log_probs
@@ -71,5 +71,6 @@ def destroy_vllm_instance(vllm_instance):
         destroy_model_parallel()
         del vllm_instance
         torch.cuda.synchronize()
+        torch.cuda.empty_cache()
     else:
         del vllm_instance

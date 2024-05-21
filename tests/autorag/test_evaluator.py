@@ -234,8 +234,6 @@ async def mock_apredict(self, prompt, **kwargs):
     return prompt.format(**kwargs)
 
 
-@patch.object(OpenAI, "acomplete", mock_acomplete)
-@patch.object(OpenAI, "apredict", mock_apredict)
 def test_restart_last_node(evaluator):
     compressor_error_folder_path = os.path.join(resource_dir, 'result_project', '1')
     base_restart_trial(evaluator, compressor_error_folder_path)

@@ -6,8 +6,7 @@ from typing import Callable, List, Dict
 import pandas as pd
 
 from autorag.evaluate.metric import retrieval_token_recall, retrieval_token_precision, retrieval_token_f1
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
-from autorag.utils import validate_qa_dataset, validate_corpus_dataset
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import fetch_contents
 
 
@@ -40,16 +39,21 @@ def run_passage_compressor_node(modules: List[Callable],
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
+    # make retrieval contents gt
+    qa_data = pd.read_parquet(os.path.join(data_dir, "qa.parquet"))
+    corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+    # check qa_data have retrieval_gt
+    assert all(len(x[0]) > 0 for x in qa_data['retrieval_gt'].tolist()), \
+        "Can't use passage compressor if you don't have retrieval gt values in QA dataset."
+
     # run modules
     results, execution_times = zip(*map(lambda task: measure_speed(
         task[0], project_dir=project_dir, previous_result=previous_result, **task[1]), zip(modules, module_params)))
     results = list(results)
     average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
-    # make retrieval contents gt
-    qa_data = pd.read_parquet(os.path.join(data_dir, "qa.parquet"))
-    corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
-    retrieval_contents_gt = make_contents_gt(qa_data, corpus_data)
+    retrieval_contents_gt = list(map(lambda x: fetch_contents(corpus_data, x), qa_data['retrieval_gt'].tolist()))
+    retrieval_contents_gt = list(map(lambda x: list(itertools.chain.from_iterable(x)), retrieval_contents_gt))
 
     # run metrics before filtering
     if strategies.get('metrics') is None:
@@ -76,7 +80,8 @@ def run_passage_compressor_node(modules: List[Callable],
     # filter by strategies
     if strategies.get('speed_threshold') is not None:
         results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best_average(results, strategies.get('metrics'), filenames)
+    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                     strategies.get('strategy', 'mean'))
     new_retrieved_contents = selected_result['retrieved_contents']
     previous_result['retrieved_contents'] = new_retrieved_contents
     selected_result = selected_result.drop(columns=['retrieved_contents'])
@@ -114,10 +119,3 @@ def evaluate_passage_compressor_node(result_df: pd.DataFrame,
     )), metrics))
     result_df = pd.concat([result_df, pd.DataFrame(metrics_scores)], axis=1)
     return result_df
-
-
-def make_contents_gt(qa_data: pd.DataFrame, corpus_data: pd.DataFrame) -> List[List[str]]:
-    validate_qa_dataset(qa_data)
-    validate_corpus_dataset(corpus_data)
-    retrieval_gt_ids = qa_data['retrieval_gt'].apply(lambda x: list(itertools.chain.from_iterable(x))).tolist()
-    return fetch_contents(corpus_data, retrieval_gt_ids)
