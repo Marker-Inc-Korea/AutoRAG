@@ -24,7 +24,7 @@ node_lines:
     - node_type: retrieval
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision,
-                   retrieval_ndcg, retrieval_map, retrieval_mrr, ragas_context_precision ]
+                   retrieval_ndcg, retrieval_map, retrieval_mrr ]
         speed_threshold: 10
       top_k: 10
       modules:
