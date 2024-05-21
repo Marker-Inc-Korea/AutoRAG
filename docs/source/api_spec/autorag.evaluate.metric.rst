@@ -28,14 +28,6 @@ autorag.evaluate.metric.retrieval\_contents module
    :undoc-members:
    :show-inheritance:
 
-autorag.evaluate.metric.retrieval\_no\_gt module
-------------------------------------------------
-
-.. automodule:: autorag.evaluate.metric.retrieval_no_gt
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 autorag.evaluate.metric.util module
 -----------------------------------
 
