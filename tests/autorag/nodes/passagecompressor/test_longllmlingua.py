@@ -5,7 +5,8 @@ from tests.autorag.nodes.passagecompressor.test_base_passage_compressor import (
                                                                                 check_result)
 
 
-def test_tree_summarize_default():
+def test_longllmlingua_default():
     llm = OpenAI()
     result = longllmlingua.__wrapped__(queries, retrieved_contents, [], [], llm)
+    print(result)
     check_result(result)

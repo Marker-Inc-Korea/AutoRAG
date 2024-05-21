@@ -31,8 +31,10 @@ def llmlingua_pure(query: str,
                    target_token: int = 300,
                    **kwargs,
                    ) -> str:
+    # split by "\n\n" (recommended by LongLLMLingua authors)
+    new_context_texts = [c for context in contents for c in context.split("\n\n")]
     compressed_prompt = llm_lingua.compress_prompt(
-        contents,
+        new_context_texts,
         question=query,
         instruction=instructions,
         rank_method="longllmlingua",
@@ -41,8 +43,4 @@ def llmlingua_pure(query: str,
     )
     compressed_prompt_txt = compressed_prompt["compressed_prompt"]
 
-    # separate out the question and instruction (appended to top and bottom)
-    compressed_prompt_txt_list = compressed_prompt_txt.split("\n\n")
-    compressed_prompt_txt_list = compressed_prompt_txt_list[1:-1]
-
-    return compressed_prompt_txt_list
+    return compressed_prompt_txt
