@@ -15,6 +15,25 @@ def longllmlingua(queries: List[str],
                   target_token: int = 300,
                   **kwargs,
                   ) -> List[str]:
+    """
+    Compresses the retrieved texts using LongLLMLingua.
+    For more information, visit https://github.com/microsoft/LLMLingua.
+
+    :param queries: The queries for retrieved passages.
+    :param contents: The contents of retrieved passages.
+    :param scores: The scores of retrieved passages.
+        Do not use in this function, so you can pass an empty list.
+    :param ids: The ids of retrieved passages.
+        Do not use in this function, so you can pass an empty list.
+    :param model_name: The model name to use for compression.
+        Default is "NousResearch/Llama-2-7b-hf".
+    :param instructions: The instructions for compression.
+        Default is None. When it is None, it will use default instructions.
+    :param target_token: The target token for compression.
+        Default is 300.
+    :param kwargs: Additional keyword arguments.
+    :return: The list of compressed texts.
+    """
     if instructions is None:
         instructions = "Given the context, please answer the final question"
     llm_lingua = PromptCompressor(
@@ -33,6 +52,18 @@ def llmlingua_pure(query: str,
                    target_token: int = 300,
                    **kwargs,
                    ) -> str:
+    """
+    Return the compressed text.
+
+    :param query: The query for retrieved passages.
+    :param contents: The contents of retrieved passages.
+    :param llm_lingua: The llm instance that will be used to compress.
+    :param instructions: The instructions for compression.
+    :param target_token: The target token for compression.
+        Default is 300.
+    :param kwargs: Additional keyword arguments.
+    :return: The compressed text.
+    """
     # split by "\n\n" (recommended by LongLLMLingua authors)
     new_context_texts = [c for context in contents for c in context.split("\n\n")]
     compressed_prompt = llm_lingua.compress_prompt(
