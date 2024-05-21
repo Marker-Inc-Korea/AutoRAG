@@ -17,8 +17,8 @@ qa_data = pd.DataFrame({
     'qid': ['id-1', 'id-2', 'id-3'],
     'query': ['query-1', 'query-2', 'query-3'],
     'retrieval_gt': [
-        [['doc-1'], ['doc-2']],
-        [[]],
+        [['doc-1', 'doc-2']],
+        [['doc-3']],
         [['doc-5'], ['doc-6']],
     ],
     'generation_gt': [['generation-1'], ['generation-2'], ['generation-3']],
@@ -102,10 +102,10 @@ def test_run_passage_compressor_node(node_line_dir):
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "0.parquet"
-    assert summary_df['passage_compressor_retrieval_token_f1'][0] == pytest.approx(single_result_df[
-                                                                                       'retrieval_token_f1'].mean())
-    assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(single_result_df[
-                                                                                              'retrieval_token_precision'].mean())
+    assert summary_df['passage_compressor_retrieval_token_f1'][0] == pytest.approx(
+        single_result_df['retrieval_token_f1'].mean())
+    assert summary_df['passage_compressor_retrieval_token_precision'][0] == pytest.approx(
+        single_result_df['retrieval_token_precision'].mean())
     assert summary_df['module_name'][0] == "tree_summarize"
     assert summary_df['module_params'][0] == {'llm': 'mock', 'model': 'gpt-3.5-turbo-16k', 'batch': 4}
     assert summary_df['execution_time'][0] > 0
