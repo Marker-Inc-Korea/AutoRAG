@@ -32,7 +32,8 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
   - [1. Prepare your evaluation data](#1-prepare-your-evaluation-data)
   - [2. Evaluate your data to various RAG modules](#2-evaluate-your-data-to-various-rag-modules)
   - [3. Use a found optimal RAG pipeline](#3-use-a-found-optimal-rag-pipeline)
-  - [4. Share your RAG pipeline](#4-share-your-rag-pipeline)
+  - [4. Run Dashboard to see the result](#4-run-dashboard)
+  - [5. Share your RAG pipeline](#5-share-your-rag-pipeline)
   - [+ Config yaml file](#-create-your-own-config-yaml-file)
 - [Supporting RAG modules](#supporting-nodes--modules)
 - [Roadmap](#roadmap)
@@ -162,7 +163,15 @@ You can run api server with CLI command.
 autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
 ```
 
-### 4. Share your RAG pipeline
+### 4. Run Dashboard
+
+You can run dashboard to easily see the result.
+
+```bash
+autorag dashboard --trial_dir /your/path/to/trial_dir
+```
+
+### 5. Share your RAG pipeline
 
 You can use your RAG pipeline from extracted pipeline yaml file.
 This extracted pipeline is great for sharing your RAG pipeline to others.
@@ -252,12 +261,12 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 # 🛣Roadmap
 
 - [ ] Policy Module for modular RAG pipeline
-- [ ] Visualize evaluation result
+- [x] Visualize evaluation result
 - [ ] Visualize config yaml file
-- [ ] More RAG modules support
+- [x] More RAG modules support
 - [x] Token usage strategy
 - [ ] Multi-modal support
-- [ ] More evaluation metrics
+- [x] More evaluation metrics
 - [ ] Answer Filtering Module
 - [x] Restart optimization from previous trial
 

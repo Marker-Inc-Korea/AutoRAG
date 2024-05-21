@@ -49,3 +49,10 @@ streamlit
 
 ### Langchain ###
 langchain-core>=0.1.6
+
+# autorag dashboard    
+panel
+seaborn
+ipykernel
+ipywidgets
+ipywidgets_bokeh
