@@ -6,7 +6,7 @@ from typing import Callable, List, Dict
 import pandas as pd
 
 from autorag.evaluate.metric import retrieval_token_recall, retrieval_token_precision, retrieval_token_f1
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average
+from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import fetch_contents
 
 
