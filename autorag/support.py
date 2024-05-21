@@ -53,6 +53,7 @@ def get_support_modules(module_name: str) -> Callable:
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
         'refine': ('autorag.nodes.passagecompressor', 'refine'),
+        'longllmlingua': ('autorag.nodes.passagecompressor', 'longllmlingua'),
         # prompt_maker
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'long_context_reorder': ('autorag.nodes.promptmaker', 'long_context_reorder'),
