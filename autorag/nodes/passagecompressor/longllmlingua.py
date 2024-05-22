@@ -1,5 +1,6 @@
 from typing import List, Optional
 
+import torch
 from llmlingua import PromptCompressor
 
 from autorag.nodes.passagecompressor.base import passage_compressor_node
@@ -41,7 +42,11 @@ def longllmlingua(queries: List[str],
     )
     results = [llmlingua_pure(query, contents_, llm_lingua, instructions, target_token, **kwargs)
                for query, contents_ in zip(queries, contents)]
+
     del llm_lingua
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     return results
 
 
