@@ -19,6 +19,9 @@ node_lines:
         - module_type: hyde
           llm: openai
           max_token: 64
+        - module_type: multi_query_expansion
+          llm: openai
+          temperature: [ 0.2, 1.0 ]
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: retrieval
