@@ -12,6 +12,14 @@ autorag.nodes.passagecompressor.base module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagecompressor.longllmlingua module
+----------------------------------------------------
+
+.. automodule:: autorag.nodes.passagecompressor.longllmlingua
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagecompressor.pass\_compressor module
 -------------------------------------------------------
 
