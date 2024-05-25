@@ -29,6 +29,7 @@ FlagEmbedding # for flag embedding reranker
 ragas # evaluation data generation & evaluation
 ray # for parallel processing
 kiwipiepy  # for BM25 Korean tokenizer
+llmlingua # for longllmlingua
 
 ### LlamaIndex ###
 llama-index>=0.10.1

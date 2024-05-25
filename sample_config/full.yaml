@@ -111,6 +111,7 @@ node_lines:
         - module_type: refine
           llm: openai
           model: gpt-3.5-turbo-16k
+        - module_type: longllmlingua
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: prompt_maker
