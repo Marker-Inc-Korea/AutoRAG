@@ -16,7 +16,8 @@ multi_query_expansion_prompt = """You are an AI language model assistant.
 
 
 @query_expansion_node
-def multi_query_expansion(queries: List[str], llm: LLMPredictorType,
+def multi_query_expansion(queries: List[str],
+                          llm: LLMPredictorType,
                           prompt: str = multi_query_expansion_prompt,
                           batch: int = 16) -> List[List[str]]:
     """
@@ -37,7 +38,8 @@ def multi_query_expansion(queries: List[str], llm: LLMPredictorType,
     return results
 
 
-async def multi_query_expansion_pure(query: str, llm: LLMPredictorType,
+async def multi_query_expansion_pure(query: str,
+                                     llm: LLMPredictorType,
                                      prompt: str = multi_query_expansion_prompt) -> List[str]:
     if prompt == "":
         prompt = multi_query_expansion_prompt
