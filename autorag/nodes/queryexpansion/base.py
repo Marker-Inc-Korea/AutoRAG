@@ -46,7 +46,7 @@ def query_expansion_node(func):
         # run query expansion function
         expanded_queries = func(queries=queries,
                                 prompt=prompt,
-                                generator_funcs=generator_callable,
+                                generator_func=generator_callable,
                                 generator_params=generator_param,
                                 batch=batch)
         return expanded_queries
