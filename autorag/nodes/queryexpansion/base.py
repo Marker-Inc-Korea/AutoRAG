@@ -28,27 +28,20 @@ def query_expansion_node(func):
         if func.__name__ == "pass_query_expansion":
             return func(queries=queries)
 
-        # set generator module for query expansion
-        generator_callable, generator_param = make_generator_callable_param(kwargs)
-
         # pop prompt from kwargs
         if "prompt" in kwargs.keys():
             prompt = kwargs.pop("prompt")
         else:
             prompt = ""
 
-        # pop batch from kwargs
-        if "batch" in kwargs.keys():
-            batch = kwargs.pop("batch")
-        else:
-            batch = 16
+        # set generator module for query expansion
+        generator_callable, generator_param = make_generator_callable_param(kwargs)
 
         # run query expansion function
         expanded_queries = func(queries=queries,
                                 prompt=prompt,
                                 generator_func=generator_callable,
-                                generator_params=generator_param,
-                                batch=batch)
+                                generator_params=generator_param)
         return expanded_queries
 
     return wrapper

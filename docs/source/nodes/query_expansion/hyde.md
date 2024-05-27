@@ -13,7 +13,9 @@ The HyDE is inspired by the paper "[Precise Zero-shot Dense Retrieval without Re
 
 **Additional Parameters**:
 
-  - **batch**: How many calls to make at once. Default is 16.
+- **prompt**: You can use your own custom prompt for the LLM model.
+  Default prompt is come from the
+  paper "[Precise Zero-shot Dense Retrieval without Relevance Labels](https://arxiv.org/abs/2212.10496)".
 
 ## **Example config.yaml**
 ```yaml
