@@ -18,7 +18,9 @@ node_lines:
           llm: openai
           model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
         - module_type: hyde
+          generator_module_type: llama_index_llm
           llm: openai
+          model: [ gpt-3.5-turbo-16k ]
           max_token: 64
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
