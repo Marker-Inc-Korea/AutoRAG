@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import List, Dict, Callable
 
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
@@ -10,7 +10,9 @@ hyde_prompt = "Please write a passage to answer the question"
 
 
 @query_expansion_node
-def hyde(queries: List[str], llm: LLMPredictorType,
+def hyde(queries: List[str],
+         generator_funcs: Callable,
+         generator_params: Dict,
          prompt: str = hyde_prompt,
          batch: int = 16) -> List[List[str]]:
     """
@@ -18,7 +20,8 @@ def hyde(queries: List[str], llm: LLMPredictorType,
     LLM model creates a hypothetical passage.
     And then, retrieve passages using hypothetical passage as a query.
     :param queries: List[str], queries to retrieve.
-    :param llm: llm to use for hypothetical passage generation.
+    :param generator_funcs: Callable, generator functions.
+    :param generator_params: Dict, generator parameters.
     :param prompt: prompt to use when generating hypothetical passage
     :param batch: Batch size for llm.
         Default is 16.

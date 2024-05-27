@@ -11,10 +11,10 @@ node_lines:
           - module_type: vectordb
             embedding_model: openai
       modules:
-        - module_type: pass_query_expansion
         - module_type: query_decompose
+          generator_module_type: llama_index_llm
           llm: openai
-          temperature: [0.2, 1.0]
+          model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
         - module_type: hyde
           llm: openai
           max_token: 64

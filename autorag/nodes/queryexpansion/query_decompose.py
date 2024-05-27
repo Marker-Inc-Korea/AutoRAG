@@ -1,5 +1,5 @@
 import asyncio
-from typing import List
+from typing import List, Callable, Dict
 
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
@@ -54,13 +54,16 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 
 
 @query_expansion_node
-def query_decompose(queries: List[str], llm: LLMPredictorType,
+def query_decompose(queries: List[str],
+                    generator_funcs: Callable,
+                    generator_params: Dict,
                     prompt: str = decompose_prompt,
                     batch: int = 16) -> List[List[str]]:
     """
     decompose query to little piece of questions.
     :param queries: List[str], queries to decompose.
-    :param llm: LLMPredictorType, language model to use.
+    :param generator_funcs: Callable, generator functions.
+    :param generator_params: Dict, generator parameters.
     :param prompt: str, prompt to use for query decomposition.
         default prompt comes from Visconde's StrategyQA few-shot prompt.
     :param batch: int, batch size for llm.

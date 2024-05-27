@@ -77,7 +77,7 @@ def test_load_node_line(evaluator):
 
 
 def test_start_trial(evaluator):
-    evaluator.start_trial(os.path.join(resource_dir, 'simple.yaml'))
+    evaluator.start_trial(os.path.join(resource_dir, 'full.yaml'))
     project_dir = evaluator.project_dir
     assert os.path.exists(os.path.join(project_dir, '0'))
     assert os.path.exists(os.path.join(project_dir, 'data'))
