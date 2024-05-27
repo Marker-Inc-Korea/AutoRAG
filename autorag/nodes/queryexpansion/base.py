@@ -1,11 +1,11 @@
 import functools
 import logging
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Dict, Optional
 
 import pandas as pd
 
-from autorag import generator_models
+from autorag.support import get_support_modules
 from autorag.utils import result_to_dataframe, validate_qa_dataset
 
 logger = logging.getLogger("AutoRAG")
@@ -28,8 +28,8 @@ def query_expansion_node(func):
         if func.__name__ == "pass_query_expansion":
             return func(queries=queries)
 
-        # set module parameters
-        llm_str = kwargs.pop("llm")
+        # set generator module for query expansion
+        generator_callable, generator_param = make_generator_callable_param(kwargs)
 
         # pop prompt from kwargs
         if "prompt" in kwargs.keys():
@@ -43,16 +43,25 @@ def query_expansion_node(func):
         else:
             batch = 16
 
-        # set llm model for query expansion
-        if llm_str in generator_models:
-            llm = generator_models[llm_str](**kwargs)
-        else:
-            logger.error(f"llm_str {llm_str} does not exist.")
-            raise KeyError(f"llm_str {llm_str} does not exist.")
-
         # run query expansion function
-        expanded_queries = func(queries=queries, llm=llm, prompt=prompt, batch=batch)
-        del llm
+        expanded_queries = func(queries=queries,
+                                prompt=prompt,
+                                generator_func=generator_callable,
+                                generator_params=generator_param,
+                                batch=batch)
         return expanded_queries
 
     return wrapper
+
+
+def make_generator_callable_param(generator_dict: Optional[Dict]):
+    if 'generator_module_type' not in generator_dict.keys():
+        generator_dict = {
+            'generator_module_type': 'llama_index_llm',
+            'llm': 'openai',
+            'model': 'gpt-3.5-turbo',
+        }
+    module_str = generator_dict.pop('generator_module_type')
+    module_callable = get_support_modules(module_str)
+    module_param = generator_dict
+    return module_callable, module_param
