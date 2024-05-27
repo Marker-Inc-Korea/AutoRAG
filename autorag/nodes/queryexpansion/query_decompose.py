@@ -68,7 +68,6 @@ def query_decompose(queries: List[str],
         Default is 16.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
-    # Run async query_decompose_pure function
     full_prompts = []
     for query in queries:
         if prompt == "":
