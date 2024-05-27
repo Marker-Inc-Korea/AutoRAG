@@ -55,7 +55,7 @@ def query_expansion_node(func):
 
 
 def make_generator_callable_param(generator_dict: Optional[Dict]):
-    if generator_dict is None:
+    if 'generator_module_type' not in generator_dict.keys():
         generator_dict = {
             'generator_module_type': 'llama_index_llm',
             'llm': 'openai',
