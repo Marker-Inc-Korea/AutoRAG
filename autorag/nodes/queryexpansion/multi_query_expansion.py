@@ -34,7 +34,7 @@ def multi_query_expansion(queries: List[str],
         if prompt is bool(prompt):
             full_prompt = multi_query_expansion_prompt.format(question=query)
         else:
-            full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
+            full_prompt = f"prompt: {prompt}\n\n question: {query}"
         full_prompts.append(full_prompt)
     input_df = pd.DataFrame({"prompts": full_prompts})
     result_df = generator_func(project_dir=None, previous_result=input_df, **generator_params)
