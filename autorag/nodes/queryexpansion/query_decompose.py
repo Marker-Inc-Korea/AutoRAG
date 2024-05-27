@@ -55,8 +55,7 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 def query_decompose(queries: List[str],
                     generator_func: Callable,
                     generator_params: Dict,
-                    prompt: str = decompose_prompt,
-                    batch: int = 16) -> List[List[str]]:
+                    prompt: str = decompose_prompt) -> List[List[str]]:
     """
     decompose query to little piece of questions.
     :param queries: List[str], queries to decompose.
@@ -64,8 +63,6 @@ def query_decompose(queries: List[str],
     :param generator_params: Dict, generator parameters.
     :param prompt: str, prompt to use for query decomposition.
         default prompt comes from Visconde's StrategyQA few-shot prompt.
-    :param batch: int, batch size for llm.
-        Default is 16.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
     full_prompts = []
@@ -76,7 +73,7 @@ def query_decompose(queries: List[str],
             full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
         full_prompts.append(full_prompt)
     input_df = pd.DataFrame({"prompts": full_prompts})
-    result_df = generator_func(project_dir=None, previous_result=input_df, batch=batch, **generator_params)
+    result_df = generator_func(project_dir=None, previous_result=input_df, **generator_params)
     answers = result_df['generated_texts'].tolist()
     results = list(map(lambda x: get_query_decompose(x[0], x[1]), zip(queries, answers)))
     return results

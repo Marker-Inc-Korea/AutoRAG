@@ -13,7 +13,8 @@ The `query_decompose` is used to decompose a ‘multi-hop question’ into ‘mu
 
 **Additional Parameters**:
 
-- **batch**: How many calls to make at once. Default is 16.
+- **prompt**: You can use your own custom prompt for the LLM model.
+  default prompt comes from Visconde's StrategyQA few-shot prompt.
 
 ## **Example config.yaml**
 ```yaml
