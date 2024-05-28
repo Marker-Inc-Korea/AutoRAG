@@ -17,6 +17,9 @@ The options are:
 - rank: This method ranks each module's results per metric, calculates the reciprocal rank, and selects the best module
   based on these rank results.
 
+- normalize mean: This method normalizes each metric's values across modules to a common scale and then determines the
+  best module.
+
 ## Configuration
 
 To use the new strategy parameter, include it in the strategy section of your YAML configuration file.
@@ -44,9 +47,23 @@ node_lines:
       - node_type: retrieval
         top_k: 5
         strategy:
-          metrics: [ precision, recall ]
+          metrics: [ retrieval_precision, retrieval_recall ]
           speed_threshold: 5
           strategy: rank
+```
+
+### Example Configuration Using Normalize Mean Strategy
+
+```yaml
+node_lines:
+  - node_line_name: example_node_line_2
+    nodes:
+      - node_type: retrieval
+        top_k: 5
+        strategy:
+          metrics: [ retrieval_precision, retrieval_recall ]
+          speed_threshold: 5
+          strategy: normalize_mean
 ```
 
 ```{tip}
