@@ -65,7 +65,6 @@ def query_decompose(queries: List[str],
         default prompt comes from Visconde's StrategyQA few-shot prompt.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
-    # Run async query_decompose_pure function
     full_prompts = []
     for query in queries:
         if bool(prompt):
