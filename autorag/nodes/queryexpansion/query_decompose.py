@@ -69,9 +69,9 @@ def query_decompose(queries: List[str],
     full_prompts = []
     for query in queries:
         if bool(prompt):
-            full_prompt = decompose_prompt.format(question=query)
-        else:
             full_prompt = f"prompt: {prompt}\n\n question: {query}"
+        else:
+            full_prompt = decompose_prompt.format(question=query)
         full_prompts.append(full_prompt)
     input_df = pd.DataFrame({"prompts": full_prompts})
     result_df = generator_func(project_dir=None, previous_result=input_df, **generator_params)
