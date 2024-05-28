@@ -49,6 +49,20 @@ node_lines:
           strategy: rank
 ```
 
+### Example Configuration Using Normalize Mean Strategy
+
+```yaml
+node_lines:
+  - node_line_name: example_node_line_2
+    nodes:
+      - node_type: retrieval
+        top_k: 5
+        strategy:
+          metrics: [ precision, recall ]
+          speed_threshold: 5
+          strategy: normalize_mean
+```
+
 ```{tip}
 For more information, go to [custom config](./custom_config.md) and [optimization](./optimization.md) docs.
 ```
