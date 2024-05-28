@@ -31,7 +31,7 @@ def multi_query_expansion(queries: List[str],
     """
     full_prompts = []
     for query in queries:
-        if prompt is bool(prompt):
+        if bool(prompt):
             full_prompt = multi_query_expansion_prompt.format(question=query)
         else:
             full_prompt = f"prompt: {prompt}\n\n question: {query}"
