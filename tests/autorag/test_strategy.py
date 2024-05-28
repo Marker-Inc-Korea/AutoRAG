@@ -3,7 +3,8 @@ import time
 import pandas as pd
 import pytest
 
-from autorag.strategy import measure_speed, filter_by_threshold, select_best_average, select_best_rr
+from autorag.strategy import (measure_speed, filter_by_threshold, select_best_average, select_best_rr,
+                              select_normalize_mean)
 
 sample_dfs = [
     pd.DataFrame(
@@ -58,6 +59,17 @@ def test_select_best_average():
 
 def test_select_best_rr():
     best_df, best_filename = select_best_rr(sample_dfs, ['retrieval_f1', 'retrieval_recall'], sample_metadatas)
+    assert best_df['content'].tolist() == ['g', 'h', 'i']
+    assert best_df['retrieval_f1'].tolist() == [0.3, 0.4, 0.5]
+    assert best_df['retrieval_recall'].tolist() == [0.3, 0.4, 0.5]
+    assert best_filename == 'c'
+
+    best_df, _ = select_best_average(sample_dfs, ['retrieval_f1', 'retrieval_recall'])
+    assert best_df['content'].tolist() == ['g', 'h', 'i']
+
+
+def test_select_normalize_mean():
+    best_df, best_filename = select_normalize_mean(sample_dfs, ['retrieval_f1', 'retrieval_recall'], sample_metadatas)
     assert best_df['content'].tolist() == ['g', 'h', 'i']
     assert best_df['retrieval_f1'].tolist() == [0.3, 0.4, 0.5]
     assert best_df['retrieval_recall'].tolist() == [0.3, 0.4, 0.5]
