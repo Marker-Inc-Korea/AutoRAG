@@ -1,10 +1,8 @@
-import asyncio
-from typing import List
+from typing import List, Callable, Dict
 
-from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
+import pandas as pd
 
 from autorag.nodes.queryexpansion.base import query_expansion_node
-from autorag.utils.util import process_batch
 
 decompose_prompt = """Decompose a question in self-contained sub-questions. Use \"The question needs no decomposition\" when no decomposition is needed.
 
@@ -54,44 +52,45 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 
 
 @query_expansion_node
-def query_decompose(queries: List[str], llm: LLMPredictorType,
-                    prompt: str = decompose_prompt,
-                    batch: int = 16) -> List[List[str]]:
+def query_decompose(queries: List[str],
+                    generator_func: Callable,
+                    generator_params: Dict,
+                    prompt: str = decompose_prompt) -> List[List[str]]:
     """
     decompose query to little piece of questions.
     :param queries: List[str], queries to decompose.
-    :param llm: LLMPredictorType, language model to use.
+    :param generator_func: Callable, generator functions.
+    :param generator_params: Dict, generator parameters.
     :param prompt: str, prompt to use for query decomposition.
         default prompt comes from Visconde's StrategyQA few-shot prompt.
-    :param batch: int, batch size for llm.
-        Default is 16.
     :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
     """
     # Run async query_decompose_pure function
-    tasks = [query_decompose_pure(query, llm, prompt) for query in queries]
-    loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+    full_prompts = []
+    for query in queries:
+        if bool(prompt):
+            full_prompt = f"prompt: {prompt}\n\n question: {query}"
+        else:
+            full_prompt = decompose_prompt.format(question=query)
+        full_prompts.append(full_prompt)
+    input_df = pd.DataFrame({"prompts": full_prompts})
+    result_df = generator_func(project_dir=None, previous_result=input_df, **generator_params)
+    answers = result_df['generated_texts'].tolist()
+    results = list(map(lambda x: get_query_decompose(x[0], x[1]), zip(queries, answers)))
     return results
 
 
-async def query_decompose_pure(query: str, llm: LLMPredictorType,
-                               prompt: str = decompose_prompt) -> List[str]:
+def get_query_decompose(query: str, answer: str) -> List[str]:
     """
     decompose query to little piece of questions.
     :param query: str, query to decompose.
-    :param llm: LLMPredictorType, language model to use.
-    :param prompt: str, prompt to use for query decomposition.
-        default prompt comes from Visconde's StrategyQA few-shot prompt.
+    :param answer: str, answer from query_decompose function.
     :return: List[str], list of a decomposed query. Return input query if query is not decomposable.
     """
-    if prompt == "":
-        prompt = decompose_prompt
-    full_prompt = "prompt: " + prompt + "\n\n" "question: " + query
-    answer = await llm.acomplete(full_prompt)
-    if answer.text == "the question needs no decomposition.":
+    if answer.lower() == "the question needs no decomposition":
         return [query]
     try:
-        lines = [line.strip() for line in answer.text.splitlines() if line.strip()]
+        lines = [line.strip() for line in answer.splitlines() if line.strip()]
         if lines[0].startswith("Decompositions:"):
             lines.pop(0)
         questions = [line.split(':', 1)[1].strip() for line in lines if ':' in line]

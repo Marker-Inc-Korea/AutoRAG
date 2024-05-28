@@ -2,17 +2,18 @@ import os.path
 import pathlib
 import shutil
 import tempfile
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.llms.openai import OpenAI
 
-from autorag import generator_models
 from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 from autorag.nodes.retrieval import bm25
 from autorag.utils.util import load_summary_file
-from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resources_dir = os.path.join(root_dir, "resources")
@@ -76,7 +77,7 @@ def base_query_expansion_test(best_result, node_line_dir):
     assert len(summary_df) == 2
     assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['module_name'][0] == "query_decompose"
-    assert summary_df['module_params'][0] == {'llm': "mock", 'temperature': 0.2, 'batch': 7}
+    assert summary_df['module_params'][0] == {'generator_module_type': 'llama_index_llm', 'llm': "mock", 'batch': 7}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True or summary_df['is_best'][0] == False  # is_best is np.bool_
     # test the best file is saved properly
@@ -88,13 +89,13 @@ def base_query_expansion_test(best_result, node_line_dir):
 
 
 def test_run_query_expansion_node(node_line_dir):
-    generator_models['mock'] = MockLLM
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "mock", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
+    module_params = [{'generator_module_type': 'llama_index_llm', 'llm': "mock", 'batch': 7},
+                     {'generator_module_type': 'llama_index_llm', 'llm': "mock"}]
     strategies = {
         'metrics': metrics,
         'speed_threshold': 5,
@@ -106,13 +107,13 @@ def test_run_query_expansion_node(node_line_dir):
 
 
 def test_run_query_expansion_node_default(node_line_dir):
-    generator_models['mock'] = MockLLM
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
     modules = [query_decompose, hyde]
-    module_params = [{'llm': "mock", 'temperature': 0.2, 'batch': 7}, {'llm': "mock"}]
+    module_params = [{'generator_module_type': 'llama_index_llm', 'llm': "mock", 'batch': 7},
+                     {'generator_module_type': 'llama_index_llm', 'llm': "mock"}]
     strategies = {
         'metrics': metrics
     }
@@ -121,13 +122,41 @@ def test_run_query_expansion_node_default(node_line_dir):
 
 
 def test_run_query_expansion_one_module(node_line_dir):
-    generator_models['mock'] = MockLLM
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     previous_result = pd.read_parquet(qa_path)
 
     modules = [query_decompose]
-    module_params = [{'llm': "mock", 'temperature': 0.2}]
+    module_params = [{'generator_module_type': 'llama_index_llm', 'llm': "mock"}]
+    strategies = {
+        'metrics': metrics
+    }
+    best_result = run_query_expansion_node(modules, module_params, previous_result, node_line_dir, strategies)
+    assert set(best_result.columns) == {
+        'qid', 'query', 'generation_gt', 'retrieval_gt', 'queries'  # automatically skip evaluation
+    }
+    summary_filepath = os.path.join(node_line_dir, "query_expansion", "summary.csv")
+    assert os.path.exists(summary_filepath)
+    summary_df = load_summary_file(summary_filepath)
+    assert set(summary_df) == {
+        'filename', 'module_name', 'module_params', 'execution_time', 'is_best'
+    }
+    best_filepath = os.path.join(node_line_dir, "query_expansion", f"best_{summary_df['filename'].values[0]}")
+    assert os.path.exists(best_filepath)
+
+
+async def mock_acomplete(self, messages, **kwargs):
+    return CompletionResponse(text=messages)
+
+
+@patch.object(OpenAI, "acomplete", mock_acomplete)
+def test_run_query_expansion_no_generator(node_line_dir):
+    project_dir = pathlib.PurePath(node_line_dir).parent.parent
+    qa_path = os.path.join(project_dir, "data", "qa.parquet")
+    previous_result = pd.read_parquet(qa_path)
+
+    modules = [query_decompose]
+    module_params = [{}]
     strategies = {
         'metrics': metrics
     }
