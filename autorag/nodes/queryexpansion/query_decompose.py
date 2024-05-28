@@ -68,7 +68,7 @@ def query_decompose(queries: List[str],
     # Run async query_decompose_pure function
     full_prompts = []
     for query in queries:
-        if prompt is bool(prompt):
+        if bool(prompt):
             full_prompt = decompose_prompt.format(question=query)
         else:
             full_prompt = f"prompt: {prompt}\n\n question: {query}"
