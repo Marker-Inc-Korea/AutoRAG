@@ -47,7 +47,7 @@ node_lines:
       - node_type: retrieval
         top_k: 5
         strategy:
-          metrics: [ precision, recall ]
+          metrics: [ retrieval_precision, retrieval_recall ]
           speed_threshold: 5
           strategy: rank
 ```
@@ -61,7 +61,7 @@ node_lines:
       - node_type: retrieval
         top_k: 5
         strategy:
-          metrics: [ precision, recall ]
+          metrics: [ retrieval_precision, retrieval_recall ]
           speed_threshold: 5
           strategy: normalize_mean
 ```
