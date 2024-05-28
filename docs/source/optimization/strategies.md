@@ -17,6 +17,9 @@ The options are:
 - rank: This method ranks each module's results per metric, calculates the reciprocal rank, and selects the best module
   based on these rank results.
 
+- normalize mean: This method normalizes each metric's values across modules to a common scale and then determines the
+  best module.
+
 ## Configuration
 
 To use the new strategy parameter, include it in the strategy section of your YAML configuration file.
