@@ -64,7 +64,7 @@ def make_vllm_instance(llm: str, input_args):
 
 def destroy_vllm_instance(vllm_instance):
     if torch.cuda.is_available():
-        from vllm.model_executor.parallel_utils.parallel_state import (
+        from vllm.distributed.parallel_state import (
             destroy_model_parallel,
         )
 
