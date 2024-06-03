@@ -44,7 +44,7 @@ def cast_qa_dataset(df: pd.DataFrame):
         else:
             raise ValueError(f"generation_gt must be str or list, but got {type(gt)}")
 
-    df = df.reset_index()
+    df = df.reset_index(drop=True)
     validate_qa_dataset(df)
     assert df['qid'].apply(lambda x: isinstance(x, str)).sum() == len(df), \
         "qid must be string type."
@@ -58,7 +58,7 @@ def cast_qa_dataset(df: pd.DataFrame):
 
 
 def cast_corpus_dataset(df: pd.DataFrame):
-    df = df.reset_index()
+    df = df.reset_index(drop=True)
     validate_corpus_dataset(df)
 
     def make_datetime_metadata(x):
