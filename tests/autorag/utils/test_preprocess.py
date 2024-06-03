@@ -12,9 +12,9 @@ from autorag.utils import (validate_qa_dataset, validate_corpus_dataset, cast_qa
 @pytest.fixture
 def qa_df():
     return pd.DataFrame({
-        'qid': ['id1', 'id2'],
-        'query': ['query1', 'query2'],
-        'retrieval_gt': [[['doc1', 'doc3'], ['doc2']], [[]]],
+        'qid': ['id1', 'id2', 'id3'],
+        'query': ['query1', 'query2', 'query3'],
+        'retrieval_gt': [[['doc1', 'doc3'], ['doc2']], [[]], [[]]],
         'generation_gt': 'answer1',
     })
 
@@ -55,6 +55,7 @@ def test_validate_corpus_dataset(corpus_df):
 # Test cast_qa_dataset
 def test_cast_qa_dataset(qa_df):
     # Cast the dataset and check for correct casting
+    qa_df.drop(index=1, inplace=True)
     casted_df = cast_qa_dataset(qa_df)
     assert all(isinstance(x, list) for x in casted_df['retrieval_gt'])
     assert all(isinstance(x[0], list) for x in casted_df['retrieval_gt'])

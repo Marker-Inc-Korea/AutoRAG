@@ -44,6 +44,7 @@ def cast_qa_dataset(df: pd.DataFrame):
         else:
             raise ValueError(f"generation_gt must be str or list, but got {type(gt)}")
 
+    df = df.reset_index()
     validate_qa_dataset(df)
     assert df['qid'].apply(lambda x: isinstance(x, str)).sum() == len(df), \
         "qid must be string type."
