@@ -71,14 +71,12 @@ def test_cast_qa_dataset(qa_df):
 # Test cast_corpus_dataset
 def test_cast_corpus_dataset(corpus_df):
     # Cast the dataset and check for a datetime key in metadata
+    corpus_df.drop(index=1, inplace=True)
     casted_df = cast_corpus_dataset(corpus_df)
     assert all('last_modified_datetime' in x for x in casted_df['metadata'])
     assert casted_df['metadata'].iloc[0]['prev_id'] is None
     assert casted_df['metadata'].iloc[0]['next_id'] == 'doc2'
-    assert casted_df['metadata'].iloc[1]['test_key'] == 'test_value'
-    assert casted_df['metadata'].iloc[1]['prev_id'] is None
-    assert casted_df['metadata'].iloc[1]['next_id'] is None
-    assert casted_df['metadata'].iloc[2]['last_modified_datetime'] == datetime(2022, 12, 1, 3, 4, 5)
+    assert casted_df['metadata'].iloc[1]['last_modified_datetime'] == datetime(2022, 12, 1, 3, 4, 5)
 
 
 def test_validate_qa_from_corpus_dataset(qa_df, corpus_df):

@@ -58,6 +58,7 @@ def cast_qa_dataset(df: pd.DataFrame):
 
 
 def cast_corpus_dataset(df: pd.DataFrame):
+    df = df.reset_index()
     validate_corpus_dataset(df)
 
     def make_datetime_metadata(x):
