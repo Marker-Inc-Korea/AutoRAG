@@ -81,7 +81,7 @@ def test_meta():
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_meta_kor():
-    ko_base_test_generation_metrics(meta_kor, [1.0, 0.0, 1.0], metrics=['meta_kor'])
+    ko_base_test_generation_metrics(meta_kor, [1.0, 1.0, 1.0], metrics=['meta_kor'])
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
