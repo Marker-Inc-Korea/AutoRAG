@@ -402,3 +402,104 @@ async def async_meta(generation_gt: List[str], pred: str,
 
     meta_scores = await asyncio.gather(*(meta_score(meta_prompts[x], generation_gt, pred) for x in metrics))
     return sum(meta_scores) / len(meta_scores)
+
+
+def meta_kor(generation_gt: List[List[str]], generations: List[str],
+             metrics: Optional[List[str]] = None,
+             model: str = 'gpt-4-0125-preview',
+             batch_size: int = 8) -> List[float]:
+    """
+        Calculate G-Eval score.
+        G-eval is a metric that uses high-performance LLM model to evaluate generation performance.
+        It evaluates the generation result by coherence, consistency, fluency, and relevance.
+        It uses only 'openai' model, and we recommend to use gpt-4 for evaluation accuracy.
+
+        :param generation_gt: A list of ground truth.
+            Must be 2-d list of string.
+            Because it can be a multiple ground truth.
+            It will get the max of g_eval score.
+        :param generations: A list of generations that LLM generated.
+        :param metrics: A list of metrics to use for evaluation.
+            Default is all metrics, which is ['coherence', 'consistency', 'fluency', 'relevance'].
+        :param model: OpenAI model name.
+            Default is 'gpt-4-0125-preview'.
+        :param batch_size: The batch size for processing.
+            Default is 8.
+        :return: G-Eval score.
+    """
+    loop = asyncio.get_event_loop()
+    tasks = [async_meta_kor(gt, pred, metrics, model) for gt, pred in zip(generation_gt, generations)]
+    result = loop.run_until_complete(process_batch(tasks, batch_size=batch_size))
+    return result
+
+
+async def async_meta_kor(generation_gt: List[str], pred: str,
+                         metrics: Optional[List[str]] = None,
+                         model: str = 'gpt-4-0125-preview',
+                         ) -> float:
+    available_metrics = ['meta_kor']
+    if metrics is None:
+        metrics = available_metrics
+    else:
+        assert len(metrics) > 0, "metrics must be a list of string"
+        metrics = [metric for metric in metrics if metric in available_metrics]
+
+    current_path = os.path.dirname(os.path.realpath(__file__))
+    prompt_path = os.path.join(current_path, 'g_eval_prompts')
+    meta_prompts = {
+        "meta_kor": open(os.path.join(prompt_path, "meta_kor.txt")).read(),
+    }
+
+    client = AsyncOpenAI()
+
+    async def meta_score(prompt: str, gen_gt: List[str], pred: str):
+        scores = []
+
+        def trim_predictions_to_max_token_length(prediction):
+            """Trims prediction output to 75 tokens"""
+            max_token_length = 75
+            tokenized_prediction = tokenizer.encode(prediction)
+            trimmed_tokenized_prediction = tokenized_prediction[1: max_token_length + 1]
+            trimmed_prediction = tokenizer.decode(trimmed_tokenized_prediction)
+            return trimmed_prediction
+
+        # truncate pred to 75 bpe token
+        tokenizer = LlamaTokenizer.from_pretrained('fxmarty/tiny-llama-fast-tokenizer')
+        truncated_pred = trim_predictions_to_max_token_length(pred)
+
+        for gt in gen_gt:
+            input_prompt = prompt.replace('{{Document}}', gt).replace('{{Summary}}', truncated_pred)
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": input_prompt}
+                ],
+                logprobs=True,
+                top_logprobs=5,
+                temperature=0,
+                max_tokens=2,
+                frequency_penalty=0,
+                presence_penalty=0,
+                stop=None,
+                n=20,
+            )
+            if '(생략)' in prompt:
+                scores.append(get_meta_score(response))
+
+        return max(scores)
+
+    def get_meta_score(responses) -> int:
+        target_tokens = {'-1': 0, '0': 0, '1': 0}
+        for choice in responses.choices:
+            first_top_log_probs = choice.logprobs.content[0].top_logprobs
+            for i, top_log_prob in enumerate(list(map(lambda x: x.token, first_top_log_probs))):
+                if top_log_prob == '3':
+                    target_tokens['1'] += (5 - i)  # Adjusting weight: closer to the top, higher the weight
+                elif top_log_prob == '2':
+                    target_tokens['0'] += (5 - i)
+                elif top_log_prob == '1':
+                    target_tokens['-1'] += (5 - i)
+        return int(max(target_tokens, key=target_tokens.get))
+
+    meta_scores = await asyncio.gather(*(meta_score(meta_prompts[x], generation_gt, pred) for x in metrics))
+    return sum(meta_scores) / len(meta_scores)
