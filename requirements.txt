@@ -29,6 +29,7 @@ FlagEmbedding # for flag embedding reranker
 ragas # evaluation data generation & evaluation
 ray # for parallel processing
 kiwipiepy  # for BM25 Korean tokenizer
+llmlingua # for longllmlingua
 
 ### LlamaIndex ###
 llama-index>=0.10.1
@@ -49,3 +50,10 @@ streamlit
 
 ### Langchain ###
 langchain-core>=0.1.6
+
+# autorag dashboard    
+panel
+seaborn
+ipykernel
+ipywidgets
+ipywidgets_bokeh

@@ -53,4 +53,5 @@ maxdepth: 1
 ---
 tree_summarize.md
 refine.md
+longllmlingua.md
 ```

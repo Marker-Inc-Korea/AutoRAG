@@ -71,4 +71,5 @@ maxdepth: 1
 ---
 query_decompose.md
 hyde.md
+multi_query_expansion.md
 ```

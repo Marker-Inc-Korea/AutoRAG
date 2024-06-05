@@ -1,6 +1,9 @@
-# Query Decompose
+# Multi Query Expansion
 
-The `query_decompose` is used to decompose a ‘multi-hop question’ into ‘multiple single-hop questions’ using a LLM model. The module uses a default decomposition prompt from the [Visconde paper](https://arxiv.org/pdf/2212.09656.pdf)'s StrategyQA few-shot prompt.
+The `multi_query_expansion` automates the process of prompt tuning by using an LLM to generate multiple queries from
+different perspectives for a given user input query. The module uses a default multi-query prompt from
+the [langchain MultiQueryRetriever](https://python.langchain.com/v0.1/docs/modules/data_connection/retrievers/MultiQueryRetriever/)'
+s default query prompt.
 
 ## **Module Parameters**
 
@@ -14,12 +17,13 @@ The `query_decompose` is used to decompose a ‘multi-hop question’ into ‘mu
 **Additional Parameters**:
 
 - **prompt**: You can use your own custom prompt for the LLM model.
-  default prompt comes from Visconde's StrategyQA few-shot prompt.
+  Default prompt comes from langchain MultiQueryRetriever default query prompt.
 
 ## **Example config.yaml**
+
 ```yaml
 modules:
-- module_type: query_decompose
+- module_type: multi_query_expansion
   generator_module_type: llama_index_llm
   llm: openai
   model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]

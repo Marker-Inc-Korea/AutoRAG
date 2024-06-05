@@ -2,6 +2,7 @@ import ast
 import asyncio
 import datetime
 import functools
+import glob
 import itertools
 import logging
 import os
@@ -360,8 +361,74 @@ def filter_dict_keys(dict_, keys: List[str]):
 
 def split_dataframe(df, chunk_size):
     num_chunks = len(df) // chunk_size + 1 if len(df) % chunk_size != 0 else len(df) // chunk_size
-    return list(map(lambda x: df[x * chunk_size:(x + 1) * chunk_size], range(num_chunks)))
+    result = list(map(lambda x: df[x * chunk_size:(x + 1) * chunk_size], range(num_chunks)))
+    result = list(map(lambda x: x.reset_index(drop=True), result))
+    return result
+
+
+def find_trial_dir(project_dir: str) -> List[str]:
+    # Pattern to match directories named with numbers
+    pattern = os.path.join(project_dir, '[0-9]*')
+    all_entries = glob.glob(pattern)
+
+    # Filter out only directories
+    trial_dirs = [entry for entry in all_entries if os.path.isdir(entry) and entry.split(os.sep)[-1].isdigit()]
+
+    return trial_dirs
+
+
+def find_node_summary_files(trial_dir: str) -> List[str]:
+    # Find all summary.csv files recursively
+    all_summary_files = glob.glob(os.path.join(trial_dir, '**', 'summary.csv'), recursive=True)
+
+    # Filter out files that are at a lower directory level
+    filtered_files = [f for f in all_summary_files if f.count(os.sep) > trial_dir.count(os.sep) + 2]
+
+    return filtered_files
 
 
 def normalize_unicode(text: str) -> str:
     return unicodedata.normalize('NFC', text)
+
+
+def dict_to_markdown(d, level=1):
+    """
+    Convert a dictionary to a Markdown formatted string.
+
+    :param d: Dictionary to convert
+    :param level: Current level of heading (used for nested dictionaries)
+    :return: Markdown formatted string
+    """
+    markdown = ""
+    for key, value in d.items():
+        if isinstance(value, dict):
+            markdown += f"{'#' * level} {key}\n"
+            markdown += dict_to_markdown(value, level + 1)
+        elif isinstance(value, list):
+            markdown += f"{'#' * level} {key}\n"
+            for item in value:
+                if isinstance(item, dict):
+                    markdown += dict_to_markdown(item, level + 1)
+                else:
+                    markdown += f"- {item}\n"
+        else:
+            markdown += f"{'#' * level} {key}\n{value}\n"
+    return markdown
+
+
+def dict_to_markdown_table(data, key_column_name: str, value_column_name: str):
+    # Check if the input is a dictionary
+    if not isinstance(data, dict):
+        raise ValueError("Input must be a dictionary")
+
+    # Create the header of the table
+    header = f"| {key_column_name} | {value_column_name} |\n| :---: | :-----: |\n"
+
+    # Create the rows of the table
+    rows = ""
+    for key, value in data.items():
+        rows += f"| {key} | {value} |\n"
+
+    # Combine header and rows
+    markdown_table = header + rows
+    return markdown_table

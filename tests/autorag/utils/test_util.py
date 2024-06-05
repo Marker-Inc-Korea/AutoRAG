@@ -13,7 +13,8 @@ from llama_index.core.llms import CompletionResponse
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
-    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, normalize_unicode
+    convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir, \
+    find_node_summary_files, normalize_unicode, dict_to_markdown, dict_to_markdown_table
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -333,6 +334,22 @@ def test_split_dataframe():
     assert pd.DataFrame({'a': list(range(3)), 'b': list(range(10, 13))}).equals(df_list_2[0])
 
 
+def test_find_trial_dir():
+    project_dir = os.path.join(root_dir, "resources", "result_project")
+    trial_dirs = find_trial_dir(project_dir)
+
+    assert len(trial_dirs) == 4
+    assert all(isinstance(int(os.path.basename(path)), int) for path in trial_dirs)
+
+
+def test_find_node_summary_files():
+    trial_dir = os.path.join(root_dir, "resources", "result_project", "2")
+    node_summary_paths = find_node_summary_files(trial_dir)
+
+    assert len(node_summary_paths) == 4
+    assert all(os.path.basename(path) == 'summary.csv' for path in node_summary_paths)
+
+
 def test_normalize_unicode():
     str1 = "전국보행자전용도로표준데이터"
     str2 = "전국보행자전용도로표준데이터"
@@ -346,3 +363,47 @@ def test_normalize_unicode():
     assert len(new_str1) == 14
     assert len(new_str2) == 14
     assert new_str1 == new_str2
+
+
+def test_dict_to_markdown():
+    data = {
+        "Title": "Sample Document",
+        "Author": "John Doe",
+        "Content": {
+            "Introduction": "This is the introduction.",
+            "Body": [
+                "First point",
+                "Second point",
+                {"Subsection": "Details about the second point"}
+            ],
+            "Conclusion": "This is the conclusion."
+        }
+    }
+    markdown_text = dict_to_markdown(data)
+    result_text = f"""# Title
+Sample Document
+# Author
+John Doe
+# Content
+## Introduction
+This is the introduction.
+## Body
+- First point
+- Second point
+### Subsection
+Details about the second point
+## Conclusion
+This is the conclusion.
+"""
+    assert result_text == markdown_text
+
+
+def test_dict_to_markdown_table():
+    data = {"key1": "value1", "key2": "value2"}
+    result = dict_to_markdown_table(data, 'havertz', 'william')
+    result_text = """| havertz | william |
+| :---: | :-----: |
+| key1 | value1 |
+| key2 | value2 |
+"""
+    assert result == result_text

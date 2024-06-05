@@ -18,6 +18,7 @@ def get_support_modules(module_name: str) -> Callable:
         'query_decompose': ('autorag.nodes.queryexpansion', 'query_decompose'),
         'hyde': ('autorag.nodes.queryexpansion', 'hyde'),
         'pass_query_expansion': ('autorag.nodes.queryexpansion', 'pass_query_expansion'),
+        'multi_query_expansion': ('autorag.nodes.queryexpansion', 'multi_query_expansion'),
         # retrieval
         'bm25': ('autorag.nodes.retrieval', 'bm25'),
         'vectordb': ('autorag.nodes.retrieval', 'vectordb'),
@@ -53,6 +54,7 @@ def get_support_modules(module_name: str) -> Callable:
         'tree_summarize': ('autorag.nodes.passagecompressor', 'tree_summarize'),
         'pass_compressor': ('autorag.nodes.passagecompressor', 'pass_compressor'),
         'refine': ('autorag.nodes.passagecompressor', 'refine'),
+        'longllmlingua': ('autorag.nodes.passagecompressor', 'longllmlingua'),
         # prompt_maker
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'long_context_reorder': ('autorag.nodes.promptmaker', 'long_context_reorder'),
