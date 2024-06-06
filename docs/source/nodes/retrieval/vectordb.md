@@ -18,9 +18,15 @@ Information about the Embedding model can be found [Supporting Embedding models]
 Plus, you can learn about how to add custom embedding model at [here](../../local_model.md#add-your-embedding-models). 
 ```
 
+- **Parameter**: `embedding_batch`
+- **Usage**: It is the batch size of the embedding model. It automatically set to the ingestion process using embedding
+  model.
+  If you get error on the embedding model, try to lower this parameter.
+
 ## **Example config.yaml**
 ```yaml
 modules:
   - module_type: vectordb
     embedding_model: openai
+    embedding_batch: 64
 ```
