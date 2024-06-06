@@ -88,7 +88,7 @@ def node_view(node_dir: str):
             filename = summary_df['filename'].iloc[event.row]
             filepath = os.path.join(node_dir, filename)
             each_module_df = pd.read_parquet(filepath)
-            each_module_df_widget.stream(each_module_df)
+            each_module_df_widget.value = each_module_df
 
     df_widget = pn.widgets.Tabulator(summary_df, name='Summary DataFrame', formatters=bokeh_formatters,
                                      buttons={'detail': '<i class="fa fa-eye"></i>'}, widths=150)
