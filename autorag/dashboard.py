@@ -81,7 +81,7 @@ def node_view(node_dir: str):
 
     each_module_df_widget = pn.widgets.Tabulator(pd.DataFrame(columns=first_df.columns), name='Module DataFrame',
                                                  formatters=bokeh_formatters,
-                                                 pagination='local', page_size=20)
+                                                 pagination='local', page_size=20, widths=150)
 
     def change_module_widget(event):
         if event.column == 'detail':
@@ -91,7 +91,7 @@ def node_view(node_dir: str):
             each_module_df_widget.stream(each_module_df)
 
     df_widget = pn.widgets.Tabulator(summary_df, name='Summary DataFrame', formatters=bokeh_formatters,
-                                     buttons={'detail': '<i class="fa fa-eye"></i>'})
+                                     buttons={'detail': '<i class="fa fa-eye"></i>'}, widths=150)
     df_widget.on_click(change_module_widget)
 
     try:
