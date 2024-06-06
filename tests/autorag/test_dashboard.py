@@ -30,5 +30,6 @@ def test_make_trial_summary_md():
     assert bool(md_text)
 
 
+@pytest.mark.skip(reason="Can't stop this test on the github action or pytest cli setup")
 def test_dashboard_run():
     dashboard.run(sample_trial_dir)
