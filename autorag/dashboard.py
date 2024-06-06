@@ -8,11 +8,13 @@ import pandas as pd
 import panel as pn
 import seaborn as sns
 import yaml
+from bokeh.models import NumberFormatter, BooleanFormatter
 
 from autorag.utils.util import dict_to_markdown, dict_to_markdown_table
 
 pn.extension('terminal', 'tabulator', 'mathjax', 'ipywidgets',
-             console_output='disable', sizing_mode="stretch_width")
+             console_output='disable', sizing_mode="stretch_width",
+             css_files=["https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"])
 logger = logging.getLogger("AutoRAG")
 
 
@@ -71,9 +73,26 @@ def node_view(node_dir: str):
     non_metric_column_names = ['filename', 'module_name', 'module_params', 'execution_time', 'average_output_token',
                                'is_best']
     summary_df = pd.read_csv(os.path.join(node_dir, 'summary.csv'))
-    df_widget = pn.widgets.Tabulator(summary_df, name='Summary DataFrame')
-    # TODO: add on click listener for pop-up of each file detail.
-    # https://panel.holoviz.org/reference/widgets/Tabulator.html
+    bokeh_formatters = {
+        'float': NumberFormatter(format='0.000'),
+        'bool': BooleanFormatter(),
+    }
+    first_df = pd.read_parquet(os.path.join(node_dir, '0.parquet'))
+
+    each_module_df_widget = pn.widgets.Tabulator(pd.DataFrame(columns=first_df.columns), name='Module DataFrame',
+                                                 formatters=bokeh_formatters,
+                                                 pagination='local', page_size=20)
+
+    def change_module_widget(event):
+        if event.column == 'detail':
+            filename = summary_df['filename'].iloc[event.row]
+            filepath = os.path.join(node_dir, filename)
+            each_module_df = pd.read_parquet(filepath)
+            each_module_df_widget.stream(each_module_df)
+
+    df_widget = pn.widgets.Tabulator(summary_df, name='Summary DataFrame', formatters=bokeh_formatters,
+                                     buttons={'detail': '<i class="fa fa-eye"></i>'})
+    df_widget.on_click(change_module_widget)
 
     try:
         fig, ax = plt.subplots(figsize=(10, 5))
@@ -86,7 +105,8 @@ def node_view(node_dir: str):
         box_plot_pane = pn.pane.Matplotlib(fig2, tight=True)
         plot_pane = pn.Row(strip_plot_pane, box_plot_pane)
 
-        layout = pn.Column("## Summary distribution plot", plot_pane, "## Summary DataFrame", df_widget)
+        layout = pn.Column("## Summary distribution plot", plot_pane, "## Summary DataFrame", df_widget,
+                           "## Module Result DataFrame", each_module_df_widget)
     except Exception as e:
         logger.error(f'Skipping make boxplot and stripplot with error {e}')
         layout = pn.Column("## Summary DataFrame", df_widget)
