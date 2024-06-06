@@ -75,12 +75,12 @@ def extract_values(node: Node, key: str) -> List[str]:
         if key not in module.module_param:
             return []
         value = module.module_param[key]
-        if isinstance(value, str):
+        if isinstance(value, str) or isinstance(value, int):
             return [value]
         elif isinstance(value, list):
             return value
         else:
-            raise ValueError(f"{key} must be str or list, but got {type(value)}")
+            raise ValueError(f"{key} must be str,list or int, but got {type(value)}")
 
     values = list(map(extract_module_values, node.modules))
     return list(set(list(itertools.chain.from_iterable(values))))
