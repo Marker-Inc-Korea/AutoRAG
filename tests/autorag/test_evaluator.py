@@ -69,7 +69,8 @@ def test_load_node_line(evaluator):
     assert node.modules[1].module == vectordb
     assert node.modules[2].module == hybrid_rrf
     assert node.modules[0].module_param == {'bm25_tokenizer': ['facebook/opt-125m', 'porter_stemmer']}
-    assert node.modules[1].module_param == {'embedding_model': ['openai', 'openai']}
+    assert node.modules[1].module_param == {'embedding_model': ['openai', 'openai'],
+                                            'embedding_batch': 50}
     assert node.modules[2].module_param == {
         'rrf_k': 5, 'target_modules': ('bm25', 'vectordb')
     }

@@ -15,7 +15,7 @@ from autorag.utils.util import process_batch, openai_truncate_by_token
 @retrieval_node
 def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collection,
              embedding_model: BaseEmbedding,
-             batch: int = 128) -> Tuple[List[List[str]], List[List[float]]]:
+             embedding_batch: int = 128) -> Tuple[List[List[str]], List[List[float]]]:
     """
     VectorDB retrieval function.
     You have to get a chroma collection that is already ingested.
@@ -26,7 +26,7 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     :param top_k: The number of passages to be retrieved.
     :param collection: A chroma collection instance that will be used to retrieve passages.
     :param embedding_model: An embedding model instance that will be used to embed queries.
-    :param batch: The number of queries to be processed in parallel.
+    :param embedding_batch: The number of queries to be processed in parallel.
         This is used to prevent API error at the query embedding.
         Default is 128.
 
@@ -39,7 +39,7 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     # run async vector_db_pure function
     tasks = [vectordb_pure(input_queries, top_k, collection, embedding_model) for input_queries in queries]
     loop = asyncio.get_event_loop()
-    results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+    results = loop.run_until_complete(process_batch(tasks, batch_size=embedding_batch))
     id_result = list(map(lambda x: x[0], results))
     score_result = list(map(lambda x: x[1], results))
     return id_result, score_result
@@ -77,8 +77,8 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
 
 
 def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, embedding_model: BaseEmbedding,
-                    batch: int = 128):
-    embedding_model.embed_batch_size = batch
+                    embedding_batch: int = 128):
+    embedding_model.embed_batch_size = embedding_batch
     validate_corpus_dataset(corpus_data)
     ids = corpus_data['doc_id'].tolist()
 

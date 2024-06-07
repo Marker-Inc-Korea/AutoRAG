@@ -121,6 +121,14 @@ class Evaluator:
             embedding_models_list = list(chain.from_iterable(
                 map(lambda nodes: extract_values_from_nodes(nodes, 'embedding_model'), node_lines.values())))
 
+            # get embedding batch size in nodes
+            embedding_batch_list = list(chain.from_iterable(
+                map(lambda nodes: extract_values_from_nodes(nodes, 'embedding_batch'), node_lines.values())))
+            if len(embedding_batch_list) == 0:
+                embedding_batch = 100
+            else:
+                embedding_batch = embedding_batch_list[0]
+
             # duplicate check in embedding_models
             embedding_models_list = list(set(embedding_models_list))
 
@@ -140,7 +148,7 @@ class Evaluator:
                 else:
                     logger.error(f"embedding_model_str {embedding_model_str} does not exist.")
                     raise KeyError(f"embedding_model_str {embedding_model_str} does not exist.")
-                vectordb_ingest(collection, self.corpus_data, embedding_model)
+                vectordb_ingest(collection, self.corpus_data, embedding_model, embedding_batch=embedding_batch)
                 logger.info(f'VectorDB corpus embedding complete with {embedding_model_str}.')
                 del embedding_model
                 if torch.cuda.is_available():

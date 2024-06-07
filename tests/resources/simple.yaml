@@ -11,6 +11,7 @@ node_lines:
           bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
         - module_type: vectordb
           embedding_model: [openai, openai]
+          embedding_batch: 50
         - module_type: hybrid_rrf
           rrf_k: 5
           target_modules: ('bm25', 'vectordb') # it will select the best result among each module and fuse it.
