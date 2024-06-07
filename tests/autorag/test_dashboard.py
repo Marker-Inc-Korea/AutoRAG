@@ -4,6 +4,7 @@ import pathlib
 import pandas as pd
 import pytest
 
+from autorag import dashboard
 from autorag.dashboard import get_metric_values, make_trial_summary_md
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
@@ -28,5 +29,7 @@ def test_make_trial_summary_md():
     md_text = make_trial_summary_md(sample_trial_dir)
     assert bool(md_text)
 
-# def test_dashboard_run():
-#     dashboard.run(sample_trial_dir)
+
+@pytest.mark.skip(reason="Can't stop this test on the github action or pytest cli setup")
+def test_dashboard_run():
+    dashboard.run(sample_trial_dir)
