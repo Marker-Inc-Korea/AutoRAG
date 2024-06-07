@@ -38,6 +38,7 @@ node_lines:
         - module_type: bm25
         - module_type: vectordb
           embedding_model: openai
+          embedding_batch: 256
         - module_type: hybrid_rrf
           target_modules: ('bm25', 'vectordb')
           rrf_k: [3, 5, 10]
