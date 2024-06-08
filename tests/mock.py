@@ -101,6 +101,11 @@ async def mock_openai_chat_create(self, messages, model, **kwargs):
                             token=' not',
                             logprob=-0.223,
                             top_logprobs=[],
+                        ),
+                        ChatCompletionTokenLogprob(
+                            token="<|end|>",
+                            logprob=-0.443,
+                            top_logprobs=[],
                         )
                     ]
                 ),
