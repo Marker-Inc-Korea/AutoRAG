@@ -2,7 +2,7 @@
 
 RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
-Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
+Explore our 📖 [Document](https://docs.auto-rag.com)!!
 
 Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
@@ -95,9 +95,9 @@ For evaluation, you need to prepare just three files.
 There is a template for your evaluation data for using AutoRAG.
 
 - Check out how to make evaluation data
-  at [here](https://marker-inc-korea.github.io/AutoRAG/data_creation/tutorial.html).
+  at [here](https://docs.auto-rag.com/data_creation/tutorial.html).
 - Check out the evaluation data rule
-  at [here](https://marker-inc-korea.github.io/AutoRAG/data_creation/data_format.html).
+  at [here](https://docs.auto-rag.com/data_creation/data_format.html).
 - Plus, you can get example datasets for testing AutoRAG at [here](./sample_dataset).
 
 ### 2. Evaluate your data to various RAG modules
@@ -128,7 +128,7 @@ At the trial folder named to numbers (like 0),
 you can check `summary.csv` file that summarizes the evaluation results and the best RAG pipeline for your data.
 
 For more details, you can check out how the folder structure looks like
-at [here](https://marker-inc-korea.github.io/AutoRAG/optimization/folder_structure.html).
+at [here](https://docs.auto-rag.com/optimization/folder_structure.html).
 
 ### 3. Use a found optimal RAG pipeline
 
@@ -148,7 +148,7 @@ runner.run('your question')
 
 Or, you can run this pipeline as api server.
 You can use python code or CLI command.
-Check out API endpoint at [here](https://marker-inc-korea.github.io/AutoRAG/deploy/api_endpoint.html).
+Check out API endpoint at [here](https://docs.auto-rag.com/deploy/api_endpoint.html).
 
 ```python
 from autorag.deploy import Runner
@@ -189,7 +189,7 @@ pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', outp
 
 You can build your own evaluation process with config yaml file.
 You can check detailed explanation how to configure each module and node
-at [here](https://marker-inc-korea.github.io/AutoRAG/nodes/index.html#).
+at [here](https://docs.auto-rag.com/nodes/index.html#).
 
 There is a simple yaml file example.
 
@@ -276,4 +276,4 @@ We are developing AutoRAG as open-source.
 
 So this project welcomes contributions and suggestions. Feel free to contribute to this project.
 
-Plus, check out our detailed documentation at [here](https://marker-inc-korea.github.io/AutoRAG/index.html).
+Plus, check out our detailed documentation at [here](https://docs.auto-rag.com/index.html).

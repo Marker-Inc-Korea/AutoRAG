@@ -17,7 +17,7 @@ So, if we labeled the retrieval_result as ‘1’ for a correct answer and ‘0�
 be `[1, 0, 1, 0]`.
 
 For more information, please refer to the
-following [Dataset Format Docs](https://marker-inc-korea.github.io/AutoRAG/data_creation/data_format.html).
+following [Dataset Format Docs](https://docs.auto-rag.com/data_creation/data_format.html).
 
 In the Apply ‘✅Basic Examples’ below, we'll use the following sample gt and result.
 Hopefully you remember them well.

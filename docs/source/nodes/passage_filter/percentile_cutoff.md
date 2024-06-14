@@ -1,7 +1,7 @@
 # Percentile Cutoff
 
 This module is inspired by
-our [similarity percentile cutoff](https://marker-inc-korea.github.io/AutoRAG/nodes/passage_filter/similarity_percentile_cutoff.html)
+our [similarity percentile cutoff](https://docs.auto-rag.com/nodes/passage_filter/similarity_percentile_cutoff.html)
 module.
 
 Filter out the contents that are below the content's length times percentile.
