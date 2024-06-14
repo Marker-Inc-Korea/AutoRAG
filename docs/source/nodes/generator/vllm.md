@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - vLLM
+      description: Use vLLM in AutoRAG. Highly optimized for AutoRAG when you use local model on GPU.
+      keywords: AutoRAG,RAG,LLM,generator,vLLM,LLM inference
+---
 # vllm
 
 The `vllm` module is generator that using [vllm](https://blog.vllm.ai/2023/06/20/vllm.html).

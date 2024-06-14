@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - hybrid rrf
+    description: Learn about hybrid rrf module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,retrieval,hybrid rrf
+---
 # Hybrid - rrf
 
 The `hybrid_rrf` module is designed to retrieve passages from multiple retrievals. 

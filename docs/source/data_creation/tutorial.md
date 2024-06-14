@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - creating your own RAG evaluation dataset
+      description: Check out AutoRAG dataset format. You will know about how to make AutoRAG compatible RAG evaluation dataset. 
+      keywords: AutoRAG,RAG,RAG evaluation,RAG dataset
+---
 # Start creating your own evaluation data
 
 ## Index

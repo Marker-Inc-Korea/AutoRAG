@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Installation and Setup
+      description: Learn how to install AutoRAG
+      keywords: AutoRAG,RAG,AutoRAG install
+---
 # Installation and Setup
 
 To install AutoRAG, you can use pip:

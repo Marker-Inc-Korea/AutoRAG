@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Make custom config yaml file
+      description: Learn how to make custom configuration YAML file for AutoRAG
+      keywords: AutoRAG,RAG,RAG optimization,AutoRAG YAML,AutoRAG config
+---
 # Make custom config yaml file
 
 ```{warning}

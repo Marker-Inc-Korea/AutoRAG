@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Retrieval
+      description: Learn about retrieval module in AutoRAG
+      keywords: AutoRAG,RAG,Advanced RAG,retrieval
+---
 # 2. Retrieval
 
 ### 🔎 **Definition**

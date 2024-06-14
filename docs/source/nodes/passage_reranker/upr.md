@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - UPR Reranker
+      description: Learn about UPR reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,UPR
+---
 # UPR
 
 The `UPR` module is a reranker based on paper called "[Improving Passage Retrieval with Zero-shot Question Generation](https://arxiv.org/abs/2204.07496)". It uses a language model to generate a question based on the passage and reranks the passages by the likelihood of the question. It can enhance accuracy because it calculates likelihood original passages and related passages (generated) with user's question. 

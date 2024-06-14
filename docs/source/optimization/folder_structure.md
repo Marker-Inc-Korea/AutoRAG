@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Folder Structure
+      description: Learn how the result folder looks like in AutoRAG
+      keywords: AutoRAG,RAG,AutoRAG folder
+---
 # Folder Structure
 
 ## Sample Structure Index

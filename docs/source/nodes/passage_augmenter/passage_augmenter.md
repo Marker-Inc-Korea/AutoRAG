@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Passage Augmenter
+      description: Learn about passage augmenter module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Augmenter
+---
 # 3. Passage Augmenter
 
 ### 🔎 **Definition**

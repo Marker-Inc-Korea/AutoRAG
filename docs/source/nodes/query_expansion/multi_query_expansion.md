@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - Multi Query Expansion
+    description: Learn about multi query expansion module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,query expansion,multi query expansion
+---
 # Multi Query Expansion
 
 The `multi_query_expansion` automates the process of prompt tuning by using an LLM to generate multiple queries from

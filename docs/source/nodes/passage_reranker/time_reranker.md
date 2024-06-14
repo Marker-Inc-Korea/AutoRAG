@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Time Reranker
+      description: Learn about time reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,TimeReranker
+---
 # Time Reranker
 
 This reranker simply sorts the passages by their time.

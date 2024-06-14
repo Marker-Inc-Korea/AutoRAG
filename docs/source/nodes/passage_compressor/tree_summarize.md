@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Tree Summarize
+      description: Learn about passage compressor module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Compressor,tree summarize
+---
 # Tree Summarize
 
 The `Tree_summarize` module is compressor based on [llama_index](https://docs.llamaindex.ai/en/latest/examples/response_synthesizers/tree_summarize.html). 

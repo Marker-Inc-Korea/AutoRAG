@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - Vector DB (MIPS)
+    description: Learn about Vector DB module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,retrieval,Vector DB,MIPS
+---
 # Vectordb
 
 The `VectorDB` module is a retrieval module that uses VectorDB as a backend. You can use Dense Retrieval with this class easily.

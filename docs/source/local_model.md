@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Run local model in AutoRAG
+      description: Learn how to run local model in AutoRAG
+      keywords: AutoRAG,RAG,RAG model,RAG LLM,embedding model,local model
+---
 # Configure LLM & Embedding models
 
 ## Index

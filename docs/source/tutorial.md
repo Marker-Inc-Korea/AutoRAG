@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Tutorial 
+      description: The great start point to optimize your RAG pipeline. RAG tutorial for RAG developers.
+      keywords: AutoRAG,RAG,RAG tutorial,AutoRAG tutorial
+---
 # Tutorial
 
 ```{tip}

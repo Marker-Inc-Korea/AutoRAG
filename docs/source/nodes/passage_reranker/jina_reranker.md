@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - JINA Reranker
+      description: Learn about JINA reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,JINA
+---
 # jina_reranker
 
 The `Jina reranker` module is a reranker from [Jina](https://jina.ai/reranker).

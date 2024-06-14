@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG RAG evaluation dataset format
+      description: Check out AutoRAG dataset format. You will know about how to make AutoRAG compatible RAG evaluation dataset. 
+      keywords: AutoRAG,RAG,RAG evaluation,RAG dataset
+---
 # Dataset Format
 
 There are two kinds of dataset, QA dataset and Corpus dataset.

@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Cohere Reranker
+      description: Learn about cohere reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,Cohere
+---
 # cohere_reranker
 
 The `cohere reranker` module is a reranker from [cohere](https://cohere.ai/).

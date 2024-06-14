@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Long Context Reorder
+      description: Learn about long context reorder module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,long context reorder,lost in the middle
+---
 # Long Context Reorder
 
 [A study](https://arxiv.org/abs/2307.03172) observed that the best performance typically arises when crucial data is

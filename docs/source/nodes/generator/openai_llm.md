@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - OpenAI LLM
+      description: Use OpenAI LLM in AutoRAG. This is optimized to use OpenAI model in AutoRAG.
+      keywords: AutoRAG,RAG,LLM,generator,OpenAI,GPT,gpt-4,gpt-3.5
+---
 # OpenAI LLM
 
 The `openai_llm` module is optimized openai llm module for AutoRAG.

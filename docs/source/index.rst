@@ -6,6 +6,7 @@
    :title: AutoRAG docs documentation
    :description: AutoRAG - AutoML tool for RAG official developer documentation docs
    :keywords: AutoRAG,Auto RAG,RAG,AutoRAG docs,LLM,RAG optimization
+   :robots: index,nofollow
 
 ########################
 AutoRAG documentation

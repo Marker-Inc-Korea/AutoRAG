@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - How optimization works?
+      description: Learn how AutoRAG optimization actually works for optimal RAG pipeline
+      keywords: AutoRAG,RAG,RAG optimize,RAG performance
+---
 # How optimization works
 
 Understanding how optimization really works in AutoRAG can be great for writing your own configuration YAML file. 

@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Passage Filter
+      description: Learn about passage filter module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Filter
+---
 # 5. Passage Filter
 
 ### 🔎 **Definition**

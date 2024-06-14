@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Deploy API endpoint
+      description: Learn how to deploy optimized RAG pipeline to FastAPI API server in AutoRAG
+      keywords: AutoRAG,RAG,RAG deploy,RAG API,FastAPI
+---
 # API endpoint
 
 ## Running API server

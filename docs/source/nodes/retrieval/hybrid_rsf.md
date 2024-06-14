@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - hybrid rsf
+    description: Learn about hybrid rsf module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,retrieval,hybrid rsf
+---
 # Hybrid - rsf
 
 The `hybrid-rsf` module is designed to retrieve passages from multiple retrievals.

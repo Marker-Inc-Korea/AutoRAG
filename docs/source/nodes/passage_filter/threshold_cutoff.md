@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Threshold Cutoff
+      description: Learn about threshold cutoff passage filter module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Filter,threshold cutoff
+---
 # Threshold Cutoff
 
 This module is inspired by

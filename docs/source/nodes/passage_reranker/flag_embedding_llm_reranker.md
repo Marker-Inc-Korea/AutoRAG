@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - Flag Embedding Reranker
+    description: Learn about flag embedding reranker module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,Reranker,FlagEmbedding
+---
 # Flag Embedding LLM Reranker
 
 The `flag embedding llm reranker` module is a reranker using BAAI LLM-based-Reranker model for

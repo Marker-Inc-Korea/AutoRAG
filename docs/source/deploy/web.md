@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Deploy Web Interface
+      description: Learn how to deploy optimized RAG pipeline to streamlit web interface in AutoRAG
+      keywords: AutoRAG,RAG,RAG deploy,RAG web,Streamlit
+---
 # Web Interface
 
 ## Running the Web Interface

@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - HyDE
+    description: Learn about hyde module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,query expansion,HyDE
+---
 # HyDE
 
 The HyDE is inspired by the paper "[Precise Zero-shot Dense Retrieval without Relevance Labels](https://arxiv.org/abs/2212.10496)". It uses a LLM model to generate a hypothetical passage for a given query.

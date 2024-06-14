@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Road to Modular RAG
+      description: Learn about the AutoRAG roadmap to the Modular RAG
+      keywords: AutoRAG,RAG,Modular RAG,Advanced RAG
+---
 # Road to Modular RAG
 
 ## 🤷‍♂️ What is Modular RAG?
