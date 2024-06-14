@@ -2,7 +2,7 @@
 
 The sample_dataset folder does not includes a `qa.parquet`, `corpus.parquet` file that is significantly large and cannot be uploaded directly to Git due to size limitations. 
 
-To prepare and use datasets available in the sample_dataset folder, specifically `triviaqa`, `msmarco` and `eli5`, you can follow the outlined methods below.
+To prepare and use datasets available in the sample_dataset folder, specifically `triviaqa`, `hotpotqa`, `msmarco` and `eli5`, you can follow the outlined methods below.
 
 ## Usage
 
