@@ -6,7 +6,7 @@ from datasets import load_dataset
 
 
 @click.command()
-@click.option('--save_path', type=str, default=pathlib.PurePath(__file__).parent, help='Path to save sample triviaqa dataset.')
+@click.option('--save_path', type=str, default=pathlib.PurePath(__file__).parent, help='Path to save sample hotpotqa dataset.')
 def load_hotpotqa_dataset(save_path):
     # set file path
     file_path = "gnekt/hotpotqa_sample_autorag"
