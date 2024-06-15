@@ -6,7 +6,7 @@ To prepare and use datasets available in the sample_dataset folder, specifically
 
 ## Usage
 
- The example provided uses `triviaqa`, but the same approach applies to `msmarco` and `eli5`.
+ The example provided uses `triviaqa`, but the same approach applies to `msmarco`, `eli5` and `hotpotqa`.
 
 ### 1. Run with a specified save path
 To execute the Python script from the terminal and save the dataset to a specified path, use the command:
