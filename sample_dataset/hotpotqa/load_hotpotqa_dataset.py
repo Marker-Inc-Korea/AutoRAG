@@ -9,7 +9,7 @@ from datasets import load_dataset
 @click.option('--save_path', type=str, default=pathlib.PurePath(__file__).parent, help='Path to save sample hotpotqa dataset.')
 def load_hotpotqa_dataset(save_path):
     # set file path
-    file_path = "gnekt/hotpotqa_sample_autorag"
+    file_path = "gnekt/hotpotqa_small_sample_autorag"
 
     # load dataset
     corpus_dataset = load_dataset(file_path, "corpus")['train'].to_pandas()
