@@ -35,6 +35,8 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 🍯 [Tips/Tricks](https://edai.notion.site/Tips-Tricks-10708a0e36ff461cb8a5d4fb3279ff15?pvs=4)
 
+☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
+
 ---
 
 # 📑 Index
