@@ -10,6 +10,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.llms.openai import OpenAI
+from llama_index.llms.ollama import Ollama
 from llama_index.llms.openai_like import OpenAILike
 from rich.logging import RichHandler
 from swifter import set_defaults
@@ -56,6 +57,7 @@ generator_models = {
     'openai': OpenAI,
     'huggingfacellm': HuggingFaceLLM,
     'openailike': OpenAILike,
+    'ollama': Ollama,
     'mock': MockLLM,
 }
 
