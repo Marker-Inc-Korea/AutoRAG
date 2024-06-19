@@ -1,6 +1,6 @@
 # TroubleShooting
 
-## Installation
+## 1. Installation
 
 ### Could not build wheels
 If you face this kind of error during installation, try some methods below.
@@ -18,8 +18,7 @@ brew install gcc # mac
 
 If you still have trouble, please open an issue on [GitHub](https://github.com/Marker-Inc-Korea/AutoRAG/issues) or chat at our [Discord](https://discord.gg/P4DYXfmSAs) channel.
 
-
-## Optimization
+## 2. Optimization
 
 ### Facing OPENAI API error
 
@@ -103,3 +102,29 @@ You must reset the index of your dataset before running AutoRAG.
 ```python
 df = df.reset_index(drop=True)
 ```
+
+## 3. LlamaIndex
+
+### Facing Import Error
+
+If you encountered the following llama_index ImportError, you need to check your LlamaIndex version.
+
+If it is lower than 0.10.0, you need to use a version at least 0.10.0!
+
+## 4. GPU-related Error
+
+The error appears to be a VRAM out of memory error.
+
+In this case, try lowering the `batch` (which can be set as a module parameter in YAML) as much as possible,
+If that doesn't work, we recommend using a quantized model (if available)!
+
+## 5. UnicodeDecodeError
+
+Error reading a parquet file on Windows!
+
+The workaround on Windows is to use engine='pyarrow',
+This is something that needs to be fixed inside AutoRAG.
+
+We’ll try to fix it in the [issue](https://github.com/Marker-Inc-Korea/AutoRAG/issues/494) :)
+
+For now, please use Mac or Linux (or WSL on Windows)!
