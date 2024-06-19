@@ -41,7 +41,7 @@ llama-index-embeddings-huggingface
 llama-index-llms-openai
 llama-index-llms-huggingface
 llama-index-llms-openai-like
-llama_index.llms.ollama
+llama-index-llms-ollama
 # Retriever
 llama-index-retrievers-bm25
 
