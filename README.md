@@ -72,6 +72,8 @@ Try now and find the best RAG pipeline for your own use-case.
 
 # ⚡ Quick Install
 
+We recommend using Python version 3.9 or higher for AutoRAG.
+
 ```bash
 pip install AutoRAG
 ```
