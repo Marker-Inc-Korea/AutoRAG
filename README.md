@@ -56,10 +56,7 @@ Try now and find the best RAG pipeline for your own use-case.
 
 # ❗Supporting Nodes & modules
 
-![module_1](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/2616f2d9-9bd4-4264-bba6-3cb8ed561bad)
-![module_2](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/8eacfdc7-68aa-4639-ab86-4bcb06bf4286)
-![module_3](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/e05ae458-9920-4eef-9da3-0936715de780)
-
+![module](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/e0cdd5c0-5f46-4103-aa52-0d14417eb3ce)
 You can check our all supporting Nodes & modules
 at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
 
