@@ -25,7 +25,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 ---
 
-### FaQ
+### ☎️ FaQ
 
 🛣️ [Support plans & Roadmap](https://edai.notion.site/Support-plans-Roadmap-02ca7c97376340c393885855e2d99630?pvs=4)
 
@@ -39,24 +39,8 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 ---
 
-# 📑 Index
-
-- [Introduction](#introduction)
-- [Quick Install](#-quick-install)
-- [Index](#-index)
-- [Strengths](#-strengths)
-- [QuickStart](#-quickstart)
-  - [1. Prepare your evaluation data](#1-prepare-your-evaluation-data)
-  - [2. Evaluate your data to various RAG modules](#2-evaluate-your-data-to-various-rag-modules)
-  - [3. Use a found optimal RAG pipeline](#3-use-a-found-optimal-rag-pipeline)
-  - [4. Run Dashboard to see the result](#4-run-dashboard)
-  - [5. Share your RAG pipeline](#5-share-your-rag-pipeline)
-  - [+ Config yaml file](#-create-your-own-config-yaml-file)
-- [Supporting RAG modules](#supporting-nodes--modules)
-- [Roadmap](#roadmap)
-- [Contribution](#contribution)
-
 # Introduction
+
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
@@ -70,6 +54,24 @@ and find the best RAG pipeline for your own use-case.
 AutoRAG supports a simple way to evaluate many RAG module combinations.
 Try now and find the best RAG pipeline for your own use-case.
 
+# ❗Supporting Nodes & modules
+
+![module_1](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/2616f2d9-9bd4-4264-bba6-3cb8ed561bad)
+![module_2](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/8eacfdc7-68aa-4639-ab86-4bcb06bf4286)
+![module_3](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/e05ae458-9920-4eef-9da3-0936715de780)
+
+You can check our all supporting Nodes & modules
+at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+
+# ❗Supporting Evaluation Metrics
+
+You can check our all supporting Evaluation Metrics
+at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+
+- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
+- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+
 # ⚡ Quick Install
 
 We recommend using Python version 3.9 or higher for AutoRAG.
@@ -77,29 +79,6 @@ We recommend using Python version 3.9 or higher for AutoRAG.
 ```bash
 pip install AutoRAG
 ```
-
-# 💪 Strengths
-
-### **1. Find your RAG baseline**
-
-Benchmark RAG pipelines with few lines of code. You can quickly get a high-performance RAG
-pipeline just for your data. Don’t waste time dealing with complex RAG modules and academic paper. Focus on your data.
-
-### **2. Analyze where is wrong**
-
-Sometimes it is hard to keep tracking where is the major problem within your RAG pipeline.
-AutoRAG gives you the data of it, so you can analyze and focus where is the major problem and where you to focus on.
-
-### **3. Quick Starter Pack for your new RAG product**
-
-Get the most effective RAG workflow among many pipelines, and start from
-there.
-Don’t start at toy-project level, start from advanced level.
-
-### **4. Share your experiment to others**
-
-It's really easy to share your experiment to others. Share your config yaml file and
-summary csv files. Plus, check out others result and adapt to your use-case.
 
 # ⚡ QuickStart
 
@@ -263,19 +242,7 @@ node_lines:
 
 ```
 
-# ❗Supporting Nodes & modules
 
-You can check our all supporting Nodes & modules
-at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
-
-# ❗Supporting Evaluation Metrics
-
-You can check our all supporting Evaluation Metrics
-at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
-
-- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
-- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
-- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
 
 # 🛣Roadmap
 
