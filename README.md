@@ -8,7 +8,7 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 ---
 
-### 📌 Colab Tutorial
+### 💪 Colab Tutorial
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 - [Step 2: Create evaluation dataset](https://colab.research.google.com/drive/1HXjVHCLTaX7mkmZp3IKlEPt0B3jVeHvP#scrollTo=cgFUCuaUZvTr)
@@ -25,7 +25,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 ---
 
-### FaQ
+### ☎️ FaQ
 
 🛣️ [Support plans & Roadmap](https://edai.notion.site/Support-plans-Roadmap-02ca7c97376340c393885855e2d99630?pvs=4)
 
@@ -39,24 +39,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 ---
 
-# 📑 Index
-
-- [Introduction](#introduction)
-- [Quick Install](#-quick-install)
-- [Index](#-index)
-- [Strengths](#-strengths)
-- [QuickStart](#-quickstart)
-  - [1. Prepare your evaluation data](#1-prepare-your-evaluation-data)
-  - [2. Evaluate your data to various RAG modules](#2-evaluate-your-data-to-various-rag-modules)
-  - [3. Use a found optimal RAG pipeline](#3-use-a-found-optimal-rag-pipeline)
-  - [4. Run Dashboard to see the result](#4-run-dashboard)
-  - [5. Share your RAG pipeline](#5-share-your-rag-pipeline)
-  - [+ Config yaml file](#-create-your-own-config-yaml-file)
-- [Supporting RAG modules](#supporting-nodes--modules)
-- [Roadmap](#roadmap)
-- [Contribution](#contribution)
-
-# Introduction
+# 😁 Introduction
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
@@ -70,6 +53,28 @@ and find the best RAG pipeline for your own use-case.
 AutoRAG supports a simple way to evaluate many RAG module combinations.
 Try now and find the best RAG pipeline for your own use-case.
 
+# 📌AutoRAG Structure
+
+![Node](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/79dda7ba-e9d8-4552-9e7b-6a5f9edc4c1a)
+
+## ❗Supporting Nodes & modules
+
+![module_1](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/828d8752-13f2-4918-8ca4-2605a86596cb)
+![module_2](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/4db3d83f-3178-4b81-bad1-b751dcd31a13)
+You can check our all supporting Nodes & modules
+at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+
+## ❗Supporting Evaluation Metrics
+
+![Metrics](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/9f090e3c-d762-41cb-9f1d-cd8d7da137dd)
+
+You can check our all supporting Evaluation Metrics
+at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+
+- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
+- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+
 # ⚡ Quick Install
 
 We recommend using Python version 3.9 or higher for AutoRAG.
@@ -78,38 +83,15 @@ We recommend using Python version 3.9 or higher for AutoRAG.
 pip install AutoRAG
 ```
 
-# 💪 Strengths
-
-### **1. Find your RAG baseline**
-
-Benchmark RAG pipelines with few lines of code. You can quickly get a high-performance RAG
-pipeline just for your data. Don’t waste time dealing with complex RAG modules and academic paper. Focus on your data.
-
-### **2. Analyze where is wrong**
-
-Sometimes it is hard to keep tracking where is the major problem within your RAG pipeline.
-AutoRAG gives you the data of it, so you can analyze and focus where is the major problem and where you to focus on.
-
-### **3. Quick Starter Pack for your new RAG product**
-
-Get the most effective RAG workflow among many pipelines, and start from
-there.
-Don’t start at toy-project level, start from advanced level.
-
-### **4. Share your experiment to others**
-
-It's really easy to share your experiment to others. Share your config yaml file and
-summary csv files. Plus, check out others result and adapt to your use-case.
-
 # ⚡ QuickStart
 
 ### 1. Prepare your evaluation data
 
 For evaluation, you need to prepare just three files.
 
-- QA dataset file (qa.parquet)
-- Corpus dataset file (corpus.parquet)
-- Config yaml file (config.yaml)
+1. **QA** dataset file (qa.parquet)
+2. **Corpus** dataset file (corpus.parquet)
+3. **Config yaml file** (config.yaml)
 
 There is a template for your evaluation data for using AutoRAG.
 
@@ -190,6 +172,10 @@ You can run dashboard to easily see the result.
 autorag dashboard --trial_dir /your/path/to/trial_dir
 ```
 
+- sample dashboard:
+
+![dashboard](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/3798827d-31d7-4c4e-a9b1-54340b964e53)
+
 ### 5. Share your RAG pipeline
 
 You can use your RAG pipeline from extracted pipeline yaml file.
@@ -204,90 +190,61 @@ from autorag.deploy import extract_best_config
 pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
 ```
 
-### ➕ Create your own Config yaml file
+### 6. Deploy your optimal RAG pipeline (for testing)
 
-You can build your own evaluation process with config yaml file.
-You can check detailed explanation how to configure each module and node
-at [here](https://docs.auto-rag.com/nodes/index.html#).
+### 6-1. Run as a CLI
 
-There is a simple yaml file example.
+You can use a found optimal RAG pipeline right away with extracted yaml file.
 
-It evaluates two retrieval modules which are BM25 and Vector Retriever, and three reranking modules.
-Lastly, it generates prompt and makes generation with two other LLM models and three temperatures.
+```python
+from autorag.deploy import Runner
 
-```yaml
-node_lines:
-  - node_line_name: retrieve_node_line
-    nodes:
-      - node_type: retrieval
-        strategy:
-          metric: retrieval_f1
-        top_k: 50
-        modules:
-          - module_type: bm25
-          - module_type: vector
-            embedding_model: [ openai, openai_embed_3_large ]
-          - module_type: hybrid_rrf
-            target_modules: ('bm25', 'vectordb')
-            rrf_k: [ 3, 5, 10 ]
-      - node_type: reranker
-        strategy:
-          metric: retrieval_precision
-          speed_threshold: 5
-        top_k: 3
-        modules:
-          - module_type: upr
-          - module_type: tart
-            prompt: Arrange the following sentences in the correct order.
-          - module_type: monoT5
-  - node_line_name: generate_node_line
-    nodes:
-      - node_type: prompt_maker
-        modules:
-          - module_type: fstring
-            prompt: "This is a news dataset, crawled from finance news site. You need to make detailed question about finance news. Do not make questions that not relevant to economy or finance domain.\n{retrieved_contents}\n\nQ: {query}\nA:"
-      - node_type: generator
-        strategy:
-          metric:
-            - metric_name: meteor
-            - metric_name: rouge
-            - metric_name: sem_score
-              embedding_model: openai
-            - metric_name: g_eval
-              model: gpt-3.5-turbo
-        modules:
-          - module_type: llama_index_llm
-            llm: openai
-            model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
-            temperature: [ 0.5, 1.0, 1.5 ]
-
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run('your question')
 ```
 
-# ❗Supporting Nodes & modules
+### 6-2. Run as an API server
 
-You can check our all supporting Nodes & modules
-at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+You can run this pipeline as an API server.
 
-# ❗Supporting Evaluation Metrics
+Check out API endpoint at [here](deploy/api_endpoint.md).
 
-You can check our all supporting Evaluation Metrics
-at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+```python
+from autorag.deploy import Runner
 
-- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
-- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
-- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run_api_server()
+```
 
-# 🛣Roadmap
+```bash
+autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+```
 
-- [ ] Policy Module for modular RAG pipeline
-- [x] Visualize evaluation result
-- [ ] Visualize config yaml file
-- [x] More RAG modules support
-- [x] Token usage strategy
-- [ ] Multi-modal support
-- [x] More evaluation metrics
-- [ ] Answer Filtering Module
-- [x] Restart optimization from previous trial
+### 6-3. Run as a Web Interface
+
+you can run this pipeline as a web interface.
+
+Check out web interface at [here](deploy/web.md).
+
+```bash
+autorag run_web --trial_path your/path/to/trial_path
+```
+
+- sample web interface:
+
+<img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
+
+# Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Marker-Inc-Korea/AutoRAG&type=Date)](https://star-history.com/#Marker-Inc-Korea/AutoRAG&Date)
+
+# Contributors ⭐
+
+Thanks go to these wonderful people:
+
+<a href="https://github.com/Marker-Inc-Korea/AutoRAG/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Marker-Inc-Korea/AutoRAG" />
+</a>
 
 # Contribution
 
