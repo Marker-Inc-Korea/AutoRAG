@@ -226,13 +226,13 @@ you can run this pipeline as a web interface.
 
 Check out web interface at [here](deploy/web.md).
 
-- sample web interface:
-
-<img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
-
 ```bash
 autorag run_web --trial_path your/path/to/trial_path
 ```
+
+- sample web interface:
+
+<img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
 # Star History
 
