@@ -299,7 +299,7 @@ class Evaluator:
 
             previous_node_dir = os.path.join(trial_path, previous_node_line, previous_node)
             best_file_pattern = f'{previous_node_dir}/best_*.parquet'
-            previous_result = pd.read_parquet(glob.glob(best_file_pattern)[0],engine='pyarrow')
+            previous_result = pd.read_parquet(glob.glob(best_file_pattern)[0], engine='pyarrow')
         return previous_result
 
     @staticmethod

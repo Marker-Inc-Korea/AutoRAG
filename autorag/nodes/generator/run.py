@@ -35,7 +35,7 @@ def run_generator_node(modules: List[Callable],
     node_dir = os.path.join(node_line_dir, "generator")  # node name
     if not os.path.exists(node_dir):
         os.makedirs(node_dir)
-    qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"),engine='pyarrow')
+    qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"), engine='pyarrow')
     if 'generation_gt' not in qa_data.columns:
         raise ValueError("You must have 'generation_gt' column in qa.parquet.")
     generation_gt = list(map(lambda x: x.tolist(), qa_data['generation_gt'].tolist()))
@@ -51,7 +51,8 @@ def run_generator_node(modules: List[Callable],
     metric_names, metric_params = cast_metrics(strategies.get('metrics'))
     if metric_names is None or len(metric_names) <= 0:
         raise ValueError("You must at least one metrics for generator evaluation.")
-    results = list(map(lambda result: evaluate_generator_node(result, generation_gt, strategies.get('metrics')), results))
+    results = list(
+        map(lambda result: evaluate_generator_node(result, generation_gt, strategies.get('metrics')), results))
 
     # save results to folder
     filepaths = list(map(lambda x: os.path.join(node_dir, f'{x}.parquet'), range(len(modules))))
