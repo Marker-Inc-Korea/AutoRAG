@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Prev Next Augmenter
+      description: Learn about passage augmenter module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Augmenter,Prev Next Augmenter
+---
 # Prev Next Augmenter
 
 This module is inspired by

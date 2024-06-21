@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - RAG generation metrics
+      description: Learn how to evaluate RAG generations (answers) in AutoRAG
+      keywords: AutoRAG,RAG,RAG evaluation,RAG metrics,RAG metric,LLM metric
+---
 # TroubleShooting
 
 ## 1. Installation

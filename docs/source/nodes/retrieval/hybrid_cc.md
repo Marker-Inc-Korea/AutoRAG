@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - hybrid cc
+    description: Learn about hybrid cc module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,retrieval,hybrid cc
+---
 # Hybrid - cc
 
 The `hybrid-cc` module is designed to retrieve passages from multiple retrievals. Similar to the `hybrid-rrf` module, the `hybrid-cc` module is also aimed at retrieving information from multiple sources.

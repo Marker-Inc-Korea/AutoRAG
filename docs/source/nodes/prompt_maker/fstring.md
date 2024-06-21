@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - F-string
+      description: Learn about f-string module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,prompt
+---
 # F-String
 
 The `fstring` module is prompt maker based on python’s f-string. Make a prompt using f-string from a query and retrieved_contents.

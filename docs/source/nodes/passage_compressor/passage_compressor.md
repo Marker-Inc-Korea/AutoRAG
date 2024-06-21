@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Passage Compressor
+      description: Learn about passage compressor module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Compressor
+---
 # 6. Passage_Compressor
 
 ### 🔎 **Definition**

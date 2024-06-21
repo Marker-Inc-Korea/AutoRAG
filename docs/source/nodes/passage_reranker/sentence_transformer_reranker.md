@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Sentence Transformer Reranker
+      description: Learn about sentence transformer reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,Sentence Transformer
+---
 # Sentence Transformer Reranker
 
 The `sentence transformer reranker` module is a reranker using sentence transformer model for

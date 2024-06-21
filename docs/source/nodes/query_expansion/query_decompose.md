@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Query Decompose
+      description: Learn about query decompose module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,query expansion,query decompose,visconde
+---
 # Query Decompose
 
 The `query_decompose` is used to decompose a ‘multi-hop question’ into ‘multiple single-hop questions’ using a LLM model. The module uses a default decomposition prompt from the [Visconde paper](https://arxiv.org/pdf/2212.09656.pdf)'s StrategyQA few-shot prompt.

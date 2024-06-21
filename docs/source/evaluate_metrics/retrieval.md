@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - RAG retrieval metrics
+      description: Learn how to evaluate RAG retrieval in AutoRAG
+      keywords: AutoRAG,RAG,RAG evaluation,RAG metrics,RAG metric,retrieval metric,retrieve metric
+---
 # Retrieval Metrics
 
 ## 0. Understanding AutoRAG's retrieval_gt

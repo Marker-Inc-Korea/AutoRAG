@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Prompt Maker
+      description: Learn about prompt maker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,prompt
+---
 # 7. Prompt Maker
 
 ### 🔎 **Definition**

@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - hybrid dbsf
+    description: Learn about hybrid dbsf module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,retrieval,hybrid dbsf
+---
 # Hybrid - dbsf
 
 The `hybrid-dbsf` module is designed to retrieve passages from multiple retrievals.

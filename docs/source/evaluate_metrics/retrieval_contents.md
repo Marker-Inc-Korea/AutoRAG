@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - RAG retrieval token metrics
+      description: Learn how to evaluate passage compressor in AutoRAG
+      keywords: AutoRAG,RAG,RAG evaluation,RAG metrics,RAG metric,passage compressor metric
+---
 # Retrieval Token Metrics
 
 ## 0. Retrieval token metric in AutoRAG

@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Long LLM Lingua
+      description: Learn about long llm lingua module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,LongLLMLingua
+---
 # Long LLM Lingua
 
 The `Long LLM Lingua` module is compressor based on [llmlingua](https://github.com/microsoft/LLMLingua).

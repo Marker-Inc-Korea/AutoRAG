@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG RAGAS data gen documentation
+    description: Generate RAG evaluation dataset using RAGAS
+    keywords: AutoRAG,RAG,RAG evaluation,RAG dataset,RAGAS
+---
 # RAGAS evaluation data generation
 
 RAGAS, the RAG evaluation framework also supports their advanced evaluation data generation.

@@ -1,3 +1,10 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - Available List
+    description: All nodes and modules of AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,modules,nodes
+---
 # Available List
 
 📌 You can check our all supporting Nodes & modules

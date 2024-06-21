@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG generator (LLM) node documentation
+      description: Configure LLM at the AutoRAG. Know the module types, evaluation metrics, and other strategies.
+      keywords: AutoRAG,RAG,LLM,generator,LLM evaluation,RAG evaluation
+---
 # 8. Generator
 
 ### 🔎 **Definition**

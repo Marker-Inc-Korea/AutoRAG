@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Similarity Threshold Cutoff
+      description: Learn about similarity threshold cutoff passage filter module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Filter
+---
 # Similarity Threshold Cutoff
 
 This module is inspired by

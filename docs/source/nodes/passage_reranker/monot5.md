@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - MonoT5 Reranker
+      description: Learn about cohere reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,MonoT5
+---
 # MonoT5
 
 The `MonoT5` module is a reranker that uses the MonoT5 model. This model rerank passages based on their relevance to a

@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Similarity Percentile Cutoff
+      description: Learn about similarity percentile cutoff passage filter module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Filter,similarity percentile cutoff
+---
 # Similarity Percentile Cutoff
 
 This module is inspired by

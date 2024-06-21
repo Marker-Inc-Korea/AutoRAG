@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Strategy
+      description: Learn how to evaluate RAG generations (answers) in AutoRAG
+      keywords: AutoRAG,RAG,RAG evaluation,RAG metrics,RAG metric,LLM metric
+---
 # Strategy
 
 ## Overview

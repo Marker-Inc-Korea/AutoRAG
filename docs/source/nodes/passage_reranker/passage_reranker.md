@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Passage Reranker
+      description: Learn about reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker
+---
 # 4. Passage_Reranker
 
 ### 🔎 **Definition**

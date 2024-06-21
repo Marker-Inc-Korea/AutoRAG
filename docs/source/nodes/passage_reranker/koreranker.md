@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Ko-Reranker
+      description: Learn about ko-reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,Ko-Reranker
+---
 # Ko-reranker
 
 The `ko-reranker` module is a reranker based on **korean**.

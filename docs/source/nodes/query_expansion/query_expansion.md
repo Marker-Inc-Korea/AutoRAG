@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Query Expansion
+      description: Learn about query expansion module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,query expansion
+---
 # **1. Query Expansion**
 
 ### 🔎 **Definition**

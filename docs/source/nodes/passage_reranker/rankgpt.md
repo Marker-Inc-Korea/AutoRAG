@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - RankGPT Reranker
+      description: Learn about rankGPT reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,RankGPT
+---
 # RankGPT
 
 The 'RankGPT' module is a reranker using [RankGPT](https://github.com/sunnweiwei/RankGPT).

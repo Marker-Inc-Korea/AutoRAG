@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Colbert Reranker
+      description: Learn about colbert reranker module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Reranker,colbert
+---
 # Colbert Reranker
 
 The `colber reranker` module is a reranker using [ColBERT](https://huggingface.co/colbert-ir/colbertv2.0) model for

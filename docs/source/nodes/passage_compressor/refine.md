@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - Refine Compressor
+      description: Learn about refine compressor module in AutoRAG 
+      keywords: AutoRAG,RAG,Advanced RAG,Passage Compressor,Refine
+---
 # Refine
 
 The `Refine` module is compressor based

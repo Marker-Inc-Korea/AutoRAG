@@ -2,6 +2,11 @@
    sphinx-quickstart on Wed Jan 17 20:55:21 2024.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
+.. meta::
+   :title: AutoRAG docs documentation
+   :description: AutoRAG - AutoML tool for RAG official developer documentation docs
+   :keywords: AutoRAG,Auto RAG,RAG,AutoRAG docs,LLM,RAG optimization
+   :robots: index,nofollow
 
 ########################
 AutoRAG documentation

@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - AutoRAG structure
+      description: Learn how AutoRAG works under the hood
+      keywords: AutoRAG,RAG,RAG structure,RAG optimization,AutoRAG system
+---
 # Structure
 
 

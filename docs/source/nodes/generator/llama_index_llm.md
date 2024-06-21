@@ -1,3 +1,10 @@
+---
+myst:
+   html_meta:
+      title: AutoRAG - LlamaIndex LLM
+      description: Use LlamaIndex LLM in AutoRAG. All LlamaIndex LLM is compatible with AutoRAG.
+      keywords: AutoRAG,RAG,LLM,generator,LlamaIndex
+---
 # llama_index LLM
 
 The `llama_index_llm` module is generator based on [llama_index](https://docs.llamaindex.ai/en/stable/api_reference/llms.html). It gets the LLM instance from llama index, and returns generated text by the input prompt. 
