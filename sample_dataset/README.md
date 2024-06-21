@@ -2,11 +2,11 @@
 
 The sample_dataset folder does not includes a `qa.parquet`, `corpus.parquet` file that is significantly large and cannot be uploaded directly to Git due to size limitations. 
 
-To prepare and use datasets available in the sample_dataset folder, specifically `triviaqa`, `msmarco` and `eli5`, you can follow the outlined methods below.
+To prepare and use datasets available in the sample_dataset folder, specifically `triviaqa`, `hotpotqa`, `msmarco` and `eli5`, you can follow the outlined methods below.
 
 ## Usage
 
- The example provided uses `triviaqa`, but the same approach applies to `msmarco` and `eli5`.
+ The example provided uses `triviaqa`, but the same approach applies to `msmarco`, `eli5` and `hotpotqa`.
 
 ### 1. Run with a specified save path
 To execute the Python script from the terminal and save the dataset to a specified path, use the command:

@@ -77,7 +77,7 @@ def node_view(node_dir: str):
         'float': NumberFormatter(format='0.000'),
         'bool': BooleanFormatter(),
     }
-    first_df = pd.read_parquet(os.path.join(node_dir, '0.parquet'))
+    first_df = pd.read_parquet(os.path.join(node_dir, '0.parquet'), engine='pyarrow')
 
     each_module_df_widget = pn.widgets.Tabulator(pd.DataFrame(columns=first_df.columns), name='Module DataFrame',
                                                  formatters=bokeh_formatters,
@@ -87,7 +87,7 @@ def node_view(node_dir: str):
         if event.column == 'detail':
             filename = summary_df['filename'].iloc[event.row]
             filepath = os.path.join(node_dir, filename)
-            each_module_df = pd.read_parquet(filepath)
+            each_module_df = pd.read_parquet(filepath, engine='pyarrow')
             each_module_df_widget.value = each_module_df
 
     df_widget = pn.widgets.Tabulator(summary_df, name='Summary DataFrame', formatters=bokeh_formatters,

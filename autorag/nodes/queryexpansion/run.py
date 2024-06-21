@@ -88,7 +88,7 @@ def run_query_expansion_node(modules: List[Callable],
         retrieval_callables, retrieval_params = make_retrieval_callable_params(extra_strategy)
 
         # get retrieval_gt
-        retrieval_gt = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))['retrieval_gt'].tolist()
+        retrieval_gt = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"), engine='pyarrow')['retrieval_gt'].tolist()
 
         # run evaluation
         evaluation_results = list(map(lambda result: evaluate_one_query_expansion_node(

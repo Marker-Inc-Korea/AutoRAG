@@ -101,7 +101,7 @@ def run_prompt_maker_node(modules: List[Callable],
         generator_callables, generator_params = make_generator_callable_params(extra_strategy)
 
         # get generation_gt
-        qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+        qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"), engine='pyarrow')
         validate_qa_dataset(qa_data)
         generation_gt = qa_data['generation_gt'].tolist()
         generation_gt = list(map(lambda x: x.tolist(), generation_gt))

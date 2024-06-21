@@ -33,7 +33,7 @@ def run_retrieval_node(modules: List[Callable],
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
-    qa_df = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+    qa_df = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"), engine='pyarrow')
     retrieval_gt = qa_df['retrieval_gt'].tolist()
     retrieval_gt = [[[str(uuid) for uuid in sub_array] if sub_array.size > 0 else [] for sub_array in inner_array]
                     for inner_array in retrieval_gt]
@@ -201,7 +201,7 @@ def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_modu
 
 
 def get_ids_and_scores(node_dir: str, filenames: List[str]) -> Dict:
-    best_results_df = list(map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename)), filenames))
+    best_results_df = list(map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename), engine='pyarrow'), filenames))
     ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
     scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
     return {

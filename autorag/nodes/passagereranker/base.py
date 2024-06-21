@@ -39,7 +39,7 @@ def passage_reranker_node(func):
 
         # time rerankers
         if func.__name__ == 'time_reranker':
-            corpus_df = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
+            corpus_df = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"), engine='pyarrow')
             metadatas = fetch_contents(corpus_df, ids, column_name='metadata')
             times = [[time['last_modified_datetime'] for time in time_list] for time_list in metadatas]
             reranked_contents, reranked_ids, reranked_scores \

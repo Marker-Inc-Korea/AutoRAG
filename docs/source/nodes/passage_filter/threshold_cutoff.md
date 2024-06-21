@@ -8,7 +8,7 @@ myst:
 # Threshold Cutoff
 
 This module is inspired by
-our [similarity threshold cutoff](https://marker-inc-korea.github.io/AutoRAG/nodes/passage_filter/similarity_threshold_cutoff.html)
+our [similarity threshold cutoff](https://docs.auto-rag.com/nodes/passage_filter/similarity_threshold_cutoff.html)
 module.
 Filters the contents, scores, and ids based on a **previous result's scores**.
 
