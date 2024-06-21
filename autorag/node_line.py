@@ -38,7 +38,7 @@ def run_node_line(nodes: List[Node],
         qa_path = os.path.join(project_dir, "data", "qa.parquet")
         if not os.path.exists(qa_path):
             raise ValueError(f"qa.parquet does not exist in {qa_path}.")
-        previous_result = pd.read_parquet(qa_path)
+        previous_result = pd.read_parquet(qa_path, engine='pyarrow')
 
     summary_lst = []
     for node in nodes:

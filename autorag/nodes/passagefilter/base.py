@@ -39,7 +39,7 @@ def passage_filter_node(func):
         ids = previous_result["retrieved_ids"].tolist()
 
         if func.__name__ == 'recency_filter':
-            corpus_df = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"))
+            corpus_df = pd.read_parquet(os.path.join(project_dir, "data", "corpus.parquet"), engine='pyarrow')
             metadatas = fetch_contents(corpus_df, ids, column_name='metadata')
             times = [[time['last_modified_datetime'] for time in time_list] for time_list in metadatas]
             filtered_contents, filtered_ids, filtered_scores \

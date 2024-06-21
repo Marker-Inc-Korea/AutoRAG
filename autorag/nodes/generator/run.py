@@ -35,7 +35,7 @@ def run_generator_node(modules: List[Callable],
     node_dir = os.path.join(node_line_dir, "generator")  # node name
     if not os.path.exists(node_dir):
         os.makedirs(node_dir)
-    qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+    qa_data = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"),engine='pyarrow')
     if 'generation_gt' not in qa_data.columns:
         raise ValueError("You must have 'generation_gt' column in qa.parquet.")
     generation_gt = list(map(lambda x: x.tolist(), qa_data['generation_gt'].tolist()))

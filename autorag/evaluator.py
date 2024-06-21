@@ -56,8 +56,8 @@ class Evaluator:
             raise ValueError(f"QA data path {qa_data_path} is not a parquet file.")
         if not corpus_data_path.endswith('.parquet'):
             raise ValueError(f"Corpus data path {corpus_data_path} is not a parquet file.")
-        self.qa_data = pd.read_parquet(qa_data_path)
-        self.corpus_data = pd.read_parquet(corpus_data_path)
+        self.qa_data = pd.read_parquet(qa_data_path, engine='pyarrow')
+        self.corpus_data = pd.read_parquet(corpus_data_path, engine='pyarrow')
         self.qa_data = cast_qa_dataset(self.qa_data)
         self.corpus_data = cast_corpus_dataset(self.corpus_data)
         self.project_dir = project_dir if project_dir is not None else os.getcwd()
@@ -299,7 +299,7 @@ class Evaluator:
 
             previous_node_dir = os.path.join(trial_path, previous_node_line, previous_node)
             best_file_pattern = f'{previous_node_dir}/best_*.parquet'
-            previous_result = pd.read_parquet(glob.glob(best_file_pattern)[0])
+            previous_result = pd.read_parquet(glob.glob(best_file_pattern)[0],engine='pyarrow')
         return previous_result
 
     @staticmethod

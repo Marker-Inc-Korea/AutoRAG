@@ -34,7 +34,7 @@ def run_passage_reranker_node(modules: List[Callable],
     if not os.path.exists(node_line_dir):
         os.makedirs(node_line_dir)
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
-    qa_df = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"))
+    qa_df = pd.read_parquet(os.path.join(project_dir, "data", "qa.parquet"), engine='pyarrow')
     retrieval_gt = qa_df['retrieval_gt'].tolist()
     retrieval_gt = [[[str(uuid) for uuid in sub_array] if sub_array.size > 0 else [] for sub_array in inner_array]
                     for inner_array in retrieval_gt]
