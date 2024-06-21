@@ -94,7 +94,7 @@ def retrieval_node(func):
             raise ValueError(f"invalid func name for using retrieval_io decorator.")
 
         # fetch data from corpus_data
-        corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+        corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"), engine='pyarrow')
         contents = fetch_contents(corpus_data, ids)
 
         return contents, ids, scores

@@ -37,7 +37,7 @@ def passage_augmenter_node(func):
         assert "retrieved_ids" in previous_result.columns, "previous_result must have retrieved_ids column."
         ids = previous_result["retrieved_ids"].tolist()
 
-        corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+        corpus_df = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"), engine='pyarrow')
         validate_corpus_dataset(corpus_df)
 
         # get top_k

@@ -40,8 +40,8 @@ def run_passage_compressor_node(modules: List[Callable],
         os.makedirs(save_dir)
 
     # make retrieval contents gt
-    qa_data = pd.read_parquet(os.path.join(data_dir, "qa.parquet"))
-    corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"))
+    qa_data = pd.read_parquet(os.path.join(data_dir, "qa.parquet"), engine='pyarrow')
+    corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"), engine='pyarrow')
     # check qa_data have retrieval_gt
     assert all(len(x[0]) > 0 for x in qa_data['retrieval_gt'].tolist()), \
         "Can't use passage compressor if you don't have retrieval gt values in QA dataset."
