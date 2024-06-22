@@ -34,6 +34,8 @@ llmlingua # for longllmlingua
 ### LlamaIndex ###
 llama-index>=0.10.1
 llama-index-core>=0.10.1
+# readers
+llama-index-readers-file
 # Embeddings
 llama-index-embeddings-openai
 llama-index-embeddings-huggingface

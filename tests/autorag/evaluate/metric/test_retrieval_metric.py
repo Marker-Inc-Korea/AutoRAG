@@ -1,7 +1,8 @@
 import pytest
 
-from autorag.evaluate.metric import (retrieval_f1, retrieval_precision, retrieval_recall, retrieval_ndcg, retrieval_mrr,
-                                     retrieval_map)
+from autorag.evaluation.metric import (retrieval_f1, retrieval_precision, retrieval_recall, retrieval_ndcg,
+                                       retrieval_mrr,
+                                       retrieval_map)
 
 retrieval_gt = [
     [['test-1', 'test-2'], ['test-3']],

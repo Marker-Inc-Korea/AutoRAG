@@ -3,7 +3,7 @@ from typing import List, Tuple, Optional
 import numpy as np
 import torch.cuda
 
-from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import passage_filter_node
 from autorag.nodes.passagefilter.similarity_threshold_cutoff import embedding_query_content
 

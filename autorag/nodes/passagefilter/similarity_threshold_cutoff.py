@@ -5,7 +5,7 @@ import numpy as np
 import torch.cuda
 
 from autorag import embedding_models
-from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import passage_filter_node
 from autorag.utils.util import reconstruct_list
 

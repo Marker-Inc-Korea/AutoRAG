@@ -1,7 +1,7 @@
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.evaluate.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score
+from autorag.evaluation.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score
 from tests.delete_tests import is_github_action
 
 generation_gts = [

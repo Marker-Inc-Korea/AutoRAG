@@ -15,7 +15,7 @@ from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 
 from autorag import embedding_models
-from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.utils.util import process_batch, openai_truncate_by_token
 
 

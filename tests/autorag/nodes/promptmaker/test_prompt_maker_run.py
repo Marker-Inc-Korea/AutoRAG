@@ -9,7 +9,7 @@ from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
-from autorag.evaluate.util import cast_metrics
+from autorag.evaluation.util import cast_metrics
 from autorag.nodes.generator import llama_index_llm
 from autorag.nodes.promptmaker import fstring
 from autorag.nodes.promptmaker.run import evaluate_generator_result, evaluate_one_prompt_maker_node, \

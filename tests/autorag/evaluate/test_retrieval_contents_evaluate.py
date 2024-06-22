@@ -3,7 +3,7 @@ from typing import Tuple, List
 import pandas as pd
 import pytest
 
-from autorag.evaluate import evaluate_retrieval_contents
+from autorag.evaluation import evaluate_retrieval_contents
 
 gt = [
     ['Enough for drinking water', 'Just looking for a water bottle'],

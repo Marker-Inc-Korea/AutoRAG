@@ -1,6 +1,6 @@
 import pytest
 
-from autorag.evaluate.metric.retrieval_contents import single_token_f1, retrieval_token_f1, retrieval_token_precision, \
+from autorag.evaluation.metric.retrieval_contents import single_token_f1, retrieval_token_f1, retrieval_token_precision, \
     retrieval_token_recall
 
 gt = [

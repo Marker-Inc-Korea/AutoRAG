@@ -3,7 +3,7 @@ from typing import List, Callable, Any, Tuple
 
 import pandas as pd
 
-from autorag.evaluate.metric import retrieval_token_f1, retrieval_token_precision, retrieval_token_recall
+from autorag.evaluation.metric import retrieval_token_f1, retrieval_token_precision, retrieval_token_recall
 
 
 def evaluate_retrieval_contents(retrieval_gt: List[List[str]], metrics: List[str]):
