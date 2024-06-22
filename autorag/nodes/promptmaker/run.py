@@ -6,8 +6,8 @@ from typing import List, Callable, Dict, Optional, Union
 import pandas as pd
 import tokenlog
 
-from autorag.evaluate import evaluate_generation
-from autorag.evaluate.util import cast_metrics
+from autorag.evaluation import evaluate_generation
+from autorag.evaluation.util import cast_metrics
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils import validate_qa_dataset

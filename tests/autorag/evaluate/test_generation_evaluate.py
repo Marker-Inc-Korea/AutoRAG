@@ -9,7 +9,7 @@ from openai.types.chat.chat_completion import Choice, ChoiceLogprobs
 from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from transformers import AutoTokenizer
 
-from autorag.evaluate.generation import evaluate_generation
+from autorag.evaluation.generation import evaluate_generation
 
 generation_gts = [
     ['The dog had bit the man.', 'The man had bitten the dog.'],

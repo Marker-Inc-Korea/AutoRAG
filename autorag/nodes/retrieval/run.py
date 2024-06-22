@@ -5,7 +5,7 @@ from typing import List, Callable, Dict, Tuple
 
 import pandas as pd
 
-from autorag.evaluate import evaluate_retrieval
+from autorag.evaluation import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import load_summary_file
 

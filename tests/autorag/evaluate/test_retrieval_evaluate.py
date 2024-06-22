@@ -3,7 +3,7 @@ from typing import Tuple, List
 
 import pandas as pd
 
-from autorag.evaluate import evaluate_retrieval
+from autorag.evaluation import evaluate_retrieval
 
 retrieval_gt = [[[f'test{i}-{j}'] for i in range(2)] for j in range(4)]
 queries_example = ["Query 1", "Query 2", "Query 3", "Query 4"]

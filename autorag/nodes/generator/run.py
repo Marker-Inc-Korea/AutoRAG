@@ -4,8 +4,8 @@ from typing import Callable, List, Dict, Union
 
 import pandas as pd
 
-from autorag.evaluate import evaluate_generation
-from autorag.evaluate.util import cast_metrics
+from autorag.evaluation import evaluate_generation
+from autorag.evaluation.util import cast_metrics
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 

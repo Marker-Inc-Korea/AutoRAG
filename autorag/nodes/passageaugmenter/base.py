@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 
 from autorag import embedding_models
-from autorag.evaluate.metric.util import calculate_cosine_similarity
+from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.utils import (result_to_dataframe, validate_qa_dataset, fetch_contents, sort_by_scores,
                            validate_corpus_dataset, cast_corpus_dataset)
 from autorag.utils.util import reconstruct_list, filter_dict_keys, select_top_k

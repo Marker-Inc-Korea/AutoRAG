@@ -1,5 +1,5 @@
 from autorag import embedding_models
-from autorag.evaluate.util import cast_metrics
+from autorag.evaluation.util import cast_metrics
 
 
 def test_cast_metrics():
