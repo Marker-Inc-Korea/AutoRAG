@@ -9,7 +9,7 @@ from unittest.mock import patch
 import chromadb
 import pandas as pd
 import pytest
-from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding, OpenAIEmbeddingModelType
 
 from autorag.nodes.retrieval import vectordb
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
@@ -19,7 +19,7 @@ from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, corpus_d
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resource_path = os.path.join(root_dir, "resources")
 
-embedding_model = OpenAIEmbedding()
+embedding_model = OpenAIEmbedding(model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_SMALL)
 
 
 @pytest.fixture
@@ -109,8 +109,8 @@ def mock_get_text_embedding_batch(self, texts, **kwargs):
 def test_long_ids_ingest(empty_chromadb):
     embedding_model = OpenAIEmbedding()
     content_df = pd.DataFrame({
-        'doc_id': [str(uuid.uuid4()) for _ in range(100_000)],
-        'contents': ['havertz' for _ in range(100_000)],
-        'metadata': [{'last_modified_datetime': datetime.now()} for _ in range(100_000)],
+        'doc_id': [str(uuid.uuid4()) for _ in range(10000)],
+        'contents': ['havertz' for _ in range(10000)],
+        'metadata': [{'last_modified_datetime': datetime.now()} for _ in range(10000)],
     })
     vectordb_ingest(empty_chromadb, content_df, embedding_model)

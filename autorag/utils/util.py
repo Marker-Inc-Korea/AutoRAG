@@ -14,6 +14,7 @@ from typing import List, Callable, Dict, Optional, Any, Collection
 
 import pandas as pd
 import tiktoken
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 logger = logging.getLogger("AutoRAG")
 
@@ -294,7 +295,7 @@ def save_parquet_safe(df: pd.DataFrame, filepath: str,
 
 
 def openai_truncate_by_token(texts: List[str], token_limit: int,
-                             model_name: str):
+                             model_name: str) -> List[str]:
     tokenizer = tiktoken.encoding_for_model(model_name)
 
     def truncate_text(text: str, limit: int, tokenizer):
@@ -432,3 +433,24 @@ def dict_to_markdown_table(data, key_column_name: str, value_column_name: str):
     # Combine header and rows
     markdown_table = header + rows
     return markdown_table
+
+
+def embedding_query_content(queries: List[str], contents_list: List[List[str]],
+                            embedding_model: Optional[str] = None, batch: int = 128):
+    flatten_contents = list(itertools.chain.from_iterable(contents_list))
+
+    openai_embedding_limit = 8191  # all openai embedding model has 8191 max token input
+    if isinstance(embedding_model, OpenAIEmbedding):
+        queries = openai_truncate_by_token(queries, openai_embedding_limit,
+                                           embedding_model.model_name)
+        flatten_contents = openai_truncate_by_token(flatten_contents, openai_embedding_limit,
+                                                    embedding_model.model_name)
+
+    # Embedding using batch
+    embedding_model.embed_batch_size = batch
+    query_embeddings = embedding_model.get_text_embedding_batch(queries)
+
+    content_lengths = list(map(len, contents_list))
+    content_embeddings_flatten = embedding_model.get_text_embedding_batch(flatten_contents)
+    content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
+    return query_embeddings, content_embeddings
