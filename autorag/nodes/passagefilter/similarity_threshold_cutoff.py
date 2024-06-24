@@ -1,14 +1,12 @@
-import itertools
 from typing import List, Tuple, Optional
 
 import numpy as np
 import torch.cuda
-from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import passage_filter_node
-from autorag.utils.util import reconstruct_list, openai_truncate_by_token
+from autorag.utils.util import embedding_query_content
 
 
 @passage_filter_node
@@ -34,6 +32,11 @@ def similarity_threshold_cutoff(queries: List[str], contents_list: List[List[str
         Default is 128.
     :return: Tuple of lists containing the filtered contents, ids, and scores
     """
+    if embedding_model is None:
+        embedding_model = embedding_models['openai']
+    else:
+        embedding_model = embedding_models[embedding_model]
+
     query_embeddings, content_embeddings = embedding_query_content(queries, contents_list, embedding_model, batch)
 
     remain_indices = list(map(lambda x: similarity_threshold_cutoff_pure(x[0], x[1], threshold),
@@ -69,29 +72,3 @@ def similarity_threshold_cutoff_pure(query_embedding: str,
     if len(result) > 0:
         return result
     return [np.argmax(similarities)]
-
-
-def embedding_query_content(queries: List[str], contents_list: List[List[str]],
-                            embedding_model: Optional[str] = None, batch: int = 128):
-    flatten_contents = list(itertools.chain.from_iterable(contents_list))
-
-    openai_embedding_limit = 8191  # all openai embedding model has 8191 max token input
-    if isinstance(embedding_model, OpenAIEmbedding):
-        queries = openai_truncate_by_token(queries, openai_embedding_limit,
-                                           embedding_model.model_name)
-        flatten_contents = openai_truncate_by_token(flatten_contents, openai_embedding_limit,
-                                                    embedding_model.model_name)
-
-    if embedding_model is None:
-        embedding_model = embedding_models['openai']
-    else:
-        embedding_model = embedding_models[embedding_model]
-
-    # Embedding using batch
-    embedding_model.embed_batch_size = batch
-    query_embeddings = embedding_model.get_text_embedding_batch(queries)
-
-    content_lengths = list(map(len, contents_list))
-    content_embeddings_flatten = embedding_model.get_text_embedding_batch(flatten_contents)
-    content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
-    return query_embeddings, content_embeddings
