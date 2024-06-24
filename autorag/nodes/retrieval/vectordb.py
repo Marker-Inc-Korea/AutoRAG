@@ -91,7 +91,7 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
 
         # truncate by token if embedding_model is OpenAIEmbedding
         if isinstance(embedding_model, OpenAIEmbedding):
-            openai_embedding_limit = 8191
+            openai_embedding_limit = 8191  # all openai embedding model has 8191 max token input
             new_contents = openai_truncate_by_token(new_contents, openai_embedding_limit, embedding_model.model_name)
 
         new_ids = new_passage['doc_id'].tolist()
