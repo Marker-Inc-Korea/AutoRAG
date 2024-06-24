@@ -79,9 +79,9 @@ You can find the package at [here](https://pretty-sodium-5e0.notion.site/ce81b24
 
 ```python
 import autorag
-from llama_index.llms.vllm import Vllm
+from llama_index.core.llms.mock import MockLLM
 
-autorag.generator_models['vllm'] = Vllm
+autorag.generator_models['mockllm'] = MockLLM
 ```
 
 Then you can use `mockllm` at config yaml file.
