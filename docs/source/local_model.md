@@ -1,10 +1,11 @@
 ---
 myst:
-   html_meta:
-      title: AutoRAG - Run local model in AutoRAG
-      description: Learn how to run local model in AutoRAG
-      keywords: AutoRAG,RAG,RAG model,RAG LLM,embedding model,local model
+  html_meta:
+    title: AutoRAG - Run local model in AutoRAG
+    description: Learn how to run local model in AutoRAG
+    keywords: AutoRAG,RAG,RAG model,RAG LLM,embedding model,local model
 ---
+
 # Configure LLM & Embedding models
 
 ## Index
@@ -34,13 +35,12 @@ Most of the modules that using LLM model can take `llm` parameter to specify the
 We support most of the llm that LlamaIndex is supporting.
 To change the LLM model type, you can change the `llm` parameter to the following values:
 
-|     LLM Model Type      |      llm parameter      |
-|:-----------------------:|:-----------------------:|
-|         OpenAI          |         openai          |
-|     HuggingFaceLLM      |     huggingfacellm      |
-|       OpenAILike        |       openailike        |
-|        Ollama           |         ollama          |
-
+| LLM Model Type | llm parameter  |
+|:--------------:|:--------------:|
+|     OpenAI     |     openai     |
+| HuggingFaceLLM | huggingfacellm |
+|   OpenAILike   |   openailike   |
+|     Ollama     |     ollama     |
 
 For example, if you want to use `OpenAILike` model, you can set `llm` parameter to `openailike`.
 
@@ -107,11 +107,9 @@ To change the embedding model, you can change the `embedding_model` parameter to
 
 |                                           Embedding Model Type                                            |       embedding_model parameter       |
 |:---------------------------------------------------------------------------------------------------------:|:-------------------------------------:|
-|                                         Default openai embedding                                          |                openai                 |
-|                                         openai babbage embedding                                          |            openai_babbage             |
-|                                           openai ada embedding                                            |              openai_ada               |
-|                                         openai davinci embedding                                          |            openai_davinci             |
-|                                          openai curie embedding                                           |             openai_curie              |
+|                             Default openai embedding (text-embedding-ada-002)                             |                openai                 |
+|                              openai large embedding (text-embedding-3-large)                              |         openai_embed_3_large          |
+|                              openai small embedding (text-embedding-3-small)                              |         openai_embed_3_small          |
 |                  [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)                  |      huggingface_baai_bge_small       |
 |               [cointegrated/rubert-tiny2](https://huggingface.co/cointegrated/rubert-tiny2)               | huggingface_cointegrated_rubert_tiny2 |
 | [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) |     huggingface_all_mpnet_base_v2     |
@@ -153,4 +151,3 @@ Then you can use `kosimcse` at config yaml file.
 ```{caution}
 When you add new LLM model, you should add instance of the `BaseEmbedding` class from LlamaIndex.
 ```
- 
