@@ -3,6 +3,7 @@ from typing import List, Tuple, Optional
 import numpy as np
 import torch.cuda
 
+from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import passage_filter_node
 from autorag.nodes.passagefilter.similarity_threshold_cutoff import embedding_query_content
@@ -31,7 +32,13 @@ def similarity_percentile_cutoff(queries: List[str], contents_list: List[List[st
         Default is 128.
     :return: Tuple of lists containing the filtered contents, ids, and scores
     """
-    query_embeddings, content_embeddings = embedding_query_content(queries, contents_list, embedding_model, batch)
+    if embedding_model is None:
+        embedding_model = embedding_models['openai']
+    else:
+        embedding_model = embedding_models[embedding_model]
+
+    query_embeddings, content_embeddings = embedding_query_content(queries, contents_list, embedding_model,
+                                                                   batch)
 
     results = list(map(lambda x: similarity_percentile_cutoff_pure(x[0], x[1], x[2], x[3], x[4], percentile),
                        zip(query_embeddings, content_embeddings, contents_list, ids_list, scores_list)))
