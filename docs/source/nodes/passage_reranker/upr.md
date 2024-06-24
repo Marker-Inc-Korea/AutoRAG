@@ -15,10 +15,6 @@ Configure the UPR module with parameters like
 - (Optional) `use_bf16` (boolean):
   - Whether to use bfloat16 for the model. 
   - Default is `False`.
-- (Optional) `num_gpus` (int):
-    - Number of GPUs in your machine.
-    - Default is 1.
-    - If you use CPU, just keep this parameter as 1.
 - (Optional) `prefix_prompt` (strings):
   - The prefix prompt serves as the initial context or instruction for the language model.
         It sets the stage for what is expected in the output 
@@ -35,7 +31,6 @@ for customizing the reranking behavior.
 modules:
   - module_type: upr
     use_bf16: False
-    num_gpus: 1
     prefix_prompt: "Passage: "
     suffix_prompt: "Please write a question based on this passage."
 ```

@@ -1,11 +1,9 @@
 import logging
-import os
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
-import numpy as np
 import pandas as pd
-import ray
 import torch
+from tqdm import tqdm
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
@@ -19,8 +17,7 @@ def upr(queries: List[str], contents_list: List[List[str]],
         scores_list: List[List[float]], ids_list: List[List[str]],
         top_k: int, use_bf16: bool = False,
         prefix_prompt: str = "Passage: ",
-        suffix_prompt: str = "Please write a question based on this passage.",
-        num_gpus: int = 1) \
+        suffix_prompt: str = "Please write a question based on this passage.") \
         -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
     """
     Rerank a list of contents based on their relevance to a query using UPR.
@@ -42,33 +39,20 @@ def upr(queries: List[str], contents_list: List[List[str]],
         Default is "Please write a question based on this passage.".
         The suffix prompt provides a cue or a closing instruction to the language model,
             signaling how to conclude the generated text or what format to follow at the end.
-    :param num_gpus: The number of GPUs that you want to use. Default is 1.
-        Set to 1 if you use a CPU or a single GPU.
     :return: tuple of lists containing the reranked contents, ids, and scores
     """
+    tqdm.pandas()
     df = pd.DataFrame({
         'query': queries,
         'contents': contents_list,
         'ids': ids_list,
     })
-    ds = ray.data.from_pandas(df)
 
     scorer = UPRScorer(suffix_prompt=suffix_prompt, prefix_prompt=prefix_prompt, use_bf16=use_bf16)
 
-    if torch.cuda.is_available():
-        score_batch = ds.map_batches(scorer, batch_size=1,
-                                     concurrency=num_gpus, num_gpus=1)
-    else:
-        score_batch = ds.map_batches(scorer,
-                                     batch_size=1,
-                                     concurrency=min(len(df), os.cpu_count()), num_cpus=os.cpu_count())
-    scores = score_batch.to_pandas()['output'].tolist()  # converted to a flatten list of scores
-
+    df['scores'] = df.progress_apply(lambda row: scorer.compute(query=row['query'], contents=row['contents']),
+                                     axis=1)
     del scorer
-
-    explode_df = df.explode('contents')
-    explode_df['scores'] = scores
-    df['scores'] = explode_df.groupby(level=0, sort=False)['scores'].apply(list).tolist()
     df[['contents', 'ids', 'scores']] = df.apply(lambda x: sort_by_scores(x, reverse=False), axis=1,
                                                  result_type='expand')
     results = select_top_k(df, ['contents', 'ids', 'scores'], top_k)
@@ -87,9 +71,8 @@ class UPRScorer:
         self.suffix_prompt = suffix_prompt
         self.prefix_prompt = prefix_prompt
 
-    def __call__(self, batch: Dict[str, np.ndarray]):
-        query_token = self.tokenizer(batch['query'][0], max_length=128, truncation=True, return_tensors='pt')
-        contents = batch['contents'][0]
+    def compute(self, query: str, contents: List[str]) -> List[float]:
+        query_token = self.tokenizer(query, max_length=128, truncation=True, return_tensors='pt')
         prompts = list(map(lambda content: f"{self.prefix_prompt} {content} {self.suffix_prompt}", contents))
         prompt_token_outputs = self.tokenizer(prompts, padding='longest',
                                               max_length=512,
@@ -107,7 +90,7 @@ class UPRScorer:
         log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
         nll = -log_softmax.gather(2, query_input_ids.unsqueeze(2)).squeeze(2)
         avg_nll = torch.sum(nll, dim=1)
-        return {"output": avg_nll.tolist()}
+        return avg_nll.tolist()
 
     def __del__(self):
         del self.model
