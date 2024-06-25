@@ -184,7 +184,7 @@ class Evaluator:
     def _load_node_lines(yaml_path: str) -> Dict[str, List[Node]]:
         if not os.path.exists(yaml_path):
             raise ValueError(f"YAML file {yaml_path} does not exist.")
-        with open(yaml_path, 'r') as stream:
+        with open(yaml_path, 'r', encoding='utf-8') as stream:
             try:
                 yaml_dict = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
