@@ -8,7 +8,7 @@ Subpackages
    :maxdepth: 4
 
    autorag.data
-   autorag.evaluate
+   autorag.evaluation
    autorag.nodes
    autorag.schema
    autorag.utils
