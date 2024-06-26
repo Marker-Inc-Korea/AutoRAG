@@ -47,7 +47,7 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 
     Question: {question}
 
-    Decompositions:"
+    Decompositions:
     """
 
 
