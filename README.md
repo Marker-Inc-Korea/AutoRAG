@@ -234,11 +234,11 @@ autorag run_web --trial_path your/path/to/trial_path
 
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
-# Star History
+# ⭐ Star History ⭐
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Marker-Inc-Korea/AutoRAG&type=Date)](https://star-history.com/#Marker-Inc-Korea/AutoRAG&Date)
 
-# Contributors ⭐
+# ✨ Contributors ✨
 
 Thanks go to these wonderful people:
 
