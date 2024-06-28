@@ -100,6 +100,7 @@ def test_run_query_expansion_node(node_line_dir):
         'metrics': metrics,
         'speed_threshold': 5,
         'top_k': 4,
+        'strategy': 'rank',
         'retrieval_modules': [{'module_type': 'bm25', 'bm25_tokenizer': 'gpt2'}],
     }
     best_result = run_query_expansion_node(modules, module_params, previous_result, node_line_dir, strategies)
