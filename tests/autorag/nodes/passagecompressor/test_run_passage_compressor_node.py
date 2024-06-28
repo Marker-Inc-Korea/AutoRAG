@@ -82,6 +82,7 @@ def test_run_passage_compressor_node(node_line_dir):
                      {'llm': 'mock', 'model': 'gpt-3.5-turbo'}]
     strategies = {
         'metrics': ['retrieval_token_f1', 'retrieval_token_precision'],
+        'strategy': 'normalize_mean',
         'speed_threshold': 5,
     }
     best_result = run_passage_compressor_node(modules, module_params, previous_result, node_line_dir, strategies)

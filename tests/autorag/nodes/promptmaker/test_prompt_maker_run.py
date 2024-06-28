@@ -105,6 +105,7 @@ def test_run_prompt_maker_node(node_line_dir):
         'speed_threshold': 5,
         'token_threshold': 25,
         'tokenizer': 'gpt-3.5-turbo',
+        'strategy': 'rank',
         'generator_modules': [{
             'module_type': 'llama_index_llm',
             'llm': 'mock',
