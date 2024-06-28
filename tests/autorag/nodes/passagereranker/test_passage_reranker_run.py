@@ -82,6 +82,7 @@ def test_run_passage_reranker_node(node_line_dir):
     module_params = [{'top_k': 4, 'model_name': 'castorini_monot5-3b-msmarco-10k'}]
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
+        'strategy': 'rank',
     }
     best_result = run_passage_reranker_node(modules, module_params, previous_result, node_line_dir, strategies)
     assert os.path.exists(os.path.join(node_line_dir, "passage_reranker"))

@@ -29,6 +29,7 @@ def test_run_passage_filter_node(node_line_dir):
     module_params = [{'threshold': 0.87}]
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
+        'strategy': 'rank',
     }
     best_result = run_passage_filter_node(modules, module_params, previous_result, node_line_dir, strategies)
     assert os.path.exists(os.path.join(node_line_dir, "passage_filter"))
