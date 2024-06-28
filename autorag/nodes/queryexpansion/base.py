@@ -42,6 +42,9 @@ def query_expansion_node(func):
                                 prompt=prompt,
                                 generator_func=generator_callable,
                                 generator_params=generator_param)
+        # delete empty string in the nested expanded queries list
+        expanded_queries = [list(map(lambda x: x.strip(), sublist)) for sublist in expanded_queries]
+        expanded_queries = [list(filter(lambda x: bool(x), sublist)) for sublist in expanded_queries]
         return expanded_queries
 
     return wrapper
