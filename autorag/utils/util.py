@@ -16,6 +16,8 @@ import pandas as pd
 import tiktoken
 import unicodedata
 from llama_index.embeddings.openai import OpenAIEmbedding
+from pydantic import BaseModel as BM
+from pydantic.v1 import BaseModel
 
 logger = logging.getLogger("AutoRAG")
 
@@ -465,7 +467,7 @@ def to_list(item):
     elif isinstance(item, pd.Series):
         # Convert pandas Series to list and recursively process each element
         return [to_list(sub_item) for sub_item in item.tolist()]
-    elif isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+    elif isinstance(item, Iterable) and not isinstance(item, (str, bytes, BaseModel, BM)):
         # Recursively process each element in other iterables
         return [to_list(sub_item) for sub_item in item]
     else:
