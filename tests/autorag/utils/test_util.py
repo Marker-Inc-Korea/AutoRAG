@@ -5,16 +5,20 @@ import pathlib
 import tempfile
 from datetime import datetime, date
 
+import numpy as np
 import pandas as pd
 import pytest
 import tiktoken
+from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.llms import CompletionResponse
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.utils import fetch_contents
 from autorag.utils.util import load_summary_file, result_to_dataframe, \
     make_combinations, explode, replace_value_in_dict, normalize_string, convert_string_to_tuple_in_dict, process_batch, \
     convert_env_in_dict, openai_truncate_by_token, convert_datetime_string, split_dataframe, find_trial_dir, \
-    find_node_summary_files, normalize_unicode, dict_to_markdown, dict_to_markdown_table
+    find_node_summary_files, normalize_unicode, dict_to_markdown, dict_to_markdown_table, convert_inputs_to_list, \
+    to_list
 from tests.mock import MockLLM
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
@@ -407,3 +411,23 @@ def test_dict_to_markdown_table():
 | key2 | value2 |
 """
     assert result == result_text
+
+
+@convert_inputs_to_list
+def convert_inputs_to_list_function(int_type, str_type, iterable_type, iterable_type2):
+    assert isinstance(int_type, int)
+    assert isinstance(str_type, str)
+    assert isinstance(iterable_type, list)
+    assert isinstance(iterable_type2, list)
+
+
+def test_convert_inputs_to_list():
+    convert_inputs_to_list_function(1, 'jax', (2, 3), (5, 6, [4, 66]))
+    convert_inputs_to_list_function(1, 'jax', np.array([3, 4]), [pd.Series([12, 13]), 14])
+    convert_inputs_to_list_function(4, 'jax', pd.Series([7, 8, 9]), np.array([[3, 4], [4, 5]]))
+
+
+def test_to_list():
+    embedding_model = OpenAIEmbedding()
+    new_model = to_list(embedding_model)
+    assert isinstance(new_model, BaseEmbedding)

@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from autorag.evaluation.metric import (retrieval_f1, retrieval_precision, retrieval_recall, retrieval_ndcg,
@@ -30,6 +31,15 @@ pred = [
 def test_retrieval_f1():
     solution = [0.5, 2 / 7, 2 / 5, 4 / 7, 2 / 3, None, None, 0.5]
     result = retrieval_f1(retrieval_gt=retrieval_gt, pred_ids=pred)
+    for gt, res in zip(solution, result):
+        assert gt == pytest.approx(res, rel=1e-4)
+
+
+def test_numpy_retrieval_metric():
+    retrieval_gt_np = [[np.array(['test-1', 'test-4'])], np.array([['test-2']])]
+    pred_np = np.array([['test-2', 'test-3', 'test-1'], ['test-5', 'test-6', 'test-8']])
+    solution = [1.0, 0.0]
+    result = retrieval_recall(retrieval_gt=retrieval_gt_np, pred_ids=pred_np)
     for gt, res in zip(solution, result):
         assert gt == pytest.approx(res, rel=1e-4)
 
