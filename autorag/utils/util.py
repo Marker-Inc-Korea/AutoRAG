@@ -8,12 +8,13 @@ import logging
 import os
 import re
 import string
-import unicodedata
 from copy import deepcopy
-from typing import List, Callable, Dict, Optional, Any, Collection
+from typing import List, Callable, Dict, Optional, Any, Collection, Iterable
 
+import numpy as np
 import pandas as pd
 import tiktoken
+import unicodedata
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 logger = logging.getLogger("AutoRAG")
@@ -454,3 +455,29 @@ def embedding_query_content(queries: List[str], contents_list: List[List[str]],
     content_embeddings_flatten = embedding_model.get_text_embedding_batch(flatten_contents)
     content_embeddings = reconstruct_list(content_embeddings_flatten, content_lengths)
     return query_embeddings, content_embeddings
+
+
+def to_list(item):
+    """Recursively convert collections to Python lists."""
+    if isinstance(item, np.ndarray):
+        # Convert numpy array to list and recursively process each element
+        return [to_list(sub_item) for sub_item in item.tolist()]
+    elif isinstance(item, pd.Series):
+        # Convert pandas Series to list and recursively process each element
+        return [to_list(sub_item) for sub_item in item.tolist()]
+    elif isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+        # Recursively process each element in other iterables
+        return [to_list(sub_item) for sub_item in item]
+    else:
+        return item
+
+
+def convert_inputs_to_list(func):
+    """Decorator to convert all function inputs to Python lists."""
+
+    def wrapper(*args, **kwargs):
+        new_args = [to_list(arg) for arg in args]
+        new_kwargs = {k: to_list(v) for k, v in kwargs.items()}
+        return func(*new_args, **new_kwargs)
+
+    return wrapper
