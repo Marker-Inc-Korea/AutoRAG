@@ -475,6 +475,7 @@ def to_list(item):
 def convert_inputs_to_list(func):
     """Decorator to convert all function inputs to Python lists."""
 
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         new_args = [to_list(arg) for arg in args]
         new_kwargs = {k: to_list(v) for k, v in kwargs.items()}
