@@ -47,9 +47,9 @@ def ko_base_test_generation_metrics(func, solution, **kwargs):
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(scores, solution))))
 
-
 def test_bleu():
     base_test_generation_metrics(bleu, [51.1507, 23.5783, 100.0], lowercase=True)
+    ko_base_test_generation_metrics(bleu, [100.0, 81.9178, 73.7534], lowercase=True, tokenize='ko-mecab', max_ngram_order=2, trg_lang='ko')
 
 
 def test_meteor():
