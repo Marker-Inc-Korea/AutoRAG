@@ -41,8 +41,8 @@ node_lines:
     node_type: generator
     strategy:
       metrics:
-        - metric_name: rouge
+      - metric_name: rouge
       - embedding_model: openai
         metric_name: sem_score
-        - metric_name: bert_score
-          lang: ko
+      - metric_name: bert_score
+        lang: ko
