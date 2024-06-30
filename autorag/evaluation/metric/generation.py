@@ -16,11 +16,12 @@ from rouge_score.rouge_scorer import RougeScorer
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
-from autorag.utils.util import process_batch, openai_truncate_by_token
+from autorag.utils.util import process_batch, openai_truncate_by_token, convert_inputs_to_list
 
 
 def generation_metric(func):
     @functools.wraps(func)
+    @convert_inputs_to_list
     def wrapper(generation_gt: List[List[str]], generations: List[str], **kwargs) -> List[float]:
         """
         Compute generation metric.
@@ -39,6 +40,7 @@ def generation_metric(func):
     return wrapper
 
 
+@convert_inputs_to_list
 def huggingface_evaluate(instance, key: str,
                          generation_gt: List[List[str]], generations: List[str],
                          **kwargs) -> List[float]:
@@ -83,6 +85,7 @@ def bleu(generation_gt: List[List[str]], generations: [str], tokenize: str|None 
     return result
 
 
+@convert_inputs_to_list
 def meteor(generation_gt: List[List[str]], generations: List[str],
            alpha: float = 0.9,
            beta: float = 3.0,
@@ -110,6 +113,7 @@ def meteor(generation_gt: List[List[str]], generations: List[str],
     return result
 
 
+@convert_inputs_to_list
 def rouge(generation_gt: List[List[str]], generations: List[str],
           rouge_type: Optional[str] = 'rougeL',
           use_stemmer: bool = False,
@@ -154,6 +158,7 @@ def rouge(generation_gt: List[List[str]], generations: List[str],
     return result
 
 
+@convert_inputs_to_list
 def sem_score(generation_gt: List[List[str]], generations: List[str],
               embedding_model: Optional[BaseEmbedding] = None,
               batch: int = 128) -> List[float]:
@@ -207,6 +212,7 @@ def sem_score(generation_gt: List[List[str]], generations: List[str],
     return result
 
 
+@convert_inputs_to_list
 def g_eval(generation_gt: List[List[str]], generations: List[str],
            metrics: Optional[List[str]] = None,
            model: str = 'gpt-4-0125-preview',
@@ -296,6 +302,7 @@ async def async_g_eval(generation_gt: List[str], pred: str,
     return sum(g_eval_scores) / len(g_eval_scores)
 
 
+@convert_inputs_to_list
 def bert_score(generation_gt: List[List[str]], generations: List[str],
                lang: str = 'en',
                batch: int = 128,

@@ -9,11 +9,12 @@ from typing import List
 
 import numpy as np
 
-from autorag.utils.util import normalize_string
+from autorag.utils.util import normalize_string, convert_inputs_to_list
 
 
 def retrieval_contents_metric(func):
     @functools.wraps(func)
+    @convert_inputs_to_list
     def wrapper(gt_contents: List[List[str]], pred_contents: List[List[str]]) -> List[float]:
         results = []
         for gt, pred in zip(gt_contents, pred_contents):

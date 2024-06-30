@@ -29,6 +29,7 @@ def test_run_passage_augmenter_node(node_line_dir):
     module_params = [{'top_k': 2, 'num_passages': 1}]
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
+        'strategy': 'rank',
     }
     best_result = run_passage_augmenter_node(modules, module_params, previous_result, node_line_dir, strategies)
     assert os.path.exists(os.path.join(node_line_dir, "passage_augmenter"))

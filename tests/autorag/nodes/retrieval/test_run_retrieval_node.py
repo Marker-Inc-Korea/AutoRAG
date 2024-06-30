@@ -52,6 +52,7 @@ def test_run_retrieval_node(node_line_dir):
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
     strategies = {
         'metrics': ['retrieval_f1', 'retrieval_recall'],
+        'strategy': 'normalize_mean',
         'speed_threshold': 5,
     }
     previous_result = pd.read_parquet(qa_path)

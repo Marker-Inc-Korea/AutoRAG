@@ -68,7 +68,7 @@ def run_query_expansion_node(modules: List[Callable],
     # Run evaluation when there are more than one module.
     if len(modules) > 1:
         # pop general keys from strategies (e.g. metrics, speed_threshold)
-        general_key = ['metrics', 'speed_threshold']
+        general_key = ['metrics', 'speed_threshold', 'strategy']
         general_strategy = dict(filter(lambda x: x[0] in general_key, strategies.items()))
         extra_strategy = dict(filter(lambda x: x[0] not in general_key, strategies.items()))
 
@@ -93,7 +93,8 @@ def run_query_expansion_node(modules: List[Callable],
         # run evaluation
         evaluation_results = list(map(lambda result: evaluate_one_query_expansion_node(
             retrieval_callables, retrieval_params, result['queries'].tolist(), retrieval_gt,
-            general_strategy['metrics'], project_dir, previous_result, strategies.get('strategy', 'mean')), results))
+            general_strategy['metrics'], project_dir, previous_result, general_strategy.get('strategy', 'mean')),
+                                      results))
 
         evaluation_df = pd.DataFrame({
             'filename': filenames,

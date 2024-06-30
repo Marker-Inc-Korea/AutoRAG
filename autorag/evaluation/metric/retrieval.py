@@ -1,11 +1,15 @@
 import functools
 import itertools
-import math
 from typing import List
+
+import math
+
+from autorag.utils.util import convert_inputs_to_list
 
 
 def retrieval_metric(func):
     @functools.wraps(func)
+    @convert_inputs_to_list
     def wrapper(retrieval_gt: List[List[List[str]]], pred_ids: List[List[str]]) -> List[float]:
         results = []
         for gt, pred in zip(retrieval_gt, pred_ids):

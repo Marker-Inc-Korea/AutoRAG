@@ -31,3 +31,55 @@ modules:
   llm: openai
   model: [ gpt-3.5-turbo-16k, gpt-3.5-turbo-1106 ]
 ```
+
+## Default Prompt
+
+When the question doesn't need decomposition, it must return "The question needs no decomposition".
+Plus, each question will be allocated in `{question}`, so you have to write it in the prompt.
+
+```
+Decompose a question in self-contained sub-questions. Use \"The question needs no decomposition\" when no decomposition is needed.
+
+Example 1:
+
+Question: Is Hamlet more common on IMDB than Comedy of Errors?
+Decompositions: 
+1: How many listings of Hamlet are there on IMDB?
+2: How many listing of Comedy of Errors is there on IMDB?
+
+Example 2:
+
+Question: Are birds important to badminton?
+
+Decompositions:
+The question needs no decomposition
+
+Example 3:
+
+Question: Is it legal for a licensed child driving Mercedes-Benz to be employed in US?
+
+Decompositions:
+1: What is the minimum driving age in the US?
+2: What is the minimum age for someone to be employed in the US?
+
+Example 4:
+
+Question: Are all cucumbers the same texture?
+
+Decompositions:
+The question needs no decomposition
+
+Example 5:
+
+Question: Hydrogen's atomic number squared exceeds number of Spice Girls?
+
+Decompositions:
+1: What is the atomic number of hydrogen?
+2: How many Spice Girls are there?
+
+Example 6:
+
+Question: {question}
+
+Decompositions:
+```
