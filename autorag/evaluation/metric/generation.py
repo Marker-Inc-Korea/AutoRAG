@@ -74,10 +74,10 @@ def bleu(generation_gt: List[List[str]], generations: [str], tokenize: str|None 
     :param smooth_value: The smoothing value for `floor` and `add-k` methods. `None` falls back to default value.
     :param max_ngram_order: If given, it overrides the maximum n-gram order (default: 4) when computing precisions.
     :param trg_lang: An optional language code to raise potential tokenizer warnings.
-    :param generation_gt: generation_gt is reference. A sequence of reference documents with document being
-    defined as a sequence of reference strings. If given, the reference n-grams
-    and lengths will be pre-computed and cached for faster BLEU computation
-    across many systems.
+    :param generation_gt: A list of ground truth.
+        Must be 2-d list of string.
+        Because it can be a multiple ground truth.
+    :param generations: A list of generations that LLM generated.
     """
     bleu = BLEU(tokenize=tokenize, smooth_method=smooth_method, smooth_value=smooth_value, max_ngram_order=max_ngram_order, trg_lang=trg_lang, **kwargs)
 
