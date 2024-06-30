@@ -7,19 +7,16 @@ node_lines:
       embedding_model: openai
     - module_type: bm25
       bm25_tokenizer: ko_kiwi
-    top_k: 3
+    top_k: 20
     strategy:
-      metrics:
-      - retrieval_f1
-      - retrieval_recall
-      - retrieval_precision
+      metrics: [ retrieval_recall, retrieval_precision, retrieval_map ]
   - node_type: passage_reranker
     modules:
     - module_type: koreranker
     - module_type: pass_reranker
     - module_type: cohere_reranker
     strategy:
-      metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+      metrics: [ retrieval_recall, retrieval_precision, retrieval_map ]
     top_k: 3
 - node_line_name: post_retrieve_node_line
   nodes:
@@ -30,21 +27,22 @@ node_lines:
     strategy:
       generator_modules:
       - batch: 2
-        llm: openai
-        module_type: llama_index_llm
+        module_type: openai_llm
       metrics:
-      - bleu
-      - meteor
-      - rouge
+        - metric_name: rouge
+        - embedding_model: openai
+          metric_name: sem_score
+        - metric_name: bert_score
+          lang: ko
   - modules:
     - batch: 2
-      llm: openai
-      model: gpt-4
-      module_type: llama_index_llm
+      llm: gpt-4o
+      module_type: openai_llm
     node_type: generator
     strategy:
       metrics:
-      - metric_name: bleu
-      - metric_name: meteor
+      - metric_name: rouge
       - embedding_model: openai
         metric_name: sem_score
+      - metric_name: bert_score
+        lang: ko
