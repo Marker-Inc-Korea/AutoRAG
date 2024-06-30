@@ -64,7 +64,7 @@ def huggingface_evaluate(instance, key: str,
     return result
 
 
-#@generation_metric
+@convert_inputs_to_list
 def bleu(generation_gt: List[List[str]], generations: [str], tokenize: str|None = None, smooth_method: str = 'exp', smooth_value: Optional[float] = None, max_ngram_order: int = 4, trg_lang: str = '', **kwargs) -> List[float]:
     """
     Computes the BLEU metric given pred and ground-truth.
