@@ -13,13 +13,13 @@ node_lines:
   nodes:
     - node_type: prompt_maker
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics: [ meteor, rouge, bert_score ]
       modules:
         - module_type: fstring
           prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
     - node_type: generator
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics: [ meteor, rouge, bert_score ]
       modules:
         - module_type: vllm
           llm: mistralai/Mistral-7B-Instruct-v0.2
