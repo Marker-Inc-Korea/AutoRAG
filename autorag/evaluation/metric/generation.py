@@ -6,7 +6,7 @@ from typing import List, Optional
 
 import evaluate
 import pandas as pd
-import sacrebleu
+from sacrebleu.metrics.bleu import BLEU
 import torch
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -64,12 +64,25 @@ def huggingface_evaluate(instance, key: str,
     return result
 
 
-@generation_metric
-def bleu(gt: List[str], pred: str, **kwargs) -> float:
+@convert_inputs_to_list
+def bleu(generation_gt: List[List[str]], generations: [str], tokenize: str|None = None, smooth_method: str = 'exp', smooth_value: Optional[float] = None, max_ngram_order: int = 4, trg_lang: str = '', **kwargs) -> List[float]:
     """
-    Compute bleu score for generation.
+    Computes the BLEU metric given pred and ground-truth.
+
+    :param tokenize: The tokenizer to use. If None, defaults to language-specific tokenizers with '13a' as the fallback default. check #https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/bleu.py
+    :param smooth_method: The smoothing method to use ('floor', 'add-k', 'exp' or 'none').
+    :param smooth_value: The smoothing value for `floor` and `add-k` methods. `None` falls back to default value.
+    :param max_ngram_order: If given, it overrides the maximum n-gram order (default: 4) when computing precisions.
+    :param trg_lang: An optional language code to raise potential tokenizer warnings.
+    :param generation_gt: A list of ground truth.
+        Must be 2-d list of string.
+        Because it can be a multiple ground truth.
+    :param generations: A list of generations that LLM generated.
     """
-    return sacrebleu.sentence_bleu(pred, gt, **kwargs).score
+    bleu = BLEU(tokenize=tokenize, smooth_method=smooth_method, smooth_value=smooth_value, max_ngram_order=max_ngram_order, trg_lang=trg_lang, **kwargs)
+
+    result = list(map(lambda x: bleu.sentence_score(x[0], x[1]).score, zip(generations, generation_gt)))
+    return result
 
 
 @convert_inputs_to_list
