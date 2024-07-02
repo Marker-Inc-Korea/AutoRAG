@@ -12,7 +12,11 @@ More details can be found [here](https://huggingface.co/Dongjin-kr/ko-reranker).
 
 
 ## **Module Parameters**
-- **Not Applicable (N/A):** There are no direct module parameters specified for the `ko-reranker` module.
+
+(Optional) `batch`
+
+- Specify batch size of the query to the Ko-reranker model.
+- default is 64.
 
 ## **Example config.yaml**
 ```yaml
