@@ -14,6 +14,11 @@ The `TART` module is a reranker based on [TART](https://arxiv.org/pdf/2211.09260
 - Specifies instructions for the reranking process. 
 - default is `Find passage to answer given question`
 
+(Optional) `batch`
+
+- Specify batch size of the query to the TART model.
+- default is 64.
+
 ## **Example config.yaml**
 ```yaml
 modules:

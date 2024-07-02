@@ -17,6 +17,10 @@ given query.
       allowing for flexible integration of different monoT5 variants.
     - default is `castorini/monot5-3b-msmarco-10k`
 
+- (Optional) `batch`
+    - Specify batch size of the query to the TART model.
+    - default is 64.
+
 ## **Example config.yaml**
 
 ```yaml
