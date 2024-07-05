@@ -36,6 +36,14 @@ autorag.nodes.promptmaker.run module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.promptmaker.window\_replacement module
+----------------------------------------------------
+
+.. automodule:: autorag.nodes.promptmaker.window_replacement
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
