@@ -37,7 +37,8 @@ def window_replacement(prompt: str, queries: List[str],
                 window_list.append(metadata['window'])
             else:
                 window_list.append(content)
-                logger.info("If you use a summarizer, the reorder will not proceed.")
+                logger.info("Only available for corpus chunked with Sentence window method."
+                            "window_replacement will not proceed.")
         contents_str = "\n\n".join(window_list)
         return _prompt.format(query=_query, retrieved_contents=contents_str)
 
