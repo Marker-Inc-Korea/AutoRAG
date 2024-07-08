@@ -1,11 +1,12 @@
 import functools
 import logging
+import os
 from pathlib import Path
 from typing import List, Union
 
 import pandas as pd
 
-from autorag.utils import result_to_dataframe
+from autorag.utils import result_to_dataframe, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
@@ -31,6 +32,14 @@ def prompt_maker_node(func):
             assert "retrieve_scores" in previous_result.columns, "previous_result must have retrieve_scores column."
             retrieve_scores = previous_result["retrieve_scores"].tolist()
             return func(prompt, query, retrieved_contents, retrieve_scores)
+        elif func.__name__ == 'window_replacement':
+            retrieved_ids = previous_result["retrieved_ids"].tolist()
+            # load corpus
+            data_dir = os.path.join(project_dir, "data")
+            corpus_data = pd.read_parquet(os.path.join(data_dir, "corpus.parquet"), engine='pyarrow')
+            # get metadata from corpus
+            retrieved_metadata = fetch_contents(corpus_data, retrieved_ids, column_name='metadata')
+            return func(prompt, query, retrieved_contents, retrieved_metadata)
         else:
             raise NotImplementedError(f"Module {func.__name__} is not implemented or not supported.")
 
