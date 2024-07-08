@@ -46,11 +46,11 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
 
     qa = qa_creation_func(contents=sampled_corpus['contents'].tolist(), **kwargs)
     qa_data = pd.DataFrame({
-        'qid': [str(uuid.uuid4()) for _ in range(len(qa))],
         'qa': qa,
         'retrieval_gt': sampled_corpus['doc_id'].tolist(),
     })
     qa_data = qa_data.explode('qa', ignore_index=True)
+    qa_data['qid'] = [str(uuid.uuid4()) for _ in range(len(qa_data))]
 
     def make_query_generation_gt(row):
         return row['qa']['query'], row['qa']['generation_gt']
