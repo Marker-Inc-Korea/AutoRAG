@@ -58,6 +58,7 @@ def get_support_modules(module_name: str) -> Callable:
         # prompt_maker
         'fstring': ('autorag.nodes.promptmaker', 'fstring'),
         'long_context_reorder': ('autorag.nodes.promptmaker', 'long_context_reorder'),
+        'window_replacement': ('autorag.nodes.promptmaker', 'window_replacement'),
         # generator
         'llama_index_llm': ('autorag.nodes.generator', 'llama_index_llm'),
         'vllm': ('autorag.nodes.generator', 'vllm'),
