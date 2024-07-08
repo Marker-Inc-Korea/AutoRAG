@@ -48,6 +48,7 @@ def test_single_content_qa(qa_parquet_filepath):
         upsert=True,
     )
     validate_qa_dataset(qa_df)
+    assert len(qa_df) == qa_df['qid'].nunique()
     assert len(qa_df) == 6
     assert qa_df['retrieval_gt'].tolist()[0] == qa_df['retrieval_gt'].tolist()[1]
 
