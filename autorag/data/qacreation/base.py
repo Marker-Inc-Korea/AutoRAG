@@ -72,7 +72,7 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
         if idx == 0:
             qa_data = temp_qa_data
         else:
-            qa_data = pd.concat([qa_data, temp_qa_data])
+            qa_data = pd.concat([qa_data, temp_qa_data], ignore_index=True)
         if output_filepath is not None:
             save_parquet_safe(qa_data, output_filepath, upsert=upsert)
 
