@@ -80,7 +80,7 @@ from autorag.data.qacreation import generate_qa_llama_index, make_single_content
 corpus_df = pd.read_parquet('path/to/corpus.parquet')
 llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
 qa_df = make_single_content_qa(corpus_df, 50, generate_qa_llama_index, llm=llm, question_num_per_content=1,
-                               output_filepath='path/to/qa.parquet')
+                               output_filepath='path/to/qa.parquet', cache_batch=64)
 ```
 
 `generate_qa_llama_index` is a function designed to generate **questions** and its **generation_gt** per content.
@@ -92,6 +92,15 @@ Which means it uses only one passage per question for answering the question.
 
 ```{admonition} What is passage?
 Passage is chunked units from raw data.
+```
+
+```{admonition} Auto-save feature
+From AutoRAG v0.2.9, the auto-save feature added! 
+Now, you don't have to afraid that something wrong while the data generation.
+The data will save automatically to the input `output_filepath`.
+
+You can set how often you want to save the result to the file. 
+Just adjust `cache_batch` parameter. Default is 32.
 ```
 
 ## Use custom prompt
