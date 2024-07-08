@@ -54,3 +54,28 @@ def test_single_content_qa(qa_parquet_filepath):
 
     assert all([len(x) == 1 and len(x[0]) == 1 for x in qa_df['retrieval_gt'].tolist()])
     assert all([len(x) == 1 for x in qa_df['generation_gt'].tolist()])
+
+
+@patch.object(
+    MockLLM,
+    "acomplete",
+    acomplete_qa_creation,
+)
+def test_single_content_qa_long_cache_batch(qa_parquet_filepath):
+    corpus_df = pd.read_parquet(os.path.join(resource_dir, "corpus_data_sample.parquet"))
+    qa_df = make_single_content_qa(
+        corpus_df,
+        content_size=30,
+        qa_creation_func=generate_qa_llama_index,
+        output_filepath=qa_parquet_filepath,
+        llm=MockLLM(),
+        question_num_per_content=2,
+        upsert=True,
+        cache_batch=2,
+    )
+    validate_qa_dataset(qa_df)
+    assert len(qa_df) == 60
+    assert qa_df['retrieval_gt'].tolist()[0] == qa_df['retrieval_gt'].tolist()[1]
+
+    assert all([len(x) == 1 and len(x[0]) == 1 for x in qa_df['retrieval_gt'].tolist()])
+    assert all([len(x) == 1 for x in qa_df['generation_gt'].tolist()])
