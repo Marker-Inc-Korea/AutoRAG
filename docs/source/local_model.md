@@ -25,10 +25,14 @@ myst:
 
 Most of the modules that using LLM model can take `llm` parameter to specify the LLM model.
 
+- [llama_index_llm](nodes/generator/llama_index_llm.md)
+
+The following modules can use generator module, which including `llama_index_llm`.
+
 - [hyde](nodes/query_expansion/hyde.md)
 - [query_decompose](nodes/query_expansion/query_decompose.md)
+- [multi_query_expansion](nodes/query_expansion/multi_query_expansion.md)
 - [tree_summarize](nodes/passage_compressor/tree_summarize.md)
-- [llama_index_llm](nodes/generator/llama_index_llm.md)
 
 ### Supporting LLM models
 
@@ -114,7 +118,8 @@ To change the embedding model, you can change the `embedding_model` parameter to
 |               [cointegrated/rubert-tiny2](https://huggingface.co/cointegrated/rubert-tiny2)               | huggingface_cointegrated_rubert_tiny2 |
 | [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) |     huggingface_all_mpnet_base_v2     |
 
-For example, if you want to use OpenAI curie embedding model, you can set `embedding_model` parameter to `openai_curie`.
+For example, if you want to use OpenAI text embedding large model, you can set `embedding_model` parameter
+to `openai_embed_3_large`.
 
 ```yaml
 nodes:
@@ -124,11 +129,6 @@ nodes:
         modules:
           - module_type: vectordb
             embedding_model: openai
-```
-
-```{attention}
-You can't pass embedding model parameters at the config yaml file like LLM models.
-Because the embedding model is initialized at the beginning of the AutoRAG program.
 ```
 
 ### Add your embedding models
@@ -141,13 +141,19 @@ execute the following code.
 
 ```python
 import autorag
+from autorag import LazyInit
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
-autorag.generator_models['kosimcse'] = HuggingFaceEmbedding("BM-K/KoSimCSE-roberta-multitask")
+autorag.embedding_models['kosimcse'] = LazyInit(HuggingFaceEmbedding, model_name="BM-K/KoSimCSE-roberta-multitask")
 ```
 
 Then you can use `kosimcse` at config yaml file.
 
 ```{caution}
-When you add new LLM model, you should add instance of the `BaseEmbedding` class from LlamaIndex.
+When you add new embedding model, you should use `LazyInit` class from autorag. The additional parameters have to be keyword parameter in the `LazyInit` initialization. 
 ```
+
+## Use vllm
+
+You can use vllm to use local LLM. For more information, please check out [vllm](nodes/generator/vllm.md) generator
+module docs.
