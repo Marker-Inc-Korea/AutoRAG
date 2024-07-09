@@ -3,6 +3,7 @@ import uuid
 from typing import Callable, Optional
 
 import pandas as pd
+from tqdm import tqdm
 
 from autorag.utils.util import save_parquet_safe
 
@@ -15,6 +16,7 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
                            output_filepath: Optional[str] = None,
                            upsert: bool = False,
                            random_state: int = 42,
+                           cache_batch: int = 32,
                            **kwargs) -> pd.DataFrame:
     """
     Make single content (single-hop, single-document) QA dataset using given qa_creation_func.
@@ -32,6 +34,9 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
     :param upsert: If true, the function will overwrite the existing file if it exists.
         Default is False.
     :param random_state: The random state for sampling corpus from the given corpus_df.
+    :param cache_batch: The number of batches to use for caching the generated QA dataset.
+        When the cache_batch size data is generated, the dataset will save to the designated output_filepath.
+        If the cache_batch size is too small, the process time will be longer.
     :param kwargs: The keyword arguments for qa_creation_func.
     :return: QA dataset dataframe.
         You can save this as parquet file to use at AutoRAG.
@@ -44,24 +49,31 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
     sampled_corpus = corpus_df.sample(n=content_size, random_state=random_state)
     sampled_corpus = sampled_corpus.reset_index(drop=True)
 
-    qa = qa_creation_func(contents=sampled_corpus['contents'].tolist(), **kwargs)
-    qa_data = pd.DataFrame({
-        'qa': qa,
-        'retrieval_gt': sampled_corpus['doc_id'].tolist(),
-    })
-    qa_data = qa_data.explode('qa', ignore_index=True)
-    qa_data['qid'] = [str(uuid.uuid4()) for _ in range(len(qa_data))]
-
     def make_query_generation_gt(row):
         return row['qa']['query'], row['qa']['generation_gt']
 
-    qa_data[['query', 'generation_gt']] = qa_data.apply(make_query_generation_gt, axis=1, result_type='expand')
-    qa_data = qa_data.drop(columns=['qa'])
+    qa_data = pd.DataFrame()
+    for idx, i in tqdm(enumerate(range(0, len(sampled_corpus), cache_batch))):
+        qa = qa_creation_func(contents=sampled_corpus['contents'].tolist()[i:i + cache_batch], **kwargs)
 
-    qa_data['retrieval_gt'] = qa_data['retrieval_gt'].apply(lambda x: [[x]])
-    qa_data['generation_gt'] = qa_data['generation_gt'].apply(lambda x: [x])
+        temp_qa_data = pd.DataFrame({
+            'qa': qa,
+            'retrieval_gt': sampled_corpus['doc_id'].tolist()[i:i + cache_batch],
+        })
+        temp_qa_data = temp_qa_data.explode('qa', ignore_index=True)
+        temp_qa_data['qid'] = [str(uuid.uuid4()) for _ in range(len(temp_qa_data))]
+        temp_qa_data[['query', 'generation_gt']] = temp_qa_data.apply(make_query_generation_gt, axis=1,
+                                                                      result_type='expand')
+        temp_qa_data = temp_qa_data.drop(columns=['qa'])
 
-    if output_filepath is not None:
-        save_parquet_safe(qa_data, output_filepath, upsert=upsert)
+        temp_qa_data['retrieval_gt'] = temp_qa_data['retrieval_gt'].apply(lambda x: [[x]])
+        temp_qa_data['generation_gt'] = temp_qa_data['generation_gt'].apply(lambda x: [x])
+
+        if idx == 0:
+            qa_data = temp_qa_data
+        else:
+            qa_data = pd.concat([qa_data, temp_qa_data], ignore_index=True)
+        if output_filepath is not None:
+            save_parquet_safe(qa_data, output_filepath, upsert=upsert)
 
     return qa_data
