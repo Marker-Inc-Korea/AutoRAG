@@ -19,26 +19,39 @@ must be included in the config file, and hybrid is calculated based on the best 
 
 Once evaluated to find the optimal pipeline, extracting the pipeline creates a parameter called target_module_params. This helps the hybrid work even if you don't include other modules, which is useful in test dataset evaluation and deployment situations.
 
-Also, target_modules and target_module_params must be in the form of a tuple. By default, tuples don't work in yaml files, but AutoRAG specifically uses them. In the AutoRAG config yaml file, a tuple is a tuple of parameters, as opposed to a List, which is a list of options for a parameter that you can try for optimization. Note that because we are using `ast.literal_eval()`, we have to write tuples as if we were writing them in python.
-
-So something like `('bm25', 'vectordb')` with quotes will work.
-
 ## **Module Parameters**
-- **Parameters**: `target_modules`, `weights`, `target_module_params`
-- **Purpose**: This module combines different retrieval modules (target_modules) and applies weights to them, adjusting their influence on the final retrieval outcome. The `target_module_params` allows for further customization of each target module.
 
-```{attention}
-In the config YAML file that you wrote, you don't have to specify the target_module_params. 
-It is automatically generated when you run the optimization process.
-```
+- (Required) **lexical_module**: The name of the lexical module you want to use like 'bm25'. If your input is string
+  list, it automatically chooses the best module.
+- (Required) **semantic_module**: The name of the semantic module you want to use like 'vectordb'. If your input is
+  string list, it automatically chooses the best module.
+- (Required) **normalize_method**: The normalization method to use.
+  There are some normalization method that you can use at the hybrid cc method.
+  AutoRAG support following.
+    - `mm`: Min-max scaling
+    - `tmm`: Theoretical min-max scaling
+    - `z`: z-score normalization
+    - `dbsf`: 3-sigma normalization
+- (Optional) **weight_range**: The range of the weight that you want to explore. If the weight is 1.0, it means the
+  weight to the semantic module will be 1.0 and weight to the lexical module will be 0.0.
+  You have to input this value as tuple. It looks like this. `(0.2, 0.8)`. Default is `(0.0, 1.0)`.
+- (Optional) **test_weight_size**: The size of the weight that tested for optimization. If the weight range
+  is `(0.2, 0.8)` and the size is 6, it will evaluate the following weights.
+  `0.2, 0.3, 0.4, 0.5, 0.6, 0.7`. Default is 100.
+- (Optional) **lexical_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
+  theoretical minimum value by yourself. Default is 0.
+- (Optional) **semantic_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
+  theoretical minimum value by yourself. Default is -1.
 
 ## **Example config.yaml**
 ```yaml
 modules:
   - module_type: hybrid_cc
-    target_modules: ('bm25', 'vectordb')
-    weights:
-      - (0.5, 0.5)
-      - (0.3, 0.7)
-      - (0.7, 0.3)
+    lexical_module: bm25
+    semantic_module: vectordb
+    normalize_method: [ mm, tmm, z, dbsf ]
+    weight_range: (0.0, 1.0)
+    test_weight_size: 100
+    lexical_theoretical_min_value: 0
+    semantic_theoretical_min_value: -1
 ```
