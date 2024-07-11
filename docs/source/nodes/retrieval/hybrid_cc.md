@@ -19,12 +19,12 @@ must be included in the config file, and hybrid is calculated based on the best 
 
 Once evaluated to find the optimal pipeline, extracting the pipeline creates a parameter called target_module_params. This helps the hybrid work even if you don't include other modules, which is useful in test dataset evaluation and deployment situations.
 
+```{attention}
+You don't have to specify the module that you want to fuse. It will auto-detect the best module name and parameter for each lexcial and semantic modules.
+```
+
 ## **Module Parameters**
 
-- (Required) **lexical_module**: The name of the lexical module you want to use like 'bm25'. If your input is string
-  list, it automatically chooses the best module.
-- (Required) **semantic_module**: The name of the semantic module you want to use like 'vectordb'. If your input is
-  string list, it automatically chooses the best module.
 - (Required) **normalize_method**: The normalization method to use.
   There are some normalization method that you can use at the hybrid cc method.
   AutoRAG support following.
@@ -47,8 +47,8 @@ Once evaluated to find the optimal pipeline, extracting the pipeline creates a p
 ```yaml
 modules:
   - module_type: hybrid_cc
-    lexical_module: bm25
-    semantic_module: vectordb
+    lexical_module: ('bm25')
+    semantic_module: ('vectordb') # have to use tuple when you want to input multiple module.
     normalize_method: [ mm, tmm, z, dbsf ]
     weight_range: (0.0, 1.0)
     test_weight_size: 100
