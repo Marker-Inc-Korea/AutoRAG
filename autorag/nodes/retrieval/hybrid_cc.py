@@ -6,8 +6,7 @@ import pandas as pd
 from autorag.nodes.retrieval import retrieval_node
 
 
-def normalize_mm(scores: List[str],
-                 fixed_min_value: float = 0):
+def normalize_mm(scores: List[str], fixed_min_value: float = 0):
     arr = np.array(scores)
     max_value = np.max(arr)
     min_value = np.min(arr)
@@ -15,18 +14,36 @@ def normalize_mm(scores: List[str],
     return norm_score
 
 
-# def normalize_tmm(semantic_scores: List[float], lexical_scores: List[float],
-#                   semantic_theoretical_min_value: float = -1.0,
-#                   lexical_theoretical_min_value: float = 0.0):
-#     concat_arr = np.array(semantic_scores + lexical_scores)
-#     max_score = np.max(concat_arr)
+def normalize_tmm(scores: List[str], fixed_min_value: float):
+    arr = np.array(scores)
+    max_value = np.max(arr)
+    norm_score = (arr - fixed_min_value) / (max_value - fixed_min_value)
+    return norm_score
+
+
+def normalize_z(scores: List[str], fixed_min_value: float = 0):
+    arr = np.array(scores)
+    mean_value = np.mean(arr)
+    std_value = np.std(arr)
+    norm_score = (arr - mean_value) / std_value
+    return norm_score
+
+
+def normalize_dbsf(scores: List[str], fixed_min_value: float = 0):
+    arr = np.array(scores)
+    mean_value = np.mean(arr)
+    std_value = np.std(arr)
+    min_value = mean_value - 3 * std_value
+    max_value = mean_value + 3 * std_value
+    norm_score = (arr - min_value) / (max_value - min_value)
+    return norm_score
 
 
 normalize_method_dict = {
     'mm': normalize_mm,
     'tmm': normalize_tmm,
-    # 'z': normalize_z,
-    # 'dbsf': normalize_dbsf,
+    'z': normalize_z,
+    'dbsf': normalize_dbsf,
 }
 
 
