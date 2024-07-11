@@ -186,35 +186,6 @@ def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics,
     return evaluate_this_module(result_df)
 
 
-def select_result_for_hybrid(node_dir: str, target_modules: Tuple) -> List[str]:
-    """
-    Get ids and scores of target_module from summary.csv and each result parquet file.
-
-    :param node_dir: The directory of the node.
-    :param target_modules: The name of the target modules.
-    :return: A list of filenames.
-    """
-
-    def select_best_among_module(df: pd.DataFrame, module_name: str):
-        modules_summary = df.loc[lambda row: row['module_name'] == module_name]
-        if len(modules_summary) == 1:
-            return modules_summary.iloc[0, :]
-        elif len(modules_summary) <= 0:
-            raise ValueError(f"module_name {module_name} does not exist in summary.csv. "
-                             f"You must run {module_name} before running hybrid retrieval.")
-        metrics = modules_summary.drop(columns=['filename', 'module_name', 'module_params', 'execution_time'])
-        metric_average = metrics.mean(axis=1)
-        metric_average = metric_average.reset_index(drop=True)
-        max_idx = metric_average.idxmax()
-        best_module = modules_summary.iloc[max_idx, :]
-        return best_module
-
-    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
-    best_results = list(map(lambda module_name: select_best_among_module(summary_df, module_name), target_modules))
-    best_filenames = list(map(lambda df: df['filename'], best_results))
-    return best_filenames
-
-
 def get_module_params(node_dir: str, filenames: List[str]) -> Tuple[Dict]:
     summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
     best_results = summary_df[summary_df['filename'].isin(filenames)]

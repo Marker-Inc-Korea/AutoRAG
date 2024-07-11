@@ -9,7 +9,7 @@ import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf, hybrid_cc
-from autorag.nodes.retrieval.run import run_retrieval_node, select_result_for_hybrid, get_ids_and_scores
+from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
 
@@ -159,28 +159,6 @@ def pseudo_node_dir():
         vector_openai_df.to_parquet(os.path.join(node_dir, "1.parquet"))
         vector_huggingface_df.to_parquet(os.path.join(node_dir, "2.parquet"))
         yield node_dir
-
-
-def test_select_result_for_hybrid(pseudo_node_dir):
-    filenames = select_result_for_hybrid(pseudo_node_dir, ("bm25", "vectordb"))
-    dict_id_scores = get_ids_and_scores(pseudo_node_dir, filenames)
-    ids = dict_id_scores['ids']
-    scores = dict_id_scores['scores']
-    assert len(ids) == len(scores) == 2
-    assert len(ids[0]) == len(scores[0]) == 3
-    assert len(ids[1]) == len(scores[1]) == 3
-    assert ids[0] == [['id-1', 'id-2', 'id-3'],
-                      ['id-1', 'id-2', 'id-3'],
-                      ['id-1', 'id-2', 'id-3']]
-    assert scores[0] == [[0.1, 0.2, 0.3],
-                         [0.1, 0.2, 0.3],
-                         [0.1, 0.2, 0.3]]
-    assert ids[1] == [['id-7', 'id-8', 'id-9'],
-                      ['id-7', 'id-8', 'id-9'],
-                      ['id-7', 'id-8', 'id-9']]
-    assert scores[1] == [[0.5, 0.6, 0.7],
-                         [0.5, 0.6, 0.7],
-                         [0.5, 0.6, 0.7]]
 
 
 def test_run_retrieval_node_only_hybrid(node_line_dir):
