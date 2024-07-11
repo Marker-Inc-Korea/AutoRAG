@@ -6,19 +6,25 @@ import pandas as pd
 from autorag.nodes.retrieval import retrieval_node
 
 
-def normalize_mm(semantic_scores: List[float], lexical_scores: List[float],
-                 semantic_theoretical_min_value: float = -1.0,
-                 lexical_theoretical_min_value: float = 0.0):
-    concat_arr = np.array(semantic_scores + lexical_scores)
-    max_score = np.max(concat_arr)
-    min_score = np.min(concat_arr)
-    norm_score = (concat_arr - min_score) / (max_score - min_score)
-    return norm_score[:len(semantic_scores)], norm_score[len(semantic_scores):]
+def normalize_mm(scores: List[str],
+                 fixed_min_value: float = 0):
+    arr = np.array(scores)
+    max_value = np.max(arr)
+    min_value = np.min(arr)
+    norm_score = (arr - min_value) / (max_value - min_value)
+    return norm_score
+
+
+# def normalize_tmm(semantic_scores: List[float], lexical_scores: List[float],
+#                   semantic_theoretical_min_value: float = -1.0,
+#                   lexical_theoretical_min_value: float = 0.0):
+#     concat_arr = np.array(semantic_scores + lexical_scores)
+#     max_score = np.max(concat_arr)
 
 
 normalize_method_dict = {
     'mm': normalize_mm,
-    # 'tmm': normalize_tmm,
+    'tmm': normalize_tmm,
     # 'z': normalize_z,
     # 'dbsf': normalize_dbsf,
 }
@@ -103,10 +109,8 @@ def fuse_per_query(semantic_ids: List[str], lexical_ids: List[str],
                    semantic_theoretical_min_value: float,
                    lexical_theoretical_min_value: float):
     normalize_func = normalize_method_dict[normalize_method]
-    norm_semantic_scores, norm_lexical_scores = normalize_func(
-        semantic_scores, lexical_scores, semantic_theoretical_min_value,
-        lexical_theoretical_min_value
-    )
+    norm_semantic_scores = normalize_func(semantic_scores, semantic_theoretical_min_value)
+    norm_lexical_scores = normalize_func(lexical_scores, lexical_theoretical_min_value)
     ids = [semantic_ids, lexical_ids]
     scores = [norm_semantic_scores, norm_lexical_scores]
     df = pd.concat([pd.Series(dict(zip(_id, score))) for _id, score in zip(ids, scores)], axis=1)

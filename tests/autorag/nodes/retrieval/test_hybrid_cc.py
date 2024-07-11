@@ -13,8 +13,8 @@ def test_cc_fuse_per_query():
                                               normalize_method='mm',
                                               semantic_theoretical_min_value=-1.0,
                                               lexical_theoretical_min_value=0.0)
-    assert result_scores == pytest.approx([0.94915, 0.240677, 0.15254237], rel=1e-3)
-    assert result_id == ['id-1', 'id-4', 'id-3']
+    assert result_scores == pytest.approx([1.0, 0.23792, 0.175], rel=1e-3)
+    assert result_id == ['id-1', 'id-4', 'id-2']
 
 
 def test_cc_non_overlap():
@@ -26,7 +26,7 @@ def test_cc_non_overlap():
                                               lexical_theoretical_min_value=0.0
                                               )
     assert result_id == ['id-6', 'id-1', 'id-4']
-    assert result_scores == pytest.approx([0.7, 0.249152, 0.2406779], rel=1e-3)
+    assert result_scores == pytest.approx([0.7, 0.3, 0.2379237], rel=1e-3)
 
 
 def test_hybrid_cc():
