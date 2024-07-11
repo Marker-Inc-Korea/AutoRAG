@@ -1,4 +1,4 @@
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -54,15 +54,15 @@ def hybrid_cc(
         ids: Tuple,
         scores: Tuple,
         top_k: int,
-        metrics: List[str],
-        retrieval_gt: List[List[List[str]]],
-        # TODO: add fixed weight for Runner.run
         normalize_method: str,
+        metrics: List[str] = ['retrieval_f1'],
+        retrieval_gt: List[List[List[str]]] = [[[]]],
         weight_range: tuple = (0.0, 1.0),
         test_weight_size: int = 100,
         strategy: str = 'normalize_mean',
         semantic_theoretical_min_value: float = -1.0,
         lexical_theoretical_min_value: float = 0.0,
+        fixed_weight: Optional[float] = None,
 ) -> Tuple[List[List[str]], List[List[float]], float]:
     """
     Hybrid CC function.
@@ -102,6 +102,9 @@ def hybrid_cc(
         theoretical minimum value by yourself. Default is -1.
     :param lexical_theoretical_min_value: This value used by `tmm` normalization method. You can set the
         theoretical minimum value by yourself. Default is 0.
+    :param fixed_weight: The fixed weight for hybrid cc. This will use for Runner.run,
+    running this module without optimize.
+    When you set this, the optimization will not run.
     :return: The tuple of ids and fused scores that fused by CC. Plus, the third element is selected weight value.
     """
     assert len(ids) == len(scores), "The length of ids and scores must be the same."
@@ -129,6 +132,12 @@ def hybrid_cc(
                               weight=weight, top_k=top_k,
                               semantic_theoretical_min_value=semantic_theoretical_min_value,
                               lexical_theoretical_min_value=lexical_theoretical_min_value)
+
+    # fixed weight
+    if fixed_weight is not None:
+        df[['cc_id', 'cc_score']] = df.apply(lambda row: cc_pure_apply(row, fixed_weight), axis=1,
+                                             result_type='expand')
+        return df['cc_id'].tolist(), df['cc_score'].tolist(), fixed_weight
 
     # start optimize weight
     weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()

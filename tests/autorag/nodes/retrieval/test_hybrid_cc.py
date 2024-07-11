@@ -45,3 +45,15 @@ def test_hybrid_cc():
 def test_hybrid_cc_node(pseudo_project_dir):
     retrieve_scores = [1.0, 0.23792372, 0.175]
     base_hybrid_weights_node_test(hybrid_cc, pseudo_project_dir, retrieve_scores)
+
+
+def test_hybrid_cc_fixed_weight():
+    result_id, result_scores, best_weight = hybrid_cc.__wrapped__(sample_ids_3, sample_scores_3, top_k=3,
+                                                                  normalize_method='tmm', fixed_weight=0.4)
+    assert result_id[0] == ['id-1', 'id-4', 'id-2']
+    assert result_id[1] == ['id-2', 'id-5', 'id-3']
+    assert result_scores[0] == pytest.approx([1.0, 0.2933333, 0.276666], rel=1e-3)
+    assert result_scores[1] == pytest.approx([1.0, 0.39428, 0.38], rel=1e-3)
+    assert isinstance(result_id, list)
+    assert isinstance(result_scores, list)
+    assert isinstance(best_weight, float)
