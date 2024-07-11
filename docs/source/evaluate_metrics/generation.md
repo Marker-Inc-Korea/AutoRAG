@@ -63,7 +63,7 @@ at [here](https://medium.com/@autorag/sem-score-maybe-the-answer-to-rag-evaluati
 
 ## 5. G-Eval
 
-### 📌Definition
+### 📌 Definition
 
 Here is the [link](https://arxiv.org/abs/2303.16634) that introduced ***G-Eval***
 
@@ -77,14 +77,14 @@ So, in AutoRAG, we use **G-Eval with GPT-4**
 
 ---
 
-### 🍀1. Coherence
+### 5-1. Coherence
 
 - Evaluate whether the answer is logically consistent and flows naturally.
 - Evaluate the connections between sentences and how they fit into the overall context.
 
 ---
 
-### 🍀2. Consistency
+### 5-2. Consistency
 
 - Evaluate whether the answer is consistent with and does not contradict the question asked or the information
   presented.
@@ -93,16 +93,27 @@ So, in AutoRAG, we use **G-Eval with GPT-4**
 
 ---
 
-### 🍀3. Fluency
+### 5-3. Fluency
 
 - Evaluate answers for fluency
 
 ---
 
-### 🍀4. Relevance
+### 5-4. Relevance
 
 - Evaluate how well the answer meets the question's requirements
 - A highly relevant answer should be directly related to the question's core topic or keyword.
+
+### ❗How to use specific G-Eval metrics
+
+You can use specific G-Eval metrics to use `metrics` parameter.
+
+Here is an example yaml file that uses **G-Eval consistency** metric.
+
+```yaml
+- metric_name: g_eval
+  metrics: [ consistency ]
+```
 
 ## 6. Bert Score
 
