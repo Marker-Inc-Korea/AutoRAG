@@ -23,6 +23,10 @@ Once evaluated to find the optimal pipeline, extracting the pipeline creates a p
 You don't have to specify the module that you want to fuse. It will auto-detect the best module name and parameter for each lexcial and semantic modules.
 ```
 
+## **Node Parameters**
+
+- (Required) **top_k**: Essential parameter for retrieval node.
+
 ## **Module Parameters**
 
 - (Required) **normalize_method**: The normalization method to use.
@@ -38,10 +42,10 @@ You don't have to specify the module that you want to fuse. It will auto-detect 
 - (Optional) **test_weight_size**: The size of the weight that tested for optimization. If the weight range
   is `(0.2, 0.8)` and the size is 6, it will evaluate the following weights.
   `0.2, 0.3, 0.4, 0.5, 0.6, 0.7`. Default is 100.
-- (Optional) **lexical_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
-  theoretical minimum value by yourself. Default is 0.
 - (Optional) **semantic_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
   theoretical minimum value by yourself. Default is -1.
+- (Optional) **lexical_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
+  theoretical minimum value by yourself. Default is 0.
 
 ## **Example config.yaml**
 ```yaml

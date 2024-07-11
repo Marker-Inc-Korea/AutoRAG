@@ -1,23 +1,32 @@
 import pytest
 
-from autorag.nodes.retrieval.hybrid_cc import cc_pure, hybrid_cc
+from autorag.nodes.retrieval.hybrid_cc import hybrid_cc, fuse_per_query
 from tests.autorag.nodes.retrieval.test_hybrid_base import (sample_ids_2, sample_scores_2, sample_ids_3,
                                                             sample_scores_3, pseudo_project_dir,
                                                             base_hybrid_weights_node_test, sample_ids_non_overlap)
 
 
-def test_cc_pure():
-    result_id, result_scores = cc_pure(sample_ids_2, sample_scores_2,
-                                       weights=(0.3, 0.7), top_k=3)
-    assert result_scores == pytest.approx([1.0, 0.23792372, 0.175])
-    assert result_id == ['id-1', 'id-4', 'id-2']
+def test_cc_fuse_per_query():
+    result_id, result_scores = fuse_per_query(sample_ids_2[0], sample_ids_2[1],
+                                              sample_scores_2[0], sample_scores_2[1],
+                                              weight=0.3, top_k=3,
+                                              normalize_method='mm',
+                                              semantic_theoretical_min_value=-1.0,
+                                              lexical_theoretical_min_value=0.0)
+    assert result_scores == pytest.approx([0.94915, 0.240677, 0.15254237], rel=1e-3)
+    assert result_id == ['id-1', 'id-4', 'id-3']
 
 
 def test_cc_non_overlap():
-    result_id, result_scores = cc_pure(sample_ids_non_overlap, sample_scores_2,
-                                       weights=(0.3, 0.7), top_k=3)
-    assert result_scores == pytest.approx([0.7, 0.3, 0.23792372])
+    result_id, result_scores = fuse_per_query(sample_ids_non_overlap[0], sample_ids_non_overlap[1],
+                                              sample_scores_2[0], sample_scores_2[1],
+                                              weight=0.3, top_k=3,
+                                              normalize_method='mm',
+                                              semantic_theoretical_min_value=-1.0,
+                                              lexical_theoretical_min_value=0.0
+                                              )
     assert result_id == ['id-6', 'id-1', 'id-4']
+    assert result_scores == pytest.approx([0.7, 0.249152, 0.2406779], rel=1e-3)
 
 
 def test_hybrid_cc():

@@ -78,7 +78,7 @@ def retrieval_node(func):
         elif func.__name__ in ["hybrid_rrf", "hybrid_cc", "hybrid_rsf", "hybrid_dbsf"]:
             if 'ids' in kwargs and 'scores' in kwargs:  # ordinary run_evaluate
                 ids, scores = func(**kwargs)
-            else:
+            else:  # => for Runner.run
                 if not ('target_modules' in kwargs and 'target_module_params' in kwargs):
                     raise ValueError(
                         f"If there are no ids and scores specified, target_modules and target_module_params must be specified for using {func.__name__}.")
@@ -86,7 +86,7 @@ def retrieval_node(func):
                 target_module_params = kwargs.pop('target_module_params')
                 result_dfs = list(map(lambda x: get_support_modules(x[0])(**x[1], project_dir=project_dir,
                                                                           previous_result=previous_result),
-                                      zip(target_modules, target_module_params)))  # => for Runner.run
+                                      zip(target_modules, target_module_params)))
                 ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), result_dfs))
                 scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), result_dfs))
                 ids, scores = func(ids=ids, scores=scores, **kwargs)
