@@ -1,13 +1,12 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict, Tuple
+from typing import List, Callable, Dict
 
 import pandas as pd
 
 from autorag.evaluation import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
-from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
 
@@ -122,24 +121,30 @@ def run_retrieval_node(modules: List[Callable],
         lexical_selected_filename, lexical_summary_df, lexical_results, lexical_times = None, pd.DataFrame(), [], []
 
     # Next, run hybrid retrieval
-    if any([module.__name__ in hybrid_module_names for module in modules]) \
-            and (semantic_selected_filename is not None and lexical_selected_filename is not None):
+    if any([module.__name__ in hybrid_module_names for module in modules]):
         hybrid_modules, hybrid_module_params = zip(*filter(lambda x: x[0].__name__ in hybrid_module_names,
                                                            zip(modules, module_params)))
-        ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename])
-        hybrid_module_params = list(map(lambda x: {**x, **ids_scores}, hybrid_module_params))
-        real_hybrid_times = [get_hybrid_execution_times(semantic_summary_df, lexical_summary_df)
-                             ] * len(hybrid_module_params)
-        hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
-                                                                       filename_first)
-        filename_first += len(hybrid_modules)
-        hybrid_times = real_hybrid_times.copy()
-        hybrid_summary_df['execution_time'] = hybrid_times
-        best_semantic_summary_row = semantic_summary_df.loc[semantic_summary_df['is_best'] == True].iloc[0]
-        best_lexical_summary_row = lexical_summary_df.loc[lexical_summary_df['is_best'] == True].iloc[0]
-        target_modules = (best_semantic_summary_row['module_name'], best_lexical_summary_row['module_name'])
-        target_module_params = (best_semantic_summary_row['module_params'], best_lexical_summary_row['module_params'])
-        hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
+        if all(['target_module_params' in x for x in hybrid_module_params]):  # for Runner.run
+            # If target_module_params are already given, run hybrid retrieval directly
+            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
+                                                                           filename_first)
+            filename_first += len(hybrid_modules)
+        else:  # for Evaluator
+            ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename])
+            hybrid_module_params = list(map(lambda x: {**x, **ids_scores}, hybrid_module_params))
+            real_hybrid_times = [get_hybrid_execution_times(semantic_summary_df, lexical_summary_df)
+                                 ] * len(hybrid_module_params)
+            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
+                                                                           filename_first)
+            filename_first += len(hybrid_modules)
+            hybrid_times = real_hybrid_times.copy()
+            hybrid_summary_df['execution_time'] = hybrid_times
+            best_semantic_summary_row = semantic_summary_df.loc[semantic_summary_df['is_best'] == True].iloc[0]
+            best_lexical_summary_row = lexical_summary_df.loc[lexical_summary_df['is_best'] == True].iloc[0]
+            target_modules = (best_semantic_summary_row['module_name'], best_lexical_summary_row['module_name'])
+            target_module_params = (
+            best_semantic_summary_row['module_params'], best_lexical_summary_row['module_params'])
+            hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
     else:
         if any([module.__name__ in hybrid_module_names for module in modules]):
             logger.warning("You must at least one semantic module and lexical module for hybrid evaluation."
@@ -184,13 +189,6 @@ def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics,
         return df['retrieved_contents'].tolist(), df['retrieved_ids'].tolist(), df['retrieve_scores'].tolist()
 
     return evaluate_this_module(result_df)
-
-
-def get_module_params(node_dir: str, filenames: List[str]) -> Tuple[Dict]:
-    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
-    best_results = summary_df[summary_df['filename'].isin(filenames)]
-    module_params = best_results['module_params'].tolist()
-    return tuple(module_params)
 
 
 def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_module_params) -> pd.DataFrame:
