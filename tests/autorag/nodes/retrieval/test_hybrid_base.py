@@ -42,6 +42,10 @@ sample_scores_3 = ([
                        [6, 2, 1, 0.5, 0.1],
                        [7, 3, 2, 1.5, 1.1],
                    ])
+sample_retrieval_gt_3 = [
+    [['id-3']],
+    [['id-2'], ['id-6']],
+]
 
 sample_ids_non_overlap = (['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
                           ['id-6', 'id-4', 'id-3', 'id-7', 'id-2'])

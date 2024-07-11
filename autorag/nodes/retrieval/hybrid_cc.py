@@ -3,7 +3,9 @@ from typing import Tuple, List
 import numpy as np
 import pandas as pd
 
+from autorag.evaluation import evaluate_retrieval
 from autorag.nodes.retrieval import retrieval_node
+from autorag.strategy import select_best
 
 
 def normalize_mm(scores: List[str], fixed_min_value: float = 0):
@@ -52,15 +54,16 @@ def hybrid_cc(
         ids: Tuple,
         scores: Tuple,
         top_k: int,
-        # TODO: add metrics and strategy to evaluate retrieval.
+        metrics: List[str],
+        retrieval_gt: List[List[List[str]]],
         # TODO: add fixed weight for Runner.run
-        # TODO: how to save selected weight value?
         normalize_method: str,
         weight_range: tuple = (0.0, 1.0),
         test_weight_size: int = 100,
+        strategy: str = 'normalize_mean',
         semantic_theoretical_min_value: float = -1.0,
         lexical_theoretical_min_value: float = 0.0,
-) -> Tuple[List[List[str]], List[List[float]]]:
+) -> Tuple[List[List[str]], List[List[float]], float]:
     """
     Hybrid CC function.
     CC (convex combination) is a method to fuse lexical and semantic retrieval results.
@@ -79,6 +82,8 @@ def hybrid_cc(
         The length of this must be the same as the length of ids.
         The semantic retrieval scores must be the first index.
     :param top_k: The number of passages to be retrieved.
+    :param metrics: The list of metrics that you want to evaluate each weight.
+    :param retrieval_gt: The list of retrieval gt to evaluate each weight.
     :param normalize_method: The normalization method to use.
       There are some normalization method that you can use at the hybrid cc method.
       AutoRAG support following.
@@ -92,11 +97,12 @@ def hybrid_cc(
     :param test_weight_size: The size of the weight that tested for optimization. If the weight range
       is `(0.2, 0.8)` and the size is 6, it will evaluate the following weights.
       `0.2, 0.3, 0.4, 0.5, 0.6, 0.7`. Default is 100.
-  :param semantic_theoretical_min_value: This value used by `tmm` normalization method. You can set the
-    theoretical minimum value by yourself. Default is -1.
+    :param strategy: The strategy to select the best weight.
+    :param semantic_theoretical_min_value: This value used by `tmm` normalization method. You can set the
+        theoretical minimum value by yourself. Default is -1.
     :param lexical_theoretical_min_value: This value used by `tmm` normalization method. You can set the
         theoretical minimum value by yourself. Default is 0.
-    :return: The tuple of ids and fused scores that fused by CC.
+    :return: The tuple of ids and fused scores that fused by CC. Plus, the third element is selected weight value.
     """
     assert len(ids) == len(scores), "The length of ids and scores must be the same."
     assert len(ids) > 1, "You must input more than one retrieval results."
@@ -105,17 +111,41 @@ def hybrid_cc(
     assert weight_range[0] >= 0, "The range must be greater than 0."
     assert weight_range[1] <= 1, "The range must be less than 1."
 
-    id_df = pd.DataFrame({f'id_{i}': id_list for i, id_list in enumerate(ids)})
-    score_df = pd.DataFrame({f'score_{i}': score_list for i, score_list in enumerate(scores)})
-    df = pd.concat([id_df, score_df], axis=1)
+    @evaluate_retrieval(retrieval_gt=retrieval_gt, metrics=metrics)
+    def evaluate_fuse_result(ids_, scores_):
+        return ['jax'] * len(ids_), ids_, scores_
 
-    def cc_pure_apply(row):
-        ids_tuple = tuple(row[[f'id_{i}' for i in range(len(ids))]].values)
-        scores_tuple = tuple(row[[f'score_{i}' for i in range(len(scores))]].values)
-        return pd.Series(cc_pure(ids_tuple, scores_tuple, (0.2, 0.8), top_k))
+    df = pd.DataFrame({
+        'semantic_ids': ids[0],
+        'lexical_ids': ids[1],
+        'semantic_score': scores[0],
+        'lexical_score': scores[1],
+    })
 
-    df[['cc_id', 'cc_score']] = df.apply(cc_pure_apply, axis=1)
-    return df['cc_id'].tolist(), df['cc_score'].tolist()
+    def cc_pure_apply(row, weight: float):
+        return fuse_per_query(row['semantic_ids'], row['lexical_ids'],
+                              row['semantic_score'], row['lexical_score'],
+                              normalize_method=normalize_method,
+                              weight=weight, top_k=top_k,
+                              semantic_theoretical_min_value=semantic_theoretical_min_value,
+                              lexical_theoretical_min_value=lexical_theoretical_min_value)
+
+    # start optimize weight
+    weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()
+    result_list = []
+    for i, weight_value in enumerate(weight_candidates):
+        temp_df = df.copy(deep=True)
+        temp_df[['cc_id', 'cc_score']] = temp_df.apply(lambda row: cc_pure_apply(row, weight_value), axis=1,
+                                                       result_type='expand')
+        # calculate metrics of the result of fusion
+        metric_df: pd.DataFrame = evaluate_fuse_result(temp_df['cc_id'].tolist(), temp_df['cc_score'].tolist())
+        result_list.append(metric_df)
+
+    # select best result
+    best_result_df, best_idx = select_best(result_list, metrics, metadatas=list(range(test_weight_size)),
+                                           strategy_name=strategy)
+    return (best_result_df['retrieved_ids'].tolist(), best_result_df['retrieve_scores'].tolist(),
+            weight_candidates[best_idx])
 
 
 def fuse_per_query(semantic_ids: List[str], lexical_ids: List[str],
