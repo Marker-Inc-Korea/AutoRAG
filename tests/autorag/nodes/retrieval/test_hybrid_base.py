@@ -74,8 +74,7 @@ modules_with_weights = {
     'scores': ([[5, 3, 1, 0.4, 0.2], [5, 3, 1, 0.4, 0.2]],
                [[6, 2, 1, 0.5, 0.1], [6, 2, 1, 0.5, 0.1]]),
     'top_k': 3,
-    'weight_range': (0.3, 0.7),
-    'test_weight_size': 20,
+    'weight': 0.3,
 }
 
 
