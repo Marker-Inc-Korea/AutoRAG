@@ -5,6 +5,7 @@ from typing import List, Callable, Dict, Tuple
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from autorag.evaluation import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
@@ -110,6 +111,7 @@ def run_retrieval_node(modules: List[Callable],
 
     filename_first = 0
     # run semantic modules
+    logger.info(f"Running retrieval node - semantic retrieval module...")
     if any([module.__name__ in semantic_module_names for module in modules]):
         semantic_modules, semantic_module_params = zip(*filter(lambda x: x[0].__name__ in semantic_module_names,
                                                                zip(modules, module_params)))
@@ -123,6 +125,7 @@ def run_retrieval_node(modules: List[Callable],
     else:
         semantic_selected_filename, semantic_summary_df, semantic_results, semantic_times = None, pd.DataFrame(), [], []
     # run lexical modules
+    logger.info(f"Running retrieval node - lexical retrieval module...")
     if any([module.__name__ in lexical_module_names for module in modules]):
         lexical_modules, lexical_module_params = zip(*filter(lambda x: x[0].__name__ in lexical_module_names,
                                                              zip(modules, module_params)))
@@ -136,6 +139,7 @@ def run_retrieval_node(modules: List[Callable],
     else:
         lexical_selected_filename, lexical_summary_df, lexical_results, lexical_times = None, pd.DataFrame(), [], []
 
+    logger.info(f"Running retrieval node - hybrid retrieval module...")
     # Next, run hybrid retrieval
     if any([module.__name__ in hybrid_module_names for module in modules]):
         hybrid_modules, hybrid_module_params = zip(*filter(lambda x: x[0].__name__ in hybrid_module_names,
@@ -263,7 +267,7 @@ def optimize_hybrid(hybrid_module_func: Callable, hybrid_module_param: Dict,
     weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()
 
     result_list = []
-    for i, weight_value in enumerate(weight_candidates):
+    for weight_value in tqdm(weight_candidates):
         result_df = hybrid_module_func(project_dir=project_dir, previous_result=previous_result,
                                        weight=weight_value, **hybrid_module_param)
         result_list.append(result_df)

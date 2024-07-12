@@ -55,7 +55,7 @@ def hybrid_rrf(
         scores_tuple = tuple(row[[f'score_{i}' for i in range(len(scores))]].values)
         return pd.Series(rrf_pure(ids_tuple, scores_tuple, weight, top_k))
 
-    df[['rrf_id', 'rrf_score']] = df.swifter.apply(rrf_pure_apply, axis=1)
+    df[['rrf_id', 'rrf_score']] = df.apply(rrf_pure_apply, axis=1)
     return df['rrf_id'].tolist(), df['rrf_score'].tolist()
 
 
