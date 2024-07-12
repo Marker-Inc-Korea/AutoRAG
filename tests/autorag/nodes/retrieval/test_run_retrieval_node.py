@@ -96,7 +96,7 @@ def test_run_retrieval_node(node_line_dir):
     assert all(hybrid_summary_df['module_params'].apply(
         lambda x: x['target_module_params'] == (
             {'top_k': 4, 'embedding_model': 'openai'}, {'top_k': 4, 'bm25_tokenizer': 'gpt2'})))
-
+    assert all(hybrid_summary_df['module_params'].apply(lambda x: 'weight' in x))
     # test the best file is saved properly
     best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]
     best_path = os.path.join(node_line_dir, "retrieval", f'best_{best_filename}')
@@ -164,7 +164,7 @@ def pseudo_node_dir():
 def test_run_retrieval_node_only_hybrid(node_line_dir):
     modules = [hybrid_cc]
     module_params = [
-        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7),
+        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weight': 0.3,
          'target_module_params': ({'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})},
     ]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
@@ -192,7 +192,7 @@ def test_run_retrieval_node_only_hybrid(node_line_dir):
     assert summary_df['retrieval_f1'][0] == single_result_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][0] == single_result_df['retrieval_recall'].mean()
     assert summary_df['module_name'][0] == "hybrid_cc"
-    assert summary_df['module_params'][0] == {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7),
+    assert summary_df['module_params'][0] == {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weight': 0.3,
                                               'target_module_params': (
                                                   {'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})}
     assert summary_df['execution_time'][0] > 0
