@@ -10,7 +10,8 @@ def hybrid_rrf(
         ids: Tuple,
         scores: Tuple,
         top_k: int,
-        rrf_k: int = 60) -> Tuple[List[List[str]], List[List[float]]]:
+        weight: int = 60,
+        rrf_k: int = -1, ) -> Tuple[List[List[str]], List[List[float]]]:
     """
     Hybrid RRF function.
     RRF (Rank Reciprocal Fusion) is a method to fuse multiple retrieval results.
@@ -27,15 +28,23 @@ def hybrid_rrf(
     :param scores: The retrieve scores that you want to fuse.
         The length of this must be the same as the length of ids.
     :param top_k: The number of passages to be retrieved.
-    :param rrf_k: Hyperparameter for RRF.
+    :param weight: Hyperparameter for RRF.
+        It was originally rrf_k value.
         Default is 60.
         For more information, please visit our documentation.
+    :param rrf_k: (Deprecated) Hyperparameter for RRF.
+        It was originally rrf_k value. Will remove at further version.
     :return: The tuple of ids and fused scores that fused by RRF.
     """
     assert len(ids) == len(scores), "The length of ids and scores must be the same."
     assert len(ids) > 1, "You must input more than one retrieval results."
     assert top_k > 0, "top_k must be greater than 0."
-    assert rrf_k > 0, "rrf_k must be greater than 0."
+    assert weight > 0, "rrf_k must be greater than 0."
+
+    if rrf_k != -1:
+        weight = int(rrf_k)
+    else:
+        weight = int(weight)
 
     id_df = pd.DataFrame({f'id_{i}': id_list for i, id_list in enumerate(ids)})
     score_df = pd.DataFrame({f'score_{i}': score_list for i, score_list in enumerate(scores)})
@@ -44,7 +53,7 @@ def hybrid_rrf(
     def rrf_pure_apply(row):
         ids_tuple = tuple(row[[f'id_{i}' for i in range(len(ids))]].values)
         scores_tuple = tuple(row[[f'score_{i}' for i in range(len(scores))]].values)
-        return pd.Series(rrf_pure(ids_tuple, scores_tuple, rrf_k, top_k))
+        return pd.Series(rrf_pure(ids_tuple, scores_tuple, weight, top_k))
 
     df[['rrf_id', 'rrf_score']] = df.swifter.apply(rrf_pure_apply, axis=1)
     return df['rrf_id'].tolist(), df['rrf_score'].tolist()

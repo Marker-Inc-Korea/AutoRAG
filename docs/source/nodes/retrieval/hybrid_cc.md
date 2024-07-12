@@ -40,8 +40,8 @@ You don't have to specify the module that you want to fuse. It will auto-detect 
   weight to the semantic module will be 1.0 and weight to the lexical module will be 0.0.
   You have to input this value as tuple. It looks like this. `(0.2, 0.8)`. Default is `(0.0, 1.0)`.
 - (Optional) **test_weight_size**: The size of the weight that tested for optimization. If the weight range
-  is `(0.2, 0.8)` and the size is 6, it will evaluate the following weights.
-  `0.2, 0.3, 0.4, 0.5, 0.6, 0.7`. Default is 100.
+  is `(0.2, 0.8)` and the size is 7, it will evaluate the following weights.
+  `0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8`. Default is 101.
 - (Optional) **semantic_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
   theoretical minimum value by yourself. Default is -1.
 - (Optional) **lexical_theoretical_min_value**: This value used by `tmm` normalization method. You can set the
@@ -51,11 +51,9 @@ You don't have to specify the module that you want to fuse. It will auto-detect 
 ```yaml
 modules:
   - module_type: hybrid_cc
-    lexical_module: ('bm25')
-    semantic_module: ('vectordb') # have to use tuple when you want to input multiple module.
     normalize_method: [ mm, tmm, z, dbsf ]
     weight_range: (0.0, 1.0)
-    test_weight_size: 100
+    test_weight_size: 101
     lexical_theoretical_min_value: 0
     semantic_theoretical_min_value: -1
 ```

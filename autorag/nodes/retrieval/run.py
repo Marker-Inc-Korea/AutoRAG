@@ -253,8 +253,12 @@ def get_hybrid_execution_times(lexical_summary, semantic_summary) -> float:
 def optimize_hybrid(hybrid_module_func: Callable, hybrid_module_param: Dict,
                     strategy: Dict, retrieval_gt, qa_df: pd.DataFrame,
                     project_dir, previous_result):
-    weight_range = hybrid_module_param.pop('weight_range', (0.0, 1.0))
-    test_weight_size = hybrid_module_param.pop('test_weight_size', 100)
+    if hybrid_module_func.__name__ == 'hybrid_rrf':
+        weight_range = hybrid_module_param.pop('weight_range', (4, 80))
+        test_weight_size = weight_range[1] - weight_range[0] + 1
+    else:
+        weight_range = hybrid_module_param.pop('weight_range', (0.0, 1.0))
+        test_weight_size = hybrid_module_param.pop('test_weight_size', 101)
 
     weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()
 
