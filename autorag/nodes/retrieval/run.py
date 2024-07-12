@@ -1,8 +1,9 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict
+from typing import List, Callable, Dict, Tuple
 
+import numpy as np
 import pandas as pd
 
 from autorag.evaluation import evaluate_retrieval
@@ -45,16 +46,14 @@ def run_retrieval_node(modules: List[Callable],
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    def run_and_save(input_modules, input_module_params, filename_start: int):
+    def run(input_modules, input_module_params) -> Tuple[List[pd.DataFrame], List]:
         """
-        Run input modules and parameters and save it to the file system as parquet file.
+            Run input modules and parameters.
 
-        :param input_modules: Input modules
-        :param input_module_params: Input module parameters
-        :param filename_start: The first filename to use
-        :return: First, it returns list of result dataframe.
-        Second, it returns list of execution times.
-        Lastly, it returns summary dataframe with module name, params, eval result etc.
+            :param input_modules: Input modules
+            :param input_module_params: Input module parameters
+            :return: First, it returns list of result dataframe.
+            Second, it returns list of execution times.
         """
         result, execution_times = zip(*map(lambda task: measure_speed(
             task[0], project_dir=project_dir, previous_result=previous_result, **task[1]),
@@ -68,22 +67,38 @@ def run_retrieval_node(modules: List[Callable],
                                                             qa_df['query'].tolist(),
                                                             qa_df['generation_gt'].tolist()), result))
 
+        return result, average_times
+
+    def save_and_summary(input_modules, input_module_params, result_list,
+                         execution_time_list, filename_start: int):
+        """
+            Save the result and make summary file
+
+            :param input_modules: Input modules
+            :param input_module_params: Input module parameters
+            :param result_list: Result list
+            :param execution_time_list: Execution times
+            :param filename_start: The first filename to use
+            :return: First, it returns list of result dataframe.
+            Second, it returns list of execution times.
+        """
+
         # save results to folder
         filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'),
                              range(filename_start, filename_start + len(input_modules))))
-        list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(result, filepaths)))  # execute save to parquet
+        list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(result_list, filepaths)))  # execute save to parquet
         filename_list = list(map(lambda x: os.path.basename(x), filepaths))
 
         summary_df = pd.DataFrame({
             'filename': filename_list,
             'module_name': list(map(lambda module: module.__name__, input_modules)),
             'module_params': input_module_params,
-            'execution_time': average_times,
-            **{metric: list(map(lambda result: result[metric].mean(), result)) for metric in
+            'execution_time': execution_time_list,
+            **{metric: list(map(lambda result: result[metric].mean(), result_list)) for metric in
                strategies.get('metrics')},
         })
         summary_df.to_csv(os.path.join(save_dir, 'summary.csv'), index=False)
-        return result, average_times, summary_df
+        return summary_df
 
     def find_best(results, average_times, filenames):
         # filter by strategies
@@ -98,8 +113,9 @@ def run_retrieval_node(modules: List[Callable],
     if any([module.__name__ in semantic_module_names for module in modules]):
         semantic_modules, semantic_module_params = zip(*filter(lambda x: x[0].__name__ in semantic_module_names,
                                                                zip(modules, module_params)))
-        semantic_results, semantic_times, semantic_summary_df = run_and_save(semantic_modules, semantic_module_params,
-                                                                             filename_first)
+        semantic_results, semantic_times = run(semantic_modules, semantic_module_params)
+        semantic_summary_df = save_and_summary(semantic_modules, semantic_module_params,
+                                               semantic_results, semantic_times, filename_first)
         semantic_selected_result, semantic_selected_filename = find_best(semantic_results, semantic_times,
                                                                          semantic_summary_df['filename'].tolist())
         semantic_summary_df['is_best'] = semantic_summary_df['filename'] == semantic_selected_filename
@@ -110,9 +126,9 @@ def run_retrieval_node(modules: List[Callable],
     if any([module.__name__ in lexical_module_names for module in modules]):
         lexical_modules, lexical_module_params = zip(*filter(lambda x: x[0].__name__ in lexical_module_names,
                                                              zip(modules, module_params)))
-        lexical_results, lexical_times, lexical_summary_df = run_and_save(lexical_modules,
-                                                                          lexical_module_params,
-                                                                          filename_first)
+        lexical_results, lexical_times = run(lexical_modules, lexical_module_params)
+        lexical_summary_df = save_and_summary(lexical_modules, lexical_module_params,
+                                              lexical_results, lexical_times, filename_first)
         lexical_selected_result, lexical_selected_filename = find_best(lexical_results, lexical_times,
                                                                        lexical_summary_df['filename'].tolist())
         lexical_summary_df['is_best'] = lexical_summary_df['filename'] == lexical_selected_filename
@@ -126,24 +142,36 @@ def run_retrieval_node(modules: List[Callable],
                                                            zip(modules, module_params)))
         if all(['target_module_params' in x for x in hybrid_module_params]):  # for Runner.run
             # If target_module_params are already given, run hybrid retrieval directly
-            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
-                                                                           filename_first)
+            hybrid_results, hybrid_times = run(hybrid_modules, hybrid_module_params)
+            hybrid_summary_df = save_and_summary(hybrid_modules, hybrid_module_params,
+                                                 hybrid_results, hybrid_times, filename_first)
             filename_first += len(hybrid_modules)
         else:  # for Evaluator
+            # get id and score
             ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename])
             hybrid_module_params = list(map(lambda x: {**x, **ids_scores}, hybrid_module_params))
+
+            # optimize each modules
             real_hybrid_times = [get_hybrid_execution_times(semantic_summary_df, lexical_summary_df)
                                  ] * len(hybrid_module_params)
-            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
-                                                                           filename_first)
-            filename_first += len(hybrid_modules)
             hybrid_times = real_hybrid_times.copy()
+            hybrid_results = []
+            for module, module_param in zip(hybrid_modules, hybrid_module_params):
+                module_result_df, module_best_weight = optimize_hybrid(module, module_param, strategies,
+                                                                       retrieval_gt, qa_df,
+                                                                       project_dir, previous_result)
+                module_param['weight'] = module_best_weight
+                hybrid_results.append(module_result_df)
+
+            hybrid_summary_df = save_and_summary(hybrid_modules, hybrid_module_params,
+                                                 hybrid_results, hybrid_times, filename_first)
+            filename_first += len(hybrid_modules)
             hybrid_summary_df['execution_time'] = hybrid_times
             best_semantic_summary_row = semantic_summary_df.loc[semantic_summary_df['is_best'] == True].iloc[0]
             best_lexical_summary_row = lexical_summary_df.loc[lexical_summary_df['is_best'] == True].iloc[0]
             target_modules = (best_semantic_summary_row['module_name'], best_lexical_summary_row['module_name'])
             target_module_params = (
-            best_semantic_summary_row['module_params'], best_lexical_summary_row['module_params'])
+                best_semantic_summary_row['module_params'], best_lexical_summary_row['module_params'])
             hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
     else:
         if any([module.__name__ in hybrid_module_names for module in modules]):
@@ -220,3 +248,30 @@ def get_hybrid_execution_times(lexical_summary, semantic_summary) -> float:
     lexical_execution_time = lexical_summary.loc[lexical_summary['is_best'] == True].iloc[0]['execution_time']
     semantic_execution_time = semantic_summary.loc[semantic_summary['is_best'] == True].iloc[0]['execution_time']
     return lexical_execution_time + semantic_execution_time
+
+
+def optimize_hybrid(hybrid_module_func: Callable, hybrid_module_param: Dict,
+                    strategy: Dict, retrieval_gt, qa_df: pd.DataFrame,
+                    project_dir, previous_result):
+    weight_range = hybrid_module_param.pop('weight_range', (0.0, 1.0))
+    test_weight_size = hybrid_module_param.pop('test_weight_size', 100)
+
+    weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()
+
+    result_list = []
+    for i, weight_value in enumerate(weight_candidates):
+        result_df = hybrid_module_func(project_dir=project_dir, previous_result=previous_result,
+                                       weight=weight_value, **hybrid_module_param)
+        result_list.append(result_df)
+
+        # evaluate here
+    if strategy.get('metrics') is None:
+        raise ValueError("You must at least one metrics for retrieval evaluation.")
+    result_list = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategy.get('metrics'),
+                                                             qa_df['query'].tolist(),
+                                                             qa_df['generation_gt'].tolist()), result_list))
+
+    # select best result
+    best_result_df, best_weight = select_best(result_list, strategy.get('metrics'), metadatas=weight_candidates,
+                                              strategy_name=strategy.get('strategy', 'normalize_mean'))
+    return best_result_df, best_weight

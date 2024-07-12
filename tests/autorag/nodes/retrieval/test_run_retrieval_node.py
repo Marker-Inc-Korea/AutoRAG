@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf, hybrid_cc
+from autorag.nodes.retrieval import bm25, vectordb, hybrid_cc
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
@@ -40,13 +40,13 @@ def node_line_dir():
 
 
 def test_run_retrieval_node(node_line_dir):
-    modules = [bm25, vectordb, hybrid_rrf, hybrid_cc, hybrid_cc]
+    modules = [bm25, vectordb, hybrid_cc, hybrid_cc]
     module_params = [
         {'top_k': 4, 'bm25_tokenizer': 'gpt2'},
         {'top_k': 4, 'embedding_model': 'openai'},
-        {'top_k': 4, 'rrf_k': 2},
-        {'top_k': 4, 'weights': (0.3, 0.7)},
-        {'top_k': 4, 'weights': (0.5, 0.5)},
+        # {'top_k': 4, 'rrf_k': 2},
+        {'top_k': 4, 'weight_range': (0.3, 0.7), 'test_weight_size': 40},
+        {'top_k': 4, 'weight_range': (0.1, 0.9), 'test_weight_size': 8},
     ]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
@@ -70,7 +70,7 @@ def test_run_retrieval_node(node_line_dir):
     summary_df = load_summary_file(summary_path)
     assert set(summary_df.columns) == {'filename', 'retrieval_f1', 'retrieval_recall',
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
-    assert len(summary_df) == 5
+    assert len(summary_df) == 4
     assert summary_df['filename'][0] == "0.parquet"
     assert summary_df['retrieval_f1'][1] == bm25_top_k_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][1] == bm25_top_k_df['retrieval_recall'].mean()
