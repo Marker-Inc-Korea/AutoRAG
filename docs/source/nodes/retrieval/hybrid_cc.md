@@ -23,10 +23,10 @@ Once evaluated to find the optimal pipeline, extracting the pipeline creates a p
 You don't have to specify the module that you want to fuse. It will auto-detect the best module name and parameter for each lexcial and semantic modules.
 ```
 
-## **Node Parameters**
+`## **Node Parameters**
 
 - (Required) **top_k**: Essential parameter for retrieval node.
-
+  `
 ## **Module Parameters**
 
 - (Required) **normalize_method**: The normalization method to use.
