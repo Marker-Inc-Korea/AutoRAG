@@ -14,7 +14,7 @@ logger = logging.getLogger("AutoRAG")
 
 semantic_module_names = ['vectordb']
 lexical_module_names = ['bm25']
-hybrid_module_names = ['hybrid_rrf', 'hybrid_cc', 'hybrid_rsf', 'hybrid_dbsf']
+hybrid_module_names = ['hybrid_rrf', 'hybrid_cc']
 
 
 def run_retrieval_node(modules: List[Callable],
