@@ -12,14 +12,8 @@ node_lines:
         - module_type: vectordb
           embedding_model: huggingface_baai_bge_small
         - module_type: hybrid_rrf
-          target_modules: ('bm25', 'vectordb')
-          rrf_k: [3, 5, 10]
         - module_type: hybrid_cc
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
+          normalize_method: [ mm, tmm, z, dbsf ]
     - node_type: passage_reranker
       strategy:
         metrics: [retrieval_f1, retrieval_recall, retrieval_precision]

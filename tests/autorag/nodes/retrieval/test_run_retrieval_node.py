@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf, hybrid_cc
-from autorag.nodes.retrieval.run import run_retrieval_node, select_result_for_hybrid, get_ids_and_scores
+from autorag.nodes.retrieval import bm25, vectordb, hybrid_cc, hybrid_rrf
+from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
 
@@ -44,9 +44,9 @@ def test_run_retrieval_node(node_line_dir):
     module_params = [
         {'top_k': 4, 'bm25_tokenizer': 'gpt2'},
         {'top_k': 4, 'embedding_model': 'openai'},
-        {'top_k': 4, 'rrf_k': 2, 'target_modules': ('bm25', 'vectordb')},
-        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7)},
-        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.5, 0.5)},
+        {'top_k': 4, 'weight_range': (5, 70)},
+        {'top_k': 4, 'weight_range': (0.3, 0.7), 'test_weight_size': 40},
+        {'top_k': 4, 'weight_range': (0.1, 0.9), 'test_weight_size': 8},
     ]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
@@ -63,7 +63,7 @@ def test_run_retrieval_node(node_line_dir):
     assert all([expect_column in best_result.columns for expect_column in expect_columns])
     # test summary feature
     summary_path = os.path.join(node_line_dir, "retrieval", "summary.csv")
-    bm25_top_k_path = os.path.join(node_line_dir, "retrieval", "0.parquet")
+    bm25_top_k_path = os.path.join(node_line_dir, "retrieval", "1.parquet")
     assert os.path.exists(bm25_top_k_path)
     bm25_top_k_df = pd.read_parquet(bm25_top_k_path)
     assert os.path.exists(summary_path)
@@ -72,10 +72,10 @@ def test_run_retrieval_node(node_line_dir):
                                        'module_name', 'module_params', 'execution_time', 'is_best'}
     assert len(summary_df) == 5
     assert summary_df['filename'][0] == "0.parquet"
-    assert summary_df['retrieval_f1'][0] == bm25_top_k_df['retrieval_f1'].mean()
-    assert summary_df['retrieval_recall'][0] == bm25_top_k_df['retrieval_recall'].mean()
-    assert summary_df['module_name'][0] == "bm25"
-    assert summary_df['module_params'][0] == {'top_k': 4, 'bm25_tokenizer': 'gpt2'}
+    assert summary_df['retrieval_f1'][1] == bm25_top_k_df['retrieval_f1'].mean()
+    assert summary_df['retrieval_recall'][1] == bm25_top_k_df['retrieval_recall'].mean()
+    assert summary_df['module_name'][0] == "vectordb"
+    assert summary_df['module_params'][0] == {'top_k': 4, 'embedding_model': 'openai'}
     assert summary_df['execution_time'][0] > 0
     # assert average times
     assert summary_df['execution_time'][0] + summary_df['execution_time'][1] == pytest.approx(
@@ -92,11 +92,11 @@ def test_run_retrieval_node(node_line_dir):
     hybrid_summary_df = summary_df[summary_df['module_name'].str.contains('hybrid')]
     assert all(hybrid_summary_df['module_params'].apply(lambda x: 'target_modules' in x))
     assert all(hybrid_summary_df['module_params'].apply(lambda x: 'target_module_params' in x))
-    assert all(hybrid_summary_df['module_params'].apply(lambda x: x['target_modules'] == ('bm25', 'vectordb')))
+    assert all(hybrid_summary_df['module_params'].apply(lambda x: x['target_modules'] == ('vectordb', 'bm25')))
     assert all(hybrid_summary_df['module_params'].apply(
         lambda x: x['target_module_params'] == (
-        {'top_k': 4, 'bm25_tokenizer': 'gpt2'}, {'top_k': 4, 'embedding_model': 'openai'})))
-
+            {'top_k': 4, 'embedding_model': 'openai'}, {'top_k': 4, 'bm25_tokenizer': 'gpt2'})))
+    assert all(hybrid_summary_df['module_params'].apply(lambda x: 'weight' in x))
     # test the best file is saved properly
     best_filename = summary_df[summary_df['is_best'] == True]['filename'].values[0]
     best_path = os.path.join(node_line_dir, "retrieval", f'best_{best_filename}')
@@ -161,32 +161,10 @@ def pseudo_node_dir():
         yield node_dir
 
 
-def test_select_result_for_hybrid(pseudo_node_dir):
-    filenames = select_result_for_hybrid(pseudo_node_dir, ("bm25", "vectordb"))
-    dict_id_scores = get_ids_and_scores(pseudo_node_dir, filenames)
-    ids = dict_id_scores['ids']
-    scores = dict_id_scores['scores']
-    assert len(ids) == len(scores) == 2
-    assert len(ids[0]) == len(scores[0]) == 3
-    assert len(ids[1]) == len(scores[1]) == 3
-    assert ids[0] == [['id-1', 'id-2', 'id-3'],
-                      ['id-1', 'id-2', 'id-3'],
-                      ['id-1', 'id-2', 'id-3']]
-    assert scores[0] == [[0.1, 0.2, 0.3],
-                         [0.1, 0.2, 0.3],
-                         [0.1, 0.2, 0.3]]
-    assert ids[1] == [['id-7', 'id-8', 'id-9'],
-                      ['id-7', 'id-8', 'id-9'],
-                      ['id-7', 'id-8', 'id-9']]
-    assert scores[1] == [[0.5, 0.6, 0.7],
-                         [0.5, 0.6, 0.7],
-                         [0.5, 0.6, 0.7]]
-
-
 def test_run_retrieval_node_only_hybrid(node_line_dir):
     modules = [hybrid_cc]
     module_params = [
-        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7),
+        {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weight': 0.3,
          'target_module_params': ({'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})},
     ]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
@@ -214,8 +192,9 @@ def test_run_retrieval_node_only_hybrid(node_line_dir):
     assert summary_df['retrieval_f1'][0] == single_result_df['retrieval_f1'].mean()
     assert summary_df['retrieval_recall'][0] == single_result_df['retrieval_recall'].mean()
     assert summary_df['module_name'][0] == "hybrid_cc"
-    assert summary_df['module_params'][0] == {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weights': (0.3, 0.7),
-         'target_module_params': ({'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})}
+    assert summary_df['module_params'][0] == {'top_k': 4, 'target_modules': ('bm25', 'vectordb'), 'weight': 0.3,
+                                              'target_module_params': (
+                                                  {'top_k': 3}, {'top_k': 3, 'embedding_model': 'openai'})}
     assert summary_df['execution_time'][0] > 0
     assert summary_df['is_best'][0] == True
     assert summary_df['filename'].nunique() == len(summary_df)

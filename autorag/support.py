@@ -24,8 +24,6 @@ def get_support_modules(module_name: str) -> Callable:
         'vectordb': ('autorag.nodes.retrieval', 'vectordb'),
         'hybrid_rrf': ('autorag.nodes.retrieval', 'hybrid_rrf'),
         'hybrid_cc': ('autorag.nodes.retrieval', 'hybrid_cc'),
-        'hybrid_rsf': ('autorag.nodes.retrieval', 'hybrid_rsf'),
-        'hybrid_dbsf': ('autorag.nodes.retrieval', 'hybrid_dbsf'),
         # passage_augmenter
         'prev_next_augmenter': ('autorag.nodes.passageaugmenter', 'prev_next_augmenter'),
         'pass_passage_augmenter': ('autorag.nodes.passageaugmenter', 'pass_passage_augmenter'),

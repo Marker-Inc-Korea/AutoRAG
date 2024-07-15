@@ -40,26 +40,11 @@ node_lines:
           embedding_model: openai
           embedding_batch: 256
         - module_type: hybrid_rrf
-          target_modules: ('bm25', 'vectordb')
-          rrf_k: [3, 5, 10]
+          weight_range: (4,80)
         - module_type: hybrid_cc
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
-        - module_type: hybrid_rsf
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
-        - module_type: hybrid_dbsf
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
+          normalize_method: [ mm, tmm, z, dbsf ]
+          weight_range: (0.0, 1.0)
+          test_weight_size: 101
     - node_type: passage_augmenter
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]

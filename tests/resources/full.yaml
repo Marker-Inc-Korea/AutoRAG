@@ -31,14 +31,11 @@ node_lines:
         - module_type: vectordb
           embedding_model: openai
         - module_type: hybrid_rrf
-          target_modules: ('bm25', 'vectordb')
-          rrf_k: [3, 5, 10]
+          weight_range: (4, 80)
         - module_type: hybrid_cc
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
+          normalize_method: [ mm, tmm, z, dbsf ]
+          weight_range: (0.0, 1.0)
+          test_weight_size: 51
     - node_type: passage_reranker
       strategy:
         metrics: [retrieval_f1, retrieval_recall, retrieval_precision]

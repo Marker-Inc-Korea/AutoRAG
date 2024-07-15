@@ -42,6 +42,10 @@ sample_scores_3 = ([
                        [6, 2, 1, 0.5, 0.1],
                        [7, 3, 2, 1.5, 1.1],
                    ])
+sample_retrieval_gt_3 = [
+    [['id-3']],
+    [['id-2'], ['id-6']],
+]
 
 sample_ids_non_overlap = (['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
                           ['id-6', 'id-4', 'id-3', 'id-7', 'id-2'])
@@ -70,7 +74,7 @@ modules_with_weights = {
     'scores': ([[5, 3, 1, 0.4, 0.2], [5, 3, 1, 0.4, 0.2]],
                [[6, 2, 1, 0.5, 0.1], [6, 2, 1, 0.5, 0.1]]),
     'top_k': 3,
-    'weights': (0.3, 0.7)
+    'weight': 0.3,
 }
 
 
@@ -82,8 +86,21 @@ def pseudo_project_dir():
             'contents': ['doc-1', 'doc-2', 'doc-3', 'doc-4', 'doc-5', 'doc-6', 'doc-7', 'doc-8', 'doc-9'],
             'metadata': [{'last_modified_date': datetime.now()} for _ in range(9)]
         })
+        qa_df = pd.DataFrame({
+            'qid': ['havertz', 'hanjunsu'],
+            'query': ['What is JAX?', 'Donggeon twerking jax havertz?'],
+            'retrieval_gt': [
+                [['id-1', 'id-4']],
+                [['id-3', 'id-8'], ['id-2']],
+            ],
+            'generation_gt': [
+                ['JAX is minsingjin.'],
+                ['Donggeon is the god.'],
+            ]
+        })
         os.makedirs(os.path.join(project_dir, "data"))
         corpus_df.to_parquet(os.path.join(project_dir, "data", 'corpus.parquet'))
+        qa_df.to_parquet(os.path.join(project_dir, "data", 'qa.parquet'))
         resource_dir = os.path.join(project_dir, "resources")
         os.makedirs(resource_dir)
         bm25_ingest(os.path.join(resource_dir, 'bm25_porter_stemmer.pkl'), corpus_df)

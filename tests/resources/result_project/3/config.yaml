@@ -11,5 +11,4 @@ node_lines:
           - module_type: vectordb
             embedding_model: [ openai, openai ]
           - module_type: hybrid_rrf
-            rrf_k: 5
-            target_modules: ('bm25', 'vectordb') # it will select the best result among each module and fuse it.
+            weight_range: (4, 40)

@@ -31,7 +31,7 @@ This document serves as a guide for configuring parameters, strategies, and the 
 
 ### Example config.yaml file
 ```yaml
-- node_line_name: retrieve_node_line  # Arbitrary node line name
+- node_line_name: retrieve_node_line
   nodes:
     - node_type: retrieval
       strategy:
@@ -43,14 +43,11 @@ This document serves as a guide for configuring parameters, strategies, and the 
         - module_type: vectordb
           embedding_model: openai
         - module_type: hybrid_rrf
-          target_modules: ('bm25', 'vectordb')
-          rrf_k: [3, 5, 10]
+          weight_range: (4, 80)
         - module_type: hybrid_cc
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
+          normalize_method: [ mm, tmm, z, dbsf ]
+          weight_range: (0.0, 1.0)
+          test_weight_size: 51
 ```
 
 #### Supported Modules
@@ -63,6 +60,4 @@ bm25.md
 vectordb.md
 hybrid_rrf.md
 hybrid_cc.md
-hybrid_rsf.md
-hybrid_dbsf.md
 ```

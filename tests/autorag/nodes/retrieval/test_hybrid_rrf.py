@@ -8,7 +8,7 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (sample_ids, sample_s
 
 
 def test_hybrid_rrf():
-    result_id, result_scores = hybrid_rrf.__wrapped__(sample_ids, sample_scores, top_k=3, rrf_k=1)
+    result_id, result_scores = hybrid_rrf.__wrapped__(sample_ids, sample_scores, top_k=3, weight=1)
     assert result_id == [
         ['id-3', 'id-1', 'id-2'],
         ['id-4', 'id-2', 'id-3']
@@ -45,7 +45,7 @@ def test_hybrid_rrf_node(pseudo_project_dir):
             [0.5, 0.6, 0.7]
         ]),
         'top_k': 3,
-        'rrf_k': 1,
+        'weight': 1,
     }
     result_df = hybrid_rrf(project_dir=pseudo_project_dir, previous_result=previous_result, **modules)
     assert len(result_df) == 3
@@ -64,7 +64,7 @@ def test_hybrid_rrf_node_deploy(pseudo_project_dir):
             {'embedding_model': 'openai', 'top_k': 3}
         ],
         'top_k': 3,
-        'rrf_k': 1,
+        'weight': 1,
     }
     result_df = hybrid_rrf(project_dir=pseudo_project_dir, previous_result=previous_result, **modules)
     assert len(result_df) == 3

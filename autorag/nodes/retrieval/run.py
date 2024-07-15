@@ -3,13 +3,18 @@ import os
 import pathlib
 from typing import List, Callable, Dict, Tuple
 
+import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from autorag.evaluation import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
-from autorag.utils.util import load_summary_file
 
 logger = logging.getLogger("AutoRAG")
+
+semantic_module_names = ['vectordb']
+lexical_module_names = ['bm25']
+hybrid_module_names = ['hybrid_rrf', 'hybrid_cc']
 
 
 def run_retrieval_node(modules: List[Callable],
@@ -42,7 +47,15 @@ def run_retrieval_node(modules: List[Callable],
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    def run_and_save(input_modules, input_module_params, filename_start: int):
+    def run(input_modules, input_module_params) -> Tuple[List[pd.DataFrame], List]:
+        """
+            Run input modules and parameters.
+
+            :param input_modules: Input modules
+            :param input_module_params: Input module parameters
+            :return: First, it returns list of result dataframe.
+            Second, it returns list of execution times.
+        """
         result, execution_times = zip(*map(lambda task: measure_speed(
             task[0], project_dir=project_dir, previous_result=previous_result, **task[1]),
                                            zip(input_modules, input_module_params)))
@@ -55,69 +68,128 @@ def run_retrieval_node(modules: List[Callable],
                                                             qa_df['query'].tolist(),
                                                             qa_df['generation_gt'].tolist()), result))
 
+        return result, average_times
+
+    def save_and_summary(input_modules, input_module_params, result_list,
+                         execution_time_list, filename_start: int):
+        """
+            Save the result and make summary file
+
+            :param input_modules: Input modules
+            :param input_module_params: Input module parameters
+            :param result_list: Result list
+            :param execution_time_list: Execution times
+            :param filename_start: The first filename to use
+            :return: First, it returns list of result dataframe.
+            Second, it returns list of execution times.
+        """
+
         # save results to folder
         filepaths = list(map(lambda x: os.path.join(save_dir, f'{x}.parquet'),
                              range(filename_start, filename_start + len(input_modules))))
-        list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(result, filepaths)))  # execute save to parquet
+        list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(result_list, filepaths)))  # execute save to parquet
         filename_list = list(map(lambda x: os.path.basename(x), filepaths))
 
         summary_df = pd.DataFrame({
             'filename': filename_list,
             'module_name': list(map(lambda module: module.__name__, input_modules)),
             'module_params': input_module_params,
-            'execution_time': average_times,
-            **{metric: list(map(lambda result: result[metric].mean(), result)) for metric in
+            'execution_time': execution_time_list,
+            **{metric: list(map(lambda result: result[metric].mean(), result_list)) for metric in
                strategies.get('metrics')},
         })
         summary_df.to_csv(os.path.join(save_dir, 'summary.csv'), index=False)
-        return result, average_times, summary_df
+        return summary_df
 
-    # run retrieval modules except hybrid
-    hybrid_module_names = ['hybrid_rrf', 'hybrid_cc', 'hybrid_rsf', 'hybrid_dbsf']
+    def find_best(results, average_times, filenames):
+        # filter by strategies
+        if strategies.get('speed_threshold') is not None:
+            results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
+        selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
+                                                         strategies.get('strategy', 'mean'))
+        return selected_result, selected_filename
+
     filename_first = 0
-    if any([module.__name__ not in hybrid_module_names for module in modules]):
-        non_hybrid_modules, non_hybrid_module_params = zip(*filter(lambda x: x[0].__name__ not in hybrid_module_names,
-                                                                   zip(modules, module_params)))
-        non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = run_and_save(non_hybrid_modules,
-                                                                                   non_hybrid_module_params, filename_first)
-        filename_first += len(non_hybrid_modules)
+    # run semantic modules
+    logger.info(f"Running retrieval node - semantic retrieval module...")
+    if any([module.__name__ in semantic_module_names for module in modules]):
+        semantic_modules, semantic_module_params = zip(*filter(lambda x: x[0].__name__ in semantic_module_names,
+                                                               zip(modules, module_params)))
+        semantic_results, semantic_times = run(semantic_modules, semantic_module_params)
+        semantic_summary_df = save_and_summary(semantic_modules, semantic_module_params,
+                                               semantic_results, semantic_times, filename_first)
+        semantic_selected_result, semantic_selected_filename = find_best(semantic_results, semantic_times,
+                                                                         semantic_summary_df['filename'].tolist())
+        semantic_summary_df['is_best'] = semantic_summary_df['filename'] == semantic_selected_filename
+        filename_first += len(semantic_modules)
     else:
-        non_hybrid_results, non_hybrid_times, non_hybrid_summary_df = [], [], pd.DataFrame()
+        semantic_selected_filename, semantic_summary_df, semantic_results, semantic_times = None, pd.DataFrame(), [], []
+    # run lexical modules
+    logger.info(f"Running retrieval node - lexical retrieval module...")
+    if any([module.__name__ in lexical_module_names for module in modules]):
+        lexical_modules, lexical_module_params = zip(*filter(lambda x: x[0].__name__ in lexical_module_names,
+                                                             zip(modules, module_params)))
+        lexical_results, lexical_times = run(lexical_modules, lexical_module_params)
+        lexical_summary_df = save_and_summary(lexical_modules, lexical_module_params,
+                                              lexical_results, lexical_times, filename_first)
+        lexical_selected_result, lexical_selected_filename = find_best(lexical_results, lexical_times,
+                                                                       lexical_summary_df['filename'].tolist())
+        lexical_summary_df['is_best'] = lexical_summary_df['filename'] == lexical_selected_filename
+        filename_first += len(lexical_modules)
+    else:
+        lexical_selected_filename, lexical_summary_df, lexical_results, lexical_times = None, pd.DataFrame(), [], []
 
+    logger.info(f"Running retrieval node - hybrid retrieval module...")
+    # Next, run hybrid retrieval
     if any([module.__name__ in hybrid_module_names for module in modules]):
         hybrid_modules, hybrid_module_params = zip(*filter(lambda x: x[0].__name__ in hybrid_module_names,
                                                            zip(modules, module_params)))
-        if all(['target_module_params' in x for x in hybrid_module_params]):
+        if all(['target_module_params' in x for x in hybrid_module_params]):  # for Runner.run
             # If target_module_params are already given, run hybrid retrieval directly
-            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
-                                                                           filename_first)
+            hybrid_results, hybrid_times = run(hybrid_modules, hybrid_module_params)
+            hybrid_summary_df = save_and_summary(hybrid_modules, hybrid_module_params,
+                                                 hybrid_results, hybrid_times, filename_first)
             filename_first += len(hybrid_modules)
-        else:
-            target_modules = list(map(lambda x: x.pop('target_modules'), hybrid_module_params))
-            target_filenames = list(map(lambda x: select_result_for_hybrid(save_dir, x), target_modules))
-            ids_scores = list(map(lambda x: get_ids_and_scores(save_dir, x), target_filenames))
-            target_module_params = list(map(lambda x: get_module_params(save_dir, x), target_filenames))
-            hybrid_module_params = list(map(lambda x: {**x[0], **x[1]}, zip(hybrid_module_params, ids_scores)))
-            real_hybrid_times = list(map(lambda filename: get_hybrid_execution_times(save_dir, filename), target_filenames))
-            hybrid_results, hybrid_times, hybrid_summary_df = run_and_save(hybrid_modules, hybrid_module_params,
-                                                                           filename_first)
-            filename_first += len(hybrid_modules)
+        else:  # for Evaluator
+            # get id and score
+            ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename])
+            hybrid_module_params = list(map(lambda x: {**x, **ids_scores}, hybrid_module_params))
+
+            # optimize each modules
+            real_hybrid_times = [get_hybrid_execution_times(semantic_summary_df, lexical_summary_df)
+                                 ] * len(hybrid_module_params)
             hybrid_times = real_hybrid_times.copy()
+            hybrid_results = []
+            for module, module_param in zip(hybrid_modules, hybrid_module_params):
+                module_result_df, module_best_weight = optimize_hybrid(module, module_param, strategies,
+                                                                       retrieval_gt, qa_df,
+                                                                       project_dir, previous_result)
+                module_param['weight'] = module_best_weight
+                hybrid_results.append(module_result_df)
+
+            hybrid_summary_df = save_and_summary(hybrid_modules, hybrid_module_params,
+                                                 hybrid_results, hybrid_times, filename_first)
+            filename_first += len(hybrid_modules)
             hybrid_summary_df['execution_time'] = hybrid_times
+            best_semantic_summary_row = semantic_summary_df.loc[semantic_summary_df['is_best'] == True].iloc[0]
+            best_lexical_summary_row = lexical_summary_df.loc[lexical_summary_df['is_best'] == True].iloc[0]
+            target_modules = (best_semantic_summary_row['module_name'], best_lexical_summary_row['module_name'])
+            target_module_params = (
+                best_semantic_summary_row['module_params'], best_lexical_summary_row['module_params'])
             hybrid_summary_df = edit_summary_df_params(hybrid_summary_df, target_modules, target_module_params)
     else:
-        hybrid_results, hybrid_times, hybrid_summary_df = [], [], pd.DataFrame()
+        if any([module.__name__ in hybrid_module_names for module in modules]):
+            logger.warning("You must at least one semantic module and lexical module for hybrid evaluation."
+                           "Passing hybrid module.")
+        hybrid_selected_filename, hybrid_summary_df, hybrid_results, hybrid_times = None, pd.DataFrame(), [], []
 
-    summary = pd.concat([non_hybrid_summary_df, hybrid_summary_df], ignore_index=True)
-    results = non_hybrid_results + hybrid_results
-    average_times = non_hybrid_times + hybrid_times
+    summary = pd.concat([semantic_summary_df, lexical_summary_df, hybrid_summary_df], ignore_index=True)
+    results = semantic_results + lexical_results + hybrid_results
+    average_times = semantic_times + lexical_times + hybrid_times
     filenames = summary['filename'].tolist()
 
     # filter by strategies
-    if strategies.get('speed_threshold') is not None:
-        results, filenames = filter_by_threshold(results, average_times, strategies['speed_threshold'], filenames)
-    selected_result, selected_filename = select_best(results, strategies.get('metrics'), filenames,
-                                                     strategies.get('strategy', 'mean'))
+    selected_result, selected_filename = find_best(results, average_times, filenames)
     best_result = pd.concat([previous_result, selected_result], axis=1)
 
     # add summary.csv 'is_best' column
@@ -151,42 +223,6 @@ def evaluate_retrieval_node(result_df: pd.DataFrame, retrieval_gt, metrics,
     return evaluate_this_module(result_df)
 
 
-def select_result_for_hybrid(node_dir: str, target_modules: Tuple) -> List[str]:
-    """
-    Get ids and scores of target_module from summary.csv and each result parquet file.
-
-    :param node_dir: The directory of the node.
-    :param target_modules: The name of the target modules.
-    :return: A list of filenames.
-    """
-
-    def select_best_among_module(df: pd.DataFrame, module_name: str):
-        modules_summary = df.loc[lambda row: row['module_name'] == module_name]
-        if len(modules_summary) == 1:
-            return modules_summary.iloc[0, :]
-        elif len(modules_summary) <= 0:
-            raise ValueError(f"module_name {module_name} does not exist in summary.csv. "
-                             f"You must run {module_name} before running hybrid retrieval.")
-        metrics = modules_summary.drop(columns=['filename', 'module_name', 'module_params', 'execution_time'])
-        metric_average = metrics.mean(axis=1)
-        metric_average = metric_average.reset_index(drop=True)
-        max_idx = metric_average.idxmax()
-        best_module = modules_summary.iloc[max_idx, :]
-        return best_module
-
-    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
-    best_results = list(map(lambda module_name: select_best_among_module(summary_df, module_name), target_modules))
-    best_filenames = list(map(lambda df: df['filename'], best_results))
-    return best_filenames
-
-
-def get_module_params(node_dir: str, filenames: List[str]) -> Tuple[Dict]:
-    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
-    best_results = summary_df[summary_df['filename'].isin(filenames)]
-    module_params = best_results['module_params'].tolist()
-    return tuple(module_params)
-
-
 def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_module_params) -> pd.DataFrame:
     def delete_ids_scores(x):
         del x['ids']
@@ -194,14 +230,16 @@ def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_modu
         return x
 
     summary_df['module_params'] = summary_df['module_params'].apply(delete_ids_scores)
-    summary_df['new_params'] = [{'target_modules': x, 'target_module_params': y} for x, y in zip(target_modules, target_module_params)]
+    summary_df['new_params'] = [{'target_modules': target_modules,
+                                 'target_module_params': target_module_params}] * len(summary_df)
     summary_df['module_params'] = summary_df.apply(lambda row: {**row['module_params'], **row['new_params']}, axis=1)
     summary_df = summary_df.drop(columns=['new_params'])
     return summary_df
 
 
 def get_ids_and_scores(node_dir: str, filenames: List[str]) -> Dict:
-    best_results_df = list(map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename), engine='pyarrow'), filenames))
+    best_results_df = list(
+        map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename), engine='pyarrow'), filenames))
     ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
     scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
     return {
@@ -210,8 +248,38 @@ def get_ids_and_scores(node_dir: str, filenames: List[str]) -> Dict:
     }
 
 
-def get_hybrid_execution_times(node_dir: str, filenames: List[str]) -> float:
-    summary_df = load_summary_file(os.path.join(node_dir, "summary.csv"))
-    best_results = summary_df[summary_df['filename'].isin(filenames)]
-    execution_times = best_results['execution_time'].sum()
-    return execution_times
+def get_hybrid_execution_times(lexical_summary, semantic_summary) -> float:
+    lexical_execution_time = lexical_summary.loc[lexical_summary['is_best'] == True].iloc[0]['execution_time']
+    semantic_execution_time = semantic_summary.loc[semantic_summary['is_best'] == True].iloc[0]['execution_time']
+    return lexical_execution_time + semantic_execution_time
+
+
+def optimize_hybrid(hybrid_module_func: Callable, hybrid_module_param: Dict,
+                    strategy: Dict, retrieval_gt, qa_df: pd.DataFrame,
+                    project_dir, previous_result):
+    if hybrid_module_func.__name__ == 'hybrid_rrf':
+        weight_range = hybrid_module_param.pop('weight_range', (4, 80))
+        test_weight_size = weight_range[1] - weight_range[0] + 1
+    else:
+        weight_range = hybrid_module_param.pop('weight_range', (0.0, 1.0))
+        test_weight_size = hybrid_module_param.pop('test_weight_size', 101)
+
+    weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()
+
+    result_list = []
+    for weight_value in tqdm(weight_candidates):
+        result_df = hybrid_module_func(project_dir=project_dir, previous_result=previous_result,
+                                       weight=weight_value, **hybrid_module_param)
+        result_list.append(result_df)
+
+        # evaluate here
+    if strategy.get('metrics') is None:
+        raise ValueError("You must at least one metrics for retrieval evaluation.")
+    result_list = list(map(lambda x: evaluate_retrieval_node(x, retrieval_gt, strategy.get('metrics'),
+                                                             qa_df['query'].tolist(),
+                                                             qa_df['generation_gt'].tolist()), result_list))
+
+    # select best result
+    best_result_df, best_weight = select_best(result_list, strategy.get('metrics'), metadatas=weight_candidates,
+                                              strategy_name=strategy.get('strategy', 'normalize_mean'))
+    return best_result_df, best_weight

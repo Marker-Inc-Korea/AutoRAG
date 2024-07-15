@@ -32,7 +32,6 @@ def retrieval_node(func):
             project_dir: Union[str, Path],
             previous_result: pd.DataFrame,
             **kwargs) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
-        logger.info(f"Running retrieval node - {func.__name__} module...")
         validate_qa_dataset(previous_result)
         resources_dir = os.path.join(project_dir, "resources")
         data_dir = os.path.join(project_dir, "data")
@@ -75,10 +74,10 @@ def retrieval_node(func):
             del embedding_model
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        elif func.__name__ in ["hybrid_rrf", "hybrid_cc", "hybrid_rsf", "hybrid_dbsf"]:
-            if 'ids' in kwargs and 'scores' in kwargs:
+        elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
+            if 'ids' in kwargs and 'scores' in kwargs:  # ordinary run_evaluate
                 ids, scores = func(**kwargs)
-            else:
+            else:  # => for Runner.run
                 if not ('target_modules' in kwargs and 'target_module_params' in kwargs):
                     raise ValueError(
                         f"If there are no ids and scores specified, target_modules and target_module_params must be specified for using {func.__name__}.")
