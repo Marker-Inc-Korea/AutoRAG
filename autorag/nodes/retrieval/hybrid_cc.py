@@ -116,23 +116,6 @@ def hybrid_cc(
                                          result_type='expand')
     return df['cc_id'].tolist(), df['cc_score'].tolist()
 
-    # # start optimize weight
-    # weight_candidates = np.linspace(weight_range[0], weight_range[1], test_weight_size).tolist()
-    # result_list = []
-    # for i, weight_value in enumerate(weight_candidates):
-    #     temp_df = df.copy(deep=True)
-    #     temp_df[['cc_id', 'cc_score']] = temp_df.apply(lambda row: cc_pure_apply(row, weight_value), axis=1,
-    #                                                    result_type='expand')
-    #     # calculate metrics of the result of fusion
-    #     metric_df: pd.DataFrame = evaluate_fuse_result(temp_df['cc_id'].tolist(), temp_df['cc_score'].tolist())
-    #     result_list.append(metric_df)
-    #
-    # # select best result
-    # best_result_df, best_idx = select_best(result_list, metrics, metadatas=list(range(test_weight_size)),
-    #                                        strategy_name=strategy)
-    # return (best_result_df['retrieved_ids'].tolist(), best_result_df['retrieve_scores'].tolist(),
-    #         weight_candidates[best_idx])
-
 
 def fuse_per_query(semantic_ids: List[str], lexical_ids: List[str],
                    semantic_scores: List[float], lexical_scores: List[float],
