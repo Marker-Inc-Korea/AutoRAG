@@ -72,7 +72,7 @@ def test_load_node_line(evaluator):
     assert node.modules[1].module_param == {'embedding_model': ['openai', 'openai'],
                                             'embedding_batch': 50}
     assert node.modules[2].module_param == {
-        'rrf_k': 5, 'target_modules': ('bm25', 'vectordb')
+        'weight_range': (4, 30)
     }
     assert nodes[1].node_type == 'passage_filter'
 
