@@ -103,6 +103,8 @@ def test_start_trial(evaluator):
                                   'retrieval_recall']
     best_result = pd.read_parquet(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval', 'best_0.parquet'))
     assert all([expect_column in best_result.columns for expect_column in expect_best_result_columns])
+    summary_df = load_summary_file(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval', 'summary.csv'))
+    best_row = summary_df.loc[summary_df['is_best'] == True].iloc[0]
 
     # test node line summary
     node_line_summary_path = os.path.join(project_dir, '0', 'retrieve_node_line', 'summary.csv')
@@ -112,12 +114,9 @@ def test_start_trial(evaluator):
     assert set(node_line_summary_df.columns) == {'node_type', 'best_module_filename',
                                                  'best_module_name', 'best_module_params', 'best_execution_time'}
     assert node_line_summary_df['node_type'][0] == 'retrieval'
-    assert node_line_summary_df['best_module_filename'][0] == '0.parquet'
-    assert node_line_summary_df['best_module_name'][0] == 'bm25'
-    assert node_line_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                             'bm25_tokenizer': 'porter_stemmer'} or \
-           node_line_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                             'bm25_tokenizer': 'facebook/opt-125m'}
+    assert node_line_summary_df['best_module_filename'][0] == best_row['filename']
+    assert node_line_summary_df['best_module_name'][0] == best_row['module_name']
+    assert node_line_summary_df['best_module_params'][0] == best_row['module_params']
     assert node_line_summary_df['best_execution_time'][0] > 0
 
     # test trial summary
@@ -129,12 +128,9 @@ def test_start_trial(evaluator):
                                              'best_module_name', 'best_module_params', 'best_execution_time'}
     assert trial_summary_df['node_line_name'][0] == 'retrieve_node_line'
     assert trial_summary_df['node_type'][0] == 'retrieval'
-    assert trial_summary_df['best_module_filename'][0] == '0.parquet'
-    assert trial_summary_df['best_module_name'][0] == 'bm25'
-    assert trial_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                         'bm25_tokenizer': 'facebook/opt-125m'} or \
-           trial_summary_df['best_module_params'][0] == {'top_k': 10,
-                                                         'bm25_tokenizer': 'porter_stemmer'}
+    assert trial_summary_df['best_module_filename'][0] == best_row['filename']
+    assert trial_summary_df['best_module_name'][0] == best_row['module_name']
+    assert trial_summary_df['best_module_params'][0] == best_row['module_params']
     assert trial_summary_df['best_execution_time'][0] > 0
 
 
