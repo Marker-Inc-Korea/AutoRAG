@@ -1,7 +1,7 @@
 # In this yaml, we do not use tree_summarize for accuracy
 # And did not use monoT5, because it can take too long.
 node_lines:
-- node_line_name: retrieve_node_line  # Arbitrary node line name
+  - node_line_name: retrieve_node_line
   nodes:
     - node_type: retrieval
       strategy:
@@ -12,14 +12,8 @@ node_lines:
         - module_type: vectordb
           embedding_model: openai
         - module_type: hybrid_rrf
-          target_modules: ('bm25', 'vectordb')
-          rrf_k: [3, 5, 10]
         - module_type: hybrid_cc
-          target_modules: ('bm25', 'vectordb')
-          weights:
-            - (0.5, 0.5)
-            - (0.3, 0.7)
-            - (0.7, 0.3)
+          normalize_method: [ mm, tmm, z, dbsf ]
     - node_type: passage_reranker
       strategy:
         metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
@@ -29,7 +23,7 @@ node_lines:
         - module_type: tart
         - module_type: upr
         - module_type: cohere_reranker
-- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  - node_line_name: post_retrieve_node_line
   nodes:
     - node_type: prompt_maker
       strategy:
