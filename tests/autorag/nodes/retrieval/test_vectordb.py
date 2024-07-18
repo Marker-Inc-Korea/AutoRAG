@@ -12,7 +12,7 @@ import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding, OpenAIEmbeddingModelType
 
 from autorag.nodes.retrieval import vectordb
-from autorag.nodes.retrieval.vectordb import vectordb_ingest
+from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test)
 
@@ -114,3 +114,15 @@ def test_long_ids_ingest(empty_chromadb):
         'metadata': [{'last_modified_datetime': datetime.now()} for _ in range(10000)],
     })
     vectordb_ingest(empty_chromadb, content_df, embedding_model)
+
+
+def test_get_id_scores(ingested_vectordb):
+    ids = ["doc2", "doc3", "doc4"]
+    embedding_model = OpenAIEmbedding()
+    queries = ["다이노스 오! 권희동~ 엔씨 오 권희동 오 권희동 권희동 안타~",
+               "두산의 헨리 라모스 오오오 라모스 시원하게 화끈하게 날려버려라"]
+    query_embeddings = embedding_model.get_text_embedding_batch(queries)
+    client = chromadb.Client()
+    scores = get_id_scores(ids, query_embeddings, ingested_vectordb, client)
+    assert len(scores) == 3
+    assert isinstance(scores[0], float)

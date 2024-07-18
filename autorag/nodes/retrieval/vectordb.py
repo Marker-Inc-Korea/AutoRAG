@@ -3,6 +3,7 @@ from typing import List, Tuple, Optional
 
 import chromadb
 import pandas as pd
+from chromadb import GetResult, QueryResult
 from chromadb.utils.batch_utils import create_batches
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -48,10 +49,10 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
 
     query_embeddings = flatten_apply(run_query_embedding_batch, queries, embedding_model=embedding_model)
 
-    # # if ids are specified, fetch the ids score from Chroma
-    # if ids is not None:
-    #     results: GetResult = collection.get(ids, include=['embeddings'])
-    #     return ids, scores
+    # if ids are specified, fetch the ids score from Chroma
+    if ids is not None:
+        client = chromadb.Client()
+
 
     # run async vector_db_pure function
     tasks = [vectordb_pure(query_embedding, top_k, collection) for query_embedding in query_embeddings]
@@ -68,7 +69,7 @@ async def vectordb_pure(query_embeddings: List[List[float]], top_k: int, collect
     Async VectorDB retrieval function.
     Its usage is for async retrieval of vector_db row by row.
 
-    :param queries: A list of query strings.
+    :param query_embeddings: A list of query embeddings.
     :param top_k: The number of passages to be retrieved.
     :param collection: A chroma collection instance that will be used to retrieve passages.
 
@@ -124,5 +125,19 @@ def run_query_embedding_batch(queries: List[str], embedding_model: BaseEmbedding
         result.extend(embeddings)
     return result
 
-# def get_similarity_score(queries: List[str], ids: List[str], collection: chromadb.Collection,
-#                          temp_client, embedding_model: BaseEmbedding) -> List[float]:
+
+def get_id_scores(ids: List[str], query_embeddings: List[List[float]],
+                  collection: chromadb.Collection, temp_client: chromadb.Client):
+    id_results: GetResult = collection.get(ids, include=['embeddings'])
+    temp_collection = temp_client.create_collection(name="temp", metadata={"hnsw:space": "cosine"})
+    temp_collection.add(ids=id_results['ids'], embeddings=id_results['embeddings'])
+
+    query_result: QueryResult = temp_collection.query(query_embeddings=query_embeddings, n_results=len(ids))
+    assert len(query_result['ids']) == len(query_result['distances'])
+    id_scores_dict = {id_: [] for id_ in ids}
+    for id_list, score_list in zip(query_result['ids'], query_result['distances']):
+        for id_ in list(id_scores_dict.keys()):
+            id_idx = id_list.index(id_)
+            id_scores_dict[id_].append(score_list[id_idx])
+    id_scores_pd = pd.DataFrame(id_scores_dict)
+    return id_scores_pd.max(axis=0).tolist()
