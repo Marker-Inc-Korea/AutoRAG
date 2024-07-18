@@ -88,6 +88,24 @@ def test_vectordb_node(project_dir_for_vectordb_node):
     base_retrieval_node_test(result_df)
 
 
+def test_vectordb_node_ids(project_dir_for_vectordb_node):
+    input_ids = [["aba8293d-2eb9-4a35-8bda-e6c87794c28d", "6f20af70-48b7-4171-a8d7-967ea583a595"],
+                 ["5efb3ac8-04f6-4184-94b3-61cbce080e86", "191c54df-703a-477d-86b6-99183f254799"],
+                 ["99f0e6df-3f03-4bdb-ba24-8f387a783c55", "5b957791-3c7b-4f29-a410-8d005a538855"],
+                 ["fbb8e444-b487-4ba7-9d0b-75b243fd666b", "5efb3ac8-04f6-4184-94b3-61cbce080e86"],
+                 ["1950c5e6-ee53-4b0f-9b32-e01d91d6ce9c", "32207872-dee5-4613-887e-b74fb5c36457"],
+                 ]
+    result_df = vectordb(project_dir=project_dir_for_vectordb_node, previous_result=previous_result, top_k=4,
+                         embedding_model="openai",
+                         ids=input_ids)
+    contents = result_df["retrieved_contents"].tolist()
+    ids = result_df["retrieved_ids"].tolist()
+    scores = result_df["retrieve_scores"].tolist()
+    assert len(contents) == len(ids) == len(scores) == 5
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 2
+    assert ids[0] == input_ids[0]
+
+
 def test_duplicate_id_vectordb_ingest(ingested_vectordb):
     vectordb_ingest(ingested_vectordb, corpus_df, embedding_model)
     assert ingested_vectordb.count() == 5
