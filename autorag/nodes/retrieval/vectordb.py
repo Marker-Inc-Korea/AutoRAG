@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import chromadb
 import pandas as pd
@@ -9,13 +9,14 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
-from autorag.utils.util import process_batch, openai_truncate_by_token
+from autorag.utils.util import process_batch, openai_truncate_by_token, flatten_apply
 
 
 @retrieval_node
 def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collection,
              embedding_model: BaseEmbedding,
-             embedding_batch: int = 128) -> Tuple[List[List[str]], List[List[float]]]:
+             embedding_batch: int = 128,
+             ids: Optional[List[str]] = None) -> Tuple[List[List[str]], List[List[float]]]:
     """
     VectorDB retrieval function.
     You have to get a chroma collection that is already ingested.
@@ -29,6 +30,9 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     :param embedding_batch: The number of queries to be processed in parallel.
         This is used to prevent API error at the query embedding.
         Default is 128.
+    :param ids: The optional list of ids that you want to retrieve.
+        You don't need to specify this in the general use cases.
+        Default is None.
 
     :return: The 2-d list contains a list of passage ids that retrieved from vectordb and 2-d list of its scores.
         It will be a length of queries. And each element has a length of top_k.
@@ -36,8 +40,21 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     # check if bm25_corpus is valid
     assert (collection.count() > 0), \
         "collection must contain at least one document. Please check you ingested collection correctly."
+    # truncate queries and embedding execution here.
+    openai_embedding_limit = 8191
+    if isinstance(embedding_model, OpenAIEmbedding):
+        queries = list(map(lambda query_list: openai_truncate_by_token(query_list, openai_embedding_limit,
+                                                                       embedding_model.model_name), queries))
+
+    query_embeddings = flatten_apply(run_query_embedding_batch, queries, embedding_model=embedding_model)
+
+    # # if ids are specified, fetch the ids score from Chroma
+    # if ids is not None:
+    #     results: GetResult = collection.get(ids, include=['embeddings'])
+    #     return ids, scores
+
     # run async vector_db_pure function
-    tasks = [vectordb_pure(input_queries, top_k, collection, embedding_model) for input_queries in queries]
+    tasks = [vectordb_pure(query_embedding, top_k, collection) for query_embedding in query_embeddings]
     loop = asyncio.get_event_loop()
     results = loop.run_until_complete(process_batch(tasks, batch_size=embedding_batch))
     id_result = list(map(lambda x: x[0], results))
@@ -45,8 +62,8 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
     return id_result, score_result
 
 
-async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Collection,
-                        embedding_model: BaseEmbedding) -> Tuple[List[str], List[float]]:
+async def vectordb_pure(query_embeddings: List[List[float]], top_k: int, collection: chromadb.Collection) -> Tuple[
+    List[str], List[float]]:
     """
     Async VectorDB retrieval function.
     Its usage is for async retrieval of vector_db row by row.
@@ -54,21 +71,11 @@ async def vectordb_pure(queries: List[str], top_k: int, collection: chromadb.Col
     :param queries: A list of query strings.
     :param top_k: The number of passages to be retrieved.
     :param collection: A chroma collection instance that will be used to retrieve passages.
-    :param embedding_model: An embedding model instance that will be used to embed queries.
 
     :return: The tuple contains a list of passage ids that retrieved from vectordb and a list of its scores.
     """
-    # truncate queries if embedding is openai and the query exceeded token limit
-    openai_embedding_limit = 8191
-    if isinstance(embedding_model, OpenAIEmbedding):
-        queries = openai_truncate_by_token(queries, openai_embedding_limit,
-                                           embedding_model.model_name)
-
-    # embed query
-    embedded_queries = list(map(embedding_model.get_query_embedding, queries))
-
     id_result, score_result = [], []
-    for embedded_query in embedded_queries:
+    for embedded_query in query_embeddings:
         result = collection.query(query_embeddings=embedded_query, n_results=top_k)
         id_result.extend(result['ids'])
         score_result.extend(result['distances'])
@@ -107,3 +114,15 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
             ids = batch[0]
             embed_content = batch[1]
             collection.add(ids=ids, embeddings=embed_content)
+
+
+def run_query_embedding_batch(queries: List[str], embedding_model: BaseEmbedding) -> List[List[float]]:
+    result = []
+    for i in range(0, len(queries), 2047):
+        batch = queries[i:i + 2047]
+        embeddings = embedding_model.get_text_embedding_batch(batch)
+        result.extend(embeddings)
+    return result
+
+# def get_similarity_score(queries: List[str], ids: List[str], collection: chromadb.Collection,
+#                          temp_client, embedding_model: BaseEmbedding) -> List[float]:
