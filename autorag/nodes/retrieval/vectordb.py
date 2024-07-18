@@ -17,7 +17,7 @@ from autorag.utils.util import process_batch, openai_truncate_by_token, flatten_
 def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collection,
              embedding_model: BaseEmbedding,
              embedding_batch: int = 128,
-             ids: Optional[List[str]] = None) -> Tuple[List[List[str]], List[List[float]]]:
+             ids: Optional[List[List[str]]] = None) -> Tuple[List[List[str]], List[List[float]]]:
     """
     VectorDB retrieval function.
     You have to get a chroma collection that is already ingested.
@@ -47,12 +47,16 @@ def vectordb(queries: List[List[str]], top_k: int, collection: chromadb.Collecti
         queries = list(map(lambda query_list: openai_truncate_by_token(query_list, openai_embedding_limit,
                                                                        embedding_model.model_name), queries))
 
-    query_embeddings = flatten_apply(run_query_embedding_batch, queries, embedding_model=embedding_model)
+    query_embeddings = flatten_apply(run_query_embedding_batch, queries, embedding_model=embedding_model,
+                                     batch_size=embedding_batch)
 
     # if ids are specified, fetch the ids score from Chroma
     if ids is not None:
         client = chromadb.Client()
-
+        score_result = list(map(
+            lambda query_embedding_list, id_list: get_id_scores(id_list, query_embedding_list, collection, client),
+            query_embeddings, ids))
+        return ids, score_result
 
     # run async vector_db_pure function
     tasks = [vectordb_pure(query_embedding, top_k, collection) for query_embedding in query_embeddings]
@@ -117,17 +121,18 @@ def vectordb_ingest(collection: chromadb.Collection, corpus_data: pd.DataFrame, 
             collection.add(ids=ids, embeddings=embed_content)
 
 
-def run_query_embedding_batch(queries: List[str], embedding_model: BaseEmbedding) -> List[List[float]]:
+def run_query_embedding_batch(queries: List[str], embedding_model: BaseEmbedding,
+                              batch_size: int) -> List[List[float]]:
     result = []
-    for i in range(0, len(queries), 2047):
-        batch = queries[i:i + 2047]
+    for i in range(0, len(queries), batch_size):
+        batch = queries[i:i + batch_size]
         embeddings = embedding_model.get_text_embedding_batch(batch)
         result.extend(embeddings)
     return result
 
 
 def get_id_scores(ids: List[str], query_embeddings: List[List[float]],
-                  collection: chromadb.Collection, temp_client: chromadb.Client):
+                  collection: chromadb.Collection, temp_client: chromadb.Client) -> List[float]:
     id_results: GetResult = collection.get(ids, include=['embeddings'])
     temp_collection = temp_client.create_collection(name="temp", metadata={"hnsw:space": "cosine"})
     temp_collection.add(ids=id_results['ids'], embeddings=id_results['embeddings'])
@@ -140,4 +145,5 @@ def get_id_scores(ids: List[str], query_embeddings: List[List[float]],
             id_idx = id_list.index(id_)
             id_scores_dict[id_].append(score_list[id_idx])
     id_scores_pd = pd.DataFrame(id_scores_dict)
+    temp_client.delete_collection("temp")
     return id_scores_pd.max(axis=0).tolist()
