@@ -10,7 +10,7 @@ from tqdm import tqdm
 from autorag.evaluation import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
-from autorag.utils.util import get_best_row
+from autorag.utils.util import get_best_row, to_list
 
 logger = logging.getLogger("AutoRAG")
 
@@ -154,7 +154,8 @@ def run_retrieval_node(modules: List[Callable],
             filename_first += len(hybrid_modules)
         else:  # for Evaluator
             # get id and score
-            ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename])
+            ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename],
+                                            semantic_summary_df, lexical_summary_df, previous_result)
             hybrid_module_params = list(map(lambda x: {**x, **ids_scores}, hybrid_module_params))
 
             # optimize each modules
@@ -241,7 +242,9 @@ def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_modu
 
 def get_ids_and_scores(node_dir: str, filenames: List[str],
                        semantic_summary_df: pd.DataFrame,
-                       lexical_summary_df: pd.DataFrame) -> Dict:
+                       lexical_summary_df: pd.DataFrame,
+                       previous_result) -> Dict[str, Tuple[List[List[str]], List[List[float]]]]:
+    project_dir = pathlib.PurePath(node_dir).parent.parent.parent
     best_results_df = list(
         map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename), engine='pyarrow'), filenames))
     ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
@@ -249,25 +252,28 @@ def get_ids_and_scores(node_dir: str, filenames: List[str],
     # search non-duplicate ids
     semantic_ids = ids[0]
     lexical_ids = ids[1]
-    lexical_target_ids = list(set(semantic_ids) - set(lexical_ids))
-    semantic_target_ids = list(set(lexical_ids) - set(semantic_ids))
+    lexical_target_ids, semantic_target_ids = [], []
+    for semantic_id_list, lexical_id_list in zip(semantic_ids, lexical_ids):
+        semantic_target_ids.append(list(set(lexical_id_list) - set(semantic_id_list)))
+        lexical_target_ids.append(list(set(semantic_id_list) - set(lexical_id_list)))
 
     # search non-duplicate ids' scores
-    new_semantic_scores = get_scores_by_ids(semantic_target_ids, semantic_summary_df)
-    new_lexical_scores = get_scores_by_ids(lexical_target_ids, lexical_summary_df)
+    new_semantic_scores = get_scores_by_ids(semantic_target_ids, semantic_summary_df, project_dir, previous_result)
+    new_lexical_scores = get_scores_by_ids(lexical_target_ids, lexical_summary_df, project_dir, previous_result)
     return {
         'ids': (ids[0].extend(semantic_target_ids), ids[1].extend(lexical_target_ids)),
         'scores': (scores[0].extend(new_semantic_scores), scores[1].extend(new_lexical_scores)),
     }
 
 
-def get_scores_by_ids(ids: List[str],
-                      module_summary_df: pd.DataFrame) -> List[float]:
+def get_scores_by_ids(ids: List[List[str]],
+                      module_summary_df: pd.DataFrame,
+                      project_dir, previous_result) -> List[List[float]]:
     module_name = get_best_row(module_summary_df)['module_name']
     module_params = get_best_row(module_summary_df)['module_params']
     module = get_support_modules(module_name)
-    scores = module(ids=ids, **module_params)
-    return scores
+    result_df = module(project_dir=project_dir, previous_result=previous_result, ids=ids, **module_params)
+    return to_list(result_df['retrieve_scores'].tolist())
 
 
 def find_unique_elems(list1: List[str], list2: List[str]) -> List[str]:
