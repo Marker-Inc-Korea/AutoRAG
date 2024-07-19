@@ -12,7 +12,7 @@ from tests.mock import mock_openai_chat_create
 @patch.object(openai.resources.chat.completions.AsyncCompletions, 'create', mock_openai_chat_create)
 def test_openai_llm():
     openai_original = openai_llm.__wrapped__
-    model = "gpt-3.5-turbo"
+    model = "gpt-4o-mini"
     answers, tokens, log_probs = openai_original(prompts, model, batch=1, temperature=0.5, logprobs=False, n=3)
     check_generated_texts(answers)
     check_generated_tokens(tokens)
@@ -26,7 +26,7 @@ def test_openai_llm_node():
             'prompts': prompts,
             'qid': ['id-1', 'id-2', 'id-3']
         })
-    result_df = openai_llm(project_dir='.', previous_result=previous_result, llm='gpt-4o')
+    result_df = openai_llm(project_dir='.', previous_result=previous_result, llm='gpt-4o-mini')
     check_generated_texts(result_df['generated_texts'].tolist())
     check_generated_tokens(result_df['generated_tokens'].tolist())
     check_generated_log_probs(result_df['generated_log_probs'].tolist())
