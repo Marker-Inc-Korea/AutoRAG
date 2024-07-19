@@ -45,6 +45,22 @@ def test_bm25_retrieval_ids(ingested_bm25_path):
     assert len(score_result[2]) == 2
 
 
+def test_bm25_retrieval_ids_empty(ingested_bm25_path):
+    with open(ingested_bm25_path, 'rb') as r:
+        bm25_corpus = pickle.load(r)
+    original_bm25 = bm25.__wrapped__
+    input_ids = [["doc2", "doc3"],
+                 [],
+                 ["doc3"]]
+    id_result, score_result = original_bm25(queries, top_k=3, bm25_corpus=bm25_corpus,
+                                            ids=input_ids)
+    assert id_result == input_ids
+    assert len(score_result) == 3
+    assert len(score_result[0]) == 2
+    assert len(score_result[1]) == 0
+    assert len(score_result[2]) == 1
+
+
 def test_bm25_node():
     result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4,
                      bm25_tokenizer='gpt2')

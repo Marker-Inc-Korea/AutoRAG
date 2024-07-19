@@ -148,6 +148,8 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
 
 def get_bm25_scores(queries: List[str], ids: List[str], tokenizer,
                     bm25_api: BM25Okapi, bm25_corpus: Dict) -> List[float]:
+    if len(ids) == 0 or not bool(ids):
+        return []
     tokenized_queries = tokenize(queries, tokenizer)
     result_dict = {id_: [] for id_ in ids}
     for query in tokenized_queries:
