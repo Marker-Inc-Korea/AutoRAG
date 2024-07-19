@@ -1,6 +1,5 @@
 import os
 import pathlib
-
 from datetime import datetime
 
 import pandas as pd
@@ -26,6 +25,13 @@ contents = ["This is a test document 1.", "This is a test document 2.", "This is
             "This is a test document 4.", "This is a test document 5."]
 metadata = [{'datetime': datetime.now()} for _ in range(5)]
 corpus_df = pd.DataFrame({"doc_id": doc_id, "contents": contents, "metadata": metadata})
+
+searchable_input_ids = [["aba8293d-2eb9-4a35-8bda-e6c87794c28d", "6f20af70-48b7-4171-a8d7-967ea583a595"],
+                        ["5efb3ac8-04f6-4184-94b3-61cbce080e86", "191c54df-703a-477d-86b6-99183f254799"],
+                        ["99f0e6df-3f03-4bdb-ba24-8f387a783c55", "5b957791-3c7b-4f29-a410-8d005a538855"],
+                        ["fbb8e444-b487-4ba7-9d0b-75b243fd666b", "5efb3ac8-04f6-4184-94b3-61cbce080e86"],
+                        ["1950c5e6-ee53-4b0f-9b32-e01d91d6ce9c", "32207872-dee5-4613-887e-b74fb5c36457"],
+                        ]
 
 
 def base_retrieval_test(id_result, score_result, top_k):
