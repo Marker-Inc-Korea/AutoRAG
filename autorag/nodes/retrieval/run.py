@@ -1,6 +1,7 @@
 import logging
 import os
 import pathlib
+from copy import deepcopy
 from typing import List, Callable, Dict, Tuple
 
 import numpy as np
@@ -250,19 +251,39 @@ def get_ids_and_scores(node_dir: str, filenames: List[str],
     ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
     scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
     # search non-duplicate ids
-    semantic_ids = ids[0]
-    lexical_ids = ids[1]
-    lexical_target_ids, semantic_target_ids = [], []
-    for semantic_id_list, lexical_id_list in zip(semantic_ids, lexical_ids):
-        semantic_target_ids.append(list(set(lexical_id_list) - set(semantic_id_list)))
-        lexical_target_ids.append(list(set(semantic_id_list) - set(lexical_id_list)))
+    semantic_ids = deepcopy(ids[0])
+    lexical_ids = deepcopy(ids[1])
+
+    def get_non_duplicate_ids(target_ids, compare_ids) -> List[List[str]]:
+        """
+        Get non-duplicate ids from target_ids and compare_ids.
+        If you want to non-duplicate ids of semantic_ids, you have to put it at target_ids.
+        """
+        result_ids = []
+        assert len(target_ids) == len(compare_ids)
+        for target_id_list, compare_id_list in zip(target_ids, compare_ids):
+            query_duplicated = list(set(compare_id_list) - set(target_id_list))
+            duplicate_list = query_duplicated if len(query_duplicated) != 0 else []
+            result_ids.append(duplicate_list)
+        return result_ids
+
+    lexical_target_ids = get_non_duplicate_ids(lexical_ids, semantic_ids)
+    semantic_target_ids = get_non_duplicate_ids(semantic_ids, lexical_ids)
+
+    new_id_tuple = ([a + b for a, b in zip(semantic_ids, semantic_target_ids)],
+                    [a + b for a, b in zip(lexical_ids, lexical_target_ids)])
 
     # search non-duplicate ids' scores
     new_semantic_scores = get_scores_by_ids(semantic_target_ids, semantic_summary_df, project_dir, previous_result)
     new_lexical_scores = get_scores_by_ids(lexical_target_ids, lexical_summary_df, project_dir, previous_result)
+
+    new_score_tuple = (
+        [a + b for a, b in zip(scores[0], new_semantic_scores)],
+        [a + b for a, b in zip(scores[1], new_lexical_scores)],
+    )
     return {
-        'ids': (ids[0].extend(semantic_target_ids), ids[1].extend(lexical_target_ids)),
-        'scores': (scores[0].extend(new_semantic_scores), scores[1].extend(new_lexical_scores)),
+        'ids': new_id_tuple,
+        'scores': new_score_tuple,
     }
 
 
