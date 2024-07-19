@@ -133,6 +133,9 @@ def run_query_embedding_batch(queries: List[str], embedding_model: BaseEmbedding
 
 def get_id_scores(ids: List[str], query_embeddings: List[List[float]],
                   collection: chromadb.Collection, temp_client: chromadb.Client) -> List[float]:
+    if len(ids) == 0 or ids is None or not bool(ids):
+        return []
+
     id_results: GetResult = collection.get(ids, include=['embeddings'])
     temp_collection = temp_client.create_collection(name="temp", metadata={"hnsw:space": "cosine"})
     temp_collection.add(ids=id_results['ids'], embeddings=id_results['embeddings'])

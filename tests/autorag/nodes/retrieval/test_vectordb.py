@@ -83,6 +83,21 @@ def test_vectordb_retrieval_ids(ingested_vectordb):
     assert all([len(score_list) == 2 for score_list in score_result])
 
 
+def test_vectordb_retrieval_ids_empty(ingested_vectordb):
+    ids = [["doc2", "doc3"],
+           [],
+           ["doc4"]]
+    original_vectordb = vectordb.__wrapped__
+    id_result, score_result = original_vectordb(queries, top_k=4,
+                                                collection=ingested_vectordb, embedding_model=embedding_model,
+                                                ids=ids)
+    assert id_result == ids
+    assert len(id_result) == len(score_result) == 3
+    assert len(score_result[0]) == 2
+    assert len(score_result[1]) == 0
+    assert len(score_result[2]) == 1
+
+
 def test_vectordb_node(project_dir_for_vectordb_node):
     result_df = vectordb(project_dir=project_dir_for_vectordb_node, previous_result=previous_result, top_k=4,
                          embedding_model="openai")
