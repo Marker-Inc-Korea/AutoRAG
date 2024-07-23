@@ -13,6 +13,8 @@ from autorag.utils.util import process_batch
 logger = logging.getLogger("AutoRAG")
 
 MAX_TOKEN_DICT = {  # model name : token limit
+    'gpt-4o-mini': 128_000,
+    'gpt-4o-mini-2024-07-18': 128_000,
     'gpt-4o': 128_000,
     'gpt-4o-2024-05-13': 128_000,
     'gpt-4-turbo': 128_000,
