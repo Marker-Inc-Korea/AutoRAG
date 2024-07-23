@@ -484,3 +484,19 @@ def convert_inputs_to_list(func):
         return func(*new_args, **new_kwargs)
 
     return wrapper
+
+
+def get_best_row(summary_df: pd.DataFrame,
+                 best_column_name: str = 'is_best') -> pd.Series:
+    """
+    From summary dataframe, find the best result row by 'is_best' column and return it.
+
+    :param summary_df: Summary dataframe created by AutoRAG.
+    :param best_column_name: The column name that indicates the best result.
+        Default is 'is_best'.
+        You don't have to change this unless the column name is different.
+    :return: Best row pandas Series instance.
+    """
+    bests = summary_df.loc[summary_df[best_column_name] == True]
+    assert len(bests) == 1, "There must be only one best result."
+    return bests.iloc[0]

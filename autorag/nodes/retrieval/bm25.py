@@ -2,7 +2,7 @@ import asyncio
 import os
 import pickle
 import re
-from typing import List, Dict, Tuple, Callable, Union, Iterable
+from typing import List, Dict, Tuple, Callable, Union, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -51,7 +51,8 @@ BM25_TOKENIZER = {
 
 
 @retrieval_node
-def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer: str = 'porter_stemmer') -> \
+def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer: str = 'porter_stemmer',
+         ids: Optional[List[List[str]]] = None) -> \
         Tuple[List[List[str]], List[List[float]]]:
     """
     BM25 retrieval function.
@@ -74,6 +75,9 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer
         It supports 'porter_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
         You can pass huggingface tokenizer name.
         Default is porter_stemmer.
+    :param ids: The optional list of ids that you want to retrieve.
+        You don't need to specify this in the general use cases.
+        Default is None.
     :return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
         It will be a length of queries. And each element has a length of top_k.
     """
@@ -85,6 +89,12 @@ def bm25(queries: List[List[str]], top_k: int, bm25_corpus: Dict, bm25_tokenizer
         (f"The bm25 corpus tokenizer is {bm25_corpus['tokenizer_name']}, but your input is {bm25_tokenizer}. "
          f"You need to ingest again. Delete bm25 pkl file and re-ingest it.")
     bm25_instance = BM25Okapi(bm25_corpus["tokens"])
+
+    if ids is not None:
+        score_result = list(map(lambda query_list, id_list: get_bm25_scores(
+            query_list, id_list, tokenizer, bm25_instance, bm25_corpus), queries, ids))
+        return ids, score_result
+
     # run async bm25_pure function
     tasks = [bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus) for input_queries in queries]
     loop = asyncio.get_event_loop()
@@ -116,10 +126,7 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
     :return: The tuple contains a list of passage ids that retrieved from bm25 and its scores.
     """
     # I don't make queries operation to async, because queries length might be small, so it will occur overhead.
-    if isinstance(tokenizer, PreTrainedTokenizerBase):
-        tokenized_queries = tokenizer(queries).input_ids
-    else:
-        tokenized_queries = tokenizer(queries)
+    tokenized_queries = tokenize(queries, tokenizer)
     id_result = []
     score_result = []
     for query in tokenized_queries:
@@ -137,6 +144,28 @@ async def bm25_pure(queries: List[str], top_k: int, tokenizer, bm25_api: BM25Oka
               sorted(zip(score_result, id_result), key=lambda pair: pair[0], reverse=True)]
     id_result, score_result = zip(*result)
     return list(id_result), list(score_result)
+
+
+def get_bm25_scores(queries: List[str], ids: List[str], tokenizer,
+                    bm25_api: BM25Okapi, bm25_corpus: Dict) -> List[float]:
+    if len(ids) == 0 or not bool(ids):
+        return []
+    tokenized_queries = tokenize(queries, tokenizer)
+    result_dict = {id_: [] for id_ in ids}
+    for query in tokenized_queries:
+        scores = bm25_api.get_scores(query)
+        for i, id_ in enumerate(ids):
+            result_dict[id_].append(scores[bm25_corpus['passage_id'].index(id_)])
+    result_df = pd.DataFrame(result_dict)
+    return result_df.max(axis=0).tolist()
+
+
+def tokenize(queries: List[str], tokenizer) -> List[List[int]]:
+    if isinstance(tokenizer, PreTrainedTokenizerBase):
+        tokenized_queries = tokenizer(queries).input_ids
+    else:
+        tokenized_queries = tokenizer(queries)
+    return tokenized_queries
 
 
 def bm25_ingest(corpus_path: str, corpus_data: pd.DataFrame, bm25_tokenizer: str = 'porter_stemmer'):

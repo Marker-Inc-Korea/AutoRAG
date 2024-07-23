@@ -12,9 +12,10 @@ import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding, OpenAIEmbeddingModelType
 
 from autorag.nodes.retrieval import vectordb
-from autorag.nodes.retrieval.vectordb import vectordb_ingest
+from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, corpus_df, previous_result,
-                                                               base_retrieval_test, base_retrieval_node_test)
+                                                               base_retrieval_test, base_retrieval_node_test,
+                                                               searchable_input_ids)
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
 resource_path = os.path.join(root_dir, "resources")
@@ -69,10 +70,50 @@ def test_vectordb_retrieval(ingested_vectordb):
     base_retrieval_test(id_result, score_result, top_k)
 
 
+def test_vectordb_retrieval_ids(ingested_vectordb):
+    ids = [["doc2", "doc3"],
+           ["doc1", "doc2"],
+           ["doc4", "doc5"]]
+    original_vectordb = vectordb.__wrapped__
+    id_result, score_result = original_vectordb(queries, top_k=4,
+                                                collection=ingested_vectordb, embedding_model=embedding_model,
+                                                ids=ids)
+    assert id_result == ids
+    assert len(id_result) == len(score_result) == 3
+    assert all([len(score_list) == 2 for score_list in score_result])
+
+
+def test_vectordb_retrieval_ids_empty(ingested_vectordb):
+    ids = [["doc2", "doc3"],
+           [],
+           ["doc4"]]
+    original_vectordb = vectordb.__wrapped__
+    id_result, score_result = original_vectordb(queries, top_k=4,
+                                                collection=ingested_vectordb, embedding_model=embedding_model,
+                                                ids=ids)
+    assert id_result == ids
+    assert len(id_result) == len(score_result) == 3
+    assert len(score_result[0]) == 2
+    assert len(score_result[1]) == 0
+    assert len(score_result[2]) == 1
+
+
 def test_vectordb_node(project_dir_for_vectordb_node):
     result_df = vectordb(project_dir=project_dir_for_vectordb_node, previous_result=previous_result, top_k=4,
                          embedding_model="openai")
     base_retrieval_node_test(result_df)
+
+
+def test_vectordb_node_ids(project_dir_for_vectordb_node):
+    result_df = vectordb(project_dir=project_dir_for_vectordb_node, previous_result=previous_result, top_k=4,
+                         embedding_model="openai",
+                         ids=searchable_input_ids)
+    contents = result_df["retrieved_contents"].tolist()
+    ids = result_df["retrieved_ids"].tolist()
+    scores = result_df["retrieve_scores"].tolist()
+    assert len(contents) == len(ids) == len(scores) == 5
+    assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 2
+    assert ids[0] == searchable_input_ids[0]
 
 
 def test_duplicate_id_vectordb_ingest(ingested_vectordb):
@@ -114,3 +155,15 @@ def test_long_ids_ingest(empty_chromadb):
         'metadata': [{'last_modified_datetime': datetime.now()} for _ in range(10000)],
     })
     vectordb_ingest(empty_chromadb, content_df, embedding_model)
+
+
+def test_get_id_scores(ingested_vectordb):
+    ids = ["doc2", "doc3", "doc4"]
+    embedding_model = OpenAIEmbedding()
+    queries = ["다이노스 오! 권희동~ 엔씨 오 권희동 오 권희동 권희동 안타~",
+               "두산의 헨리 라모스 오오오 라모스 시원하게 화끈하게 날려버려라"]
+    query_embeddings = embedding_model.get_text_embedding_batch(queries)
+    client = chromadb.Client()
+    scores = get_id_scores(ids, query_embeddings, ingested_vectordb, client)
+    assert len(scores) == 3
+    assert isinstance(scores[0], float)

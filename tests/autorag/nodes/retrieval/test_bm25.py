@@ -7,8 +7,10 @@ import pytest
 
 from autorag.nodes.retrieval import bm25
 from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer, tokenize_space
+from autorag.utils.util import to_list
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
-                                                               base_retrieval_test, base_retrieval_node_test)
+                                                               base_retrieval_test, base_retrieval_node_test,
+                                                               searchable_input_ids)
 
 
 @pytest.fixture
@@ -27,10 +29,51 @@ def test_bm25_retrieval(ingested_bm25_path):
     base_retrieval_test(id_result, score_result, top_k)
 
 
+def test_bm25_retrieval_ids(ingested_bm25_path):
+    with open(ingested_bm25_path, 'rb') as r:
+        bm25_corpus = pickle.load(r)
+    original_bm25 = bm25.__wrapped__
+    input_ids = [["doc2", "doc3"],
+                 ["doc1"],
+                 ["doc3", "doc4"]]
+    id_result, score_result = original_bm25(queries, top_k=3, bm25_corpus=bm25_corpus,
+                                            ids=input_ids)
+    assert id_result == input_ids
+    assert len(score_result) == 3
+    assert len(score_result[0]) == 2
+    assert len(score_result[1]) == 1
+    assert len(score_result[2]) == 2
+
+
+def test_bm25_retrieval_ids_empty(ingested_bm25_path):
+    with open(ingested_bm25_path, 'rb') as r:
+        bm25_corpus = pickle.load(r)
+    original_bm25 = bm25.__wrapped__
+    input_ids = [["doc2", "doc3"],
+                 [],
+                 ["doc3"]]
+    id_result, score_result = original_bm25(queries, top_k=3, bm25_corpus=bm25_corpus,
+                                            ids=input_ids)
+    assert id_result == input_ids
+    assert len(score_result) == 3
+    assert len(score_result[0]) == 2
+    assert len(score_result[1]) == 0
+    assert len(score_result[2]) == 1
+
+
 def test_bm25_node():
     result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4,
                      bm25_tokenizer='gpt2')
     base_retrieval_node_test(result_df)
+
+
+def test_bm25_node_ids():
+    result_df = bm25(project_dir=project_dir, previous_result=previous_result, top_k=4,
+                     bm25_tokenizer='gpt2', ids=searchable_input_ids)
+    assert to_list(result_df['retrieved_ids'].tolist()) == searchable_input_ids
+    score_result = to_list(result_df['retrieve_scores'].tolist())
+    assert len(score_result) == 5
+    assert len(score_result[0]) == 2
 
 
 def test_bm25_ingest(ingested_bm25_path):

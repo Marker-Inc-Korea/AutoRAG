@@ -1,6 +1,7 @@
 import logging
 import os
 import pathlib
+from copy import deepcopy
 from typing import List, Callable, Dict, Tuple
 
 import numpy as np
@@ -9,6 +10,8 @@ from tqdm import tqdm
 
 from autorag.evaluation import evaluate_retrieval
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
+from autorag.support import get_support_modules
+from autorag.utils.util import get_best_row, to_list
 
 logger = logging.getLogger("AutoRAG")
 
@@ -152,7 +155,8 @@ def run_retrieval_node(modules: List[Callable],
             filename_first += len(hybrid_modules)
         else:  # for Evaluator
             # get id and score
-            ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename])
+            ids_scores = get_ids_and_scores(save_dir, [semantic_selected_filename, lexical_selected_filename],
+                                            semantic_summary_df, lexical_summary_df, previous_result)
             hybrid_module_params = list(map(lambda x: {**x, **ids_scores}, hybrid_module_params))
 
             # optimize each modules
@@ -237,15 +241,64 @@ def edit_summary_df_params(summary_df: pd.DataFrame, target_modules, target_modu
     return summary_df
 
 
-def get_ids_and_scores(node_dir: str, filenames: List[str]) -> Dict:
+def get_ids_and_scores(node_dir: str, filenames: List[str],
+                       semantic_summary_df: pd.DataFrame,
+                       lexical_summary_df: pd.DataFrame,
+                       previous_result) -> Dict[str, Tuple[List[List[str]], List[List[float]]]]:
+    project_dir = pathlib.PurePath(node_dir).parent.parent.parent
     best_results_df = list(
         map(lambda filename: pd.read_parquet(os.path.join(node_dir, filename), engine='pyarrow'), filenames))
     ids = tuple(map(lambda df: df['retrieved_ids'].apply(list).tolist(), best_results_df))
     scores = tuple(map(lambda df: df['retrieve_scores'].apply(list).tolist(), best_results_df))
+    # search non-duplicate ids
+    semantic_ids = deepcopy(ids[0])
+    lexical_ids = deepcopy(ids[1])
+
+    def get_non_duplicate_ids(target_ids, compare_ids) -> List[List[str]]:
+        """
+        Get non-duplicate ids from target_ids and compare_ids.
+        If you want to non-duplicate ids of semantic_ids, you have to put it at target_ids.
+        """
+        result_ids = []
+        assert len(target_ids) == len(compare_ids)
+        for target_id_list, compare_id_list in zip(target_ids, compare_ids):
+            query_duplicated = list(set(compare_id_list) - set(target_id_list))
+            duplicate_list = query_duplicated if len(query_duplicated) != 0 else []
+            result_ids.append(duplicate_list)
+        return result_ids
+
+    lexical_target_ids = get_non_duplicate_ids(lexical_ids, semantic_ids)
+    semantic_target_ids = get_non_duplicate_ids(semantic_ids, lexical_ids)
+
+    new_id_tuple = ([a + b for a, b in zip(semantic_ids, semantic_target_ids)],
+                    [a + b for a, b in zip(lexical_ids, lexical_target_ids)])
+
+    # search non-duplicate ids' scores
+    new_semantic_scores = get_scores_by_ids(semantic_target_ids, semantic_summary_df, project_dir, previous_result)
+    new_lexical_scores = get_scores_by_ids(lexical_target_ids, lexical_summary_df, project_dir, previous_result)
+
+    new_score_tuple = (
+        [a + b for a, b in zip(scores[0], new_semantic_scores)],
+        [a + b for a, b in zip(scores[1], new_lexical_scores)],
+    )
     return {
-        'ids': ids,
-        'scores': scores,
+        'ids': new_id_tuple,
+        'scores': new_score_tuple,
     }
+
+
+def get_scores_by_ids(ids: List[List[str]],
+                      module_summary_df: pd.DataFrame,
+                      project_dir, previous_result) -> List[List[float]]:
+    module_name = get_best_row(module_summary_df)['module_name']
+    module_params = get_best_row(module_summary_df)['module_params']
+    module = get_support_modules(module_name)
+    result_df = module(project_dir=project_dir, previous_result=previous_result, ids=ids, **module_params)
+    return to_list(result_df['retrieve_scores'].tolist())
+
+
+def find_unique_elems(list1: List[str], list2: List[str]) -> List[str]:
+    return list(set(list1).symmetric_difference(set(list2)))
 
 
 def get_hybrid_execution_times(lexical_summary, semantic_summary) -> float:
