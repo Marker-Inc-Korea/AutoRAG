@@ -47,6 +47,7 @@ def ko_base_test_generation_metrics(func, solution, **kwargs):
     assert all(list(map(lambda x: x[0] == pytest.approx(x[1], 0.001),
                         zip(scores, solution))))
 
+
 def test_bleu():
     base_test_generation_metrics(bleu, [51.1507, 23.5783, 100.0], lowercase=True)
 
