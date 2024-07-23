@@ -39,7 +39,7 @@ llama-index-readers-file
 llama-index-embeddings-openai
 llama-index-embeddings-huggingface
 # LLMs
-llama-index-llms-openai
+llama-index-llms-openai>=0.1.26
 llama-index-llms-huggingface
 llama-index-llms-openai-like
 llama-index-llms-ollama
