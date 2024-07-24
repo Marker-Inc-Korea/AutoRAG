@@ -6,13 +6,13 @@ from typing import List, Optional
 
 import evaluate
 import pandas as pd
-from sacrebleu.metrics.bleu import BLEU
 import torch
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from openai import AsyncOpenAI
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
+from sacrebleu.metrics.bleu import BLEU
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
@@ -65,7 +65,9 @@ def huggingface_evaluate(instance, key: str,
 
 
 @convert_inputs_to_list
-def bleu(generation_gt: List[List[str]], generations: [str], tokenize: str|None = None, smooth_method: str = 'exp', smooth_value: Optional[float] = None, max_ngram_order: int = 4, trg_lang: str = '', **kwargs) -> List[float]:
+def bleu(generation_gt: List[List[str]], generations: [str], tokenize: Optional[str] = None,
+         smooth_method: str = 'exp', smooth_value: Optional[float] = None, max_ngram_order: int = 4,
+         trg_lang: str = '', **kwargs) -> List[float]:
     """
     Computes the BLEU metric given pred and ground-truth.
 
@@ -79,9 +81,10 @@ def bleu(generation_gt: List[List[str]], generations: [str], tokenize: str|None 
         Because it can be a multiple ground truth.
     :param generations: A list of generations that LLM generated.
     """
-    bleu = BLEU(tokenize=tokenize, smooth_method=smooth_method, smooth_value=smooth_value, max_ngram_order=max_ngram_order, trg_lang=trg_lang, **kwargs)
+    bleu_instance = BLEU(tokenize=tokenize, smooth_method=smooth_method, smooth_value=smooth_value,
+                         max_ngram_order=max_ngram_order, trg_lang=trg_lang, **kwargs)
 
-    result = list(map(lambda x: bleu.sentence_score(x[0], x[1]).score, zip(generations, generation_gt)))
+    result = list(map(lambda x: bleu_instance.sentence_score(x[0], x[1]).score, zip(generations, generation_gt)))
     return result
 
 
