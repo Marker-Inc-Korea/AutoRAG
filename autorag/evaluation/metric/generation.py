@@ -322,4 +322,8 @@ def bert_score(generation_gt: List[List[str]], generations: List[str],
     df['bert_score'] = evaluator.compute(predictions=df['prediction'].tolist(),
                                          references=df['reference'].tolist(),
                                          lang=lang, nthreads=n_threads, batch_size=batch)['f1']
+
+    del evaluator
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return df.groupby(level=0)['bert_score'].max().tolist()
