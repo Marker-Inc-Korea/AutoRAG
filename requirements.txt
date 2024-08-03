@@ -20,7 +20,7 @@ uvicorn  # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
 guidance # for qa data creation
-cohere>=5.0.0a9 # for cohere services
+cohere<=5.6.2 # for cohere services
 tokenlog>=0.0.2 # for token logging
 aiohttp # for async http requests
 bert_score # for bert score
