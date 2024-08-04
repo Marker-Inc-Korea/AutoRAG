@@ -44,5 +44,9 @@ pythonpath = ["."]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"] # default is prepend
 
+[project.optional-dependencies]
+ko = ["kiwipiepy", "konlpy"]
+all = ["AutoRAG[ko]"]
+
 [project.entry-points.console_scripts]
 autorag = "autorag.cli:cli"

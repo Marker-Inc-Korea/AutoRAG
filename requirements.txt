@@ -27,7 +27,6 @@ bert_score # for bert score
 sentence-transformers # for sentence transformer reranker
 FlagEmbedding # for flag embedding reranker
 ragas # evaluation data generation & evaluation
-kiwipiepy  # for BM25 Korean tokenizer
 llmlingua # for longllmlingua
 
 ### LlamaIndex ###
@@ -48,7 +47,6 @@ llama-index-retrievers-bm25
 
 # WebUI
 streamlit
-
 
 ### Langchain ###
 langchain-core>=0.1.6
