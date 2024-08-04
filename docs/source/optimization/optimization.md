@@ -12,10 +12,16 @@ In this documentation, you can learn about how AutoRAG works under the hood.
 
 ## Swapping modules in Node
 
-![Advanced RAG](../_static/roadmap/advanced_RAG.png)
+![Advanced RAG](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/79dda7ba-e9d8-4552-9e7b-6a5f9edc4c1a)
 
 Here is the diagram of the overall AutoRAG pipeline.
 Each node represents a node, and each node's result passed to the next node.
+
+```{admonition} Do I need to use all nodes?
+No. The essential node for the 'working' RAG pipeline is `retrieval`, `prompt maker` and `generator`.
+
+The other nodes are optional, so you can add it for the better performance.
+```
 
 But remember, you can set multiple modules and multiple parameters in each node. 
 And you get the best result among them. 
