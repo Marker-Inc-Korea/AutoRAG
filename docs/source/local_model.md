@@ -66,7 +66,7 @@ This is the parameter for the LLM model.
 You can set the model parameter for LlamaIndex LLM initialization.
 The most frequently used parameters are `model`, `max_token`, and `temperature`.
 Please check what you can set for the model parameter
-at [LlamaIndex LLM](https://docs.llamaindex.ai/en/latest/api_reference/llms.html).
+at [LlamaIndex LLM](https://docs.llamaindex.ai/en/stable/module_guides/models/llms/).
 
 ### Add more LLM models
 

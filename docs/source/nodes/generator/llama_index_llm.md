@@ -7,7 +7,9 @@ myst:
 ---
 # llama_index LLM
 
-The `llama_index_llm` module is generator based on [llama_index](https://docs.llamaindex.ai/en/stable/api_reference/llms.html). It gets the LLM instance from llama index, and returns generated text by the input prompt. 
+The `llama_index_llm` module is generator based
+on [llama_index](https://docs.llamaindex.ai/en/stable/module_guides/models/llms/). It gets the LLM instance from llama
+index, and returns generated text by the input prompt.
 It does not generate log probs.
 
 ## **Module Parameters**
