@@ -18,6 +18,20 @@ Do you have any trouble with installation?
 First, you can check out the [troubleshooting](troubleshooting.md) page.
 ```
 
+### Installation for Korean 🇰🇷
+
+You can install optional dependencies for Korean language.
+
+```bash
+pip install AutoRAG[ko]
+```
+
+And after that, you have to install **jdk 17** for using `konlpy`.
+Plus, don't forget to set environment PATH for jdk. (JAVA_HOME and PATH)
+
+The instruction for mac users
+is [here](https://velog.io/@yoonsy/M1%EC%B9%A9-Mac%EC%97%90-konlpy-%EC%84%A4%EC%B9%98%ED%95%98%EA%B8%B0).
+
 ## Setup OPENAI API KEY
 To use LLM and embedding models, it is common to use OpenAI models.
 If you want to use other models, check out [here](local_model.md)

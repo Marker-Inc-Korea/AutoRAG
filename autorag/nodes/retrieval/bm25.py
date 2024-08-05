@@ -6,7 +6,6 @@ from typing import List, Dict, Tuple, Callable, Union, Iterable, Optional
 
 import numpy as np
 import pandas as pd
-from kiwipiepy import Kiwi, Token
 from llama_index.core.indices.keyword_table.utils import simple_extract_keywords
 from nltk import PorterStemmer
 from rank_bm25 import BM25Okapi
@@ -18,10 +17,40 @@ from autorag.utils.util import normalize_string
 
 
 def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
+    try:
+        from kiwipiepy import Kiwi, Token
+    except ImportError:
+        raise ImportError("You need to install kiwipiepy to use 'ko_kiwi' tokenizer. "
+                          "Please install kiwipiepy by running 'pip install kiwipiepy'. "
+                          "Or install Korean version of AutoRAG by running 'pip install AutoRAG[ko]'.")
     texts = list(map(lambda x: x.strip().lower(), texts))
     kiwi = Kiwi()
     tokenized_list: Iterable[List[Token]] = kiwi.tokenize(texts)
     return [list(map(lambda x: x.form, token_list)) for token_list in tokenized_list]
+
+
+def tokenize_ko_kkma(texts: List[str]) -> List[List[str]]:
+    try:
+        from konlpy.tag import Kkma
+    except ImportError:
+        raise ImportError("You need to install konlpy to use 'ko_kkma' tokenizer. "
+                          "Please install konlpy by running 'pip install konlpy'. "
+                          "Or install Korean version of AutoRAG by running 'pip install AutoRAG[ko]'.")
+    tokenizer = Kkma()
+    tokenized_list: List[List[str]] = list(map(lambda x: tokenizer.morphs(x), texts))
+    return tokenized_list
+
+
+def tokenize_ko_okt(texts: List[str]) -> List[List[str]]:
+    try:
+        from konlpy.tag import Okt
+    except ImportError:
+        raise ImportError("You need to install konlpy to use 'ko_kkma' tokenizer. "
+                          "Please install konlpy by running 'pip install konlpy'. "
+                          "Or install Korean version of AutoRAG by running 'pip install AutoRAG[ko]'.")
+    tokenizer = Okt()
+    tokenized_list: List[List[str]] = list(map(lambda x: tokenizer.morphs(x), texts))
+    return tokenized_list
 
 
 def tokenize_porter_stemmer(texts: List[str]) -> List[List[str]]:
@@ -47,6 +76,8 @@ BM25_TOKENIZER = {
     'porter_stemmer': tokenize_porter_stemmer,
     'ko_kiwi': tokenize_ko_kiwi,
     'space': tokenize_space,
+    'ko_kkma': tokenize_ko_kkma,
+    'ko_okt': tokenize_ko_okt,
 }
 
 
