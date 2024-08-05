@@ -72,6 +72,14 @@ autorag.support module
    :undoc-members:
    :show-inheritance:
 
+autorag.validator module
+------------------------
+
+.. automodule:: autorag.validator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.web module
 ------------------
 
