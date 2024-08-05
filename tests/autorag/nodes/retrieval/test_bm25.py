@@ -7,7 +7,7 @@ import pytest
 
 from autorag.nodes.retrieval import bm25
 from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer, tokenize_space, \
-    tokenize_ko_kkma
+    tokenize_ko_kkma, tokenize_ko_okt
 from autorag.utils.util import to_list
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test,
@@ -137,6 +137,13 @@ def test_tokenize_ko_wiki():
 
 def test_tokenize_ko_kkma():
     tokenized_list = tokenize_ko_kkma(ko_texts)
+    assert len(tokenized_list) == len(ko_texts)
+    assert isinstance(tokenized_list[0], list)
+    assert all(isinstance(x, str) for x in tokenized_list[0])
+
+
+def test_tokenize_ko_okt():
+    tokenized_list = tokenize_ko_okt(ko_texts)
     assert len(tokenized_list) == len(ko_texts)
     assert isinstance(tokenized_list[0], list)
     assert all(isinstance(x, str) for x in tokenized_list[0])

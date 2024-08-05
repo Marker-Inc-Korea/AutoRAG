@@ -41,6 +41,18 @@ def tokenize_ko_kkma(texts: List[str]) -> List[List[str]]:
     return tokenized_list
 
 
+def tokenize_ko_okt(texts: List[str]) -> List[List[str]]:
+    try:
+        from konlpy.tag import Okt
+    except ImportError:
+        raise ImportError("You need to install konlpy to use 'ko_kkma' tokenizer. "
+                          "Please install konlpy by running 'pip install konlpy'. "
+                          "Or install Korean version of AutoRAG by running 'pip install AutoRAG[ko]'.")
+    tokenizer = Okt()
+    tokenized_list: List[List[str]] = list(map(lambda x: tokenizer.morphs(x), texts))
+    return tokenized_list
+
+
 def tokenize_porter_stemmer(texts: List[str]) -> List[List[str]]:
     def tokenize_remove_stopword(text: str, stemmer) -> List[str]:
         text = text.lower()
@@ -65,6 +77,7 @@ BM25_TOKENIZER = {
     'ko_kiwi': tokenize_ko_kiwi,
     'space': tokenize_space,
     'ko_kkma': tokenize_ko_kkma,
+    'ko_okt': tokenize_ko_okt,
 }
 
 
