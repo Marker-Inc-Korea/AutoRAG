@@ -11,7 +11,6 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 ### 💪 Colab Tutorial
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
-- [Step 2: Create evaluation dataset](https://colab.research.google.com/drive/1HXjVHCLTaX7mkmZp3IKlEPt0B3jVeHvP#scrollTo=cgFUCuaUZvTr)
 
 ---
 
@@ -59,7 +58,7 @@ Try now and find the best RAG pipeline for your own use-case.
 
 ## ❗Supporting Nodes & modules
 
-![module_1](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/828d8752-13f2-4918-8ca4-2605a86596cb)
+![module_1](https://github.com/user-attachments/assets/d49cc7b4-56a6-4b5f-bb3d-2fc5b962996b)
 ![module_2](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/4db3d83f-3178-4b81-bad1-b751dcd31a13)
 You can check our all supporting Nodes & modules
 at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
