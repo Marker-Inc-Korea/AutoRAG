@@ -6,11 +6,18 @@ import pandas as pd
 import pytest
 
 from autorag.nodes.retrieval import bm25
-from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer, tokenize_space
+from autorag.nodes.retrieval.bm25 import bm25_ingest, tokenize_ko_kiwi, tokenize_porter_stemmer, tokenize_space, \
+    tokenize_ko_kkma, tokenize_ko_okt
 from autorag.utils.util import to_list
 from tests.autorag.nodes.retrieval.test_retrieval_base import (queries, project_dir, corpus_df, previous_result,
                                                                base_retrieval_test, base_retrieval_node_test,
                                                                searchable_input_ids)
+
+ko_texts = [
+    "안녕? 나는 혜인이야. 내가 비눗방울 만드는 방법을 알려줄께.",
+    "너 정말 잘한다. 넌 정말 짱이야. 우리 친구할래?",
+    "내 생일 파티에 너만 못 온 그날, 혜진이가 엄청 혼났던 그날, 지원이가 여친이랑 헤어진 그날",
+]
 
 
 @pytest.fixture
@@ -122,13 +129,22 @@ def test_other_method_bm25(ingested_bm25_path):
 
 
 def test_tokenize_ko_wiki():
-    texts = [
-        "안녕? 나는 혜인이야. 내가 비눗방울 만드는 방법을 알려줄께.",
-        "너 정말 잘한다. 넌 정말 짱이야. 우리 친구할래?",
-        "내 생일 파티에 너만 못 온 그날, 혜진이가 엄청 혼났던 그날, 지원이가 여친이랑 헤어진 그날",
-    ]
-    tokenized_list = tokenize_ko_kiwi(texts)
-    assert len(tokenized_list) == len(texts)
+    tokenized_list = tokenize_ko_kiwi(ko_texts)
+    assert len(tokenized_list) == len(ko_texts)
+    assert isinstance(tokenized_list[0], list)
+    assert all(isinstance(x, str) for x in tokenized_list[0])
+
+
+def test_tokenize_ko_kkma():
+    tokenized_list = tokenize_ko_kkma(ko_texts)
+    assert len(tokenized_list) == len(ko_texts)
+    assert isinstance(tokenized_list[0], list)
+    assert all(isinstance(x, str) for x in tokenized_list[0])
+
+
+def test_tokenize_ko_okt():
+    tokenized_list = tokenize_ko_okt(ko_texts)
+    assert len(tokenized_list) == len(ko_texts)
     assert isinstance(tokenized_list[0], list)
     assert all(isinstance(x, str) for x in tokenized_list[0])
 
