@@ -76,6 +76,14 @@ it is okay to save it as 1-d list or just string.
 If you save it as 1-d list, it treats as 'and' operation.
 ```
 
+```{attention}
+The ids of retrieval_gt must be included in the corpus dataset as `doc_id`.
+
+When AutoRAG starts to evaluate, it checks the existence of the retrieval ids in the corpus dataset.
+
+You MUST match the retrieval_gt ids with the corpus dataset.
+```
+
 This column is crucial because AutoRAG evaluate retrieval performance with this column.
 It can affect hugely to optimization performance or nodes like retrieval, query expansion or passage reranker.
 
@@ -111,6 +119,8 @@ A unique identifier for each passage. Its type is `string`.
 
 ```{warning}
 Do not make a duplicate doc id. It can occur unexpected behavior.
+
+Plus, we suggest you to double-check that retrieval_gt ids in the QA dataset are included in the corpus dataset as `doc_id`.
 ```
 
 ### contents

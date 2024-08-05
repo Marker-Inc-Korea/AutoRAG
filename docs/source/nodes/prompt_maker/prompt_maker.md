@@ -25,18 +25,30 @@ Please refer to the parameter of [Generator Node](../generator/generator.md) for
 
 #### **Strategy Parameters**:
 
-1. **Metrics**: Metrics such as `bleu`,`meteor`, and `rouge` are used to evaluate the performance of the prompt maker process through its impact on generator (llm) outcomes.
-2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized.
-3. **Token Threshold**: `token_threshold` ensuring that output prompt average token length does not exceed the
+1. **Metrics**: (Essential) Metrics such as `bleu`,`meteor`, and `rouge` are used to evaluate the performance of the
+   prompt maker process through its impact on generator (llm) outcomes.
+2. **Speed Threshold**: (Optional) `speed_threshold` is applied across all nodes, ensuring that any method exceeding the
+   average processing time for a query is not utilized.
+3. **Token Threshold**: (Optional) `token_threshold` ensuring that output prompt average token length does not exceed
+   the
    threshold.
-4. **tokenizer**: Since you don't know what LLM model you will use in the next nodes, you can specify the tokenizer name
+4. **tokenizer**: (Optional) Since you don't know what LLM model you will use in the next nodes, you can specify the
+   tokenizer name
    to use in `token_threshold` strategy.
    You can use OpenAI model names or Huggingface model names that support `AutoTokenizer`.
    It will automatically find the tokenizer for the model name you specify.
    Default is 'gpt2'.
-5. **Generator Modules**: The prompt maker node can use all modules and module parameters from the generator node,
+5. **Generator Modules**: (Optional, but recommended to set) The prompt maker node can use all modules and module
+   parameters from the generator node,
    including:
    - [llama_index_llm](../generator/llama_index_llm.md): with `llm` and additional llm parameters
+   - [openai_llm](../generator/openai_llm.md): with `llm` and additional openai `AsyncOpenAI` parameters
+   - [vllm](../generator/vllm.md): with `llm` and additional vllm parameters
+
+   And the default model of generator module for evaluating prompt maker is openai gpt-3.5-turbo model.
+
+   Plus, the evaluation of prompt maker will skip when there are only one combination of prompt maker modules and
+   options.
 
 ### Example config.yaml file
 ```yaml
