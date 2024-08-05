@@ -12,6 +12,7 @@ from autorag import dashboard
 from autorag.deploy import Runner
 from autorag.deploy import extract_best_config as original_extract_best_config
 from autorag.evaluator import Evaluator
+from autorag.validator import Validator
 
 logger = logging.getLogger("AutoRAG")
 
@@ -33,7 +34,6 @@ def evaluate(config, qa_data_path, corpus_data_path, project_dir):
         raise ValueError(f"Config file {config} does not exist.")
     evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir=project_dir)
     evaluator.start_trial(config)
-    logger.info('Evaluation complete.')
 
 
 @click.command()
@@ -95,7 +95,19 @@ def restart_evaluate(trial_path):
     corpus_data_path = os.path.join(project_dir, 'data', 'corpus.parquet')
     evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir)
     evaluator.restart_trial(trial_path)
-    logger.info('Evaluation complete.')
+
+
+@click.command()
+@click.option('--config', '-c', help='Path to config yaml file. Must be yaml or yml file.', type=str)
+@click.option('--qa_data_path', help='Path to QA dataset. Must be parquet file.', type=str)
+@click.option('--corpus_data_path', help='Path to corpus dataset. Must be parquet file.', type=str)
+def validate(config, qa_data_path, corpus_data_path):
+    if not config.endswith('.yaml') and not config.endswith('.yml'):
+        raise ValueError(f"Config file {config} is not a parquet file.")
+    if not os.path.exists(config):
+        raise ValueError(f"Config file {config} does not exist.")
+    validator = Validator(qa_data_path=qa_data_path, corpus_data_path=corpus_data_path)
+    validator.validate(config)
 
 
 cli.add_command(evaluate, 'evaluate')
@@ -104,6 +116,7 @@ cli.add_command(run_web, 'run_web')
 cli.add_command(run_dashboard, 'dashboard')
 cli.add_command(extract_best_config, 'extract_best_config')
 cli.add_command(restart_evaluate, 'restart_evaluate')
+cli.add_command(validate, 'validate')
 
 if __name__ == '__main__':
     cli()

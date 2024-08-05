@@ -30,6 +30,14 @@ def test_evaluator_cli():
         assert os.path.exists(os.path.join(project_dir, '0', 'retrieve_node_line', 'retrieval', '0.parquet'))
 
 
+def test_validator_cli():
+    result = subprocess.run(['autorag', 'validate', '--config', os.path.join(resource_dir, 'simple.yaml'),
+                             '--qa_data_path', os.path.join(resource_dir, 'qa_data_sample.parquet'),
+                             '--corpus_data_path', os.path.join(resource_dir, 'corpus_data_sample.parquet'),
+                             ])
+    assert result.returncode == 0
+
+
 def test_run_api():
     runner = CliRunner()
     result = runner.invoke(cli, ['run_api', '--config_path', 'test/path/test.yaml',

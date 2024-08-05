@@ -1,10 +1,11 @@
 ---
 myst:
-   html_meta:
-      title: AutoRAG - Tutorial 
-      description: The great start point to optimize your RAG pipeline. RAG tutorial for RAG developers.
-      keywords: AutoRAG,RAG,RAG tutorial,AutoRAG tutorial
+  html_meta:
+    title: AutoRAG - Tutorial
+    description: The great start point to optimize your RAG pipeline. RAG tutorial for RAG developers.
+    keywords: AutoRAG,RAG,RAG tutorial,AutoRAG tutorial
 ---
+
 # Tutorial
 
 ```{tip}
@@ -20,16 +21,17 @@ Do you use Colab? You can check out Colab tutorial at [here](https://colab.resea
 
 First, you have to prepare an evaluation dataset for your RAG pipeline.
 Making a good evaluation dataset is the key to getting a good RAG pipeline.
-So, you need to focus on the quality of your evaluation dataset. 
+So, you need to focus on the quality of your evaluation dataset.
 Once you have it, the optimal RAG pipeline can be found using AutoRAG easily.
 
-So, for users who want to make a good evaluation dataset, 
+So, for users who want to make a good evaluation dataset,
 we provide a detailed guide at [here](data_creation/tutorial.md).
 
 For users who want to use a pre-made evaluation dataset,
 we provide example datasets at [here](data_creation/data_format.md#samples).
 
-Also, you can check out sample datasets at [huggingface](https://huggingface.co/collections/MarkrAI/autorag-evaluation-datasets-65c0ee87d673dcc686bd14b8).
+Also, you can check out sample datasets
+at [huggingface](https://huggingface.co/collections/MarkrAI/autorag-evaluation-datasets-65c0ee87d673dcc686bd14b8).
 You can download it manually using huggingface datasets library.
 
 ```{attention}
@@ -48,7 +50,7 @@ If you don't know about specific columns and data types, check out the [Data For
 
 ## Find Optimal RAG Pipeline
 
-Let's find an optimal RAG pipeline with AutoRAG! 
+Let's find an optimal RAG pipeline with AutoRAG!
 After you prepare your evaluation dataset, you need to have a config yaml file.
 There are few pre-made config yaml files at our GitHub repo `sample_config` folder.
 We highly recommend using pre-made config yaml files for starter.
@@ -59,10 +61,34 @@ If you want to write your own custom config yaml file for detailed configuration
 check out the [optimization](optimization/optimization.md) section.
 ```
 
+### Validate your system
+
+Before you start the optimization, you might need to validate your system.
+When you run AutoRAG, there might be an error in your YAML file, python dependencies, GPU error, or unexpected errors.
+So it is recommended to run the validation.
+It runs whole optimization, but only to find a system error with minimum cost.
+
+You can run validation with cli command.
+
+```bash
+autorag validate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
+```
+
+Or you can use python code like below.
+
+```python
+from autorag.validator import Validator
+
+validator = Validator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
+validator.validate('your/path/to/default_config.yaml')
+```
+
+### Run AutoRAG optimization
+
 Run below code at CLI, then AutoRAG automatically evaluate your dataset and find the best RAG pipeline for your dataset.
 
 ```bash
-autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
+autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet --project_dir ./your/project/directory
 ```
 
 Or you can use python code like below.
@@ -70,7 +96,8 @@ Or you can use python code like below.
 ```python
 from autorag.evaluator import Evaluator
 
-evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
+evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet',
+                      project_dir='your/path/to/project_directory')
 evaluator.start_trial('your/path/to/config.yaml')
 ```
 
@@ -81,17 +108,23 @@ These files and folders contain all information about the evaluation results and
 	<img src="./_static/project_folder_example.png" alt="Example of project folder structure">
 </p>
 
-The First thing you can see might be a folder named after number, which is 3 in the above image. 
+The First thing you can see might be a folder named after number, which is 3 in the above image.
 This is the trial folder that contains all results that you run above.
 The number is the trial number, and you can check when you run the evaluation at `trial.json` file.
 
-And the most important file is `summary.csv` files. 
+And the most important file is `summary.csv` files.
 You can check out which module and parameters are the best for your dataset.
 And there are lots of details inside node line and node folders.
 You can find out more information about folder structure and result files at [here](structure.md).
 
 ```{admonition} Want to specify project folder?
 You can specify project directory with `--project_dir` option or project_dir parameter.
+```
+
+```{admonition} Why use python command?
+You have to use python command when you want to add custom LLM models or custom embedding models.
+Because the addition process must be executed as python code.
+Please refer [this document](https://docs.auto-rag.com/local_model.html) to know how to add custom LLM or embedding models.
 ```
 
 ### ❗Restart a trial if an error occurs during the trial
@@ -115,7 +148,6 @@ from autorag.evaluator import Evaluator
 evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
 evaluator.restart_trial(tiral_path='your/path/to/trial_path')
 ```
-
 
 ```{admonition} What if Trial_Path didn't also create a First Node Line?
 If the First Node Line folder has not been created in the trial path you want to restart,
@@ -211,7 +243,6 @@ you can run this pipeline as a web interface.
 
 Check out web interface at [here](deploy/web.md).
 
-
 ```bash
 autorag run_web --yaml_path your/path/to/pipeline.yaml
 ```
@@ -228,10 +259,9 @@ With that, you can share whole RAG pipeline and evaluation results to others.
 Feel free to share your work at our [Discord](https://discord.gg/P4DYXfmSAs) channel!
 ```
 
-
-And that's it! 
+And that's it!
 You successfully found the optimal RAG pipeline for your dataset and deployed it.
-Now, you can make your custom config file, write better config yaml file, 
+Now, you can make your custom config file, write better config yaml file,
 and evaluate it again and again for better result.
 
 Or just launch a new RAG product with your saved time with AutoRAG!

@@ -101,6 +101,8 @@ class Evaluator:
 
         trial_summary_df.to_csv(os.path.join(self.project_dir, trial_name, 'summary.csv'), index=False)
 
+        logger.info('Evaluation complete.')
+
     def __embed(self, node_lines: Dict[str, List[Node]]):
         if any(list(map(lambda nodes: module_type_exists(nodes, 'bm25'), node_lines.values()))):
             # ingest BM25 corpus
@@ -264,6 +266,8 @@ class Evaluator:
                 previous_result = run_node_line(node_line, node_line_dir, previous_result)
                 trial_summary_df = self._append_node_line_summary(node_line_name, node_line_dir, trial_summary_df)
         trial_summary_df.to_csv(os.path.join(trial_path, 'summary.csv'), index=False)
+
+        logger.info('Evaluation complete.')
 
     def __find_conflict_point(self, trial_path: str, node_line_names: List[str],
                               node_lines: Dict[str, List[Node]]) -> tuple[str, str]:
