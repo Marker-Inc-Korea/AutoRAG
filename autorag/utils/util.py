@@ -96,7 +96,7 @@ def load_summary_file(summary_path: str,
                 raise ValueError(f"Malformed dict received : {elem}\nCan't convert to dict properly")
             return {'threshold': date_object}
 
-    summary_df[dict_columns] = summary_df[dict_columns].applymap(convert_dict)
+    summary_df[dict_columns] = summary_df[dict_columns].map(convert_dict)
     return summary_df
 
 

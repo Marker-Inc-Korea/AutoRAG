@@ -1,5 +1,5 @@
 numpy<2.0.0 # temporal not using numpy 2.0.0
-pandas
+pandas>=2.1.0
 tqdm
 tiktoken>=0.7.0  # for counting token
 openai>=1.0.0
