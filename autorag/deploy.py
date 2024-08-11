@@ -65,7 +65,7 @@ def summary_df_to_yaml(summary_df: pd.DataFrame, config_dict: Dict) -> Dict:
     summary_df['categorical_node_line_name'] = pd.Categorical(summary_df['node_line_name'], categories=node_line_names,
                                                               ordered=True)
     summary_df = summary_df.sort_values(by='categorical_node_line_name')
-    grouped = summary_df.groupby('categorical_node_line_name')
+    grouped = summary_df.groupby('categorical_node_line_name', observed=False)
 
     node_lines = [
         {
