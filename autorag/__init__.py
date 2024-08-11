@@ -9,18 +9,15 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.llms.huggingface import HuggingFaceLLM
-from llama_index.llms.openai import OpenAI
 from llama_index.llms.ollama import Ollama
+from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai_like import OpenAILike
 from rich.logging import RichHandler
-from swifter import set_defaults
 
 version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'VERSION')
 
 with open(version_path, 'r') as f:
     __version__ = f.read().strip()
-
-set_defaults(allow_dask_on_strings=True)
 
 
 class LazyInit:
