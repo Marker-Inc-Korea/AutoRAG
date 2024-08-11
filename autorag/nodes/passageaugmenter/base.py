@@ -44,7 +44,8 @@ def passage_augmenter_node(func):
         if func.__name__ == 'prev_next_augmenter':
             corpus_df = cast_corpus_dataset(corpus_df)
             slim_corpus_df = corpus_df[["doc_id", "metadata"]]
-            slim_corpus_df['metadata'] = slim_corpus_df['metadata'].apply(filter_dict_keys, keys=['prev_id', 'next_id'])
+            slim_corpus_df.loc[:, 'metadata'] = slim_corpus_df['metadata'].apply(
+                filter_dict_keys, keys=['prev_id', 'next_id'])
 
             mode = kwargs.pop("mode", 'both')
             num_passages = kwargs.pop("num_passages", 1)
