@@ -1,4 +1,5 @@
 import asyncio
+import nest_asyncio
 import os.path
 import random
 from typing import Optional, List, Dict, Any
@@ -7,6 +8,9 @@ import pandas as pd
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.utils.util import process_batch
+
+
+nest_asyncio.apply()
 
 package_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -18,6 +22,7 @@ def generate_qa_llama_index(
         question_num_per_content: int = 1,
         max_retries: int = 3,
         batch: int = 4,
+        queries: Optional[List[str]] = None,
 ) -> List[List[Dict]]:
     """
     Generate a qa set from the list of contents.
@@ -31,6 +36,8 @@ def generate_qa_llama_index(
         The prompt must include the following placeholders:
         - {{text}}: The content string
         - {{num_questions}}: The number of questions to generate
+        - {{query}}: The query string
+          if existing_query_df is None, {{query}} can be ommited.
         As default, the prompt is set to the default prompt for the question type.
     :param question_num_per_content: Number of questions to generate for each content.
         Default is 1.
@@ -44,13 +51,23 @@ def generate_qa_llama_index(
     if prompt is None:
         prompt = open(os.path.join(package_dir, "llama_index_default_prompt.txt"), 'r').read()
 
-    tasks = [
-        async_qa_gen_llama_index(content, llm, prompt, question_num_per_content, max_retries)
-        for content in contents
-    ]
+    if queries is not None:
+        tasks = [
+            async_qa_gen_llama_index(content, llm, prompt, 1, max_retries, query)
+            for content, query in zip(contents, queries)
+        ]
+    else:
+        tasks = [
+            async_qa_gen_llama_index(content, llm, prompt, question_num_per_content, max_retries)
+            for content in contents
+        ]
+        
     loops = asyncio.get_event_loop()
     results = loops.run_until_complete(process_batch(tasks, batch))
+    
     return results
+
+
 
 
 def generate_qa_llama_index_by_ratio(
@@ -117,7 +134,8 @@ async def async_qa_gen_llama_index(
         llm: LLMPredictorType,
         prompt: str,
         question_num: int = 1,
-        max_retries: int = 3
+        max_retries: int = 3,
+        query: Optional[str] = None,
 ):
     """
     Generate a qa set by using the given content and the llama index model.
@@ -137,9 +155,15 @@ async def async_qa_gen_llama_index(
 
     async def generate(content: str, llm: LLMPredictorType):
         for _ in range(max_retries):
-            output = await llm.acomplete(
-                prompt.replace("{{text}}", content).replace("{{num_questions}}", str(question_num)))
-            result = parse_output(output.text)
+            if query:
+                output = await llm.acomplete(
+                    prompt.replace("{{text}}", content).replace("{{num_questions}}", "0").replace("{{query}}", query))
+                result = [{'query': query, 'generation_gt': f"[Q]:{query} \n[A]: {output.text.strip()}"}]
+            else:
+                output = await llm.acomplete(
+                    prompt.replace("{{text}}", content).replace("{{num_questions}}", str(question_num)))
+                result = parse_output(output.text)
+            
             if len(result) == question_num:
                 return result
         raise InterruptedError(f"Failed to generate output of length {question_num} after {max_retries} retries.")
