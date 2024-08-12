@@ -5,6 +5,7 @@ import os
 from typing import List, Optional
 
 import evaluate
+import nltk
 import pandas as pd
 import torch
 from llama_index.core.embeddings import BaseEmbedding
@@ -109,6 +110,7 @@ def meteor(generation_gt: List[List[str]], generations: List[str],
         Default is 0.5.
     :return: A list of computed metric scores.
     """
+    nltk.download('punkt_tab')
     meteor_instance = evaluate.load("meteor")
     result = huggingface_evaluate(meteor_instance, 'meteor', generation_gt, generations,
                                   alpha=alpha, beta=beta, gamma=gamma)
