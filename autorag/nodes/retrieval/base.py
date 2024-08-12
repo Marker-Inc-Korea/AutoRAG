@@ -55,7 +55,7 @@ def retrieval_node(func):
         assert "query" in previous_result.columns, "previous_result must have query column."
         if "queries" not in previous_result.columns:
             previous_result["queries"] = previous_result["query"]
-        previous_result["queries"] = previous_result["queries"].apply(cast_queries)
+        previous_result.loc[:, "queries"] = previous_result["queries"].apply(cast_queries)
         queries = previous_result["queries"].tolist()
 
         # run retrieval function

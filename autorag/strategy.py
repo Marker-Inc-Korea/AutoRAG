@@ -127,7 +127,7 @@ def select_best_rr(results: List[pd.DataFrame], columns: Iterable[str],
     results, columns, metadatas = validate_strategy_inputs(results, columns, metadatas)
     each_average_df = pd.DataFrame([df[columns].mean(axis=0).to_dict() for df in results])
     rank_df = each_average_df.rank(ascending=False)
-    rr_df = rank_df.applymap(lambda x: 1 / x)
+    rr_df = rank_df.map(lambda x: 1 / x)
     best_index = np.array(rr_df.sum(axis=1)).argmax()
     return results[best_index], metadatas[best_index]
 

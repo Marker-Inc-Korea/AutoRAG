@@ -1,11 +1,10 @@
 numpy<2.0.0 # temporal not using numpy 2.0.0
-pandas
+pandas>=2.1.0
 tqdm
 tiktoken>=0.7.0  # for counting token
 openai>=1.0.0
 rank_bm25  # for bm25 retrieval
 transformers
-swifter  # for parallel pandas apply
 pyyaml  # for yaml file
 pyarrow  # for pandas with parquet
 fastparquet  # for pandas with parquet
@@ -28,6 +27,7 @@ sentence-transformers # for sentence transformer reranker
 FlagEmbedding # for flag embedding reranker
 ragas # evaluation data generation & evaluation
 llmlingua # for longllmlingua
+peft
 
 ### LlamaIndex ###
 llama-index>=0.10.1
