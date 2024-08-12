@@ -27,6 +27,7 @@ sentence-transformers # for sentence transformer reranker
 FlagEmbedding # for flag embedding reranker
 ragas # evaluation data generation & evaluation
 llmlingua # for longllmlingua
+peft
 
 ### LlamaIndex ###
 llama-index>=0.10.1
