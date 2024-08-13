@@ -1,4 +1,4 @@
-numpy<2.0.0 # temporal not using numpy 2.0.0
+numpy<3.0.0 # temporal not using numpy 2.0.0
 pandas>=2.1.0
 tqdm
 tiktoken>=0.7.0  # for counting token
