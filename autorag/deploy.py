@@ -4,6 +4,7 @@ import uuid
 from copy import deepcopy
 from typing import Optional, Dict, List
 
+import nest_asyncio
 import pandas as pd
 import uvicorn
 import yaml
@@ -207,7 +208,7 @@ class Runner:
 
             {
                 "Query": "your query",
-                "result_column": "answer"
+                "result_column": "generated_texts"
             }
 
         And it returns json response like below:
@@ -222,10 +223,11 @@ class Runner:
         :param port: The port of the api server.
         :param kwargs: Other arguments for uvicorn.run.
         """
+        nest_asyncio.apply()
         logger.info(f"Run api server at {host}:{port}")
-        uvicorn.run(self.app, host=host, port=port, **kwargs)
+        uvicorn.run(self.app, host=host, port=port, loop="asyncio", **kwargs)
 
 
 class RunnerInput(BaseModel):
     query: str
-    result_column: str = "answer"
+    result_column: str = "generated_texts"

@@ -39,6 +39,8 @@ def test_validator_cli():
 
 
 def test_run_api():
+    # This test code only tests cli function, not API server itself
+    # If you are looking for API server test code, please go to test_deploy.py test_runner_api_server()
     runner = CliRunner()
     result = runner.invoke(cli, ['run_api', '--config_path', 'test/path/test.yaml',
                                  '--host', '0.0.0.0', '--port', '8080'])
