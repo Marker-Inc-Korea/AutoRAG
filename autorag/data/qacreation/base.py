@@ -2,37 +2,15 @@ import logging
 import uuid
 from typing import Callable, Optional, List
 
+import chromadb
 import pandas as pd
 from tqdm import tqdm
 
-import os
-import chromadb
-from langchain.vectorstores import Chroma
-from chromadb.utils import embedding_functions
-from langchain.embeddings.base import Embeddings
-from langchain_openai import OpenAIEmbeddings
-from FlagEmbedding import BGEM3FlagModel
-
-from autorag.utils.util import save_parquet_safe
+import autorag
+from autorag.nodes.retrieval.vectordb import vectordb_ingest, vectordb
+from autorag.utils.util import save_parquet_safe, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
-
-
-
-
-class BGEM3Embeddings(Embeddings):
-    def __init__(self):
-        self.model = BGEM3FlagModel("BAAI/bge-m3", use_fp16=True, device='cuda')
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        embeddings = self.model.encode(texts, return_dense=True, max_length=512)
-        return embeddings['dense_vecs'].tolist()
-
-    def embed_query(self, text: str) -> List[float]:
-        embedding = self.model.encode([text], return_dense=True, max_length=512)
-        return embedding['dense_vecs'][0].tolist()
-
-
 
 
 def make_single_content_qa(corpus_df: pd.DataFrame,
@@ -104,113 +82,81 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
     return qa_data
 
 
-
-
 def make_qa_with_existing_queries(
-    corpus_df: pd.DataFrame,
-    existing_query_df: pd.DataFrame,
-    content_size: int,
-    qa_creation_func: Callable,
-    output_filepath: Optional[str] = None,
-    upsert: bool = False,
-    random_state: int = 42,
-    cache_batch: int = 32,
-    local: bool = False,
-    top_k: int = 1,
-    **kwargs
+        corpus_df: pd.DataFrame,
+        existing_query_df: pd.DataFrame,
+        content_size: int,
+        qa_creation_func: Callable,
+        output_filepath: Optional[str] = None,
+        embedding_model: str = 'openai_embed_3_large',
+        upsert: bool = False,
+        random_state: int = 42,
+        cache_batch: int = 32,
+        top_k: int = 3,
+        **kwargs
 ) -> pd.DataFrame:
     """
-    Make single content QA dataset using given qa_creation_func and existing queries.
+    Make single-hop QA dataset using given qa_creation_func and existing queries.
     
     :param corpus_df: The corpus dataframe to make QA dataset from.
     :param existing_query_df: Dataframe containing existing queries to use for QA pair creation.
     :param content_size: This function will generate QA dataset for the given number of contents.
     :param qa_creation_func: The function to create QA pairs.
     :param output_filepath: Optional filepath to save the parquet file.
+    :param embedding_model: The embedding model to use for vectorization.
+        You can add your own embedding model in the autorag.embedding_models.
+        Please refer to how to add an embedding model in this doc: https://docs.auto-rag.com/local_model.html
+        The default is 'openai_embed_3_large'.
     :param upsert: If true, the function will overwrite the existing file if it exists.
     :param random_state: The random state for sampling corpus from the given corpus_df.
     :param cache_batch: The number of batches to use for caching the generated QA dataset.
-    :param local: If true, the function will use local embedding model.
     :param top_k: The number of sources to refer by model.
+        Default is 3.
     :param kwargs: The keyword arguments for qa_creation_func.
     :return: QA dataset dataframe.
     """
+    assert 'query' in existing_query_df.columns, "existing_query_df must have 'query' column."
     assert content_size > 0, "content_size must be greater than 0."
     if content_size > len(corpus_df):
         logger.warning(f"content_size {content_size} is larger than the corpus size {len(corpus_df)}. "
                        "Setting content_size to the corpus size.")
         content_size = len(corpus_df)
 
-    if local:
-        logger.info("Loading local embedding model...")
-        embeddings = BGEM3Embeddings()
-        persist_directory = './chroma_db_local'
-    else:
-        logger.info("Loading OpenAI embedding model...")
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-        persist_directory = './chroma_db_OpenAI'
+    logger.info("Loading local embedding model...")
+    embeddings = autorag.embedding_models[embedding_model]
 
-    # Vector DB creation or loading
-    if os.path.exists(persist_directory) and os.listdir(persist_directory):
-        logger.info("Loaded existing vector database.")
-        vectorstore = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
-    else:
-        vectorstore = Chroma.from_texts(
-            texts=corpus_df['contents'].tolist(),
-            embedding=embeddings,
-            metadatas=[{"doc_id": doc_id} for doc_id in corpus_df['doc_id']],
-            persist_directory=persist_directory
-        )
-        logger.info("Created and saved new vector database.")
+    # Vector DB creation
+    chroma_client = chromadb.Client()
+    collection_name = "auto-rag"
+    collection = chroma_client.get_or_create_collection(collection_name)
 
-    results = []
-    for query in existing_query_df['query'].tolist():
-        result = vectorstore.similarity_search(query, k=top_k)
-        results.append(result)
+    # embed corpus_df
+    vectordb_ingest(collection, corpus_df, embeddings)
+    vectordb_func = vectordb.__wrapped__
+    retrieved_ids, retrieve_scores = vectordb_func(existing_query_df['query'].tolist(), top_k, collection, embeddings)
 
-    relevant_docs = [doc for batch in results for doc in batch]
-    relevant_doc_ids = [[doc.metadata['doc_id'] for doc in batch] for batch in results]
-    
-    combined_df = pd.DataFrame({
-        'doc_id': [doc_id for batch in relevant_doc_ids for doc_id in batch],
-        'query': [query for query, batch in zip(existing_query_df['query'], relevant_doc_ids) for _ in batch]
+    retrieved_contents: List[List[str]] = fetch_contents(corpus_df, retrieved_ids)
+    input_passage_strs: List[str] = list(map(
+        lambda x: '\n'.join([f"Document {i + 1}\n{content}" for i, content in enumerate(x)]),
+        retrieved_contents))
+    retrieved_qa_df = pd.DataFrame({
+        'qid': [str(uuid.uuid4()) for _ in range(len(existing_query_df))],
+        'query': existing_query_df['query'].tolist(),
+        'retrieval_gt': list(map(lambda x: [x], retrieved_ids)),
+        'input_passage_str': input_passage_strs,
     })
-    
-    content_series = corpus_df.set_index('doc_id')['contents']
-    combined_df['contents'] = combined_df['doc_id'].map(content_series)
-    combined_df['contents'] = combined_df['contents'].fillna('')
-    
-    combined_df = combined_df.sample(n=min(content_size, len(combined_df)), random_state=random_state)
 
-    qa_data = pd.DataFrame()
-    for idx, i in tqdm(enumerate(range(0, len(combined_df), cache_batch)), total=len(combined_df)//cache_batch):
-        batch = combined_df.iloc[i:i + cache_batch]
-        
-        qa = qa_creation_func(contents=batch['contents'].tolist(), 
-                              queries=batch['query'].tolist(),
-                              **kwargs)
+    sample_qa_df = retrieved_qa_df.sample(n=min(content_size, len(retrieved_qa_df)), random_state=random_state)
 
-        temp_qa_data = pd.DataFrame({
-            'qa': qa,
-            'retrieval_gt': batch['doc_id'].tolist(),
-            'query': batch['query'].tolist()
-        })
+    generation_gt = qa_creation_func(contents=sample_qa_df['input_passage_str'].tolist(),
+                                     queries=sample_qa_df['query'].tolist(),
+                                     batch=cache_batch,
+                                     **kwargs)
+    qa_df = sample_qa_df.copy(deep=True)
+    qa_df.drop(columns=['input_passage_str'], inplace=True)
+    qa_df['generation_gt'] = generation_gt
 
-        temp_qa_data = temp_qa_data.explode('qa', ignore_index=True)
-        temp_qa_data['qid'] = [str(uuid.uuid4()) for _ in range(len(temp_qa_data))]
-        temp_qa_data[['query', 'generation_gt']] = temp_qa_data.apply(
-            lambda row: (row['query'], row['qa']['generation_gt']), axis=1, result_type='expand')
-        temp_qa_data = temp_qa_data.drop(columns=['qa'])
+    if output_filepath is not None:
+        save_parquet_safe(qa_df, output_filepath, upsert=upsert)
 
-        temp_qa_data['retrieval_gt'] = temp_qa_data['retrieval_gt'].apply(lambda x: [[x]])
-        temp_qa_data['generation_gt'] = temp_qa_data['generation_gt'].apply(lambda x: [x])
-
-        if idx == 0:
-            qa_data = temp_qa_data
-        else:
-            qa_data = pd.concat([qa_data, temp_qa_data], ignore_index=True)
-        
-        if output_filepath is not None:
-            save_parquet_safe(qa_data, output_filepath, upsert=upsert)
-            
-    return qa_data
+    return qa_df

@@ -4,6 +4,7 @@ import random
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.utils.util import process_batch
@@ -53,37 +54,28 @@ def generate_qa_llama_index(
     return results
 
 
-
-def generate_qa_with_existing_queries(
+def generate_answers(
     llm: LLMPredictorType,
     contents: List[str],
     queries: List[str],
-    prompt: Optional[str] = None,
-    max_retries: int = 3,
     batch: int = 4,
 ) -> List[List[Dict]]:
     """
-    Generate a qa set from the list of contents using existing queries.
+    Generate qa sets from the list of contents using existing queries.
 
     :param llm: Llama index model
     :param contents: List of content strings.
     :param queries: List of existing queries.
-    :param prompt: The prompt to use for the qa generation.
-    :param max_retries: The maximum number of retries when generated question number is not equal to the target number.
     :param batch: The batch size to process asynchronously.
     :return: 2-d list of dictionaries containing the query and generation_gt.
     """
-    if prompt is None:
-        prompt = open(os.path.join(package_dir, "llama_index_default_prompt.txt"), 'r').read()
 
     tasks = [
-        async_qa_gen_llama_index_with_query(content, llm, prompt, max_retries, query)
+        generate_basic_answer(llm, content, query)
         for content, query in zip(contents, queries)
     ]
-    
     loops = asyncio.get_event_loop()
     results = loops.run_until_complete(process_batch(tasks, batch))
-    
     return results
 
 
@@ -181,32 +173,19 @@ async def async_qa_gen_llama_index(
     return await generate(content, llm)
 
 
-async def async_qa_gen_llama_index_with_query(
-        content: str,
-        llm: LLMPredictorType,
-        prompt: str,
-        max_retries: int = 3,
-        query: str = None,
-):
+async def generate_basic_answer(llm: LLMPredictorType, passage_str: str, query: str) -> str:
+    basic_answer_system_prompt = """You are an AI assistant to answer the given question in the provide evidence text.
+    You can find the evidence from the given text about question, and you have to write a proper answer to the given question.
+    You have to preserve the question's language at the answer.
+    For example, if the input question is Korean, the output answer must be in Korean.
     """
-    Generate a qa set by using the given content, query, and the llama index model.
+    user_prompt = f"Text:\n<|text_start|>\n{passage_str}\n<|text_end|>\n\nQuestion:\n{query}\n\nAnswer:"
 
-    :param content: Content string
-    :param llm: Llama index model
-    :param prompt: The prompt to use for the qa generation.
-    :param max_retries: Maximum number of retries when generation fails
-    :param query: The existing query to use
-    :return: List of dictionaries containing the query and generation_gt
-    """
-    async def generate(content: str, llm: LLMPredictorType):
-        for _ in range(max_retries):
-            output = await llm.acomplete(
-                prompt.replace("{{text}}", content).replace("{{query}}", query))
-            result = [{'query': query, 'generation_gt': output.text.strip()}]
-            return result
-        raise InterruptedError(f"Failed to generate output after {max_retries} retries.")
-
-    return await generate(content, llm)
+    response = await llm.achat(messages=[
+        ChatMessage(role=MessageRole.SYSTEM, content=basic_answer_system_prompt),
+        ChatMessage(role=MessageRole.USER, content=user_prompt)
+    ], temperature=1.0)
+    return response.message.content
 
 
 def validate_llama_index_prompt(prompt: str) -> bool:
