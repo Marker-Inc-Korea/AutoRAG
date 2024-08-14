@@ -89,6 +89,7 @@ def make_qa_with_existing_queries(
         qa_creation_func: Callable,
         output_filepath: Optional[str] = None,
         embedding_model: str = 'openai_embed_3_large',
+        collection: Optional[chromadb.Collection] = None,
         upsert: bool = False,
         random_state: int = 42,
         cache_batch: int = 32,
@@ -107,6 +108,10 @@ def make_qa_with_existing_queries(
         You can add your own embedding model in the autorag.embedding_models.
         Please refer to how to add an embedding model in this doc: https://docs.auto-rag.com/local_model.html
         The default is 'openai_embed_3_large'.
+    :param collection: The chromadb collection to use for vector DB.
+        You can make any chromadb collection and use it here.
+        If you already ingested the corpus_df to the collection, the embedding process will not be repeated.
+        The default is None. If None, it makes a temporary collection.
     :param upsert: If true, the function will overwrite the existing file if it exists.
     :param random_state: The random state for sampling corpus from the given corpus_df.
     :param cache_batch: The number of batches to use for caching the generated QA dataset.
@@ -126,9 +131,10 @@ def make_qa_with_existing_queries(
     embeddings = autorag.embedding_models[embedding_model]
 
     # Vector DB creation
-    chroma_client = chromadb.Client()
-    collection_name = "auto-rag"
-    collection = chroma_client.get_or_create_collection(collection_name)
+    if collection is None:
+        chroma_client = chromadb.Client()
+        collection_name = "auto-rag"
+        collection = chroma_client.get_or_create_collection(collection_name)
 
     # embed corpus_df
     vectordb_ingest(collection, corpus_df, embeddings)
