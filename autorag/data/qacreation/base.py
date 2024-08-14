@@ -86,7 +86,7 @@ def make_qa_with_existing_queries(
         corpus_df: pd.DataFrame,
         existing_query_df: pd.DataFrame,
         content_size: int,
-        qa_creation_func: Callable,
+        answer_creation_func: Callable,
         output_filepath: Optional[str] = None,
         embedding_model: str = 'openai_embed_3_large',
         collection: Optional[chromadb.Collection] = None,
@@ -102,7 +102,7 @@ def make_qa_with_existing_queries(
     :param corpus_df: The corpus dataframe to make QA dataset from.
     :param existing_query_df: Dataframe containing existing queries to use for QA pair creation.
     :param content_size: This function will generate QA dataset for the given number of contents.
-    :param qa_creation_func: The function to create QA pairs.
+    :param answer_creation_func: The function to create answer with input query.
     :param output_filepath: Optional filepath to save the parquet file.
     :param embedding_model: The embedding model to use for vectorization.
         You can add your own embedding model in the autorag.embedding_models.
@@ -154,10 +154,10 @@ def make_qa_with_existing_queries(
 
     sample_qa_df = retrieved_qa_df.sample(n=min(content_size, len(retrieved_qa_df)), random_state=random_state)
 
-    generation_gt = qa_creation_func(contents=sample_qa_df['input_passage_str'].tolist(),
-                                     queries=sample_qa_df['query'].tolist(),
-                                     batch=cache_batch,
-                                     **kwargs)
+    generation_gt = answer_creation_func(contents=sample_qa_df['input_passage_str'].tolist(),
+                                         queries=sample_qa_df['query'].tolist(),
+                                         batch=cache_batch,
+                                         **kwargs)
     qa_df = sample_qa_df.copy(deep=True)
     qa_df.drop(columns=['input_passage_str'], inplace=True)
     qa_df['generation_gt'] = generation_gt
