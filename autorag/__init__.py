@@ -47,7 +47,8 @@ embedding_models = {
     'huggingface_cointegrated_rubert_tiny2': LazyInit(HuggingFaceEmbedding, model_name="cointegrated/rubert-tiny2"),
     'huggingface_all_mpnet_base_v2': LazyInit(HuggingFaceEmbedding,
                                               model_name="sentence-transformers/all-mpnet-base-v2",
-                                              max_length=512, )
+                                              max_length=512, ),
+    'huggingface_bge_m3': LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
 }
 
 generator_models = {

@@ -4,6 +4,7 @@ import random
 from typing import Optional, List, Dict, Any
 
 import pandas as pd
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.utils.util import process_batch
@@ -47,6 +48,31 @@ def generate_qa_llama_index(
     tasks = [
         async_qa_gen_llama_index(content, llm, prompt, question_num_per_content, max_retries)
         for content in contents
+    ]
+    loops = asyncio.get_event_loop()
+    results = loops.run_until_complete(process_batch(tasks, batch))
+    return results
+
+
+def generate_answers(
+    llm: LLMPredictorType,
+    contents: List[str],
+    queries: List[str],
+    batch: int = 4,
+) -> List[List[Dict]]:
+    """
+    Generate qa sets from the list of contents using existing queries.
+
+    :param llm: Llama index model
+    :param contents: List of content strings.
+    :param queries: List of existing queries.
+    :param batch: The batch size to process asynchronously.
+    :return: 2-d list of dictionaries containing the query and generation_gt.
+    """
+
+    tasks = [
+        generate_basic_answer(llm, content, query)
+        for content, query in zip(contents, queries)
     ]
     loops = asyncio.get_event_loop()
     results = loops.run_until_complete(process_batch(tasks, batch))
@@ -145,6 +171,21 @@ async def async_qa_gen_llama_index(
         raise InterruptedError(f"Failed to generate output of length {question_num} after {max_retries} retries.")
 
     return await generate(content, llm)
+
+
+async def generate_basic_answer(llm: LLMPredictorType, passage_str: str, query: str) -> str:
+    basic_answer_system_prompt = """You are an AI assistant to answer the given question in the provide evidence text.
+    You can find the evidence from the given text about question, and you have to write a proper answer to the given question.
+    You have to preserve the question's language at the answer.
+    For example, if the input question is Korean, the output answer must be in Korean.
+    """
+    user_prompt = f"Text:\n<|text_start|>\n{passage_str}\n<|text_end|>\n\nQuestion:\n{query}\n\nAnswer:"
+
+    response = await llm.achat(messages=[
+        ChatMessage(role=MessageRole.SYSTEM, content=basic_answer_system_prompt),
+        ChatMessage(role=MessageRole.USER, content=user_prompt)
+    ], temperature=1.0)
+    return response.message.content
 
 
 def validate_llama_index_prompt(prompt: str) -> bool:

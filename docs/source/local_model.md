@@ -117,6 +117,7 @@ To change the embedding model, you can change the `embedding_model` parameter to
 |                  [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)                  |      huggingface_baai_bge_small       |
 |               [cointegrated/rubert-tiny2](https://huggingface.co/cointegrated/rubert-tiny2)               | huggingface_cointegrated_rubert_tiny2 |
 | [sentence-transformers/all-mpnet-base-v2](https://huggingface.co/sentence-transformers/all-mpnet-base-v2) |     huggingface_all_mpnet_base_v2     |
+|                             [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)                             |          huggingface_bge_m3           |
 
 For example, if you want to use OpenAI text embedding large model, you can set `embedding_model` parameter
 to `openai_embed_3_large`.

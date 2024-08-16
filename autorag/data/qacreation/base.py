@@ -1,11 +1,14 @@
 import logging
 import uuid
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
+import chromadb
 import pandas as pd
 from tqdm import tqdm
 
-from autorag.utils.util import save_parquet_safe
+import autorag
+from autorag.nodes.retrieval.vectordb import vectordb_ingest, vectordb
+from autorag.utils.util import save_parquet_safe, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
@@ -77,3 +80,89 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
             save_parquet_safe(qa_data, output_filepath, upsert=upsert)
 
     return qa_data
+
+
+def make_qa_with_existing_queries(
+        corpus_df: pd.DataFrame,
+        existing_query_df: pd.DataFrame,
+        content_size: int,
+        answer_creation_func: Callable,
+        output_filepath: Optional[str] = None,
+        embedding_model: str = 'openai_embed_3_large',
+        collection: Optional[chromadb.Collection] = None,
+        upsert: bool = False,
+        random_state: int = 42,
+        cache_batch: int = 32,
+        top_k: int = 3,
+        **kwargs
+) -> pd.DataFrame:
+    """
+    Make single-hop QA dataset using given qa_creation_func and existing queries.
+    
+    :param corpus_df: The corpus dataframe to make QA dataset from.
+    :param existing_query_df: Dataframe containing existing queries to use for QA pair creation.
+    :param content_size: This function will generate QA dataset for the given number of contents.
+    :param answer_creation_func: The function to create answer with input query.
+    :param output_filepath: Optional filepath to save the parquet file.
+    :param embedding_model: The embedding model to use for vectorization.
+        You can add your own embedding model in the autorag.embedding_models.
+        Please refer to how to add an embedding model in this doc: https://docs.auto-rag.com/local_model.html
+        The default is 'openai_embed_3_large'.
+    :param collection: The chromadb collection to use for vector DB.
+        You can make any chromadb collection and use it here.
+        If you already ingested the corpus_df to the collection, the embedding process will not be repeated.
+        The default is None. If None, it makes a temporary collection.
+    :param upsert: If true, the function will overwrite the existing file if it exists.
+    :param random_state: The random state for sampling corpus from the given corpus_df.
+    :param cache_batch: The number of batches to use for caching the generated QA dataset.
+    :param top_k: The number of sources to refer by model.
+        Default is 3.
+    :param kwargs: The keyword arguments for qa_creation_func.
+    :return: QA dataset dataframe.
+    """
+    assert 'query' in existing_query_df.columns, "existing_query_df must have 'query' column."
+    assert content_size > 0, "content_size must be greater than 0."
+    if content_size > len(corpus_df):
+        logger.warning(f"content_size {content_size} is larger than the corpus size {len(corpus_df)}. "
+                       "Setting content_size to the corpus size.")
+        content_size = len(corpus_df)
+
+    logger.info("Loading local embedding model...")
+    embeddings = autorag.embedding_models[embedding_model]
+
+    # Vector DB creation
+    if collection is None:
+        chroma_client = chromadb.Client()
+        collection_name = "auto-rag"
+        collection = chroma_client.get_or_create_collection(collection_name)
+
+    # embed corpus_df
+    vectordb_ingest(collection, corpus_df, embeddings)
+    vectordb_func = vectordb.__wrapped__
+    retrieved_ids, retrieve_scores = vectordb_func(existing_query_df['query'].tolist(), top_k, collection, embeddings)
+
+    retrieved_contents: List[List[str]] = fetch_contents(corpus_df, retrieved_ids)
+    input_passage_strs: List[str] = list(map(
+        lambda x: '\n'.join([f"Document {i + 1}\n{content}" for i, content in enumerate(x)]),
+        retrieved_contents))
+    retrieved_qa_df = pd.DataFrame({
+        'qid': [str(uuid.uuid4()) for _ in range(len(existing_query_df))],
+        'query': existing_query_df['query'].tolist(),
+        'retrieval_gt': list(map(lambda x: [x], retrieved_ids)),
+        'input_passage_str': input_passage_strs,
+    })
+
+    sample_qa_df = retrieved_qa_df.sample(n=min(content_size, len(retrieved_qa_df)), random_state=random_state)
+
+    generation_gt = answer_creation_func(contents=sample_qa_df['input_passage_str'].tolist(),
+                                         queries=sample_qa_df['query'].tolist(),
+                                         batch=cache_batch,
+                                         **kwargs)
+    qa_df = sample_qa_df.copy(deep=True)
+    qa_df.drop(columns=['input_passage_str'], inplace=True)
+    qa_df['generation_gt'] = generation_gt
+
+    if output_filepath is not None:
+        save_parquet_safe(qa_df, output_filepath, upsert=upsert)
+
+    return qa_df
