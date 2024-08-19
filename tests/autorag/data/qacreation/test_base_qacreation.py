@@ -113,6 +113,7 @@ def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
     assert len(qa_df) == 5
     assert all(len(elem) == 3 for elem in qa_df['retrieval_gt'].apply(lambda x: x[0]).tolist())
     assert all((elem in query_df['query'].tolist()) for elem in qa_df['query'].tolist())
+    assert all((elem in query_df['generation_gt'].tolist()) for elem in qa_df['generation_gt'].tolist())
 
 
 def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(chroma_persistent_client, qa_parquet_filepath):
@@ -143,3 +144,4 @@ def test_make_qa_with_existing_qa_persistent_client_with_gen_gt(chroma_persisten
     assert len(qa_df) == 5
     assert all(len(elem) == 3 for elem in qa_df['retrieval_gt'].apply(lambda x: x[0]).tolist())
     assert all((elem in query_df['query'].tolist()) for elem in qa_df['query'].tolist())
+    assert all((elem in query_df['generation_gt'].tolist()) for elem in qa_df['generation_gt'].tolist())
