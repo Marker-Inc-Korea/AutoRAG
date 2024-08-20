@@ -91,7 +91,7 @@ def test_g_eval_fluency():
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_g_eval_full():
-	base_test_generation_metrics(g_eval, [4.25, 2.5, 4.25], model="gpt-3.5-turbo")
+	base_test_generation_metrics(g_eval, [3.5, 2.75, 2.0], model="gpt-4o-mini")
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
