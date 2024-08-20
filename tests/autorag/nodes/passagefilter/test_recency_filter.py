@@ -9,6 +9,7 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	base_passage_filter_test,
 	base_passage_filter_node_test,
 	previous_result,
+	project_dir_with_corpus,
 )
 
 

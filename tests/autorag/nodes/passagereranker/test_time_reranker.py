@@ -8,6 +8,7 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	previous_result,
 	base_reranker_node_test,
 	time_list,
+	project_dir_with_corpus,
 )
 
 

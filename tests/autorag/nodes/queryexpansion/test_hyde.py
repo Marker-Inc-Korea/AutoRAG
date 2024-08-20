@@ -4,6 +4,7 @@ from tests.autorag.nodes.queryexpansion.test_query_expansion_base import (
 	project_dir,
 	previous_result,
 	base_query_expansion_node_test,
+	ingested_vectordb_node,
 )
 
 sample_query = ["How many members are in Newjeans?", "What is visconde structure?"]
