@@ -99,7 +99,11 @@ def openai_llm(
 		)
 
 	client = AsyncOpenAI(api_key=api_key)
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop = loop
 	tasks = [get_result(prompt, client, llm, tokenizer, **kwargs) for prompt in prompts]
 	result = loop.run_until_complete(process_batch(tasks, batch))
 	answer_result = list(map(lambda x: x[0], result))

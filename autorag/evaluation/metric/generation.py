@@ -210,7 +210,11 @@ def rouge(
 		].fmeasure
 
 	tasks = [compute(gt, pred) for gt, pred in zip(generation_gt, generations)]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop = loop
 	result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
 	del rouge_instance
@@ -309,7 +313,11 @@ def g_eval(
 	    Default is 8.
 	:return: G-Eval score.
 	"""
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop = loop
 	tasks = [
 		async_g_eval(gt, pred, metrics, model)
 		for gt, pred in zip(generation_gt, generations)

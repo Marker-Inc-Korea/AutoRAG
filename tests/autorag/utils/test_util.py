@@ -356,7 +356,11 @@ def test_process_batch():
 	mock_llm = MockLLM()
 
 	tasks = [mock_llm.acomplete(prompt) for prompt in prompts]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop = loop
 	result = loop.run_until_complete(process_batch(tasks, batch_size=64))
 
 	assert result == results

@@ -4,6 +4,7 @@ import uuid
 from copy import deepcopy
 from typing import Optional, Dict, List
 
+import gradio as gr
 import nest_asyncio
 import pandas as pd
 import uvicorn
@@ -240,6 +241,14 @@ class Runner:
 		nest_asyncio.apply()
 		logger.info(f"Run api server at {host}:{port}")
 		uvicorn.run(self.app, host=host, port=port, loop="asyncio", **kwargs)
+
+	def run_web(self):
+		def get_response(message, history):
+			return self.run(message)
+
+		gr.ChatInterface(
+			get_response, title="📚 AutoRAG", retry_btn=None, undo_btn=None
+		).launch(share=True)
 
 
 class RunnerInput(BaseModel):
