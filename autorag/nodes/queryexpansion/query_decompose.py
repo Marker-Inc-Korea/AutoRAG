@@ -52,49 +52,55 @@ decompose_prompt = """Decompose a question in self-contained sub-questions. Use 
 
 
 @query_expansion_node
-def query_decompose(queries: List[str],
-                    generator_func: Callable,
-                    generator_params: Dict,
-                    prompt: str = decompose_prompt) -> List[List[str]]:
-    """
-    decompose query to little piece of questions.
-    :param queries: List[str], queries to decompose.
-    :param generator_func: Callable, generator functions.
-    :param generator_params: Dict, generator parameters.
-    :param prompt: str, prompt to use for query decomposition.
-        default prompt comes from Visconde's StrategyQA few-shot prompt.
-    :return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
-    """
-    full_prompts = []
-    for query in queries:
-        if bool(prompt):
-            full_prompt = f"prompt: {prompt}\n\n question: {query}"
-        else:
-            full_prompt = decompose_prompt.format(question=query)
-        full_prompts.append(full_prompt)
-    input_df = pd.DataFrame({"prompts": full_prompts})
-    result_df = generator_func(project_dir=None, previous_result=input_df, **generator_params)
-    answers = result_df['generated_texts'].tolist()
-    results = list(map(lambda x: get_query_decompose(x[0], x[1]), zip(queries, answers)))
-    return results
+def query_decompose(
+	queries: List[str],
+	generator_func: Callable,
+	generator_params: Dict,
+	prompt: str = decompose_prompt,
+) -> List[List[str]]:
+	"""
+	decompose query to little piece of questions.
+	:param queries: List[str], queries to decompose.
+	:param generator_func: Callable, generator functions.
+	:param generator_params: Dict, generator parameters.
+	:param prompt: str, prompt to use for query decomposition.
+	    default prompt comes from Visconde's StrategyQA few-shot prompt.
+	:return: List[List[str]], list of decomposed query. Return input query if query is not decomposable.
+	"""
+	full_prompts = []
+	for query in queries:
+		if bool(prompt):
+			full_prompt = f"prompt: {prompt}\n\n question: {query}"
+		else:
+			full_prompt = decompose_prompt.format(question=query)
+		full_prompts.append(full_prompt)
+	input_df = pd.DataFrame({"prompts": full_prompts})
+	result_df = generator_func(
+		project_dir=None, previous_result=input_df, **generator_params
+	)
+	answers = result_df["generated_texts"].tolist()
+	results = list(
+		map(lambda x: get_query_decompose(x[0], x[1]), zip(queries, answers))
+	)
+	return results
 
 
 def get_query_decompose(query: str, answer: str) -> List[str]:
-    """
-    decompose query to little piece of questions.
-    :param query: str, query to decompose.
-    :param answer: str, answer from query_decompose function.
-    :return: List[str], list of a decomposed query. Return input query if query is not decomposable.
-    """
-    if answer.lower() == "the question needs no decomposition":
-        return [query]
-    try:
-        lines = [line.strip() for line in answer.splitlines() if line.strip()]
-        if lines[0].startswith("Decompositions:"):
-            lines.pop(0)
-        questions = [line.split(':', 1)[1].strip() for line in lines if ':' in line]
-        if not questions:
-            return [query]
-        return questions
-    except:
-        return [query]
+	"""
+	decompose query to little piece of questions.
+	:param query: str, query to decompose.
+	:param answer: str, answer from query_decompose function.
+	:return: List[str], list of a decomposed query. Return input query if query is not decomposable.
+	"""
+	if answer.lower() == "the question needs no decomposition":
+		return [query]
+	try:
+		lines = [line.strip() for line in answer.splitlines() if line.strip()]
+		if lines[0].startswith("Decompositions:"):
+			lines.pop(0)
+		questions = [line.split(":", 1)[1].strip() for line in lines if ":" in line]
+		if not questions:
+			return [query]
+		return questions
+	except:
+		return [query]
