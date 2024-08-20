@@ -46,7 +46,8 @@ addopts = ["--import-mode=importlib"] # default is prepend
 
 [project.optional-dependencies]
 ko = ["kiwipiepy", "konlpy"]
-all = ["AutoRAG[ko]"]
+dev = ["ruff", "pre-commit"]
+all = ["AutoRAG[ko]", "AutoRAG[dev]"]
 
 [project.entry-points.console_scripts]
 autorag = "autorag.cli:cli"
