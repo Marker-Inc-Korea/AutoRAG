@@ -28,7 +28,11 @@ def llama_index_llm(
 	    The third element is a list of generated text's pseudo log probs.
 	"""
 	tasks = [llm.acomplete(prompt) for prompt in prompts]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
 	results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
 	generated_texts = list(map(lambda x: x.text, results))

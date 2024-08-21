@@ -72,7 +72,11 @@ def rankgpt(
 		reranker.async_postprocess_nodes(nodes, query, ids)
 		for nodes, query, ids in zip(nodes_list, query_bundles, ids_list)
 	]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
 	rerank_result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 	content_result = [list(map(lambda x: x.node.text, res[0])) for res in rerank_result]
 	score_result = [

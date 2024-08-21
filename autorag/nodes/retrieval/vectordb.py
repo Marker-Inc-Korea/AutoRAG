@@ -84,7 +84,11 @@ def vectordb(
 		vectordb_pure(query_embedding, top_k, collection)
 		for query_embedding in query_embeddings
 	]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
 	results = loop.run_until_complete(process_batch(tasks, batch_size=embedding_batch))
 	id_result = list(map(lambda x: x[0], results))
 	score_result = list(map(lambda x: x[1], results))

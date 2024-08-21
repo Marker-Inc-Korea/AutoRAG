@@ -58,6 +58,10 @@ def refine(
 		summarizer.aget_response(query, content)
 		for query, content in zip(queries, contents)
 	]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
 	results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 	return results

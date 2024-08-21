@@ -10,6 +10,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 from pydantic import BaseModel
+import gradio as gr
 
 from autorag.support import get_support_modules
 from autorag.utils.util import load_summary_file
@@ -240,6 +241,14 @@ class Runner:
 		nest_asyncio.apply()
 		logger.info(f"Run api server at {host}:{port}")
 		uvicorn.run(self.app, host=host, port=port, loop="asyncio", **kwargs)
+
+	def run_web(self):
+		def get_response(message, history):
+			return self.run(message)
+
+		gr.ChatInterface(
+			get_response, title="📚 AutoRAG", retry_btn=None, undo_btn=None
+		).launch(share=True)
 
 
 class RunnerInput(BaseModel):

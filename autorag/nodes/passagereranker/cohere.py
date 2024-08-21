@@ -53,7 +53,11 @@ def cohere_reranker(
 		cohere_rerank_pure(cohere_client, model, query, document, ids, top_k)
 		for query, document, ids in zip(queries, contents_list, ids_list)
 	]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
 	results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 	content_result = list(map(lambda x: x[0], results))
 	id_result = list(map(lambda x: x[1], results))

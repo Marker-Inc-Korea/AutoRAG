@@ -56,7 +56,11 @@ def jina_reranker(
 			queries, contents_list, scores_list, ids_list
 		)
 	]
-	loop = asyncio.get_event_loop()
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
 	results = loop.run_until_complete(process_batch(tasks, batch))
 
 	content_result, id_result, score_result = zip(*results)
