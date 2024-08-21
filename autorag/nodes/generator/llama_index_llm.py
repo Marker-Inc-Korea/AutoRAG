@@ -1,11 +1,10 @@
-import asyncio
 from typing import List, Tuple
 
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 from transformers import AutoTokenizer
 
 from autorag.nodes.generator.base import generator_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import get_event_loop, process_batch
 
 
 @generator_node
@@ -28,11 +27,7 @@ def llama_index_llm(
 	    The third element is a list of generated text's pseudo log probs.
 	"""
 	tasks = [llm.acomplete(prompt) for prompt in prompts]
-	try:
-		loop = asyncio.get_running_loop()
-	except RuntimeError:
-		loop = asyncio.new_event_loop()
-		asyncio.set_event_loop(loop)
+	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
 	generated_texts = list(map(lambda x: x.text, results))

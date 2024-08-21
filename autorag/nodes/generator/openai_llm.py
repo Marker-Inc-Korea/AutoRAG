@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 from typing import List, Tuple
@@ -8,7 +7,7 @@ from openai import AsyncOpenAI
 from tiktoken import Encoding
 
 from autorag.nodes.generator.base import generator_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import get_event_loop, process_batch
 
 logger = logging.getLogger("AutoRAG")
 
@@ -99,11 +98,7 @@ def openai_llm(
 		)
 
 	client = AsyncOpenAI(api_key=api_key)
-	try:
-		loop = asyncio.get_running_loop()
-	except RuntimeError:
-		loop = asyncio.new_event_loop()
-		asyncio.set_event_loop(loop)
+	loop = get_event_loop()
 	tasks = [get_result(prompt, client, llm, tokenizer, **kwargs) for prompt in prompts]
 	result = loop.run_until_complete(process_batch(tasks, batch))
 	answer_result = list(map(lambda x: x[0], result))

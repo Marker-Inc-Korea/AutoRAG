@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -11,7 +10,7 @@ from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import get_event_loop, process_batch
 
 
 @passage_reranker_node
@@ -72,11 +71,7 @@ def rankgpt(
 		reranker.async_postprocess_nodes(nodes, query, ids)
 		for nodes, query, ids in zip(nodes_list, query_bundles, ids_list)
 	]
-	try:
-		loop = asyncio.get_running_loop()
-	except RuntimeError:
-		loop = asyncio.new_event_loop()
-		asyncio.set_event_loop(loop)
+	loop = get_event_loop()
 	rerank_result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 	content_result = [list(map(lambda x: x.node.text, res[0])) for res in rerank_result]
 	score_result = [

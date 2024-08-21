@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Optional
 
 from llama_index.core import PromptTemplate
@@ -8,7 +7,7 @@ from llama_index.core.response_synthesizers import TreeSummarize
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
 from autorag.nodes.passagecompressor.base import passage_compressor_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import get_event_loop, process_batch
 
 
 @passage_compressor_node
@@ -60,10 +59,6 @@ def tree_summarize(
 		summarizer.aget_response(query, content)
 		for query, content in zip(queries, contents)
 	]
-	try:
-		loop = asyncio.get_running_loop()
-	except RuntimeError:
-		loop = asyncio.new_event_loop()
-		asyncio.set_event_loop(loop)
+	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 	return results

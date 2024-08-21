@@ -1,11 +1,10 @@
-import asyncio
 import os
 from typing import List, Tuple, Optional
 
 import aiohttp
 
 from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import get_event_loop, process_batch
 
 JINA_API_URL = "https://api.jina.ai/v1/rerank"
 
@@ -56,11 +55,7 @@ def jina_reranker(
 			queries, contents_list, scores_list, ids_list
 		)
 	]
-	try:
-		loop = asyncio.get_running_loop()
-	except RuntimeError:
-		loop = asyncio.new_event_loop()
-		asyncio.set_event_loop(loop)
+	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch))
 
 	content_result, id_result, score_result = zip(*results)

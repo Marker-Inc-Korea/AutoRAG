@@ -11,6 +11,7 @@ import string
 from copy import deepcopy
 from typing import List, Callable, Dict, Optional, Any, Collection, Iterable
 
+from asyncio import AbstractEventLoop
 import numpy as np
 import pandas as pd
 import tiktoken
@@ -557,3 +558,15 @@ def get_best_row(
 	bests = summary_df.loc[summary_df[best_column_name]]
 	assert len(bests) == 1, "There must be only one best result."
 	return bests.iloc[0]
+
+
+def get_event_loop() -> AbstractEventLoop:
+	"""
+	Get asyncio event loop safely.
+	"""
+	try:
+		loop = asyncio.get_running_loop()
+	except RuntimeError:
+		loop = asyncio.new_event_loop()
+		asyncio.set_event_loop(loop)
+	return loop
