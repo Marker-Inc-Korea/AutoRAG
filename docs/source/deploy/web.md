@@ -10,7 +10,7 @@ myst:
 ## Running the Web Interface
 As mentioned in the tutorial, you can run the web interface following the below command:
 
-### 1. Use yaml path
+### 1. Use YAML path
 ```bash
 autorag run_web --yaml_path your/path/to/pipeline.yaml
 ```
@@ -22,7 +22,7 @@ You can specify project directory with `--project_dir` option or project_dir par
 autorag run_web --yaml_path your/path/to/pipeline.yaml --project_dir your/project/directory
 ```
 
-### 2. Use trial path
+### 2. Use a trial path
 ```bash
 autorag run_web --trial_path your/path/to/trial
 ```

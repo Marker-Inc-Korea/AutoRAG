@@ -26,7 +26,7 @@ The extent to which words in the generated sentence are included in the referenc
 
 `n-gram` base
 
-The extent to which words from the reference setence are included in the generated sentence
+The extent to which words from the reference sentences are included in the generated sentence
 → By AutoRAG, the extent to which words in `Answer gt` are included in the `LLM generated result`
 
 ## 3. METEOR
@@ -40,11 +40,11 @@ Here is the paper [link](https://www.cs.cmu.edu/~alavie/papers/BanerjeeLavie2005
 The metric is based on the**harmonic mean**of unigram**precision and recall**, with recall weighted higher than
 precision.
 
-It also has several features that are not found in other metrics, such asstemmingandsynonymymatching, along with the
+It also has several features that are not found in other metrics, such as stemming and synonym matching, along with the
 standard exact word matching.
 
 The metric was designed to fix some of the problems found in the more popular`BLEU`metric, and also produce good
-correlation with human judgement at the sentence or segment level.
+correlation with human judgment at the sentence or segment level.
 
 This differs from the `BLEU` metric in that `BLEU` seeks correlation at the corpus level.
 
@@ -52,7 +52,7 @@ This differs from the `BLEU` metric in that `BLEU` seeks correlation at the corp
 
 ### 📌Definition
 
-Here is the paper[link](https://arxiv.org/pdf/2401.17072.pdf)that introduced ***Sem Score***.
+Here is the paper [link](https://arxiv.org/pdf/2401.17072.pdf) that introduced ***Sem Score***.
 
 The concept of SemScore is quite simple.
 
@@ -71,7 +71,7 @@ Here is the [link](https://arxiv.org/abs/2303.16634) that introduced ***G-Eval**
 to assess the quality of NLG outputs.
 
 Paper said that **G-Eval with GPT-4** as the backbone model achieves a Spearman correlation of 0.514 with human on
-summarization task, outperforming all previous methods by a large margin.
+a summarization task, outperforming all previous methods by a large margin.
 
 So, in AutoRAG, we use **G-Eval with GPT-4**
 
@@ -88,7 +88,7 @@ So, in AutoRAG, we use **G-Eval with GPT-4**
 
 - Evaluate whether the answer is consistent with and does not contradict the question asked or the information
   presented.
-- A answer should provide information that does not conflict with the requirements of the question or the data
+- An answer should provide information that does not conflict with the requirements of the question or the data
   presented.
 
 ---
@@ -108,7 +108,7 @@ So, in AutoRAG, we use **G-Eval with GPT-4**
 
 You can use specific G-Eval metrics to use `metrics` parameter.
 
-Here is an example yaml file that uses **G-Eval consistency** metric.
+Here is an example YAML file that uses **G-Eval consistency** metric.
 
 ```yaml
 - metric_name: g_eval

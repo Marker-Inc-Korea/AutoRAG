@@ -42,13 +42,13 @@ We support [Ragas context precision](https://docs.ragas.io/en/latest/concepts/me
 
 - Also known as **PPV** (Positive Predictive Value).
 
-❗So in AutoRAG, Precision is **(number of correct answers in result) / (length of result)**.
+❗So in AutoRAG, Precision is **(number of correct answers in a result) / (length of a result)**.
 
 ### ✅Apply Basic Example
 
 Retrieval resulted in the correct answer `[1, 0, 1, 0]`.
 
-Precision = (number of correct answers in result) / (length of result).
+Precision = (number of correct answers in a result) / (length of a result).
 
 So in this case, precision is 2/4 = 0.5.
 
@@ -80,11 +80,11 @@ So in this case, We need to see how many of the two lists in gt contain the corr
 
 2. `['test-3']`
 
-   The result does not include `test-3`.
+   The result doesn’t include `test-3`.
 
    Therefore, this list is incorrect.
 
-The ‘number of list containing the correct answer’ was 1, and the ‘length of gt’ is 2.
+The ‘number of lists containing the correct answer’ was 1, and the ‘length of gt’ is 2.
 
 Therefore, Recall is 1/2 = 0.5.
 
@@ -130,7 +130,7 @@ Therefore, the F1 Score = 2*(0.5*0.5)/(0.5+0.5) = 0.5
 
 2. `['test-3']`
 
-   The result does not include `test-3`.
+   The result doesn’t include `test-3`.
 
    Therefore, the RR of this list is 0.
 
@@ -158,7 +158,7 @@ average of the averages.
    1. `test-1` is in the first part of result. Therefore, Precision = 1
    2. `test-2` is in the third of the result. Therefore, Precision = 2/3
 
-   ⇒ AP(Average Precision) = (1 + 2/3) / 2 = 5/6
+   ⇒ AP (Average Precision) = (1 + 2/3) / 2 = 5/6
 
 2. `['test-3']`
    1. `test-3` is not included in the result. Therefore, Precision = 0, AP = 0
@@ -183,7 +183,7 @@ Cumulated Gain (CG) literally means the cumulative sum of relevance.
 However, in the case of CG, if the types of passages in TopN are the same, a model with more relevant passages ranked
 higher may perform equally well as a model with less relevant passages.
 
-Therefore, we don't use this value directly, but use the DCG with a discount.
+Therefore, we don't use this value directly but use the DCG with a discount.
 
 2️⃣**DCG** (Discounted Cumulated Gain)
 
@@ -197,7 +197,7 @@ influenced by the relevance of higher-ranked items and less influenced by the re
 
 ![dcg](../_static/dcg.png)
 
-3️⃣**IDCG** (Ideal Discounted Cumulated Gain)
+3️⃣**IDCG** (Ideal-Discounted Cumulated Gain)
 
 The Ideal Discounted Cumulated Gain (IDCG) is the most ideal value of the DCG result. It is absolute and not directly
 related to the model.
