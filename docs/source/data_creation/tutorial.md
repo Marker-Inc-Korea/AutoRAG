@@ -58,7 +58,7 @@ from langchain_community.document_loaders import DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from autorag.data.corpus import langchain_documents_to_parquet
 
-documents = DirectoryLoader('your_dir_path', glob='**/*.md').load_data()
+documents = DirectoryLoader('your_dir_path', glob='**/*.md').load()
 documents = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=128).split_documents(documents)
 corpus_df = langchain_documents_to_parquet(documents, 'path/to/corpus.parquet')
 ```
