@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - creating your own RAG evaluation dataset
-      description: Check out AutoRAG dataset format. You will know about how to make AutoRAG compatible RAG evaluation dataset. 
+      description: Check out AutoRAG dataset format. You will know about how to make AutoRAG compatible RAG evaluation dataset.
       keywords: AutoRAG,RAG,RAG evaluation,RAG dataset
 ---
 # Start creating your own evaluation data
@@ -96,11 +96,11 @@ Passage is chunked units from raw data.
 ```
 
 ```{admonition} Auto-save feature
-From AutoRAG v0.2.9, the auto-save feature added! 
+From AutoRAG v0.2.9, the auto-save feature added!
 Now, you don't have to afraid that something wrong while the data generation.
 The data will save automatically to the input `output_filepath`.
 
-You can set how often you want to save the result to the file. 
+You can set how often you want to save the result to the file.
 Just adjust `cache_batch` parameter. Default is 32.
 ```
 

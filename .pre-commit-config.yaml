@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0  # Use the ref you want to point at
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.6.1
+    hooks:
+      - id: ruff
+        types_or: [ python, pyi ]
+        args: [ "--fix" ]
+      - id: ruff-format
+        types_or: [ python, pyi ]
