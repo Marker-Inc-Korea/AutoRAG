@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from llama_index.core.base.llms.types import CompletionResponse
 
-from autorag.data.qacreation import make_single_content_qa, generate_qa_llama_index, make_qa_with_existing_queries, \
+from autorag.data.qacreation import make_single_content_qa, generate_qa_llama_index, make_qa_with_existing_qa, \
     generate_answers
 from autorag.utils import validate_qa_dataset
 from tests.mock import MockLLM
@@ -89,10 +89,10 @@ def test_single_content_qa_long_cache_batch(qa_parquet_filepath):
     assert all([len(x) == 1 for x in qa_df['generation_gt'].tolist()])
 
 
-def test_make_qa_with_existing_queries(qa_parquet_filepath):
+def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
     corpus_df = pd.read_parquet(os.path.join(resource_dir, "corpus_data_sample.parquet"), engine='pyarrow')
     query_df = pd.read_parquet(os.path.join(resource_dir, "qa_data_sample.parquet"), engine='pyarrow')
-    qa_df = make_qa_with_existing_queries(
+    qa_df = make_qa_with_existing_qa(
         corpus_df, query_df, content_size=5, answer_creation_func=generate_answers,
         output_filepath=qa_parquet_filepath, llm=MockLLM(), upsert=True,
     )
@@ -102,11 +102,25 @@ def test_make_qa_with_existing_queries(qa_parquet_filepath):
     assert all((elem in query_df['query'].tolist()) for elem in qa_df['query'].tolist())
 
 
-def test_make_qa_with_existing_queries_persistent_client(chroma_persistent_client, qa_parquet_filepath):
+def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
+    corpus_df = pd.read_parquet(os.path.join(resource_dir, "corpus_data_sample.parquet"), engine='pyarrow')
+    query_df = pd.read_parquet(os.path.join(resource_dir, "qa_data_sample.parquet"), engine='pyarrow')
+    qa_df = make_qa_with_existing_qa(
+        corpus_df, query_df, content_size=5, exist_gen_gt=True,
+        output_filepath=qa_parquet_filepath, upsert=True,
+    )
+    validate_qa_dataset(qa_df)
+    assert len(qa_df) == 5
+    assert all(len(elem) == 3 for elem in qa_df['retrieval_gt'].apply(lambda x: x[0]).tolist())
+    assert all((elem in query_df['query'].tolist()) for elem in qa_df['query'].tolist())
+    assert all((elem in query_df['generation_gt'].tolist()) for elem in qa_df['generation_gt'].tolist())
+
+
+def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(chroma_persistent_client, qa_parquet_filepath):
     corpus_df = pd.read_parquet(os.path.join(resource_dir, "corpus_data_sample.parquet"), engine='pyarrow')
     query_df = pd.read_parquet(os.path.join(resource_dir, "qa_data_sample.parquet"), engine='pyarrow')
     collection = chroma_persistent_client.get_or_create_collection('auto-rag')
-    qa_df = make_qa_with_existing_queries(
+    qa_df = make_qa_with_existing_qa(
         corpus_df, query_df, content_size=5, answer_creation_func=generate_answers,
         output_filepath=qa_parquet_filepath, llm=MockLLM(), upsert=True,
         collection=collection, embedding_model='openai_embed_3_small',
@@ -115,3 +129,19 @@ def test_make_qa_with_existing_queries_persistent_client(chroma_persistent_clien
     assert len(qa_df) == 5
     assert all(len(elem) == 3 for elem in qa_df['retrieval_gt'].apply(lambda x: x[0]).tolist())
     assert all((elem in query_df['query'].tolist()) for elem in qa_df['query'].tolist())
+
+
+def test_make_qa_with_existing_qa_persistent_client_with_gen_gt(chroma_persistent_client, qa_parquet_filepath):
+    corpus_df = pd.read_parquet(os.path.join(resource_dir, "corpus_data_sample.parquet"), engine='pyarrow')
+    query_df = pd.read_parquet(os.path.join(resource_dir, "qa_data_sample.parquet"), engine='pyarrow')
+    collection = chroma_persistent_client.get_or_create_collection('auto-rag')
+    qa_df = make_qa_with_existing_qa(
+        corpus_df, query_df, content_size=5, exist_gen_gt=True,
+        output_filepath=qa_parquet_filepath, upsert=True,
+        collection=collection, embedding_model='openai_embed_3_small',
+    )
+    validate_qa_dataset(qa_df)
+    assert len(qa_df) == 5
+    assert all(len(elem) == 3 for elem in qa_df['retrieval_gt'].apply(lambda x: x[0]).tolist())
+    assert all((elem in query_df['query'].tolist()) for elem in qa_df['query'].tolist())
+    assert all((elem in query_df['generation_gt'].tolist()) for elem in qa_df['generation_gt'].tolist())
