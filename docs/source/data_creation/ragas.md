@@ -7,7 +7,7 @@ myst:
 ---
 # RAGAS evaluation data generation
 
-RAGAS, the RAG evaluation framework also supports their advanced evaluation data generation.
+RAGAS, the RAG evaluation framework, also support their advanced evaluation data generation.
 You can learn more about their evaluation data generation method
 at [here](https://docs.ragas.io/en/stable/concepts/testset_generation.html).
 
@@ -26,7 +26,7 @@ corpus_df = pd.read_parquet('path/to/corpus.parquet')
 qa_df = generate_qa_ragas(corpus_df, test_size=50)
 ```
 
-This will make QA set with 50 questions using RAGAS evaluation data generation method.
+This will make QA set with 50 questions using the RAGAS evaluation data generation method.
 
 You can use output `qa_df` directly for AutoRAG optimization.
 
@@ -37,8 +37,8 @@ You can use output `qa_df` directly for AutoRAG optimization.
 - multi_context
 - conditional
 
-You can set distribution of question types by making distribution list.
-You can access each question type from importing ragas evolution types.
+You can set the distribution of question types by making a distribution list.
+You can access each question type by importing RAGAS evolution types.
 
 ```python
 from ragas.testset.evolutions import simple, reasoning, multi_context, conditional
@@ -58,7 +58,7 @@ Now you can pass this distribution dictionary as input.
 
 ## Use custom models
 
-RAGAS support custom models using Langchain.
+RAGAS supports custom models using Langchain.
 You can get a support list of models from Langchain at [here](https://python.langchain.com/docs/integrations/llms/).
 
 Plus, you might need to use `ChatModel` class from Langchain.
