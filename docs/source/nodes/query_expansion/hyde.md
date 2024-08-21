@@ -7,7 +7,8 @@ myst:
 ---
 # HyDE
 
-The HyDE is inspired by the paper "[Precise Zero-shot Dense Retrieval without Relevance Labels](https://arxiv.org/abs/2212.10496)". It uses a LLM model to generate a hypothetical passage for a given query.
+The HyDE is inspired by the paper "[Precise Zero-shot Dense Retrieval without Relevance Labels](https://arxiv.org/abs/2212.10496)".
+It uses an LLM model to generate a hypothetical passage for a given query.
 
 ## **Module Parameters**
 
@@ -21,8 +22,7 @@ The HyDE is inspired by the paper "[Precise Zero-shot Dense Retrieval without Re
 **Additional Parameters**:
 
 - **prompt**: You can use your own custom prompt for the LLM model.
-  Default prompt is come from the
-  paper "[Precise Zero-shot Dense Retrieval without Relevance Labels](https://arxiv.org/abs/2212.10496)".
+Default prompt is coming from the paper "[Precise Zero-shot Dense Retrieval without Relevance Labels](https://arxiv.org/abs/2212.10496)".
 
 ## **Example config.yaml**
 ```yaml

@@ -2,14 +2,12 @@
 myst:
    html_meta:
       title: AutoRAG - Threshold Cutoff
-      description: Learn about threshold cutoff passage filter module in AutoRAG 
+      description: Learn about threshold cutoff passage filter module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Filter,threshold cutoff
 ---
 # Threshold Cutoff
 
-This module is inspired by
-our [similarity threshold cutoff](https://docs.auto-rag.com/nodes/passage_filter/similarity_threshold_cutoff.html)
-module.
+This module is inspired by our [similarity threshold cutoff](https://docs.auto-rag.com/nodes/passage_filter/similarity_threshold_cutoff.html) module.
 Filters the contents, scores, and ids based on a **previous result's scores**.
 
 📣 Keeps at least one item per query if all scores are below the threshold.

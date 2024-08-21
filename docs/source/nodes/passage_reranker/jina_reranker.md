@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - JINA Reranker
-      description: Learn about JINA reranker module in AutoRAG 
+      description: Learn about JINA reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,JINA
 ---
 # jina_reranker
@@ -23,7 +23,7 @@ Next, you can set your Jina API key in the environment variable.
 export JINAAI_API_KEY=your_jina_api_key
 ```
 
-Or, you can set your cohere API key in the config.yaml file directly.
+Or, you can set your JinaAI API key in the config.yaml file directly.
 
 ```yaml
 - module_type: jina_reranker
@@ -32,7 +32,7 @@ Or, you can set your cohere API key in the config.yaml file directly.
 
 ## **Module Parameters**
 
-- **batch** : The size of batch. It sends the batch size of passages to jina API at once. If it is too large, it can
+- **batch** : The size of a batch. It sends the batch size of passages to jina API at once. If it is too large, it can
   cause some error. (default: 8)
   You can increase when you have higher 'rpm' and 'tpm' limit from Jina AI.
 - **model** : The type of model you want to use for reranking. Default is "jina-reranker-v1-base-en" and you can change

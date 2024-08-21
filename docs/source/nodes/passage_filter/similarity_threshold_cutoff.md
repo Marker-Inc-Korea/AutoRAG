@@ -2,13 +2,13 @@
 myst:
    html_meta:
       title: AutoRAG - Similarity Threshold Cutoff
-      description: Learn about similarity threshold cutoff passage filter module in AutoRAG 
+      description: Learn about similarity threshold cutoff passage filter module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Filter
 ---
 # Similarity Threshold Cutoff
 
 This module is inspired by
-LlamaIndex ['Sentence Embedding Optimizer'](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/OptimizerDemo/).
+LlamaIndex ["Sentence Embedding Optimizer"](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/OptimizerDemo/).
 Re-calculate each content's similarity with the query and filter out the contents that are below the threshold.
 
 📣 Keeps at least one item per query if all scores are below the threshold.
@@ -23,7 +23,7 @@ Re-calculate each content's similarity with the query and filter out the content
 
 ```{tip}
 Information about the Embedding model can be found [Supporting Embedding models](../../local_model.md#supporting-embedding-models).
-Plus, you can learn about how to add custom embedding model at [here](../../local_model.md#add-your-embedding-models). 
+Plus, you can learn about how to add custom embedding model at [here](../../local_model.md#add-your-embedding-models).
 ```
 
 ## **Example config.yaml**

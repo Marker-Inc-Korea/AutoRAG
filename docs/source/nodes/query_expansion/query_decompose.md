@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Query Decompose
-      description: Learn about query decompose module in AutoRAG 
+      description: Learn about query decompose module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,query expansion,query decompose,visconde
 ---
 # Query Decompose
@@ -21,7 +21,7 @@ The `query_decompose` is used to decompose a ‘multi-hop question’ into ‘mu
 **Additional Parameters**:
 
 - **prompt**: You can use your own custom prompt for the LLM model.
-  default prompt comes from Visconde's StrategyQA few-shot prompt.
+Default prompt comes from StrategyQA few-shot prompt of Visconde.
 
 ## **Example config.yaml**
 ```yaml
@@ -34,7 +34,7 @@ modules:
 
 ## Default Prompt
 
-When the question doesn't need decomposition, it must return "The question needs no decomposition".
+When the question doesn't need decomposition, it must return "The question needs no decomposition."
 Plus, each question will be allocated in `{question}`, so you have to write it in the prompt.
 
 ```
@@ -43,7 +43,7 @@ Decompose a question in self-contained sub-questions. Use \"The question needs n
 Example 1:
 
 Question: Is Hamlet more common on IMDB than Comedy of Errors?
-Decompositions: 
+Decompositions:
 1: How many listings of Hamlet are there on IMDB?
 2: How many listing of Comedy of Errors is there on IMDB?
 

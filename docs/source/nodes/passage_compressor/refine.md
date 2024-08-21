@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Refine Compressor
-      description: Learn about refine compressor module in AutoRAG 
+      description: Learn about refine compressor module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Compressor,Refine
 ---
 # Refine
@@ -26,7 +26,7 @@ Information about the LLM model can be found [Supporting LLM models](../../local
 - **Additional Parameters**:
     - **batch**: How many calls to make at once. Default is 16.
     - Other LLM-related parameters such as `model`, `temperature`, and `max_tokens` can be set. These are passed as
-      keyword arguments (`kwargs`) to the LLM object, allowing for further customization of the LLM's behavior.
+      keyword arguments (`kwargs`) to the LLM object, allowing for further customization of the behavior of LLM.
 
 ## **Example config.yaml**
 

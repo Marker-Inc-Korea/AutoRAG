@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Passage Reranker
-      description: Learn about reranker module in AutoRAG 
+      description: Learn about reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker
 ---
 # 4. Passage_Reranker
@@ -12,7 +12,9 @@ Reranking is a process applied after the initial retrieval of contents. It invol
 
 
 ### 🤸 **Benefits**
-The primary benefit of reranking is the enhanced prioritization of high-relevance contents. By performing a subsequent evaluation, reranking ensures that the most pertinent information is more accessible, improving the overall quality and relevance of the retrieved data.
+The primary benefit of reranking is the enhanced prioritization of high-relevance contents.
+Reranking ensures that the most pertinent information is more accessible,
+improving the overall quality and relevance of the retrieved data.
 
 ## 🔢 **Parameters**
 ### **Overview**:

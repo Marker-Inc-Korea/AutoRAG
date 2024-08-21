@@ -17,17 +17,17 @@ This document serves as a guide for configuring parameters, strategies, and the 
 
 ### **Node Parameters**
 **Top_k**
-- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be retrieved from corpus.
+- **Description**: The `top_k` parameter is used at the node level to define the top 'k' results to be retrieved from corpus.
 
 ### **Strategy Parameters**
-1. **Metrics**:  
+1. **Metrics**:
    - **Types**: `retrieval_f1`, `retrieval_recall`, `retrieval_precision`
    ```{admonition} Purpose
    These metrics are used to evaluate the effectiveness of the retrieval process, measuring the accuracy, recall, and precision of the retrieved content.
    ```
 
 2. **Speed Threshold**:
-   - **Description**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized.
+   - **Description**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not used.
 
 ### Example config.yaml file
 ```yaml

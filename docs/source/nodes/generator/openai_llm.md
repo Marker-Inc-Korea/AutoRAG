@@ -15,7 +15,7 @@ There are several advantages using `openai` module in AutoRAG.
 
 ### 1. Auto-truncate prompt
 
-Sometimes, prompt might exceed token limitation of model.
+Sometimes, prompt might exceed a token limitation of the model.
 It will occur server-side error, and all your answer results will be gone.
 To prevent this, `openai_llm` module truncate prompt to the max length of gpt model.
 
@@ -24,14 +24,14 @@ To prevent this, `openai_llm` module truncate prompt to the max length of gpt mo
 In `llama_index_llm` module, it does not return proper tokens. It just return pseudo token using GPT2 tokenizer.
 
 When you use `openai_llm` module, you can get real tokens that used in gpt model.
-In the future, there will be a module that use token for boosting RAG performance.
+In the future, there will be a module that uses token for boosting RAG performance.
 
 ### 3. Accurate log prob output
 
 In `llama_index_llm` module, it does not return proper log probs since llama index does not support it.
 
 With `openai_llm` module, you can get real log probability to every token of generated answers.
-In the future, there sill be a module that use log probability, like answer filter.
+In the future, there will be some modules that use log probability, like answer filter.
 
 ## **Module Parameters**
 

@@ -2,13 +2,13 @@
 myst:
    html_meta:
       title: AutoRAG - Prev Next Augmenter
-      description: Learn about passage augmenter module in AutoRAG 
+      description: Learn about passage augmenter module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Augmenter,Prev Next Augmenter
 ---
 # Prev Next Augmenter
 
 This module is inspired by
-LlamaIndex ['Forward/Backward Augmentation'](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/PrevNextPostprocessorDemo/).
+LlamaIndex ["Forward/Backward Augmentation"](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/PrevNextPostprocessorDemo/).
 It allows users to fetch additional passages.
 
 ## **Module Parameters**
@@ -20,7 +20,7 @@ It allows users to fetch additional passages.
     - `next`: add passages after the retrieved passage
     - `both`: add passages before and after the retrieved passage
 
-  Default is 'next'.
+  Default is 'next.'
 
 ## **Example config.yaml**
 
