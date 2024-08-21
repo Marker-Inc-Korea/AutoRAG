@@ -41,7 +41,7 @@ Plus, you can find sample dataset download script from `sample_dataset` folder.
 
 ## Setting up environment
 
-As a python package, AutoRAG tested primarily in Python versions >= 3.9. 
+As a python package, AutoRAG tested primarily in Python versions >= 3.9.
 Here's a guide to set environment.
 
 1. Fork [AutoRAG Github repo](https://github.com/Marker-Inc-Korea/AutoRAG) and clone it to your local machine. (New to GitHub / git? Here's [how](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo).)
@@ -49,7 +49,7 @@ Here's a guide to set environment.
 3. Install pre-commit hooks by running `pre-commit install` in the terminal.
 4. Make a new virtual environment (Highly Recommended)
 5. Install AutoRAG as development version. `pip install -e '.[all]'`
-6. Install test dependencies `pip install -r tests/requirements.txt` 
+6. Install test dependencies `pip install -r tests/requirements.txt`
 7. Write `pytest.ini` file and add env variable for running tests.
 ```ini
 [pytest]
@@ -63,7 +63,7 @@ log_cli_level=INFO
 
 ## Validating your change
 
-Let's make sure to `format/lint` our change. 
+Let's make sure to `format/lint` our change.
 For bigger changes, let's also make sure to `test` our change.
 
 ### Formatting/Linting
@@ -94,7 +94,7 @@ Plus, your test will run as github actions when you try to merge it to the main 
 #### Warning about OPENAI_API_KEY
 
 When executing test at github actions, it will be failed due to the OpenAI API key.
-Don't worry, we will run the test locally and merge your code if there is no problem. 
+Don't worry, we will run the test locally and merge your code if there is no problem.
 
 ## Making a Pull Request
 
