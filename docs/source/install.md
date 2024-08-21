@@ -20,17 +20,17 @@ First, you can check out the [troubleshooting](troubleshooting.md) page.
 
 ### Installation for Korean 🇰🇷
 
-You can install optional dependencies for Korean language.
+You can install optional dependencies for the Korean language.
 
 ```bash
 pip install AutoRAG[ko]
 ```
 
 And after that, you have to install **jdk 17** for using `konlpy`.
-Plus, don't forget to set environment PATH for jdk. (JAVA_HOME and PATH)
+Plus, remember to set environment PATH for jdk.
+(JAVA_HOME and PATH)
 
-The instruction for mac users
-is [here](https://velog.io/@yoonsy/M1%EC%B9%A9-Mac%EC%97%90-konlpy-%EC%84%A4%EC%B9%98%ED%95%98%EA%B8%B0).
+The instruction for Mac users is [here](https://velog.io/@yoonsy/M1%EC%B9%A9-Mac%EC%97%90-konlpy-%EC%84%A4%EC%B9%98%ED%95%98%EA%B8%B0).
 
 ## Setup OPENAI API KEY
 To use LLM and embedding models, it is common to use OpenAI models.
@@ -43,18 +43,18 @@ You can get your API key at [here](https://platform.openai.com/account/api-keys)
 export OPENAI_API_KEY="sk-...your-api-key..."
 ```
 
-Or, as an alternative, you can set env variable using .env file.
+Or, as an alternative, you can set env variable using the `.env` file.
 
 ```bash
 pip install python-dotenv
 ```
 
-Then, make .env file at your root folder like below.
+Then, make an.env file at your root folder like below.
 ```dotenv
 OPENAI_API_KEY=sk-...your-api-key...
 ```
 
-And when you try to run AutoRAG, you can use below code to load .env file.
+And when you try to run AutoRAG, you can use below code to load `.env` file.
 
 ```python
 from dotenv import load_dotenv
@@ -67,7 +67,7 @@ And you are ready to use AutoRAG!
 
 ## Build from source
 
-If you want to build AutoRAG from source, the first step is to clone AutoRAG repository.
+If you want to build AutoRAG from source, the first step is to clone the AutoRAG repository.
 
 ```bash
 git clone https://github.com/Marker-Inc-Korea/AutoRAG.git
@@ -86,8 +86,8 @@ pip install -r tests/requirements.txt
 pip install -r docs/requirements.txt
 ```
 
-For testing, you have to set env variable at pytest.ini.
-Make new pytest.ini file at the root of the project and write below.
+For testing, you have to set the environment variable at pytest.ini.
+Make a new `pytest.ini` file at the root of the project and write below.
 
 ```ini
 [pytest]
@@ -104,5 +104,5 @@ After that, you can run tests with pytest.
 python -m pytest -n auto
 ```
 
-After this, please check out our documentation for contributors. 
+After this, please check out our documentation for contributors.
 We are writing this documentation for contributors, so please wait for a while.

@@ -146,7 +146,7 @@ Or you can use python code like below.
 from autorag.evaluator import Evaluator
 
 evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet')
-evaluator.restart_trial(tiral_path='your/path/to/trial_path')
+evaluator.restart_trial(trial_path='your/path/to/trial_path')
 ```
 
 ```{admonition} What if Trial_Path didn't also create a First Node Line?
