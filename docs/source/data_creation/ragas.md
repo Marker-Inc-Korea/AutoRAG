@@ -67,8 +67,8 @@ Plus, you might need to use `ChatModel` class from Langchain.
 from autorag.data.qacreation.ragas import generate_qa_ragas
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-generator_llm = ChatOpenAI(model="gpt-3.5-turbo", temprature=0.4)
-critic_llm = ChatOpenAI(model="gpt-4", temprature=0.0)
+generator_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.4)
+critic_llm = ChatOpenAI(model="gpt-4", temperature=0.0)
 embedding_model = OpenAIEmbeddings()
 
 qa_df = generate_qa_ragas(corpus_df, test_size=50, distributions=distributions,
