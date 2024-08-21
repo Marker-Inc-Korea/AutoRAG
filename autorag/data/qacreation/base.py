@@ -3,6 +3,7 @@ import uuid
 from typing import Callable, Optional, List
 
 import chromadb
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -82,11 +83,12 @@ def make_single_content_qa(corpus_df: pd.DataFrame,
     return qa_data
 
 
-def make_qa_with_existing_queries(
+def make_qa_with_existing_qa(
         corpus_df: pd.DataFrame,
         existing_query_df: pd.DataFrame,
         content_size: int,
-        answer_creation_func: Callable,
+        answer_creation_func: Optional[Callable] = None,
+        exist_gen_gt: Optional[bool] = False,
         output_filepath: Optional[str] = None,
         embedding_model: str = 'openai_embed_3_large',
         collection: Optional[chromadb.Collection] = None,
@@ -102,7 +104,11 @@ def make_qa_with_existing_queries(
     :param corpus_df: The corpus dataframe to make QA dataset from.
     :param existing_query_df: Dataframe containing existing queries to use for QA pair creation.
     :param content_size: This function will generate QA dataset for the given number of contents.
-    :param answer_creation_func: The function to create answer with input query.
+    :param answer_creation_func: Optional function to create answer with input query.
+        If exist_gen_gt is False, this function must be given.
+    :param exist_gen_gt: Optional boolean to use existing generation_gt.
+        If True, the existing_query_df must have 'generation_gt' column.
+        If False, the answer_creation_func must be given.
     :param output_filepath: Optional filepath to save the parquet file.
     :param embedding_model: The embedding model to use for vectorization.
         You can add your own embedding model in the autorag.embedding_models.
@@ -121,6 +127,12 @@ def make_qa_with_existing_queries(
     :return: QA dataset dataframe.
     """
     assert 'query' in existing_query_df.columns, "existing_query_df must have 'query' column."
+
+    if exist_gen_gt:
+        assert 'generation_gt' in existing_query_df.columns, "existing_query_df must have 'generation_gt' column."
+    else:
+        assert answer_creation_func is not None, "answer_creation_func must be given when exist_gen_gt is False."
+
     assert content_size > 0, "content_size must be greater than 0."
     if content_size > len(corpus_df):
         logger.warning(f"content_size {content_size} is larger than the corpus size {len(corpus_df)}. "
@@ -145,6 +157,7 @@ def make_qa_with_existing_queries(
     input_passage_strs: List[str] = list(map(
         lambda x: '\n'.join([f"Document {i + 1}\n{content}" for i, content in enumerate(x)]),
         retrieved_contents))
+
     retrieved_qa_df = pd.DataFrame({
         'qid': [str(uuid.uuid4()) for _ in range(len(existing_query_df))],
         'query': existing_query_df['query'].tolist(),
@@ -152,15 +165,24 @@ def make_qa_with_existing_queries(
         'input_passage_str': input_passage_strs,
     })
 
+    if exist_gen_gt:
+        generation_gt = existing_query_df['generation_gt'].tolist()
+        if isinstance(generation_gt[0], np.ndarray):
+            retrieved_qa_df['generation_gt'] = generation_gt
+        else:
+            raise ValueError("In existing_query_df, generation_gt (per query) must be in the form of List[str].")
+
     sample_qa_df = retrieved_qa_df.sample(n=min(content_size, len(retrieved_qa_df)), random_state=random_state)
 
-    generation_gt = answer_creation_func(contents=sample_qa_df['input_passage_str'].tolist(),
-                                         queries=sample_qa_df['query'].tolist(),
-                                         batch=cache_batch,
-                                         **kwargs)
     qa_df = sample_qa_df.copy(deep=True)
     qa_df.drop(columns=['input_passage_str'], inplace=True)
-    qa_df['generation_gt'] = generation_gt
+
+    if not exist_gen_gt:
+        generation_gt = answer_creation_func(contents=sample_qa_df['input_passage_str'].tolist(),
+                                             queries=sample_qa_df['query'].tolist(),
+                                             batch=cache_batch,
+                                             **kwargs)
+        qa_df['generation_gt'] = generation_gt
 
     if output_filepath is not None:
         save_parquet_safe(qa_df, output_filepath, upsert=upsert)

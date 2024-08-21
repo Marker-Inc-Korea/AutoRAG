@@ -169,10 +169,10 @@ qa_df = make_single_content_qa(corpus_df, content_size=50, qa_creation_func=gene
 Remeber all prompts must have the placeholders `{{text}}` and `{{num_questions}}`.
 ```
 
-## When you have existing queries
+## When you have existing qa data
 
-When you have existing queries, you can use it for AutoRAG.
-The real user's question is valuable data, so it is always great to use it prior to generating synthetic data.
+When you have existing qa data, you can use it for AutoRAG.
+The real user's qa data is valuable data, so it is always great to use it prior to generating synthetic data.
 
 But you have to make retrieval_gt for existing queries from your corpus data.
 The process to find the retrieval_gt at the corpus is hard, but must be accurate.
@@ -180,15 +180,24 @@ For making it less hard, we use an embedding model and vectordb for finding rele
 After that, you have to clarify the retrieval_gt is right.
 If retrieval_gt is not relevant, you have to remove it on the dataset.
 
+This feature is available if you have only query ready, and if you have both query and generation_gt ready.
+
+### If you only have query data:
+
+First get retrieval_gt with the existing query, then put query and retrieval_gt into LLM and generate generation_gt.
+
+- `answer_creation_func`, `llm` parameters are necessary.
+- `existing_qa_df` must have 'query' column.
+
 ```python
 import pandas as pd
 from llama_index.llms.openai import OpenAI
-from autorag.data.qacreation import make_qa_with_existing_queries, generate_answers
+from autorag.data.qacreation import make_qa_with_existing_qa, generate_answers
 
 corpus_df = pd.read_parquet('path/to/corpus.parquet')
 existing_qa_df = pd.read_parquet('path/to/existing_qa.parquet')  # It have to contain 'query' column
 llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
-qa_df = make_qa_with_existing_queries(corpus_df, existing_qa_df, content_size=50,
+qa_df = make_qa_with_existing_qa(corpus_df, existing_qa_df, content_size=50,
                                       answer_creation_func=generate_answers,
                                       llm=llm, output_filepath='path/to/qa.parquet', cache_batch=64,
                                       embedding_model='openai_embed_3_large', top_k=5)
@@ -200,7 +209,7 @@ You can use `PersistentClient` for saving corpus embeddings locally as well.
 import pandas as pd
 import chromadb
 from llama_index.llms.openai import OpenAI
-from autorag.data.qacreation import make_qa_with_existing_queries, generate_answers
+from autorag.data.qacreation import make_qa_with_existing_qa, generate_answers
 
 client = chromadb.PersistentClient('path/to/chromadb')
 collection = client.get_or_create_collection('auto-rag')
@@ -208,8 +217,52 @@ collection = client.get_or_create_collection('auto-rag')
 corpus_df = pd.read_parquet('path/to/corpus.parquet')
 existing_qa_df = pd.read_parquet('path/to/existing_qa.parquet')  # It have to contain 'query' column
 llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
-qa_df = make_qa_with_existing_queries(corpus_df, existing_qa_df, content_size=50,
+qa_df = make_qa_with_existing_qa(corpus_df, existing_qa_df, content_size=50,
                                       answer_creation_func=generate_answers, collection=collection,
                                       llm=llm, output_filepath='path/to/qa.parquet', cache_batch=64,
                                       embedding_model='openai_embed_3_large', top_k=5)
+```
+
+### If you have both query and generation_gt:
+
+Use query and generation_gt as they are, and just find and add retrieval_gt.
+
+- `answer_creation_func`, `llm` parameters are not necessary.
+- `exist_gen_gt=True` parameter is necessary.
+- `existing_qa_df` must have 'query' and 'generation_gt' columns.
+   - generation_gt(per query) must be in the form of List[str].
+
+```python
+import pandas as pd
+from llama_index.llms.openai import OpenAI
+from autorag.data.qacreation import make_qa_with_existing_qa, generate_answers
+
+corpus_df = pd.read_parquet('path/to/corpus.parquet')
+existing_qa_df = pd.read_parquet(
+   'path/to/existing_qa.parquet')  # It have to contain 'query' and 'generation_gt' columns.
+llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+qa_df = make_qa_with_existing_qa(corpus_df, existing_qa_df, content_size=50, exist_gen_gt=True,
+                                 output_filepath='path/to/qa.parquet', cache_batch=64,
+                                 embedding_model='openai_embed_3_large', top_k=5)
+```
+
+You can use `PersistentClient` for saving corpus embeddings locally as well.
+
+```python
+import pandas as pd
+import chromadb
+from llama_index.llms.openai import OpenAI
+from autorag.data.qacreation import make_qa_with_existing_qa, generate_answers
+
+client = chromadb.PersistentClient('path/to/chromadb')
+collection = client.get_or_create_collection('auto-rag')
+
+corpus_df = pd.read_parquet('path/to/corpus.parquet')
+existing_qa_df = pd.read_parquet(
+   'path/to/existing_qa.parquet')  # It have to contain 'query' and 'generation_gt' columns.
+llm = OpenAI(model='gpt-3.5-turbo', temperature=1.0)
+qa_df = make_qa_with_existing_qa(corpus_df, existing_qa_df, content_size=50,
+                                 exist_gen_gt=True, collection=collection,
+                                 output_filepath='path/to/qa.parquet', cache_batch=64,
+                                 embedding_model='openai_embed_3_large', top_k=5)
 ```
