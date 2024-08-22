@@ -8,13 +8,14 @@ from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
-from autorag.utils import validate_corpus_dataset
+from autorag.utils import validate_corpus_dataset, cast_corpus_dataset
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
 	openai_truncate_by_token,
 	flatten_apply,
 )
+
 
 
 @retrieval_node
@@ -133,7 +134,19 @@ def vectordb_ingest(
 	embedding_model: BaseEmbedding,
 	embedding_batch: int = 128,
 ):
+	"""
+	Ingest given corpus data to the chromadb collection.
+	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8191 tokens.
+	Plus, when the corpus content is empty (whitespace), it will be ignored.
+	And if there is a document id that already exists in the collection, it will be ignored.
+
+	:param collection: Chromadb collection instance to ingest.
+	:param corpus_data: The corpus data that contains doc_id and contents columns.
+	:param embedding_model: An embedding model instance that will be used to embed queries.
+	:param embedding_batch: The number of chunks that will be processed in parallel.
+	"""
 	embedding_model.embed_batch_size = embedding_batch
+	corpus_data = cast_corpus_dataset(corpus_data)
 	validate_corpus_dataset(corpus_data)
 	ids = corpus_data["doc_id"].tolist()
 
@@ -149,7 +162,7 @@ def vectordb_ingest(
 		# truncate by token if embedding_model is OpenAIEmbedding
 		if isinstance(embedding_model, OpenAIEmbedding):
 			openai_embedding_limit = (
-				8191  # all openai embedding model has 8191 max token input
+				8191  # all openai embedding models have 8191 max token input
 			)
 			new_contents = openai_truncate_by_token(
 				new_contents, openai_embedding_limit, embedding_model.model_name

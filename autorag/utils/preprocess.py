@@ -71,6 +71,9 @@ def cast_corpus_dataset(df: pd.DataFrame):
 	df = df.reset_index(drop=True)
 	validate_corpus_dataset(df)
 
+	# drop rows that have empty contents
+	df = df[~df["contents"].apply(lambda x: x is None or x.isspace())]
+
 	def make_datetime_metadata(x):
 		if x is None or x == {}:
 			return {"last_modified_datetime": datetime.now()}

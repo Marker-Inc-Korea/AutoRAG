@@ -80,7 +80,7 @@ def load_summary_file(
 	summary_path: str, dict_columns: Optional[List[str]] = None
 ) -> pd.DataFrame:
 	"""
-	Load summary file from summary_path.
+	Load a summary file from summary_path.
 
 	:param summary_path: The path of the summary file.
 	:param dict_columns: The columns that are dictionary type.
@@ -129,9 +129,9 @@ def make_combinations(target_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
 	"""
 	Make combinations from target_dict.
 	The target_dict key value must be a string,
-	and the value can be list of values or single value.
+	and the value can be a list of values or single value.
 	If generates all combinations of values from target_dict,
-	which means generated dictionaries that contain only one value for each key,
+	which means generating dictionaries that contain only one value for each key,
 	and all dictionaries will be different from each other.
 
 	:param target_dict: The target dictionary.
@@ -188,11 +188,11 @@ def explode(index_values: Collection[Any], explode_values: Collection[Collection
 
 def replace_value_in_dict(target_dict: Dict, key: str, replace_value: Any) -> Dict:
 	"""
-	Replace the value of the certain key in target_dict.
-	If there is not targeted key in target_dict, it will return target_dict.
+	Replace the value of a certain key in target_dict.
+	If there is no targeted key in target_dict, it will return target_dict.
 
 	:param target_dict: The target dictionary.
-	:param key: The key to replace.
+	:param key: The key is to replace.
 	:param replace_value: The value to replace.
 	:return: The replaced dictionary.
 	"""
@@ -206,7 +206,7 @@ def replace_value_in_dict(target_dict: Dict, key: str, replace_value: Any) -> Di
 def normalize_string(s: str) -> str:
 	"""
 	Taken from the official evaluation script for v1.1 of the SQuAD dataset.
-	Lower text and remove punctuation, articles and extra whitespace.
+	Lower text and remove punctuation, articles, and extra whitespace.
 	"""
 
 	def remove_articles(text):
@@ -547,7 +547,7 @@ def get_best_row(
 	summary_df: pd.DataFrame, best_column_name: str = "is_best"
 ) -> pd.Series:
 	"""
-	From summary dataframe, find the best result row by 'is_best' column and return it.
+	From the summary dataframe, find the best result row by 'is_best' column and return it.
 
 	:param summary_df: Summary dataframe created by AutoRAG.
 	:param best_column_name: The column name that indicates the best result.
