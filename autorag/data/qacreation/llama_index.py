@@ -1,4 +1,3 @@
-import asyncio
 import os.path
 import random
 from typing import Optional, List, Dict, Any
@@ -7,7 +6,7 @@ import pandas as pd
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
 
-from autorag.utils.util import process_batch
+from autorag.utils.util import process_batch, get_event_loop
 
 package_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -53,7 +52,7 @@ def generate_qa_llama_index(
 		)
 		for content in contents
 	]
-	loops = asyncio.get_event_loop()
+	loops = get_event_loop()
 	results = loops.run_until_complete(process_batch(tasks, batch))
 	return results
 
@@ -78,7 +77,7 @@ def generate_answers(
 		generate_basic_answer(llm, content, query)
 		for content, query in zip(contents, queries)
 	]
-	loops = asyncio.get_event_loop()
+	loops = get_event_loop()
 	results = loops.run_until_complete(process_batch(tasks, batch))
 	return results
 
@@ -142,7 +141,7 @@ def generate_qa_llama_index_by_ratio(
 		)
 	]
 
-	loops = asyncio.get_event_loop()
+	loops = get_event_loop()
 	results = loops.run_until_complete(process_batch(tasks, batch))
 
 	return results
