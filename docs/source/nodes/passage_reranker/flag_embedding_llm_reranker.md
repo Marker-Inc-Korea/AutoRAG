@@ -12,9 +12,9 @@ passage reranking.
 
 ## **Module Parameters**
 
-- **batch** : The size of batch. If you have limited CUDA memory, decrease the size of the batch. (default: 64)
-- **model_name** : The type of model you want to use for reranking. Default is "BAAI/bge-reranker-v2-gemma".
-    - you can check model list at [here](https://github.com/FlagOpen/FlagEmbedding)
+- **batch** : The size of a batch. If you have limited CUDA memory, decrease the size of the batch. (default: 64)
+- **model_name** : The type of model you want to use for reranking. Default is "BAAI/bge-reranker-v2-gemma."
+    - you can check a model list at [here](https://github.com/FlagOpen/FlagEmbedding)
 - **use_fp16** : Whether to use fp16 or not. (default: False)
 
 ## **Example config.yaml**

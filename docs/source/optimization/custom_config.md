@@ -5,21 +5,21 @@ myst:
       description: Learn how to make custom configuration YAML file for AutoRAG
       keywords: AutoRAG,RAG,RAG optimization,AutoRAG YAML,AutoRAG config
 ---
-# Make custom config yaml file
+# Make a custom config YAML file
 
 ```{warning}
-Read this documentation after you learned about the [structure](./folder_structure.md) of the AutoRAG. 
+Read this documentation after you learned about the [structure](./folder_structure.md) of the AutoRAG.
 ```
 
-## Make yaml file
+## Make YAML file
 
-At first, you must make a new yaml file.
-In your favorite editor, make new file and save it as `.yml` or `.yaml` extension.
+At first, you must make a new YAML file.
+In your favorite editor, make a new file and save it as `.yml` or `.yaml` extension.
 
 ## Make Node Line
 
 The first thing you can do is to set the node lines.
-Think of node line as a collection of nodes. 
+Think of node line as a collection of nodes.
 
 You can make a node line like this.
 
@@ -35,10 +35,10 @@ node_lines:
 Now, you can set which nodes you want to use in each node line.
 When you set nodes, you have to set **strategies** and **node parameters**.
 
-Strategy is a method to evaluate each node. 
+Strategy is a method to evaluate each node.
 You can specify the method how to evaluate each node, like metrics, speed threshold, etc.
 
-Node parameter is a parameter that set to all modules in the node. 
+Node parameter is a parameter that sets to all modules in the node.
 If you have a parameter that duplicates in all modules, you can set it to node parameter.
 
 You can set multiple nodes in a node line. You can specify node_type to set which node you want to use.
@@ -65,11 +65,11 @@ And you can see `metrics` and `speed_threshold` at the strategy. You can set mul
 
 ## Specify modules
 
-Lastly, you need to set modules for each node. 
+Lastly, you need to set modules for each node.
 You can set multiple modules for a single node.
 Plus, you need to set module parameters for each module.
 
-Most module parameters are optional, but it can be a hyperparameter that you want to optimize. 
+Most module parameters are optional, but it can be a hyperparameter that you want to optimize.
 You can set multiple module parameters using a list.
 It will convert to combinations of module parameters, and AutoRAG will test it one by one.
 
@@ -111,10 +111,10 @@ Keep in mind, we use `ast.literal_eval` to parse the tuple in the AutoRAG.
 So you have to write the tuple like you are writing a tuple in the python code.
 ```
 
-## Use environment variable in the yaml file
+## Use environment variable in the YAML file
 
 It becomes easier to manage the api key or other secrets using environment variables.
-You can use environment variables in the yaml file directly. 
+You can use environment variables in the YAML file directly.
 
 ```yaml
 node_lines:
@@ -127,14 +127,14 @@ node_lines:
         modules:
           - module_type: vectordb
             embedding_model: openai
-            api_key: ${OPENAI_API_KEY} 
+            api_key: ${OPENAI_API_KEY}
 ```
 
-Look the `api_key` parameter. You can use environment variable directly in the yaml file.
+Look the `api_key` parameter. You can use environment variable directly in the YAML file.
 
-Use '${}' to use environment variable in the yaml file.
+Use '${}' to use an environment variable in the YAML file.
 
 ```{tip}
-If there is no environment variable, it returns a empty string. 
+If there is no environment variable, it returns a empty string.
 It can occur unintended action, so you have to set the environment variable before you run the AutoRAG.
 ```

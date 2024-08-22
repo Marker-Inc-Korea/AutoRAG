@@ -12,7 +12,7 @@ myst:
 Currently, in AutoRAG, the ***Retrieval token metric*** is only used by the `Passage Compressor Node`. It measures
 performance by comparing the compressed passage to Answer_gt.
 
-When comparing Passage and Answer gt, the comparison is made on a per token basis, which you can see by looking at the
+When comparing Passage and Answer gt, the comparison is made on a per-token basis, which you can see by looking at the
 example
 
 ### ✅Basic Example
@@ -32,9 +32,9 @@ First, let's break up gt and result into tokens
 
 Next, let's look at the number of overlapping tokens in gt and result
 
-- The first is that all 6 tokens overlap with GT, so the number of overlapping tokens is 6.
-- The second has 4 tokens overlapping except for the 'I'.
-- The third has 4 tokens overlapping except for 'I' and 'water'.
+- The first is that all six tokens overlap with GT, so the number of overlapping tokens is 6.
+- The second has four tokens overlapping except for the 'I.'
+- The third has four tokens overlapping except for 'I' and 'water.'
 
 ## 1. Token Precision
 

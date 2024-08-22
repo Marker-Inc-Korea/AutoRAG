@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Query Expansion
-      description: Learn about query expansion module in AutoRAG 
+      description: Learn about query expansion module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,query expansion
 ---
 # **1. Query Expansion**
@@ -19,11 +19,12 @@ The goal is to improve the relevance of the search results by including variatio
 
 ## 🔢 **Parameters**
 ### **Overview**:
-This document serves as a guide for configuring parameters, strategies, and the YAML file. 
+This document serves as a guide for configuring parameters, strategies, and the YAML file.
 ### **Node Parameters**
 - **Not Applicable (N/A):** There are no direct node parameters specified for the query expansion node.
 ### **Strategy**
-**Performance Evaluation**: The performance of the query_expansion node cannot be measured by the result alone. Therefore, it executes retrieval using queries, the result of Node, and evaluates it with the retrieval result.
+**Performance Evaluation**: The result alone cannot measure the performance of the query_expansion node.
+Therefore, it executes retrieval using queries, the result of Node, and evaluates it with the retrieval result.
 Therefore, in strategy, we set the parameters necessary for retrieval and evaluation.
 ```{tip}
 Please refer to the parameter of [retrieval Node](../retrieval/retrieval.md) for more details.
@@ -32,9 +33,9 @@ Please refer to the parameter of [retrieval Node](../retrieval/retrieval.md) for
 #### **Strategy Parameters**:
 
 1. **Metrics**: Metrics such as `retrieval_f1`,`retrieval_recall`, and `retrieval_precision` are used to evaluate the performance of the query expansion process through its impact on retrieval outcomes.
-2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not utilized.
+2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not used.
 3. **Top_k**: This parameter specifies the number of top results to consider during the retrieval evaluation phase.
-4. **Retrieval Modules**: The query expansion node can utilize all modules and module parameters from the retrieval node, including:
+4. **Retrieval Modules**: The query expansion node can use all modules and module parameters from the retrieval node, including:
     - [bm25](../retrieval/bm25.md)
     - [vectordb](../retrieval/vectordb.md): with `embedding_model` parameter
     - [hybrid_rrf](../retrieval/hybrid_rrf.md): with `target_modules` and `rrf_k` parameters

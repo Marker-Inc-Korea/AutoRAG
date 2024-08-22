@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - TART Reranker
-      description: Learn about TART reranker module in AutoRAG 
+      description: Learn about TART reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,TART
 ---
 # TART
@@ -11,12 +11,12 @@ The `TART` module is a reranker based on [TART](https://arxiv.org/pdf/2211.09260
 
 ## **Module Parameters**
 (Optional) `instruction`
-- Specifies instructions for the reranking process. 
+- Specifies instructions for the reranking process.
 - default is `Find passage to answer given question`
 
 (Optional) `batch`
 
-- Specify batch size of the query to the TART model.
+- Specify the batch size of the query to the TART model.
 - default is 64.
 
 ## **Example config.yaml**

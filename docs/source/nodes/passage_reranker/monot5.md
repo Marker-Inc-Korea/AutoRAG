@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - MonoT5 Reranker
-      description: Learn about cohere reranker module in AutoRAG 
+      description: Learn about cohere reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,MonoT5
 ---
 # MonoT5
@@ -18,7 +18,7 @@ given query.
     - default is `castorini/monot5-3b-msmarco-10k`
 
 - (Optional) `batch`
-    - Specify batch size of the query to the TART model.
+    - Specify the batch size of the query to the TART model.
     - default is 64.
 
 ## **Example config.yaml**

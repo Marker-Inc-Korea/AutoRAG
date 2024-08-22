@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Passage Augmenter
-      description: Learn about passage augmenter module in AutoRAG 
+      description: Learn about passage augmenter module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Augmenter
 ---
 # 3. Passage Augmenter
@@ -14,13 +14,13 @@ As opposed to the passage filter node, this is a node that adds passages
 
 ### 🤸 **Benefits**
 
-The primary benefit of passage augmenter is that allows users to fetch additional passages.
+The primary benefit of passage augmenter is that it allows users to fetch additional passages.
 
 ## **Node Parameters**
 
 **Top_k**
 
-- **Description**: The `top_k` parameter is utilized at the node level to define the top 'k' results to be retrieved
+- **Description**: The `top_k` parameter is used at the node level to define the top 'k' results to be retrieved
   from corpus.
 - 📌 **Note**: The number of `top_k` must be same or less than the number of "`retrieval`node parameter `top_k`".
 

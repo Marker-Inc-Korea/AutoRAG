@@ -10,8 +10,7 @@ myst:
 
 📌Only available for corpus chunked with `sentence window` method
 
-The `window_replacement` module is prompt maker based on based
-on [llama_index](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/MetadataReplacementDemo/).
+The `window_replacement` module is prompt maker based on [llama_index](https://docs.llamaindex.ai/en/stable/examples/node_postprocessor/MetadataReplacementDemo/).
 
 Replace retrieved_contents with window to create a Prompt. This is most useful for large documents/indexes, as it helps
 to retrieve more fine-grained details.
