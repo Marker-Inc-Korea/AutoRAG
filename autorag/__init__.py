@@ -63,11 +63,15 @@ embedding_models = {
 	"huggingface_bge_m3": LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
 }
 
+class CustomOllama(Ollama):
+    def __init__(self, **kwargs):
+        super().__init__(request_timeout=3000, **kwargs)
+
 generator_models = {
 	"openai": OpenAI,
 	"huggingfacellm": HuggingFaceLLM,
 	"openailike": OpenAILike,
-	"ollama": Ollama,
+	"ollama": CustomOllama,
 	"mock": MockLLM,
 }
 
