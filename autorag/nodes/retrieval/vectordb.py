@@ -17,7 +17,6 @@ from autorag.utils.util import (
 )
 
 
-
 @retrieval_node
 def vectordb(
 	queries: List[List[str]],
