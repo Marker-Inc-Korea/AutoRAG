@@ -23,11 +23,11 @@ myst:
 
 ```{tip}
 If you want to know more about the node and module, please refer to the [Nodes & Modules](./nodes/index.md) section.
-``` 
+```
 
 ### Node Line
 
-`Node Line`: A Collection of Nodes. 
+`Node Line`: A Collection of Nodes.
 
 #### Example Node Lines
 ![Node Lines](./_static/node_lines.png)
@@ -41,7 +41,7 @@ Node lines can be changed at any time in the YAML file
 ```
 
 
-    
+
 ### Strategy
 
 `Strategy`: Strategy is what you decide to optimize ‘based on’ when optimizing. It is a crucial aspect of optimization that guides the selection and arrangement of optimization techniques.
@@ -50,10 +50,10 @@ Node lines can be changed at any time in the YAML file
   ```{admonition} Summarize
     By default, every node must contain their own metric.
   ```
-- **Speed Threshold**: Optionally, speed_threshold parameter can be added to all nodes. This parameter serves as a criterion for optimization, focusing efforts on enhancing the speed of operations up to a specified threshold.
+- **Speed Threshold**: Optionally, the `speed_threshold` parameter can be added to all nodes. This parameter serves as a criterion for optimization, focusing efforts on enhancing the speed of operations up to a specified threshold.
   ```{admonition} Summarize
    The speed threshold can be optionally applied to all nodes.
-  ```  
+  ```
 - **Node-Specific Strategies:** The optimization strategy may vary from one node to another within the same system. This flexibility allows for tailored optimization that addresses the unique requirements or limitations of each node.
   ```{admonition} Summarize
   1. Different metrics for different nodes.

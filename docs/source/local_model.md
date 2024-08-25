@@ -75,7 +75,7 @@ You can add it by simply calling `autorag.generator_models` and add new key and 
 For example, if you want to add `MockLLM` model for testing, execute the following code.
 
 ```{attention}
-It was major update for LlamaIndex to v0.10.0. 
+It was major update for LlamaIndex to v0.10.0.
 The integration of llms must be installed to different packages.
 So, before add your model, you should find and install the right package for your model.
 You can find the package at [here](https://pretty-sodium-5e0.notion.site/ce81b247649a44e4b6b35dfb24af28a6?v=53b3c2ced7bb4c9996b81b83c9f01139).
@@ -88,7 +88,7 @@ from llama_index.core.llms.mock import MockLLM
 autorag.generator_models['mockllm'] = MockLLM
 ```
 
-Then you can use `mockllm` at config yaml file.
+Then you can use `mockllm` at config YAML file.
 
 ```{caution}
 When you add new LLM model, you should add class itself, not the instance.
@@ -100,7 +100,7 @@ Plus, it must follow LlamaIndex LLM's interface.
 
 ### Modules that use Embedding model
 
-Modules that using embedding model can take `embedding_model` parameter to specify the LLM model.
+Modules that using an embedding model can take `embedding_model` parameter to specify the LLM model.
 
 - [vectordb](nodes/retrieval/vectordb.md)
 
@@ -148,10 +148,10 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 autorag.embedding_models['kosimcse'] = LazyInit(HuggingFaceEmbedding, model_name="BM-K/KoSimCSE-roberta-multitask")
 ```
 
-Then you can use `kosimcse` at config yaml file.
+Then you can use `kosimcse` at config YAML file.
 
 ```{caution}
-When you add new embedding model, you should use `LazyInit` class from autorag. The additional parameters have to be keyword parameter in the `LazyInit` initialization. 
+When you add new embedding model, you should use `LazyInit` class from autorag. The additional parameters have to be keyword parameter in the `LazyInit` initialization.
 ```
 
 ## Use vllm

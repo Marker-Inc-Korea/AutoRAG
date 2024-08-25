@@ -9,7 +9,7 @@ myst:
 
 The `multi_query_expansion` automates the process of prompt tuning by using an LLM to generate multiple queries from
 different perspectives for a given user input query. The module uses a default multi-query prompt from
-the [langchain MultiQueryRetriever](https://python.langchain.com/v0.1/docs/modules/data_connection/retrievers/MultiQueryRetriever/)'
+the [Langchain MultiQueryRetriever](https://python.langchain.com/v0.1/docs/modules/data_connection/retrievers/MultiQueryRetriever/)
 s default query prompt.
 
 ## **Module Parameters**

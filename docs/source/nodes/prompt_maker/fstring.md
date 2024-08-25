@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - F-string
-      description: Learn about f-string module in AutoRAG 
+      description: Learn about f-string module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,prompt
 ---
 # F-String
@@ -12,7 +12,7 @@ The `fstring` module is prompt maker based on python’s f-string. Make a prompt
 
 ## **Module Parameters**
 
-**prompt**: This is the prompt that will be input to llm. Since it is created using an fstring, it must contain `{query}` and `{retreived_contents}`.
+**prompt**: This is the prompt that will be input to llm. Since it is created using a fstring, it must contain `{query}` and `{retreived_contents}`.
 
 ## **Example config.yaml**
 ```yaml

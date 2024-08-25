@@ -7,10 +7,13 @@ myst:
 ---
 # Hybrid - rrf
 
-The `hybrid_rrf` module is designed to retrieve passages from multiple retrievals. 
-The `hybrid_rrf` module is tailored for retrieving passages from multiple sources of information. It utilizes the Reciprocal Rank Fusion (RRF) algorithm to calculate final similarity scores. This calculation is based on the ranking of passages in each retrieval, effectively combining retrieval scores from different sources.
+The `hybrid_rrf` module is designed to retrieve passages from multiple retrievals.
+The `hybrid_rrf` module is tailored for retrieving passages from multiple sources of information.
+It uses the Reciprocal Rank Fusion (RRF) algorithm to calculate final similarity scores.
+This calculation is based on the ranking of passages in each retrieval,
+effectively combining retrieval scores from different sources.
 
-## ❗️Hybird additional explanation
+## ❗️Hybrid additional explanation
 
 You can specify which rrf_k range that you want to explore. AutoRAG will find the optimal rrf_k parameter among your
 specified range.

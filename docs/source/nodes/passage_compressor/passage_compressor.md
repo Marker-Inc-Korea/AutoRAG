@@ -2,13 +2,14 @@
 myst:
    html_meta:
       title: AutoRAG - Passage Compressor
-      description: Learn about passage compressor module in AutoRAG 
+      description: Learn about passage compressor module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Compressor
 ---
 # 6. Passage_Compressor
 
 ### 🔎 **Definition**
-Passage compressor module compresses the contents before they are input into a language model (LLM), reducing the amount of token usage.
+Passage compressor module compresses the contents before they are inputs into a language model (LLM),
+reducing the amount of token usage.
 
 ### 🤸 **Benefits**
 - **Efficiency in Token Usage:** By compressing the contents prior to their entry into a language model, the Passage Compressor significantly reduces the number of tokens required. This efficiency is crucial for large-scale applications where token usage can quickly accumulate, potentially leading to higher computational costs and slower processing times.
@@ -20,7 +21,7 @@ Passage compressor module compresses the contents before they are input into a l
 ### **Overview**:
 This document serves as a guide for configuring parameters, strategies, and the config YAML file for various nodes within a system.
 ### **Node Parameters**
-- **None** 
+- **None**
 ### **Strategy Parameters**
 1. **Metrics**: The use of specialized metrics such as `retrieval_token_f1`, `retrieval_token_recall`, and `retrieval_token_precision` is crucial. These metrics are tailored to evaluate the efficiency of the passage compressor in optimizing the token-level relevance of retrieved content.
    ```{admonition} Purpose

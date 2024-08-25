@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Ko-Reranker
-      description: Learn about ko-reranker module in AutoRAG 
+      description: Learn about ko-reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,Ko-Reranker
 ---
 # Ko-reranker
@@ -15,7 +15,7 @@ More details can be found [here](https://huggingface.co/Dongjin-kr/ko-reranker).
 
 (Optional) `batch`
 
-- Specify batch size of the query to the Ko-reranker model.
+- Specify the batch size of the query to the Ko-reranker model.
 - default is 64.
 
 ## **Example config.yaml**

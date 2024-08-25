@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Colbert Reranker
-      description: Learn about colbert reranker module in AutoRAG 
+      description: Learn about colbert reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,colbert
 ---
 # Colbert Reranker
@@ -12,7 +12,7 @@ passage reranking.
 
 ## **Module Parameters**
 
-- **batch** : The size of batch. If you have limited CUDA memory, decrease the size of the batch. (default: 64)
+- **batch** : The size of a batch. If you have limited CUDA memory, decrease the size of the batch. (default: 64)
 - **model_name** : The type of model you want to use for reranking. Default is "colbert-ir/colbertv2.0".
 
 ## **Example config.yaml**
