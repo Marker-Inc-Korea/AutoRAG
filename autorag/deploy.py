@@ -243,7 +243,11 @@ class Runner:
 		uvicorn.run(self.app, host=host, port=port, loop="asyncio", **kwargs)
 
 	def run_web(
-		self, server_name: str = "0.0.0.0", server_port: int = 7680, share: bool = False
+		self,
+		server_name: str = "0.0.0.0",
+		server_port: int = 7680,
+		share: bool = False,
+		**kwargs,
 	):
 		"""
 		Run web interface to interact pipeline.
@@ -252,6 +256,7 @@ class Runner:
 		:param server_name: The host of the web. Default is 0.0.0.0.
 		:param server_port: The port of the web. Default is 7680.
 		:param share: Whether to create a publicly shareable link. Default is False.
+		:param kwargs: Other arguments for gr.ChatInterface.launch.
 		"""
 
 		logger.info(f"Run web interface at http://{server_name}:{server_port}")
@@ -261,7 +266,9 @@ class Runner:
 
 		gr.ChatInterface(
 			get_response, title="📚 AutoRAG", retry_btn=None, undo_btn=None
-		).launch(server_name=server_name, server_port=server_port, share=share)
+		).launch(
+			server_name=server_name, server_port=server_port, share=share, **kwargs
+		)
 
 
 class RunnerInput(BaseModel):
