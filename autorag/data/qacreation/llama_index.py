@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 
 import pandas as pd
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
-from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
+from llama_index.core.llms import LLM
 
 from autorag.utils.util import process_batch, get_event_loop
 
@@ -12,7 +12,7 @@ package_dir = os.path.dirname(os.path.realpath(__file__))
 
 
 def generate_qa_llama_index(
-	llm: LLMPredictorType,
+	llm: LLM,
 	contents: List[str],
 	prompt: Optional[str] = None,
 	question_num_per_content: int = 1,
@@ -58,7 +58,7 @@ def generate_qa_llama_index(
 
 
 def generate_answers(
-	llm: LLMPredictorType,
+	llm: LLM,
 	contents: List[str],
 	queries: List[str],
 	batch: int = 4,
@@ -83,7 +83,7 @@ def generate_answers(
 
 
 def generate_qa_llama_index_by_ratio(
-	llm: LLMPredictorType,
+	llm: LLM,
 	contents: List[str],
 	prompts_ratio: Dict,
 	question_num_per_content: int = 1,
@@ -149,7 +149,7 @@ def generate_qa_llama_index_by_ratio(
 
 async def async_qa_gen_llama_index(
 	content: str,
-	llm: LLMPredictorType,
+	llm: LLM,
 	prompt: str,
 	question_num: int = 1,
 	max_retries: int = 3,
@@ -170,7 +170,7 @@ async def async_qa_gen_llama_index(
 	"""
 	validate_llama_index_prompt(prompt)
 
-	async def generate(content: str, llm: LLMPredictorType):
+	async def generate(content: str, llm: LLM):
 		for _ in range(max_retries):
 			output = await llm.acomplete(
 				prompt.replace("{{text}}", content).replace(
@@ -187,9 +187,7 @@ async def async_qa_gen_llama_index(
 	return await generate(content, llm)
 
 
-async def generate_basic_answer(
-	llm: LLMPredictorType, passage_str: str, query: str
-) -> str:
+async def generate_basic_answer(llm: LLM, passage_str: str, query: str) -> str:
 	basic_answer_system_prompt = """You are an AI assistant to answer the given question in the provide evidence text.
     You can find the evidence from the given text about question, and you have to write a proper answer to the given question.
     You have to preserve the question's language at the answer.
