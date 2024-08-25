@@ -43,5 +43,5 @@ def test_web_cli_trial():
 	"If you want to test it, clear this line and run it."
 )
 def test_web_library():
-	runner = Runner.from_yaml(os.path.join(resource_dir, "result_project", "best.yaml"))
+	runner = Runner.from_trial_folder(os.path.join(resource_dir, "result_project", "0"))
 	runner.run_web()
