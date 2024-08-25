@@ -2,6 +2,7 @@ import os
 import pathlib
 import tempfile
 
+import nest_asyncio
 import pandas as pd
 import pytest
 import yaml
@@ -193,6 +194,7 @@ def test_runner_full(evaluator):
 
 
 def test_runner_api_server(evaluator):
+	nest_asyncio.apply()
 	os.environ["BM25"] = "bm25"
 	project_dir = evaluator.project_dir
 	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))

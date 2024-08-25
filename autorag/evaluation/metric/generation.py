@@ -18,6 +18,7 @@ from sacrebleu.metrics.bleu import BLEU
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.utils.util import (
+	get_event_loop,
 	process_batch,
 	openai_truncate_by_token,
 	convert_inputs_to_list,
@@ -210,7 +211,7 @@ def rouge(
 		].fmeasure
 
 	tasks = [compute(gt, pred) for gt, pred in zip(generation_gt, generations)]
-	loop = asyncio.get_event_loop()
+	loop = get_event_loop()
 	result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
 	del rouge_instance
@@ -309,7 +310,7 @@ def g_eval(
 	    Default is 8.
 	:return: G-Eval score.
 	"""
-	loop = asyncio.get_event_loop()
+	loop = get_event_loop()
 	tasks = [
 		async_g_eval(gt, pred, metrics, model)
 		for gt, pred in zip(generation_gt, generations)

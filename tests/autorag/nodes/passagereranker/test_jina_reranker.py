@@ -1,6 +1,7 @@
 import asyncio
 from unittest.mock import patch
 
+import pytest
 from aioresponses import aioresponses
 
 import autorag
@@ -18,7 +19,8 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 )
 
 
-def test_jina_reranker_pure():
+@pytest.mark.asyncio()
+async def test_jina_reranker_pure():
 	with aioresponses() as m:
 		mock_response = {
 			"results": [
@@ -27,15 +29,13 @@ def test_jina_reranker_pure():
 			]
 		}
 		m.post(JINA_API_URL, payload=mock_response)
-		content_result, id_result, score_result = asyncio.run(
-			jina_reranker_pure(
-				queries_example[0],
-				contents_example[0],
-				scores_example[0],
-				ids_example[0],
-				top_k=2,
-				api_key="mock_api_key",
-			)
+		content_result, id_result, score_result = await jina_reranker_pure(
+			queries_example[0],
+			contents_example[0],
+			scores_example[0],
+			ids_example[0],
+			top_k=2,
+			api_key="mock_api_key",
 		)
 		assert len(content_result) == 2
 		assert len(id_result) == 2

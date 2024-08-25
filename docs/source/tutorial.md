@@ -243,6 +243,12 @@ you can run this pipeline as a web interface.
 
 Check out the web interface at [here](deploy/web.md).
 
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run_web()
+```
 ```bash
 autorag run_web --yaml_path your/path/to/pipeline.yaml
 ```

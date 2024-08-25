@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset
-from autorag.utils.util import normalize_string
+from autorag.utils.util import get_event_loop, normalize_string
 
 
 def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
@@ -152,7 +152,7 @@ def bm25(
 		bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus)
 		for input_queries in queries
 	]
-	loop = asyncio.get_event_loop()
+	loop = get_event_loop()
 	results = loop.run_until_complete(asyncio.gather(*tasks))
 	id_result = list(map(lambda x: x[0], results))
 	score_result = list(map(lambda x: x[1], results))

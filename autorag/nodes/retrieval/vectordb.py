@@ -1,4 +1,3 @@
-import asyncio
 from typing import List, Tuple, Optional
 
 import chromadb
@@ -10,7 +9,12 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
 from autorag.utils import validate_corpus_dataset, cast_corpus_dataset
-from autorag.utils.util import process_batch, openai_truncate_by_token, flatten_apply
+from autorag.utils.util import (
+	get_event_loop,
+	process_batch,
+	openai_truncate_by_token,
+	flatten_apply,
+)
 
 
 @retrieval_node
@@ -84,7 +88,7 @@ def vectordb(
 		vectordb_pure(query_embedding, top_k, collection)
 		for query_embedding in query_embeddings
 	]
-	loop = asyncio.get_event_loop()
+	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch_size=embedding_batch))
 	id_result = list(map(lambda x: x[0], results))
 	score_result = list(map(lambda x: x[1], results))

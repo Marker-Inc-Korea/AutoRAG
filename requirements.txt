@@ -47,11 +47,12 @@ llama-index-retrievers-bm25
 
 # WebUI
 streamlit
+gradio
 
 ### Langchain ###
 langchain-core>=0.1.6
 
-# autorag dashboard    
+# autorag dashboard
 panel
 seaborn
 ipykernel

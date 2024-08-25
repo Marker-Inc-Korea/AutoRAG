@@ -34,6 +34,7 @@ from autorag.utils.util import (
 	dict_to_markdown_table,
 	convert_inputs_to_list,
 	to_list,
+	get_event_loop,
 )
 from tests.mock import MockLLM
 
@@ -356,7 +357,7 @@ def test_process_batch():
 	mock_llm = MockLLM()
 
 	tasks = [mock_llm.acomplete(prompt) for prompt in prompts]
-	loop = asyncio.get_event_loop()
+	loop = get_event_loop()
 	result = loop.run_until_complete(process_batch(tasks, batch_size=64))
 
 	assert result == results
