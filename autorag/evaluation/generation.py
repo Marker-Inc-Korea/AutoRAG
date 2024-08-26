@@ -4,7 +4,7 @@ from typing import List, Callable, Union, Dict
 
 import pandas as pd
 
-from autorag.evaluation.metric.generation import (
+from autorag.evaluation.metric.a_agt import (
 	bleu,
 	meteor,
 	rouge,

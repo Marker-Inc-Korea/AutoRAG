@@ -18,10 +18,10 @@ from sacrebleu.metrics.bleu import BLEU
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.utils.util import (
-	get_event_loop,
-	process_batch,
-	openai_truncate_by_token,
-	convert_inputs_to_list,
+    get_event_loop,
+    process_batch,
+    openai_truncate_by_token,
+    convert_inputs_to_list,
 )
 
 
