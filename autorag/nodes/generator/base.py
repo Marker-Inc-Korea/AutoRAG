@@ -41,6 +41,9 @@ def generator_node(func):
 					"You can check valid llm names from autorag.generator_models."
 				)
 			batch = kwargs.pop("batch", 16)
+			if llm == "huggingfacellm":
+				kwargs["model_name"] = kwargs.pop("model")
+				kwargs["tokenizer_name"] = kwargs["model_name"]
 			llm_instance = generator_models[llm](**kwargs)
 			result = func(prompts=prompts, llm=llm_instance, batch=batch)
 			del llm_instance
