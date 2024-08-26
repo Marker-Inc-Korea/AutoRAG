@@ -1,6 +1,6 @@
 import pytest
 
-from autorag.evaluation.metric.retrieval_contents import (
+from autorag.evaluation.metric.p_pgt import (
 	single_token_f1,
 	retrieval_token_f1,
 	retrieval_token_precision,
