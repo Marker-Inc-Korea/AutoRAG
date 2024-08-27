@@ -116,7 +116,7 @@ df = df.reset_index(drop=True)
 
 If you encounter the following llama_index ImportError, you need to check your LlamaIndex version.
 
-If it is lower than 0.10.0, you need to use a version at least 0.10.0!
+If it is lower than 0.11.0, you need to use a version at least 0.11.0!
 
 ## 4. GPU-related Error
 
@@ -135,3 +135,17 @@ This is something that needs to be fixed inside AutoRAG.
 We’ll try to fix it in the [issue](https://github.com/Marker-Inc-Korea/AutoRAG/issues/494) :)
 
 For now, please use Mac or Linux (or WSL on Windows)!
+
+## 6. Ollama `RequestTimeOut` Error
+
+If you encounter `RequestTimeOut` error, you can adjust the `timeout` parameter in the `ollama` module.
+
+```yaml
+        modules:
+          - module_type: llama_index_llm
+            llm: ollama
+            model: llama3
+            request_timeout: 100  # ⇒ You can change the timeout value
+```
+
+If you increase the timeout value but doesn't resolve the error, it may be a ollama issue.
