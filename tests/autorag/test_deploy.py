@@ -2,11 +2,9 @@ import os
 import pathlib
 import tempfile
 
-import nest_asyncio
 import pandas as pd
 import pytest
 import yaml
-from fastapi.testclient import TestClient
 
 from autorag.deploy import (
 	summary_df_to_yaml,
@@ -194,13 +192,12 @@ def test_runner_full(evaluator):
 
 
 def test_runner_api_server(evaluator):
-	nest_asyncio.apply()
 	os.environ["BM25"] = "bm25"
 	project_dir = evaluator.project_dir
 	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))
 	runner = Runner.from_trial_folder(os.path.join(project_dir, "0"))
 
-	client = TestClient(runner.app)
+	client = runner.app.test_client()
 
 	# Use the TestClient to make a request to the server
 	response = client.post(
@@ -211,8 +208,8 @@ def test_runner_api_server(evaluator):
 		},
 	)
 	assert response.status_code == 200
-	assert "retrieved_contents" in response.json()
-	retrieved_contents = response.json()["retrieved_contents"]
+	assert "retrieved_contents" in response.json
+	retrieved_contents = response.json["retrieved_contents"]
 	assert len(retrieved_contents) == 1
 	assert isinstance(retrieved_contents, list)
 	assert isinstance(retrieved_contents[0], str)
