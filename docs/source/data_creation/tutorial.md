@@ -47,7 +47,7 @@ from llama_index.core.node_parser import TokenTextSplitter
 from autorag.data.corpus import llama_text_node_to_parquet
 
 documents = SimpleDirectoryReader('your_dir_path').load_data()
-nodes = TokenTextSplitter().get_nodes_from_documents(documents=documents, chunk_size=512, chunk_overlap=128)
+nodes = TokenTextSplitter(chunk_size=512, chunk_overlap=128).get_nodes_from_documents(documents=documents)
 corpus_df = llama_text_node_to_parquet(nodes, 'path/to/corpus.parquet')
 ```
 
