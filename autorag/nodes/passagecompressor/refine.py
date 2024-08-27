@@ -4,7 +4,7 @@ from llama_index.core import PromptTemplate
 from llama_index.core.prompts import PromptType
 from llama_index.core.prompts.utils import is_chat_model
 from llama_index.core.response_synthesizers import Refine
-from llama_index.core.service_context_elements.llm_predictor import LLMPredictorType
+from llama_index.core.llms import LLM
 
 from autorag.nodes.passagecompressor.base import passage_compressor_node
 from autorag.utils.util import get_event_loop, process_batch
@@ -16,7 +16,7 @@ def refine(
 	contents: List[List[str]],
 	scores,
 	ids,
-	llm: LLMPredictorType,
+	llm: LLM,
 	prompt: Optional[str] = None,
 	chat_prompt: Optional[str] = None,
 	batch: int = 16,

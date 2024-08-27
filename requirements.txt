@@ -30,8 +30,8 @@ llmlingua # for longllmlingua
 peft
 
 ### LlamaIndex ###
-llama-index>=0.10.1
-llama-index-core>=0.10.1
+llama-index>=0.11.0
+llama-index-core>=0.11.0
 # readers
 llama-index-readers-file
 # Embeddings
