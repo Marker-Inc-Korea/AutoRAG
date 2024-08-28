@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 import openai.resources.chat
@@ -19,6 +20,7 @@ from tests.mock import mock_openai_chat_create
 	mock_openai_chat_create,
 )
 def test_openai_llm():
+	os.environ["OPENAI_API_KEY"] = "mock_openai_api_key"
 	openai_original = openai_llm.__wrapped__
 	model = "gpt-4o-mini"
 	answers, tokens, log_probs = openai_original(
@@ -35,6 +37,7 @@ def test_openai_llm():
 	mock_openai_chat_create,
 )
 def test_openai_llm_node():
+	os.environ["OPENAI_API_KEY"] = "mock_openai_api_key"
 	previous_result = pd.DataFrame(
 		{"prompts": prompts, "qid": ["id-1", "id-2", "id-3"]}
 	)
@@ -52,6 +55,7 @@ def test_openai_llm_node():
 	mock_openai_chat_create,
 )
 def test_openai_llm_truncate():
+	os.environ["OPENAI_API_KEY"] = "mock_openai_api_key"
 	openai_original = openai_llm.__wrapped__
 	prompt = [
 		f"havertz on the block and I am {i}th player on the Arsenal."

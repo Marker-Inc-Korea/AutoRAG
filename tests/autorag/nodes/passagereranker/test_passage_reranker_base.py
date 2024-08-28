@@ -38,7 +38,7 @@ ko_contents_example = [
 ]
 time_list = [
 	[datetime(2021, 1, 1), datetime(2021, 1, 20), datetime(2021, 1, 3)],
-	[datetime(2021, 3, 1), datetime(2022, 3, 1), datetime(2030, 1, 1)],
+	[datetime(2021, 3, 1), datetime(2030, 3, 1), datetime(1999, 1, 1)],
 ]
 ids_example = [
 	[str(uuid4()) for _ in range(len(contents_example[0]))],

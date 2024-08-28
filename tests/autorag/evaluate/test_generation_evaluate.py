@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 import openai
@@ -106,6 +107,7 @@ async def mock_g_eval_openai_create(*args, **kwargs):
 	mock_get_text_embedding_batch,
 )
 def test_evaluate_generation():
+	os.environ["OPENAI_API_KEY"] = "mock_openai_api_key"
 	result_df = pseudo_generation()
 	assert isinstance(result_df, pd.DataFrame)
 	assert len(result_df) == 3

@@ -59,8 +59,8 @@ async def mock_jina_reranker_pure(
 		)
 	elif query == queries_example[1]:
 		return (
-			[contents[2], contents[0], contents[1]][:top_k],
-			[ids[2], ids[0], ids[1]][:top_k],
+			[contents[1], contents[0], contents[2]][:top_k],
+			[ids[1], ids[0], ids[2]][:top_k],
 			[0.8, 0.2, 0.1][:top_k],
 		)
 	else:

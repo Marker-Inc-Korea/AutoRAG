@@ -239,7 +239,7 @@ def test_long_ids_ingest(empty_chromadb):
 
 def test_get_id_scores(ingested_vectordb):
 	ids = ["doc2", "doc3", "doc4"]
-	embedding_model = OpenAIEmbedding()
+	embedding_model = MockEmbedding(1536)
 	queries = [
 		"다이노스 오! 권희동~ 엔씨 오 권희동 오 권희동 권희동 안타~",
 		"두산의 헨리 라모스 오오오 라모스 시원하게 화끈하게 날려버려라",
