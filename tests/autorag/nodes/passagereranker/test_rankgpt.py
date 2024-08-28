@@ -1,7 +1,8 @@
-import asyncio
+from unittest.mock import patch
 
 import pytest
 from llama_index.core import QueryBundle
+from llama_index.core.base.llms.types import ChatMessage, ChatResponse, MessageRole
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.llms.openai import OpenAI
 
@@ -19,6 +20,17 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 )
 
 
+async def mock_openai_achat(self, messages) -> ChatResponse:
+	return ChatResponse(
+		message=ChatMessage(content="[2] > [1] > [3]", role=MessageRole.ASSISTANT)
+	)
+
+
+@patch.object(
+	OpenAI,
+	"achat",
+	mock_openai_achat,
+)
 @pytest.mark.asyncio()
 async def test_async_rankgpt_rerank():
 	query = queries_example[0]
@@ -34,6 +46,11 @@ async def test_async_rankgpt_rerank():
 	assert all(isinstance(node, NodeWithScore) for node in result)
 
 
+@patch.object(
+	OpenAI,
+	"achat",
+	mock_openai_achat,
+)
 def test_rankgpt_reranker():
 	top_k = 3
 	original_rankgpt_reranker = rankgpt.__wrapped__
@@ -48,6 +65,11 @@ def test_rankgpt_reranker():
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
+@patch.object(
+	OpenAI,
+	"achat",
+	mock_openai_achat,
+)
 def test_rankgpt_reranker_batch_one():
 	top_k = 3
 	batch = 1
@@ -64,6 +86,11 @@ def test_rankgpt_reranker_batch_one():
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
+@patch.object(
+	OpenAI,
+	"achat",
+	mock_openai_achat,
+)
 def test_rankgpt_node():
 	top_k = 1
 	result_df = rankgpt(

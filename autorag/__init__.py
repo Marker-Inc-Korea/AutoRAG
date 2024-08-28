@@ -2,8 +2,11 @@ import logging
 import logging.config
 import os
 import sys
+from random import random
+from typing import List
 
 import transformers
+from llama_index.core import MockEmbedding
 from llama_index.core.llms.mock import MockLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -38,6 +41,13 @@ class LazyInit:
 		return getattr(self._instance, name)
 
 
+class MockEmbeddingRandom(MockEmbedding):
+	"""Mock embedding with random vectors."""
+
+	def _get_vector(self) -> List[float]:
+		return [random() for _ in range(self.embed_dim)]
+
+
 embedding_models = {
 	"openai": LazyInit(
 		OpenAIEmbedding
@@ -61,6 +71,7 @@ embedding_models = {
 		max_length=512,
 	),
 	"huggingface_bge_m3": LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
+	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
 }
 
 generator_models = {

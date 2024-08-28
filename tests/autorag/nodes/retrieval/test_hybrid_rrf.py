@@ -1,5 +1,8 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import hybrid_rrf
 from autorag.nodes.retrieval.hybrid_rrf import rrf_pure
@@ -9,6 +12,7 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
 	previous_result,
 	pseudo_project_dir,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 
 def test_hybrid_rrf():
@@ -68,6 +72,11 @@ def test_hybrid_rrf_node(pseudo_project_dir):
 	}
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_hybrid_rrf_node_deploy(pseudo_project_dir):
 	modules = {
 		"target_modules": ("bm25", "vectordb"),

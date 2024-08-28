@@ -1,3 +1,7 @@
+from unittest.mock import patch
+
+from llama_index.embeddings.openai import OpenAIEmbedding
+
 from autorag.nodes.passageaugmenter import prev_next_augmenter
 
 from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
@@ -7,6 +11,7 @@ from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
 	corpus_data,
 	doc_id_list,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 
 def test_prev_next_augmenter_next():
@@ -59,6 +64,11 @@ def test_prev_next_augmenter_multi_passages():
 	]
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_prev_next_augmenter_node():
 	result_df = prev_next_augmenter(
 		project_dir=project_dir, previous_result=previous_result, mode="next", top_k=2
