@@ -50,7 +50,7 @@ Here's a guide to set environment.
 4. Make a new virtual environment (Highly Recommended)
 5. Install AutoRAG as development version. `pip install -e '.[all]'`
 6. Install test dependencies `pip install -r tests/requirements.txt`
-7. Write `pytest.ini` file and add env variable for running tests.
+7. Write `pytest.ini` file and add env variable for running tests. (We do not need OPENAI_API_KEY at GitHub actions)
 ```ini
 [pytest]
 env =
