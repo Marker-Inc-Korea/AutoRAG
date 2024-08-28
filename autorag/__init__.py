@@ -4,6 +4,7 @@ import os
 import sys
 
 import transformers
+from llama_index.core import MockEmbedding
 from llama_index.core.llms.mock import MockLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -61,6 +62,7 @@ embedding_models = {
 		max_length=512,
 	),
 	"huggingface_bge_m3": LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
+	"mock": LazyInit(MockEmbedding, embed_dim=768),
 }
 
 generator_models = {
