@@ -158,8 +158,7 @@ def test_extract_best_config(pseudo_trial_path):
 
 
 def test_runner(evaluator):
-	os.environ["BM25"] = "bm25"
-	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))
+	evaluator.start_trial(os.path.join(resource_dir, "simple_mock.yaml"))
 	project_dir = evaluator.project_dir
 
 	def runner_test(runner: Runner):
@@ -167,7 +166,7 @@ def test_runner(evaluator):
 			"What is the best movie in Korea? Have Korea movie ever won Oscar?",
 			"retrieved_contents",
 		)
-		assert len(answer) == 1
+		assert len(answer) == 10
 		assert isinstance(answer, list)
 		assert isinstance(answer[0], str)
 
@@ -192,9 +191,8 @@ def test_runner_full(evaluator):
 
 
 def test_runner_api_server(evaluator):
-	os.environ["BM25"] = "bm25"
 	project_dir = evaluator.project_dir
-	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))
+	evaluator.start_trial(os.path.join(resource_dir, "simple_mock.yaml"))
 	runner = Runner.from_trial_folder(os.path.join(project_dir, "0"))
 
 	client = runner.app.test_client()
@@ -210,6 +208,6 @@ def test_runner_api_server(evaluator):
 	assert response.status_code == 200
 	assert "retrieved_contents" in response.json
 	retrieved_contents = response.json["retrieved_contents"]
-	assert len(retrieved_contents) == 1
+	assert len(retrieved_contents) == 10
 	assert isinstance(retrieved_contents, list)
 	assert isinstance(retrieved_contents[0], str)
