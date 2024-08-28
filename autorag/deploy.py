@@ -221,7 +221,7 @@ class Runner:
 		.. Code:: json
 
 		    {
-		        "Query": "your query",
+		        "query": "your query",
 		        "result_column": "generated_texts"
 		    }
 
@@ -235,7 +235,7 @@ class Runner:
 
 		:param host: The host of the api server.
 		:param port: The port of the api server.
-		:param kwargs: Other arguments for uvicorn.run.
+		:param kwargs: Other arguments for Flask app.run.
 		"""
 		logger.info(f"Run api server at {host}:{port}")
 		self.app.run(host=host, port=port, **kwargs)
