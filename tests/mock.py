@@ -137,4 +137,4 @@ def mock_get_text_embedding_batch(
 	show_progress: bool = False,
 	**kwargs: Any,
 ) -> List[Embedding]:
-	return [[random() for _ in range(768)] for _ in range(len(texts))]
+	return [[random() for _ in range(1536)] for _ in range(len(texts))]

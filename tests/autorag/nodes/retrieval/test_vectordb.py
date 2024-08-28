@@ -9,7 +9,8 @@ from unittest.mock import patch
 import chromadb
 import pandas as pd
 import pytest
-from llama_index.embeddings.openai import OpenAIEmbedding, OpenAIEmbeddingModelType
+from llama_index.core import MockEmbedding
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import vectordb
 from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
@@ -21,15 +22,14 @@ from tests.autorag.nodes.retrieval.test_retrieval_base import (
 	base_retrieval_node_test,
 	searchable_input_ids,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
 ).parent.parent.parent
 resource_path = os.path.join(root_dir, "resources")
 
-embedding_model = OpenAIEmbedding(
-	model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_SMALL
-)
+embedding_model = MockEmbedding(1536)
 
 
 @pytest.fixture
@@ -77,6 +77,11 @@ def project_dir_for_vectordb_node():
 		yield test_project_dir
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_vectordb_retrieval(ingested_vectordb):
 	top_k = 4
 	original_vectordb = vectordb.__wrapped__
@@ -89,6 +94,11 @@ def test_vectordb_retrieval(ingested_vectordb):
 	base_retrieval_test(id_result, score_result, top_k)
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_vectordb_retrieval_ids(ingested_vectordb):
 	ids = [["doc2", "doc3"], ["doc1", "doc2"], ["doc4", "doc5"]]
 	original_vectordb = vectordb.__wrapped__
@@ -104,6 +114,11 @@ def test_vectordb_retrieval_ids(ingested_vectordb):
 	assert all([len(score_list) == 2 for score_list in score_result])
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_vectordb_retrieval_ids_empty(ingested_vectordb):
 	ids = [["doc2", "doc3"], [], ["doc4"]]
 	original_vectordb = vectordb.__wrapped__
@@ -121,6 +136,11 @@ def test_vectordb_retrieval_ids_empty(ingested_vectordb):
 	assert len(score_result[2]) == 1
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_vectordb_node(project_dir_for_vectordb_node):
 	result_df = vectordb(
 		project_dir=project_dir_for_vectordb_node,
@@ -131,6 +151,11 @@ def test_vectordb_node(project_dir_for_vectordb_node):
 	base_retrieval_node_test(result_df)
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_vectordb_node_ids(project_dir_for_vectordb_node):
 	result_df = vectordb(
 		project_dir=project_dir_for_vectordb_node,
@@ -147,6 +172,11 @@ def test_vectordb_node_ids(project_dir_for_vectordb_node):
 	assert ids[0] == searchable_input_ids[0]
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_duplicate_id_vectordb_ingest(ingested_vectordb):
 	vectordb_ingest(ingested_vectordb, corpus_df, embedding_model)
 	assert ingested_vectordb.count() == 5
@@ -168,6 +198,11 @@ def test_duplicate_id_vectordb_ingest(ingested_vectordb):
 	assert ingested_vectordb.count() == 8
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_long_text_vectordb_ingest(ingested_vectordb):
 	new_doc_id = ["doc6", "doc7"]
 	new_contents = ["This is a test" * 20000, "This is a test" * 40000]
@@ -175,7 +210,7 @@ def test_long_text_vectordb_ingest(ingested_vectordb):
 	new_corpus_df = pd.DataFrame(
 		{"doc_id": new_doc_id, "contents": new_contents, "metadata": new_metadata}
 	)
-	assert isinstance(embedding_model, OpenAIEmbedding)
+	assert isinstance(embedding_model, MockEmbedding)
 	vectordb_ingest(ingested_vectordb, new_corpus_df, embedding_model)
 
 	assert ingested_vectordb.count() == 7

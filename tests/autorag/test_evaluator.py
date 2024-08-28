@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 
 from autorag.deploy import extract_best_config
@@ -17,6 +18,7 @@ from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
 from autorag.utils.util import load_summary_file
 from tests.delete_tests import is_github_action
+from tests.mock import mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
@@ -85,6 +87,11 @@ def test_load_node_line(evaluator):
 	assert nodes[1].node_type == "passage_filter"
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_start_trial(evaluator):
 	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))
 	project_dir = evaluator.project_dir
@@ -142,9 +149,14 @@ def test_start_trial(evaluator):
 		"retrieval_f1",
 		"retrieval_recall",
 	]
+	summary_df = load_summary_file(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "summary.csv")
+	)
+	best_row = summary_df.loc[summary_df["is_best"]].iloc[0]
+	best_filename = summary_df.loc[summary_df["is_best"]]["filename"].values[0]
 	best_result = pd.read_parquet(
 		os.path.join(
-			project_dir, "0", "retrieve_node_line", "retrieval", "best_0.parquet"
+			project_dir, "0", "retrieve_node_line", "retrieval", f"best_{best_filename}"
 		)
 	)
 	assert all(
@@ -153,10 +165,6 @@ def test_start_trial(evaluator):
 			for expect_column in expect_best_result_columns
 		]
 	)
-	summary_df = load_summary_file(
-		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "summary.csv")
-	)
-	best_row = summary_df.loc[summary_df["is_best"]].iloc[0]
 
 	# test node line summary
 	node_line_summary_path = os.path.join(
