@@ -25,7 +25,7 @@ contents_example = [
 		"Paris is the capital of France.",
 		"havertz is suck at soccer",
 	],
-	["i am hungry", "LA is a country in the United States.", "Newjeans has 5 members."],
+	["i am hungry", "Newjeans has 5 members.", "LA is a country in the United States."],
 ]
 ko_queries_example = ["프랑스의 수도는 어디인가요?", "뉴진스의 멤버는 몇 명인가요?"]
 ko_contents_example = [
@@ -34,7 +34,7 @@ ko_contents_example = [
 		"프랑스의 수도는 파리 입니다.",
 		"아스날은 축구를 못합니다.",
 	],
-	["배고파요", "LA는 미국의 도시입니다.", "뉴진스의 멤버는 5명 입니다."],
+	["배고파요", "뉴진스의 멤버는 5명 입니다.", "LA는 미국의 도시입니다."],
 ]
 time_list = [
 	[datetime(2021, 1, 1), datetime(2021, 1, 20), datetime(2021, 1, 3)],
@@ -81,12 +81,12 @@ def base_reranker_test(contents, ids, scores, top_k, use_ko=False, descending=Tr
 		assert contents[0][0] == "프랑스의 수도는 파리 입니다."
 		assert ids[0][0] in ids_example[0][1]
 		assert contents[1][0] == "뉴진스의 멤버는 5명 입니다."
-		assert ids[1][0] in ids_example[1][2]
+		assert ids[1][0] in ids_example[1][1]
 	else:
 		assert contents[0][0] == "Paris is the capital of France."
 		assert ids[0][0] in ids_example[0][1]
 		assert contents[1][0] == "Newjeans has 5 members."
-		assert ids[1][0] in ids_example[1][2]
+		assert ids[1][0] in ids_example[1][1]
 
 
 def base_reranker_node_test(result_df, top_k, use_ko=False, descending=True):
