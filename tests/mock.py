@@ -1,7 +1,9 @@
 import time
-from typing import Optional, Callable, Sequence, Any
+from random import random
+from typing import Optional, Callable, Sequence, Any, List
 
 import tiktoken
+from llama_index.core.base.embeddings.base import Embedding
 from llama_index.core.base.llms.types import (
 	ChatMessage,
 	LLMMetadata,
@@ -127,3 +129,12 @@ async def mock_openai_chat_create(self, messages, model, **kwargs):
 		model=model,
 		object="chat.completion",
 	)
+
+
+def mock_get_text_embedding_batch(
+	self,
+	texts: List[str],
+	show_progress: bool = False,
+	**kwargs: Any,
+) -> List[Embedding]:
+	return [[random() for _ in range(768)] for _ in range(len(texts))]

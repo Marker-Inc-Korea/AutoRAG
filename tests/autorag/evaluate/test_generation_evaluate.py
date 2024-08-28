@@ -3,6 +3,7 @@ from unittest.mock import patch
 import openai
 import pandas as pd
 import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
 from openai.types.chat import (
 	ChatCompletion,
 	ChatCompletionMessage,
@@ -13,6 +14,7 @@ from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from transformers import AutoTokenizer
 
 from autorag.evaluation.generation import evaluate_generation
+from tests.mock import mock_get_text_embedding_batch
 
 generation_gts = [
 	["The dog had bit the man.", "The man had bitten the dog."],
@@ -97,6 +99,11 @@ async def mock_g_eval_openai_create(*args, **kwargs):
 	openai.resources.chat.completions.AsyncCompletions,
 	"create",
 	mock_g_eval_openai_create,
+)
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
 )
 def test_evaluate_generation():
 	result_df = pseudo_generation()

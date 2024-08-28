@@ -9,6 +9,7 @@ import chromadb
 import pandas as pd
 import pytest
 from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.data.qacreation import (
 	make_single_content_qa,
@@ -17,7 +18,7 @@ from autorag.data.qacreation import (
 	generate_answers,
 )
 from autorag.utils import validate_qa_dataset
-from tests.mock import MockLLM
+from tests.mock import MockLLM, mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
@@ -102,6 +103,11 @@ def test_single_content_qa_long_cache_batch(qa_parquet_filepath):
 	assert all([len(x) == 1 for x in qa_df["generation_gt"].tolist()])
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
 	corpus_df = pd.read_parquet(
 		os.path.join(resource_dir, "corpus_data_sample.parquet"), engine="pyarrow"
@@ -126,6 +132,11 @@ def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
 	assert all((elem in query_df["query"].tolist()) for elem in qa_df["query"].tolist())
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
 	corpus_df = pd.read_parquet(
 		os.path.join(resource_dir, "corpus_data_sample.parquet"), engine="pyarrow"
@@ -153,6 +164,11 @@ def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
 	)
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(
 	chroma_persistent_client, qa_parquet_filepath
 ):
@@ -182,6 +198,11 @@ def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(
 	assert all((elem in query_df["query"].tolist()) for elem in qa_df["query"].tolist())
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_make_qa_with_existing_qa_persistent_client_with_gen_gt(
 	chroma_persistent_client, qa_parquet_filepath
 ):
