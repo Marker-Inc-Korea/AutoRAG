@@ -4,13 +4,11 @@ import uuid
 from copy import deepcopy
 from typing import Optional, Dict, List
 
-import nest_asyncio
 import pandas as pd
-import uvicorn
 import yaml
-from fastapi import FastAPI
 from pydantic import BaseModel
 import gradio as gr
+from flask import Flask, request
 
 from autorag.support import get_support_modules
 from autorag.utils.util import load_summary_file
@@ -128,7 +126,7 @@ class Runner:
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		self.config = config
 		self.project_dir = os.getcwd() if project_dir is None else project_dir
-		self.app = FastAPI()
+		self.app = Flask(__name__)
 		self.__add_api_route()
 
 	@classmethod
@@ -207,8 +205,9 @@ class Runner:
 		return previous_result[result_column].tolist()[0]
 
 	def __add_api_route(self):
-		@self.app.post("/run")
-		async def run_pipeline(runner_input: RunnerInput):
+		@self.app.route("/run", methods=["POST"])
+		def run_pipeline():
+			runner_input = RunnerInput(**request.json)
 			query = runner_input.query
 			result_column = runner_input.result_column
 			result = self.run(query, result_column)
@@ -222,7 +221,7 @@ class Runner:
 		.. Code:: json
 
 		    {
-		        "Query": "your query",
+		        "query": "your query",
 		        "result_column": "generated_texts"
 		    }
 
@@ -236,11 +235,10 @@ class Runner:
 
 		:param host: The host of the api server.
 		:param port: The port of the api server.
-		:param kwargs: Other arguments for uvicorn.run.
+		:param kwargs: Other arguments for Flask app.run.
 		"""
-		nest_asyncio.apply()
 		logger.info(f"Run api server at {host}:{port}")
-		uvicorn.run(self.app, host=host, port=port, loop="asyncio", **kwargs)
+		self.app.run(host=host, port=port, **kwargs)
 
 	def run_web(
 		self,

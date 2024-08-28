@@ -36,7 +36,7 @@ AutoRAG supports
 
 - **Data Creation**: Create RAG evaluation data with your own raw documents.
 - **Optimization**: Automatically run experiments to find the best RAG pipeline for your own data.
-- **Deployment**: Deploy the best RAG pipeline with single yaml file. Supports FastAPI server as well.
+- **Deployment**: Deploy the best RAG pipeline with single yaml file. Supports Flask server as well.
 
 🏃‍♂️ Getting Started
 ************************************
