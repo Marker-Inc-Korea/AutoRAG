@@ -2,16 +2,19 @@ import os.path
 import pathlib
 import shutil
 import tempfile
+from unittest.mock import patch
 
 import chromadb
 import pandas as pd
 import pytest
+from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import bm25, vectordb, hybrid_cc, hybrid_rrf
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
+from tests.mock import mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
@@ -34,7 +37,7 @@ def node_line_dir():
 		)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
 		corpus_df = pd.read_parquet(corpus_path)
-		vectordb_ingest(collection, corpus_df, OpenAIEmbedding())
+		vectordb_ingest(collection, corpus_df, MockEmbedding(1536))
 
 		test_trail_dir = os.path.join(test_project_dir, "test_trial")
 		os.makedirs(test_trail_dir)
@@ -43,6 +46,11 @@ def node_line_dir():
 		yield node_line_dir
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_run_retrieval_node(node_line_dir):
 	modules = [bm25, vectordb, hybrid_rrf, hybrid_cc, hybrid_cc]
 	module_params = [
@@ -209,6 +217,11 @@ def pseudo_node_dir():
 		yield node_dir
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_run_retrieval_node_only_hybrid(node_line_dir):
 	modules = [hybrid_cc]
 	module_params = [

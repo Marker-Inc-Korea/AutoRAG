@@ -20,11 +20,11 @@ def test_time_reranker():
 		contents_example, scores_example, ids_example, top_k, time_list
 	)
 	assert id_result[0] == [ids_example[0][1], ids_example[0][2]]
-	assert id_result[1] == [ids_example[1][2], ids_example[1][1]]
+	assert id_result[1] == [ids_example[1][1], ids_example[1][0]]
 	assert contents_result[0] == [contents_example[0][1], contents_example[0][2]]
-	assert contents_result[1] == [contents_example[1][2], contents_example[1][1]]
+	assert contents_result[1] == [contents_example[1][1], contents_example[1][0]]
 	assert score_result[0] == [0.8, 0.1]
-	assert score_result[1] == [0.7, 0.2]
+	assert score_result[1] == [0.2, 0.1]
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 

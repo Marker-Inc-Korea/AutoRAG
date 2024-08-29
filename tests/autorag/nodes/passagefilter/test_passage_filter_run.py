@@ -1,8 +1,10 @@
 import os
 import tempfile
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.passagefilter import similarity_threshold_cutoff
 from autorag.nodes.passagefilter.run import run_passage_filter_node
@@ -12,6 +14,7 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	corpus_data,
 	previous_result,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 
 @pytest.fixture
@@ -28,6 +31,11 @@ def node_line_dir():
 		yield node_line_dir
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_run_passage_filter_node(node_line_dir):
 	modules = [similarity_threshold_cutoff]
 	module_params = [{"threshold": 0.87}]

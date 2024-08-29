@@ -13,14 +13,13 @@ resource_dir = os.path.join(root_dir, "resources")
 
 
 def test_evaluator_cli():
-	os.environ["BM25"] = "bm25"
 	with tempfile.TemporaryDirectory() as project_dir:
 		result = subprocess.run(
 			[
 				"autorag",
 				"evaluate",
 				"--config",
-				os.path.join(resource_dir, "simple.yaml"),
+				os.path.join(resource_dir, "simple_mock.yaml"),
 				"--qa_data_path",
 				os.path.join(resource_dir, "qa_data_sample.parquet"),
 				"--corpus_data_path",
@@ -52,7 +51,7 @@ def test_validator_cli():
 			"autorag",
 			"validate",
 			"--config",
-			os.path.join(resource_dir, "simple.yaml"),
+			os.path.join(resource_dir, "simple_mock.yaml"),
 			"--qa_data_path",
 			os.path.join(resource_dir, "qa_data_sample.parquet"),
 			"--corpus_data_path",

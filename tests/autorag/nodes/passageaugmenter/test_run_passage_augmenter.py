@@ -1,8 +1,10 @@
 import os
 import tempfile
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.passageaugmenter import prev_next_augmenter
 from autorag.nodes.passageaugmenter.run import run_passage_augmenter_node
@@ -12,6 +14,7 @@ from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
 	corpus_data,
 	previous_result,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 
 @pytest.fixture
@@ -28,6 +31,11 @@ def node_line_dir():
 		yield node_line_dir
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_run_passage_augmenter_node(node_line_dir):
 	modules = [prev_next_augmenter]
 	module_params = [{"top_k": 2, "num_passages": 1}]
