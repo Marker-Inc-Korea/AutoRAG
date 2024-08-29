@@ -62,3 +62,5 @@ ipywidgets_bokeh
 
 # parse
 PyMuPDF
+pdfminer.six
+pdfplumber
