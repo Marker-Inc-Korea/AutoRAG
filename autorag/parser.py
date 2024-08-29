@@ -14,7 +14,7 @@ from autorag.utils.util import make_combinations, explode
 logger = logging.getLogger("AutoRAG")
 
 
-class Parse:
+class Parser:
 	def __init__(self, data_path_glob: str, project_dir: Optional[str] = None):
 		self.data_path_glob = data_path_glob
 		self.project_dir = project_dir if project_dir is not None else os.getcwd()
@@ -25,7 +25,7 @@ class Parse:
 
 		# copy yaml file to trial directory
 		shutil.copy(
-			yaml_path, os.path.join(self.project_dir, trial_name, "config.yaml")
+			yaml_path, os.path.join(self.project_dir, trial_name, "parse_config.yaml")
 		)
 
 		# load yaml file
