@@ -66,4 +66,4 @@ pdfminer.six
 pdfplumber
 unstructured
 jq
-unstructured[pdf]
+"unstructured[pdf]"
