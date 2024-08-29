@@ -14,7 +14,6 @@ from tests.autorag.data.parse.test_parse_base import (
 	single_pdf_path_list,
 	multiple_pdf_data_list,
 	data_dir,
-	check_parse_result,
 	korean_text_glob,
 	eng_text_glob,
 )
