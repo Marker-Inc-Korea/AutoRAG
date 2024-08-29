@@ -59,3 +59,6 @@ seaborn
 ipykernel
 ipywidgets
 ipywidgets_bokeh
+
+# parse
+PyMuPDF
