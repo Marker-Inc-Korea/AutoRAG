@@ -1,6 +1,6 @@
 import pandas as pd
 
-from autorag.data.v2.generation_gt.llamaindex import (
+from autorag.data.v2.generation_gt.llama_index_gen_gt import (
 	make_concise_gen_gt,
 	make_basic_gen_gt,
 )
