@@ -5,15 +5,10 @@ from typing import Dict
 from llama_index.core.base.llms.base import BaseLLM
 from llama_index.core.base.llms.types import MessageRole, ChatMessage
 
-concise_answer_system_prompt = """You are an AI assistant to answer the given question in the provide evidence text.
-You can find the evidence from the given text about question, and you have to write a proper answer to the given question.
-Your answer have to be concise and relevant to the question.
-Do not make a verbose answer and make it super clear.
-It doesn't have to be an full sentence. It can be the answer is a word or a paraphrase.
-"""
-basic_answer_system_prompt = """You are an AI assistant to answer the given question in the provide evidence text.
-You can find the evidence from the given text about question, and you have to write a proper answer to the given question.
-"""
+from autorag.data.beta.generation_gt.prompt import (
+	concise_answer_system_prompt,
+	basic_answer_system_prompt,
+)
 
 
 async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str):
