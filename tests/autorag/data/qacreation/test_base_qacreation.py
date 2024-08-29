@@ -11,7 +11,7 @@ import pytest
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.data.qacreation import (
+from autorag.data.legacy.qacreation import (
 	make_single_content_qa,
 	generate_qa_llama_index,
 	make_qa_with_existing_qa,

@@ -3,7 +3,7 @@ import tempfile
 import pytest
 from langchain_core.documents import Document
 
-from autorag.data.corpus import langchain_documents_to_parquet
+from autorag.data.legacy.corpus import langchain_documents_to_parquet
 from tests.autorag.data.corpus.test_base import validate_corpus
 
 
