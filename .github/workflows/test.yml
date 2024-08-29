@@ -37,3 +37,6 @@ jobs:
       - name: Run tests
         run: |
           python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/
+      - name: Install dependencies
+        run: |
+          pip install pyOpenSSL>=23.2.0
