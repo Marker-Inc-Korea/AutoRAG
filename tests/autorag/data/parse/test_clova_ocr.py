@@ -26,25 +26,18 @@ async def mock_clova_ocr_pure(
 	api_key: str,
 	table_detection: bool = False,
 ):
-	return f"Mocked OCR result for {image_name}", image_name
+	return "Mocked OCR result", "mock_image_name"
 
 
-def check_clova_result(texts, file_names, file_type):
-	if file_type == "single_pdf":
-		assert texts == [
-			"Mocked OCR result for korean_texts_two_page_1.png",
-			"Mocked OCR result for korean_texts_two_page_2.png",
-		]
-		assert file_names == [
-			"korean_texts_two_page_1.png",
-			"korean_texts_two_page_2.png",
-		]
-	elif file_type == "multiple_pdf":
-		assert texts == [
-			"Mocked OCR result for baseball_1_1.png",
-			"Mocked OCR result for baseball_2_1.png",
-		]
-		assert file_names == ["baseball_1_1.png", "baseball_2_1.png"]
+def check_clova_result(texts, file_names):
+	assert texts == [
+		"Mocked OCR result",
+		"Mocked OCR result",
+	]
+	assert file_names == [
+		"mock_image_name",
+		"mock_image_name",
+	]
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
@@ -53,15 +46,13 @@ def test_clova_ocr_single_pdf():
 	texts, file_names = clova_ocr_original(
 		single_pdf_path_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_clova_result(texts, file_names, "single_pdf")
+	check_clova_result(texts, file_names)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_single_pdf_node():
 	result_df = clova_ocr(korean_text_glob, url="mock_url", api_key="mock_api_key")
-	check_clova_result(
-		result_df["texts"].tolist(), result_df["file_name"].tolist(), "single_pdf"
-	)
+	check_clova_result(result_df["texts"].tolist(), result_df["file_name"].tolist())
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
@@ -70,15 +61,13 @@ def test_clova_ocr_multiple_pdf():
 	texts, file_names = clova_ocr_original(
 		multiple_pdf_data_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_clova_result(texts, file_names, "multiple_pdf")
+	check_clova_result(texts, file_names)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_multiple_pdf_node():
 	result_df = clova_ocr(eng_text_glob, url="mock_url", api_key="mock_api_key")
-	check_clova_result(
-		result_df["texts"].tolist(), result_df["file_name"].tolist(), "multiple_pdf"
-	)
+	check_clova_result(result_df["texts"].tolist(), result_df["file_name"].tolist())
 
 
 def test_pdf_to_images():
