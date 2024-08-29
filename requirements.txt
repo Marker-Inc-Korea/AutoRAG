@@ -65,3 +65,4 @@ PyMuPDF
 pdfminer.six
 pdfplumber
 unstructured
+jq
