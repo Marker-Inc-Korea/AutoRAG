@@ -8,7 +8,7 @@ import pytest
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.core.llms import MockLLM
 
-from autorag.data.legacy.qacreation.llama_index import (
+from autorag.data.qacreation.llama_index import (
 	async_qa_gen_llama_index,
 	generate_qa_llama_index_by_ratio,
 	generate_qa_llama_index,

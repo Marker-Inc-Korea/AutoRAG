@@ -4,10 +4,7 @@ import pytest
 from llama_index.core import Document
 from llama_index.core.schema import TextNode, NodeRelationship, RelatedNodeInfo
 
-from autorag.data.legacy.corpus import (
-	llama_documents_to_parquet,
-	llama_text_node_to_parquet,
-)
+from autorag.data.corpus import llama_documents_to_parquet, llama_text_node_to_parquet
 from tests.autorag.data.corpus.test_base import validate_corpus
 
 
