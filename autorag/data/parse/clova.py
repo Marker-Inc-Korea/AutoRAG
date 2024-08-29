@@ -93,6 +93,7 @@ async def clova_ocr_pure(
 def pdf_to_images(pdf_path) -> Tuple[List[bytes], List[str]]:
 	pdf_document = fitz.open(pdf_path)
 	pdf_name = pdf_path.split("/")[-1]
+	pure_pdf_name = pdf_name.split(".pdf")[0]
 
 	image_data_list, image_name_list = [], []
 	for page_num in range(len(pdf_document)):
@@ -103,7 +104,7 @@ def pdf_to_images(pdf_path) -> Tuple[List[bytes], List[str]]:
 		img_data = pix.tobytes("png")
 		image_data_list.append(img_data)
 
-		img_name = f"{pdf_name}_{page_num + 1}.png"
+		img_name = f"{pure_pdf_name}_{page_num + 1}.png"
 		image_name_list.append(img_name)
 
 	return image_data_list, image_name_list
