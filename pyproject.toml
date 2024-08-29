@@ -109,7 +109,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "**/{docs}/*" = ["E402", "F401"]
 "test_*.py" = ["F401", "F811"]
 "*_test.py" = ["F401", "F811"]
-"resources/*" = ["W292"]
+"resources/parse_data/*/*" = ["W292"]
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
