@@ -60,3 +60,4 @@ def check_parse_result(texts, file_names, file_type):
 	if file_type == "json":
 		assert texts == ["This is a sample JSON file"]
 	assert file_names == file_names_dict[file_type]
+	assert all([file_name in file_names_dict[file_type] for file_name in file_names])
