@@ -16,7 +16,7 @@ def get_support_modules(module_name: str) -> Callable:
 	support_modules = {
 		# parse
 		"langchain_parse": ("autorag.data.parse", "langchain_parse"),
-		"clova_ocr": ("autorag.data.parse", "clova_ocr"),
+		"clova": ("autorag.data.parse", "clova_ocr"),
 		"llama_parse": ("autorag.data.parse", "llama_parse"),
 		"table_hybrid_parse": ("autorag.data.parse", "table_hybrid_parse"),
 		# query_expansion
