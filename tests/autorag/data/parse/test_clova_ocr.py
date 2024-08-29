@@ -83,6 +83,7 @@ def test_extract_text_from_fields():
 	text_path = os.path.join(data_dir, "clova_data", "result_text.txt")
 	with open(text_path, "r", encoding="utf-8") as file:
 		expect_text = file.read()
+	expect_text = expect_text.split("\n\\n\\n\\n")[0]
 
 	text = extract_text_from_fields(result["images"][0]["fields"])
 	assert text == expect_text
@@ -96,6 +97,7 @@ def test_json_to_html_table():
 	table_path = os.path.join(data_dir, "clova_data", "result_table.txt")
 	with open(table_path, "r", encoding="utf-8") as file:
 		expect_table = file.read()
+	expect_table = expect_table.split("\n\\n\\n\\n")[0]
 
 	table = json_to_html_table(result["images"][0]["tables"][0]["cells"])
 	assert table == expect_table
