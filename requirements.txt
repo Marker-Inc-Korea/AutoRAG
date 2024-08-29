@@ -64,3 +64,4 @@ ipywidgets_bokeh
 PyMuPDF
 pdfminer.six
 pdfplumber
+unstructured
