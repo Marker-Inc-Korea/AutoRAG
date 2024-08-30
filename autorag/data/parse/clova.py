@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import itertools
 import json
@@ -9,7 +8,7 @@ import aiohttp
 import fitz  # PyMuPDF
 
 from autorag.data.parse.base import parser_node
-from autorag.utils.util import process_batch
+from autorag.utils.util import process_batch, get_event_loop
 
 
 @parser_node
@@ -44,7 +43,7 @@ def clova_ocr(
 		clova_ocr_pure(image_data, image_name, url, api_key, table_detection)
 		for image_data, image_name in zip(image_data_list, image_name_list)
 	]
-	loop = asyncio.get_event_loop()
+	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch))
 
 	texts, names = zip(*results)
@@ -90,22 +89,31 @@ async def clova_ocr_pure(
 		return page_text, image_name
 
 
-def pdf_to_images(pdf_path) -> Tuple[List[bytes], List[str]]:
-	pdf_document = fitz.open(pdf_path)
-	pdf_name = pdf_path.split("/")[-1]
-	pure_pdf_name = pdf_name.split(".pdf")[0]
+def pdf_to_images(pdf_path: str) -> Tuple[List[bytes], List[str]]:
+	"""Combine the two functions to achieve the original functionality."""
 
-	image_data_list, image_name_list = [], []
-	for page_num in range(len(pdf_document)):
-		page = pdf_document.load_page(page_num)
+	def convert_pdf_to_images(_pdf_path: str) -> List[bytes]:
+		"""Convert each page of the PDF to an image and return the image data."""
+		pdf_document = fitz.open(_pdf_path)
+		image_data_lst = []
+		for page_num in range(len(pdf_document)):
+			page = pdf_document.load_page(page_num)
+			pix = page.get_pixmap()
+			img_data = pix.tobytes("png")
+			image_data_lst.append(img_data)
+		return image_data_lst
 
-		# get image data
-		pix = page.get_pixmap()
-		img_data = pix.tobytes("png")
-		image_data_list.append(img_data)
+	def generate_image_names(_pdf_path: str, num_pages: int) -> List[str]:
+		"""Generate image names based on the PDF file name and the number of pages."""
+		pdf_name = _pdf_path.split("/")[-1]
+		pure_pdf_name = pdf_name.split(".pdf")[0]
+		image_name_lst = [
+			f"{pure_pdf_name}_{page_num + 1}.png" for page_num in range(num_pages)
+		]
+		return image_name_lst
 
-		img_name = f"{pure_pdf_name}_{page_num + 1}.png"
-		image_name_list.append(img_name)
+	image_data_list = convert_pdf_to_images(pdf_path)
+	image_name_list = generate_image_names(pdf_path, len(image_data_list))
 
 	return image_data_list, image_name_list
 

@@ -1,2 +1,2 @@
-from .clova import clova_ocr, clova_ocr_pure
+from .clova import clova_ocr
 from .langchain_parse import langchain_parse

@@ -9,8 +9,6 @@ from autorag.data.parse.base import parser_node
 def langchain_parse(
 	data_path_list: List[str], parse_method: str, **kwargs
 ) -> Tuple[List[str], List[str]]:
-	# Get the number of available CPU cores
-
 	if parse_method in ["directory", "unstructured"]:
 		results = parse_all_files(data_path_list, parse_method, **kwargs)
 		texts, file_names = results[0], results[1]

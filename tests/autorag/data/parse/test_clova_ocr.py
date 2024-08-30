@@ -2,6 +2,8 @@ import json
 import os.path
 from unittest.mock import patch
 
+import pytest
+
 import autorag
 from autorag.data.parse import clova_ocr
 from autorag.data.parse.clova import (
@@ -40,6 +42,32 @@ def check_clova_result(texts, file_names):
 	]
 
 
+@pytest.fixture
+def result_sample():
+	result_path = os.path.join(data_dir, "clova_data", "result_sample.json")
+	with open(result_path, "r", encoding="utf-8") as file:
+		result_sample = json.load(file)
+		yield result_sample
+
+
+@pytest.fixture
+def expect_text():
+	text_path = os.path.join(data_dir, "clova_data", "result_text.txt")
+	with open(text_path, "r", encoding="utf-8") as file:
+		expect_text = file.read()
+		expect_text = expect_text.split("\n\\n\\n\\n")[0]
+		yield expect_text
+
+
+@pytest.fixture
+def expect_table():
+	table_path = os.path.join(data_dir, "clova_data", "result_table.txt")
+	with open(table_path, "r", encoding="utf-8") as file:
+		expect_table = file.read()
+		expect_table = expect_table.split("\n\\n\\n\\n")[0]
+		yield expect_table
+
+
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_single_pdf():
 	clova_ocr_original = clova_ocr.__wrapped__
@@ -75,29 +103,11 @@ def test_pdf_to_images():
 	assert names == ["korean_texts_two_page_1.png", "korean_texts_two_page_2.png"]
 
 
-def test_extract_text_from_fields():
-	result_path = os.path.join(data_dir, "clova_data", "result_sample.json")
-	with open(result_path, "r", encoding="utf-8") as file:
-		result = json.load(file)
-
-	text_path = os.path.join(data_dir, "clova_data", "result_text.txt")
-	with open(text_path, "r", encoding="utf-8") as file:
-		expect_text = file.read()
-	expect_text = expect_text.split("\n\\n\\n\\n")[0]
-
-	text = extract_text_from_fields(result["images"][0]["fields"])
+def test_extract_text_from_fields(result_sample, expect_text):
+	text = extract_text_from_fields(result_sample["images"][0]["fields"])
 	assert text == expect_text
 
 
-def test_json_to_html_table():
-	result_path = os.path.join(data_dir, "clova_data", "result_sample.json")
-	with open(result_path, "r", encoding="utf-8") as file:
-		result = json.load(file)
-
-	table_path = os.path.join(data_dir, "clova_data", "result_table.txt")
-	with open(table_path, "r", encoding="utf-8") as file:
-		expect_table = file.read()
-	expect_table = expect_table.split("\n\\n\\n\\n")[0]
-
-	table = json_to_html_table(result["images"][0]["tables"][0]["cells"])
+def test_json_to_html_table(result_sample, expect_table):
+	table = json_to_html_table(result_sample["images"][0]["tables"][0]["cells"])
 	assert table == expect_table
