@@ -1,9 +1,10 @@
+import math
 from typing import Tuple, List
 
-import math
 import pandas as pd
 
 from autorag.evaluation import evaluate_retrieval
+from autorag.schema.payload import Payload
 
 retrieval_gt = [[[f"test{i}-{j}"] for i in range(2)] for j in range(4)]
 queries_example = ["Query 1", "Query 2", "Query 3", "Query 4"]
@@ -31,23 +32,21 @@ ids = [
 	[f"pred-{i}" for i in range(4, 8)],
 	[retrieval_gt[3][0][0], "pred-8", "pred-9", "pred-10"],
 ]
+payloads = [Payload(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt) for ret_gt, queries, gen_gt in
+			zip(retrieval_gt, queries_example, generation_gt_example)]
 
 
 @evaluate_retrieval(
-	retrieval_gt=retrieval_gt,
+	payloads=payloads,
 	metrics=["retrieval_recall", "retrieval_precision", "retrieval_f1"],
-	queries=queries_example,
-	generation_gt=generation_gt_example,
 )
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 	return contents, ids, scores
 
 
 @evaluate_retrieval(
-	retrieval_gt=retrieval_gt,
+	payloads=payloads,
 	metrics=[{"metric_name": "retrieval_recall"}, {"metric_name": "retrieval_f1"}],
-	queries=queries_example,
-	generation_gt=generation_gt_example,
 )
 def pseudo_retrieval_dict_metric() -> (
 	Tuple[List[List[str]], List[List[str]], List[List[float]]]

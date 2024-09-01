@@ -13,6 +13,7 @@ from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from transformers import AutoTokenizer
 
 from autorag.evaluation.generation import evaluate_generation
+from autorag.schema.payload import Payload
 
 generation_gts = [
 	["The dog had bit the man.", "The man had bitten the dog."],
@@ -35,7 +36,7 @@ pseudo_log_probs = list(map(lambda x: [0.1] * len(x), pseudo_tokens))
 
 
 @evaluate_generation(
-	generation_gt=generation_gts,
+	payloads=[Payload(generation_gt=gen_gt) for gen_gt in generation_gts],
 	metrics=["bleu", "meteor", "rouge", "sem_score", "g_eval"],
 )
 def pseudo_generation():
@@ -43,14 +44,14 @@ def pseudo_generation():
 
 
 @evaluate_generation(
-	generation_gt=generation_gts, metrics=["bleu", "meteor", "donggeon_metric"]
+	payloads=[Payload(generation_gt=gen_gt) for gen_gt in generation_gts], metrics=["bleu", "meteor", "donggeon_metric"]
 )
 def pseudo_generation_with_log_probs():
 	return pseudo_generations, pseudo_tokens, pseudo_log_probs
 
 
 @evaluate_generation(
-	generation_gt=generation_gts,
+	payloads=[Payload(generation_gt=gen_gt) for gen_gt in generation_gts],
 	metrics=[
 		{"metric_name": "bleu"},
 		{"metric_name": "sem_score", "embedding_model": "openai"},
