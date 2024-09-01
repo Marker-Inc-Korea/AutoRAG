@@ -1,6 +1,6 @@
 import functools
 import warnings
-from typing import List, Callable, Any, Tuple, Optional, Union, Dict
+from typing import List, Callable, Any, Tuple, Union, Dict
 
 import pandas as pd
 
@@ -13,6 +13,7 @@ from autorag.evaluation.metric import (
 	retrieval_map,
 )
 from autorag.evaluation.util import cast_metrics
+from autorag.schema.payload import Payload, METRIC_INPUT_DICT
 
 RETRIEVAL_METRIC_FUNC_DICT = {
 	func.__name__: func
@@ -29,10 +30,8 @@ RETRIEVAL_NO_GT_METRIC_FUNC_DICT = {func.__name__: func for func in []}
 
 
 def evaluate_retrieval(
-	retrieval_gt: List[List[List[str]]],
+		payloads: List[Payload],
 	metrics: Union[List[str], List[Dict]],
-	queries: Optional[List[str]] = None,
-	generation_gt: Optional[List[List[str]]] = None,
 ):
 	def decorator_evaluate_retrieval(
 		func: Callable[
@@ -56,25 +55,28 @@ def evaluate_retrieval(
 			metric_names, metric_params = cast_metrics(metrics)
 
 			for metric_name, metric_param in zip(metric_names, metric_params):
+				# Extract each required field from all payloads
+				extracted_inputs = {field: [getattr(payload, field) for payload in payloads] for field in
+									METRIC_INPUT_DICT.get(metric_name, [])}
+
 				if metric_name in RETRIEVAL_METRIC_FUNC_DICT:
 					metric_func = RETRIEVAL_METRIC_FUNC_DICT[metric_name]
 					metric_scores[metric_name] = metric_func(
-						retrieval_gt=retrieval_gt, pred_ids=pred_ids, **metric_param
+						**extracted_inputs, pred_ids=pred_ids, **metric_param
 					)
 				elif metric_name in RETRIEVAL_NO_GT_METRIC_FUNC_DICT:
 					metric_func = RETRIEVAL_NO_GT_METRIC_FUNC_DICT[metric_name]
-					if queries is None:
+					if 'queries' not in extracted_inputs.keys():
 						raise ValueError(
 							f"To using {metric_name}, you have to provide queries."
 						)
-					if generation_gt is None:
+					if 'generation_gt' not in extracted_inputs.keys():
 						raise ValueError(
 							f"To using {metric_name}, you have to provide generation ground truth."
 						)
 					metric_scores[metric_name] = metric_func(
-						queries=queries,
+						**extracted_inputs,
 						retrieved_contents=contents,
-						generation_gt=generation_gt,
 						**metric_param,
 					)
 				else:
