@@ -19,6 +19,7 @@ markdown_glob = os.path.join(data_dir, "markdown_data", "*")
 html_glob = os.path.join(data_dir, "html_data", "*")
 xml_glob = os.path.join(data_dir, "xml_data", "*")
 all_files_glob = os.path.join(data_dir, "all_files", "*")
+hybrid_glob = os.path.join(data_dir, "hybrid_data", "*")
 
 single_pdf_path_list = glob(korean_text_glob)
 multiple_pdf_data_list = glob(eng_text_glob)
@@ -28,6 +29,7 @@ markdown_data_list = glob(markdown_glob)
 html_data_list = glob(html_glob)
 xml_data_list = glob(xml_glob)
 all_files_data_list = glob(all_files_glob)
+hybrid_data_list = glob(hybrid_glob)
 
 file_names_dict = {
 	"single_pdf": ["korean_texts_two_page.pdf"],
@@ -51,6 +53,7 @@ file_names_dict = {
 		"baseball_1.pdf",
 	],
 	"all_files_directory": ["csv_sample.csv", "baseball_1.pdf"],
+	"hybrid": ["nfl_rulebook_both_page_1.pdf", "nfl_rulebook_both_page_2.pdf"],
 }
 
 

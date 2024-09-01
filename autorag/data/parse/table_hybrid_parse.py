@@ -1,3 +1,4 @@
+import itertools
 import os
 from typing import List, Tuple, Optional, Dict, Callable
 
@@ -26,10 +27,16 @@ def table_hybrid_parse(
 	os.makedirs(without_table_dir, exist_ok=True)
 
 	# Split PDF file into pages and Save PDFs with and without tables
-	with_table_data_list, without_table_data_list = map(
-		lambda x: save_pdf_page_by_table(x, with_table_dir, without_table_dir),
-		data_path_list,
-	)
+	table_data_list, text_data_list = [], []
+	for data_path in data_path_list:
+		table_datas, text_datas = save_pdf_page_by_table(
+			data_path, with_table_dir, without_table_dir
+		)
+		table_data_list.append(table_datas)
+		text_data_list.append(text_datas)
+
+	with_table_data_list = list(itertools.chain(*table_data_list))
+	without_table_data_list = list(itertools.chain(*text_data_list))
 
 	# Extract PDF without tables using text_parse_module
 	table_parse_texts, table_parse_file_names = get_each_module_result(
@@ -48,11 +55,13 @@ def table_hybrid_parse(
 	# sort by file names
 	file_names, texts = zip(*sorted(zip(file_names, texts)))
 
-	return texts, file_names
+	return list(texts), list(file_names)
 
 
 # Save PDFs with and without tables
-def save_pdf_page_by_table(data_path: str, with_table_dir: str, without_table_dir: str):
+def save_pdf_page_by_table(
+	data_path: str, with_table_dir: str, without_table_dir: str
+) -> Tuple[List[str], List[str]]:
 	file_name = data_path.split("/")[-1].split(".pdf")[0]
 
 	with_table_data_list, without_table_data_list = [], []
