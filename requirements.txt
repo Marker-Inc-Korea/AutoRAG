@@ -59,11 +59,3 @@ seaborn
 ipykernel
 ipywidgets
 ipywidgets_bokeh
-
-# parse
-PyMuPDF
-pdfminer.six
-pdfplumber
-unstructured
-jq
-unstructured[pdf]
