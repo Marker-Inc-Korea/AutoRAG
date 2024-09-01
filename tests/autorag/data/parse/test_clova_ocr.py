@@ -8,6 +8,7 @@ import autorag
 from autorag.data.parse import clova_ocr
 from autorag.data.parse.clova import (
 	pdf_to_images,
+	generate_image_names,
 	extract_text_from_fields,
 	json_to_html_table,
 )
@@ -99,7 +100,13 @@ def test_clova_ocr_multiple_pdf_node():
 
 
 def test_pdf_to_images():
-	data, names = pdf_to_images(single_pdf_path_list[0])
+	data_list = pdf_to_images(multiple_pdf_data_list[0])
+	assert isinstance(data_list, list)
+	assert isinstance(data_list[0], bytes)
+
+
+def test_generate_image_names():
+	names = generate_image_names(single_pdf_path_list[0], 2)
 	assert names == ["korean_texts_two_page_1.png", "korean_texts_two_page_2.png"]
 
 

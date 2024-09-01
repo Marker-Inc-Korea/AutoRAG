@@ -33,9 +33,12 @@ def clova_ocr(
 			"or directly set it on the config YAML file."
 		)
 
-	image_datas, image_names = zip(
-		*[pdf_to_images(data_path) for data_path in data_path_list]
-	)
+	image_datas = list(map(lambda data_path: pdf_to_images(data_path), data_path_list))
+	image_names = [
+		generate_image_names(pdf_path, len(image_data))
+		for pdf_path, image_data in zip(data_path_list, image_datas)
+	]
+
 	image_data_list = list(itertools.chain(*image_datas))
 	image_name_list = list(itertools.chain(*image_names))
 
@@ -89,33 +92,26 @@ async def clova_ocr_pure(
 		return page_text, image_name
 
 
-def pdf_to_images(pdf_path: str) -> Tuple[List[bytes], List[str]]:
-	"""Combine the two functions to achieve the original functionality."""
+def pdf_to_images(pdf_path: str) -> List[bytes]:
+	"""Convert each page of the PDF to an image and return the image data."""
+	pdf_document = fitz.open(pdf_path)
+	image_data_lst = []
+	for page_num in range(len(pdf_document)):
+		page = pdf_document.load_page(page_num)
+		pix = page.get_pixmap()
+		img_data = pix.tobytes("png")
+		image_data_lst.append(img_data)
+	return image_data_lst
 
-	def convert_pdf_to_images(_pdf_path: str) -> List[bytes]:
-		"""Convert each page of the PDF to an image and return the image data."""
-		pdf_document = fitz.open(_pdf_path)
-		image_data_lst = []
-		for page_num in range(len(pdf_document)):
-			page = pdf_document.load_page(page_num)
-			pix = page.get_pixmap()
-			img_data = pix.tobytes("png")
-			image_data_lst.append(img_data)
-		return image_data_lst
 
-	def generate_image_names(_pdf_path: str, num_pages: int) -> List[str]:
-		"""Generate image names based on the PDF file name and the number of pages."""
-		pdf_name = _pdf_path.split("/")[-1]
-		pure_pdf_name = pdf_name.split(".pdf")[0]
-		image_name_lst = [
-			f"{pure_pdf_name}_{page_num + 1}.png" for page_num in range(num_pages)
-		]
-		return image_name_lst
-
-	image_data_list = convert_pdf_to_images(pdf_path)
-	image_name_list = generate_image_names(pdf_path, len(image_data_list))
-
-	return image_data_list, image_name_list
+def generate_image_names(pdf_path: str, num_pages: int) -> List[str]:
+	"""Generate image names based on the PDF file name and the number of pages."""
+	pdf_name = pdf_path.split("/")[-1]
+	pure_pdf_name = pdf_name.split(".pdf")[0]
+	image_name_lst = [
+		f"{pure_pdf_name}_{page_num + 1}.png" for page_num in range(num_pages)
+	]
+	return image_name_lst
 
 
 def extract_text_from_fields(fields):
