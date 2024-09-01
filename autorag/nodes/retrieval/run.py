@@ -2,13 +2,14 @@ import logging
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Tuple
+from typing import List, Callable, Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from autorag.evaluation import evaluate_retrieval
+from autorag.schema.payload import Payload
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils.util import get_best_row, to_list
@@ -53,6 +54,9 @@ def run_retrieval_node(
 		]
 		for inner_array in retrieval_gt
 	]
+	# make rows to payload
+	payloads = [Payload(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
 
 	save_dir = os.path.join(node_line_dir, "retrieval")  # node name
 	if not os.path.exists(save_dir):
@@ -87,10 +91,8 @@ def run_retrieval_node(
 			map(
 				lambda x: evaluate_retrieval_node(
 					x,
-					retrieval_gt,
+					payloads,
 					strategies.get("metrics"),
-					qa_df["query"].tolist(),
-					qa_df["generation_gt"].tolist(),
 				),
 				result,
 			)
@@ -271,8 +273,7 @@ def run_retrieval_node(
 					module,
 					module_param,
 					strategies,
-					retrieval_gt,
-					qa_df,
+					payloads,
 					project_dir,
 					previous_result,
 				)
@@ -345,28 +346,22 @@ def run_retrieval_node(
 
 def evaluate_retrieval_node(
 	result_df: pd.DataFrame,
-	retrieval_gt,
-	metrics,
-	queries: List[str],
-	generation_gt: List[List[str]],
+		payloads: List[Payload],
+		metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
 	"""
 	Evaluate retrieval node from retrieval node result dataframe.
 
 	:param result_df: The result dataframe from a retrieval node.
-	:param retrieval_gt: Ground truth for retrieval from qa dataset.
+	:param payloads: List of metric input schema for AutoRAG.
 	:param metrics: Metric list from input strategies.
-	:param queries: Query list from input strategies.
-	:param generation_gt: Ground truth for generation from qa dataset.
 	:return: Return result_df with metrics columns.
 	    The columns will be 'retrieved_contents', 'retrieved_ids', 'retrieve_scores', and metric names.
 	"""
 
 	@evaluate_retrieval(
-		retrieval_gt=retrieval_gt,
+		payloads=payloads,
 		metrics=metrics,
-		queries=queries,
-		generation_gt=generation_gt,
 	)
 	def evaluate_this_module(df: pd.DataFrame):
 		return (
@@ -495,8 +490,7 @@ def optimize_hybrid(
 	hybrid_module_func: Callable,
 	hybrid_module_param: Dict,
 	strategy: Dict,
-	retrieval_gt,
-	qa_df: pd.DataFrame,
+		payloads: List[Payload],
 	project_dir,
 	previous_result,
 ):
@@ -528,10 +522,8 @@ def optimize_hybrid(
 		map(
 			lambda x: evaluate_retrieval_node(
 				x,
-				retrieval_gt,
+				payloads,
 				strategy.get("metrics"),
-				qa_df["query"].tolist(),
-				qa_df["generation_gt"].tolist(),
 			),
 			result_list,
 		)
