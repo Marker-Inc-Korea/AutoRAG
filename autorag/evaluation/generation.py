@@ -13,6 +13,7 @@ from autorag.evaluation.metric.generation import (
 	bert_score,
 )
 from autorag.evaluation.util import cast_metrics
+from autorag.schema.payload import Payload, METRIC_INPUT_DICT
 
 GENERATION_METRIC_FUNC_DICT = {
 	func.__name__: func for func in [bleu, meteor, rouge, sem_score, g_eval, bert_score]
@@ -20,7 +21,7 @@ GENERATION_METRIC_FUNC_DICT = {
 
 
 def evaluate_generation(
-	generation_gt: List[List[str]], metrics: Union[List[str], List[Dict]]
+		payloads: List[Payload], metrics: Union[List[str], List[Dict]]
 ):
 	def decorator_evaluate_generation(func: Callable):
 		@functools.wraps(func)
@@ -46,16 +47,21 @@ def evaluate_generation(
 			metric_names, metric_params = cast_metrics(metrics)
 
 			for metric_name, metric_param in zip(metric_names, metric_params):
+				# Extract each required field from all payloads
+				extracted_inputs = {field: [getattr(payload, field) for payload in payloads] for field in
+									METRIC_INPUT_DICT.get(metric_name, [])}
+
 				if metric_name not in GENERATION_METRIC_FUNC_DICT:
 					warnings.warn(
 						f"metric {metric_name} is not in supported metrics: {GENERATION_METRIC_FUNC_DICT.keys()}"
 						f"{metric_name} will be ignored."
 					)
 				else:
+
 					metric_scores[metric_name] = GENERATION_METRIC_FUNC_DICT[
 						metric_name
 					](
-						generation_gt=generation_gt,
+						**extracted_inputs,
 						generations=generated_str,
 						**metric_param,
 					)
