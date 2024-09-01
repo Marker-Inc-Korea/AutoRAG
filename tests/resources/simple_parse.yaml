@@ -1,0 +1,3 @@
+modules:
+  - module_type: langchain_parse
+    parse_method: [pdfminer, pdfplumber]
