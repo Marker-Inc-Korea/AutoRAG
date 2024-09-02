@@ -29,6 +29,9 @@ jobs:
       - name: Install poppler-utils
         run: |
           sudo apt-get install poppler-utils
+      - name: Install tesseract
+        run: |
+          sudo apt-get install tesseract-ocr
       - name: Install AutoRAG
         run: |
           pip install -e '.[all]'
