@@ -1,6 +1,5 @@
 import os.path
 import tempfile
-import pytest
 
 from autorag.data.parse import table_hybrid_parse
 from autorag.data.parse.table_hybrid_parse import save_page_by_table
@@ -36,12 +35,14 @@ def test_table_hybrid_parse_node():
 
 
 def test_save_page_by_table():
-	save_dir = table_hybrid_params["pages_save_dir"]
-	text_dir = os.path.join(save_dir, "text")
-	table_dir = os.path.join(save_dir, "table")
+	with tempfile.TemporaryDirectory() as save_dir:
+		text_dir = os.path.join(save_dir, "text")
+		table_dir = os.path.join(save_dir, "table")
+		os.makedirs(text_dir, exist_ok=True)
+		os.makedirs(table_dir, exist_ok=True)
 
-	save_page_by_table(hybrid_data_list[0], text_dir, table_dir)
-	assert os.path.exists(text_dir)
-	assert os.path.exists(os.path.join(text_dir, "nfl_rulebook_both_page_1.pdf"))
-	assert os.path.exists(table_dir)
-	assert os.path.exists(os.path.join(table_dir, "nfl_rulebook_both_page_2.pdf"))
+		save_page_by_table(hybrid_data_list[0], text_dir, table_dir)
+		assert os.path.exists(text_dir)
+		assert os.path.exists(os.path.join(text_dir, "nfl_rulebook_both_page_1.pdf"))
+		assert os.path.exists(table_dir)
+		assert os.path.exists(os.path.join(table_dir, "nfl_rulebook_both_page_2.pdf"))
