@@ -128,7 +128,7 @@ def run_query_expansion_node(
 				lambda result: evaluate_one_query_expansion_node(
 					retrieval_callables,
 					retrieval_params,
-					payloads,
+					[payload(queries=queries) for payload, queries in zip(payloads, result['queries'].to_list())],
 					general_strategy["metrics"],
 					project_dir,
 					previous_result,
