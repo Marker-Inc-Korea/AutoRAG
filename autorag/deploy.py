@@ -118,7 +118,7 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
 	yaml_dict = summary_df_to_yaml(trial_summary_df, config_dict)
 	if output_path is not None:
 		with open(output_path, "w") as f:
-			yaml.dump(yaml_dict, f)
+			yaml.safe_dump(yaml_dict, f)
 	return yaml_dict
 
 

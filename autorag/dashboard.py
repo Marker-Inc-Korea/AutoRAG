@@ -167,7 +167,7 @@ def yaml_to_markdown(yaml_filepath):
 	with open(yaml_filepath, "r", encoding="utf-8") as file:
 		try:
 			content = yaml.safe_load(file)
-			markdown_content += f"## {os.path.basename(yaml_filepath)}\n```yaml\n{yaml.dump(content, allow_unicode=True)}\n```\n\n"
+			markdown_content += f"## {os.path.basename(yaml_filepath)}\n```yaml\n{yaml.safe_dump(content, allow_unicode=True)}\n```\n\n"
 		except yaml.YAMLError as exc:
 			print(f"Error in {yaml_filepath}: {exc}")
 	return markdown_content
