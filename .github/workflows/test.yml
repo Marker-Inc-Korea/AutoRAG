@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r tests/requirements.txt
+      - name: Upgrade pyOpenSSL
+        run: |
+          pip install --upgrade pyOpenSSL
       - name: delete tests package
         run: python3 tests/delete_tests.py
       - name: Run tests

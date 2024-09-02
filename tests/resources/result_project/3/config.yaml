@@ -9,6 +9,6 @@ node_lines:
         modules:
           - module_type: ${BM25} # for testing env variable
           - module_type: vectordb
-            embedding_model: [ openai, openai ]
+            embedding_model: [ mock, mock ]
           - module_type: hybrid_rrf
             weight_range: (4, 40)

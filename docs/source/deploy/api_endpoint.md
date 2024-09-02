@@ -2,8 +2,8 @@
 myst:
    html_meta:
       title: AutoRAG - Deploy API endpoint
-      description: Learn how to deploy optimized RAG pipeline to FastAPI API server in AutoRAG
-      keywords: AutoRAG,RAG,RAG deploy,RAG API,FastAPI
+      description: Learn how to deploy optimized RAG pipeline to Flask API server in AutoRAG
+      keywords: AutoRAG,RAG,RAG deploy,RAG API,Flask
 ---
 # API endpoint
 

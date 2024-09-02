@@ -1,0 +1,13 @@
+modules:
+  - module_type: langchain_parse
+    parse_method: [ pdfminer, pdfplumber, pypdfium2, pypdf, pymupdf, unstructuredpdf ]
+  - module_type: langchain_parse
+    parse_method: upstagelayoutanalysis
+  - module_type: langchain_parse
+    parse_method: json
+    jq_schema: .messages[].content
+  - module_type: clova
+    table_detection: true
+  - module_type: llama_parse
+    result_type: markdown
+    language: ko

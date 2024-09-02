@@ -1,8 +1,11 @@
+from unittest.mock import patch
+
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.evaluation.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score
 from tests.delete_tests import is_github_action
+from tests.mock import mock_get_text_embedding_batch
 
 generation_gts = [
 	["The dog had bit the man.", "The man had bitten the dog."],
@@ -76,10 +79,19 @@ def test_sem_score():
 	base_test_generation_metrics(sem_score, [0.9005998, 0.7952, 1.0])
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_sem_score_other_model():
-	base_test_generation_metrics(
-		sem_score, [0.9888, 0.9394, 1.0], embedding_model=OpenAIEmbedding()
+	scores = sem_score(
+		generation_gt=generation_gts,
+		generations=generations,
+		embedding_model=OpenAIEmbedding(),
 	)
+	assert len(scores) == len(generation_gts)
+	assert all(isinstance(score, float) for score in scores)
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")

@@ -14,8 +14,7 @@ rouge_score  # for rouge score
 rich  # for pretty logging
 chromadb>=0.5.0 # for vectordb retrieval
 click  # for cli
-fastapi  # for api server
-uvicorn  # for api server
+Flask # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
 guidance # for qa data creation
@@ -51,6 +50,8 @@ gradio
 
 ### Langchain ###
 langchain-core>=0.1.6
+langchain_unstructured
+langchain-upstage
 
 # autorag dashboard
 panel

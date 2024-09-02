@@ -1,3 +1,7 @@
+from unittest.mock import patch
+
+from llama_index.embeddings.openai import OpenAIEmbedding
+
 from autorag.nodes.passagefilter import similarity_threshold_cutoff
 from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	queries_example,
@@ -9,8 +13,14 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	previous_result,
 	base_passage_filter_node_test,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_similarity_threshold_cutoff():
 	original_cutoff = similarity_threshold_cutoff.__wrapped__
 	contents, ids, scores = original_cutoff(
@@ -25,6 +35,11 @@ def test_similarity_threshold_cutoff():
 	base_passage_filter_test(contents, ids, scores)
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 def test_similarity_threshold_cutoff_node():
 	result_df = similarity_threshold_cutoff(
 		project_dir=project_dir, previous_result=previous_result, threshold=0.9

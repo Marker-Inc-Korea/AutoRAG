@@ -2,8 +2,27 @@ import logging
 import logging.config
 import os
 import sys
+from random import random
+from typing import List
 
 import transformers
+from llama_index.core import MockEmbedding
+from langchain_community.document_loaders import (
+	PDFMinerLoader,
+	PDFPlumberLoader,
+	PyPDFium2Loader,
+	PyPDFLoader,
+	PyMuPDFLoader,
+	UnstructuredPDFLoader,
+	CSVLoader,
+	JSONLoader,
+	UnstructuredMarkdownLoader,
+	BSHTMLLoader,
+	UnstructuredXMLLoader,
+	DirectoryLoader,
+)
+from langchain_unstructured import UnstructuredLoader
+from langchain_upstage import UpstageLayoutAnalysisLoader
 from llama_index.core.llms.mock import MockLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -38,6 +57,13 @@ class LazyInit:
 		return getattr(self._instance, name)
 
 
+class MockEmbeddingRandom(MockEmbedding):
+	"""Mock embedding with random vectors."""
+
+	def _get_vector(self) -> List[float]:
+		return [random() for _ in range(self.embed_dim)]
+
+
 embedding_models = {
 	"openai": LazyInit(
 		OpenAIEmbedding
@@ -61,6 +87,7 @@ embedding_models = {
 		max_length=512,
 	),
 	"huggingface_bge_m3": LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
+	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
 }
 
 generator_models = {
@@ -69,6 +96,31 @@ generator_models = {
 	"openailike": OpenAILike,
 	"ollama": Ollama,
 	"mock": MockLLM,
+}
+
+parse_modules = {
+	# PDF
+	"pdfminer": PDFMinerLoader,
+	"pdfplumber": PDFPlumberLoader,
+	"pypdfium2": PyPDFium2Loader,
+	"pypdf": PyPDFLoader,
+	"pymupdf": PyMuPDFLoader,
+	"unstructuredpdf": UnstructuredPDFLoader,
+	"upstagelayoutanalysis": UpstageLayoutAnalysisLoader,
+	# Common File Types
+	# 1. CSV
+	"csv": CSVLoader,
+	# 2. JSON
+	"json": JSONLoader,
+	# 3. Markdown
+	"unstructuredmarkdown": UnstructuredMarkdownLoader,
+	# 4. HTML
+	"bshtml": BSHTMLLoader,
+	# 5. XML
+	"unstructuredxml": UnstructuredXMLLoader,
+	# 6. All files
+	"directory": DirectoryLoader,
+	"unstructured": UnstructuredLoader,
 }
 
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"
