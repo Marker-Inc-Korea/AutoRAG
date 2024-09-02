@@ -47,7 +47,7 @@ addopts = ["--import-mode=importlib"] # default is prepend
 [project.optional-dependencies]
 ko = ["kiwipiepy", "konlpy"]
 dev = ["ruff", "pre-commit"]
-parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0"]
+parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<4.0"]
 all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]"]
 
 [project.entry-points.console_scripts]
