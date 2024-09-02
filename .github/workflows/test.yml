@@ -26,6 +26,9 @@ jobs:
       - name: Install gcc
         run: |
           sudo apt-get install gcc
+      - name: Install poppler-utils
+        run: |
+          sudo apt-get install poppler-utils
       - name: Install AutoRAG
         run: |
           pip install -e '.[all]'
