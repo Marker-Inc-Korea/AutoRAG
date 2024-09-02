@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import os
 from typing import List, Tuple
 
 from autorag import parse_modules
@@ -46,7 +47,7 @@ def langchain_parse_pure(data_path: str, parse_method: str, kwargs) -> Tuple[str
 	# Load the text from the file
 	documents = parse_instance.load()
 	text = documents[0].page_content
-	file_name = data_path.split("/")[-1]
+	file_name = os.path.basename(data_path)
 
 	# Clean up the parse instance
 	del parse_instance
