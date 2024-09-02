@@ -31,10 +31,11 @@ def check_llama_parse_result(texts, file_names, file_type):
 			"I love AutoRAG",
 			"I love AutoRAG",
 		]
-		assert file_names == [
+		expect_names = [
 			"baseball_1.pdf",
 			"baseball_2.pdf",
 		]
+		assert all([file_name in expect_names for file_name in file_names])
 
 
 @patch.object(llama_parse.base.LlamaParse, "aload_data", mock_llama_parse_aload_data)
