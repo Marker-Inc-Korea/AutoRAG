@@ -1,6 +1,7 @@
 import os
+import tempfile
 from glob import glob
-from typing import List, Tuple, Optional, Dict, Callable
+from typing import List, Tuple, Dict, Callable
 
 from PyPDF2 import PdfFileReader, PdfFileWriter
 import pdfplumber
@@ -16,37 +17,37 @@ def table_hybrid_parse(
 	text_params: Dict,
 	table_parse_module: str,
 	table_params: Dict,
-	pages_save_dir: Optional[str] = None,
 ) -> Tuple[List[str], List[str]]:
 	# make save folder directory
-	pages_save_dir if pages_save_dir is not None else os.getcwd()
-	os.makedirs(pages_save_dir, exist_ok=True)
-	text_dir = os.path.join(pages_save_dir, "text")
-	os.makedirs(text_dir, exist_ok=True)
-	table_dir = os.path.join(pages_save_dir, "table")
-	os.makedirs(table_dir, exist_ok=True)
+	with tempfile.TemporaryDirectory() as save_dir:
+		text_dir = os.path.join(save_dir, "text")
+		table_dir = os.path.join(save_dir, "table")
 
-	# Split PDF file into pages and Save PDFs with and without tables
-	[save_page_by_table(data_path, text_dir, table_dir) for data_path in data_path_list]
+		os.makedirs(text_dir, exist_ok=True)
+		os.makedirs(table_dir, exist_ok=True)
 
-	# Extract text pages
-	table_results, table_file_names = get_each_module_result(
-		table_parse_module, table_params, os.path.join(table_dir, "*")
-	)
+		# Split PDF file into pages and Save PDFs with and without tables
+		for data_path in data_path_list:
+			save_page_by_table(data_path, text_dir, table_dir)
 
-	# Extract table pages
-	text_results, text_file_names = get_each_module_result(
-		text_parse_module, text_params, os.path.join(text_dir, "*")
-	)
+		# Extract text pages
+		table_results, table_file_names = get_each_module_result(
+			table_parse_module, table_params, os.path.join(table_dir, "*")
+		)
 
-	# Merge parsing results of PDFs with and without tables
-	texts = table_results + text_results
-	file_names = table_file_names + text_file_names
+		# Extract table pages
+		text_results, text_file_names = get_each_module_result(
+			text_parse_module, text_params, os.path.join(text_dir, "*")
+		)
 
-	# sort by file names
-	file_names, texts = zip(*sorted(zip(file_names, texts)))
+		# Merge parsing results of PDFs with and without tables
+		texts = table_results + text_results
+		file_names = table_file_names + text_file_names
 
-	return list(texts), list(file_names)
+		# Sort by file names
+		file_names, texts = zip(*sorted(zip(file_names, texts)))
+
+		return list(texts), list(file_names)
 
 
 # Save PDFs with and without tables
