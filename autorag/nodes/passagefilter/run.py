@@ -5,7 +5,7 @@ from typing import List, Callable, Dict
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 
@@ -45,7 +45,7 @@ def run_passage_filter_node(
 		for inner_array in retrieval_gt
 	]
 	# make rows to payload
-	payloads = [Payload(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+	payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
 
 	results, execution_times = zip(

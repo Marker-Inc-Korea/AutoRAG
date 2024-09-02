@@ -4,7 +4,7 @@ from typing import Tuple, List
 import pandas as pd
 
 from autorag.evaluation import evaluate_retrieval
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 
 retrieval_gt = [[[f"test{i}-{j}"] for i in range(2)] for j in range(4)]
 queries_example = ["Query 1", "Query 2", "Query 3", "Query 4"]
@@ -32,12 +32,12 @@ ids = [
 	[f"pred-{i}" for i in range(4, 8)],
 	[retrieval_gt[3][0][0], "pred-8", "pred-9", "pred-10"],
 ]
-payloads = [Payload(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt) for ret_gt, queries, gen_gt in
+payloads = [MetricInput(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt) for ret_gt, queries, gen_gt in
 			zip(retrieval_gt, queries_example, generation_gt_example)]
 
 
 @evaluate_retrieval(
-	payloads=payloads,
+	metric_inputs=payloads,
 	metrics=["retrieval_recall", "retrieval_precision", "retrieval_f1"],
 )
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
@@ -45,7 +45,7 @@ def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[floa
 
 
 @evaluate_retrieval(
-	payloads=payloads,
+	metric_inputs=payloads,
 	metrics=[{"metric_name": "retrieval_recall"}, {"metric_name": "retrieval_f1"}],
 )
 def pseudo_retrieval_dict_metric() -> (

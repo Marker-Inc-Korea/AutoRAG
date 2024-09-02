@@ -13,7 +13,7 @@ from autorag.evaluation.metric import (
 	retrieval_map,
 )
 from autorag.evaluation.util import cast_metrics
-from autorag.schema.payload import Payload, METRIC_INPUT_DICT
+from autorag.schema.metricinput import MetricInput, METRIC_INPUT_DICT
 
 RETRIEVAL_METRIC_FUNC_DICT = {
 	func.__name__: func
@@ -30,7 +30,7 @@ RETRIEVAL_NO_GT_METRIC_FUNC_DICT = {func.__name__: func for func in []}
 
 
 def evaluate_retrieval(
-		payloads: List[Payload],
+		metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 ):
 	def decorator_evaluate_retrieval(
@@ -56,7 +56,7 @@ def evaluate_retrieval(
 
 			for metric_name, metric_param in zip(metric_names, metric_params):
 				# Extract each required field from all payloads
-				extracted_inputs = {field: [getattr(payload, field) for payload in payloads] for field in
+				extracted_inputs = {field: [getattr(payload, field) for payload in metric_inputs] for field in
 									METRIC_INPUT_DICT.get(metric_name, [])}
 
 				if metric_name in RETRIEVAL_METRIC_FUNC_DICT:

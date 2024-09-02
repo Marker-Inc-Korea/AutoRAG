@@ -15,8 +15,7 @@ from openai.types.chat.chat_completion_token_logprob import TopLogprob
 from transformers import AutoTokenizer
 
 from autorag.evaluation.generation import evaluate_generation
-from autorag.schema.payload import Payload
-
+from autorag.schema.metricinput import MetricInput
 from tests.mock import mock_get_text_embedding_batch
 
 generation_gts = [
@@ -40,7 +39,7 @@ pseudo_log_probs = list(map(lambda x: [0.1] * len(x), pseudo_tokens))
 
 
 @evaluate_generation(
-	payloads=[Payload(generation_gt=gen_gt) for gen_gt in generation_gts],
+	metric_inputs=[MetricInput(generation_gt=gen_gt) for gen_gt in generation_gts],
 	metrics=["bleu", "meteor", "rouge", "sem_score", "g_eval"],
 )
 def pseudo_generation():
@@ -48,14 +47,15 @@ def pseudo_generation():
 
 
 @evaluate_generation(
-	payloads=[Payload(generation_gt=gen_gt) for gen_gt in generation_gts], metrics=["bleu", "meteor", "donggeon_metric"]
+	metric_inputs=[MetricInput(generation_gt=gen_gt) for gen_gt in generation_gts],
+	metrics=["bleu", "meteor", "donggeon_metric"]
 )
 def pseudo_generation_with_log_probs():
 	return pseudo_generations, pseudo_tokens, pseudo_log_probs
 
 
 @evaluate_generation(
-	payloads=[Payload(generation_gt=gen_gt) for gen_gt in generation_gts],
+	metric_inputs=[MetricInput(generation_gt=gen_gt) for gen_gt in generation_gts],
 	metrics=[
 		{"metric_name": "bleu"},
 		{"metric_name": "sem_score", "embedding_model": "openai"},

@@ -8,7 +8,7 @@ import tokenlog
 
 from autorag.evaluation import evaluate_generation
 from autorag.evaluation.util import cast_metrics
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils import validate_qa_dataset
@@ -137,7 +137,7 @@ def run_prompt_maker_node(
 		generation_gt = qa_data["generation_gt"].tolist()
 		generation_gt = list(map(lambda x: x.tolist(), generation_gt))
 
-		payloads = [Payload(generation_gt=gen_gt) for gen_gt in generation_gt]
+		payloads = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
 
 		all_prompts = []
 		for result in results:
@@ -236,7 +236,7 @@ def evaluate_one_prompt_maker_node(
 	prompts: List[str],
 	generator_funcs: List[Callable],
 	generator_params: List[Dict],
-		payloads: List[Payload],
+		payloads: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 	project_dir,
 	strategy_name: str,
@@ -268,10 +268,10 @@ def evaluate_one_prompt_maker_node(
 
 def evaluate_generator_result(
 	result_df: pd.DataFrame,
-		payloads: List[Payload],
+		payloads: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
-	@evaluate_generation(payloads=payloads, metrics=metrics)
+	@evaluate_generation(metric_inputs=payloads, metrics=metrics)
 	def evaluate(df):
 		return df["generated_texts"].tolist()
 

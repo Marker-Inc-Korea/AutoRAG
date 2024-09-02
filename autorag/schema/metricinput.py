@@ -25,7 +25,7 @@ from autorag.evaluation.metric.retrieval_contents import (
 
 
 @dataclass
-class Payload:
+class MetricInput:
     query: Optional[str] = None
     queries: Optional[List[str]] = None
     gt_contents: Optional[List[str]] = None

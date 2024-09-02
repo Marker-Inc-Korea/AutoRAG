@@ -8,10 +8,10 @@ from autorag.evaluation.metric import (
 	retrieval_token_precision,
 	retrieval_token_recall,
 )
-from autorag.schema.payload import Payload, METRIC_INPUT_DICT
+from autorag.schema.metricinput import MetricInput, METRIC_INPUT_DICT
 
 
-def evaluate_retrieval_contents(payloads: List[Payload], metrics: List[str]):
+def evaluate_retrieval_contents(metric_inputs: List[MetricInput], metrics: List[str]):
 	def decorator_evaluate_retrieval_contents(
 		func: Callable[
 			[Any], Tuple[List[List[str]], List[List[str]], List[List[float]]]
@@ -44,7 +44,7 @@ def evaluate_retrieval_contents(payloads: List[Payload], metrics: List[str]):
 				else:
 					metric_func = metric_funcs[metric]
 					# Extract each required field from all payloads
-					extracted_inputs = {field: [getattr(payload, field) for payload in payloads] for field in
+					extracted_inputs = {field: [getattr(payload, field) for payload in metric_inputs] for field in
 										METRIC_INPUT_DICT.get(metric_func.__name__, [])}
 					metric_scores = metric_func(
 						**extracted_inputs, pred_contents=contents

@@ -13,7 +13,7 @@ from autorag.nodes.queryexpansion import query_decompose, hyde
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 from autorag.nodes.retrieval import bm25
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import load_summary_file
 
 root_dir = pathlib.PurePath(
@@ -62,7 +62,7 @@ def test_evaluate_one_query_expansion_node(node_line_dir):
 		{"top_k": 1, "bm25_tokenizer": "gpt2"},
 		{"top_k": 2, "bm25_tokenizer": "gpt2"},
 	]
-	payloads = [Payload(queries=queries, retrieval_gt=ret_gt) for queries, ret_gt in
+	payloads = [MetricInput(queries=queries, retrieval_gt=ret_gt) for queries, ret_gt in
 				zip(sample_expanded_queries, sample_retrieval_gt)]
 
 	best_result = evaluate_one_query_expansion_node(

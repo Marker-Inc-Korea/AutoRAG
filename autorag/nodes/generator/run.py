@@ -6,7 +6,7 @@ import pandas as pd
 
 from autorag.evaluation import evaluate_generation
 from autorag.evaluation.util import cast_metrics
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 
@@ -59,7 +59,7 @@ def run_generator_node(
 	# make rows to payload
 	generation_gt = list(map(lambda x: x.tolist(), qa_data["generation_gt"].tolist()))
 
-	payloads = [Payload(generation_gt=gen_gt) for gen_gt in generation_gt]
+	payloads = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
 
 	metric_names, metric_params = cast_metrics(strategies.get("metrics"))
 	if metric_names is None or len(metric_names) <= 0:
@@ -125,9 +125,9 @@ def run_generator_node(
 
 
 def evaluate_generator_node(
-		result_df: pd.DataFrame, payloads: List[Payload], metrics: Union[List[str], List[Dict]]
+		result_df: pd.DataFrame, payloads: List[MetricInput], metrics: Union[List[str], List[Dict]]
 ):
-	@evaluate_generation(payloads=payloads, metrics=metrics)
+	@evaluate_generation(metric_inputs=payloads, metrics=metrics)
 	def evaluate_generation_module(df: pd.DataFrame):
 		return (
 			df["generated_texts"].tolist(),

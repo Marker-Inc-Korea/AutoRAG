@@ -7,7 +7,7 @@ from typing import List, Callable, Dict, Optional
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils.util import make_combinations, explode
@@ -119,7 +119,7 @@ def run_query_expansion_node(
 		)["retrieval_gt"].tolist()
 
 		# make rows to payload
-		payloads = [Payload(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+		payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 					zip(retrieval_gt, previous_result["query"].tolist(), previous_result["generation_gt"].tolist())]
 
 		# run evaluation
@@ -189,7 +189,7 @@ def run_query_expansion_node(
 def evaluate_one_query_expansion_node(
 	retrieval_funcs: List[Callable],
 	retrieval_params: List[Dict],
-		payloads: List[Payload],
+		payloads: List[MetricInput],
 	metrics: List[str],
 	project_dir,
 	previous_result: pd.DataFrame,

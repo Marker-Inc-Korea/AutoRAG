@@ -6,7 +6,7 @@ from typing import List, Callable, Dict
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 logger = logging.getLogger("AutoRAG")
@@ -46,7 +46,7 @@ def run_passage_augmenter_node(
 		)
 	)
 	average_times = list(map(lambda x: x / len(results[0]), execution_times))
-	payloads = [Payload(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+	payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 				zip(retrieval_gt, previous_result["query"].tolist(), previous_result["generation_gt"].tolist())]
 
 	# run metrics before filtering

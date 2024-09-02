@@ -9,7 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from autorag.evaluation import evaluate_retrieval
-from autorag.schema.payload import Payload
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils.util import get_best_row, to_list
@@ -55,7 +55,7 @@ def run_retrieval_node(
 		for inner_array in retrieval_gt
 	]
 	# make rows to payload
-	payloads = [Payload(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+	payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
 
 	save_dir = os.path.join(node_line_dir, "retrieval")  # node name
@@ -346,7 +346,7 @@ def run_retrieval_node(
 
 def evaluate_retrieval_node(
 	result_df: pd.DataFrame,
-		payloads: List[Payload],
+		payloads: List[MetricInput],
 		metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
 	"""
@@ -360,7 +360,7 @@ def evaluate_retrieval_node(
 	"""
 
 	@evaluate_retrieval(
-		payloads=payloads,
+		metric_inputs=payloads,
 		metrics=metrics,
 	)
 	def evaluate_this_module(df: pd.DataFrame):
@@ -490,7 +490,7 @@ def optimize_hybrid(
 	hybrid_module_func: Callable,
 	hybrid_module_param: Dict,
 	strategy: Dict,
-		payloads: List[Payload],
+		payloads: List[MetricInput],
 	project_dir,
 	previous_result,
 ):
