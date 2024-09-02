@@ -17,6 +17,8 @@ def parser_node(func):
 		logger.info(f"Running parser - {func.__name__} module...")
 
 		data_path_list = glob(data_path_glob)
+		if not data_path_list:
+			raise FileNotFoundError(f"data does not exits in {data_path_glob}")
 
 		if func.__name__ == "langchain_parse":
 			parse_method = parse_method.lower()
