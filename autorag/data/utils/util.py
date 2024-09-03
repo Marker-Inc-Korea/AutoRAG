@@ -6,6 +6,7 @@ from typing import Dict, List
 
 import pandas as pd
 from langchain_core.documents import Document
+from llama_index.core.schema import NodeRelationship
 
 
 def get_file_metadata(file_path: str) -> Dict:
@@ -47,3 +48,21 @@ def corpus_df_to_langchain_documents(corpus_df: pd.DataFrame) -> List[Document]:
 			zip(page_contents, ids, metadatas),
 		)
 	)
+
+
+def add_essential_metadata_llama_text_node(metadata: Dict, relationships: Dict) -> Dict:
+	if "last_modified_datetime" not in metadata:
+		metadata["last_modified_datetime"] = datetime.now()
+
+	if "prev_id" not in metadata:
+		if NodeRelationship.PREVIOUS in relationships:
+			prev_node = relationships.get(NodeRelationship.PREVIOUS, None)
+			if prev_node:
+				metadata["prev_id"] = prev_node.node_id
+
+	if "next_id" not in metadata:
+		if NodeRelationship.NEXT in relationships:
+			next_node = relationships.get(NodeRelationship.NEXT, None)
+			if next_node:
+				metadata["next_id"] = next_node.node_id
+	return metadata

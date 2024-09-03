@@ -9,16 +9,20 @@ import os
 import re
 import string
 from copy import deepcopy
-from typing import List, Callable, Dict, Optional, Any, Collection, Iterable
+from typing import List, Callable, Dict, Optional, Any, Collection, Iterable, Tuple
 
 from asyncio import AbstractEventLoop
 import numpy as np
 import pandas as pd
 import tiktoken
 import unicodedata
+
+import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
+
+from autorag.schema import Module
 
 logger = logging.getLogger("AutoRAG")
 
@@ -570,3 +574,26 @@ def get_event_loop() -> AbstractEventLoop:
 		loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(loop)
 	return loop
+
+
+def load_yaml(yaml_path: str):
+	if not os.path.exists(yaml_path):
+		raise ValueError(f"YAML file {yaml_path} does not exist.")
+	with open(yaml_path, "r", encoding="utf-8") as stream:
+		try:
+			yaml_dict = yaml.safe_load(stream)
+		except yaml.YAMLError as exc:
+			raise ValueError(f"YAML file {yaml_path} could not be loaded.") from exc
+	return yaml_dict["modules"]
+
+
+def get_param_combinations(modules: List[Dict]) -> Tuple[List[Callable], List[Dict]]:
+	module_callable_list, module_params_list = [], []
+	for module in modules:
+		module_instance = Module.from_dict(module)
+		module_params_list.append(module_instance.module_param)
+		module_callable_list.append(module_instance.module)
+
+	combinations = list(map(make_combinations, module_params_list))
+	module_list, combination_list = explode(module_callable_list, combinations)
+	return module_list, combination_list
