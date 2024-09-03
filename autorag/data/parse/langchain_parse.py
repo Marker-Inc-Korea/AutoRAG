@@ -2,7 +2,7 @@ import multiprocessing as mp
 import os
 from typing import List, Tuple
 
-from autorag import parse_modules
+from autorag.data import parse_modules
 from autorag.data.parse.base import parser_node
 
 

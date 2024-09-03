@@ -1,13 +1,13 @@
 import os
 import tempfile
 from glob import glob
-from typing import List, Tuple, Dict, Callable
+from typing import List, Tuple, Dict
 
 from PyPDF2 import PdfFileReader, PdfFileWriter
 import pdfplumber
 
+from autorag.support import get_support_modules
 from autorag.data.parse.base import parser_node
-from autorag.schema import Module
 
 
 @parser_node
@@ -92,11 +92,8 @@ def get_each_module_result(
 	if not data_path_list:
 		raise FileNotFoundError(f"data does not exits in {data_path_glob}")
 
-	def get_param_combinations_pure(module_dict: Dict) -> Tuple[Callable, Dict]:
-		module_instance = Module.from_dict(module_dict)
-		return module_instance.module, module_instance.module_param
-
-	module_callable, module_params = get_param_combinations_pure(module_params)
+	module_name = module_params.pop("module_type")
+	module_callable = get_support_modules(module_name)
 	module_original = module_callable.__wrapped__
 	texts, file_names = module_original(data_path_list, **module_params)
 
