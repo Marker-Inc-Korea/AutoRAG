@@ -8,8 +8,11 @@ from tests.autorag.data.parse.test_parse_base import (
 	hybrid_data_list,
 	hybrid_glob,
 	check_parse_result,
+	multiple_pdf_data_list,
+	eng_text_glob,
+	table_data_list,
+	korean_table_glob,
 )
-
 
 table_hybrid_params = {
 	"text_parse_module": "langchain_parse",
@@ -31,6 +34,36 @@ def test_table_hybrid_parse_node():
 	result_df = table_hybrid_parse(hybrid_glob, **table_hybrid_params)
 	check_parse_result(
 		result_df["texts"].tolist(), result_df["file_name"].tolist(), "hybrid"
+	)
+
+
+def test_table_hybrid_parse_only_text():
+	table_hybrid_parse_original = table_hybrid_parse.__wrapped__
+	texts, file_names = table_hybrid_parse_original(
+		multiple_pdf_data_list, **table_hybrid_params
+	)
+	check_parse_result(texts, file_names, "hybrid_text")
+
+
+def test_table_hybrid_parse_only_text_node():
+	result_df = table_hybrid_parse(eng_text_glob, **table_hybrid_params)
+	check_parse_result(
+		result_df["texts"].tolist(), result_df["file_name"].tolist(), "hybrid_text"
+	)
+
+
+def test_table_hybrid_parse_only_table():
+	table_hybrid_parse_original = table_hybrid_parse.__wrapped__
+	texts, file_names = table_hybrid_parse_original(
+		table_data_list, **table_hybrid_params
+	)
+	check_parse_result(texts, file_names, "hybrid_table")
+
+
+def test_table_hybrid_parse_only_table_node():
+	result_df = table_hybrid_parse(korean_table_glob, **table_hybrid_params)
+	check_parse_result(
+		result_df["texts"].tolist(), result_df["file_name"].tolist(), "hybrid_table"
 	)
 
 

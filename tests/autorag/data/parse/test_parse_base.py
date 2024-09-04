@@ -11,7 +11,7 @@ result_dir = os.path.join(resource_dir, "test_results")
 data_dir = os.path.join(resource_dir, "parse_data")
 
 korean_text_glob = os.path.join(data_dir, "korean_text", "*")
-korean_table_glob = os.path.join(data_dir, "korean_table", "*")
+korean_table_glob = os.path.join(data_dir, "korean_table", "only_table", "*")
 eng_text_glob = os.path.join(data_dir, "eng_text", "*")
 csv_glob = os.path.join(data_dir, "csv_data", "*")
 json_glob = os.path.join(data_dir, "json_data", "*")
@@ -30,6 +30,7 @@ html_data_list = glob(html_glob)
 xml_data_list = glob(xml_glob)
 all_files_data_list = glob(all_files_glob)
 hybrid_data_list = glob(hybrid_glob)
+table_data_list = glob(korean_table_glob)
 
 file_names_dict = {
 	"single_pdf": ["korean_texts_two_page.pdf"],
@@ -54,6 +55,8 @@ file_names_dict = {
 	],
 	"all_files_directory": ["csv_sample.csv", "baseball_1.pdf"],
 	"hybrid": ["nfl_rulebook_both_page_1.pdf", "nfl_rulebook_both_page_2.pdf"],
+	"hybrid_text": ["baseball_1_page_1.pdf", "baseball_2_page_1.pdf"],
+	"hybrid_table": ["kbo_only_table_page_1.pdf"],
 }
 
 
