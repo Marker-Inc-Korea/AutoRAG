@@ -35,3 +35,4 @@ def run_chunker(
 		}
 	)
 	summary_df.to_csv(os.path.join(trial_path, "summary.csv"), index=False)
+	return summary_df
