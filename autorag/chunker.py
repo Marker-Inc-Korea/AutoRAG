@@ -8,7 +8,7 @@ from typing import Optional
 import pandas as pd
 
 from autorag.data.chunk.run import run_chunker
-from autorag.utils.util import load_yaml, get_param_combinations
+from autorag.data.utils.util import load_yaml, get_param_combinations
 
 logger = logging.getLogger("AutoRAG")
 

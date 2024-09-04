@@ -24,7 +24,7 @@ def llama_index_chunk(
 		documents = [Document(text=text) for text in texts]
 
 	# chunk documents
-	chunk_results = chunker.get_nodes_from_documents(documents)
+	chunk_results = chunker.get_nodes_from_documents(documents=documents)
 
 	# make doc_id
 	doc_id = list(map(lambda node: node.node_id, chunk_results))

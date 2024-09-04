@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from autorag.data.parse.run import run_parser
-from autorag.utils.util import load_yaml, get_param_combinations
+from autorag.data.utils.util import load_yaml, get_param_combinations
 
 logger = logging.getLogger("AutoRAG")
 

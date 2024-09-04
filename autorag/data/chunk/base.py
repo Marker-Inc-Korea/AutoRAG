@@ -36,8 +36,6 @@ def chunker_node(func):
 			)
 			result = func(texts=texts, chunker=chunk_instance, **file_names_dict)
 			return result
-		elif func.__name__ == "kss":
-			return func(texts=texts, **file_names_dict)
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
 
