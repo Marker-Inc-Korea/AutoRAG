@@ -106,7 +106,7 @@ def pdf_to_images(pdf_path: str) -> List[bytes]:
 
 def generate_image_names(pdf_path: str, num_pages: int) -> List[str]:
 	"""Generate image names based on the PDF file name and the number of pages."""
-	pdf_name = pdf_path.split("/")[-1]
+	pdf_name = os.path.basename(pdf_path)
 	pure_pdf_name = pdf_name.split(".pdf")[0]
 	image_name_lst = [
 		f"{pure_pdf_name}_{page_num + 1}.png" for page_num in range(num_pages)
