@@ -90,7 +90,7 @@ def get_each_module_result(
 
 	data_path_list = glob(data_path_glob)
 	if not data_path_list:
-		raise FileNotFoundError(f"data does not exits in {data_path_glob}")
+		return [], []
 
 	module_name = module_params.pop("module_type")
 	module_callable = get_support_modules(module_name)
