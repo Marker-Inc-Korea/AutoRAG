@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Optional, Dict, Awaitable
+from typing import Callable, Optional, Dict, Awaitable, Any
 import pandas as pd
 from autorag.utils.util import process_batch, get_event_loop
 
@@ -69,7 +69,7 @@ class Corpus:
 	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Corpus":
 		return Corpus(fn(self.data))
 
-	def sample(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "QA":
+	def sample(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
 		"""
 		Sample the corpus for making QA.
 		It selects the subset of the corpus and makes QA set from it.
@@ -83,7 +83,7 @@ class Corpus:
 		:return: QA instance that is selected.
 		It contains qid and retrieval_gt columns.
 		"""
-		return QA(fn(self.data), self)
+		return QA(fn(self.data, **kwargs), self)
 
 
 class QA:
