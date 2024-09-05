@@ -61,24 +61,21 @@ class Corpus:
 	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Corpus":
 		return Corpus(fn(self.data))
 
-	def select_evidence(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Evidence":
-		return Evidence(fn(self.data), self)
+	def sample(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "QA":
+		"""
+		Sample the corpus for making QA.
+		It selects the subset of the corpus and makes QA set from it.
+		You can generate questions from the created question.
+		It is the first step to make QA set from the corpus.
+		If you select just one passage from each passage, it will be a single-hop QA set.
+		If you select multiple passages from each passage, it will be a multi-hop QA set.
 
-
-class Evidence:
-	def __init__(
-		self,
-		evidence_df: Optional[pd.DataFrame] = None,
-		linked_corpus: Optional[Corpus] = None,
-	):
-		self.data = evidence_df
-		self.linked_corpus = linked_corpus
-
-	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Evidence":
-		return Evidence(fn(self.data), self.linked_corpus)
-
-	def generate_qa(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "QA":
-		return QA(fn(self.data), self.linked_corpus)
+		:param fn: The select function to perform.
+		It returns QA dataframe.
+		:return: QA instance that is selected.
+		It contains qid and retrieval_gt columns.
+		"""
+		return QA(fn(self.data), self)
 
 
 class QA:
