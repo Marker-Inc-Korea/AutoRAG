@@ -47,7 +47,15 @@ class Corpus:
 		linked_raw: Optional[Raw] = None,
 	):
 		self.data = corpus_df
-		self.linked_raw = linked_raw
+		self._linked_raw = linked_raw
+
+	@property
+	def linked_raw(self) -> Raw:
+		return self._linked_raw
+
+	@linked_raw.setter
+	def linked_raw(self, raw: Raw):
+		raise NotImplementedError("linked_raw is read-only.")
 
 	def batch_apply(
 		self, fn: Callable[[Dict], Awaitable[Dict]], batch_size: int = 32
@@ -59,6 +67,7 @@ class Corpus:
 		return Corpus(pd.DataFrame(results))
 
 	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Corpus":
+		# implement chunk using this map function
 		return Corpus(fn(self.data))
 
 	def sample(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "QA":
@@ -85,7 +94,15 @@ class QA:
 		linked_corpus: Optional[Corpus] = None,
 	):
 		self.data = qa_df
-		self.linked_corpus = linked_corpus
+		self._linked_corpus = linked_corpus
+
+	@property
+	def linked_corpus(self) -> Corpus:
+		return self._linked_corpus
+
+	@linked_corpus.setter
+	def linked_corpus(self, corpus: Corpus):
+		raise NotImplementedError("linked_corpus is read-only.")
 
 	def batch_apply(
 		self, fn: Callable[[Dict], Awaitable[Dict]], batch_size: int = 32
@@ -107,7 +124,7 @@ class QA:
 		The QA data must have a `retrieval_gt` column.
 
 		:param new_corpus: Corpus that you want to replace.
-			Must have valid `linked_raw` and `raw_id`, `raw_start_idx`, `raw_end_idx` columns.
+		    Must have valid `linked_raw` and `raw_id`, `raw_start_idx`, `raw_end_idx` columns.
 		:return: The QA instance that updated linked corpus.
 		"""
 		pass
