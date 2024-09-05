@@ -43,7 +43,7 @@ async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[Response
 )
 def test_make_factoid_query_gen():
 	qa = QA(qa_df)
-	new_qa = qa.batch_apply(lambda row: factoid_query_gen(row, client))
+	new_qa = qa.batch_apply(factoid_query_gen, client=client)
 	assert "query" in new_qa.data.columns
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
@@ -56,7 +56,7 @@ def test_make_factoid_query_gen():
 )
 def test_make_factoid_query_gen_ko():
 	qa = QA(qa_df)
-	new_qa = qa.batch_apply(lambda row: factoid_query_gen(row, client, lang="ko"))
+	new_qa = qa.batch_apply(factoid_query_gen, client=client, lang="ko")
 	assert "query" in new_qa.data.columns
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)

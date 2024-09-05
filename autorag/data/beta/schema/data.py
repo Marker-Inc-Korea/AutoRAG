@@ -17,22 +17,24 @@ class Raw:
 		self.data = raw_df
 
 	def batch_apply(
-		self, fn: Callable[[Dict], Awaitable[Dict]], batch_size: int = 32
+		self, fn: Callable[[Dict, Any], Awaitable[Dict]], batch_size: int = 32, **kwargs
 	) -> "Raw":
 		raw_dicts = self.data.to_dict(orient="records")
 		loop = get_event_loop()
-		tasks = [fn(raw_dict) for raw_dict in raw_dicts]
+		tasks = [fn(raw_dict, **kwargs) for raw_dict in raw_dicts]
 		results = loop.run_until_complete(process_batch(tasks, batch_size))
 		return Raw(pd.DataFrame(results))
 
-	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Raw":
-		return Raw(fn(self.data))
+	def map(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "Raw":
+		return Raw(fn(self.data, **kwargs))
 
-	def flatmap(self, fn: Callable) -> "Raw":
-		return fn(self.data)
+	def flatmap(self, fn: Callable, **kwargs) -> "Raw":
+		return fn(self.data, **kwargs)
 
-	def chunk(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Corpus":
-		return Corpus(fn(self.data), self)
+	def chunk(
+		self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs
+	) -> "Corpus":
+		return Corpus(fn(self.data, **kwargs), self)
 
 
 class Corpus:
@@ -58,16 +60,18 @@ class Corpus:
 		raise NotImplementedError("linked_raw is read-only.")
 
 	def batch_apply(
-		self, fn: Callable[[Dict], Awaitable[Dict]], batch_size: int = 32
+		self, fn: Callable[[Dict, Any], Awaitable[Dict]], batch_size: int = 32, **kwargs
 	) -> "Corpus":
 		corpus_dicts = self.data.to_dict(orient="records")
 		loop = get_event_loop()
-		tasks = [fn(corpus_dict) for corpus_dict in corpus_dicts]
+		tasks = [fn(corpus_dict, **kwargs) for corpus_dict in corpus_dicts]
 		results = loop.run_until_complete(process_batch(tasks, batch_size))
 		return Corpus(pd.DataFrame(results))
 
-	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Corpus":
-		return Corpus(fn(self.data))
+	def map(
+		self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs
+	) -> "Corpus":
+		return Corpus(fn(self.data, **kwargs))
 
 	def sample(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
 		"""
@@ -104,16 +108,16 @@ class QA:
 		raise NotImplementedError("linked_corpus is read-only.")
 
 	def batch_apply(
-		self, fn: Callable[[Dict], Awaitable[Dict]], batch_size: int = 32
+		self, fn: Callable[[Dict, Any], Awaitable[Dict]], batch_size: int = 32, **kwargs
 	) -> "QA":
 		qa_dicts = self.data.to_dict(orient="records")
 		loop = get_event_loop()
-		tasks = [fn(qa_dict) for qa_dict in qa_dicts]
+		tasks = [fn(qa_dict, **kwargs) for qa_dict in qa_dicts]
 		results = loop.run_until_complete(process_batch(tasks, batch_size))
 		return QA(pd.DataFrame(results))
 
-	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "QA":
-		return QA(fn(self.data))
+	def map(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
+		return QA(fn(self.data, **kwargs))
 
 	def update_corpus(self, new_corpus: Corpus) -> "QA":
 		"""

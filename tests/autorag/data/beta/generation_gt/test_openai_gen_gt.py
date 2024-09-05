@@ -50,9 +50,7 @@ async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[Response
 def test_make_concise_gen_gt():
 	qa = QA(qa_df)
 	result_qa = qa.batch_apply(
-		lambda row: make_concise_gen_gt(
-			row, client, model_name="gpt-4o-mini-2024-07-18"
-		)
+		make_concise_gen_gt, client=client, model_name="gpt-4o-mini-2024-07-18"
 	)
 	check_generation_gt(result_qa)
 
@@ -64,7 +62,7 @@ def test_make_concise_gen_gt():
 )
 def test_make_basic_gen_gt():
 	qa = QA(qa_df)
-	result_qa = qa.batch_apply(lambda row: make_basic_gen_gt(row, client))
+	result_qa = qa.batch_apply(make_basic_gen_gt, client=client)
 	check_generation_gt(result_qa)
 
 
@@ -75,5 +73,5 @@ def test_make_basic_gen_gt():
 )
 def test_make_basic_gen_gt_ko():
 	qa = QA(qa_df)
-	result_qa = qa.batch_apply(lambda row: make_basic_gen_gt(row, client, lang="ko"))
+	result_qa = qa.batch_apply(make_basic_gen_gt, client=client, lang="ko")
 	check_generation_gt(result_qa)
