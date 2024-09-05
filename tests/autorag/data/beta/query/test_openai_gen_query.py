@@ -10,7 +10,7 @@ from openai.types.chat import (
 )
 
 from autorag.data.beta.query.openai_gen_query import Response, factoid_query_gen
-from autorag.schema.data import QA
+from autorag.data.beta.schema.data import QA
 from tests.autorag.data.beta.query.base_test_query_gen import qa_df
 
 
