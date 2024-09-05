@@ -67,7 +67,6 @@ class Corpus:
 		return Corpus(pd.DataFrame(results))
 
 	def map(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "Corpus":
-		# implement chunk using this map function
 		return Corpus(fn(self.data))
 
 	def sample(self, fn: Callable[[pd.DataFrame], pd.DataFrame]) -> "QA":
