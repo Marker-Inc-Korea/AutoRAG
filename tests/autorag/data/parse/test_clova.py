@@ -29,10 +29,10 @@ async def mock_clova_ocr_pure(
 	api_key: str,
 	table_detection: bool = False,
 ):
-	return "Mocked OCR result", "mock_image_name"
+	return "Mocked OCR result", "mock_image_name", 1
 
 
-def check_clova_result(texts, file_names):
+def check_clova_result(texts, file_names, pages):
 	assert texts == [
 		"Mocked OCR result",
 		"Mocked OCR result",
@@ -41,6 +41,7 @@ def check_clova_result(texts, file_names):
 		"mock_image_name",
 		"mock_image_name",
 	]
+	assert pages == [1, 1]
 
 
 @pytest.fixture
@@ -72,31 +73,39 @@ def expect_table():
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_single_pdf():
 	clova_ocr_original = clova_ocr.__wrapped__
-	texts, file_names = clova_ocr_original(
+	texts, file_names, pages = clova_ocr_original(
 		single_pdf_path_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_clova_result(texts, file_names)
+	check_clova_result(texts, file_names, pages)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_single_pdf_node():
 	result_df = clova_ocr(korean_text_glob, url="mock_url", api_key="mock_api_key")
-	check_clova_result(result_df["texts"].tolist(), result_df["file_name"].tolist())
+	check_clova_result(
+		result_df["texts"].tolist(),
+		result_df["file_name"].tolist(),
+		result_df["page"].tolist(),
+	)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_multiple_pdf():
 	clova_ocr_original = clova_ocr.__wrapped__
-	texts, file_names = clova_ocr_original(
+	texts, file_names, pages = clova_ocr_original(
 		multiple_pdf_data_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_clova_result(texts, file_names)
+	check_clova_result(texts, file_names, pages)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_multiple_pdf_node():
 	result_df = clova_ocr(eng_text_glob, url="mock_url", api_key="mock_api_key")
-	check_clova_result(result_df["texts"].tolist(), result_df["file_name"].tolist())
+	check_clova_result(
+		result_df["texts"].tolist(),
+		result_df["file_name"].tolist(),
+		result_df["page"].tolist(),
+	)
 
 
 def test_pdf_to_images():
@@ -105,9 +114,12 @@ def test_pdf_to_images():
 	assert isinstance(data_list[0], bytes)
 
 
-def test_generate_image_names():
+def test_generate_image_info():
 	names = generate_image_info(single_pdf_path_list[0], 2)
-	assert names == ["korean_texts_two_page_1.png", "korean_texts_two_page_2.png"]
+	assert names == [
+		{"pdf_name": "korean_texts_two_page.pdf", "pdf_page": 1},
+		{"pdf_name": "korean_texts_two_page.pdf", "pdf_page": 2},
+	]
 
 
 def test_extract_text_from_fields(result_sample, expect_text):
