@@ -1,7 +1,10 @@
 import os
 import pathlib
+from datetime import datetime
 
 from glob import glob
+
+from autorag.data.parse.base import _add_date
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
@@ -54,15 +57,36 @@ file_names_dict = {
 		"baseball_1.pdf",
 	],
 	"all_files_directory": ["csv_sample.csv", "baseball_1.pdf"],
-	"hybrid": ["nfl_rulebook_both_page_1.pdf", "nfl_rulebook_both_page_2.pdf"],
-	"hybrid_text": ["baseball_1_page_1.pdf", "baseball_2_page_1.pdf"],
-	"hybrid_table": ["kbo_only_table_page_1.pdf"],
+	"hybrid": ["nfl_rulebook_both.pdf", "nfl_rulebook_both.pdf"],
+	"hybrid_text": ["baseball_1.pdf", "baseball_2.pdf"],
+	"hybrid_table": ["kbo_only_table.pdf"],
 }
 
 
-def check_parse_result(texts, file_names, file_type):
+def check_parse_result(texts, file_names, pages, file_type, module_type):
 	assert isinstance(texts, list)
 	assert isinstance(texts[0], str)
-	if file_type == "json":
-		assert texts == ["This is a sample JSON file"]
 	assert all([file_name in file_names_dict[file_type] for file_name in file_names])
+	if module_type in ["langchain", "llama"]:
+		assert pages == [-1] * len(texts)
+	elif module_type in ["hybrid"]:
+		if file_type == "hybrid":
+			assert pages == [1, 2]
+		elif file_type == "hybrid_text":
+			assert pages == [1, 1]
+		elif file_type == "hybrid_table":
+			assert pages == [1]
+
+
+def test_add_date():
+	result = (
+		[
+			"jeffrey love bali, kia tigers and Newjeans. But it's a top secret that he loves Newjeans. i love this "
+			"story."
+		],
+		["jeffrey_top_secret.pdf"],
+		[-1],
+	)
+	result = _add_date(result)
+	assert isinstance(result[3], list)
+	assert isinstance(result[3][0], datetime)

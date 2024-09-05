@@ -22,10 +22,10 @@ async def mock_llama_parse_aload_data(*args, **kwargs) -> List[Document]:
 @patch.object(llama_parse.base.LlamaParse, "aload_data", mock_llama_parse_aload_data)
 def test_llama_parse_single_pdf():
 	llama_parse_original = llamaparse.__wrapped__
-	texts, file_names = llama_parse_original(
+	texts, file_names, pages = llama_parse_original(
 		single_pdf_path_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_parse_result(texts, file_names, "single_pdf")
+	check_parse_result(texts, file_names, pages, "single_pdf", "llama")
 	assert texts == ["I love AutoRAG"]
 
 
@@ -33,7 +33,11 @@ def test_llama_parse_single_pdf():
 def test_llama_parse_single_pdf_node():
 	result_df = llamaparse(korean_text_glob, url="mock_url", api_key="mock_api_key")
 	check_parse_result(
-		result_df["texts"].tolist(), result_df["file_name"].tolist(), "single_pdf"
+		result_df["texts"].tolist(),
+		result_df["file_name"].tolist(),
+		result_df["page"].tolist(),
+		"single_pdf",
+		"llama",
 	)
 	assert result_df["texts"].tolist() == ["I love AutoRAG"]
 
@@ -41,10 +45,10 @@ def test_llama_parse_single_pdf_node():
 @patch.object(llama_parse.base.LlamaParse, "aload_data", mock_llama_parse_aload_data)
 def test_llama_parse_multiple_pdf():
 	llama_parse_original = llamaparse.__wrapped__
-	texts, file_names = llama_parse_original(
+	texts, file_names, pages = llama_parse_original(
 		multiple_pdf_data_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_parse_result(texts, file_names, "multiple_pdf")
+	check_parse_result(texts, file_names, pages, "multiple_pdf", "llama")
 	assert texts == ["I love AutoRAG", "I love AutoRAG"]
 
 
@@ -52,6 +56,10 @@ def test_llama_parse_multiple_pdf():
 def test_llama_parse_multiple_pdf_node():
 	result_df = llamaparse(eng_text_glob, url="mock_url", api_key="mock_api_key")
 	check_parse_result(
-		result_df["texts"].tolist(), result_df["file_name"].tolist(), "multiple_pdf"
+		result_df["texts"].tolist(),
+		result_df["file_name"].tolist(),
+		result_df["page"].tolist(),
+		"multiple_pdf",
+		"llama",
 	)
 	assert result_df["texts"].tolist() == ["I love AutoRAG", "I love AutoRAG"]

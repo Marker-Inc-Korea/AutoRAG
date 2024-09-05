@@ -10,7 +10,7 @@ from autorag.utils.util import process_batch, get_event_loop
 @parser_node
 def llama_parse(
 	data_path_list: List[str], batch: int = 8, **kwargs
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], List[int]]:
 	parse_instance = LlamaParse(**kwargs)
 
 	tasks = [
@@ -22,8 +22,9 @@ def llama_parse(
 	del parse_instance
 
 	texts, names = zip(*results)
+	pages = [-1] * len(texts)
 
-	return list(texts), list(names)
+	return list(texts), list(names), pages
 
 
 async def llama_parse_pure(data_path: str, parse_instance) -> Tuple[str, str]:

@@ -17,7 +17,7 @@ def table_hybrid_parse(
 	text_params: Dict,
 	table_parse_module: str,
 	table_params: Dict,
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], List[int]]:
 	# make save folder directory
 	with tempfile.TemporaryDirectory() as save_dir:
 		text_dir = os.path.join(save_dir, "text")
@@ -47,7 +47,12 @@ def table_hybrid_parse(
 		# Sort by file names
 		file_names, texts = zip(*sorted(zip(file_names, texts)))
 
-		return list(texts), list(file_names)
+		# get pure file names and pages
+		pure_file_names, pages = zip(
+			*[split_name_page(file_name) for file_name in file_names]
+		)
+
+		return list(texts), list(pure_file_names), list(pages)
 
 
 # Save PDFs with and without tables
@@ -95,6 +100,18 @@ def get_each_module_result(
 	module_name = module_params.pop("module_type")
 	module_callable = get_support_modules(module_name)
 	module_original = module_callable.__wrapped__
-	texts, file_names = module_original(data_path_list, **module_params)
+	texts, file_names, _ = module_original(data_path_list, **module_params)
 
 	return texts, file_names
+
+
+def split_name_page(file_name: str) -> Tuple[str, int]:
+	split_result = file_name.rsplit("_page_", -1)
+
+	file_base = split_result[0]
+	page_number_with_extension = split_result[1]
+	page_number, extension = page_number_with_extension.split(".")
+
+	pure_file_name = f"{file_base}.{extension}"
+
+	return pure_file_name, int(page_number)

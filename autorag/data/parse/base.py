@@ -1,5 +1,6 @@
 import functools
 import logging
+from datetime import datetime
 from glob import glob
 from typing import Tuple, List, Optional
 
@@ -10,10 +11,10 @@ logger = logging.getLogger("AutoRAG")
 
 def parser_node(func):
 	@functools.wraps(func)
-	@result_to_dataframe(["texts", "file_name"])
+	@result_to_dataframe(["texts", "file_name", "page", "date"])
 	def wrapper(
 		data_path_glob: str, parse_method: Optional[str] = None, **kwargs
-	) -> Tuple[List[str], List[str]]:
+	) -> Tuple[List[str], List[str], List[int], List[datetime]]:
 		logger.info(f"Running parser - {func.__name__} module...")
 
 		data_path_list = glob(data_path_glob)
@@ -38,6 +39,15 @@ def parser_node(func):
 			result = func(data_path_list=data_path_list, **kwargs)
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
+		result = _add_date(result)
 		return result
 
 	return wrapper
+
+
+def _add_date(result):
+	date_lst = [datetime.now()] * len(result[0])
+	result_lst = list(result)
+	result_lst.append(date_lst)
+	result_tuple = tuple(result_lst)
+	return result_tuple

@@ -9,7 +9,7 @@ from autorag.data.parse.base import parser_node
 @parser_node
 def langchain_parse(
 	data_path_list: List[str], parse_method: str, **kwargs
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], List[int]]:
 	if parse_method in ["directory", "unstructured"]:
 		results = parse_all_files(data_path_list, parse_method, **kwargs)
 		texts, file_names = results[0], results[1]
@@ -25,8 +25,9 @@ def langchain_parse(
 
 		texts, file_names = zip(*results)
 		texts, file_names = list(texts), list(file_names)
+	pages = [-1] * len(texts)
 
-	return texts, file_names
+	return texts, file_names, pages
 
 
 def langchain_parse_pure(data_path: str, parse_method: str, kwargs) -> Tuple[str, str]:

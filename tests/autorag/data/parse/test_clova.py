@@ -8,7 +8,7 @@ import autorag
 from autorag.data.parse import clova_ocr
 from autorag.data.parse.clova import (
 	pdf_to_images,
-	generate_image_names,
+	generate_image_info,
 	extract_text_from_fields,
 	json_to_html_table,
 )
@@ -106,7 +106,7 @@ def test_pdf_to_images():
 
 
 def test_generate_image_names():
-	names = generate_image_names(single_pdf_path_list[0], 2)
+	names = generate_image_info(single_pdf_path_list[0], 2)
 	assert names == ["korean_texts_two_page_1.png", "korean_texts_two_page_2.png"]
 
 
