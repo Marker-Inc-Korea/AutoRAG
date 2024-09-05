@@ -29,7 +29,7 @@ async def mock_clova_ocr_pure(
 	api_key: str,
 	table_detection: bool = False,
 ):
-	return "Mocked OCR result", "mock_image_name", 1
+	return "Mocked OCR result", single_pdf_path_list[0], 1
 
 
 def check_clova_result(texts, path, pages):
@@ -38,8 +38,8 @@ def check_clova_result(texts, path, pages):
 		"Mocked OCR result",
 	]
 	assert path == [
-		"mock_image_name",
-		"mock_image_name",
+		single_pdf_path_list[0],
+		single_pdf_path_list[0],
 	]
 	assert pages == [1, 1]
 

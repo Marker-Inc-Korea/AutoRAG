@@ -5,6 +5,7 @@ from datetime import datetime
 from glob import glob
 
 from autorag.data.parse.base import _add_last_modified_datetime
+from autorag.data.utils.util import get_file_metadata
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
@@ -88,4 +89,6 @@ def test_last_modified_datetime():
 		[-1],
 	)
 	result = _add_last_modified_datetime(result)
-	assert result[3] == ["2024-09-03"]
+
+	date = get_file_metadata(single_pdf_path_list[0])["last_modified_datetime"]
+	assert result[3] == [date]
