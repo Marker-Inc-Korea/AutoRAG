@@ -23,3 +23,9 @@ def test_make_basic_gen_gt():
 	qa = QA(qa_df)
 	result_qa = qa.batch_apply(lambda row: make_basic_gen_gt(row, llm))
 	check_generation_gt(result_qa)
+
+
+def test_make_basic_gen_gt_ko():
+	qa = QA(qa_df)
+	result_qa = qa.batch_apply(lambda row: make_basic_gen_gt(row, llm, lang="ko"))
+	check_generation_gt(result_qa)

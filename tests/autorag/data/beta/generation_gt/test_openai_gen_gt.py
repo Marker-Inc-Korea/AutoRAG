@@ -66,3 +66,14 @@ def test_make_basic_gen_gt():
 	qa = QA(qa_df)
 	result_qa = qa.batch_apply(lambda row: make_basic_gen_gt(row, client))
 	check_generation_gt(result_qa)
+
+
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_make_basic_gen_gt_ko():
+	qa = QA(qa_df)
+	result_qa = qa.batch_apply(lambda row: make_basic_gen_gt(row, client, lang="ko"))
+	check_generation_gt(result_qa)
