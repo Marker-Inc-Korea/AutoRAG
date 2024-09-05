@@ -11,6 +11,17 @@ Subpackages
    autorag.data.beta.query
    autorag.data.beta.schema
 
+Submodules
+----------
+
+autorag.data.beta.sample module
+-------------------------------
+
+.. automodule:: autorag.data.beta.sample
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
