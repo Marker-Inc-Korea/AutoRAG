@@ -47,3 +47,16 @@ def test_make_factoid_query_gen():
 	assert "query" in new_qa.data.columns
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
+
+
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_make_factoid_query_gen_ko():
+	qa = QA(qa_df)
+	new_qa = qa.batch_apply(lambda row: factoid_query_gen(row, client, lang="ko"))
+	assert "query" in new_qa.data.columns
+	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
+	assert len(new_qa.data) == len(qa_df)

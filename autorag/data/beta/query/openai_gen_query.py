@@ -4,7 +4,7 @@ from typing import Dict
 from openai import AsyncClient
 from pydantic import BaseModel
 
-from autorag.data.beta.query.prompt import factoid_single_hop_system_prompt
+from autorag.data.beta.query.prompt import QUERY_GEN_SYSTEM_PROMPT
 
 
 class Response(BaseModel):
@@ -37,8 +37,11 @@ async def query_gen_openai_base(
 
 
 async def factoid_query_gen(
-	row: Dict, client: AsyncClient, model_name: str = "gpt-4o-2024-08-06"
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-2024-08-06",
+	lang: str = "en",
 ) -> Dict:
 	return await query_gen_openai_base(
-		row, client, factoid_single_hop_system_prompt, model_name
+		row, client, QUERY_GEN_SYSTEM_PROMPT["factoid_single_hop"][lang], model_name
 	)
