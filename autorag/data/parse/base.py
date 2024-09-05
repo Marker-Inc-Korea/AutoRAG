@@ -5,13 +5,14 @@ from glob import glob
 from typing import Tuple, List, Optional
 
 from autorag.utils import result_to_dataframe
+from autorag.data.utils.util import get_file_metadata
 
 logger = logging.getLogger("AutoRAG")
 
 
 def parser_node(func):
 	@functools.wraps(func)
-	@result_to_dataframe(["texts", "file_name", "page", "date"])
+	@result_to_dataframe(["texts", "path", "page", "last_modified_datetime"])
 	def wrapper(
 		data_path_glob: str, parse_method: Optional[str] = None, **kwargs
 	) -> Tuple[List[str], List[str], List[int], List[datetime]]:
@@ -39,15 +40,15 @@ def parser_node(func):
 			result = func(data_path_list=data_path_list, **kwargs)
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
-		result = _add_date(result)
+		result = _add_last_modified_datetime(result)
 		return result
 
 	return wrapper
 
 
-def _add_date(result):
-	date_lst = [datetime.now()] * len(result[0])
-	result_lst = list(result)
-	result_lst.append(date_lst)
-	result_tuple = tuple(result_lst)
-	return result_tuple
+def _add_last_modified_datetime(result):
+	last_modified_datetime_lst = list(
+		map(lambda x: get_file_metadata(x)["last_modified_datetime"], result[1])
+	)
+	result_with_dates = result + (last_modified_datetime_lst,)
+	return result_with_dates

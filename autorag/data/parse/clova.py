@@ -42,17 +42,17 @@ def clova_ocr(
 	]
 
 	image_data_list = list(itertools.chain(*image_data_lst))
-	image_name_list = list(itertools.chain(*image_info_lst))
+	image_info_list = list(itertools.chain(*image_info_lst))
 
 	tasks = [
-		clova_ocr_pure(image_data, image_name, url, api_key, table_detection)
-		for image_data, image_name in zip(image_data_list, image_name_list)
+		clova_ocr_pure(image_data, image_info, url, api_key, table_detection)
+		for image_data, image_info in zip(image_data_list, image_info_list)
 	]
 	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch))
 
-	texts, names, pages = zip(*results)
-	return list(texts), list(names), list(pages)
+	texts, path, pages = zip(*results)
+	return list(texts), list(path), list(pages)
 
 
 async def clova_ocr_pure(
@@ -91,7 +91,7 @@ async def clova_ocr_pure(
 			page_text += f"\n\ntable html:\n{table_html}"
 
 		await session.close()
-		return page_text, image_info["pdf_name"], image_info["pdf_page"]
+		return page_text, image_info["pdf_path"], image_info["pdf_page"]
 
 
 def pdf_to_images(pdf_path: str) -> List[bytes]:
@@ -108,9 +108,8 @@ def pdf_to_images(pdf_path: str) -> List[bytes]:
 
 def generate_image_info(pdf_path: str, num_pages: int) -> List[dict]:
 	"""Generate image names based on the PDF file name and the number of pages."""
-	pdf_name = os.path.basename(pdf_path)
 	image_info_lst = [
-		{"pdf_name": pdf_name, "pdf_page": page_num + 1}
+		{"pdf_path": pdf_path, "pdf_page": page_num + 1}
 		for page_num in range(num_pages)
 	]
 	return image_info_lst

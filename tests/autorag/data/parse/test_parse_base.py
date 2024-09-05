@@ -4,7 +4,7 @@ from datetime import datetime
 
 from glob import glob
 
-from autorag.data.parse.base import _add_date
+from autorag.data.parse.base import _add_last_modified_datetime
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
@@ -35,58 +35,57 @@ all_files_data_list = glob(all_files_glob)
 hybrid_data_list = glob(hybrid_glob)
 table_data_list = glob(korean_table_glob)
 
-file_names_dict = {
-	"single_pdf": ["korean_texts_two_page.pdf"],
-	"multiple_pdf": ["baseball_1.pdf", "baseball_2.pdf"],
-	"csv": ["csv_sample.csv"],
-	"json": ["json_sample.json"],
-	"markdown": ["markdown_sample.md"],
-	"html": ["html_sample.html"],
-	"xml": ["xml_sample.xml"],
+file_path_dict = {
+	"single_pdf": single_pdf_path_list,
+	"multiple_pdf": multiple_pdf_data_list,
+	"csv": csv_data_list,
+	"json": json_data_list,
+	"markdown": markdown_data_list,
+	"html": html_data_list,
+	"xml": xml_data_list,
 	"all_files_unstructured": [
-		"csv_sample.csv",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
-		"baseball_1.pdf",
+		all_files_data_list[0],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
+		all_files_data_list[1],
 	],
-	"all_files_directory": ["csv_sample.csv", "baseball_1.pdf"],
-	"hybrid": ["nfl_rulebook_both.pdf", "nfl_rulebook_both.pdf"],
-	"hybrid_text": ["baseball_1.pdf", "baseball_2.pdf"],
-	"hybrid_table": ["kbo_only_table.pdf"],
+	"all_files_directory": all_files_data_list,
+	"hybrid": hybrid_data_list,
+	"hybrid_text": multiple_pdf_data_list,
+	"hybrid_table": table_data_list,
 }
 
 
 def check_parse_result(texts, file_names, pages, file_type, module_type):
 	assert isinstance(texts, list)
 	assert isinstance(texts[0], str)
-	assert all([file_name in file_names_dict[file_type] for file_name in file_names])
+	assert all([file_name in file_path_dict[file_type] for file_name in file_names])
 	if module_type in ["langchain", "llama"]:
 		assert pages == [-1] * len(texts)
 	elif module_type in ["hybrid"]:
 		if file_type == "hybrid":
-			assert pages == [1, 2]
+			assert pages == [2, 1]
 		elif file_type == "hybrid_text":
 			assert pages == [1, 1]
 		elif file_type == "hybrid_table":
 			assert pages == [1]
 
 
-def test_add_date():
+def test_last_modified_datetime():
 	result = (
 		[
 			"jeffrey love bali, kia tigers and Newjeans. But it's a top secret that he loves Newjeans. i love this "
 			"story."
 		],
-		["jeffrey_top_secret.pdf"],
+		single_pdf_path_list,
 		[-1],
 	)
-	result = _add_date(result)
-	assert isinstance(result[3], list)
-	assert isinstance(result[3][0], datetime)
+	result = _add_last_modified_datetime(result)
+	assert result[3] == ["2024-09-03"]

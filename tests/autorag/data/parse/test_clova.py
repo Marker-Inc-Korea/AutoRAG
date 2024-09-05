@@ -32,12 +32,12 @@ async def mock_clova_ocr_pure(
 	return "Mocked OCR result", "mock_image_name", 1
 
 
-def check_clova_result(texts, file_names, pages):
+def check_clova_result(texts, path, pages):
 	assert texts == [
 		"Mocked OCR result",
 		"Mocked OCR result",
 	]
-	assert file_names == [
+	assert path == [
 		"mock_image_name",
 		"mock_image_name",
 	]
@@ -73,10 +73,10 @@ def expect_table():
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_single_pdf():
 	clova_ocr_original = clova_ocr.__wrapped__
-	texts, file_names, pages = clova_ocr_original(
+	texts, path, pages = clova_ocr_original(
 		single_pdf_path_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_clova_result(texts, file_names, pages)
+	check_clova_result(texts, path, pages)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
@@ -84,7 +84,7 @@ def test_clova_ocr_single_pdf_node():
 	result_df = clova_ocr(korean_text_glob, url="mock_url", api_key="mock_api_key")
 	check_clova_result(
 		result_df["texts"].tolist(),
-		result_df["file_name"].tolist(),
+		result_df["path"].tolist(),
 		result_df["page"].tolist(),
 	)
 
@@ -92,10 +92,10 @@ def test_clova_ocr_single_pdf_node():
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_multiple_pdf():
 	clova_ocr_original = clova_ocr.__wrapped__
-	texts, file_names, pages = clova_ocr_original(
+	texts, path, pages = clova_ocr_original(
 		multiple_pdf_data_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_clova_result(texts, file_names, pages)
+	check_clova_result(texts, path, pages)
 
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
@@ -103,7 +103,7 @@ def test_clova_ocr_multiple_pdf_node():
 	result_df = clova_ocr(eng_text_glob, url="mock_url", api_key="mock_api_key")
 	check_clova_result(
 		result_df["texts"].tolist(),
-		result_df["file_name"].tolist(),
+		result_df["path"].tolist(),
 		result_df["page"].tolist(),
 	)
 
@@ -117,8 +117,8 @@ def test_pdf_to_images():
 def test_generate_image_info():
 	names = generate_image_info(single_pdf_path_list[0], 2)
 	assert names == [
-		{"pdf_name": "korean_texts_two_page.pdf", "pdf_page": 1},
-		{"pdf_name": "korean_texts_two_page.pdf", "pdf_page": 2},
+		{"pdf_path": single_pdf_path_list[0], "pdf_page": 1},
+		{"pdf_path": single_pdf_path_list[0], "pdf_page": 2},
 	]
 
 

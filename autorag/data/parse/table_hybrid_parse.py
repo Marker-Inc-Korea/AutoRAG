@@ -27,47 +27,55 @@ def table_hybrid_parse(
 		os.makedirs(table_dir, exist_ok=True)
 
 		# Split PDF file into pages and Save PDFs with and without tables
-		for data_path in data_path_list:
+		path_map_dict_lst = [
 			save_page_by_table(data_path, text_dir, table_dir)
+			for data_path in data_path_list
+		]
+		path_map_dict = {k: v for d in path_map_dict_lst for k, v in d.items()}
 
 		# Extract text pages
-		table_results, table_file_names = get_each_module_result(
+		table_results, table_file_path = get_each_module_result(
 			table_parse_module, table_params, os.path.join(table_dir, "*")
 		)
 
 		# Extract table pages
-		text_results, text_file_names = get_each_module_result(
+		text_results, text_file_path = get_each_module_result(
 			text_parse_module, text_params, os.path.join(text_dir, "*")
 		)
 
 		# Merge parsing results of PDFs with and without tables
 		texts = table_results + text_results
-		file_names = table_file_names + text_file_names
+		temp_path_lst = table_file_path + text_file_path
 
 		# Sort by file names
-		file_names, texts = zip(*sorted(zip(file_names, texts)))
+		temp_path_lst, texts = zip(*sorted(zip(temp_path_lst, texts)))
 
-		# get pure file names and pages
-		pure_file_names, pages = zip(
-			*[split_name_page(file_name) for file_name in file_names]
-		)
+		# get original file path
+		path = list(map(lambda temp_path: path_map_dict[temp_path], temp_path_lst))
 
-		return list(texts), list(pure_file_names), list(pages)
+		# get pages
+		pages = list(map(lambda x: get_page_from_path(x), temp_path_lst))
+
+		return list(texts), path, pages
 
 
 # Save PDFs with and without tables
-def save_page_by_table(data_path: str, text_dir: str, table_dir: str):
+def save_page_by_table(data_path: str, text_dir: str, table_dir: str) -> Dict[str, str]:
 	file_name = os.path.basename(data_path).split(".pdf")[0]
 
 	with open(data_path, "rb") as input_data:
 		pdf_reader = PdfFileReader(input_data)
 		num_pages = pdf_reader.getNumPages()
 
+		path_map_dict = {}
 		for page_num in range(num_pages):
 			output_pdf_path = _get_output_path(
 				data_path, page_num, file_name, text_dir, table_dir
 			)
 			_save_single_page(pdf_reader, page_num, output_pdf_path)
+			path_map_dict.update({output_pdf_path: data_path})
+
+	return path_map_dict
 
 
 def _get_output_path(
@@ -100,18 +108,15 @@ def get_each_module_result(
 	module_name = module_params.pop("module_type")
 	module_callable = get_support_modules(module_name)
 	module_original = module_callable.__wrapped__
-	texts, file_names, _ = module_original(data_path_list, **module_params)
+	texts, path, _ = module_original(data_path_list, **module_params)
 
-	return texts, file_names
+	return texts, path
 
 
-def split_name_page(file_name: str) -> Tuple[str, int]:
+def get_page_from_path(file_path: str) -> int:
+	file_name = os.path.basename(file_path)
 	split_result = file_name.rsplit("_page_", -1)
-
-	file_base = split_result[0]
 	page_number_with_extension = split_result[1]
-	page_number, extension = page_number_with_extension.split(".")
+	page_number, _ = page_number_with_extension.split(".")
 
-	pure_file_name = f"{file_base}.{extension}"
-
-	return pure_file_name, int(page_number)
+	return int(page_number)
