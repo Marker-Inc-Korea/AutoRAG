@@ -36,3 +36,13 @@ async def factoid_query_gen(
 	return await llama_index_generate_base(
 		row, llm, QUERY_GEN_SYSTEM_PROMPT["factoid_single_hop"][lang]
 	)
+
+
+async def concept_completion_query_gen(
+	row: Dict,
+	llm: BaseLLM,
+	lang: str = "en",
+) -> Dict:
+	return await llama_index_generate_base(
+		row, llm, QUERY_GEN_SYSTEM_PROMPT["concept_completion"][lang]
+	)

@@ -45,3 +45,14 @@ async def factoid_query_gen(
 	return await query_gen_openai_base(
 		row, client, QUERY_GEN_SYSTEM_PROMPT["factoid_single_hop"][lang], model_name
 	)
+
+
+async def concept_completion_query_gen(
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-2024-08-06",
+	lang: str = "en",
+) -> Dict:
+	return await query_gen_openai_base(
+		row, client, QUERY_GEN_SYSTEM_PROMPT["factoid_single_hop"][lang], model_name
+	)
