@@ -80,7 +80,38 @@ Users do not know the passage source of the question, so it should not be mentio
 				role=MessageRole.SYSTEM,
 				content="Generate a multi-hop question for the given answer which requires reference to all of the given documents.",
 			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Document 1: The Municipality of Nuevo Laredo is located in the Mexican state of Tamaulipas.
+Document 2: The Ciudad Deportiva (Sports City ¨ ¨) is a sports
+complex in Nuevo Laredo, Mexico. It is home to the Tecolotes de
+Nuevo Laredo Mexican Baseball League team and ...""",
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="""Answer: Tamaulipas
+One-hop question (using Document 1): In which Mexican state is Nuevo Laredo located?
+Two-hop question (using Document 2):  In which Mexican state can one find the Ciudad Deportiva, home to the Tecolotes de Nuevo Laredo?""",
+			),
 		],
-		"ko": "주어진 답변에 대한 multi-hop 질문을 생성하십시오. 이 질문은 주어진 모든 문서를 기반으로 생성해야 합니다.",
+		"ko": [
+			ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="Generate a multi-hop question for the given answer which requires reference to all of the given documents.",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Document 1: The Municipality of Nuevo Laredo is located in the Mexican state of Tamaulipas.
+Document 2: The Ciudad Deportiva (Sports City ¨ ¨) is a sports
+complex in Nuevo Laredo, Mexico. It is home to the Tecolotes de
+Nuevo Laredo Mexican Baseball League team and ...""",
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="""Answer: Tamaulipas
+One-hop question (using Document 1): In which Mexican state is Nuevo Laredo located?
+Two-hop question (using Document 2):  In which Mexican state can one find the Ciudad Deportiva, home to the Tecolotes de Nuevo Laredo?""",
+			),
+		],
 	},
 }
