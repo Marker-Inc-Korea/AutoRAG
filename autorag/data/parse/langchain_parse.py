@@ -1,5 +1,4 @@
 import multiprocessing as mp
-import os
 from typing import List, Tuple
 
 from autorag.data import parse_modules
@@ -9,10 +8,10 @@ from autorag.data.parse.base import parser_node
 @parser_node
 def langchain_parse(
 	data_path_list: List[str], parse_method: str, **kwargs
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], List[int]]:
 	if parse_method in ["directory", "unstructured"]:
 		results = parse_all_files(data_path_list, parse_method, **kwargs)
-		texts, file_names = results[0], results[1]
+		texts, path = results[0], results[1]
 
 	else:
 		num_workers = mp.cpu_count()
@@ -23,10 +22,11 @@ def langchain_parse(
 				[(data_path, parse_method, kwargs) for data_path in data_path_list],
 			)
 
-		texts, file_names = zip(*results)
-		texts, file_names = list(texts), list(file_names)
+		texts, path = zip(*results)
+		texts, path = list(texts), list(path)
+	pages = [-1] * len(texts)
 
-	return texts, file_names
+	return texts, path, pages
 
 
 def langchain_parse_pure(data_path: str, parse_method: str, kwargs) -> Tuple[str, str]:
@@ -47,12 +47,11 @@ def langchain_parse_pure(data_path: str, parse_method: str, kwargs) -> Tuple[str
 	# Load the text from the file
 	documents = parse_instance.load()
 	text = documents[0].page_content
-	file_name = os.path.basename(data_path)
 
 	# Clean up the parse instance
 	del parse_instance
 
-	return text, file_name
+	return text, data_path
 
 
 def parse_all_files(
@@ -66,7 +65,7 @@ def parse_all_files(
 		raise ValueError(f"Unsupported parse method: {parse_method}")
 	docs = parse_instance.load()
 	texts = [doc.page_content for doc in docs]
-	file_names = [doc.metadata["source"].split("/")[-1] for doc in docs]
+	file_names = [doc.metadata["source"] for doc in docs]
 
 	del parse_instance
 	return texts, file_names

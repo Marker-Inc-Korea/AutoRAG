@@ -4,10 +4,7 @@ from typing import Dict
 from openai import AsyncClient
 from pydantic import BaseModel
 
-from autorag.data.beta.generation_gt.prompt import (
-	basic_answer_system_prompt,
-	concise_answer_system_prompt,
-)
+from autorag.data.beta.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
 class Response(BaseModel):
@@ -42,7 +39,10 @@ async def make_gen_gt_openai(
 
 
 async def make_concise_gen_gt(
-	row: Dict, client: AsyncClient, model_name: str = "gpt-4o-2024-08-06"
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-2024-08-06",
+	lang: str = "en",
 ):
 	"""
 	Generate concise generation_gt using OpenAI Structured Output for preventing errors.
@@ -52,15 +52,20 @@ async def make_concise_gen_gt(
 	:param client: The OpenAI async client.
 	:param model_name: The model name that supports structured output.
 	    It has to be "gpt-4o-2024-08-06" or "gpt-4o-mini-2024-07-18".
+	:param lang: The language code of the prompt.
+		Default is "en".
 	:return: The output row of the qa dataframe with added "generation_gt" in it.
 	"""
 	return await make_gen_gt_openai(
-		row, client, concise_answer_system_prompt, model_name
+		row, client, GEN_GT_SYSTEM_PROMPT["concise"][lang], model_name
 	)
 
 
 async def make_basic_gen_gt(
-	row: Dict, client: AsyncClient, model_name: str = "gpt-4o-2024-08-06"
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-2024-08-06",
+	lang: str = "en",
 ):
 	"""
 	Generate basic generation_gt using OpenAI Structured Output for preventing errors.
@@ -70,6 +75,10 @@ async def make_basic_gen_gt(
 	:param client: The OpenAI async client.
 	:param model_name: The model name that supports structured output.
 	    It has to be "gpt-4o-2024-08-06" or "gpt-4o-mini-2024-07-18".
+	:param lang: The language code of the prompt.
+		Default is "en".
 	:return: The output row of the qa dataframe with added "generation_gt" in it.
 	"""
-	return await make_gen_gt_openai(row, client, basic_answer_system_prompt, model_name)
+	return await make_gen_gt_openai(
+		row, client, GEN_GT_SYSTEM_PROMPT["basic"][lang], model_name
+	)
