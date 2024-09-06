@@ -73,24 +73,16 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 			sentence_splitter = sentence_splitter_modules[sentence_splitter_str]
 			kwargs.update({"sentence_splitter": sentence_splitter})
 
-	def get_embedding_model(_embed_model_str: str, _module_type: str):
-		if _embed_model_str == "openai":
-			if _module_type == "langchain_chunk":
-				_embed_model_str = "openai_langchain"
-		return embedding_models[_embed_model_str]()
-
 	# Add embed_model to kwargs
-	embedding_available_methods = ["semantic_llama_index", "semantic_langchain"]
+	embedding_available_methods = ["semantic_llama_index"]
 	if chunk_method in embedding_available_methods:
 		# there is no default embed_model, so we have to get it parameter and add it.
 		if "embed_model" not in kwargs.keys():
 			raise ValueError(f"embed_model is required for {chunk_method} method.")
 		embed_model_str = kwargs.pop("embed_model")
-		embed_model = get_embedding_model(embed_model_str, module_type)
+		embed_model = embedding_models[embed_model_str]()
 		if chunk_method == "semantic_llama_index":
 			kwargs.update({"embed_model": embed_model})
-		elif chunk_method == "semantic_langchain":
-			kwargs.update({"embeddings": embed_model})
 
 	return chunk_modules[chunk_method](**kwargs)
 
