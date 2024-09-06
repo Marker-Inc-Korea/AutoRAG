@@ -49,7 +49,10 @@ Users do not know the passage source of the question, so it should not be mentio
 		"en": [
 			ChatMessage(
 				role=MessageRole.SYSTEM,
-				content="""You're an AI tasked to convert Text into a "Concept Completion" Question. Follow the following instructions.
+				content="""You're an AI tasked to convert Text into a "Concept Completion" Question.
+A “concept completion” question asks directly about the essence or identity of a concept.
+
+Follow the following instructions.
 Instructions:
 1. Questions MUST BE extracted from given Text
 2. Questions should be as detailed as possible from Text
@@ -62,7 +65,10 @@ Users do not know the passage source of the question, so it should not be mentio
 		"ko": [
 			ChatMessage(
 				role=MessageRole.SYSTEM,
-				content="""당신은 Text를 “개념 완성” 질문으로 변환하는 AI입니다. 다음 지시사항을 따르세요.
+				content="""당신은 Text를 “개념 완성” 질문으로 변환하는 AI입니다.
+"개념 완성" 질문은 개념의 본질이나 정체성에 대해 직접적으로 묻는 질문입니다.
+
+다음 지시사항을 따르세요.
 지시사항:
 1.	질문은 반드시 주어진 Text를 기반으로 작성되어야 합니다.
 2.	질문은 Text를 기반으로 가능한 한 자세하게 작성되어야 합니다.
