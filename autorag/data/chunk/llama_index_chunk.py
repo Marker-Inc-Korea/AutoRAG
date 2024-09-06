@@ -1,3 +1,4 @@
+import os.path
 from typing import Tuple, List, Dict, Any, Optional
 
 from llama_index.core import Document
@@ -12,16 +13,13 @@ def llama_index_chunk(
 	texts: List[str],
 	chunker: NodeParser,
 	file_name_language: Optional[str] = None,
-	file_names: Optional[List[str]] = None,
+	metadata_list: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
 	# set documents
-	if file_names:
-		documents = [
-			Document(text=text, metadata={"file_name": file_name})
-			for text, file_name in zip(texts, file_names)
-		]
-	else:
-		documents = [Document(text=text) for text in texts]
+	documents = [
+		Document(text=text, metadata=metadata)
+		for text, metadata in zip(texts, metadata_list)
+	]
 
 	# chunk documents
 	chunk_results = chunker.get_nodes_from_documents(documents=documents)
@@ -31,9 +29,8 @@ def llama_index_chunk(
 
 	# make contents
 	if file_name_language:
-		chunked_file_names = list(
-			map(lambda x: x.metadata.get("file_name", ""), chunk_results)
-		)
+		path_lst = list(map(lambda x: x.metadata.get("path", ""), chunk_results))
+		chunked_file_names = list(map(lambda x: os.path.basename(x), path_lst))
 		chunked_texts = list(map(lambda x: x.text, chunk_results))
 		contents = add_file_name(file_name_language, chunked_file_names, chunked_texts)
 	else:

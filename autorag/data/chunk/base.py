@@ -1,6 +1,6 @@
 import functools
 import logging
-from typing import Tuple, List, Dict, Any, Optional
+from typing import Tuple, List, Dict, Any
 
 import pandas as pd
 
@@ -15,7 +15,7 @@ def chunker_node(func):
 	@functools.wraps(func)
 	@result_to_dataframe(["doc_id", "contents", "metadata"])
 	def wrapper(
-		parsed_result: pd.DataFrame, chunk_method: Optional[str] = None, **kwargs
+		parsed_result: pd.DataFrame, chunk_method: str, **kwargs
 	) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
 		logger.info(f"Running chunker - {func.__name__} module...")
 
@@ -23,18 +23,20 @@ def chunker_node(func):
 		texts = parsed_result["texts"].tolist()
 
 		# get filenames from parsed_result when 'add_file_name' is setting
-		file_names_dict, kwargs = __make_file_names_dict(parsed_result, **kwargs)
+		file_name_language = kwargs.pop("add_file_name", None)
+		metadata_list = make_metadata_list(parsed_result)
 
 		# run chunk module
-		if func.__name__ in ["llama_index_chunk", "langchain_chunk"]:
-			if chunk_method is None:
-				raise ValueError(
-					f"chunk_method is required for {func.__name__} module."
-				)
+		if func.__name__ in ["llama_index_chunk"]:
 			chunk_instance = __get_chunk_instance(
 				func.__name__, chunk_method.lower(), **kwargs
 			)
-			result = func(texts=texts, chunker=chunk_instance, **file_names_dict)
+			result = func(
+				texts=texts,
+				chunker=chunk_instance,
+				file_name_language=file_name_language,
+				metadata_list=metadata_list,
+			)
 			return result
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
@@ -42,22 +44,19 @@ def chunker_node(func):
 	return wrapper
 
 
-def __make_file_names_dict(parsed_result: pd.DataFrame, **kwargs):
-	file_names_dict = {}
+def make_metadata_list(parsed_result: pd.DataFrame) -> List[Dict[str, str]]:
+	metadata_list = [{} for _ in range(len(parsed_result["texts"]))]
 
-	if "add_file_name" in kwargs:
-		file_name_language = kwargs.pop("add_file_name").lower()
+	def _make_metadata_pure(
+		lst: List[str], key: str, metadata_lst: List[Dict[str, str]]
+	):
+		for value, metadata in zip(lst, metadata_lst):
+			metadata[key] = value
 
-		if "file_name" in parsed_result.columns:
-			file_names = parsed_result["file_name"].tolist()
-			file_names_dict = {
-				"file_name_language": file_name_language,
-				"file_names": file_names,
-			}
-		else:
-			raise ValueError("The 'file_name' column is required in parsed_result")
-
-	return file_names_dict, kwargs
+	for column in ["page", "last_modified_datetime", "path"]:
+		if column in parsed_result.columns:
+			_make_metadata_pure(parsed_result[column].tolist(), column, metadata_list)
+	return metadata_list
 
 
 def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
