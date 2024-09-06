@@ -44,6 +44,14 @@ autorag.data.parse.run module
    :undoc-members:
    :show-inheritance:
 
+autorag.data.parse.table\_hybrid\_parse module
+----------------------------------------------
+
+.. automodule:: autorag.data.parse.table_hybrid_parse
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
