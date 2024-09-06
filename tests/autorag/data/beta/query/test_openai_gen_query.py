@@ -16,7 +16,7 @@ from autorag.data.beta.query.openai_gen_query import (
 	two_hop_incremental,
 	TwoHopIncrementalResponse,
 )
-from autorag.data.beta.schema.data import QA
+from autorag.data.beta.schema import QA
 from tests.autorag.data.beta.query.base_test_query_gen import qa_df, multi_hop_qa_df
 
 client = AsyncOpenAI()

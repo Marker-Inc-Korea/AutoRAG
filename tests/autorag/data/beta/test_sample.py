@@ -1,7 +1,7 @@
 import pandas as pd
 
 from autorag.data.beta.sample import random_single_hop, range_single_hop
-from autorag.data.beta.schema.data import Corpus, QA
+from autorag.data.beta.schema import Corpus, QA
 
 corpus_df = pd.DataFrame(
 	{"doc_id": [1, 2, 3, 4, 5], "contents": ["doc1", "doc2", "doc3", "doc4", "doc5"]}

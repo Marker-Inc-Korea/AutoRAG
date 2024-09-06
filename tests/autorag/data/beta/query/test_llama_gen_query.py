@@ -8,7 +8,7 @@ from autorag.data.beta.query.llama_gen_query import (
 	concept_completion_query_gen,
 	two_hop_incremental,
 )
-from autorag.data.beta.schema.data import QA
+from autorag.data.beta.schema import QA
 from tests.autorag.data.beta.query.base_test_query_gen import qa_df, multi_hop_qa_df
 
 llm = MockLLM()
