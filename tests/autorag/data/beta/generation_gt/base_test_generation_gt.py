@@ -1,6 +1,6 @@
 import pandas as pd
 
-from autorag.data.beta.schema.data import QA
+from autorag.data.beta.schema import QA
 
 passage = """NewJeans (뉴진스) is a 5-member girl group under ADOR and HYBE Labels.
 The members consist of Minji, Hanni, Danielle, Haerin, and Hyein.
@@ -29,3 +29,4 @@ def check_generation_gt(result_qa: QA):
 	}
 	assert len(result_qa.data) == len(qa_df)
 	assert result_qa.data["generation_gt"].iloc[0]
+	assert all(isinstance(x, list) for x in result_qa.data["generation_gt"].tolist())

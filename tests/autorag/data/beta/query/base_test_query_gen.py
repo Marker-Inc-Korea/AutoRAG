@@ -14,8 +14,19 @@ qa_df = pd.DataFrame(
 		"qid": ["jax1", "jax2"],
 		"retrieval_gt": [[["havertz1"]], [["havertz2"]]],
 		"retrieval_gt_contents": [
-			passage1,
-			passage2,
+			[[passage1]],
+			[[passage2]],
+		],
+	}
+)
+
+
+multi_hop_qa_df = pd.DataFrame(
+	{
+		"qid": ["jax1"],
+		"retrieval_gt": [[["havertz1"], ["havertz2"]]],
+		"retrieval_gt_contents": [
+			[[passage1], [passage2]],
 		],
 	}
 )
