@@ -5,6 +5,7 @@ from typing import Dict
 from llama_index.core.base.llms.base import BaseLLM
 from llama_index.core.base.llms.types import MessageRole, ChatMessage
 
+from autorag.data.beta.generation_gt.base import add_gen_gt
 from autorag.data.beta.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
@@ -23,8 +24,7 @@ async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str):
 		],
 		temperature=0.0,
 	)
-	row["generation_gt"] = response.message.content
-	return row
+	return add_gen_gt(row, response.message.content)
 
 
 async def make_concise_gen_gt(row: Dict, llm: BaseLLM, lang: str = "en") -> Dict:

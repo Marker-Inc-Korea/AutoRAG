@@ -4,6 +4,7 @@ from typing import Dict
 from openai import AsyncClient
 from pydantic import BaseModel
 
+from autorag.data.beta.generation_gt.base import add_gen_gt
 from autorag.data.beta.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
@@ -34,8 +35,7 @@ async def make_gen_gt_openai(
 		response_format=Response,
 	)
 	response: Response = completion.choices[0].message.parsed
-	row["generation_gt"] = response.answer
-	return row
+	return add_gen_gt(row, response.answer)
 
 
 async def make_concise_gen_gt(

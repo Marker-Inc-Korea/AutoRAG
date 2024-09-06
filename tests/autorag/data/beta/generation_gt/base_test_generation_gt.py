@@ -29,3 +29,4 @@ def check_generation_gt(result_qa: QA):
 	}
 	assert len(result_qa.data) == len(qa_df)
 	assert result_qa.data["generation_gt"].iloc[0]
+	assert all(isinstance(x, list) for x in result_qa.data["generation_gt"].tolist())

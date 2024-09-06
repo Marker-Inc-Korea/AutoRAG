@@ -75,3 +75,17 @@ def test_make_basic_gen_gt_ko():
 	qa = QA(qa_df)
 	result_qa = qa.batch_apply(make_basic_gen_gt, client=client, lang="ko")
 	check_generation_gt(result_qa)
+
+
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_make_multiple_gen_gt():
+	qa = QA(qa_df)
+	result_qa = qa.batch_apply(make_basic_gen_gt, client=client, lang="ko").batch_apply(
+		make_concise_gen_gt, client=client
+	)
+	check_generation_gt(result_qa)
+	assert all(len(x) == 2 for x in result_qa.data["generation_gt"].tolist())
