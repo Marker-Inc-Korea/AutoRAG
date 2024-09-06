@@ -1,6 +1,6 @@
 import pandas as pd
 
-from autorag.schema.data import QA
+from autorag.data.beta.schema.data import QA
 
 passage = """NewJeans (뉴진스) is a 5-member girl group under ADOR and HYBE Labels.
 The members consist of Minji, Hanni, Danielle, Haerin, and Hyein.

@@ -5,10 +5,7 @@ from typing import Dict
 from llama_index.core.base.llms.base import BaseLLM
 from llama_index.core.base.llms.types import MessageRole, ChatMessage
 
-from autorag.data.beta.generation_gt.prompt import (
-	concise_answer_system_prompt,
-	basic_answer_system_prompt,
-)
+from autorag.data.beta.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
 async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str):
@@ -30,9 +27,11 @@ async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str):
 	return row
 
 
-async def make_concise_gen_gt(row: Dict, llm: BaseLLM) -> Dict:
-	return await make_gen_gt_llama_index(row, llm, concise_answer_system_prompt)
+async def make_concise_gen_gt(row: Dict, llm: BaseLLM, lang: str = "en") -> Dict:
+	return await make_gen_gt_llama_index(
+		row, llm, GEN_GT_SYSTEM_PROMPT["concise"][lang]
+	)
 
 
-async def make_basic_gen_gt(row: Dict, llm: BaseLLM) -> Dict:
-	return await make_gen_gt_llama_index(row, llm, basic_answer_system_prompt)
+async def make_basic_gen_gt(row: Dict, llm: BaseLLM, lang: str = "en") -> Dict:
+	return await make_gen_gt_llama_index(row, llm, GEN_GT_SYSTEM_PROMPT["basic"][lang])

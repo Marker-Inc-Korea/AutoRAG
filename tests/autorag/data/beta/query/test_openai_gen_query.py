@@ -5,20 +5,14 @@ import openai.resources.beta.chat
 from openai import AsyncOpenAI
 from openai.types.chat import (
 	ParsedChatCompletion,
-	ParsedChoice,
 	ParsedChatCompletionMessage,
+	ParsedChoice,
 )
 
-from autorag.data.beta.generation_gt.openai_gen_gt import (
-	make_concise_gen_gt,
-	make_basic_gen_gt,
-	Response,
-)
+from autorag.data.beta.query.openai_gen_query import Response, factoid_query_gen
 from autorag.data.beta.schema.data import QA
-from tests.autorag.data.beta.generation_gt.base_test_generation_gt import (
-	qa_df,
-	check_generation_gt,
-)
+from tests.autorag.data.beta.query.base_test_query_gen import qa_df
+
 
 client = AsyncOpenAI()
 
@@ -31,7 +25,7 @@ async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[Response
 				finish_reason="stop",
 				index=0,
 				message=ParsedChatCompletionMessage(
-					parsed=Response(answer="mock answer"),
+					parsed=Response(query="mock answer"),
 					role="assistant",
 				),
 			)
@@ -47,12 +41,12 @@ async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[Response
 	"parse",
 	mock_gen_gt_response,
 )
-def test_make_concise_gen_gt():
+def test_make_factoid_query_gen():
 	qa = QA(qa_df)
-	result_qa = qa.batch_apply(
-		make_concise_gen_gt, client=client, model_name="gpt-4o-mini-2024-07-18"
-	)
-	check_generation_gt(result_qa)
+	new_qa = qa.batch_apply(factoid_query_gen, client=client)
+	assert "query" in new_qa.data.columns
+	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
+	assert len(new_qa.data) == len(qa_df)
 
 
 @patch.object(
@@ -60,18 +54,9 @@ def test_make_concise_gen_gt():
 	"parse",
 	mock_gen_gt_response,
 )
-def test_make_basic_gen_gt():
+def test_make_factoid_query_gen_ko():
 	qa = QA(qa_df)
-	result_qa = qa.batch_apply(make_basic_gen_gt, client=client)
-	check_generation_gt(result_qa)
-
-
-@patch.object(
-	openai.resources.beta.chat.completions.AsyncCompletions,
-	"parse",
-	mock_gen_gt_response,
-)
-def test_make_basic_gen_gt_ko():
-	qa = QA(qa_df)
-	result_qa = qa.batch_apply(make_basic_gen_gt, client=client, lang="ko")
-	check_generation_gt(result_qa)
+	new_qa = qa.batch_apply(factoid_query_gen, client=client, lang="ko")
+	assert "query" in new_qa.data.columns
+	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
+	assert len(new_qa.data) == len(qa_df)
