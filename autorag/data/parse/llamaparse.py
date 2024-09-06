@@ -1,4 +1,3 @@
-import os
 from typing import List, Tuple
 
 from llama_parse import LlamaParse
@@ -10,7 +9,7 @@ from autorag.utils.util import process_batch, get_event_loop
 @parser_node
 def llama_parse(
 	data_path_list: List[str], batch: int = 8, **kwargs
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], List[int]]:
 	parse_instance = LlamaParse(**kwargs)
 
 	tasks = [
@@ -21,15 +20,15 @@ def llama_parse(
 
 	del parse_instance
 
-	texts, names = zip(*results)
+	texts, path = zip(*results)
+	pages = [-1] * len(texts)
 
-	return list(texts), list(names)
+	return list(texts), list(path), pages
 
 
 async def llama_parse_pure(data_path: str, parse_instance) -> Tuple[str, str]:
 	documents = await parse_instance.aload_data(data_path)
 
 	text = documents[0].text
-	file_name = os.path.basename(data_path)
 
-	return text, file_name
+	return text, data_path

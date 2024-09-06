@@ -38,7 +38,7 @@ def test_start_parsing(parser):
 	assert os.path.exists(os.path.join(project_dir, "0", "1.parquet"))
 	pdfplumber_result = pd.read_parquet(os.path.join(project_dir, "0", "1.parquet"))
 
-	expect_result_columns = ["texts", "file_name"]
+	expect_result_columns = ["texts", "path", "page", "last_modified_datetime"]
 	assert all(
 		[
 			expect_column in pdfminer_result.columns

@@ -26,6 +26,12 @@ jobs:
       - name: Install gcc
         run: |
           sudo apt-get install gcc
+      - name: Install poppler-utils
+        run: |
+          sudo apt-get install poppler-utils
+      - name: Install tesseract
+        run: |
+          sudo apt-get install tesseract-ocr
       - name: Install AutoRAG
         run: |
           pip install -e '.[all]'
@@ -35,6 +41,11 @@ jobs:
       - name: Upgrade pyOpenSSL
         run: |
           pip install --upgrade pyOpenSSL
+      - name: Install NLTK and download model
+        run: |
+          pip install nltk
+          python3 -c "import nltk; nltk.download('punkt_tab')"
+          python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
       - name: delete tests package
         run: python3 tests/delete_tests.py
       - name: Run tests
