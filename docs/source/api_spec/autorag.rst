@@ -56,6 +56,14 @@ autorag.node\_line module
    :undoc-members:
    :show-inheritance:
 
+autorag.parser module
+---------------------
+
+.. automodule:: autorag.parser
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.strategy module
 -----------------------
 

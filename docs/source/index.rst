@@ -84,6 +84,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    data_creation/tutorial.md
    data_creation/data_format.md
    data_creation/ragas.md
+   data_creation/beta/data_creation.md
 
 
 .. toctree::
@@ -143,4 +144,3 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    :hidden:
 
    api_spec/modules
-

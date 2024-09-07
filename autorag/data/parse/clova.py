@@ -18,7 +18,7 @@ def clova_ocr(
 	api_key: Optional[str] = None,
 	batch: int = 8,
 	table_detection: bool = False,
-) -> Tuple[List[str], List[str]]:
+) -> Tuple[List[str], List[str], List[int]]:
 	url = os.getenv("CLOVA_URL", None) if url is None else url
 	if url is None:
 		raise KeyError(
@@ -33,33 +33,35 @@ def clova_ocr(
 			"or directly set it on the config YAML file."
 		)
 
-	image_datas = list(map(lambda data_path: pdf_to_images(data_path), data_path_list))
-	image_names = [
-		generate_image_names(pdf_path, len(image_data))
-		for pdf_path, image_data in zip(data_path_list, image_datas)
+	image_data_lst = list(
+		map(lambda data_path: pdf_to_images(data_path), data_path_list)
+	)
+	image_info_lst = [
+		generate_image_info(pdf_path, len(image_data))
+		for pdf_path, image_data in zip(data_path_list, image_data_lst)
 	]
 
-	image_data_list = list(itertools.chain(*image_datas))
-	image_name_list = list(itertools.chain(*image_names))
+	image_data_list = list(itertools.chain(*image_data_lst))
+	image_info_list = list(itertools.chain(*image_info_lst))
 
 	tasks = [
-		clova_ocr_pure(image_data, image_name, url, api_key, table_detection)
-		for image_data, image_name in zip(image_data_list, image_name_list)
+		clova_ocr_pure(image_data, image_info, url, api_key, table_detection)
+		for image_data, image_info in zip(image_data_list, image_info_list)
 	]
 	loop = get_event_loop()
 	results = loop.run_until_complete(process_batch(tasks, batch))
 
-	texts, names = zip(*results)
-	return list(texts), list(names)
+	texts, path, pages = zip(*results)
+	return list(texts), list(path), list(pages)
 
 
 async def clova_ocr_pure(
 	image_data: bytes,
-	image_name: str,
+	image_info: dict,
 	url: str,
 	api_key: str,
 	table_detection: bool = False,
-) -> Tuple[str, str]:
+) -> Tuple[str, str, int]:
 	session = aiohttp.ClientSession()
 	headers = {"X-OCR-SECRET": api_key, "Content-Type": "application/json"}
 
@@ -89,7 +91,7 @@ async def clova_ocr_pure(
 			page_text += f"\n\ntable html:\n{table_html}"
 
 		await session.close()
-		return page_text, image_name
+		return page_text, image_info["pdf_path"], image_info["pdf_page"]
 
 
 def pdf_to_images(pdf_path: str) -> List[bytes]:
@@ -104,14 +106,13 @@ def pdf_to_images(pdf_path: str) -> List[bytes]:
 	return image_data_lst
 
 
-def generate_image_names(pdf_path: str, num_pages: int) -> List[str]:
+def generate_image_info(pdf_path: str, num_pages: int) -> List[dict]:
 	"""Generate image names based on the PDF file name and the number of pages."""
-	pdf_name = pdf_path.split("/")[-1]
-	pure_pdf_name = pdf_name.split(".pdf")[0]
-	image_name_lst = [
-		f"{pure_pdf_name}_{page_num + 1}.png" for page_num in range(num_pages)
+	image_info_lst = [
+		{"pdf_path": pdf_path, "pdf_page": page_num + 1}
+		for page_num in range(num_pages)
 	]
-	return image_name_lst
+	return image_info_lst
 
 
 def extract_text_from_fields(fields):
