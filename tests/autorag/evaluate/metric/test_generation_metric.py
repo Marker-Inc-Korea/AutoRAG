@@ -4,6 +4,7 @@ import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.evaluation.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score
+from autorag.schema.metricinput import MetricInput
 from tests.delete_tests import is_github_action
 from tests.mock import mock_get_text_embedding_batch
 
@@ -38,9 +39,12 @@ ko_generations = [
 	"요즘 세상에서는 예술가가 되려면, AI를 이겨야 한다.",
 ]
 
-
+metric_inputs = [MetricInput(generated_texts=gen, generation_gt=gen_gt) for gen, gen_gt in
+				 zip(generations, generation_gts)]
+ko_metric_inputs = [MetricInput(generated_texts=gen, generation_gt=gen_gt) for gen, gen_gt in
+					zip(ko_generations, ko_generation_gts)]
 def base_test_generation_metrics(func, solution, **kwargs):
-	scores = func(generation_gt=generation_gts, generations=generations, **kwargs)
+	scores = func(metric_inputs, **kwargs)
 	assert len(scores) == len(generation_gts)
 	assert all(isinstance(score, float) for score in scores)
 	assert all(
@@ -49,7 +53,7 @@ def base_test_generation_metrics(func, solution, **kwargs):
 
 
 def ko_base_test_generation_metrics(func, solution, **kwargs):
-	scores = func(generation_gt=ko_generation_gts, generations=ko_generations, **kwargs)
+	scores = func(ko_metric_inputs, **kwargs)
 	assert len(scores) == len(ko_generation_gts)
 	assert all(isinstance(score, float) for score in scores)
 	assert all(
@@ -86,8 +90,7 @@ def test_sem_score():
 )
 def test_sem_score_other_model():
 	scores = sem_score(
-		generation_gt=generation_gts,
-		generations=generations,
+		metric_inputs=metric_inputs,
 		embedding_model=OpenAIEmbedding(),
 	)
 	assert len(scores) == len(generation_gts)

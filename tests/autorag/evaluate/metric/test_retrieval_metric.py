@@ -9,6 +9,7 @@ from autorag.evaluation.metric import (
 	retrieval_mrr,
 	retrieval_map,
 )
+from autorag.schema.metricinput import MetricInput
 
 retrieval_gt = [
 	[["test-1", "test-2"], ["test-3"]],
@@ -36,11 +37,11 @@ pred = [
 	["pred-14"],  # retrieval_gt is empty so not counted
 	["pred-15", "pred-16", "test-15"],  # recall:1, precision: 1/3, f1: 0.5
 ]
-
+metric_inputs = [MetricInput(retrieval_gt=ret_gt, retrieval_ids=pr) for ret_gt, pr in zip(retrieval_gt, pred)]
 
 def test_retrieval_f1():
 	solution = [0.5, 2 / 7, 2 / 5, 4 / 7, 2 / 3, None, None, 0.5]
-	result = retrieval_f1(retrieval_gt=retrieval_gt, pred_ids=pred)
+	result = retrieval_f1(metric_inputs=metric_inputs)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)
 
@@ -49,21 +50,23 @@ def test_numpy_retrieval_metric():
 	retrieval_gt_np = [[np.array(["test-1", "test-4"])], np.array([["test-2"]])]
 	pred_np = np.array([["test-2", "test-3", "test-1"], ["test-5", "test-6", "test-8"]])
 	solution = [1.0, 0.0]
-	result = retrieval_recall(retrieval_gt=retrieval_gt_np, pred_ids=pred_np)
+	metric_inputs_np = [MetricInput(retrieval_gt=ret_gt_np, retrieval_ids=pr_np) for ret_gt_np, pr_np in
+						zip(retrieval_gt_np, pred_np)]
+	result = retrieval_recall(metric_inputs=metric_inputs_np)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_recall():
 	solution = [0.5, 1 / 3, 1, 2 / 3, 1, None, None, 1]
-	result = retrieval_recall(retrieval_gt=retrieval_gt, pred_ids=pred)
+	result = retrieval_recall(metric_inputs=metric_inputs)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_precision():
 	solution = [0.5, 0.25, 0.25, 0.5, 0.5, None, None, 1 / 3]
-	result = retrieval_precision(retrieval_gt=retrieval_gt, pred_ids=pred)
+	result = retrieval_precision(metric_inputs=metric_inputs)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)
 
@@ -79,20 +82,20 @@ def test_retrieval_ndcg():
 		None,
 		0.5,
 	]
-	result = retrieval_ndcg(retrieval_gt=retrieval_gt, pred_ids=pred)
+	result = retrieval_ndcg(metric_inputs=metric_inputs)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_mrr():
 	solution = [1 / 2, 1 / 3, 1, 1 / 2, 1, None, None, 1 / 3]
-	result = retrieval_mrr(retrieval_gt=retrieval_gt, pred_ids=pred)
+	result = retrieval_mrr(metric_inputs=metric_inputs)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)
 
 
 def test_retrieval_map():
 	solution = [5 / 12, 1 / 3, 1, 1 / 2, 1, None, None, 1 / 3]
-	result = retrieval_map(retrieval_gt=retrieval_gt, pred_ids=pred)
+	result = retrieval_map(metric_inputs=metric_inputs)
 	for gt, res in zip(solution, result):
 		assert gt == pytest.approx(res, rel=1e-4)

@@ -6,6 +6,7 @@ from autorag.evaluation.metric.retrieval_contents import (
 	retrieval_token_precision,
 	retrieval_token_recall,
 )
+from autorag.schema.metricinput import MetricInput
 
 gt = [
 	["Enough for drinking water", "Just looking for a water bottle"],
@@ -23,6 +24,7 @@ pred = [
 	["Who is son? He is great player in the world"],
 	["i love havertz", "i love kai havertz"],
 ]
+metric_inputs = [MetricInput(gt_contents=g, retrieval_contents=p) for g, p in zip(gt, pred)]
 
 
 def test_single_token_f1():
@@ -38,23 +40,23 @@ def test_single_token_f1():
 
 
 def test_retrieval_token_f1():
-	f1 = retrieval_token_f1.__wrapped__(gt[0], pred[0])
+	f1 = retrieval_token_f1.__wrapped__(MetricInput(gt_contents=gt[0], retrieval_contents=pred[0]))
 	assert f1 == pytest.approx(0.38333, rel=0.001)
 
-	f1 = retrieval_token_f1.__wrapped__(gt[1], pred[1])
+	f1 = retrieval_token_f1.__wrapped__(MetricInput(gt_contents=gt[1], retrieval_contents=pred[1]))
 	assert f1 == pytest.approx(0.797979, rel=0.001)
 
-	result_f1 = retrieval_token_f1(gt_contents=gt, pred_contents=pred)
+	result_f1 = retrieval_token_f1(metric_inputs=metric_inputs)
 	assert result_f1 == pytest.approx([0.38333, 0.797979, None, None], rel=0.001)
 
 
 def test_retrieval_token_precision():
-	result_precision = retrieval_token_precision(gt_contents=gt, pred_contents=pred)
+	result_precision = retrieval_token_precision(metric_inputs=metric_inputs)
 	assert result_precision == pytest.approx(
 		[0.383333, 0.8222222, None, None], rel=0.001
 	)
 
 
 def test_retrieval_token_recall():
-	result_recall = retrieval_token_recall(gt_contents=gt, pred_contents=pred)
+	result_recall = retrieval_token_recall(metric_inputs=metric_inputs)
 	assert result_recall == pytest.approx([0.383333, 0.777777, None, None], rel=0.001)
