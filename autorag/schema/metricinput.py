@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Callable, Any
 
+import pandas as pd
+
 
 @dataclass
 class MetricInput:
@@ -35,6 +37,30 @@ class MetricInput:
                 return False
 
         return True
+
+    @classmethod
+    def from_dataframe(cls, df: pd.DataFrame) -> List['MetricInput']:
+        instances = []
+
+        for _, row in df.iterrows():
+            instance = cls()
+
+            for attr_name in cls.__annotations__:
+                if attr_name in row:
+                    value = row[attr_name]
+
+                    if isinstance(value, str):
+                        setattr(instance, attr_name, value.strip() if value.strip() != '' else None)
+                    elif isinstance(value, list):
+                        setattr(instance, attr_name, value if len(value) > 0 else None)
+                    elif isinstance(value, (int, float)):
+                        setattr(instance, attr_name, value)
+                    else:
+                        setattr(instance, attr_name, value)
+
+            instances.append(instance)
+
+        return instances
 
     def _check_list(self, lst: List[Any]) -> bool:
         if len(lst) == 0:
