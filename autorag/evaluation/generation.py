@@ -13,7 +13,7 @@ from autorag.evaluation.metric.generation import (
 	bert_score,
 )
 from autorag.evaluation.util import cast_metrics
-from autorag.schema.metricinput import MetricInput, METRIC_INPUT_DICT
+from autorag.schema.metricinput import MetricInput
 
 GENERATION_METRIC_FUNC_DICT = {
 	func.__name__: func for func in [bleu, meteor, rouge, sem_score, g_eval, bert_score]
@@ -42,15 +42,13 @@ def evaluate_generation(
 				raise ValueError(
 					"Input func must return string list as generated answer at the first return value."
 				)
+			for metric_input, generated_text in zip(metric_inputs, generated_str):
+				setattr(metric_input, "generated_texts", generated_text)
 
 			metric_scores = {}
 			metric_names, metric_params = cast_metrics(metrics)
 
 			for metric_name, metric_param in zip(metric_names, metric_params):
-				# Extract each required field from all payloads
-				extracted_inputs = {field: [getattr(payload, field) for payload in metric_inputs] for field in
-									METRIC_INPUT_DICT.get(metric_name, [])}
-
 				if metric_name not in GENERATION_METRIC_FUNC_DICT:
 					warnings.warn(
 						f"metric {metric_name} is not in supported metrics: {GENERATION_METRIC_FUNC_DICT.keys()}"
@@ -61,8 +59,7 @@ def evaluate_generation(
 					metric_scores[metric_name] = GENERATION_METRIC_FUNC_DICT[
 						metric_name
 					](
-						**extracted_inputs,
-						generations=generated_str,
+						metric_inputs=metric_inputs,
 						**metric_param,
 					)
 

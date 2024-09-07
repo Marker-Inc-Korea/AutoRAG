@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import itertools
 import os
 from typing import List, Optional
@@ -16,7 +15,9 @@ from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
 from autorag import embedding_models
+from autorag.evaluation.metric.util import autorag_generation_metric
 from autorag.evaluation.metric.util import calculate_cosine_similarity
+from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
@@ -25,34 +26,9 @@ from autorag.utils.util import (
 )
 
 
-def generation_metric(func):
-	@functools.wraps(func)
-	@convert_inputs_to_list
-	def wrapper(
-		generation_gt: List[List[str]], generations: List[str], **kwargs
-	) -> List[float]:
-		"""
-		Compute generation metric.
-
-		:param generation_gt: A list of ground truth.
-		    Must be 2-d list of string.
-		    Because it can be a multiple ground truth.
-		:param generations: A list of generations that LLM generated.
-		:param kwargs: The additional arguments for metric function.
-		:return: A list of computed metric scores.
-		"""
-		# make generation_gt and generations to pd dataframe
-		result = list(
-			map(lambda x: func(x[0], x[1], **kwargs), zip(generation_gt, generations))
-		)
-		return result
-
-	return wrapper
-
-
 @convert_inputs_to_list
 def huggingface_evaluate(
-	instance, key: str, generation_gt: List[List[str]], generations: List[str], **kwargs
+		instance, key: str, metric_inputs: List[MetricInput], **kwargs
 ) -> List[float]:
 	"""
 	Compute huggingface evaluate metric.
@@ -79,15 +55,14 @@ def huggingface_evaluate(
 		)
 
 	result = list(
-		map(lambda x: compute_score(x[0], x[1]), zip(generation_gt, generations))
+		map(lambda x: compute_score(x.generation_gt, x.generated_texts), metric_inputs)
 	)
 	return result
 
 
-@convert_inputs_to_list
+@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
 def bleu(
-	generation_gt: List[List[str]],
-	generations: [str],
+		metric_inputs: List[MetricInput],
 	tokenize: Optional[str] = None,
 	smooth_method: str = "exp",
 	smooth_value: Optional[float] = None,
@@ -119,17 +94,16 @@ def bleu(
 
 	result = list(
 		map(
-			lambda x: bleu_instance.sentence_score(x[0], x[1]).score,
-			zip(generations, generation_gt),
+			lambda x: bleu_instance.sentence_score(x.generated_texts, x.generation_gt).score,
+			metric_inputs,
 		)
 	)
 	return result
 
 
-@convert_inputs_to_list
+@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
 def meteor(
-	generation_gt: List[List[str]],
-	generations: List[str],
+		metric_inputs: List[MetricInput],
 	alpha: float = 0.9,
 	beta: float = 3.0,
 	gamma: float = 0.5,
@@ -155,8 +129,7 @@ def meteor(
 	result = huggingface_evaluate(
 		meteor_instance,
 		"meteor",
-		generation_gt,
-		generations,
+		metric_inputs,
 		alpha=alpha,
 		beta=beta,
 		gamma=gamma,
@@ -165,10 +138,9 @@ def meteor(
 	return result
 
 
-@convert_inputs_to_list
+@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
 def rouge(
-	generation_gt: List[List[str]],
-	generations: List[str],
+		metric_inputs: List[MetricInput],
 	rouge_type: Optional[str] = "rougeL",
 	use_stemmer: bool = False,
 	split_summaries: bool = False,
@@ -210,7 +182,7 @@ def rouge(
 			rouge_type
 		].fmeasure
 
-	tasks = [compute(gt, pred) for gt, pred in zip(generation_gt, generations)]
+	tasks = [compute(metric_input.generation_gt, metric_input.generated_texts) for metric_input in metric_inputs]
 	loop = get_event_loop()
 	result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
@@ -218,10 +190,9 @@ def rouge(
 	return result
 
 
-@convert_inputs_to_list
+@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
 def sem_score(
-	generation_gt: List[List[str]],
-	generations: List[str],
+		metric_inputs: List[MetricInput],
 	embedding_model: Optional[BaseEmbedding] = None,
 	batch: int = 128,
 ) -> List[float]:
@@ -240,6 +211,8 @@ def sem_score(
 	    Default is 128
 	:return: A list of computed metric scores.
 	"""
+	generations = [metric_input.generated_texts for metric_input in metric_inputs]
+	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	if embedding_model is None:
 		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]
 
@@ -283,10 +256,9 @@ def sem_score(
 	return result
 
 
-@convert_inputs_to_list
+@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
 def g_eval(
-	generation_gt: List[List[str]],
-	generations: List[str],
+		metric_inputs: List[MetricInput],
 	metrics: Optional[List[str]] = None,
 	model: str = "gpt-4-0125-preview",
 	batch_size: int = 8,
@@ -310,6 +282,8 @@ def g_eval(
 	    Default is 8.
 	:return: G-Eval score.
 	"""
+	generations = [metric_input.generated_texts for metric_input in metric_inputs]
+	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	loop = get_event_loop()
 	tasks = [
 		async_g_eval(gt, pred, metrics, model)
@@ -385,14 +359,15 @@ async def async_g_eval(
 	return sum(g_eval_scores) / len(g_eval_scores)
 
 
-@convert_inputs_to_list
+@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
 def bert_score(
-	generation_gt: List[List[str]],
-	generations: List[str],
+		metric_inputs: List[MetricInput],
 	lang: str = "en",
 	batch: int = 128,
 	n_threads: int = os.cpu_count(),
 ) -> List[float]:
+	generations = [metric_input.generated_texts for metric_input in metric_inputs]
+	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	evaluator = evaluate.load("bertscore")
 
 	df = pd.DataFrame(

@@ -137,7 +137,7 @@ def run_prompt_maker_node(
 		generation_gt = qa_data["generation_gt"].tolist()
 		generation_gt = list(map(lambda x: x.tolist(), generation_gt))
 
-		payloads = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
+		metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
 
 		all_prompts = []
 		for result in results:
@@ -147,7 +147,7 @@ def run_prompt_maker_node(
 			all_prompts,
 			generator_callables,
 			generator_params,
-			payloads * len(results),
+			metric_inputs * len(results),
 			general_strategy["metrics"],
 			project_dir,
 			strategy_name=strategies.get("strategy", "mean"),
@@ -236,7 +236,7 @@ def evaluate_one_prompt_maker_node(
 	prompts: List[str],
 	generator_funcs: List[Callable],
 	generator_params: List[Dict],
-		payloads: List[MetricInput],
+		metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 	project_dir,
 	strategy_name: str,
@@ -250,7 +250,7 @@ def evaluate_one_prompt_maker_node(
 	)
 	evaluation_results = list(
 		map(
-			lambda x: evaluate_generator_result(x[0], payloads, metrics),
+			lambda x: evaluate_generator_result(x[0], metric_inputs, metrics),
 			zip(generator_results, generator_funcs),
 		)
 	)
@@ -268,10 +268,10 @@ def evaluate_one_prompt_maker_node(
 
 def evaluate_generator_result(
 	result_df: pd.DataFrame,
-		payloads: List[MetricInput],
+		metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
-	@evaluate_generation(metric_inputs=payloads, metrics=metrics)
+	@evaluate_generation(metric_inputs=metric_inputs, metrics=metrics)
 	def evaluate(df):
 		return df["generated_texts"].tolist()
 

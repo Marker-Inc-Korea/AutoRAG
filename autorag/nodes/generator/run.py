@@ -125,9 +125,9 @@ def run_generator_node(
 
 
 def evaluate_generator_node(
-		result_df: pd.DataFrame, payloads: List[MetricInput], metrics: Union[List[str], List[Dict]]
+		result_df: pd.DataFrame, metric_inputs: List[MetricInput], metrics: Union[List[str], List[Dict]]
 ):
-	@evaluate_generation(metric_inputs=payloads, metrics=metrics)
+	@evaluate_generation(metric_inputs=metric_inputs, metrics=metrics)
 	def evaluate_generation_module(df: pd.DataFrame):
 		return (
 			df["generated_texts"].tolist(),
