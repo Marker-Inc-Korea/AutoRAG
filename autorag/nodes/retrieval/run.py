@@ -55,7 +55,7 @@ def run_retrieval_node(
 		for inner_array in retrieval_gt
 	]
 	# make rows to payload
-	payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
 
 	save_dir = os.path.join(node_line_dir, "retrieval")  # node name
@@ -91,7 +91,7 @@ def run_retrieval_node(
 			map(
 				lambda x: evaluate_retrieval_node(
 					x,
-					payloads,
+					metric_inputs,
 					strategies.get("metrics"),
 				),
 				result,
@@ -273,7 +273,7 @@ def run_retrieval_node(
 					module,
 					module_param,
 					strategies,
-					payloads,
+					metric_inputs,
 					project_dir,
 					previous_result,
 				)
@@ -346,21 +346,21 @@ def run_retrieval_node(
 
 def evaluate_retrieval_node(
 	result_df: pd.DataFrame,
-		payloads: List[MetricInput],
+		metric_inputs: List[MetricInput],
 		metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
 	"""
 	Evaluate retrieval node from retrieval node result dataframe.
 
 	:param result_df: The result dataframe from a retrieval node.
-	:param payloads: List of metric input schema for AutoRAG.
+	:param metric_inputs: List of metric input schema for AutoRAG.
 	:param metrics: Metric list from input strategies.
 	:return: Return result_df with metrics columns.
 	    The columns will be 'retrieved_contents', 'retrieved_ids', 'retrieve_scores', and metric names.
 	"""
 
 	@evaluate_retrieval(
-		metric_inputs=payloads,
+		metric_inputs=metric_inputs,
 		metrics=metrics,
 	)
 	def evaluate_this_module(df: pd.DataFrame):
@@ -490,7 +490,7 @@ def optimize_hybrid(
 	hybrid_module_func: Callable,
 	hybrid_module_param: Dict,
 	strategy: Dict,
-		payloads: List[MetricInput],
+		input_metrics: List[MetricInput],
 	project_dir,
 	previous_result,
 ):
@@ -522,7 +522,7 @@ def optimize_hybrid(
 		map(
 			lambda x: evaluate_retrieval_node(
 				x,
-				payloads,
+				input_metrics,
 				strategy.get("metrics"),
 			),
 			result_list,

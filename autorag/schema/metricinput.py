@@ -7,7 +7,9 @@ class MetricInput:
     query: Optional[str] = None
     queries: Optional[List[str]] = None
     gt_contents: Optional[List[str]] = None
+    retrieval_contents: Optional[List[str]] = None
     retrieval_gt: Optional[List[List[str]]] = None
+    retrieval_ids: Optional[List[str]] = None
     prompt: Optional[str] = None
     generated_texts: Optional[str] = None
     generation_gt: Optional[List[str]] = None

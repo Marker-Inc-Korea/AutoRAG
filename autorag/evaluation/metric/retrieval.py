@@ -1,49 +1,30 @@
-import functools
 import itertools
-from typing import List
-
 import math
 
-from autorag.utils.util import convert_inputs_to_list
+from autorag.evaluation.metric.util import autorag_metric
+from autorag.schema.metricinput import MetricInput
 
 
-def retrieval_metric(func):
-	@functools.wraps(func)
-	@convert_inputs_to_list
-	def wrapper(
-		retrieval_gt: List[List[List[str]]], pred_ids: List[List[str]]
-	) -> List[float]:
-		results = []
-		for gt, pred in zip(retrieval_gt, pred_ids):
-			if gt == [[]] or any(bool(g_) is False for g in gt for g_ in g):
-				results.append(None)
-			else:
-				results.append(func(gt, pred))
-		return results
-
-	return wrapper
-
-
-@retrieval_metric
-def retrieval_f1(gt: List[List[str]], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+def retrieval_f1(metric_input: MetricInput):
 	"""
 	Compute f1 score for retrieval.
 
-	:param gt: 2-d list of ground truth ids.
-	    It contains and/or connections between ids.
-	:param pred: Prediction ids.
+	:param metric_input: The MetricInput schema for AutoRAG metric.
 	:return: The f1 score.
 	"""
-	recall_score = retrieval_recall.__wrapped__(gt, pred)
-	precision_score = retrieval_precision.__wrapped__(gt, pred)
+	recall_score = retrieval_recall.__wrapped__(metric_input)
+	precision_score = retrieval_precision.__wrapped__(metric_input)
 	if recall_score + precision_score == 0:
 		return 0
 	else:
 		return 2 * (recall_score * precision_score) / (recall_score + precision_score)
 
 
-@retrieval_metric
-def retrieval_recall(gt: List[List[str]], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+def retrieval_recall(metric_input: MetricInput) -> float:
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+
 	gt_sets = [frozenset(g) for g in gt]
 	pred_set = set(pred)
 	hits = sum(any(pred_id in gt_set for pred_id in pred_set) for gt_set in gt_sets)
@@ -51,8 +32,10 @@ def retrieval_recall(gt: List[List[str]], pred: List[str]):
 	return recall
 
 
-@retrieval_metric
-def retrieval_precision(gt: List[List[str]], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+def retrieval_precision(metric_input: MetricInput) -> float:
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+
 	gt_sets = [frozenset(g) for g in gt]
 	pred_set = set(pred)
 	hits = sum(any(pred_id in gt_set for gt_set in gt_sets) for pred_id in pred_set)
@@ -60,8 +43,10 @@ def retrieval_precision(gt: List[List[str]], pred: List[str]):
 	return precision
 
 
-@retrieval_metric
-def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+def retrieval_ndcg(metric_input: MetricInput) -> float:
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+
 	gt_sets = [frozenset(g) for g in gt]
 	pred_set = set(pred)
 	relevance_scores = {
@@ -85,12 +70,14 @@ def retrieval_ndcg(gt: List[List[str]], pred: List[str]):
 	return ndcg
 
 
-@retrieval_metric
-def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+def retrieval_mrr(metric_input: MetricInput) -> float:
 	"""
 	Reciprocal Rank (RR) is the reciprocal of the rank of the first relevant item.
 	Mean of RR in whole queries is MRR.
 	"""
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+
 	# Flatten the ground truth list of lists into a single set of relevant documents
 	gt_sets = [frozenset(g) for g in gt]
 
@@ -103,11 +90,13 @@ def retrieval_mrr(gt: List[List[str]], pred: List[str]) -> float:
 	return sum(rr_list) / len(gt_sets) if rr_list else 0.0
 
 
-@retrieval_metric
-def retrieval_map(gt: List[List[str]], pred: List[str]) -> float:
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+def retrieval_map(metric_input: MetricInput) -> float:
 	"""
 	Mean Average Precision (MAP) is the mean of Average Precision (AP) for all queries.
 	"""
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+
 	gt_sets = [frozenset(g) for g in gt]
 
 	ap_list = []

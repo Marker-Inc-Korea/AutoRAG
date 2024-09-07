@@ -46,7 +46,7 @@ def run_passage_augmenter_node(
 		)
 	)
 	average_times = list(map(lambda x: x / len(results[0]), execution_times))
-	payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 				zip(retrieval_gt, previous_result["query"].tolist(), previous_result["generation_gt"].tolist())]
 
 	# run metrics before filtering
@@ -58,7 +58,7 @@ def run_passage_augmenter_node(
 		map(
 			lambda x: evaluate_retrieval_node(
 				x,
-				payloads,
+				metric_inputs,
 				strategies.get("metrics"),
 			),
 			results,

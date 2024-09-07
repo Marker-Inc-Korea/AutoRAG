@@ -13,7 +13,7 @@ from autorag.evaluation.metric import (
 	retrieval_map,
 )
 from autorag.evaluation.util import cast_metrics
-from autorag.schema.metricinput import MetricInput, METRIC_INPUT_DICT
+from autorag.schema.metricinput import MetricInput
 
 RETRIEVAL_METRIC_FUNC_DICT = {
 	func.__name__: func
@@ -26,7 +26,6 @@ RETRIEVAL_METRIC_FUNC_DICT = {
 		retrieval_map,
 	]
 }
-RETRIEVAL_NO_GT_METRIC_FUNC_DICT = {func.__name__: func for func in []}
 
 
 def evaluate_retrieval(
@@ -50,39 +49,22 @@ def evaluate_retrieval(
 		@functools.wraps(func)
 		def wrapper(*args, **kwargs) -> pd.DataFrame:
 			contents, pred_ids, scores = func(*args, **kwargs)
+			for metric_input, pred_id in zip(metric_inputs, pred_ids):
+				setattr(metric_input, "retrieval_ids", pred_id)
 
 			metric_scores = {}
 			metric_names, metric_params = cast_metrics(metrics)
 
 			for metric_name, metric_param in zip(metric_names, metric_params):
-				# Extract each required field from all payloads
-				extracted_inputs = {field: [getattr(payload, field) for payload in metric_inputs] for field in
-									METRIC_INPUT_DICT.get(metric_name, [])}
 
 				if metric_name in RETRIEVAL_METRIC_FUNC_DICT:
 					metric_func = RETRIEVAL_METRIC_FUNC_DICT[metric_name]
 					metric_scores[metric_name] = metric_func(
-						**extracted_inputs, pred_ids=pred_ids, **metric_param
-					)
-				elif metric_name in RETRIEVAL_NO_GT_METRIC_FUNC_DICT:
-					metric_func = RETRIEVAL_NO_GT_METRIC_FUNC_DICT[metric_name]
-					if 'queries' not in extracted_inputs.keys():
-						raise ValueError(
-							f"To using {metric_name}, you have to provide queries."
-						)
-					if 'generation_gt' not in extracted_inputs.keys():
-						raise ValueError(
-							f"To using {metric_name}, you have to provide generation ground truth."
-						)
-					metric_scores[metric_name] = metric_func(
-						**extracted_inputs,
-						retrieved_contents=contents,
-						**metric_param,
+						metric_inputs=metric_inputs, **metric_param
 					)
 				else:
 					warnings.warn(
 						f"metric {metric_name} is not in supported metrics: {RETRIEVAL_METRIC_FUNC_DICT.keys()}"
-						f" and {RETRIEVAL_NO_GT_METRIC_FUNC_DICT.keys()}"
 						f"{metric_name} will be ignored."
 					)
 

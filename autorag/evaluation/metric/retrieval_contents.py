@@ -3,31 +3,14 @@ This file contains the retrieval contents metric,
 which means calculate the metric based on the contents of the retrieved items.
 """
 
-import functools
 import itertools
 from collections import Counter
-from typing import List
 
 import numpy as np
 
-from autorag.utils.util import normalize_string, convert_inputs_to_list
-
-
-def retrieval_contents_metric(func):
-	@functools.wraps(func)
-	@convert_inputs_to_list
-	def wrapper(
-		gt_contents: List[List[str]], pred_contents: List[List[str]]
-	) -> List[float]:
-		results = []
-		for gt, pred in zip(gt_contents, pred_contents):
-			if gt == [] or any(bool(g) is False for g in gt):
-				results.append(None)
-			else:
-				results.append(func(gt, pred))
-		return results
-
-	return wrapper
+from autorag.evaluation.metric.util import autorag_metric
+from autorag.schema.metricinput import MetricInput
+from autorag.utils.util import normalize_string
 
 
 def single_token_f1(ground_truth: str, prediction: str):
@@ -43,8 +26,9 @@ def single_token_f1(ground_truth: str, prediction: str):
 	return precision, recall, f1
 
 
-@retrieval_contents_metric
-def retrieval_token_f1(gt: List[str], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
+def retrieval_token_f1(metric_input: MetricInput):
+	pred, gt = metric_input.retrieval_contents, metric_input.gt_contents
 	calculated_results = list(
 		map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt)))
 	)
@@ -53,8 +37,9 @@ def retrieval_token_f1(gt: List[str], pred: List[str]):
 	return result_np.max(axis=1).mean()
 
 
-@retrieval_contents_metric
-def retrieval_token_precision(gt: List[str], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
+def retrieval_token_precision(metric_input: MetricInput):
+	pred, gt = metric_input.retrieval_contents, metric_input.gt_contents
 	calculated_results = list(
 		map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt)))
 	)
@@ -63,8 +48,9 @@ def retrieval_token_precision(gt: List[str], pred: List[str]):
 	return result_np.max(axis=1).mean()
 
 
-@retrieval_contents_metric
-def retrieval_token_recall(gt: List[str], pred: List[str]):
+@autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
+def retrieval_token_recall(metric_input: MetricInput):
+	pred, gt = metric_input.retrieval_contents, metric_input.gt_contents
 	calculated_results = list(
 		map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt)))
 	)

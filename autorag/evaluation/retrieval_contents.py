@@ -8,7 +8,7 @@ from autorag.evaluation.metric import (
 	retrieval_token_precision,
 	retrieval_token_recall,
 )
-from autorag.schema.metricinput import MetricInput, METRIC_INPUT_DICT
+from autorag.schema.metricinput import MetricInput
 
 
 def evaluate_retrieval_contents(metric_inputs: List[MetricInput], metrics: List[str]):
@@ -34,6 +34,8 @@ def evaluate_retrieval_contents(metric_inputs: List[MetricInput], metrics: List[
 				retrieval_token_precision.__name__: retrieval_token_precision,
 				retrieval_token_f1.__name__: retrieval_token_f1,
 			}
+			for metric_input, content in zip(metric_inputs, contents):
+				setattr(metric_input, "retrieval_contents", content)
 
 			metrics_scores = {}
 			for metric in metrics:
@@ -44,10 +46,8 @@ def evaluate_retrieval_contents(metric_inputs: List[MetricInput], metrics: List[
 				else:
 					metric_func = metric_funcs[metric]
 					# Extract each required field from all payloads
-					extracted_inputs = {field: [getattr(payload, field) for payload in metric_inputs] for field in
-										METRIC_INPUT_DICT.get(metric_func.__name__, [])}
 					metric_scores = metric_func(
-						**extracted_inputs, pred_contents=contents
+						metric_inputs=metric_inputs
 					)
 					metrics_scores[metric] = metric_scores
 

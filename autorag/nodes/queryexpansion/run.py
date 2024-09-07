@@ -119,7 +119,8 @@ def run_query_expansion_node(
 		)["retrieval_gt"].tolist()
 
 		# make rows to payload
-		payloads = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+		metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt
+						 in
 					zip(retrieval_gt, previous_result["query"].tolist(), previous_result["generation_gt"].tolist())]
 
 		# run evaluation
@@ -128,7 +129,8 @@ def run_query_expansion_node(
 				lambda result: evaluate_one_query_expansion_node(
 					retrieval_callables,
 					retrieval_params,
-					[payload(queries=queries) for payload, queries in zip(payloads, result['queries'].to_list())],
+					[metric_input(queries=queries) for metric_input, queries in
+					 zip(metric_inputs, result['queries'].to_list())],
 					general_strategy["metrics"],
 					project_dir,
 					previous_result,
@@ -189,13 +191,13 @@ def run_query_expansion_node(
 def evaluate_one_query_expansion_node(
 	retrieval_funcs: List[Callable],
 	retrieval_params: List[Dict],
-		payloads: List[MetricInput],
+		metric_inputs: List[MetricInput],
 	metrics: List[str],
 	project_dir,
 	previous_result: pd.DataFrame,
 	strategy_name: str,
 ) -> pd.DataFrame:
-	previous_result["queries"] = [payload.queries for payload in payloads]
+	previous_result["queries"] = [metric_input.queries for metric_input in metric_inputs]
 	retrieval_results = list(
 		map(
 			lambda x: x[0](
@@ -208,7 +210,7 @@ def evaluate_one_query_expansion_node(
 		map(
 			lambda x: evaluate_retrieval_node(
 				x,
-				payloads,
+				metric_inputs,
 				metrics,
 			),
 			retrieval_results,
