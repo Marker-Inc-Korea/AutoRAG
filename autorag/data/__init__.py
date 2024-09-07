@@ -25,6 +25,13 @@ from llama_index.core.node_parser import (
 	SemanticDoubleMergingSplitterNodeParser,
 	SimpleFileNodeParser,
 )
+from langchain.text_splitter import (
+	RecursiveCharacterTextSplitter,
+	CharacterTextSplitter,
+	KonlpyTextSplitter,
+	SentenceTransformersTokenTextSplitter,
+)
+from langchain_experimental.text_splitter import SemanticChunker
 
 parse_modules = {
 	# PDF
@@ -64,6 +71,16 @@ chunk_modules = {
 	"semanticdoublemerging": SemanticDoubleMergingSplitterNodeParser,
 	# Simple
 	"simplefile": SimpleFileNodeParser,
+	# LangChain
+	# Token
+	"sentencetransformerstoken": SentenceTransformersTokenTextSplitter,
+	# Character
+	"recursivecharacter": RecursiveCharacterTextSplitter,
+	"character": CharacterTextSplitter,
+	# Sentence
+	"konlpy": KonlpyTextSplitter,
+	# Semantic
+	"semantic_langchain": SemanticChunker,
 }
 
 

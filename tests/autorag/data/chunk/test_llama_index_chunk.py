@@ -27,7 +27,7 @@ def test_llama_index_chunk(chunk_instance):
 	)
 	check_chunk_result(doc_id, metadata)
 	assert len(contents) == 4
-	assert contents == expect_texts["original"]
+	assert contents == expect_texts["token"]
 
 
 def test_llama_index_chunk_node():
@@ -46,7 +46,7 @@ def test_llama_index_chunk_file_name_ko(chunk_instance):
 	)
 	check_chunk_result(doc_id, metadata)
 	assert len(contents) == 4
-	assert contents == expect_texts["korean"]
+	assert contents == expect_texts["token_ko"]
 
 
 def test_llama_index_chunk_file_name_ko_node():
@@ -67,7 +67,7 @@ def test_llama_index_chunk_file_name_eng(chunk_instance):
 	)
 	check_chunk_result(doc_id, metadata)
 	assert len(contents) == 4
-	assert contents == expect_texts["english"]
+	assert contents == expect_texts["token_eng"]
 
 
 def test_llama_index_chunk_file_name_eng_node():

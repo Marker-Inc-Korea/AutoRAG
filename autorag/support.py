@@ -21,6 +21,7 @@ def get_support_modules(module_name: str) -> Callable:
 		"table_hybrid_parse": ("autorag.data.parse", "table_hybrid_parse"),
 		# chunk
 		"llama_index_chunk": ("autorag.data.chunk", "llama_index_chunk"),
+		"langchain_chunk": ("autorag.data.chunk", "langchain_chunk"),
 		# query_expansion
 		"query_decompose": ("autorag.nodes.queryexpansion", "query_decompose"),
 		"hyde": ("autorag.nodes.queryexpansion", "hyde"),
