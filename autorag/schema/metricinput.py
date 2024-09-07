@@ -17,6 +17,7 @@ class MetricInput:
     generation_gt: Optional[List[str]] = None
     generated_log_probs: Optional[List[float]] = None
 
+    @classmethod
     def is_fields_notnone(self, fields_to_check: List[str]) -> bool:
         type_checks: Dict[type, Callable[[Any], bool]] = {
             str: lambda x: len(x.strip()) > 0,
@@ -39,10 +40,16 @@ class MetricInput:
         return True
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame) -> List['MetricInput']:
+    def from_dataframe(cls, qa_data: pd.DataFrame) -> List['MetricInput']:
+        """
+        Convert a pandas DataFrame into a list of MetricInput instances.
+        qa_data: pd.DataFrame: qa_data DataFrame containing metric data.
+
+        :returns: List[MetricInput]: List of MetricInput objects created from DataFrame rows.
+        """
         instances = []
 
-        for _, row in df.iterrows():
+        for _, row in qa_data.iterrows():
             instance = cls()
 
             for attr_name in cls.__annotations__:
