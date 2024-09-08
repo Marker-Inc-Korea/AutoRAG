@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import tiktoken
 import unicodedata
+
 from llama_index.embeddings.openai import OpenAIEmbedding
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel

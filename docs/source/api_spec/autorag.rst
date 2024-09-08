@@ -16,6 +16,14 @@ Subpackages
 Submodules
 ----------
 
+autorag.chunker module
+----------------------
+
+.. automodule:: autorag.chunker
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.cli module
 ------------------
 
