@@ -5,7 +5,7 @@ from autorag.evaluation.metric.util import autorag_metric
 from autorag.schema.metricinput import MetricInput
 
 
-@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_f1(metric_input: MetricInput):
 	"""
 	Compute f1 score for retrieval.
@@ -21,9 +21,9 @@ def retrieval_f1(metric_input: MetricInput):
 		return 2 * (recall_score * precision_score) / (recall_score + precision_score)
 
 
-@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_recall(metric_input: MetricInput) -> float:
-	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
 	gt_sets = [frozenset(g) for g in gt]
 	pred_set = set(pred)
@@ -32,9 +32,9 @@ def retrieval_recall(metric_input: MetricInput) -> float:
 	return recall
 
 
-@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_precision(metric_input: MetricInput) -> float:
-	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
 	gt_sets = [frozenset(g) for g in gt]
 	pred_set = set(pred)
@@ -43,9 +43,9 @@ def retrieval_precision(metric_input: MetricInput) -> float:
 	return precision
 
 
-@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_ndcg(metric_input: MetricInput) -> float:
-	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
 	gt_sets = [frozenset(g) for g in gt]
 	pred_set = set(pred)
@@ -70,13 +70,13 @@ def retrieval_ndcg(metric_input: MetricInput) -> float:
 	return ndcg
 
 
-@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_mrr(metric_input: MetricInput) -> float:
 	"""
 	Reciprocal Rank (RR) is the reciprocal of the rank of the first relevant item.
 	Mean of RR in whole queries is MRR.
 	"""
-	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
 	# Flatten the ground truth list of lists into a single set of relevant documents
 	gt_sets = [frozenset(g) for g in gt]
@@ -90,12 +90,12 @@ def retrieval_mrr(metric_input: MetricInput) -> float:
 	return sum(rr_list) / len(gt_sets) if rr_list else 0.0
 
 
-@autorag_metric(fields_to_check=["retrieval_gt", "retrieval_ids"])
+@autorag_metric(fields_to_check=["retrieval_gt", "retrieved_ids"])
 def retrieval_map(metric_input: MetricInput) -> float:
 	"""
 	Mean Average Precision (MAP) is the mean of Average Precision (AP) for all queries.
 	"""
-	gt, pred = metric_input.retrieval_gt, metric_input.retrieval_ids
+	gt, pred = metric_input.retrieval_gt, metric_input.retrieved_ids
 
 	gt_sets = [frozenset(g) for g in gt]
 

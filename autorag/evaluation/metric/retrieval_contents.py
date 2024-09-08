@@ -26,7 +26,7 @@ def single_token_f1(ground_truth: str, prediction: str):
 	return precision, recall, f1
 
 
-@autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
+@autorag_metric(fields_to_check=["retrieved_contents", "retrieval_gt_contents"])
 def retrieval_token_f1(metric_input: MetricInput):
 	pred, gt = metric_input.retrieved_contents, metric_input.retrieval_gt_contents
 	calculated_results = list(
@@ -37,7 +37,7 @@ def retrieval_token_f1(metric_input: MetricInput):
 	return result_np.max(axis=1).mean()
 
 
-@autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
+@autorag_metric(fields_to_check=["retrieved_contents", "retrieval_gt_contents"])
 def retrieval_token_precision(metric_input: MetricInput):
 	pred, gt = metric_input.retrieved_contents, metric_input.retrieval_gt_contents
 	calculated_results = list(
@@ -48,7 +48,7 @@ def retrieval_token_precision(metric_input: MetricInput):
 	return result_np.max(axis=1).mean()
 
 
-@autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
+@autorag_metric(fields_to_check=["retrieved_contents", "retrieval_gt_contents"])
 def retrieval_token_recall(metric_input: MetricInput):
 	pred, gt = metric_input.retrieved_contents, metric_input.retrieval_gt_contents
 	calculated_results = list(
