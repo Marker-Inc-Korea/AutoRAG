@@ -43,7 +43,7 @@ def evaluate_generation(
 					"Input func must return string list as generated answer at the first return value."
 				)
 			for metric_input, generated_text in zip(metric_inputs, generated_str):
-				setattr(metric_input, "generated_texts", generated_text)
+				metric_input.generated_text = generated_text
 
 			metric_scores = {}
 			metric_names, metric_params = cast_metrics(metrics)

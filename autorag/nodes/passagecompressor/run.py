@@ -166,7 +166,7 @@ def evaluate_passage_compressor_node(
 		retrieval_token_f1.__name__: retrieval_token_f1,
 	}
 	for metric_input, generated_text in zip(metric_inputs, result_df["retrieved_contents"].tolist()):
-		setattr(metric_input, "retrieval_contents", generated_text)
+		metric_input.retrieval_contents = generated_text
 	metrics = list(filter(lambda x: x in metric_funcs.keys(), metrics))
 	if len(metrics) <= 0:
 		raise ValueError(f"metrics must be one of {metric_funcs.keys()}")

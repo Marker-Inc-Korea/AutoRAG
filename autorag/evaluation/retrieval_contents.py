@@ -35,7 +35,7 @@ def evaluate_retrieval_contents(metric_inputs: List[MetricInput], metrics: List[
 				retrieval_token_f1.__name__: retrieval_token_f1,
 			}
 			for metric_input, content in zip(metric_inputs, contents):
-				setattr(metric_input, "retrieval_contents", content)
+				metric_input.retrieval_contents = content
 
 			metrics_scores = {}
 			for metric in metrics:
