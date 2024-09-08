@@ -1,6 +1,7 @@
 import mimetypes
 import os
 from datetime import datetime
+from itertools import accumulate
 from pathlib import Path
 from typing import Dict, List, Tuple, Callable
 
@@ -93,3 +94,11 @@ def get_param_combinations(modules: List[Dict]) -> Tuple[List[Callable], List[Di
 	combinations = list(map(make_combinations, module_params_list))
 	module_list, combination_list = explode(module_callable_list, combinations)
 	return module_list, combination_list
+
+
+def gen_start_end_idx(contents: List[str]) -> List[Tuple[int, int]]:
+	lengths = [len(content) for content in contents]
+	start_indices = list(accumulate([0] + lengths[:-1]))
+	return [
+		(start, start + length - 1) for start, length in zip(start_indices, lengths)
+	]

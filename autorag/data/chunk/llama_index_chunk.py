@@ -1,5 +1,5 @@
 import os.path
-from itertools import accumulate, chain
+from itertools import chain
 from typing import Tuple, List, Dict, Any, Optional
 
 from llama_index.core import Document
@@ -7,7 +7,10 @@ from llama_index.core.node_parser.interface import NodeParser
 
 from autorag.utils.util import process_batch, get_event_loop
 from autorag.data.chunk.base import chunker_node, add_file_name
-from autorag.data.utils.util import add_essential_metadata_llama_text_node
+from autorag.data.utils.util import (
+	add_essential_metadata_llama_text_node,
+	gen_start_end_idx,
+)
 
 
 @chunker_node
@@ -86,11 +89,3 @@ async def llama_index_chunk_pure(
 	)
 
 	return doc_id, contents, path_lst, start_end_idx, metadata
-
-
-def gen_start_end_idx(contents: List[str]) -> List[Tuple[int, int]]:
-	lengths = [len(content) for content in contents]
-	start_indices = list(accumulate([0] + lengths[:-1]))
-	return [
-		(start, start + length - 1) for start, length in zip(start_indices, lengths)
-	]
