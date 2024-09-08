@@ -15,7 +15,7 @@ from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
 from autorag import embedding_models
-from autorag.evaluation.metric.util import autorag_generation_metric
+from autorag.evaluation.metric.util import autorag_metric_loop
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import (
@@ -60,7 +60,7 @@ def huggingface_evaluate(
 	return result
 
 
-@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
+@autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def bleu(
 		metric_inputs: List[MetricInput],
 	tokenize: Optional[str] = None,
@@ -101,7 +101,7 @@ def bleu(
 	return result
 
 
-@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
+@autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def meteor(
 		metric_inputs: List[MetricInput],
 	alpha: float = 0.9,
@@ -138,7 +138,7 @@ def meteor(
 	return result
 
 
-@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
+@autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def rouge(
 		metric_inputs: List[MetricInput],
 	rouge_type: Optional[str] = "rougeL",
@@ -190,7 +190,7 @@ def rouge(
 	return result
 
 
-@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
+@autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def sem_score(
 		metric_inputs: List[MetricInput],
 	embedding_model: Optional[BaseEmbedding] = None,
@@ -256,7 +256,7 @@ def sem_score(
 	return result
 
 
-@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
+@autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def g_eval(
 		metric_inputs: List[MetricInput],
 	metrics: Optional[List[str]] = None,
@@ -359,7 +359,7 @@ async def async_g_eval(
 	return sum(g_eval_scores) / len(g_eval_scores)
 
 
-@autorag_generation_metric(fields_to_check=["generation_gt", "generated_texts"])
+@autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def bert_score(
 		metric_inputs: List[MetricInput],
 	lang: str = "en",

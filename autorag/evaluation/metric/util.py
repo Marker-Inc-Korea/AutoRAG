@@ -40,7 +40,7 @@ def autorag_metric(fields_to_check: List[str]):
     return decorator_autorag_metric
 
 
-def autorag_generation_metric(fields_to_check: List[str]):
+def autorag_metric_loop(fields_to_check: List[str]):
     def decorator_autorag_generation_metric(func):
         @functools.wraps(func)
         @convert_inputs_to_list
