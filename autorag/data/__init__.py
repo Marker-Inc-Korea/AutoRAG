@@ -1,3 +1,5 @@
+from typing import List, Callable
+
 from langchain_community.document_loaders import (
 	PDFMinerLoader,
 	PDFPlumberLoader,
@@ -14,6 +16,17 @@ from langchain_community.document_loaders import (
 )
 from langchain_unstructured import UnstructuredLoader
 from langchain_upstage import UpstageLayoutAnalysisLoader
+
+from llama_index.core.node_parser import (
+	TokenTextSplitter,
+	SentenceSplitter,
+	SentenceWindowNodeParser,
+	SemanticSplitterNodeParser,
+	SemanticDoubleMergingSplitterNodeParser,
+	SimpleFileNodeParser,
+)
+
+from autorag import LazyInit
 
 parse_modules = {
 	# PDF
@@ -39,3 +52,35 @@ parse_modules = {
 	"directory": DirectoryLoader,
 	"unstructured": UnstructuredLoader,
 }
+
+chunk_modules = {
+	# Llama Index
+	# Token
+	"token": TokenTextSplitter,
+	# Sentence
+	"sentence": SentenceSplitter,
+	# window
+	"sentencewindow": SentenceWindowNodeParser,
+	# Semantic
+	"semantic_llama_index": SemanticSplitterNodeParser,
+	"semanticdoublemerging": SemanticDoubleMergingSplitterNodeParser,
+	# Simple
+	"simplefile": SimpleFileNodeParser,
+}
+
+
+def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
+	from kiwipiepy import Kiwi
+
+	kiwi = Kiwi()
+
+	def split(text: str) -> List[str]:
+		kiwi_result = kiwi.split_into_sents(text)
+		sentences = list(map(lambda x: x.text, kiwi_result))
+
+		return sentences
+
+	return split
+
+
+sentence_splitter_modules = {"kiwi": LazyInit(split_by_sentence_kiwi)}
