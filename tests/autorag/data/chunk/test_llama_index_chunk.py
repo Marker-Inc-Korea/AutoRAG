@@ -7,8 +7,11 @@ from tests.autorag.data.chunk.test_chunk_base import (
 	base_texts,
 	parsed_result,
 	check_chunk_result,
+	check_chunk_result_node,
 	base_metadata,
 	expect_texts,
+	expect_token_path,
+	expect_token_idx,
 )
 
 
@@ -31,76 +34,84 @@ def chunk_instance_sentence_splitter():
 
 def test_llama_index_chunk(chunk_instance):
 	llama_index_chunk_original = llama_index_chunk.__wrapped__
-	doc_id, contents, metadata = llama_index_chunk_original(
+	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
 		base_texts, chunk_instance, metadata_list=base_metadata
 	)
-	check_chunk_result(doc_id, metadata)
+	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
 	assert len(contents) == 4
 	assert contents == expect_texts["original"]
+	assert path == expect_token_path
+	assert start_end_idx == expect_token_idx
 
 
 def test_llama_index_chunk_node():
 	result_df = llama_index_chunk(parsed_result, chunk_method="token")
-	check_chunk_result(result_df["doc_id"].tolist(), result_df["metadata"].tolist())
+	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9
 
 
 def test_llama_index_chunk_file_name_ko(chunk_instance):
 	llama_index_chunk_original = llama_index_chunk.__wrapped__
-	doc_id, contents, metadata = llama_index_chunk_original(
+	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
 		base_texts,
 		chunk_instance,
 		file_name_language="korean",
 		metadata_list=base_metadata,
 	)
-	check_chunk_result(doc_id, metadata)
+	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
 	assert len(contents) == 4
 	assert contents == expect_texts["korean"]
+	assert path == expect_token_path
+	assert start_end_idx == expect_token_idx
 
 
 def test_llama_index_chunk_file_name_ko_node():
 	result_df = llama_index_chunk(
 		parsed_result, chunk_method="token", add_file_name="korean"
 	)
-	check_chunk_result(result_df["doc_id"].tolist(), result_df["metadata"].tolist())
+	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9
 
 
 def test_llama_index_chunk_file_name_eng(chunk_instance):
 	llama_index_chunk_original = llama_index_chunk.__wrapped__
-	doc_id, contents, metadata = llama_index_chunk_original(
+	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
 		base_texts,
 		chunk_instance,
 		file_name_language="english",
 		metadata_list=base_metadata,
 	)
-	check_chunk_result(doc_id, metadata)
+	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
 	assert len(contents) == 4
 	assert contents == expect_texts["english"]
+	assert path == expect_token_path
+	assert start_end_idx == expect_token_idx
 
 
 def test_llama_index_chunk_file_name_eng_node():
 	result_df = llama_index_chunk(
 		parsed_result, chunk_method="token", add_file_name="english"
 	)
-	check_chunk_result(result_df["doc_id"].tolist(), result_df["metadata"].tolist())
+	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9
 
 
 def test_llama_index_chunk_sentence(chunk_instance_sentence_splitter):
 	llama_index_chunk_original = llama_index_chunk.__wrapped__
-	doc_id, contents, metadata = llama_index_chunk_original(
+	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
 		base_texts, chunk_instance_sentence_splitter, metadata_list=base_metadata
 	)
-	check_chunk_result(doc_id, metadata)
+	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
 	assert len(contents) == 2
 	assert all("window" in meta.keys() for meta in metadata)
+	assert path == [base_metadata[0]["path"], base_metadata[1]["path"]]
+	assert start_end_idx == [(0, 168), (0, 165)]
 
 
 def test_llama_index_chunk_sentence_node():
 	result_df = llama_index_chunk(
 		parsed_result, chunk_method="sentencewindow", sentence_splitter="kiwi"
 	)
-	check_chunk_result(result_df["doc_id"].tolist(), result_df["metadata"].tolist())
+	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 206
 	assert all("window" in meta.keys() for meta in (result_df["metadata"].tolist()))

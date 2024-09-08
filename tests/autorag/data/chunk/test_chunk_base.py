@@ -59,12 +59,38 @@ expect_texts = {
 	],
 }
 
+expect_token_path = [
+	base_metadata[0]["path"],
+	base_metadata[0]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+]
 
-def check_chunk_result(doc_id, metadata):
-	assert isinstance(doc_id, list)
-	assert isinstance(doc_id[0], str)
-	assert isinstance(metadata, list)
-	assert isinstance(metadata[0], dict)
+expect_token_idx = [(0, 142), (143, 167), (0, 118), (119, 164)]
+
+
+def check_chunk_result(doc_id, contents, path, start_end_idx, metadata):
+	params = [
+		(doc_id, list, str),
+		(contents, list, str),
+		(path, list, str),
+		(start_end_idx, list, tuple),
+		(metadata, list, dict),
+	]
+
+	for param, outer_type, inner_type in params:
+		assert isinstance(param, outer_type)
+		assert isinstance(param[0], inner_type)
+
+
+def check_chunk_result_node(result_df):
+	check_chunk_result(
+		result_df["doc_id"].tolist(),
+		result_df["contents"].tolist(),
+		result_df["path"].tolist(),
+		result_df["start_end_idx"].tolist(),
+		result_df["metadata"].tolist(),
+	)
 
 
 def test_make_metadata_list():
