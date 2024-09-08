@@ -56,10 +56,10 @@ def run_generator_node(
 	# get average token usage
 	token_usages = list(map(lambda x: x["generated_tokens"].apply(len).mean(), results))
 
-	# make rows to payload
+	# make rows to metric_inputs
 	generation_gt = list(map(lambda x: x.tolist(), qa_data["generation_gt"].tolist()))
 
-	payloads = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
+	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
 
 	metric_names, metric_params = cast_metrics(strategies.get("metrics"))
 	if metric_names is None or len(metric_names) <= 0:
@@ -67,7 +67,7 @@ def run_generator_node(
 	results = list(
 		map(
 			lambda result: evaluate_generator_node(
-				result, payloads, strategies.get("metrics")
+				result, metric_inputs, strategies.get("metrics")
 			),
 			results,
 		)

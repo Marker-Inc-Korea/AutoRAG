@@ -118,7 +118,7 @@ def run_query_expansion_node(
 			os.path.join(project_dir, "data", "qa.parquet"), engine="pyarrow"
 		)["retrieval_gt"].tolist()
 
-		# make rows to payload
+		# make rows to metric_inputs
 		metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt
 						 in
 					zip(retrieval_gt, previous_result["query"].tolist(), previous_result["generation_gt"].tolist())]
@@ -129,8 +129,10 @@ def run_query_expansion_node(
 				lambda result: evaluate_one_query_expansion_node(
 					retrieval_callables,
 					retrieval_params,
-					[metric_input(queries=queries) for metric_input, queries in
-					 zip(metric_inputs, result['queries'].to_list())],
+					[
+						setattr(metric_input, "queries", queries) or metric_input
+						for metric_input, queries in zip(metric_inputs, result['queries'].to_list())
+					],
 					general_strategy["metrics"],
 					project_dir,
 					previous_result,

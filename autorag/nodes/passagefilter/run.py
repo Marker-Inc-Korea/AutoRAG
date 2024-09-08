@@ -44,7 +44,7 @@ def run_passage_filter_node(
 		]
 		for inner_array in retrieval_gt
 	]
-	# make rows to payload
+	# make rows to metric_inputs
 	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
 				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
 
