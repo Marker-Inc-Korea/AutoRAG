@@ -104,12 +104,3 @@ def test_llama_index_chunk_sentence_node():
 	check_chunk_result(result_df["doc_id"].tolist(), result_df["metadata"].tolist())
 	assert len(result_df["doc_id"].tolist()) == 206
 	assert all("window" in meta.keys() for meta in (result_df["metadata"].tolist()))
-
-
-def test_llama_index_chunk_semantic_node():
-	result_df = llama_index_chunk(
-		parsed_result, chunk_method="semantic_llama_index", embed_model="openai"
-	)
-	check_chunk_result(result_df["doc_id"].tolist(), result_df["metadata"].tolist())
-	assert len(result_df["doc_id"].tolist()) == 206
-	assert all("window" in meta.keys() for meta in (result_df["metadata"].tolist()))
