@@ -26,6 +26,8 @@ from llama_index.core.node_parser import (
 	SimpleFileNodeParser,
 )
 
+from autorag import LazyInit
+
 parse_modules = {
 	# PDF
 	"pdfminer": PDFMinerLoader,
@@ -81,4 +83,4 @@ def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
 	return split
 
 
-sentence_splitter_modules = {"kiwi": split_by_sentence_kiwi()}
+sentence_splitter_modules = {"kiwi": LazyInit(split_by_sentence_kiwi)}

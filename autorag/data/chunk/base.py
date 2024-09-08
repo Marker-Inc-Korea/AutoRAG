@@ -70,8 +70,8 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 		# llama index default sentence_splitter is 'nltk -PunktSentenceTokenizer'
 		if "sentence_splitter" in kwargs.keys():
 			sentence_splitter_str = kwargs.pop("sentence_splitter")
-			sentence_splitter = sentence_splitter_modules[sentence_splitter_str]
-			kwargs.update({"sentence_splitter": sentence_splitter})
+			sentence_splitter_func = sentence_splitter_modules[sentence_splitter_str]()
+			kwargs.update({"sentence_splitter": sentence_splitter_func})
 
 	# Add embed_model to kwargs
 	embedding_available_methods = ["semantic_llama_index"]

@@ -15,6 +15,19 @@ def llama_index_chunk(
 	file_name_language: Optional[str] = None,
 	metadata_list: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+	"""
+	Chunk texts from the parsed result to use llama index chunk method
+
+	:param texts: The list of texts to chunk from the parsed result
+	:param chunker: A llama index NodeParser(Chunker) instance.
+	:param file_name_language: The language to use 'add_file_name' feature.
+		You need to set one of 'English' and 'Korean'
+		The 'add_file_name' feature is to add a file_name to chunked_contents.
+		This is used to prevent hallucination by retrieving contents from the wrong document.
+		Default form of 'English' is "file_name: {file_name}\n contents: {content}"
+	:param metadata_list: The list of dict of metadata from the parsed result
+	:return: tuple of lists containing the chunked doc_id, contents, and metadata
+	"""
 	# set documents
 	documents = [
 		Document(text=text, metadata=metadata)
