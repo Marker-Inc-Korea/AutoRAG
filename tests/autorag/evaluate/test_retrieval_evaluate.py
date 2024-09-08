@@ -32,12 +32,12 @@ ids = [
 	[f"pred-{i}" for i in range(4, 8)],
 	[retrieval_gt[3][0][0], "pred-8", "pred-9", "pred-10"],
 ]
-payloads = [MetricInput(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt) for ret_gt, queries, gen_gt in
-			zip(retrieval_gt, queries_example, generation_gt_example)]
+metric_inputs = [MetricInput(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt) for ret_gt, queries, gen_gt in
+				 zip(retrieval_gt, queries_example, generation_gt_example)]
 
 
 @evaluate_retrieval(
-	metric_inputs=payloads,
+	metric_inputs=metric_inputs,
 	metrics=["retrieval_recall", "retrieval_precision", "retrieval_f1"],
 )
 def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
@@ -45,7 +45,7 @@ def pseudo_retrieval() -> Tuple[List[List[str]], List[List[str]], List[List[floa
 
 
 @evaluate_retrieval(
-	metric_inputs=payloads,
+	metric_inputs=metric_inputs,
 	metrics=[{"metric_name": "retrieval_recall"}, {"metric_name": "retrieval_f1"}],
 )
 def pseudo_retrieval_dict_metric() -> (
