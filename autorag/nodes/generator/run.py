@@ -8,6 +8,7 @@ from autorag.evaluation import evaluate_generation
 from autorag.evaluation.util import cast_metrics
 from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
+from autorag.utils.util import to_list
 
 
 def run_generator_node(
@@ -57,7 +58,7 @@ def run_generator_node(
 	token_usages = list(map(lambda x: x["generated_tokens"].apply(len).mean(), results))
 
 	# make rows to metric_inputs
-	generation_gt = list(map(lambda x: x.tolist(), qa_data["generation_gt"].tolist()))
+	generation_gt = to_list(qa_data["generation_gt"].tolist())
 
 	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
 
