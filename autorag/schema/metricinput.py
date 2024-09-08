@@ -18,16 +18,16 @@ class MetricInput:
     generation_gt: Optional[List[str]] = None
     generated_log_probs: Optional[List[float]] = None
 
-    def is_fields_notnone(cls, fields_to_check: List[str]) -> bool:
+    def is_fields_notnone(self, fields_to_check: List[str]) -> bool:
         type_checks: Dict[type, Callable[[Any], bool]] = {
             str: lambda x: len(x.strip()) > 0,
-            list: cls._check_list,
+            list: self._check_list,
             int: lambda _: True,
             float: lambda _: True,
-            np.ndarray: cls._check_list
+            np.ndarray: self._check_list
         }
         for field in fields_to_check:
-            actual_value = getattr(cls, field)
+            actual_value = getattr(self, field)
 
             if actual_value is None:
                 return False
