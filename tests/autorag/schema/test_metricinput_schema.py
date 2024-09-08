@@ -9,7 +9,7 @@ def sample_metric_input():
     return MetricInput(
         query="test query",
         queries=["q1", "q2"],
-        gt_contents=["gc1", "gc2"]
+        retrieval_gt_contents=["gc1", "gc2"]
     )
 
 
@@ -17,7 +17,7 @@ def test_default_constructor():
     metric_input = MetricInput()
     assert metric_input.query is None
     assert metric_input.queries is None
-    assert metric_input.gt_contents is None
+    assert metric_input.retrieval_gt_contents is None
 
 
 def test_is_fields_notnone(sample_metric_input):
@@ -51,7 +51,7 @@ def test_from_dataframe_empty_values():
     assert len(metricinputs) == 2
     assert metricinputs[0].query is None
     assert metricinputs[0].queries is None
-    assert metricinputs[0].gt_contents is None
+    assert metricinputs[0].retrieval_gt_contents is None
     assert metricinputs[1].query == 'valid query'
     assert metricinputs[1].queries == ['q1', 'q2']
-    assert metricinputs[1].gt_contents == ['gc1', 'gc2']
+    assert metricinputs[1].retrieval_gt_contents == ['gc1', 'gc2']

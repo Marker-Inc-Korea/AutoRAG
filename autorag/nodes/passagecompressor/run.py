@@ -70,14 +70,14 @@ def run_passage_compressor_node(
 	results = list(results)
 	average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
-	retrieval_contents_gt = list(
+	retrieval_gt_contents = list(
 		map(lambda x: fetch_contents(corpus_data, x), qa_data["retrieval_gt"].tolist())
 	)
-	retrieval_contents_gt = list(
-		map(lambda x: list(itertools.chain.from_iterable(x)), retrieval_contents_gt)
+	retrieval_gt_contents = list(
+		map(lambda x: list(itertools.chain.from_iterable(x)), retrieval_gt_contents)
 	)
 
-	metric_inputs = [MetricInput(gt_contents=ret_cont_gt) for ret_cont_gt in retrieval_contents_gt]
+	metric_inputs = [MetricInput(retrieval_gt_contents=ret_cont_gt) for ret_cont_gt in retrieval_gt_contents]
 
 	# run metrics before filtering
 	if strategies.get("metrics") is None:

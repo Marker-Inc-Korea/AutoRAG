@@ -28,7 +28,7 @@ def single_token_f1(ground_truth: str, prediction: str):
 
 @autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
 def retrieval_token_f1(metric_input: MetricInput):
-	pred, gt = metric_input.retrieval_contents, metric_input.gt_contents
+	pred, gt = metric_input.retrieved_contents, metric_input.retrieval_gt_contents
 	calculated_results = list(
 		map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt)))
 	)
@@ -39,7 +39,7 @@ def retrieval_token_f1(metric_input: MetricInput):
 
 @autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
 def retrieval_token_precision(metric_input: MetricInput):
-	pred, gt = metric_input.retrieval_contents, metric_input.gt_contents
+	pred, gt = metric_input.retrieved_contents, metric_input.retrieval_gt_contents
 	calculated_results = list(
 		map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt)))
 	)
@@ -50,7 +50,7 @@ def retrieval_token_precision(metric_input: MetricInput):
 
 @autorag_metric(fields_to_check=["retrieval_contents", "gt_contents"])
 def retrieval_token_recall(metric_input: MetricInput):
-	pred, gt = metric_input.retrieval_contents, metric_input.gt_contents
+	pred, gt = metric_input.retrieved_contents, metric_input.retrieval_gt_contents
 	calculated_results = list(
 		map(lambda x: single_token_f1(x[1], x[0]), list(itertools.product(pred, gt)))
 	)

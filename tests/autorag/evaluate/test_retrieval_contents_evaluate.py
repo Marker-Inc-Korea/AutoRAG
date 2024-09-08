@@ -21,7 +21,7 @@ pred = [
 
 
 @evaluate_retrieval_contents(
-	metric_inputs=[MetricInput(gt_contents=gt_contents) for gt_contents in gt],
+	metric_inputs=[MetricInput(retrieval_gt_contents=gt_contents) for gt_contents in gt],
 	metrics=[
 		"retrieval_token_recall",
 		"retrieval_token_precision",

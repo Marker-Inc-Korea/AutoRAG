@@ -24,7 +24,7 @@ pred = [
 	["Who is son? He is great player in the world"],
 	["i love havertz", "i love kai havertz"],
 ]
-metric_inputs = [MetricInput(gt_contents=g, retrieval_contents=p) for g, p in zip(gt, pred)]
+metric_inputs = [MetricInput(retrieval_gt_contents=g, retrieved_contents=p) for g, p in zip(gt, pred)]
 
 
 def test_single_token_f1():
@@ -40,10 +40,10 @@ def test_single_token_f1():
 
 
 def test_retrieval_token_f1():
-	f1 = retrieval_token_f1.__wrapped__(MetricInput(gt_contents=gt[0], retrieval_contents=pred[0]))
+	f1 = retrieval_token_f1.__wrapped__(MetricInput(retrieval_gt_contents=gt[0], retrieved_contents=pred[0]))
 	assert f1 == pytest.approx(0.38333, rel=0.001)
 
-	f1 = retrieval_token_f1.__wrapped__(MetricInput(gt_contents=gt[1], retrieval_contents=pred[1]))
+	f1 = retrieval_token_f1.__wrapped__(MetricInput(retrieval_gt_contents=gt[1], retrieved_contents=pred[1]))
 	assert f1 == pytest.approx(0.797979, rel=0.001)
 
 	result_f1 = retrieval_token_f1(metric_inputs=metric_inputs)
