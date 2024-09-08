@@ -70,7 +70,8 @@ class MetricInput:
 
         return instances
 
-    def _check_list(self, lst_or_arr: Union[List[Any], np.ndarray]) -> bool:
+    @staticmethod
+    def _check_list(lst_or_arr: Union[List[Any], np.ndarray]) -> bool:
         if isinstance(lst_or_arr, np.ndarray):
             lst_or_arr = lst_or_arr.flatten().tolist()
 
@@ -79,8 +80,8 @@ class MetricInput:
 
         type_checks: Dict[type, Callable[[Any], bool]] = {
             str: lambda x: len(x.strip()) > 0,
-            list: self._check_list,
-            np.ndarray: self._check_list,
+            list: MetricInput._check_list,
+            np.ndarray: MetricInput._check_list,
             int: lambda _: True,
             float: lambda _: True,
         }
