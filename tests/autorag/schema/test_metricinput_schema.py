@@ -21,17 +21,17 @@ def test_default_constructor():
 
 
 def test_is_fields_notnone(sample_metric_input):
-    assert sample_metric_input.is_fields_notnone(["query", "queries", "gt_contents"])
+    assert sample_metric_input.is_fields_notnone(["query", "queries", "retrieval_gt_contents"])
 
     sample_metric_input.query = None
-    assert not sample_metric_input.is_fields_notnone(["query", "queries", "gt_contents"])
+    assert not sample_metric_input.is_fields_notnone(["query", "queries", "retrieval_gt_contents"])
 
 
 def test_from_dataframe_multiple_rows():
     df = pd.DataFrame({
         'query': ['test query 1', 'test query 2'],
         'queries': [['q1', 'q2'], ['q3', 'q4']],
-        'gt_contents': [['gc1', 'gc2'], ['gc3', 'gc4']]
+        'retrieval_gt_contents': [['gc1', 'gc2'], ['gc3', 'gc4']]
     })
 
     metricinputs = MetricInput.from_dataframe(df)
@@ -44,7 +44,7 @@ def test_from_dataframe_empty_values():
     df = pd.DataFrame({
         'query': ['', 'valid query'],
         'queries': [[], ['q1', 'q2']],
-        'gt_contents': [None, ['gc1', 'gc2']]
+        'retrieval_gt_contents': [None, ['gc1', 'gc2']]
     })
 
     metricinputs = MetricInput.from_dataframe(df)

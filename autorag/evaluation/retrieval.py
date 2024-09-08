@@ -50,7 +50,7 @@ def evaluate_retrieval(
 		def wrapper(*args, **kwargs) -> pd.DataFrame:
 			contents, pred_ids, scores = func(*args, **kwargs)
 			for metric_input, pred_id in zip(metric_inputs, pred_ids):
-				metric_input.retrieval_ids = pred_id
+				metric_input.retrieved_ids = pred_id
 
 			metric_scores = {}
 			metric_names, metric_params = cast_metrics(metrics)

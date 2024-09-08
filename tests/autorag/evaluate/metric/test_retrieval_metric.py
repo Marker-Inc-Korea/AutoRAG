@@ -37,7 +37,7 @@ pred = [
 	["pred-14"],  # retrieval_gt is empty so not counted
 	["pred-15", "pred-16", "test-15"],  # recall:1, precision: 1/3, f1: 0.5
 ]
-metric_inputs = [MetricInput(retrieval_gt=ret_gt, retrieval_ids=pr) for ret_gt, pr in zip(retrieval_gt, pred)]
+metric_inputs = [MetricInput(retrieval_gt=ret_gt, retrieved_ids=pr) for ret_gt, pr in zip(retrieval_gt, pred)]
 
 def test_retrieval_f1():
 	solution = [0.5, 2 / 7, 2 / 5, 4 / 7, 2 / 3, None, None, 0.5]
@@ -50,7 +50,7 @@ def test_numpy_retrieval_metric():
 	retrieval_gt_np = [[np.array(["test-1", "test-4"])], np.array([["test-2"]])]
 	pred_np = np.array([["test-2", "test-3", "test-1"], ["test-5", "test-6", "test-8"]])
 	solution = [1.0, 0.0]
-	metric_inputs_np = [MetricInput(retrieval_gt=ret_gt_np, retrieval_ids=pr_np) for ret_gt_np, pr_np in
+	metric_inputs_np = [MetricInput(retrieval_gt=ret_gt_np, retrieved_ids=pr_np) for ret_gt_np, pr_np in
 						zip(retrieval_gt_np, pred_np)]
 	result = retrieval_recall(metric_inputs=metric_inputs_np)
 	for gt, res in zip(solution, result):
