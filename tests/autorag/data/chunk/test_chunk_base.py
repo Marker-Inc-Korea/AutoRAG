@@ -88,7 +88,26 @@ expect_token_path = [
 	base_metadata[1]["path"],
 ]
 
+expect_character_path = [
+	base_metadata[0]["path"],
+	base_metadata[0]["path"],
+	base_metadata[0]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+]
+
 expect_token_idx = [(0, 143), (144, 169), (0, 119), (120, 166)]
+expect_character_idx = [
+	(0, 82),
+	(84, 149),
+	(151, 169),
+	(0, 67),
+	(69, 118),
+	(120, 146),
+	(148, 166),
+]
 
 
 def check_chunk_result(doc_id, contents, path, start_end_idx, metadata):
