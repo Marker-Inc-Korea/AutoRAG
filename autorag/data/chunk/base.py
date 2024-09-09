@@ -13,10 +13,12 @@ logger = logging.getLogger("AutoRAG")
 
 def chunker_node(func):
 	@functools.wraps(func)
-	@result_to_dataframe(["doc_id", "contents", "metadata"])
+	@result_to_dataframe(["doc_id", "contents", "path", "start_end_idx", "metadata"])
 	def wrapper(
 		parsed_result: pd.DataFrame, chunk_method: str, **kwargs
-	) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+	) -> Tuple[
+		List[str], List[str], List[str], List[Tuple[int, int]], List[Dict[str, Any]]
+	]:
 		logger.info(f"Running chunker - {func.__name__} module...")
 
 		# get texts from parsed_result
@@ -37,6 +39,7 @@ def chunker_node(func):
 				file_name_language=file_name_language,
 				metadata_list=metadata_list,
 			)
+			del chunk_instance
 			return result
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
