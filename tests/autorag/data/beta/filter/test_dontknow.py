@@ -2,6 +2,8 @@ import time
 from unittest.mock import patch
 
 import pandas as pd
+from llama_index.core.base.llms.types import ChatResponse, ChatMessage, MessageRole
+from llama_index.llms.openai import OpenAI
 from openai import AsyncOpenAI
 from openai.types.chat import (
 	ParsedChatCompletion,
@@ -14,6 +16,7 @@ from autorag.data.beta.filter.dontknow import (
 	dontknow_filter_rule_based,
 	dontknow_filter_openai,
 	Response,
+	dontknow_filter_llama_index,
 )
 from autorag.data.beta.schema import QA
 
@@ -74,6 +77,15 @@ async def mock_openai_response(*args, **kwargs) -> ParsedChatCompletion[Response
 	)
 
 
+async def mock_llama_index_response(*args, **kwargs) -> ChatResponse:
+	user_prompt = kwargs["messages"][1].content
+	return ChatResponse(
+		message=ChatMessage(
+			role=MessageRole.ASSISTANT, content=str(user_prompt in dont_know_lang)
+		)
+	)
+
+
 def test_dontknow_filter_rule_based():
 	# Test for English
 	en_qa = QA(en_qa_df)
@@ -95,7 +107,7 @@ def test_dontknow_filter_rule_based():
 	"parse",
 	mock_openai_response,
 )
-def test_dontknow_filter_openai_true():
+def test_dontknow_filter_openai():
 	client = AsyncOpenAI()
 	en_qa = QA(en_qa_df)
 	result_en_qa = en_qa.batch_filter(
@@ -107,5 +119,25 @@ def test_dontknow_filter_openai_true():
 	ko_qa = QA(ko_qa_df)
 	result_ko_qa = ko_qa.batch_filter(
 		dontknow_filter_openai, client=client, lang="ko"
+	).map(lambda df: df.reset_index(drop=True))
+	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
+
+
+@patch.object(
+	OpenAI,
+	"achat",
+	mock_llama_index_response,
+)
+def test_dontknow_filter_llama_index():
+	llm = OpenAI()
+	en_qa = QA(en_qa_df)
+	result_en_qa = en_qa.batch_filter(
+		dontknow_filter_llama_index, llm=llm, lang="en"
+	).map(lambda df: df.reset_index(drop=True))
+	pd.testing.assert_frame_equal(result_en_qa.data, expected_df_en)
+
+	ko_qa = QA(ko_qa_df)
+	result_ko_qa = ko_qa.batch_filter(
+		dontknow_filter_llama_index, llm=llm, lang="ko"
 	).map(lambda df: df.reset_index(drop=True))
 	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)

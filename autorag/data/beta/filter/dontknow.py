@@ -1,6 +1,7 @@
 from typing import Dict, List
 
-from llama_index.core.base.llms.types import ChatMessage, MessageRole
+from llama_index.core.base.llms.base import BaseLLM
+from llama_index.core.base.llms.types import ChatMessage, MessageRole, ChatResponse
 from llama_index.llms.openai.utils import to_openai_message_dicts
 from openai import AsyncClient
 from pydantic import BaseModel
@@ -75,3 +76,32 @@ async def dontknow_filter_openai(
 		)
 		result.append(completion.choices[0].message.parsed.is_dont_know)
 	return not any(result)
+
+
+async def dontknow_filter_llama_index(
+	row: Dict,
+	llm: BaseLLM,
+	lang: str = "en",
+) -> bool:
+	"""
+	This will drop rows that have a "don't know" answer.
+	It will drop unanswerable questions from the QA dataset.
+	You can use this filter with the ` batch_filter ` function at `QA` class.
+
+	:param row: The row dict from QA dataset.
+	:param llm: The Llama index llm instance.
+		It will be good if you set max tokens to low for saving tokens.
+	:param lang: The supported language is en or ko.
+	:return: False if the row generation_gt is a "don't know" meaning.
+	"""
+	assert "generation_gt" in row.keys(), "generation_gt column is not in the row."
+	system_prompt: List[ChatMessage] = FILTER_PROMPT["dontknow_filter"][lang]
+	results = []
+	for gen_gt in row["generation_gt"]:
+		response: ChatResponse = await llm.achat(
+			messages=system_prompt
+			+ [ChatMessage(role=MessageRole.USER, content=gen_gt)]
+		)
+		result_str = response.message.content
+		results.append("true" in result_str.lower().strip())
+	return not any(results)
