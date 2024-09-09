@@ -125,6 +125,11 @@ class QA:
 		masks = loop.run_until_complete(process_batch(tasks, batch_size))
 		return QA(self.data[masks], self.linked_corpus)
 
+	def filter(self, fn: Callable[[Dict, Any], bool], **kwargs) -> "QA":
+		qa_dicts = self.data.to_dict(orient="records")
+		masks = [fn(qa_dict, **kwargs) for qa_dict in qa_dicts]
+		return QA(self.data[masks], self.linked_corpus)
+
 	def map(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
 		return QA(fn(self.data, **kwargs), self.linked_corpus)
 

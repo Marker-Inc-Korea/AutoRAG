@@ -1,5 +1,6 @@
 import pandas as pd
 from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.beta.schema import QA
 
 
 def test_dontknow_filter_rule_based():
@@ -32,9 +33,15 @@ def test_dontknow_filter_rule_based():
 	)
 
 	# Test for English
-	result_df_en = dontknow_filter_rule_based(en_qa_df, lang="en")
-	pd.testing.assert_frame_equal(result_df_en.reset_index(drop=True), expected_df_en)
+	en_qa = QA(en_qa_df)
+	result_en_qa = en_qa.filter(dontknow_filter_rule_based, lang="en").map(
+		lambda df: df.reset_index(drop=True)
+	)
+	pd.testing.assert_frame_equal(result_en_qa.data, expected_df_en)
 
 	# Test for Korean
-	result_df_ko = dontknow_filter_rule_based(ko_qa_df, lang="ko")
-	pd.testing.assert_frame_equal(result_df_ko.reset_index(drop=True), expected_df_ko)
+	ko_qa = QA(ko_qa_df)
+	result_ko_qa = ko_qa.filter(dontknow_filter_rule_based, lang="ko").map(
+		lambda df: df.reset_index(drop=True)
+	)
+	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
