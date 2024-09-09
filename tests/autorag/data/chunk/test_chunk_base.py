@@ -57,6 +57,12 @@ expect_texts = {
 		"file_name: gunn_chelsea_sad_story.pdf\n"
 		" contents: estdside_gunn always loses. I love this story.",
 	],
+	"overlap": [
+		"The Kia Tigers lost the Korean Series this year and failed to win the championship. jeffrey went to gwangju to the Korean Series, but they lost",
+		"to the Korean Series, but they lost there. I love this story.",
+		"minsing's Real Madrid were crushed by Ulsan Hyundai of Korea's BOBB. minsing's Man United beat estdside_gunn's Chelsea.",
+		"United beat estdside_gunn's Chelsea. estdside_gunn always loses. I love this story.",
+	],
 }
 
 expect_token_path = [
@@ -67,6 +73,7 @@ expect_token_path = [
 ]
 
 expect_token_idx = [(0, 142), (144, 168), (0, 118), (120, 165)]
+expect_overlap_idx = [(0, 142), (108, 168), (0, 118), (83, 165)]
 
 
 def check_chunk_result(doc_id, contents, path, start_end_idx, metadata):
