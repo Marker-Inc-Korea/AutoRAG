@@ -79,6 +79,12 @@ expect_texts = {
 		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[5]}",
 		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[6]}",
 	],
+	"overlap": [
+		"The Kia Tigers lost the Korean Series this year and failed to win the championship. jeffrey went to gwangju to the Korean Series, but they lost",
+		"to the Korean Series, but they lost there. I love this story.",
+		"minsing's Real Madrid were crushed by Ulsan Hyundai of Korea's BOBB. minsing's Man United beat estdside_gunn's Chelsea.",
+		"United beat estdside_gunn's Chelsea. estdside_gunn always loses. I love this story.",
+	],
 }
 
 expect_token_path = [
@@ -98,7 +104,8 @@ expect_character_path = [
 	base_metadata[1]["path"],
 ]
 
-expect_token_idx = [(0, 143), (144, 169), (0, 119), (120, 166)]
+expect_token_idx = [(0, 142), (144, 168), (0, 118), (120, 165)]
+expect_overlap_idx = [(0, 142), (108, 168), (0, 118), (83, 165)]
 expect_character_idx = [
 	(0, 82),
 	(84, 149),
