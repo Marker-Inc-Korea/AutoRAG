@@ -63,8 +63,10 @@ def make_vllm_instance(llm: str, input_args: Dict):
 
 	model_from_args = input_args.pop("model", None)
 	model = llm if model_from_args is None else model_from_args
-	init_params = inspect.signature(SamplingParams.__init__).parameters.values()
-	sampling_params_init_params = [param.name for param in init_params]
+	from_optional_params = inspect.signature(
+		SamplingParams.from_optional
+	).parameters.values()
+	sampling_params_init_params = [param.name for param in from_optional_params]
 
 	result_kwargs = {}
 	for key, value in input_args.items():
