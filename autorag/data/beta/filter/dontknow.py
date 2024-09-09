@@ -1,7 +1,11 @@
-from typing import Dict
+from typing import Dict, List
 
-import pandas as pd
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
+from llama_index.llms.openai.utils import to_openai_message_dicts
+from openai import AsyncClient
 from pydantic import BaseModel
+
+from autorag.data.beta.filter.prompt import FILTER_PROMPT
 
 dont_know_phrases = {
 	"en": [
@@ -40,7 +44,34 @@ class Response(BaseModel):
 	is_dont_know: bool
 
 
-def dontknow_filter_openai(qa_df: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
-	assert (
-		"generation_gt" in qa_df.columns
-	), "generation_gt column is not in the DataFrame."
+async def dontknow_filter_openai(
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-mini-2024-07-18",
+	lang: str = "en",
+) -> bool:
+	"""
+	This will drop rows that have a "don't know" answer.
+	It will drop unanswerable questions from the QA dataset.
+	You can use this filter with the ` batch_filter ` function at `QA` class.
+
+	:param row: The row dict from QA dataset.
+	:param client: The OpenAI client.
+	:param model_name: The model name.
+		You have to use gpt-4o-2024-08-06 or gpt-4o-mini-2024-07-18.
+	:param lang: The supported language is en or ko.
+	:return: False if the row generation_gt is a "don't know" meaning.
+	"""
+	assert "generation_gt" in row.keys(), "generation_gt column is not in the row."
+	system_prompt: List[ChatMessage] = FILTER_PROMPT["dontknow_filter"][lang]
+	result = []
+	for gen_gt in row["generation_gt"]:
+		completion = await client.beta.chat.completions.parse(
+			model=model_name,
+			messages=to_openai_message_dicts(
+				system_prompt + [ChatMessage(role=MessageRole.USER, content=gen_gt)]
+			),
+			response_format=Response,
+		)
+		result.append(completion.choices[0].message.parsed.is_dont_know)
+	return not any(result)
