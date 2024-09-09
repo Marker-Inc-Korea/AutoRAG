@@ -13,10 +13,12 @@ logger = logging.getLogger("AutoRAG")
 
 def chunker_node(func):
 	@functools.wraps(func)
-	@result_to_dataframe(["doc_id", "contents", "metadata"])
+	@result_to_dataframe(["doc_id", "contents", "path", "start_end_idx", "metadata"])
 	def wrapper(
 		parsed_result: pd.DataFrame, chunk_method: str, **kwargs
-	) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+	) -> Tuple[
+		List[str], List[str], List[str], List[Tuple[int, int]], List[Dict[str, Any]]
+	]:
 		logger.info(f"Running chunker - {func.__name__} module...")
 
 		# get texts from parsed_result
@@ -37,6 +39,7 @@ def chunker_node(func):
 				file_name_language=file_name_language,
 				metadata_list=metadata_list,
 			)
+			del chunk_instance
 			return result
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
@@ -70,8 +73,8 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 		# llama index default sentence_splitter is 'nltk -PunktSentenceTokenizer'
 		if "sentence_splitter" in kwargs.keys():
 			sentence_splitter_str = kwargs.pop("sentence_splitter")
-			sentence_splitter = sentence_splitter_modules[sentence_splitter_str]
-			kwargs.update({"sentence_splitter": sentence_splitter})
+			sentence_splitter_func = sentence_splitter_modules[sentence_splitter_str]()
+			kwargs.update({"sentence_splitter": sentence_splitter_func})
 
 	def get_embedding_model(_embed_model_str: str, _module_type: str):
 		if _embed_model_str == "openai":

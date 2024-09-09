@@ -42,4 +42,5 @@ maxdepth: 1
 ---
 tutorial.md
 query_gen.md
+filter.md
 ```
