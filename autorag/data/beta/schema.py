@@ -36,6 +36,13 @@ class Raw:
 	) -> "Corpus":
 		return Corpus(fn(self.data, **kwargs), self)
 
+	def __add__(self, other):
+		assert isinstance(other, Raw), "You can only add Raw instances."
+		self.data = pd.concat([self.data, other.data], ignore_index=True).reset_index(
+			drop=True
+		)
+		return self
+
 
 class Corpus:
 	"""
