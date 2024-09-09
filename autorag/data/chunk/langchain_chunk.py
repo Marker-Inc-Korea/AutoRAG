@@ -5,7 +5,6 @@ from typing import Tuple, List, Dict, Any, Optional
 
 from langchain_text_splitters import TextSplitter
 
-from autorag.utils.util import process_batch, get_event_loop
 from autorag.data.chunk.base import chunker_node, add_file_name
 from autorag.data.utils.util import add_essential_metadata, get_start_end_idx
 
@@ -16,7 +15,6 @@ def langchain_chunk(
 	chunker: TextSplitter,
 	file_name_language: Optional[str] = None,
 	metadata_list: Optional[List[Dict[str, str]]] = None,
-	batch: int = 8,
 ) -> Tuple[
 	List[str], List[str], List[str], List[Tuple[int, int]], List[Dict[str, Any]]
 ]:
@@ -31,21 +29,18 @@ def langchain_chunk(
 	    This is used to prevent hallucination by retrieving contents from the wrong document.
 	    Default form of 'English' is "file_name: {file_name}\n contents: {content}"
 	:param metadata_list: The list of dict of metadata from the parsed result
-	:param batch: The batch size for chunk texts. Default is 8
 	:return: tuple of lists containing the chunked doc_id, contents, path, start_idx, end_idx and metadata
 	"""
-	tasks = [
+	results = [
 		langchain_chunk_pure(text, chunker, file_name_language, meta)
 		for text, meta in zip(texts, metadata_list)
 	]
-	loop = get_event_loop()
-	results = loop.run_until_complete(process_batch(tasks, batch))
 
 	doc_id, contents, path, start_end_idx, metadata = (
 		list(chain.from_iterable(item)) for item in zip(*results)
 	)
 
-	return list(doc_id), list(contents), list(path), list(start_end_idx), list(metadata)
+	return doc_id, contents, path, start_end_idx, metadata
 
 
 def langchain_chunk_pure(
