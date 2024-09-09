@@ -61,8 +61,6 @@ class MetricInput:
                         setattr(instance, attr_name, value.strip() if value.strip() != '' else None)
                     elif isinstance(value, list):
                         setattr(instance, attr_name, value if len(value) > 0 else None)
-                    elif isinstance(value, (int, float)):
-                        setattr(instance, attr_name, value)
                     else:
                         setattr(instance, attr_name, value)
 
