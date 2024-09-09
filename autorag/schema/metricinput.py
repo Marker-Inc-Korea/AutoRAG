@@ -19,13 +19,6 @@ class MetricInput:
     generated_log_probs: Optional[List[float]] = None
 
     def is_fields_notnone(self, fields_to_check: List[str]) -> bool:
-        type_checks: Dict[type, Callable[[Any], bool]] = {
-            str: lambda x: len(x.strip()) > 0,
-            list: self._check_list,
-            int: lambda _: True,
-            float: lambda _: True,
-            np.ndarray: self._check_list
-        }
         for field in fields_to_check:
             actual_value = getattr(self, field)
 
@@ -76,14 +69,6 @@ class MetricInput:
         if len(lst_or_arr) == 0:
             return False
 
-        type_checks: Dict[type, Callable[[Any], bool]] = {
-            str: lambda x: len(x.strip()) > 0,
-            list: MetricInput._check_list,
-            np.ndarray: MetricInput._check_list,
-            int: lambda _: True,
-            float: lambda _: True,
-        }
-
         for item in lst_or_arr:
             if item is None:
                 return False
@@ -97,3 +82,12 @@ class MetricInput:
                 return False
 
         return True
+
+
+type_checks: Dict[type, Callable[[Any], bool]] = {
+    str: lambda x: len(x.strip()) > 0,
+    list: MetricInput._check_list,
+    np.ndarray: MetricInput._check_list,
+    int: lambda _: True,
+    float: lambda _: True,
+}
