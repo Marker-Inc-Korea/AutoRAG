@@ -98,4 +98,4 @@ def get_param_combinations(modules: List[Dict]) -> Tuple[List[Callable], List[Di
 def get_start_end_idx(original_text: str, search_str: str) -> Tuple[int, int]:
 	start_idx = original_text.find(search_str)
 	end_idx = start_idx + len(search_str)
-	return start_idx, end_idx
+	return start_idx, end_idx - 1
