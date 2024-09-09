@@ -9,7 +9,7 @@ from autorag.utils.util import process_batch, get_event_loop
 from autorag.data.chunk.base import chunker_node, add_file_name
 from autorag.data.utils.util import (
 	add_essential_metadata_llama_text_node,
-	gen_start_end_idx,
+	get_start_end_idx,
 )
 
 
@@ -61,7 +61,7 @@ async def llama_index_chunk_pure(
 	document = [Document(text=text, metadata=_metadata)]
 
 	# chunk document
-	chunk_results = chunker.get_nodes_from_documents(documents=document)
+	chunk_results = await chunker.aget_nodes_from_documents(documents=document)
 
 	# make doc_id
 	doc_id = list(map(lambda node: node.node_id, chunk_results))
@@ -73,11 +73,11 @@ async def llama_index_chunk_pure(
 	if file_name_language:
 		chunked_file_names = list(map(lambda x: os.path.basename(x), path_lst))
 		chunked_texts = list(map(lambda x: x.text, chunk_results))
-		start_end_idx = gen_start_end_idx(chunked_texts)
+		start_end_idx = list(map(lambda x: get_start_end_idx(text, x), chunked_texts))
 		contents = add_file_name(file_name_language, chunked_file_names, chunked_texts)
 	else:
 		contents = list(map(lambda x: x.text, chunk_results))
-		start_end_idx = gen_start_end_idx(contents)
+		start_end_idx = list(map(lambda x: get_start_end_idx(text, x), contents))
 
 	metadata = list(
 		map(

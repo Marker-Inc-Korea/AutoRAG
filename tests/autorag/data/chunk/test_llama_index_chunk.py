@@ -105,7 +105,7 @@ def test_llama_index_chunk_sentence(chunk_instance_sentence_splitter):
 	assert len(contents) == 2
 	assert all("window" in meta.keys() for meta in metadata)
 	assert path == [base_metadata[0]["path"], base_metadata[1]["path"]]
-	assert start_end_idx == [(0, 168), (0, 165)]
+	assert start_end_idx == [(0, 169), (0, 166)]
 
 
 def test_llama_index_chunk_sentence_node():
