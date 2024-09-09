@@ -1,7 +1,7 @@
-from typing import List
+from typing import Dict
 
 import pandas as pd
-
+from pydantic import BaseModel
 
 dont_know_phrases = {
 	"en": [
@@ -26,17 +26,21 @@ dont_know_phrases = {
 }
 
 
-def dontknow_filter_rule_based(qa_df: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
+def dontknow_filter_rule_based(row: Dict, lang: str = "en") -> bool:
+	assert (
+		"generation_gt" in row.keys()
+	), "generation_gt column is not in the DataFrame."
+	dont_know_phrase = dont_know_phrases[lang]
+	return not any(
+		phrase in s for phrase in dont_know_phrase for s in row["generation_gt"]
+	)
+
+
+class Response(BaseModel):
+	is_dont_know: bool
+
+
+def dontknow_filter_openai(qa_df: pd.DataFrame, lang: str = "en") -> pd.DataFrame:
 	assert (
 		"generation_gt" in qa_df.columns
 	), "generation_gt column is not in the DataFrame."
-
-	def is_i_dont_know(input_list: List[str], dont_know_phrase: List[str]) -> bool:
-		return any(phrase in s for phrase in dont_know_phrase for s in input_list)
-
-	result_df = qa_df[
-		~qa_df["generation_gt"].apply(
-			lambda x: is_i_dont_know(x, dont_know_phrases[lang])
-		)
-	]
-	return result_df
