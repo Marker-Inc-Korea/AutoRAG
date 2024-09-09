@@ -1,3 +1,4 @@
+import itertools
 import os
 import pathlib
 
@@ -24,8 +25,11 @@ base_metadata = [
 
 parsed_result = pd.read_parquet(os.path.join(data_dir, "sample_parsed.parquet"))
 
+character_expect_texts = list(
+	itertools.chain.from_iterable(list(map(lambda x: x.split(". "), base_texts)))
+)
 expect_texts = {
-	"original": [
+	"token": [
 		"The Kia Tigers lost the Korean Series this year and failed to win the "
 		"championship. jeffrey went to gwangju to the Korean Series, but they lost",
 		"there. I love this story.",
@@ -33,7 +37,7 @@ expect_texts = {
 		"minsing's Man United beat estdside_gunn's Chelsea.",
 		"estdside_gunn always loses. I love this story.",
 	],
-	"korean": [
+	"token_ko": [
 		"파일 제목: jeffrey_tigers_sad_story.pdf\n"
 		" 내용: The Kia Tigers lost the Korean Series this year and failed to win the "
 		"championship. jeffrey went to gwangju to the Korean Series, but they lost",
@@ -44,7 +48,7 @@ expect_texts = {
 		"파일 제목: gunn_chelsea_sad_story.pdf\n"
 		" 내용: estdside_gunn always loses. I love this story.",
 	],
-	"english": [
+	"token_eng": [
 		"file_name: jeffrey_tigers_sad_story.pdf\n"
 		" contents: The Kia Tigers lost the Korean Series this year and failed to win "
 		"the championship. jeffrey went to gwangju to the Korean Series, but they "
@@ -56,6 +60,24 @@ expect_texts = {
 		"BOBB. minsing's Man United beat estdside_gunn's Chelsea.",
 		"file_name: gunn_chelsea_sad_story.pdf\n"
 		" contents: estdside_gunn always loses. I love this story.",
+	],
+	"character_ko": [
+		f"파일 제목: jeffrey_tigers_sad_story.pdf\n 내용: {character_expect_texts[0]}",
+		f"파일 제목: jeffrey_tigers_sad_story.pdf\n 내용: {character_expect_texts[1]}",
+		f"파일 제목: jeffrey_tigers_sad_story.pdf\n 내용: {character_expect_texts[2]}",
+		f"파일 제목: gunn_chelsea_sad_story.pdf\n 내용: {character_expect_texts[3]}",
+		f"파일 제목: gunn_chelsea_sad_story.pdf\n 내용: {character_expect_texts[4]}",
+		f"파일 제목: gunn_chelsea_sad_story.pdf\n 내용: {character_expect_texts[5]}",
+		f"파일 제목: gunn_chelsea_sad_story.pdf\n 내용: {character_expect_texts[6]}",
+	],
+	"character_eng": [
+		f"file_name: jeffrey_tigers_sad_story.pdf\n contents: {character_expect_texts[0]}",
+		f"file_name: jeffrey_tigers_sad_story.pdf\n contents: {character_expect_texts[1]}",
+		f"file_name: jeffrey_tigers_sad_story.pdf\n contents: {character_expect_texts[2]}",
+		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[3]}",
+		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[4]}",
+		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[5]}",
+		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[6]}",
 	],
 	"overlap": [
 		"The Kia Tigers lost the Korean Series this year and failed to win the championship. jeffrey went to gwangju to the Korean Series, but they lost",
@@ -72,8 +94,27 @@ expect_token_path = [
 	base_metadata[1]["path"],
 ]
 
+expect_character_path = [
+	base_metadata[0]["path"],
+	base_metadata[0]["path"],
+	base_metadata[0]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+	base_metadata[1]["path"],
+]
+
 expect_token_idx = [(0, 142), (144, 168), (0, 118), (120, 165)]
 expect_overlap_idx = [(0, 142), (108, 168), (0, 118), (83, 165)]
+expect_character_idx = [
+	(0, 81),
+	(84, 148),
+	(151, 168),
+	(0, 66),
+	(69, 117),
+	(120, 145),
+	(148, 165),
+]
 
 
 def check_chunk_result(doc_id, contents, path, start_end_idx, metadata):

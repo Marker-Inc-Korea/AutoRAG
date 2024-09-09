@@ -15,6 +15,7 @@ from llama_index.llms.huggingface import HuggingFaceLLM
 from llama_index.llms.ollama import Ollama
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai_like import OpenAILike
+from langchain.embeddings import OpenAIEmbeddings
 from rich.logging import RichHandler
 
 version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "VERSION")
@@ -49,6 +50,7 @@ class MockEmbeddingRandom(MockEmbedding):
 
 
 embedding_models = {
+	# llama index
 	"openai": LazyInit(
 		OpenAIEmbedding
 	),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
@@ -72,6 +74,8 @@ embedding_models = {
 	),
 	"huggingface_bge_m3": LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
 	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
+	# langchain
+	"openai_langchain": LazyInit(OpenAIEmbeddings),
 }
 
 generator_models = {
