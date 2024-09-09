@@ -48,8 +48,7 @@ addopts = ["--import-mode=importlib"] # default is prepend
 ko = ["kiwipiepy", "konlpy"]
 dev = ["ruff", "pre-commit"]
 parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
-chunk = ["langchain-experimental"]
-all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[chunk]"]
+all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]"]
 
 [project.entry-points.console_scripts]
 autorag = "autorag.cli:cli"

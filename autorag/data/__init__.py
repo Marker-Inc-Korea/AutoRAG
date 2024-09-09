@@ -31,7 +31,6 @@ from langchain.text_splitter import (
 	KonlpyTextSplitter,
 	SentenceTransformersTokenTextSplitter,
 )
-from langchain_experimental.text_splitter import SemanticChunker
 
 from autorag import LazyInit
 
@@ -81,8 +80,6 @@ chunk_modules = {
 	"character": CharacterTextSplitter,
 	# Sentence
 	"konlpy": KonlpyTextSplitter,
-	# Semantic
-	"semantic_langchain": SemanticChunker,
 }
 
 
