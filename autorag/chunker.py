@@ -7,6 +7,7 @@ from typing import Optional
 
 import pandas as pd
 
+from autorag.data.beta.schema import Raw
 from autorag.data.chunk.run import run_chunker
 from autorag.data.utils.util import load_yaml, get_param_combinations
 
@@ -14,17 +15,28 @@ logger = logging.getLogger("AutoRAG")
 
 
 class Chunker:
-	def __init__(self, parsed_data_path: str, project_dir: Optional[str] = None):
+	def __init__(self, raw: Raw, project_dir: Optional[str] = None):
+		self.parsed_raw = raw
+		self.project_dir = project_dir if project_dir is not None else os.getcwd()
+
+	@classmethod
+	def from_parquet(
+		cls, parsed_data_path: str, project_dir: Optional[str] = None
+	) -> "Chunker":
 		if not os.path.exists(parsed_data_path):
 			raise ValueError(f"parsed_data_path {parsed_data_path} does not exist.")
-		self.parsed_data_path = pd.read_parquet(parsed_data_path, engine="pyarrow")
-		self.project_dir = project_dir if project_dir is not None else os.getcwd()
+		if not parsed_data_path.endswith("parquet"):
+			raise ValueError(
+				f"parsed_data_path {parsed_data_path} is not a parquet file."
+			)
+		parsed_result = pd.read_parquet(parsed_data_path, engine="pyarrow")
+		return cls(Raw(parsed_result), project_dir)
 
 	def start_chunking(self, yaml_path: str):
 		trial_name = self.__get_new_trial_name()
 		self.__make_trial_dir(trial_name)
 
-		# copy yaml file to trial directory
+		# Copy YAML file to the trial directory
 		shutil.copy(
 			yaml_path, os.path.join(self.project_dir, trial_name, "chunk_config.yaml")
 		)
@@ -38,7 +50,7 @@ class Chunker:
 		run_chunker(
 			modules=input_modules,
 			module_params=input_params,
-			parsed_result=self.parsed_data_path,
+			parsed_result=self.parsed_raw.data,
 			trial_path=os.path.join(self.project_dir, trial_name),
 		)
 		logger.info("Chunking Done!")
