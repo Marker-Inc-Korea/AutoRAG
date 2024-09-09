@@ -75,16 +75,14 @@ async def llama_index_chunk_pure(
 		chunked_texts = list(map(lambda x: x.text, chunk_results))
 		start_end_idx = list(
 			map(
-				lambda x: get_start_end_idx(text, x, chunker.class_name()),
+				lambda x: get_start_end_idx(text, x),
 				chunked_texts,
 			)
 		)
 		contents = add_file_name(file_name_language, chunked_file_names, chunked_texts)
 	else:
 		contents = list(map(lambda x: x.text, chunk_results))
-		start_end_idx = list(
-			map(lambda x: get_start_end_idx(text, x, chunker.class_name()), contents)
-		)
+		start_end_idx = list(map(lambda x: get_start_end_idx(text, x), contents))
 
 	metadata = list(
 		map(
