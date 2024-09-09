@@ -9,7 +9,6 @@ Subpackages
 
    autorag.data.beta.generation_gt
    autorag.data.beta.query
-   autorag.data.beta.schema
 
 Submodules
 ----------
@@ -18,6 +17,14 @@ autorag.data.beta.sample module
 -------------------------------
 
 .. automodule:: autorag.data.beta.sample
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+autorag.data.beta.schema module
+-------------------------------
+
+.. automodule:: autorag.data.beta.schema
    :members:
    :undoc-members:
    :show-inheritance:

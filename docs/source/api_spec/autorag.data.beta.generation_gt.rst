@@ -4,6 +4,14 @@ autorag.data.beta.generation\_gt package
 Submodules
 ----------
 
+autorag.data.beta.generation\_gt.base module
+--------------------------------------------
+
+.. automodule:: autorag.data.beta.generation_gt.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.data.beta.generation\_gt.llama\_index\_gen\_gt module
 -------------------------------------------------------------
 
