@@ -48,7 +48,7 @@ def langchain_chunk(
 	return list(doc_id), list(contents), list(path), list(start_end_idx), list(metadata)
 
 
-async def langchain_chunk_pure(
+def langchain_chunk_pure(
 	text: str,
 	chunker: TextSplitter,
 	file_name_language: Optional[str] = None,
