@@ -13,10 +13,12 @@ logger = logging.getLogger("AutoRAG")
 
 def chunker_node(func):
 	@functools.wraps(func)
-	@result_to_dataframe(["doc_id", "contents", "metadata"])
+	@result_to_dataframe(["doc_id", "contents", "path", "start_end_idx", "metadata"])
 	def wrapper(
 		parsed_result: pd.DataFrame, chunk_method: str, **kwargs
-	) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
+	) -> Tuple[
+		List[str], List[str], List[str], List[Tuple[int, int]], List[Dict[str, Any]]
+	]:
 		logger.info(f"Running chunker - {func.__name__} module...")
 
 		# get texts from parsed_result
@@ -27,7 +29,7 @@ def chunker_node(func):
 		metadata_list = make_metadata_list(parsed_result)
 
 		# run chunk module
-		if func.__name__ in ["llama_index_chunk"]:
+		if func.__name__ in ["llama_index_chunk", "langchain_chunk"]:
 			chunk_instance = __get_chunk_instance(
 				func.__name__, chunk_method.lower(), **kwargs
 			)
@@ -37,6 +39,7 @@ def chunker_node(func):
 				file_name_language=file_name_language,
 				metadata_list=metadata_list,
 			)
+			del chunk_instance
 			return result
 		else:
 			raise ValueError(f"Unsupported module_type: {func.__name__}")
@@ -73,16 +76,24 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 			sentence_splitter_func = sentence_splitter_modules[sentence_splitter_str]()
 			kwargs.update({"sentence_splitter": sentence_splitter_func})
 
+	def get_embedding_model(_embed_model_str: str, _module_type: str):
+		if _embed_model_str == "openai":
+			if _module_type == "langchain_chunk":
+				_embed_model_str = "openai_langchain"
+		return embedding_models[_embed_model_str]()
+
 	# Add embed_model to kwargs
-	embedding_available_methods = ["semantic_llama_index"]
+	embedding_available_methods = ["semantic_llama_index", "semantic_langchain"]
 	if chunk_method in embedding_available_methods:
 		# there is no default embed_model, so we have to get it parameter and add it.
 		if "embed_model" not in kwargs.keys():
 			raise ValueError(f"embed_model is required for {chunk_method} method.")
 		embed_model_str = kwargs.pop("embed_model")
-		embed_model = embedding_models[embed_model_str]()
+		embed_model = get_embedding_model(embed_model_str, module_type)
 		if chunk_method == "semantic_llama_index":
 			kwargs.update({"embed_model": embed_model})
+		elif chunk_method == "semantic_langchain":
+			kwargs.update({"embeddings": embed_model})
 
 	return chunk_modules[chunk_method](**kwargs)
 
