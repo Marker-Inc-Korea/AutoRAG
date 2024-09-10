@@ -3,7 +3,7 @@ from typing import Callable, Optional, Dict, Awaitable, Any
 import pandas as pd
 
 from autorag.support import get_support_modules
-from autorag.utils.util import process_batch, get_event_loop
+from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
@@ -141,6 +141,16 @@ class QA:
 
 	def map(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
 		return QA(fn(self.data, **kwargs), self.linked_corpus)
+
+	def make_retrieval_gt_contents(self) -> "QA":
+		"""
+		Make retrieval_gt_contents column from retrieval_gt column.
+		:return: The QA instance that has a retrieval_gt_contents column.
+		"""
+		self.data["retrieval_gt_contents"] = self.data["retrieval_gt"].apply(
+			lambda x: fetch_contents(self.linked_corpus.data, x)
+		)
+		return self
 
 	def update_corpus(self, new_corpus: Corpus) -> "QA":
 		"""
