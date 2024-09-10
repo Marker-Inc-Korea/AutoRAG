@@ -1,3 +1,4 @@
+import gc
 import inspect
 from copy import deepcopy
 from typing import List, Tuple, Dict
@@ -86,7 +87,9 @@ def destroy_vllm_instance(vllm_instance):
 
 		destroy_model_parallel()
 		del vllm_instance
-		torch.cuda.synchronize()
+		gc.collect()
 		torch.cuda.empty_cache()
+		torch.distributed.destroy_process_group()
+		torch.cuda.synchronize()
 	else:
 		del vllm_instance
