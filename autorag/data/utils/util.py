@@ -95,14 +95,9 @@ def get_param_combinations(modules: List[Dict]) -> Tuple[List[Callable], List[Di
 	return module_list, combination_list
 
 
-def get_start_end_idx(
-	original_text: str, search_str: str, chunk_type: str
-) -> Tuple[int, int]:
-	if chunk_type in [
-		"SemanticSplitterNodeParser",
-		"SemanticDoubleMergingSplitterNodeParser",
-	]:
-		return 0, 0
+def get_start_end_idx(original_text: str, search_str: str) -> Tuple[int, int]:
 	start_idx = original_text.find(search_str)
+	if start_idx == -1:
+		return 0, 0
 	end_idx = start_idx + len(search_str)
 	return start_idx, end_idx - 1

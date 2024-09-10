@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   autorag.data.beta.filter
    autorag.data.beta.generation_gt
    autorag.data.beta.query
 
