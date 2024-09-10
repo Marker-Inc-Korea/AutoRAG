@@ -5,7 +5,7 @@ from datetime import datetime
 import chromadb
 import pandas as pd
 import pytest
-from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.core import MockEmbedding
 
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
@@ -136,7 +136,7 @@ def pseudo_project_dir():
 		collection = db.create_collection(
 			name="openai", metadata={"hnsw:space": "cosine"}
 		)
-		vectordb_ingest(collection, corpus_df, OpenAIEmbedding())
+		vectordb_ingest(collection, corpus_df, MockEmbedding(embed_dim=1536))
 		yield project_dir
 
 

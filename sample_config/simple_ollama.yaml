@@ -30,3 +30,4 @@ node_lines:
             model: llama3
             temperature: [ 0.1, 0.5, 1.0 ]
             batch: 1
+            request_timeout: 100 # You can increase this value if your model is big (slow)

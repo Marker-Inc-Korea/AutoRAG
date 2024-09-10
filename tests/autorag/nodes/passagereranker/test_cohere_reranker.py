@@ -30,9 +30,9 @@ async def mock_cohere_reranker(
 	elif query == queries_example[1]:
 		return RerankResponse(
 			results=[
-				RerankResponseResultsItem(index=2, relevance_score=0.8),
+				RerankResponseResultsItem(index=1, relevance_score=0.8),
 				RerankResponseResultsItem(index=0, relevance_score=0.2),
-				RerankResponseResultsItem(index=1, relevance_score=0.1),
+				RerankResponseResultsItem(index=2, relevance_score=0.1),
 			][:top_n]
 		)
 	response_items = [

@@ -70,9 +70,6 @@ def chat_box(runner: Runner):
 def run_web_server(
 	yaml_path: Optional[str], project_dir: Optional[str], trial_path: Optional[str]
 ):
-	import nest_asyncio
-
-	nest_asyncio.apply()
 	runner = get_runner(yaml_path, project_dir, trial_path)
 	set_initial_state()
 	set_page_config()

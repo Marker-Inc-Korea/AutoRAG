@@ -4,7 +4,6 @@ from tests.autorag.nodes.queryexpansion.test_query_expansion_base import (
 	project_dir,
 	previous_result,
 	base_query_expansion_node_test,
-	ingested_vectordb_node,
 )
 
 sample_query = [
@@ -25,7 +24,7 @@ def test_query_decompose():
 	assert isinstance(result[0][0], str)
 
 
-def test_query_decompose_node(ingested_vectordb_node):
+def test_query_decompose_node():
 	generator_dict = {"generator_module_type": "llama_index_llm", "llm": "mock"}
 	result_df = query_decompose(
 		project_dir=project_dir, previous_result=previous_result, **generator_dict

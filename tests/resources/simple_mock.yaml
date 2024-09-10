@@ -1,0 +1,15 @@
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: retrieval  # represents run_node function
+      strategy:  # essential for every node
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10 # node param, which adapt to every module in this node.
+      modules:
+        - module_type: ${BM25} # for testing env variable
+          bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
+        - module_type: vectordb
+          embedding_model: [mock, mock]
+          embedding_batch: 50
+        - module_type: hybrid_rrf
+          weight_range: (4, 30)

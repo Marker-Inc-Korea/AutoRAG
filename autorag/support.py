@@ -14,6 +14,14 @@ def dynamically_find_function(key: str, target_dict: Dict) -> Callable:
 
 def get_support_modules(module_name: str) -> Callable:
 	support_modules = {
+		# parse
+		"langchain_parse": ("autorag.data.parse", "langchain_parse"),
+		"clova": ("autorag.data.parse", "clova_ocr"),
+		"llamaparse": ("autorag.data.parse", "llama_parse"),
+		"table_hybrid_parse": ("autorag.data.parse", "table_hybrid_parse"),
+		# chunk
+		"llama_index_chunk": ("autorag.data.chunk", "llama_index_chunk"),
+		"langchain_chunk": ("autorag.data.chunk", "langchain_chunk"),
 		# query_expansion
 		"query_decompose": ("autorag.nodes.queryexpansion", "query_decompose"),
 		"hyde": ("autorag.nodes.queryexpansion", "hyde"),

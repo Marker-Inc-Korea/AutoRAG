@@ -47,7 +47,8 @@ addopts = ["--import-mode=importlib"] # default is prepend
 [project.optional-dependencies]
 ko = ["kiwipiepy", "konlpy"]
 dev = ["ruff", "pre-commit"]
-all = ["AutoRAG[ko]", "AutoRAG[dev]"]
+parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
+all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]"]
 
 [project.entry-points.console_scripts]
 autorag = "autorag.cli:cli"
@@ -109,6 +110,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "**/{docs}/*" = ["E402", "F401"]
 "test_*.py" = ["F401", "F811"]
 "*_test.py" = ["F401", "F811"]
+"resources/parse_data/*" = ["W292"]
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.
