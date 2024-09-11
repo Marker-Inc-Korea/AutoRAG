@@ -1,7 +1,7 @@
 import logging
-from typing import Callable, Optional, Dict, Awaitable, Any
+from typing import Callable, Optional, Dict, Awaitable, Any, Tuple, List
 import pandas as pd
-from autorag.utils.util import process_batch, get_event_loop
+from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
@@ -151,4 +151,93 @@ class QA:
 		    Must have valid `linked_raw` and `raw_id`, `raw_start_idx`, `raw_end_idx` columns.
 		:return: The QA instance that updated linked corpus.
 		"""
-		pass
+		self.data["evidence_path"] = (
+			self.data["retrieval_gt"]
+			.apply(
+				lambda x: fetch_contents(
+					self.linked_corpus.data,
+					x,
+					column_name="path",
+				)
+			)
+			.tolist()
+		)
+		if "evidence_start_end_idx" not in self.data.columns:
+			# make evidence start_end_idx
+			self.data["evidence_start_end_idx"] = (
+				self.data["retrieval_gt"]
+				.apply(
+					lambda x: fetch_contents(
+						self.linked_corpus.data,
+						x,
+						column_name="start_end_idx",
+					)
+				)
+				.tolist()
+			)
+
+		# matching the new corpus with the old corpus
+		path_corpus_dict = QA.__make_path_corpus_dict(new_corpus.data)
+		new_retrieval_gt = (
+			self.data["evidence_start_end_idx"]
+			.apply(
+				lambda row: QA.__match_index_row(
+					row["evidence_start_end_idx"],
+					row["evidence_path"],
+					path_corpus_dict,
+				)
+			)
+			.tolist()
+		)
+		new_qa = self.data.copy(deep=True)[["qid", "query", "generation_gt"]]
+		new_qa["retrieval_gt"] = new_retrieval_gt
+		return QA(new_qa, new_corpus)
+
+	@staticmethod
+	def __match_index(target_idx: Tuple[int, int], dst_idx: Tuple[int, int]) -> bool:
+		"""
+		Check if the target_idx is overlap by the dst_idx.
+		"""
+		target_start, target_end = target_idx
+		dst_start, dst_end = dst_idx
+		return (
+			dst_start <= target_start <= dst_end or dst_start <= target_end <= dst_end
+		)
+
+	@staticmethod
+	def __match_index_row(
+		evidence_indices: List[List[Tuple[int, int]]],
+		evidence_paths: List[List[str]],
+		path_corpus_dict: Dict,
+	) -> List[List[str]]:
+		"""
+		Find the matched passage from new_corpus.
+
+		:param evidence_indices: The evidence indices at the corresponding Raw.
+			Its shape is the same as the retrieval_gt.
+		:param evidence_paths: The evidence paths at the corresponding Raw.
+			Its shape is the same as the retrieval_gt.
+		:param path_corpus_dict: The key is the path name, and the value is the corpus dataframe that only contains the path in the key.
+			You can make it using `QA.__make_path_corpus_dict`.
+		:return:
+		"""
+		result = []
+		for i, idx_list in enumerate(evidence_indices):
+			sub_result = []
+			for j, idx in enumerate(idx_list):
+				path_corpus_df = path_corpus_dict[evidence_paths[i][j]]
+				matched_corpus = path_corpus_df.loc[
+					path_corpus_df["start_end_idx"].apply(
+						lambda x: QA.__match_index(idx, x)
+					)
+				]
+				sub_result.extend(matched_corpus["doc_id"].tolist())
+			result.append(sub_result)
+		return result
+
+	@staticmethod
+	def __make_path_corpus_dict(corpus_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+		return {
+			path: corpus_df[corpus_df["path"] == path]
+			for path in corpus_df["path"].unique()
+		}
