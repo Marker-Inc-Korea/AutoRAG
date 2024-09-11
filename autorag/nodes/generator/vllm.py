@@ -1,6 +1,7 @@
+import gc
 import inspect
 from copy import deepcopy
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 import torch
 
@@ -57,21 +58,25 @@ def vllm(
 	return generated_texts, generated_token_ids, generated_log_probs
 
 
-def make_vllm_instance(llm: str, input_args):
+def make_vllm_instance(llm: str, input_args: Dict):
 	from vllm import LLM
+	from vllm import SamplingParams
 
 	model_from_args = input_args.pop("model", None)
 	model = llm if model_from_args is None else model_from_args
-	init_params = inspect.signature(LLM.__init__).parameters.values()
-	keyword_init_params = [
-		param.name for param in init_params if param.kind == param.KEYWORD_ONLY
-	]
-	input_kwargs = {}
-	for param in keyword_init_params:
-		v = input_args.pop(param, None)
-		if v is not None:
-			input_kwargs[param] = v
-	return LLM(model, **input_kwargs)
+	from_optional_params = inspect.signature(
+		SamplingParams.from_optional
+	).parameters.values()
+	sampling_params_init_params = [param.name for param in from_optional_params]
+
+	result_kwargs = {}
+	for key, value in input_args.items():
+		if key not in sampling_params_init_params:
+			result_kwargs[key] = value
+	# pop used result_kwargs keys in input_args
+	for key in result_kwargs.keys():
+		input_args.pop(key)
+	return LLM(model, **result_kwargs)
 
 
 def destroy_vllm_instance(vllm_instance):
@@ -82,7 +87,9 @@ def destroy_vllm_instance(vllm_instance):
 
 		destroy_model_parallel()
 		del vllm_instance
-		torch.cuda.synchronize()
+		gc.collect()
 		torch.cuda.empty_cache()
+		torch.distributed.destroy_process_group()
+		torch.cuda.synchronize()
 	else:
 		del vllm_instance
