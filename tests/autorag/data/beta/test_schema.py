@@ -1,6 +1,7 @@
 import pandas as pd
 
 from autorag.data.beta.schema import Raw, Corpus, QA
+from tests.autorag.data.beta.test_data_creation_piepline import initial_raw
 
 
 def test_raw_add():
@@ -38,6 +39,26 @@ def test_raw_add():
 		}
 	)
 	pd.testing.assert_frame_equal((raw_1 + raw_2).data, expected_dataframe)
+
+
+def test_raw_chunk():
+	corpus = initial_raw.chunk(
+		"llama_index_chunk", chunk_method="token", chunk_size=128, chunk_overlap=5
+	)
+	assert isinstance(corpus, Corpus)
+	pd.testing.assert_frame_equal(corpus.linked_raw.data, initial_raw.data)
+	assert set(corpus.data.columns) == {
+		"doc_id",
+		"contents",
+		"path",
+		"start_end_idx",
+		"metadata",
+	}
+	assert corpus.data["doc_id"].nunique() == len(corpus.data)
+	assert all(
+		origin_path in initial_raw.data["path"].tolist()
+		for origin_path in corpus.data["path"].tolist()
+	)
 
 
 # def test_update_corpus():

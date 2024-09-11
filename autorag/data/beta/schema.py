@@ -3,6 +3,8 @@ from typing import Callable, Optional, Dict, Awaitable, Any, Tuple, List
 import pandas as pd
 from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
+from autorag.support import get_support_modules
+
 logger = logging.getLogger("AutoRAG")
 
 
@@ -31,10 +33,10 @@ class Raw:
 	def flatmap(self, fn: Callable, **kwargs) -> "Raw":
 		return fn(self.data, **kwargs)
 
-	def chunk(
-		self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs
-	) -> "Corpus":
-		return Corpus(fn(self.data, **kwargs), self)
+	def chunk(self, module_name: str, **module_params) -> "Corpus":
+		chunk_module = get_support_modules(module_name)
+		chunked_result = chunk_module(parsed_result=self.data, **module_params)
+		return Corpus(chunked_result, self)
 
 	def __add__(self, other):
 		assert isinstance(other, Raw), "You can only add Raw instances."
@@ -139,6 +141,16 @@ class QA:
 
 	def map(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
 		return QA(fn(self.data, **kwargs), self.linked_corpus)
+
+	def make_retrieval_gt_contents(self) -> "QA":
+		"""
+		Make retrieval_gt_contents column from retrieval_gt column.
+		:return: The QA instance that has a retrieval_gt_contents column.
+		"""
+		self.data["retrieval_gt_contents"] = self.data["retrieval_gt"].apply(
+			lambda x: fetch_contents(self.linked_corpus.data, x)
+		)
+		return self
 
 	def update_corpus(self, new_corpus: Corpus) -> "QA":
 		"""
