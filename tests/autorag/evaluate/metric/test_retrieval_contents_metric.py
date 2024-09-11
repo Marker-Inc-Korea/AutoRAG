@@ -28,12 +28,12 @@ metric_inputs = [MetricInput(retrieval_gt_contents=g, retrieved_contents=p) for 
 
 
 def test_single_token_f1():
-	precision, recall, f1 = single_token_f1(gt[0][0], pred[0][0])
+	precision, recall, f1 = single_token_f1(gt[0][0][0], pred[0][0])
 	assert precision == 0.75
 	assert recall == 0.75
 	assert f1 == 0.75
 
-	precision, recall, f1 = single_token_f1(gt[0][1], pred[0][2])
+	precision, recall, f1 = single_token_f1(gt[0][0][1], pred[0][2])
 	assert precision == 0.4
 	assert recall == 0.4
 	assert f1 == pytest.approx(0.4)
