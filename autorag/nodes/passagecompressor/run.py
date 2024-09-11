@@ -1,4 +1,3 @@
-import itertools
 import os.path
 import pathlib
 from typing import Callable, List, Dict
@@ -10,6 +9,7 @@ from autorag.evaluation.metric import (
 	retrieval_token_precision,
 	retrieval_token_f1,
 )
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import fetch_contents
 
@@ -69,12 +69,11 @@ def run_passage_compressor_node(
 	results = list(results)
 	average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
-	retrieval_contents_gt = list(
+	retrieval_gt_contents = list(
 		map(lambda x: fetch_contents(corpus_data, x), qa_data["retrieval_gt"].tolist())
 	)
-	retrieval_contents_gt = list(
-		map(lambda x: list(itertools.chain.from_iterable(x)), retrieval_contents_gt)
-	)
+
+	metric_inputs = [MetricInput(retrieval_gt_contents=ret_cont_gt) for ret_cont_gt in retrieval_gt_contents]
 
 	# run metrics before filtering
 	if strategies.get("metrics") is None:
@@ -85,7 +84,7 @@ def run_passage_compressor_node(
 	results = list(
 		map(
 			lambda x: evaluate_passage_compressor_node(
-				x, retrieval_contents_gt, strategies.get("metrics")
+				x, metric_inputs, strategies.get("metrics")
 			),
 			results,
 		)
@@ -155,13 +154,15 @@ def run_passage_compressor_node(
 
 
 def evaluate_passage_compressor_node(
-	result_df: pd.DataFrame, retrieval_contents_gt: List[List[str]], metrics: List[str]
+		result_df: pd.DataFrame, metric_inputs: List[MetricInput], metrics: List[str]
 ):
 	metric_funcs = {
 		retrieval_token_recall.__name__: retrieval_token_recall,
 		retrieval_token_precision.__name__: retrieval_token_precision,
 		retrieval_token_f1.__name__: retrieval_token_f1,
 	}
+	for metric_input, generated_text in zip(metric_inputs, result_df["retrieved_contents"].tolist()):
+		metric_input.retrieved_contents = generated_text
 	metrics = list(filter(lambda x: x in metric_funcs.keys(), metrics))
 	if len(metrics) <= 0:
 		raise ValueError(f"metrics must be one of {metric_funcs.keys()}")
@@ -170,8 +171,7 @@ def evaluate_passage_compressor_node(
 			lambda metric: (
 				metric,
 				metric_funcs[metric](
-					gt_contents=retrieval_contents_gt,
-					pred_contents=result_df["retrieved_contents"].tolist(),
+					metric_inputs=metric_inputs,
 				),
 			),
 			metrics,

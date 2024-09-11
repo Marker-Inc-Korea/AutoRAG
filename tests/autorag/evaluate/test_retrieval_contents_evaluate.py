@@ -4,10 +4,11 @@ import pandas as pd
 import pytest
 
 from autorag.evaluation import evaluate_retrieval_contents
+from autorag.schema.metricinput import MetricInput
 
 gt = [
-	["Enough for drinking water", "Just looking for a water bottle"],
-	["Do you want to buy some?"],
+	[["Enough for drinking water", "Just looking for a water bottle"]],
+	[["Do you want to buy some?"]],
 ]
 pred = [
 	[
@@ -20,7 +21,7 @@ pred = [
 
 
 @evaluate_retrieval_contents(
-	retrieval_gt=gt,
+	metric_inputs=[MetricInput(retrieval_gt_contents=gt_contents) for gt_contents in gt],
 	metrics=[
 		"retrieval_token_recall",
 		"retrieval_token_precision",

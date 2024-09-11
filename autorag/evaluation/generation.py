@@ -13,6 +13,7 @@ from autorag.evaluation.metric.generation import (
 	bert_score,
 )
 from autorag.evaluation.util import cast_metrics
+from autorag.schema.metricinput import MetricInput
 
 GENERATION_METRIC_FUNC_DICT = {
 	func.__name__: func for func in [bleu, meteor, rouge, sem_score, g_eval, bert_score]
@@ -20,7 +21,7 @@ GENERATION_METRIC_FUNC_DICT = {
 
 
 def evaluate_generation(
-	generation_gt: List[List[str]], metrics: Union[List[str], List[Dict]]
+		metric_inputs: List[MetricInput], metrics: Union[List[str], List[Dict]]
 ):
 	def decorator_evaluate_generation(func: Callable):
 		@functools.wraps(func)
@@ -41,6 +42,8 @@ def evaluate_generation(
 				raise ValueError(
 					"Input func must return string list as generated answer at the first return value."
 				)
+			for metric_input, generated_text in zip(metric_inputs, generated_str):
+				metric_input.generated_texts = generated_text
 
 			metric_scores = {}
 			metric_names, metric_params = cast_metrics(metrics)
@@ -52,11 +55,11 @@ def evaluate_generation(
 						f"{metric_name} will be ignored."
 					)
 				else:
+
 					metric_scores[metric_name] = GENERATION_METRIC_FUNC_DICT[
 						metric_name
 					](
-						generation_gt=generation_gt,
-						generations=generated_str,
+						metric_inputs=metric_inputs,
 						**metric_param,
 					)
 
