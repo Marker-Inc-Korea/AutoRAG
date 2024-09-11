@@ -28,16 +28,14 @@ from autorag.utils.util import (
 
 @convert_inputs_to_list
 def huggingface_evaluate(
-		instance, key: str, metric_inputs: List[MetricInput], **kwargs
+	instance, key: str, metric_inputs: List[MetricInput], **kwargs
 ) -> List[float]:
 	"""
 	Compute huggingface evaluate metric.
 
 	:param instance: The instance of huggingface evaluates metric.
 	:param key: The key to retrieve result score from huggingface evaluate result.
-	:param generation_gt: A list of ground truth.
-	    Must be 2-d list of string.
-	:param generations: A list of generations that LLM generated.
+	:param metric_inputs: A list of MetricInput schema
 	:param kwargs: The additional arguments for metric function.
 	:return: The list of scores.
 	"""
@@ -62,7 +60,7 @@ def huggingface_evaluate(
 
 @autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def bleu(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	tokenize: Optional[str] = None,
 	smooth_method: str = "exp",
 	smooth_value: Optional[float] = None,
@@ -73,15 +71,12 @@ def bleu(
 	"""
 	Computes the BLEU metric given pred and ground-truth.
 
+	:param metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
 	:param tokenize: The tokenizer to use. If None, defaults to language-specific tokenizers with '13a' as the fallback default. check #https://github.com/mjpost/sacrebleu/blob/master/sacrebleu/metrics/bleu.py
 	:param smooth_method: The smoothing method to use ('floor', 'add-k', 'exp' or 'none').
 	:param smooth_value: The smoothing value for `floor` and `add-k` methods. `None` falls back to default value.
 	:param max_ngram_order: If given, it overrides the maximum n-gram order (default: 4) when computing precisions.
 	:param trg_lang: An optional language code to raise potential tokenizer warnings.
-	:param generation_gt: A list of ground truth.
-	    Must be 2-d list of string.
-	    Because it can be a multiple ground truth.
-	:param generations: A list of generations that LLM generated.
 	"""
 	bleu_instance = BLEU(
 		tokenize=tokenize,
@@ -94,7 +89,9 @@ def bleu(
 
 	result = list(
 		map(
-			lambda x: bleu_instance.sentence_score(x.generated_texts, x.generation_gt).score,
+			lambda x: bleu_instance.sentence_score(
+				x.generated_texts, x.generation_gt
+			).score,
 			metric_inputs,
 		)
 	)
@@ -103,7 +100,7 @@ def bleu(
 
 @autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def meteor(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	alpha: float = 0.9,
 	beta: float = 3.0,
 	gamma: float = 0.5,
@@ -111,10 +108,7 @@ def meteor(
 	"""
 	Compute meteor score for generation.
 
-	:param generation_gt: A list of ground truth.
-	        Must be 2-d list of string.
-	        Because it can be a multiple ground truth.
-	:param generations: A list of generations that LLM generated.
+	:param metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
 	:param alpha: Parameter for controlling relative weights of precision and recall.
 	    Default is 0.9.
 	:param beta: Parameter for controlling shape of penalty as a
@@ -140,7 +134,7 @@ def meteor(
 
 @autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def rouge(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	rouge_type: Optional[str] = "rougeL",
 	use_stemmer: bool = False,
 	split_summaries: bool = False,
@@ -149,10 +143,7 @@ def rouge(
 	"""
 	Compute rouge score for generation.
 
-	:param generation_gt: A list of ground truth.
-	        Must be 2-d list of string.
-	        Because it can be a multiple ground truth.
-	:param generations: A list of generations that LLM generated.
+	:param metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
 	:param rouge_type: A rouge type to use for evaluation.
 	    Default is 'RougeL'.
 	    Choose between rouge1, rouge2, rougeL, and rougeLSum.
@@ -182,7 +173,10 @@ def rouge(
 			rouge_type
 		].fmeasure
 
-	tasks = [compute(metric_input.generation_gt, metric_input.generated_texts) for metric_input in metric_inputs]
+	tasks = [
+		compute(metric_input.generation_gt, metric_input.generated_texts)
+		for metric_input in metric_inputs
+	]
 	loop = get_event_loop()
 	result = loop.run_until_complete(process_batch(tasks, batch_size=batch))
 
@@ -192,18 +186,14 @@ def rouge(
 
 @autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def sem_score(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	embedding_model: Optional[BaseEmbedding] = None,
 	batch: int = 128,
 ) -> List[float]:
 	"""
 	Compute sem score between generation gt and pred with cosine similarity.
 
-	:param generation_gt: A list of ground truth.
-	        Must be 2-d list of string.
-	        Because it can be a multiple ground truth.
-	        It will get the max of cosine similarity between generation_gt and pred.
-	:param generations: A list of generations that LLM generated.
+	:param metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
 	:param embedding_model: Embedding model to use for compute cosine similarity.
 	    Default is all-mpnet-base-v2 embedding model.
 	    The paper used this embedding model.
@@ -258,7 +248,7 @@ def sem_score(
 
 @autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def g_eval(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	metrics: Optional[List[str]] = None,
 	model: str = "gpt-4-0125-preview",
 	batch_size: int = 8,
@@ -269,11 +259,7 @@ def g_eval(
 	It evaluates the generation result by coherence, consistency, fluency, and relevance.
 	It uses only 'openai' model, and we recommend to use gpt-4 for evaluation accuracy.
 
-	:param generation_gt: A list of ground truth.
-	    Must be 2-d list of string.
-	    Because it can be a multiple ground truth.
-	    It will get the max of g_eval score.
-	:param generations: A list of generations that LLM generated.
+	:param metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
 	:param metrics: A list of metrics to use for evaluation.
 	    Default is all metrics, which is ['coherence', 'consistency', 'fluency', 'relevance'].
 	:param model: OpenAI model name.
@@ -361,7 +347,7 @@ async def async_g_eval(
 
 @autorag_metric_loop(fields_to_check=["generation_gt", "generated_texts"])
 def bert_score(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	lang: str = "en",
 	batch: int = 128,
 	n_threads: int = os.cpu_count(),
