@@ -1,4 +1,3 @@
-import itertools
 import os.path
 import pathlib
 from typing import Callable, List, Dict
@@ -72,9 +71,6 @@ def run_passage_compressor_node(
 
 	retrieval_gt_contents = list(
 		map(lambda x: fetch_contents(corpus_data, x), qa_data["retrieval_gt"].tolist())
-	)
-	retrieval_gt_contents = list(
-		map(lambda x: list(itertools.chain.from_iterable(x)), retrieval_gt_contents)
 	)
 
 	metric_inputs = [MetricInput(retrieval_gt_contents=ret_cont_gt) for ret_cont_gt in retrieval_gt_contents]

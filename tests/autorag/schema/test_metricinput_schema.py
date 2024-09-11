@@ -9,7 +9,7 @@ def sample_metric_input():
     return MetricInput(
         query="test query",
         queries=["q1", "q2"],
-        retrieval_gt_contents=["gc1", "gc2"]
+        retrieval_gt_contents=[["gc1"], ["gc2"]]
     )
 
 

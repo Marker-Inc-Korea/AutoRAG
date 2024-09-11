@@ -9,7 +9,7 @@ import pandas as pd
 class MetricInput:
     query: Optional[str] = None
     queries: Optional[List[str]] = None
-    retrieval_gt_contents: Optional[List[str]] = None
+    retrieval_gt_contents: Optional[List[List[str]]] = None
     retrieved_contents: Optional[List[str]] = None
     retrieval_gt: Optional[List[List[str]]] = None
     retrieved_ids: Optional[List[str]] = None

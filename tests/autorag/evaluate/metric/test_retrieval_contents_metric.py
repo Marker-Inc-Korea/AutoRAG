@@ -9,10 +9,10 @@ from autorag.evaluation.metric.retrieval_contents import (
 from autorag.schema.metricinput import MetricInput
 
 gt = [
-	["Enough for drinking water", "Just looking for a water bottle"],
-	["Do you want to buy some?"],
-	[""],
-	[],
+	[["Enough for drinking water", "Just looking for a water bottle"]],
+	[["Do you want to buy some?"]],
+	[[""]],
+	[[]],
 ]
 pred = [
 	[
