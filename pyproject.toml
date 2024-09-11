@@ -45,7 +45,7 @@ testpaths = ["tests"]
 addopts = ["--import-mode=importlib"] # default is prepend
 
 [project.optional-dependencies]
-ko = ["kiwipiepy", "konlpy"]
+ko = ["kiwipiepy >= 0.18.0", "konlpy"]
 dev = ["ruff", "pre-commit"]
 parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
 all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]"]
