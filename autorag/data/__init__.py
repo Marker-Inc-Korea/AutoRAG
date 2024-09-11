@@ -25,6 +25,12 @@ from llama_index.core.node_parser import (
 	SemanticDoubleMergingSplitterNodeParser,
 	SimpleFileNodeParser,
 )
+from langchain.text_splitter import (
+	RecursiveCharacterTextSplitter,
+	CharacterTextSplitter,
+	KonlpyTextSplitter,
+	SentenceTransformersTokenTextSplitter,
+)
 
 from autorag import LazyInit
 
@@ -66,6 +72,14 @@ chunk_modules = {
 	"semanticdoublemerging": SemanticDoubleMergingSplitterNodeParser,
 	# Simple
 	"simplefile": SimpleFileNodeParser,
+	# LangChain
+	# Token
+	"sentencetransformerstoken": SentenceTransformersTokenTextSplitter,
+	# Character
+	"recursivecharacter": RecursiveCharacterTextSplitter,
+	"character": CharacterTextSplitter,
+	# Sentence
+	"konlpy": KonlpyTextSplitter,
 }
 
 

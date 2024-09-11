@@ -1,7 +1,9 @@
 import logging
 from typing import Callable, Optional, Dict, Awaitable, Any
 import pandas as pd
-from autorag.utils.util import process_batch, get_event_loop
+
+from autorag.support import get_support_modules
+from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
@@ -31,10 +33,17 @@ class Raw:
 	def flatmap(self, fn: Callable, **kwargs) -> "Raw":
 		return fn(self.data, **kwargs)
 
-	def chunk(
-		self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs
-	) -> "Corpus":
-		return Corpus(fn(self.data, **kwargs), self)
+	def chunk(self, module_name: str, **module_params) -> "Corpus":
+		chunk_module = get_support_modules(module_name)
+		chunked_result = chunk_module(parsed_result=self.data, **module_params)
+		return Corpus(chunked_result, self)
+
+	def __add__(self, other):
+		assert isinstance(other, Raw), "You can only add Raw instances."
+		self.data = pd.concat([self.data, other.data], ignore_index=True).reset_index(
+			drop=True
+		)
+		return self
 
 
 class Corpus:
@@ -66,12 +75,12 @@ class Corpus:
 		loop = get_event_loop()
 		tasks = [fn(corpus_dict, **kwargs) for corpus_dict in corpus_dicts]
 		results = loop.run_until_complete(process_batch(tasks, batch_size))
-		return Corpus(pd.DataFrame(results))
+		return Corpus(pd.DataFrame(results), self.linked_raw)
 
 	def map(
 		self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs
 	) -> "Corpus":
-		return Corpus(fn(self.data, **kwargs))
+		return Corpus(fn(self.data, **kwargs), self.linked_raw)
 
 	def sample(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
 		"""
@@ -114,10 +123,34 @@ class QA:
 		loop = get_event_loop()
 		tasks = [fn(qa_dict, **kwargs) for qa_dict in qa_dicts]
 		results = loop.run_until_complete(process_batch(tasks, batch_size))
-		return QA(pd.DataFrame(results))
+		return QA(pd.DataFrame(results), self.linked_corpus)
+
+	def batch_filter(
+		self, fn: Callable[[Dict, Any], Awaitable[bool]], batch_size: int = 32, **kwargs
+	) -> "QA":
+		qa_dicts = self.data.to_dict(orient="records")
+		loop = get_event_loop()
+		tasks = [fn(qa_dict, **kwargs) for qa_dict in qa_dicts]
+		masks = loop.run_until_complete(process_batch(tasks, batch_size))
+		return QA(self.data[masks], self.linked_corpus)
+
+	def filter(self, fn: Callable[[Dict, Any], bool], **kwargs) -> "QA":
+		qa_dicts = self.data.to_dict(orient="records")
+		masks = [fn(qa_dict, **kwargs) for qa_dict in qa_dicts]
+		return QA(self.data[masks], self.linked_corpus)
 
 	def map(self, fn: Callable[[pd.DataFrame, Any], pd.DataFrame], **kwargs) -> "QA":
-		return QA(fn(self.data, **kwargs))
+		return QA(fn(self.data, **kwargs), self.linked_corpus)
+
+	def make_retrieval_gt_contents(self) -> "QA":
+		"""
+		Make retrieval_gt_contents column from retrieval_gt column.
+		:return: The QA instance that has a retrieval_gt_contents column.
+		"""
+		self.data["retrieval_gt_contents"] = self.data["retrieval_gt"].apply(
+			lambda x: fetch_contents(self.linked_corpus.data, x)
+		)
+		return self
 
 	def update_corpus(self, new_corpus: Corpus) -> "QA":
 		"""
