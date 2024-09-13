@@ -1,9 +1,9 @@
 import logging
-from typing import Callable, Optional, Dict, Awaitable, Any
+from typing import Callable, Optional, Dict, Awaitable, Any, Tuple, List
 import pandas as pd
+from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
 from autorag.support import get_support_modules
-from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
@@ -67,6 +67,20 @@ class Corpus:
 	@linked_raw.setter
 	def linked_raw(self, raw: Raw):
 		raise NotImplementedError("linked_raw is read-only.")
+
+	def to_parquet(self, save_path: str):
+		"""
+		Save the corpus to the AutoRAG compatible parquet file.
+		It is not for the data creation, for running AutoRAG.
+		If you want to save it directly, use the below code.
+		`corpus.data.to_parquet(save_path)`
+
+		:param save_path: The path to save the corpus.
+		"""
+		if not save_path.endswith(".parquet"):
+			raise ValueError("save_path must be ended with .parquet")
+		save_df = self.data[["doc_id", "contents", "metadata"]].reset_index(drop=True)
+		save_df.to_parquet(save_path)
 
 	def batch_apply(
 		self, fn: Callable[[Dict, Any], Awaitable[Dict]], batch_size: int = 32, **kwargs
@@ -152,6 +166,26 @@ class QA:
 		)
 		return self
 
+	def to_parquet(self, qa_save_path: str, corpus_save_path: str):
+		"""
+		Save the qa and corpus to the AutoRAG compatible parquet file.
+		It is not for the data creation, for running AutoRAG.
+		If you want to save it directly, use the below code.
+		`qa.data.to_parquet(save_path)`
+
+		:param qa_save_path: The path to save the qa dataset.
+		:param corpus_save_path: The path to save the corpus.
+		"""
+		if not qa_save_path.endswith(".parquet"):
+			raise ValueError("save_path must be ended with .parquet")
+		if not corpus_save_path.endswith(".parquet"):
+			raise ValueError("save_path must be ended with .parquet")
+		save_df = self.data[
+			["qid", "query", "retrieval_gt", "generation_gt"]
+		].reset_index(drop=True)
+		save_df.to_parquet(qa_save_path)
+		self.linked_corpus.to_parquet(corpus_save_path)
+
 	def update_corpus(self, new_corpus: Corpus) -> "QA":
 		"""
 		Update linked corpus.
@@ -163,4 +197,105 @@ class QA:
 		    Must have valid `linked_raw` and `raw_id`, `raw_start_idx`, `raw_end_idx` columns.
 		:return: The QA instance that updated linked corpus.
 		"""
-		pass
+		self.data["evidence_path"] = (
+			self.data["retrieval_gt"]
+			.apply(
+				lambda x: fetch_contents(
+					self.linked_corpus.data,
+					x,
+					column_name="path",
+				)
+			)
+			.tolist()
+		)
+		self.data["evidence_page"] = self.data["retrieval_gt"].apply(
+			lambda x: list(
+				map(
+					lambda lst: list(map(lambda x: x.get("page", -1), lst)),
+					fetch_contents(self.linked_corpus.data, x, column_name="metadata"),
+				)
+			)
+		)
+		if "evidence_start_end_idx" not in self.data.columns:
+			# make evidence start_end_idx
+			self.data["evidence_start_end_idx"] = (
+				self.data["retrieval_gt"]
+				.apply(
+					lambda x: fetch_contents(
+						self.linked_corpus.data,
+						x,
+						column_name="start_end_idx",
+					)
+				)
+				.tolist()
+			)
+
+		# matching the new corpus with the old corpus
+		path_corpus_dict = QA.__make_path_corpus_dict(new_corpus.data)
+		new_retrieval_gt = self.data.apply(
+			lambda row: QA.__match_index_row(
+				row["evidence_start_end_idx"],
+				row["evidence_path"],
+				row["evidence_page"],
+				path_corpus_dict,
+			),
+			axis=1,
+		).tolist()
+		new_qa = self.data.copy(deep=True)[["qid", "query", "generation_gt"]]
+		new_qa["retrieval_gt"] = new_retrieval_gt
+		return QA(new_qa, new_corpus)
+
+	@staticmethod
+	def __match_index(target_idx: Tuple[int, int], dst_idx: Tuple[int, int]) -> bool:
+		"""
+		Check if the target_idx is overlap by the dst_idx.
+		"""
+		target_start, target_end = target_idx
+		dst_start, dst_end = dst_idx
+		return (
+			dst_start <= target_start <= dst_end or dst_start <= target_end <= dst_end
+		)
+
+	@staticmethod
+	def __match_index_row(
+		evidence_indices: List[List[Tuple[int, int]]],
+		evidence_paths: List[List[str]],
+		evidence_pages: List[List[int]],
+		path_corpus_dict: Dict,
+	) -> List[List[str]]:
+		"""
+		Find the matched passage from new_corpus.
+
+		:param evidence_indices: The evidence indices at the corresponding Raw.
+			Its shape is the same as the retrieval_gt.
+		:param evidence_paths: The evidence paths at the corresponding Raw.
+			Its shape is the same as the retrieval_gt.
+		:param path_corpus_dict: The key is the path name, and the value is the corpus dataframe that only contains the path in the key.
+			You can make it using `QA.__make_path_corpus_dict`.
+		:return:
+		"""
+		result = []
+		for i, idx_list in enumerate(evidence_indices):
+			sub_result = []
+			for j, idx in enumerate(idx_list):
+				path_corpus_df = path_corpus_dict[evidence_paths[i][j]]
+				if evidence_pages[i][j] >= 0:
+					path_corpus_df = path_corpus_df.loc[
+						path_corpus_df["metadata"].apply(lambda x: x.get("page", -1))
+						== evidence_pages[i][j]
+					]
+				matched_corpus = path_corpus_df.loc[
+					path_corpus_df["start_end_idx"].apply(
+						lambda x: QA.__match_index(idx, x)
+					)
+				]
+				sub_result.extend(matched_corpus["doc_id"].tolist())
+			result.append(sub_result)
+		return result
+
+	@staticmethod
+	def __make_path_corpus_dict(corpus_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+		return {
+			path: corpus_df[corpus_df["path"] == path]
+			for path in corpus_df["path"].unique()
+		}
