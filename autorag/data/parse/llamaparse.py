@@ -10,6 +10,16 @@ from autorag.utils.util import process_batch, get_event_loop
 def llama_parse(
 	data_path_list: List[str], batch: int = 8, **kwargs
 ) -> Tuple[List[str], List[str], List[int]]:
+	"""
+	Parse documents to use llama_parse.
+	LLAMA_CLOUD_API_KEY environment variable should be set.
+	You can get the key from https://cloud.llamaindex.ai/api-key
+
+	:param data_path_list: The list of data paths to parse.
+	:param batch: The batch size for parse documents. Default is 8.
+	:param kwargs: The extra parameters for creating the llama_parse instance.
+	:return: tuple of lists containing the parsed texts, path and pages.
+	"""
 	parse_instance = LlamaParse(**kwargs)
 
 	tasks = [

@@ -9,6 +9,14 @@ from autorag.data.parse.base import parser_node
 def langchain_parse(
 	data_path_list: List[str], parse_method: str, **kwargs
 ) -> Tuple[List[str], List[str], List[int]]:
+	"""
+	Parse documents to use langchain document_loaders(parse) method
+
+	:param data_path_list: The list of data paths to parse.
+	:param parse_method: A langchain document_loaders(parse) method to use.
+	:param kwargs: The extra parameters for creating the langchain document_loaders(parse) instance.
+	:return: tuple of lists containing the parsed texts, path and pages.
+	"""
 	if parse_method in ["directory", "unstructured"]:
 		results = parse_all_files(data_path_list, parse_method, **kwargs)
 		texts, path = results[0], results[1]
