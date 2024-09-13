@@ -6,7 +6,9 @@ import pandas as pd
 
 from autorag.evaluation import evaluate_generation
 from autorag.evaluation.util import cast_metrics
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
+from autorag.utils.util import to_list
 
 
 def run_generator_node(
@@ -41,7 +43,6 @@ def run_generator_node(
 	)
 	if "generation_gt" not in qa_data.columns:
 		raise ValueError("You must have 'generation_gt' column in qa.parquet.")
-	generation_gt = list(map(lambda x: x.tolist(), qa_data["generation_gt"].tolist()))
 
 	results, execution_times = zip(
 		*map(
@@ -56,13 +57,18 @@ def run_generator_node(
 	# get average token usage
 	token_usages = list(map(lambda x: x["generated_tokens"].apply(len).mean(), results))
 
+	# make rows to metric_inputs
+	generation_gt = to_list(qa_data["generation_gt"].tolist())
+
+	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
+
 	metric_names, metric_params = cast_metrics(strategies.get("metrics"))
 	if metric_names is None or len(metric_names) <= 0:
 		raise ValueError("You must at least one metrics for generator evaluation.")
 	results = list(
 		map(
 			lambda result: evaluate_generator_node(
-				result, generation_gt, strategies.get("metrics")
+				result, metric_inputs, strategies.get("metrics")
 			),
 			results,
 		)
@@ -120,9 +126,9 @@ def run_generator_node(
 
 
 def evaluate_generator_node(
-	result_df: pd.DataFrame, generation_gt, metrics: Union[List[str], List[Dict]]
+		result_df: pd.DataFrame, metric_inputs: List[MetricInput], metrics: Union[List[str], List[Dict]]
 ):
-	@evaluate_generation(generation_gt=generation_gt, metrics=metrics)
+	@evaluate_generation(metric_inputs=metric_inputs, metrics=metrics)
 	def evaluate_generation_module(df: pd.DataFrame):
 		return (
 			df["generated_texts"].tolist(),

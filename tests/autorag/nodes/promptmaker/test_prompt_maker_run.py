@@ -17,6 +17,7 @@ from autorag.nodes.promptmaker.run import (
 	evaluate_one_prompt_maker_node,
 	run_prompt_maker_node,
 )
+from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import load_summary_file
 from tests.mock import MockLLM
 
@@ -50,7 +51,8 @@ previous_result = pd.DataFrame(
 
 def test_evaluate_generator_result():
 	sample_df = pd.DataFrame({"generated_texts": sample_generated_texts})
-	result_df = evaluate_generator_result(sample_df, sample_generation_gt, metrics)
+	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in sample_generation_gt]
+	result_df = evaluate_generator_result(sample_df, metric_inputs, metrics)
 	metric_names, _ = cast_metrics(metrics)
 	assert all(metric_name in result_df.columns for metric_name in metric_names)
 	assert len(result_df) == len(sample_generated_texts)
@@ -64,11 +66,12 @@ def test_evaluate_one_prompt_maker_node():
 		{"llm": "mock", "model": "gpt-3.5-turbo-1106"},
 	]
 	project_dir = "_"
+	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in sample_generation_gt]
 	best_result = evaluate_one_prompt_maker_node(
 		prompts,
 		generator_funcs,
 		generator_params,
-		sample_generation_gt,
+		metric_inputs,
 		metrics,
 		project_dir,
 		"rank",

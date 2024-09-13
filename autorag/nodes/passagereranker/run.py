@@ -6,6 +6,7 @@ from typing import List, Callable, Dict
 import pandas as pd
 
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
+from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 
 logger = logging.getLogger("AutoRAG")
@@ -46,6 +47,9 @@ def run_passage_reranker_node(
 		]
 		for inner_array in retrieval_gt
 	]
+	# make rows to metric_inputs
+	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
+				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
 
 	results, execution_times = zip(
 		*map(
@@ -69,10 +73,8 @@ def run_passage_reranker_node(
 		map(
 			lambda x: evaluate_retrieval_node(
 				x,
-				retrieval_gt,
+				metric_inputs,
 				strategies.get("metrics"),
-				qa_df["query"].tolist(),
-				qa_df["generation_gt"].tolist(),
 			),
 			results,
 		)
