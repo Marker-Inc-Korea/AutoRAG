@@ -1,3 +1,5 @@
+import tempfile
+
 import pandas as pd
 
 from autorag.data.beta.schema import Raw, Corpus, QA
@@ -61,38 +63,124 @@ def test_raw_chunk():
 	)
 
 
-# def test_update_corpus():
-# 	raw = Raw(
-# 		pd.DataFrame(
-# 			{
-# 				{
-# 					"texts": ["hello", "world", "jax"],
-# 					"path": ["path1", "path1", "path2"],
-# 					"page": [1, 2, -1],
-# 					"last_modified_datetime": [
-# 						"2021-08-01",
-# 						"2021-08-02",
-# 						"2021-08-03",
-# 					],
-# 				}
-# 			}
-# 		)
-# 	)
-# original_corpus = Corpus(
-# 	pd.DataFrame(
-# 		{
-# 			"doc_id": ["id1", "id2", "id3", "id4", "id5", "id6"],
-# 			"contents": ["hello", "world", "foo", "bar", "baz", "jax"],
-# 			"path": ["path1", "path1", "path1", "path1", "path2", "path2"],
-# 			"start_end_idx": [
-# 				(0, 120),
-# 				(90, 200),
-# 				(4, 5),
-# 				(6, 7),
-# 				(8, 9),
-# 				(10, 11),
-# 			],
-# 		}
-# 	),
-# 	raw,
-# )
+def test_update_corpus():
+	raw = Raw(
+		pd.DataFrame(
+			{
+				"texts": ["hello", "world", "jax"],
+				"path": ["path1", "path1", "path2"],
+				"page": [1, 2, -1],
+				"last_modified_datetime": [
+					"2021-08-01",
+					"2021-08-02",
+					"2021-08-03",
+				],
+			}
+		)
+	)
+	original_corpus = Corpus(
+		pd.DataFrame(
+			{
+				"doc_id": ["id1", "id2", "id3", "id4", "id5", "id6"],
+				"contents": ["hello", "world", "foo", "bar", "baz", "jax"],
+				"path": ["path1", "path1", "path1", "path1", "path2", "path2"],
+				"start_end_idx": [
+					(0, 120),
+					(90, 200),
+					(0, 40),
+					(35, 75),
+					(0, 100),
+					(150, 200),
+				],
+				"metadata": [
+					{"page": 1, "last_modified_datetime": "2021-08-01"},
+					{"page": 1, "last_modified_datetime": "2021-08-01"},
+					{"page": 2, "last_modified_datetime": "2021-08-02"},
+					{"page": 2, "last_modified_datetime": "2021-08-02"},
+					{"last_modified_datetime": "2021-08-01"},
+					{"last_modified_datetime": "2021-08-01"},
+				],
+			}
+		),
+		raw,
+	)
+
+	qa = QA(
+		pd.DataFrame(
+			{
+				"qid": ["qid1", "qid2", "qid3", "qid4"],
+				"query": ["hello", "world", "foo", "bar"],
+				"retrieval_gt": [
+					[["id1"]],
+					[["id1"], ["id2"]],
+					[["id3", "id4"]],
+					[["id6", "id2"], ["id5"]],
+				],
+				"generation_gt": ["world", "foo", "bar", "jax"],
+			}
+		),
+		original_corpus,
+	)
+
+	new_corpus = Corpus(
+		pd.DataFrame(
+			{
+				"doc_id": [
+					"new_id1",
+					"new_id2",
+					"new_id3",
+					"new_id4",
+					"new_id5",
+					"new_id6",
+				],
+				"contents": ["hello", "world", "foo", "bar", "baz", "jax"],
+				"path": ["path1", "path1", "path1", "path1", "path2", "path2"],
+				"start_end_idx": [
+					(0, 80),
+					(80, 150),
+					(15, 50),
+					(50, 80),
+					(0, 200),
+					(201, 400),
+				],
+				"metadata": [
+					{"page": 1, "last_modified_datetime": "2021-08-01"},
+					{"page": 1, "last_modified_datetime": "2021-08-01"},
+					{"page": 2, "last_modified_datetime": "2021-08-02"},
+					{"page": 2, "last_modified_datetime": "2021-08-02"},
+					{"last_modified_datetime": "2021-08-01"},
+					{"last_modified_datetime": "2021-08-01"},
+				],
+			}
+		),
+		raw,
+	)
+
+	new_qa = qa.update_corpus(new_corpus)
+
+	expected_dataframe = pd.DataFrame(
+		{
+			"qid": ["qid1", "qid2", "qid3", "qid4"],
+			"retrieval_gt": [
+				[["new_id1", "new_id2"]],
+				[["new_id1", "new_id2"], ["new_id2"]],
+				[["new_id3", "new_id3", "new_id4"]],
+				[["new_id5", "new_id2"], ["new_id5"]],
+			],
+		}
+	)
+	pd.testing.assert_frame_equal(
+		new_qa.data[["qid", "retrieval_gt"]], expected_dataframe
+	)
+	with tempfile.NamedTemporaryFile(suffix=".parquet") as qa_path:
+		with tempfile.NamedTemporaryFile(suffix=".parquet") as corpus_path:
+			new_qa.to_parquet(qa_path.name, corpus_path.name)
+			loaded_qa = pd.read_parquet(qa_path.name, engine="pyarrow")
+			assert set(loaded_qa.columns) == {
+				"qid",
+				"query",
+				"retrieval_gt",
+				"generation_gt",
+			}
+			loaded_corpus = pd.read_parquet(corpus_path.name, engine="pyarrow")
+			assert set(loaded_corpus.columns) == {"doc_id", "contents", "metadata"}
