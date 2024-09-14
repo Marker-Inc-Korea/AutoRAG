@@ -38,9 +38,10 @@ Plus, you can specify the batch size.
 
 ```{toctree}
 ---
-maxdepth: 1
+maxdepth: 2
 ---
 tutorial.md
-query_gen.md
-filter.md
+qa_creation/qa_creation.md
+chunk/chunk.md
+parse/parse.md
 ```
