@@ -18,6 +18,18 @@ def table_hybrid_parse(
 	table_parse_module: str,
 	table_params: Dict,
 ) -> Tuple[List[str], List[str], List[int]]:
+	"""
+	Parse documents to use table_hybrid_parse method.
+	The table_hybrid_parse method is a hybrid method that combines the parsing results of PDFs with and without tables.
+	It splits the PDF file into pages, separates pages with and without tables, and then parses and merges the results.
+
+	:param data_path_list: The list of data paths to parse.
+	:param text_parse_module: The text parsing module to use. The type should be a string.
+	:param text_params: The extra parameters for the text parsing module. The type should be a dictionary.
+	:param table_parse_module: The table parsing module to use. The type should be a string.
+	:param table_params: The extra parameters for the table parsing module. The type should be a dictionary.
+	:return: tuple of lists containing the parsed texts, path and pages.
+	"""
 	# make save folder directory
 	with tempfile.TemporaryDirectory() as save_dir:
 		text_dir = os.path.join(save_dir, "text")
