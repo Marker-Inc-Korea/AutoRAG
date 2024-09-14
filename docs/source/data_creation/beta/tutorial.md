@@ -16,17 +16,6 @@ Therefore, to use AutoRAG, you need to convert your raw data into `corpus data` 
 
 ## 1. Parse
 
-Make parsed result from raw documents
-
-available list 링크 갤러리
-
-parse docs 링크 갤러리
-
-YAML File Example
-
-따로 만들고 싶으면 data format 맞추세유 ~
-
-
 ## 2. QA Creation
 
 ### Question Generation
@@ -36,8 +25,8 @@ If you want to learn about more question generation type, check [here](./query_g
 
 ### Answer Creation
 
-You can do like this.
 
+### Filter
 
 
 ## 3. Chunk
