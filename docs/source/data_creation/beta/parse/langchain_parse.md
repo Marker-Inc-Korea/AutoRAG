@@ -1,6 +1,7 @@
 # Langchain Parse
 
-Parse raw documents to use langchain document_loaders.
+Parse raw documents to use
+[langchain document_loaders](https://python.langchain.com/v0.2/docs/integrations/document_loaders/#all-document-loaders).
 
 ## Available Parse Method by File Type
 
