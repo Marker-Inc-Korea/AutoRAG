@@ -19,6 +19,20 @@ def clova_ocr(
 	batch: int = 8,
 	table_detection: bool = False,
 ) -> Tuple[List[str], List[str], List[int]]:
+	"""
+	Parse documents to use Naver Clova OCR.
+
+	:param data_path_list: The list of data paths to parse.
+	:param url: The URL for Clova OCR.
+		You can get the URL with the guide at https://guide.ncloud-docs.com/docs/clovaocr-example01
+		You can set the environment variable CLOVA_URL, or you can set it directly as a parameter.
+	:param api_key: The API key for Clova OCR.
+		You can get the API key with the guide at https://guide.ncloud-docs.com/docs/clovaocr-example01
+		You can set the environment variable CLOVA_API_KEY, or you can set it directly as a parameter.
+	:param batch: The batch size for parse documents. Default is 8.
+	:param table_detection: Whether to enable table detection. Default is False.
+	:return: tuple of lists containing the parsed texts, path and pages.
+	"""
 	url = os.getenv("CLOVA_URL", None) if url is None else url
 	if url is None:
 		raise KeyError(
