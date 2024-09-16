@@ -18,6 +18,14 @@ chunker = Chunker.from_parquet(parsed_data_path="your/parsed/data/path")
 chunker.start_chunking("your/path/to/chunk_config.yaml")
 ```
 
+## Features
+
+### 1. Add File Name
+
+
+### 2. Sentence Splitter
+
+
 ## Run Chunk Pipeline
 
 ### 1. Set chunker instance
