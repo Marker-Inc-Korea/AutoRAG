@@ -574,3 +574,27 @@ def get_event_loop() -> AbstractEventLoop:
 		loop = asyncio.new_event_loop()
 		asyncio.set_event_loop(loop)
 	return loop
+
+
+def find_key_values(data, target_key: str) -> List[Any]:
+	"""
+	Recursively find all values for a specific key in a nested dictionary or list.
+
+	:param data: The dictionary or list to search.
+	:param target_key: The key to search for.
+	:return: A list of values associated with the target key.
+	"""
+	values = []
+
+	if isinstance(data, dict):
+		for key, value in data.items():
+			if key == target_key:
+				values.append(value)
+			if isinstance(value, (dict, list)):
+				values.extend(find_key_values(value, target_key))
+	elif isinstance(data, list):
+		for item in data:
+			if isinstance(item, (dict, list)):
+				values.extend(find_key_values(item, target_key))
+
+	return values

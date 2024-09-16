@@ -35,6 +35,7 @@ from autorag.utils.util import (
 	convert_inputs_to_list,
 	to_list,
 	get_event_loop,
+	find_key_values,
 )
 from tests.mock import MockLLM
 
@@ -496,3 +497,47 @@ def test_to_list():
 	embedding_model = OpenAIEmbedding()
 	new_model = to_list(embedding_model)
 	assert isinstance(new_model, BaseEmbedding)
+
+
+def test_find_key_values():
+	# Test case 1: Simple dictionary
+	data = {"a": 1, "b": 2, "c": {"a": 3, "d": 4}}
+	target_key = "a"
+	expected = [1, 3]
+	assert find_key_values(data, target_key) == expected
+
+	# Test case 2: Nested dictionary with lists
+	data = {"a": 1, "b": [{"a": 2}, {"c": {"a": 3}}]}
+	target_key = "a"
+	expected = [1, 2, 3]
+	assert find_key_values(data, target_key) == expected
+
+	# Test case 3: List of dictionaries
+	data = [{"a": 1}, {"b": 2, "c": {"a": 3}}]
+	target_key = "a"
+	expected = [1, 3]
+	assert find_key_values(data, target_key) == expected
+
+	# Test case 4: No matching key
+	data = {"b": 2, "c": {"d": 4}}
+	target_key = "a"
+	expected = []
+	assert find_key_values(data, target_key) == expected
+
+	# Test case 5: Empty dictionary
+	data = {}
+	target_key = "a"
+	expected = []
+	assert find_key_values(data, target_key) == expected
+
+	# Test case 6: Empty list
+	data = []
+	target_key = "a"
+	expected = []
+	assert find_key_values(data, target_key) == expected
+
+	# Test case 7: Complex nested structure
+	data = {"a": {"b": [{"a": 1}, {"c": {"a": 2}}]}, "d": [{"e": {"a": 3}}]}
+	target_key = "a"
+	expected = [{"b": [{"a": 1}, {"c": {"a": 2}}]}, 1, 2, 3]
+	assert find_key_values(data, target_key) == expected

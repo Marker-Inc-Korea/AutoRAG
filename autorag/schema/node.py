@@ -2,13 +2,13 @@ import itertools
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Dict, List, Callable, Tuple
+from typing import Dict, List, Callable, Tuple, Any
 
 import pandas as pd
 
 from autorag.schema.module import Module
 from autorag.support import get_support_nodes
-from autorag.utils.util import make_combinations, explode
+from autorag.utils.util import make_combinations, explode, find_key_values
 
 logger = logging.getLogger("AutoRAG")
 
@@ -99,6 +99,23 @@ def extract_values_from_nodes(nodes: List[Node], key: str) -> List[str]:
 	"""
 	values = list(map(lambda node: extract_values(node, key), nodes))
 	return list(set(list(itertools.chain.from_iterable(values))))
+
+
+def extract_values_from_nodes_strategy(nodes: List[Node], key: str) -> List[Any]:
+	"""
+	This function extract values from nodes' strategy.
+
+	:param nodes: The nodes you want to extract values from.
+	:param key: The key string that you want to extract.
+	:return: The list of extracted values.
+	    It removes duplicated elements automatically.
+	"""
+	values = []
+	for node in nodes:
+		value_list = find_key_values(node.strategy, key)
+		if value_list:
+			values.extend(value_list)
+	return values
 
 
 def module_type_exists(nodes: List[Node], module_type: str) -> bool:
