@@ -25,7 +25,7 @@ So, you need to focus on the quality of your evaluation dataset.
 Once you have it, the optimal RAG pipeline can be found using AutoRAG easily.
 
 So, for users who want to make a good evaluation dataset,
-we provide a detailed guide at [here](data_creation/tutorial.md).
+we provide a detailed guide at [here](data_creation/beta/data_creation.md).
 
 For users who want to use a pre-made evaluation dataset,
 we provide example datasets at [here](data_creation/data_format.md#samples).
