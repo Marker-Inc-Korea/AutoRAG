@@ -105,14 +105,15 @@ async def vectordb_pure(
 	:param query_embeddings: A list of query embeddings.
 	:param top_k: The number of passages to be retrieved.
 	:param collection: A chroma collection instance that will be used to retrieve passages.
-
-	:return: The tuple contains a list of passage ids that retrieved from vectordb and a list of its scores.
+	:return: The tuple contains a list of passage ids that are retrieved from vectordb and a list of its scores.
 	"""
 	id_result, score_result = [], []
 	for embedded_query in query_embeddings:
 		result = collection.query(query_embeddings=embedded_query, n_results=top_k)
 		id_result.extend(result["ids"])
-		score_result.extend(result["distances"])
+		score_result.extend(
+			list(map(lambda lst: list(map(lambda x: 1 - x, lst)), result["distances"]))
+		)
 
 	# Distribute passages evenly
 	id_result, score_result = evenly_distribute_passages(id_result, score_result, top_k)
