@@ -18,7 +18,11 @@ from autorag.nodes.retrieval.base import get_bm25_pkl_name
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.schema import Node
-from autorag.schema.node import module_type_exists, extract_values_from_nodes
+from autorag.schema.node import (
+	module_type_exists,
+	extract_values_from_nodes,
+	extract_values_from_nodes_strategy,
+)
 from autorag.utils import (
 	cast_qa_dataset,
 	cast_corpus_dataset,
@@ -82,7 +86,7 @@ class Evaluator:
 
 		validate_qa_from_corpus_dataset(self.qa_data, self.corpus_data)
 
-		# copy dataset to project directory
+		# copy dataset to the project directory
 		if not os.path.exists(os.path.join(self.project_dir, "data")):
 			os.makedirs(os.path.join(self.project_dir, "data"))
 		qa_path_in_project = os.path.join(self.project_dir, "data", "qa.parquet")
@@ -100,7 +104,7 @@ class Evaluator:
 		trial_name = self.__get_new_trial_name()
 		self.__make_trial_dir(trial_name)
 
-		# copy yaml file to trial directory
+		# copy YAML file to the trial directory
 		shutil.copy(
 			yaml_path, os.path.join(self.project_dir, trial_name, "config.yaml")
 		)
@@ -148,13 +152,12 @@ class Evaluator:
 			bm25_tokenizer_list = list(
 				chain.from_iterable(
 					map(
-						lambda nodes: extract_values_from_nodes(
-							nodes, "bm25_tokenizer"
-						),
+						lambda nodes: self._find_bm25_tokenizer(nodes),
 						node_lines.values(),
 					)
 				)
 			)
+
 			if len(bm25_tokenizer_list) == 0:
 				bm25_tokenizer_list = ["porter_stemmer"]
 			for bm25_tokenizer in bm25_tokenizer_list:
@@ -166,6 +169,7 @@ class Evaluator:
 				# ingest because bm25 supports update new corpus data
 				bm25_ingest(bm25_dir, self.corpus_data, bm25_tokenizer=bm25_tokenizer)
 			logger.info("BM25 corpus embedding complete.")
+
 		if any(
 			list(
 				map(
@@ -178,9 +182,7 @@ class Evaluator:
 			embedding_models_list = list(
 				chain.from_iterable(
 					map(
-						lambda nodes: extract_values_from_nodes(
-							nodes, "embedding_model"
-						),
+						lambda nodes: self._find_embedding_model(nodes),
 						node_lines.values(),
 					)
 				)
@@ -517,3 +519,31 @@ class Evaluator:
 			}
 		)
 		return summary_lst
+
+	@staticmethod
+	def _find_bm25_tokenizer(nodes: List[Node]):
+		bm25_tokenizer_list = extract_values_from_nodes(nodes, "bm25_tokenizer")
+		strategy_tokenizer_list = list(
+			chain.from_iterable(
+				extract_values_from_nodes_strategy(nodes, "bm25_tokenizer")
+			)
+		)
+		return list(set(bm25_tokenizer_list + strategy_tokenizer_list))
+
+	@staticmethod
+	def _find_embedding_model(nodes: List[Node]):
+		embedding_models_list = extract_values_from_nodes(nodes, "embedding_model")
+		retrieval_module_dicts = extract_values_from_nodes_strategy(
+			nodes, "retrieval_modules"
+		)
+		for retrieval_modules in retrieval_module_dicts:
+			vectordb_modules = list(
+				filter(lambda x: x["module_type"] == "vectordb", retrieval_modules)
+			)
+			embedding_models_list.extend(
+				list(map(lambda x: x.get("embedding_model", None), vectordb_modules))
+			)
+		embedding_models_list = list(
+			filter(lambda x: x is not None, embedding_models_list)
+		)
+		return list(set(embedding_models_list))

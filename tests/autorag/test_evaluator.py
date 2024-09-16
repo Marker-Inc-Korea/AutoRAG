@@ -64,8 +64,8 @@ def test_load_node_line(evaluator):
 	assert node_lines["retrieve_node_line"] is not None
 	nodes = node_lines["retrieve_node_line"]
 	assert isinstance(nodes, list)
-	assert len(nodes) == 2
-	node = nodes[0]
+	assert len(nodes) == 3
+	node = nodes[1]
 	assert isinstance(node, Node)
 	assert node.node_type == "retrieval"
 	assert node.run_node == run_retrieval_node
@@ -84,7 +84,7 @@ def test_load_node_line(evaluator):
 		"embedding_batch": 50,
 	}
 	assert node.modules[2].module_param == {"weight_range": (4, 30)}
-	assert nodes[1].node_type == "passage_filter"
+	assert nodes[2].node_type == "passage_filter"
 
 
 @patch.object(
@@ -174,7 +174,7 @@ def test_start_trial(evaluator):
 	node_line_summary_df = load_summary_file(
 		node_line_summary_path, ["best_module_params"]
 	)
-	assert len(node_line_summary_df) == 2
+	assert len(node_line_summary_df) == 3
 	assert set(node_line_summary_df.columns) == {
 		"node_type",
 		"best_module_filename",
@@ -182,17 +182,17 @@ def test_start_trial(evaluator):
 		"best_module_params",
 		"best_execution_time",
 	}
-	assert node_line_summary_df["node_type"][0] == "retrieval"
-	assert node_line_summary_df["best_module_filename"][0] == best_row["filename"]
-	assert node_line_summary_df["best_module_name"][0] == best_row["module_name"]
-	assert node_line_summary_df["best_module_params"][0] == best_row["module_params"]
+	assert node_line_summary_df["node_type"][1] == "retrieval"
+	assert node_line_summary_df["best_module_filename"][1] == best_row["filename"]
+	assert node_line_summary_df["best_module_name"][1] == best_row["module_name"]
+	assert node_line_summary_df["best_module_params"][1] == best_row["module_params"]
 	assert node_line_summary_df["best_execution_time"][0] > 0
 
 	# test trial summary
 	trial_summary_path = os.path.join(project_dir, "0", "summary.csv")
 	assert os.path.exists(trial_summary_path)
 	trial_summary_df = load_summary_file(trial_summary_path, ["best_module_params"])
-	assert len(trial_summary_df) == 2
+	assert len(trial_summary_df) == 3
 	assert set(trial_summary_df.columns) == {
 		"node_line_name",
 		"node_type",
@@ -202,10 +202,10 @@ def test_start_trial(evaluator):
 		"best_execution_time",
 	}
 	assert trial_summary_df["node_line_name"][0] == "retrieve_node_line"
-	assert trial_summary_df["node_type"][0] == "retrieval"
-	assert trial_summary_df["best_module_filename"][0] == best_row["filename"]
-	assert trial_summary_df["best_module_name"][0] == best_row["module_name"]
-	assert trial_summary_df["best_module_params"][0] == best_row["module_params"]
+	assert trial_summary_df["node_type"][1] == "retrieval"
+	assert trial_summary_df["best_module_filename"][1] == best_row["filename"]
+	assert trial_summary_df["best_module_name"][1] == best_row["module_name"]
+	assert trial_summary_df["best_module_params"][1] == best_row["module_params"]
 	assert trial_summary_df["best_execution_time"][0] > 0
 
 
