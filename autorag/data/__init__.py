@@ -42,7 +42,6 @@ parse_modules = {
 	"pypdf": PyPDFLoader,
 	"pymupdf": PyMuPDFLoader,
 	"unstructuredpdf": UnstructuredPDFLoader,
-	"upstagelayoutanalysis": UpstageLayoutAnalysisLoader,
 	# Common File Types
 	# 1. CSV
 	"csv": CSVLoader,
@@ -57,6 +56,7 @@ parse_modules = {
 	# 6. All files
 	"directory": DirectoryLoader,
 	"unstructured": UnstructuredLoader,
+	"upstagelayoutanalysis": UpstageLayoutAnalysisLoader,
 }
 
 chunk_modules = {
