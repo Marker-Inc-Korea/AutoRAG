@@ -117,5 +117,5 @@ def add_file_name(
 		)
 	else:
 		raise ValueError(
-			f"Unsupported file_name_language: {file_name_language}. Choose from 'english' or 'korean'."
+			f"Unsupported file_name_language: {file_name_language}. Choose from 'en' or 'ko'."
 		)
