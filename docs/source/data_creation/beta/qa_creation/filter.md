@@ -4,6 +4,11 @@ After generating QA dataset, you want to filter some generation results.
 Because LLM is not perfect and has a lot of mistakes while generating datasets,
 it is good if you use some filtering methods to remove some bad results.
 
+The supported filtering methods are below.
+
+1. [Rule-based Don't know Filter](#rule-based-dont-know-filter)
+2. [LLM-based Don't know Filter](#llm-based-dont-know-filter)
+
 # 1. Unanswerable question filtering
 
 Sometimes LLM generates unanswerable questions from the given passage.

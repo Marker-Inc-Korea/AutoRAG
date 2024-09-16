@@ -4,37 +4,9 @@ In this document, we will cover how to generate questions for the QA dataset.
 
 ## Overview
 
-You can use `basic_apply` function at `QA` instance to generate questions.
+You can use `batch_apply` function at `QA` instance to generate questions.
 Before generating a question, the `QA` must have the `qid` and `retrieval_gt` columns.
 You can get those to use `sample` at the `Corpus` instance.
-
-```python
-from openai import AsyncOpenAI
-import pandas as pd
-from typing import List
-
-from autorag.data.beta.schema import Raw, QA, Corpus
-from autorag.data.beta.sample import random_single_hop
-from autorag.data.beta.query.openai_gen_query import factoid_query_gen
-from autorag.data.beta.generation_gt.openai_gen_gt import make_concise_gen_gt
-
-openai_client = AsyncOpenAI()
-parsing_result = Raw(pd.read_parquet('./parse.parquet'))
-initial_corpus = parsing_result.chunk(lambda data: recursive_split(data, chunk_size=128, chunk_overlap=24))
-initial_qa = initial_corpus.sample(
-     random_single_hop, n=50
-).batch_apply(
-    factoid_query_gen, client=openai_client, lang='ko'
-).batch_apply(
-    make_concise_gen_gt, client=openai_client, lang='ko'
-)
-
-# Make many corpus and QA instances from the same QA set.
-corpus_list: List[Corpus] = parsing_result.chunk_pipeline('./chunk.yaml')
-qa_list: List[QA] = list(map(lambda corpus: initial_qa.update_corpus(corpus), corpus_list))
-for i, qa in enumerate(qa_list):
-    qa.to_parquet(qa_path=f'./qa_{i}.parquet', corpus_path=f'./corpus_{i}.parquet')
-```
 
 ```{attention}
 In OpenAI version of data creation, you can use only 'gpt-4o-2024-08-06' and 'gpt-4o-mini-2024-07-18'.
@@ -45,7 +17,7 @@ If you want to use another model, use llama_index version instead.
 
 1. [Factoid](#1-factoid)
 2. [Concept Completion](#2-concept-completion)
-3. Two-hop Incremental
+3. [Two-hop Incremental](#3-two-hop-incremental)
 
 
 ## 1. Factoid

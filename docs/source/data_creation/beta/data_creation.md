@@ -22,19 +22,7 @@ In this new data creation pipeline, we have three schemas. `Raw`, `QA`, and `Cor
 You can use the corpus to generate the answer for the question.
 You have to make corpus data from your documents using parsing and chunking.
 
-### Functions for data creation
-
-We provide some functions for customizing and running a data creation process.
-Here are the basic concepts of each function.
-
-### `QA` and `Corpus`
-
-- `batch_apply`: Apply the function to each row of the dataset, but run in parallel using `asyncio`.
-You have to use `async` functions for using this function.
-Plus, you can specify the batch size.
-- `map`: You can use this function to do something to its pd.DataFrame value. The input function must be get input of pd.DataFrame and return pd.DataFrame.
-
-
+To see the tutorial of the data creation, check [here](./tutorial.md).
 
 ```{toctree}
 ---
