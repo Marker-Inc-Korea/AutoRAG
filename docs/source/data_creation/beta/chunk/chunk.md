@@ -1,8 +1,91 @@
 # Chunk
 
+In this section, we will cover how to chunk parsed result.
 
+It is a crucial step because if the parsed result is not chunked well, the RAG will not be optimized well.
 
-#### Supported Modules
+Using only YAML files, you can easily use the various chunk methods.
+The chunked result is saved according to the data format used by AutoRAG.
+
+## Overview
+
+The sample chunk pipeline looks like this.
+
+```python
+from autorag.chunker import Chunker
+
+chunker = Chunker.from_parquet(parsed_data_path="your/parsed/data/path")
+chunker.start_chunking("your/path/to/chunk_config.yaml")
+```
+
+## Run Chunk Pipeline
+
+### 1. Set chunker instance
+
+```python
+from autorag.chunker import Chunker
+
+chunker = Chunker.from_parquet(parsed_data_path="your/parsed/data/path")
+```
+
+```{admonition} Want to specify project folder?
+You can specify project directory with `--project_dir` option or project_dir parameter.
+```
+
+### 2. Set YAML file
+
+Here is an example of how to use the `llama_index_chunk` module.
+
+```yaml
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: [ Token, Sentence ]
+    chunk_size: [ 1024, 512 ]
+    chunk_overlap: 24
+```
+
+### 3. Start chunking
+
+Use `start_chunking` function to start parsing.
+
+```python
+chunker.start_chunking("your/path/to/chunk_config.yaml")
+```
+
+### 4. Check the result
+
+If you set `project_dir` parameter, you can check the result in the project directory.
+If not, you can check the result in the current directory.
+
+The way to check the result is the same as the `Evaluator` and `Parser` in AutoRAG.
+
+A `trial_folder` is created in `project_dir` first.
+
+If the chunking is completed successfully, the following three types of files are created in the trial_folder.
+
+1. Chunked Result
+2. Used YAML file
+3. Summary file
+
+For example, if chunking is performed using three chunk methods, the following files are created.
+`0.parquet`, `1.parquet`, `2.parquet`, `parse_config.yaml`, `summary.csv`
+
+Finally, in the summary.csv file, you can see information about the chunked result, such as what chunk method was used to chunk it.
+
+## Output Columns
+- `doc_id`: Document ID. The type is string.
+- `contents`: The contents of the chunked data. The type is string.
+- `path`: The path of the document. The type is string.
+- `start_end_idx`:
+  - Store index of chunked_str based on original_str before chunking
+  - stored to map the retrieval_gt of Evaluation QA Dataset according to various chunk methods.
+- `metadata`: It is also stored in the passage after the data of the parsed result is chunked. The type is dictionary.
+  - Depending on the dataformat of AutoRAG's `Parsed Result`, metadata should have the following keys: `page`, `last_modified_datetime`, `path`.
+
+#### Supported Chunk Modules
+
+📌 You can check our all Chunk modules
+at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
 
 ```{toctree}
 ---

@@ -67,7 +67,7 @@ parser.start_parsing("your/path/to/parse_config.yaml")
 If you set `project_dir` parameter, you can check the result in the project directory.
 If not, you can check the result in the current directory.
 
-The way to check the result is the same as the `Evaluator` in AutoRAG.
+The way to check the result is the same as the `Evaluator` and `Chunker` in AutoRAG.
 
 A `trial_folder` is created in `project_dir` first.
 
@@ -84,12 +84,12 @@ Finally, in the summary.csv file, you can see information about the parsed resul
 
 ## Output Columns
 
-- texts: Parsed text from the document.
-- path: Path of the document.
-- pages: Number of pages in the document. Contains page if parsing on a per-page basis, otherwise -1.
+- `texts`: Parsed text from the document.
+- `path`: Path of the document.
+- `pages`: Number of pages in the document. Contains page if parsing on a per-page basis, otherwise -1.
     - Modules that parse per page: [ `clova`, `table_hybrid_parse` ]
     - Modules that don't parse on a per-page basis: [ `langchain_parse`, `llama_parse` ]
-- last_modified_datetime: Last modified datetime of the document.
+- `last_modified_datetime`: Last modified datetime of the document.
 
 #### Supported Parse Modules
 
