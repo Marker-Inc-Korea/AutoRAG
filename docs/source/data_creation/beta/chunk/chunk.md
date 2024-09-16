@@ -21,10 +21,74 @@ chunker.start_chunking("your/path/to/chunk_config.yaml")
 ## Features
 
 ### 1. Add File Name
+You need to set one of 'English' and 'Korean'
+The 'add_file_name' feature is to add a file_name to chunked_contents.
+This is used to prevent hallucination by retrieving contents from the wrong document.
+Default form of English is `"file_name: {file_name}\n contents: {content}"`
 
+#### Example YAML
+
+```yaml
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: [ Token, Sentence ]
+    chunk_size: [ 1024, 512 ]
+    chunk_overlap: 24
+    add_file_name: english
+```
 
 ### 2. Sentence Splitter
 
+The following chunk methods in the `llama_index_chunk` module use the sentence splitter.
+
+- `Semantic_llama_index`
+- `SemanticDoubling`
+- `SentenceWindow`
+
+The following methods use `PunktSentenceTokenizer` as the default sentence splitter.
+
+See below for the available languages of `PunktSentenceTokenizer`.
+
+["Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Italian, Malayalam, Norwegian, Polish, Portuguese, Russian, Slovenian, Spanish, Swedish, Turkish"]
+
+So if the language you want to use is not in the list, or you want to use a different sentence splitter, you can use the sentence_splitter parameter.
+
+#### Available Sentence Splitter
+- [kiwi](https://github.com/bab2min/kiwipiepy) : For Korean 🇰🇷
+
+#### Example YAML
+
+```yaml
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: [ SentenceWindow ]
+    sentence_splitter: kiwi
+    window_size: 3
+    add_file_name: english
+```
+
+#### Using sentence splitter that is not in the Available Sentence Splitter
+
+If you want to use `kiwi`, you can use the following code.
+
+```python
+from autorag.data import sentence_splitter_modules, LazyInit
+
+def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
+	from kiwipiepy import Kiwi
+
+	kiwi = Kiwi()
+
+	def split(text: str) -> List[str]:
+		kiwi_result = kiwi.split_into_sents(text)
+		sentences = list(map(lambda x: x.text, kiwi_result))
+
+		return sentences
+
+	return split
+
+sentence_splitter_modules["kiwi"] = LazyInit(split_by_sentence_kiwi)
+```
 
 ## Run Chunk Pipeline
 
