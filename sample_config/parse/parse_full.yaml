@@ -11,3 +11,10 @@ modules:
   - module_type: llama_parse
     result_type: markdown
     language: ko
+  - module_type: table_hybrid_parse
+    text_parse_module: langchain_parse
+    text_params:
+      parse_method: pdfplumber
+    table_parse_module: clova
+    table_params:
+      table_detection: true
