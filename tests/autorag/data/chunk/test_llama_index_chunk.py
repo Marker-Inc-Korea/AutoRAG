@@ -47,7 +47,7 @@ def test_llama_index_chunk_file_name_ko(chunk_instance):
 	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
 		base_texts,
 		chunk_instance,
-		file_name_language="korean",
+		file_name_language="ko",
 		metadata_list=base_metadata,
 	)
 	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
@@ -59,7 +59,7 @@ def test_llama_index_chunk_file_name_ko(chunk_instance):
 
 def test_llama_index_chunk_file_name_ko_node():
 	result_df = llama_index_chunk(
-		parsed_result, chunk_method="token", add_file_name="korean"
+		parsed_result, chunk_method="token", add_file_name="ko"
 	)
 	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9
@@ -70,7 +70,7 @@ def test_llama_index_chunk_file_name_eng(chunk_instance):
 	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
 		base_texts,
 		chunk_instance,
-		file_name_language="english",
+		file_name_language="en",
 		metadata_list=base_metadata,
 	)
 	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
@@ -82,7 +82,7 @@ def test_llama_index_chunk_file_name_eng(chunk_instance):
 
 def test_llama_index_chunk_file_name_eng_node():
 	result_df = llama_index_chunk(
-		parsed_result, chunk_method="token", add_file_name="english"
+		parsed_result, chunk_method="token", add_file_name="en"
 	)
 	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9

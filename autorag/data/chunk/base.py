@@ -101,14 +101,14 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 def add_file_name(
 	file_name_language: str, file_names: List[str], chunk_texts: List[str]
 ) -> List[str]:
-	if file_name_language == "english":
+	if file_name_language == "en":
 		return list(
 			map(
 				lambda x: f"file_name: {x[1]}\n contents: {x[0]}",
 				zip(chunk_texts, file_names),
 			)
 		)
-	elif file_name_language == "korean":
+	elif file_name_language == "ko":
 		return list(
 			map(
 				lambda x: f"파일 제목: {x[1]}\n 내용: {x[0]}",
@@ -117,5 +117,5 @@ def add_file_name(
 		)
 	else:
 		raise ValueError(
-			f"Unsupported file_name_language: {file_name_language}. Choose from 'english' or 'korean'."
+			f"Unsupported file_name_language: {file_name_language}. Choose from 'en' or 'ko'."
 		)
