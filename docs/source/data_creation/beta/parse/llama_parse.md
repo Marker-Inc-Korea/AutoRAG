@@ -12,8 +12,12 @@ You can set language to use `language` parameter.
 
 ## Table Extraction
 
+If you have tables in your raw document, set `result_type: markdown` to convert them to Markdown and save them.
 
-
+📌`result_type`: You can set 3 types of result type.
+- text
+- markdown
+- json
 
 ## Example YAML
 
@@ -21,5 +25,5 @@ You can set language to use `language` parameter.
 modules:
   - module_type: llama_parse
     result_type: markdown
-    language: ko
+    language: en
 ```
