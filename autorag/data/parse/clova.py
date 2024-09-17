@@ -16,7 +16,7 @@ def clova_ocr(
 	data_path_list: List[str],
 	url: Optional[str] = None,
 	api_key: Optional[str] = None,
-	batch: int = 8,
+	batch: int = 5,
 	table_detection: bool = False,
 ) -> Tuple[List[str], List[str], List[int]]:
 	"""
