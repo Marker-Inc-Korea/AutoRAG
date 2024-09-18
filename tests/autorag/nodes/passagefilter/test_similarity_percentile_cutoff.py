@@ -1,8 +1,9 @@
 from unittest.mock import patch
 
+import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.passagefilter import similarity_percentile_cutoff
+from autorag.nodes.passagefilter import SimilarityPercentileCutoff
 from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	queries_example,
 	contents_example,
@@ -16,14 +17,20 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 from tests.mock import mock_get_text_embedding_batch
 
 
+@pytest.fixture
+def similarity_percentile_cutoff_instance():
+	return SimilarityPercentileCutoff(
+		project_dir=project_dir, previous_result=previous_result
+	)
+
+
 @patch.object(
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
 )
-def test_similarity_percentile_cutoff():
-	original_cutoff = similarity_percentile_cutoff.__wrapped__
-	contents, ids, scores = original_cutoff(
+def test_similarity_percentile_cutoff(similarity_percentile_cutoff_instance):
+	contents, ids, scores = similarity_percentile_cutoff_instance._pure(
 		queries_example,
 		contents_example,
 		scores_example,
@@ -43,7 +50,7 @@ def test_similarity_percentile_cutoff():
 	mock_get_text_embedding_batch,
 )
 def test_similarity_percentile_cutoff_node():
-	result_df = similarity_percentile_cutoff(
+	result_df = SimilarityPercentileCutoff.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, percentile=0.9
 	)
 	base_passage_filter_node_test(result_df)
