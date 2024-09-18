@@ -19,7 +19,7 @@ class Fstring(BasePromptMaker):
 	) -> List[str]:
 		"""
 		Make a prompt using f-string from a query and retrieved_contents.
-		You must type a prompt or prompt list at config yaml file like this:
+		You must type a prompt or prompt list at a config YAML file like this:
 
 		.. Code:: yaml
 		nodes:
