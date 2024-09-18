@@ -82,7 +82,7 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"recency_filter": ("autorag.nodes.passagefilter", "recency_filter"),
 		"threshold_cutoff": ("autorag.nodes.passagefilter", "threshold_cutoff"),
-		"percentile_cutoff": ("autorag.nodes.passagefilter", "percentile_cutoff"),
+		"percentile_cutoff": ("autorag.nodes.passagefilter", "PercentileCutoff"),
 		# passage_compressor
 		"tree_summarize": ("autorag.nodes.passagecompressor", "tree_summarize"),
 		"pass_compressor": ("autorag.nodes.passagecompressor", "pass_compressor"),

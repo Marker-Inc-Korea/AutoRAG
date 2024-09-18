@@ -1,4 +1,7 @@
-from autorag.nodes.passagefilter import percentile_cutoff
+import pytest
+from sklearn.utils.fixes import percentile
+
+from autorag.nodes.passagefilter import percentile_cutoff, PercentileCutoff
 from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	queries_example,
 	contents_example,
@@ -11,9 +14,15 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 )
 
 
-def test_percentile_cutoff():
-	original_cutoff = percentile_cutoff.__wrapped__
-	contents, ids, scores = original_cutoff(
+@pytest.fixture
+def percentile_cutoff_instance():
+	return PercentileCutoff(
+		project_dir=project_dir, previous_result=previous_result, percentile=0.6
+	)
+
+
+def test_percentile_cutoff(percentile_cutoff_instance):
+	contents, ids, scores = percentile_cutoff_instance._pure(
 		queries_example, contents_example, scores_example, ids_example, percentile=0.6
 	)
 	base_passage_filter_test(contents, ids, scores)
@@ -24,9 +33,8 @@ def test_percentile_cutoff():
 	]
 
 
-def test_percentile_cutoff_reverse():
-	original_cutoff = percentile_cutoff.__wrapped__
-	contents, ids, scores = original_cutoff(
+def test_percentile_cutoff_reverse(percentile_cutoff_instance):
+	contents, ids, scores = percentile_cutoff_instance._pure(
 		queries_example,
 		contents_example,
 		scores_example,
@@ -40,7 +48,7 @@ def test_percentile_cutoff_reverse():
 
 
 def test_percentile_cutoff_node():
-	result_df = percentile_cutoff(
+	result_df = PercentileCutoff.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, percentile=0.9
 	)
 	base_passage_filter_node_test(result_df)
