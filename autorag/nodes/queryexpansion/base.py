@@ -1,23 +1,27 @@
-import functools
+import abc
 import logging
 from pathlib import Path
 from typing import List, Union, Dict, Optional
 
 import pandas as pd
 
+from autorag.schema import BaseModule
 from autorag.support import get_support_modules
-from autorag.utils import result_to_dataframe, validate_qa_dataset
+from autorag.utils import validate_qa_dataset
 
 logger = logging.getLogger("AutoRAG")
 
 
-def query_expansion_node(func):
-	@functools.wraps(func)
-	@result_to_dataframe(["queries"])
-	def wrapper(
-		project_dir: Union[str, Path], previous_result: pd.DataFrame, *args, **kwargs
-	) -> List[List[str]]:
-		logger.info(f"Running query expansion node - {func.__name__} module...")
+class BaseQueryExpansion(BaseModule, metaclass=abc.ABCMeta):
+	def __init__(self, project_dir: Union[str, Path], *args, **kwargs):
+		self.cast_to_init(project_dir, *args, **kwargs)
+
+	def cast_to_init(self, project_dir: Union[str, Path], *args, **kwargs):
+		logger.info(
+			f"Initialize query expansion node - {self.__class__.__name__} module..."
+		)
+
+	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		validate_qa_dataset(previous_result)
 
 		# find queries columns
@@ -26,35 +30,33 @@ def query_expansion_node(func):
 		), "previous_result must have query column."
 		queries = previous_result["query"].tolist()
 
-		if func.__name__ == "pass_query_expansion":
-			return func(queries=queries)
-
 		# pop prompt from kwargs
-		if "prompt" in kwargs.keys():
-			prompt = kwargs.pop("prompt")
-		else:
-			prompt = ""
+		prompt = kwargs.pop("prompt", "")
 
 		# set generator module for query expansion
 		generator_callable, generator_param = make_generator_callable_param(kwargs)
+		return queries, prompt, generator_callable, generator_param
 
-		# run query expansion function
-		expanded_queries = func(
-			queries=queries,
-			prompt=prompt,
-			generator_func=generator_callable,
-			generator_params=generator_param,
+	@staticmethod
+	def _check_expanded_query(queries: List[str], expanded_queries: List[List[str]]):
+		return list(
+			map(
+				lambda query, expanded_query_list: check_expanded_query(
+					query, expanded_query_list
+				),
+				queries,
+				expanded_queries,
+			)
 		)
-		# delete empty string in the nested expanded queries list
-		expanded_queries = [
-			list(map(lambda x: x.strip(), sublist)) for sublist in expanded_queries
-		]
-		expanded_queries = [
-			list(filter(lambda x: bool(x), sublist)) for sublist in expanded_queries
-		]
-		return expanded_queries
 
-	return wrapper
+
+def check_expanded_query(query: str, expanded_query_list: List[str]):
+	# check if the expanded query is the same as the original query
+	expanded_query_list = list(map(lambda x: x.strip(), expanded_query_list))
+	return [
+		expanded_query if expanded_query else query
+		for expanded_query in expanded_query_list
+	]
 
 
 def make_generator_callable_param(generator_dict: Optional[Dict]):
@@ -62,7 +64,7 @@ def make_generator_callable_param(generator_dict: Optional[Dict]):
 		generator_dict = {
 			"generator_module_type": "llama_index_llm",
 			"llm": "openai",
-			"model": "gpt-3.5-turbo",
+			"model": "gpt-4o-mini",
 		}
 	module_str = generator_dict.pop("generator_module_type")
 	module_callable = get_support_modules(module_str)

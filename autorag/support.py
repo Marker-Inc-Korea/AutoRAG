@@ -27,7 +27,7 @@ def get_support_modules(module_name: str) -> Callable:
 		"hyde": ("autorag.nodes.queryexpansion", "hyde"),
 		"pass_query_expansion": (
 			"autorag.nodes.queryexpansion",
-			"pass_query_expansion",
+			"PassQueryExpansion",
 		),
 		"multi_query_expansion": (
 			"autorag.nodes.queryexpansion",
