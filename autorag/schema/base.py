@@ -11,7 +11,7 @@ class BaseModule(metaclass=ABCMeta):
 		pass
 
 	@abstractmethod
-	def pure(self, previous_result: pd.DataFrame, *args, **kwargs) -> pd.DataFrame:
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		pass
 
 	@abstractmethod
@@ -19,9 +19,15 @@ class BaseModule(metaclass=ABCMeta):
 		pass
 
 	@classmethod
-	def run_evaluator(cls, *args, **kwargs):
-		instance = cls(*args, **kwargs)
-		result = instance.pure(*args, **kwargs)
+	def run_evaluator(
+		cls,
+		project_dir: Union[str, Path],
+		previous_result: pd.DataFrame,
+		*args,
+		**kwargs,
+	):
+		instance = cls(project_dir, *args, **kwargs)
+		result = instance.pure(previous_result, *args, **kwargs)
 		del instance
 		return result
 
