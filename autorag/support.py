@@ -81,7 +81,7 @@ def get_support_modules(module_name: str) -> Callable:
 			"similarity_percentile_cutoff",
 		),
 		"recency_filter": ("autorag.nodes.passagefilter", "recency_filter"),
-		"threshold_cutoff": ("autorag.nodes.passagefilter", "threshold_cutoff"),
+		"threshold_cutoff": ("autorag.nodes.passagefilter", "ThresholdCutoff"),
 		"percentile_cutoff": ("autorag.nodes.passagefilter", "PercentileCutoff"),
 		# passage_compressor
 		"tree_summarize": ("autorag.nodes.passagecompressor", "tree_summarize"),
