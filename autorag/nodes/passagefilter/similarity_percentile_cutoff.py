@@ -1,4 +1,5 @@
-from typing import List, Tuple, Optional
+from pathlib import Path
+from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,24 @@ from autorag.utils import result_to_dataframe
 
 
 class SimilarityPercentileCutoff(BasePassageFilter):
+	def __init__(self, project_dir: Union[str, Path], *args, **kwargs):
+		"""
+		Initialize the SimilarityPercentileCutoff module
+
+		:param project_dir: The project directory to use for initializing the module
+		:param embedding_model: The embedding model string to use for calculating similarity
+			Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
+		"""
+		super().__init__(project_dir, *args, **kwargs)
+		embedding_model_str = kwargs.pop("embedding_model", "openai")
+		self.embedding_model = embedding_models[embedding_model_str]
+
+	def __del__(self):
+		del self.embedding_model
+
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
+
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
@@ -26,7 +45,6 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		scores_list: List[List[float]],
 		ids_list: List[List[str]],
 		percentile: float,
-		embedding_model: Optional[str] = None,
 		batch: int = 128,
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
@@ -40,19 +58,12 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		:param scores_list: The list of lists of scores retrieved
 		:param ids_list: The list of lists of ids retrieved
 		:param percentile: The percentile to cut off
-		:param embedding_model: The embedding model to use for calculating similarity
-		    Default is OpenAIEmbedding.
 		:param batch: The number of queries to be processed in a batch
 		    Default is 128.
 		:return: Tuple of lists containing the filtered contents, ids, and scores
 		"""
-		if embedding_model is None:
-			embedding_model = embedding_models["openai"]
-		else:
-			embedding_model = embedding_models[embedding_model]
-
 		query_embeddings, content_embeddings = embedding_query_content(
-			queries, contents_list, embedding_model, batch
+			queries, contents_list, self.embedding_model, batch
 		)
 
 		results = list(
@@ -71,10 +82,6 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		remain_content_list = list(map(lambda x: x[0], results))
 		remain_ids_list = list(map(lambda x: x[1], results))
 		remain_scores_list = list(map(lambda x: x[2], results))
-
-		del embedding_model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
 
 		return remain_content_list, remain_ids_list, remain_scores_list
 
