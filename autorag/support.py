@@ -71,7 +71,7 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"time_reranker": ("autorag.nodes.passagereranker", "time_reranker"),
 		# passage_filter
-		"pass_passage_filter": ("autorag.nodes.passagefilter", "pass_passage_filter"),
+		"pass_passage_filter": ("autorag.nodes.passagefilter", "PassPassageFilter"),
 		"similarity_threshold_cutoff": (
 			"autorag.nodes.passagefilter",
 			"SimilarityThresholdCutoff",

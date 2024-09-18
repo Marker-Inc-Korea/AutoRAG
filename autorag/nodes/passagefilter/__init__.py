@@ -1,4 +1,4 @@
-from .pass_passage_filter import pass_passage_filter
+from .pass_passage_filter import PassPassageFilter
 from .percentile_cutoff import PercentileCutoff
 from .recency import RecencyFilter
 from .similarity_percentile_cutoff import SimilarityPercentileCutoff
