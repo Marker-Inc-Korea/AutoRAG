@@ -28,6 +28,7 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		self.embedding_model = embedding_models[embedding_model_str]
 
 	def __del__(self):
+		super().__del__()
 		del self.embedding_model
 
 		if torch.cuda.is_available():
