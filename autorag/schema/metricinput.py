@@ -1,93 +1,113 @@
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Callable, Any, Union
+from itertools import chain
 
 import numpy as np
 import pandas as pd
+from deepeval.test_case import LLMTestCase
 
 
 @dataclass
 class MetricInput:
-    query: Optional[str] = None
-    queries: Optional[List[str]] = None
-    retrieval_gt_contents: Optional[List[List[str]]] = None
-    retrieved_contents: Optional[List[str]] = None
-    retrieval_gt: Optional[List[List[str]]] = None
-    retrieved_ids: Optional[List[str]] = None
-    prompt: Optional[str] = None
-    generated_texts: Optional[str] = None
-    generation_gt: Optional[List[str]] = None
-    generated_log_probs: Optional[List[float]] = None
+	query: Optional[str] = None
+	queries: Optional[List[str]] = None
+	retrieval_gt_contents: Optional[List[List[str]]] = None
+	retrieved_contents: Optional[List[str]] = None
+	retrieval_gt: Optional[List[List[str]]] = None
+	retrieved_ids: Optional[List[str]] = None
+	prompt: Optional[str] = None
+	generated_texts: Optional[str] = None
+	generation_gt: Optional[List[str]] = None
+	generated_log_probs: Optional[List[float]] = None
 
-    def is_fields_notnone(self, fields_to_check: List[str]) -> bool:
-        for field in fields_to_check:
-            actual_value = getattr(self, field)
+	def is_fields_notnone(self, fields_to_check: List[str]) -> bool:
+		for field in fields_to_check:
+			actual_value = getattr(self, field)
 
-            if actual_value is None:
-                return False
+			if actual_value is None:
+				return False
 
-            try:
-                if not type_checks.get(type(actual_value), lambda _: False)(actual_value):
-                    return False
-            except Exception:
-                return False
+			try:
+				if not type_checks.get(type(actual_value), lambda _: False)(
+					actual_value
+				):
+					return False
+			except Exception:
+				return False
 
-        return True
+		return True
 
-    @classmethod
-    def from_dataframe(cls, qa_data: pd.DataFrame) -> List['MetricInput']:
-        """
-        Convert a pandas DataFrame into a list of MetricInput instances.
-        qa_data: pd.DataFrame: qa_data DataFrame containing metric data.
+	def to_deepeval_testcase(self):
+		test_case = LLMTestCase(
+			input=self.query,
+			expected_output=self.generation_gt[0],
+			actual_output=self.generated_texts,
+			context=list(chain(*self.retrieval_gt_contents)),
+			retrieval_context=self.retrieved_contents,
+			tools_called=None,
+			expected_tools=None,
+		)
+		return test_case
 
-        :returns: List[MetricInput]: List of MetricInput objects created from DataFrame rows.
-        """
-        instances = []
+	@classmethod
+	def from_dataframe(cls, qa_data: pd.DataFrame) -> List["MetricInput"]:
+		"""
+		Convert a pandas DataFrame into a list of MetricInput instances.
+		qa_data: pd.DataFrame: qa_data DataFrame containing metric data.
 
-        for _, row in qa_data.iterrows():
-            instance = cls()
+		:returns: List[MetricInput]: List of MetricInput objects created from DataFrame rows.
+		"""
+		instances = []
 
-            for attr_name in cls.__annotations__:
-                if attr_name in row:
-                    value = row[attr_name]
+		for _, row in qa_data.iterrows():
+			instance = cls()
 
-                    if isinstance(value, str):
-                        setattr(instance, attr_name, value.strip() if value.strip() != '' else None)
-                    elif isinstance(value, list):
-                        setattr(instance, attr_name, value if len(value) > 0 else None)
-                    else:
-                        setattr(instance, attr_name, value)
+			for attr_name in cls.__annotations__:
+				if attr_name in row:
+					value = row[attr_name]
 
-            instances.append(instance)
+					if isinstance(value, str):
+						setattr(
+							instance,
+							attr_name,
+							value.strip() if value.strip() != "" else None,
+						)
+					elif isinstance(value, list):
+						setattr(instance, attr_name, value if len(value) > 0 else None)
+					else:
+						setattr(instance, attr_name, value)
 
-        return instances
+			instances.append(instance)
 
-    @staticmethod
-    def _check_list(lst_or_arr: Union[List[Any], np.ndarray]) -> bool:
-        if isinstance(lst_or_arr, np.ndarray):
-            lst_or_arr = lst_or_arr.flatten().tolist()
+		return instances
 
-        if len(lst_or_arr) == 0:
-            return False
+	@staticmethod
+	def _check_list(lst_or_arr: Union[List[Any], np.ndarray]) -> bool:
+		if isinstance(lst_or_arr, np.ndarray):
+			lst_or_arr = lst_or_arr.flatten().tolist()
 
-        for item in lst_or_arr:
-            if item is None:
-                return False
+		if len(lst_or_arr) == 0:
+			return False
 
-            item_type = type(item)
+		for item in lst_or_arr:
+			if item is None:
+				return False
 
-            if item_type in type_checks:
-                if not type_checks[item_type](item):
-                    return False
-            else:
-                return False
+			item_type = type(item)
 
-        return True
+			if item_type in type_checks:
+				if not type_checks[item_type](item):
+					return False
+			else:
+				return False
+
+		return True
 
 
 type_checks: Dict[type, Callable[[Any], bool]] = {
-    str: lambda x: len(x.strip()) > 0,
-    list: MetricInput._check_list,
-    np.ndarray: MetricInput._check_list,
-    int: lambda _: True,
-    float: lambda _: True,
+	str: lambda x: len(x.strip()) > 0,
+	list: MetricInput._check_list,
+	np.ndarray: MetricInput._check_list,
+	int: lambda _: True,
+	float: lambda _: True,
 }
