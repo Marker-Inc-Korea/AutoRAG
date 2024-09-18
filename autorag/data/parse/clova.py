@@ -16,7 +16,7 @@ def clova_ocr(
 	data_path_list: List[str],
 	url: Optional[str] = None,
 	api_key: Optional[str] = None,
-	batch: int = 8,
+	batch: int = 5,
 	table_detection: bool = False,
 ) -> Tuple[List[str], List[str], List[int]]:
 	"""
@@ -46,6 +46,8 @@ def clova_ocr(
 			"Please set the API key for Clova OCR in the environment variable CLOVA_API_KEY "
 			"or directly set it on the config YAML file."
 		)
+	if batch > 5:
+		raise ValueError("The batch size should be less than or equal to 5.")
 
 	image_data_lst = list(
 		map(lambda data_path: pdf_to_images(data_path), data_path_list)
