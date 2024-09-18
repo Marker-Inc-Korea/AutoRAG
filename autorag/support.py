@@ -74,7 +74,7 @@ def get_support_modules(module_name: str) -> Callable:
 		"pass_passage_filter": ("autorag.nodes.passagefilter", "pass_passage_filter"),
 		"similarity_threshold_cutoff": (
 			"autorag.nodes.passagefilter",
-			"similarity_threshold_cutoff",
+			"SimilarityThresholdCutoff",
 		),
 		"similarity_percentile_cutoff": (
 			"autorag.nodes.passagefilter",

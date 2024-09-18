@@ -2,5 +2,5 @@ from .pass_passage_filter import pass_passage_filter
 from .percentile_cutoff import PercentileCutoff
 from .recency import RecencyFilter
 from .similarity_percentile_cutoff import SimilarityPercentileCutoff
-from .similarity_threshold_cutoff import similarity_threshold_cutoff
+from .similarity_threshold_cutoff import SimilarityThresholdCutoff
 from .threshold_cutoff import ThresholdCutoff
