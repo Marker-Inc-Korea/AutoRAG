@@ -11,7 +11,7 @@ from llama_index.llms.openai import OpenAI
 from autorag import generator_models
 from autorag.evaluation.util import cast_metrics
 from autorag.nodes.generator import llama_index_llm
-from autorag.nodes.promptmaker import fstring
+from autorag.nodes.promptmaker import Fstring
 from autorag.nodes.promptmaker.run import (
 	evaluate_generator_result,
 	evaluate_one_prompt_maker_node,
@@ -51,7 +51,9 @@ previous_result = pd.DataFrame(
 
 def test_evaluate_generator_result():
 	sample_df = pd.DataFrame({"generated_texts": sample_generated_texts})
-	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in sample_generation_gt]
+	metric_inputs = [
+		MetricInput(generation_gt=gen_gt) for gen_gt in sample_generation_gt
+	]
 	result_df = evaluate_generator_result(sample_df, metric_inputs, metrics)
 	metric_names, _ = cast_metrics(metrics)
 	assert all(metric_name in result_df.columns for metric_name in metric_names)
@@ -66,7 +68,9 @@ def test_evaluate_one_prompt_maker_node():
 		{"llm": "mock", "model": "gpt-3.5-turbo-1106"},
 	]
 	project_dir = "_"
-	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in sample_generation_gt]
+	metric_inputs = [
+		MetricInput(generation_gt=gen_gt) for gen_gt in sample_generation_gt
+	]
 	best_result = evaluate_one_prompt_maker_node(
 		prompts,
 		generator_funcs,
@@ -138,7 +142,7 @@ def check_summary_df(node_line_dir):
 
 def test_run_prompt_maker_node(node_line_dir):
 	generator_models["mock"] = MockLLM
-	modules = [fstring, fstring]
+	modules = [Fstring, Fstring]
 	params = [
 		{
 			"prompt": "Tell me something about the question: {query} \n\n {retrieved_contents}"
@@ -182,7 +186,7 @@ async def acomplete_qa_creation(*args, **kwargs):
 
 @patch.object(OpenAI, "acomplete", acomplete_qa_creation)
 def test_run_prompt_maker_node_default(node_line_dir):
-	modules = [fstring, fstring]
+	modules = [Fstring, Fstring]
 	params = [
 		{
 			"prompt": "Tell me something about the question: {query} \n\n {retrieved_contents}"
@@ -204,7 +208,7 @@ def test_run_prompt_maker_node_default(node_line_dir):
 
 
 def test_run_prompt_maker_one_module(node_line_dir):
-	modules = [fstring]
+	modules = [Fstring]
 	params = [
 		{
 			"prompt": "Tell me something about the question: {query} \n\n {retrieved_contents}"
