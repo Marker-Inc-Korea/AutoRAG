@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from autorag.nodes.generator import vllm
+from autorag.nodes.generator import Vllm
 from tests.autorag.nodes.generator.test_generator_base import (
 	prompts,
 	check_generated_texts,
@@ -15,9 +15,10 @@ def test_vllm():
 	previous_result = pd.DataFrame(
 		{"prompts": prompts, "qid": ["id-1", "id-2", "id-3"]}
 	)
-	result_df = vllm(
+	result_df = Vllm.run_evaluator(
 		project_dir=".",
 		previous_result=previous_result,
+		tensor_parallel_size=1,
 		llm="facebook/opt-125m",
 		max_tokens=5,
 		temperature=0.5,

@@ -94,7 +94,7 @@ def get_support_modules(module_name: str) -> Callable:
 		"window_replacement": ("autorag.nodes.promptmaker", "WindowReplacement"),
 		# generator
 		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
-		"vllm": ("autorag.nodes.generator", "vllm"),
+		"vllm": ("autorag.nodes.generator", "Vllm"),
 		"openai_llm": ("autorag.nodes.generator", "OpenAILLM"),
 	}
 	return dynamically_find_function(module_name, support_modules)
