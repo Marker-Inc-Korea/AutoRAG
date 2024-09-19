@@ -5,7 +5,12 @@ from transformers import AutoTokenizer
 
 from autorag import generator_models
 from autorag.nodes.generator.base import BaseGenerator
-from autorag.utils.util import get_event_loop, process_batch, result_to_dataframe
+from autorag.utils.util import (
+	get_event_loop,
+	process_batch,
+	result_to_dataframe,
+	pop_params,
+)
 
 
 class LlamaIndexLLM(BaseGenerator):
@@ -37,7 +42,8 @@ class LlamaIndexLLM(BaseGenerator):
 						"`model` or `model_name` parameter must be provided for using huggingfacellm."
 					)
 			kwargs["tokenizer_name"] = kwargs["model_name"]
-		self.llm_instance = generator_models[self.llm](**kwargs)
+		llm_class = generator_models[self.llm]
+		self.llm_instance = llm_class(**pop_params(llm_class.__init__, kwargs))
 
 	def __del__(self):
 		super().__del__()

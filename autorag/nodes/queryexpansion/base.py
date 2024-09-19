@@ -14,12 +14,12 @@ logger = logging.getLogger("AutoRAG")
 
 class BaseQueryExpansion(BaseModule, metaclass=abc.ABCMeta):
 	def __init__(self, project_dir: Union[str, Path], *args, **kwargs):
-		self.cast_to_init(project_dir, *args, **kwargs)
-
-	def cast_to_init(self, project_dir: Union[str, Path], *args, **kwargs):
 		logger.info(
 			f"Initialize query expansion node - {self.__class__.__name__} module..."
 		)
+		# set generator module for query expansion
+		generator_class, generator_param = make_generator_callable_param(kwargs)
+		self.generator = generator_class(project_dir, **generator_param)
 
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		validate_qa_dataset(previous_result)
@@ -29,13 +29,7 @@ class BaseQueryExpansion(BaseModule, metaclass=abc.ABCMeta):
 			"query" in previous_result.columns
 		), "previous_result must have query column."
 		queries = previous_result["query"].tolist()
-
-		# pop prompt from kwargs
-		prompt = kwargs.pop("prompt", "")
-
-		# set generator module for query expansion
-		generator_callable, generator_param = make_generator_callable_param(kwargs)
-		return queries, prompt, generator_callable, generator_param
+		return queries
 
 	@staticmethod
 	def _check_expanded_query(queries: List[str], expanded_queries: List[List[str]]):
@@ -67,6 +61,6 @@ def make_generator_callable_param(generator_dict: Optional[Dict]):
 			"model": "gpt-4o-mini",
 		}
 	module_str = generator_dict.pop("generator_module_type")
-	module_callable = get_support_modules(module_str)
+	module_class = get_support_modules(module_str)
 	module_param = generator_dict
-	return module_callable, module_param
+	return module_class, module_param
