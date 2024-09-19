@@ -23,7 +23,7 @@ def get_support_modules(module_name: str) -> Callable:
 		"llama_index_chunk": ("autorag.data.chunk", "llama_index_chunk"),
 		"langchain_chunk": ("autorag.data.chunk", "langchain_chunk"),
 		# query_expansion
-		"query_decompose": ("autorag.nodes.queryexpansion", "query_decompose"),
+		"query_decompose": ("autorag.nodes.queryexpansion", "QueryDecompose"),
 		"hyde": ("autorag.nodes.queryexpansion", "HyDE"),
 		"pass_query_expansion": (
 			"autorag.nodes.queryexpansion",

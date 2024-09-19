@@ -26,7 +26,18 @@ class MultiQueryExpansion(BaseQueryExpansion):
 		expanded_queries = self._pure(queries, prompt, **kwargs)
 		return self._check_expanded_query(queries, expanded_queries)
 
-	def _pure(self, queries, prompt: str = multi_query_expansion_prompt, **kwargs):
+	def _pure(
+		self, queries, prompt: str = multi_query_expansion_prompt, **kwargs
+	) -> List[List[str]]:
+		"""
+		Expand a list of queries using a multi-query expansion approach.
+		LLM model generate 3 different versions queries for each input query.
+
+		:param queries: List[str], queries to decompose.
+		:param prompt: str, prompt to use for multi-query expansion.
+			default prompt comes from langchain MultiQueryRetriever default query prompt.
+		:return: List[List[str]], list of expansion query.
+		"""
 		full_prompts = list(map(lambda x: prompt.format(query=x), queries))
 		input_df = pd.DataFrame({"prompts": full_prompts})
 		result_df = self.generator.pure(previous_result=input_df, **kwargs)
