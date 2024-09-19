@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from autorag import generator_models
-from autorag.nodes.generator import llama_index_llm
+from autorag.nodes.generator import LlamaIndexLLM
 from autorag.nodes.generator.run import run_generator_node
 from autorag.utils.util import load_summary_file
 from tests.mock import MockLLM
@@ -52,7 +52,7 @@ def node_line_dir():
 
 def test_run_generator_node(node_line_dir):
 	generator_models["mock"] = MockLLM
-	modules = [llama_index_llm, llama_index_llm]
+	modules = [LlamaIndexLLM, LlamaIndexLLM]
 	module_params = [
 		{
 			"llm": "mock",
