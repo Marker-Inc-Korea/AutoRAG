@@ -15,13 +15,10 @@ logger = logging.getLogger("AutoRAG")
 
 class BasePassageFilter(BaseModule, metaclass=abc.ABCMeta):
 	def __init__(self, project_dir: Union[str, Path], *args, **kwargs):
-		self.cast_to_init(project_dir, *args, **kwargs)
+		logger.info(f"Initialize passage filter node - {self.__class__.__name__}")
 
 	def __del__(self):
 		logger.info(f"Prompt maker node - {self.__class__.__name__} module is deleted.")
-
-	def cast_to_init(self, project_dir: Union[str, Path], *args, **kwargs):
-		logger.info(f"Initialize passage filter node - {self.__class__.__name__}")
 
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		logger.info(

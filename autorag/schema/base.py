@@ -32,13 +32,6 @@ class BaseModule(metaclass=ABCMeta):
 		return result
 
 	@abstractmethod
-	def cast_to_init(self, project_dir: Union[str, Path], *args, **kwargs):
-		"""
-		This function is for cast function (a.k.a decorator) only for init function in the whole node.
-		"""
-		pass
-
-	@abstractmethod
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		"""
 		This function is for cast function (a.k.a decorator) only for pure function in the whole node.
