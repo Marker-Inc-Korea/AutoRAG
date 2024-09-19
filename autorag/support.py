@@ -24,14 +24,14 @@ def get_support_modules(module_name: str) -> Callable:
 		"langchain_chunk": ("autorag.data.chunk", "langchain_chunk"),
 		# query_expansion
 		"query_decompose": ("autorag.nodes.queryexpansion", "query_decompose"),
-		"hyde": ("autorag.nodes.queryexpansion", "hyde"),
+		"hyde": ("autorag.nodes.queryexpansion", "HyDE"),
 		"pass_query_expansion": (
 			"autorag.nodes.queryexpansion",
 			"PassQueryExpansion",
 		),
 		"multi_query_expansion": (
 			"autorag.nodes.queryexpansion",
-			"multi_query_expansion",
+			"MultiQueryExpansion",
 		),
 		# retrieval
 		"bm25": ("autorag.nodes.retrieval", "bm25"),
