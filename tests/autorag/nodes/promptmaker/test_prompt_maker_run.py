@@ -10,7 +10,7 @@ from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
 from autorag.evaluation.util import cast_metrics
-from autorag.nodes.generator import llama_index_llm
+from autorag.nodes.generator import LlamaIndexLLM
 from autorag.nodes.promptmaker import Fstring
 from autorag.nodes.promptmaker.run import (
 	evaluate_generator_result,
@@ -62,7 +62,7 @@ def test_evaluate_generator_result():
 
 def test_evaluate_one_prompt_maker_node():
 	generator_models["mock"] = MockLLM
-	generator_funcs = [llama_index_llm, llama_index_llm]
+	generator_funcs = [LlamaIndexLLM, LlamaIndexLLM]
 	generator_params = [
 		{"llm": "mock", "model": "gpt-3.5-turbo"},
 		{"llm": "mock", "model": "gpt-3.5-turbo-1106"},

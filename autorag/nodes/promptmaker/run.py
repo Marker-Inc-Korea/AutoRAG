@@ -1,7 +1,7 @@
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Optional, Union
+from typing import List, Dict, Optional, Union
 
 import pandas as pd
 import tokenlog
@@ -234,7 +234,7 @@ def make_generator_callable_params(strategy_dict: Dict):
 
 def evaluate_one_prompt_maker_node(
 	prompts: List[str],
-	generator_funcs: List[Callable],
+	generator_classes: List,
 	generator_params: List[Dict],
 	metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
@@ -244,14 +244,16 @@ def evaluate_one_prompt_maker_node(
 	input_df = pd.DataFrame({"prompts": prompts})
 	generator_results = list(
 		map(
-			lambda x: x[0](project_dir=project_dir, previous_result=input_df, **x[1]),
-			zip(generator_funcs, generator_params),
+			lambda x: x[0].run_evaluator(
+				project_dir=project_dir, previous_result=input_df, **x[1]
+			),
+			zip(generator_classes, generator_params),
 		)
 	)
 	evaluation_results = list(
 		map(
 			lambda x: evaluate_generator_result(x[0], metric_inputs, metrics),
-			zip(generator_results, generator_funcs),
+			zip(generator_results, generator_classes),
 		)
 	)
 	metric_names = (
