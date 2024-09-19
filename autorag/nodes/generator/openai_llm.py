@@ -123,11 +123,16 @@ class OpenAILLM(BaseGenerator):
 				)
 			)
 
+		openai_chat_params = pop_params(self.client.chat.completions.create, kwargs)
 		loop = get_event_loop()
 		if self.llm.startswith("o1"):
-			tasks = [self.get_result_o1(prompt, **kwargs) for prompt in prompts]
+			tasks = [
+				self.get_result_o1(prompt, **openai_chat_params) for prompt in prompts
+			]
 		else:
-			tasks = [self.get_result(prompt, **kwargs) for prompt in prompts]
+			tasks = [
+				self.get_result(prompt, **openai_chat_params) for prompt in prompts
+			]
 		result = loop.run_until_complete(process_batch(tasks, self.batch))
 		answer_result = list(map(lambda x: x[0], result))
 		token_result = list(map(lambda x: x[1], result))
