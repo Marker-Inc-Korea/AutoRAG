@@ -93,9 +93,9 @@ def get_support_modules(module_name: str) -> Callable:
 		"long_context_reorder": ("autorag.nodes.promptmaker", "LongContextReorder"),
 		"window_replacement": ("autorag.nodes.promptmaker", "WindowReplacement"),
 		# generator
-		"llama_index_llm": ("autorag.nodes.generator", "llama_index_llm"),
+		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"vllm": ("autorag.nodes.generator", "vllm"),
-		"openai_llm": ("autorag.nodes.generator", "openai_llm"),
+		"openai_llm": ("autorag.nodes.generator", "OpenAILLM"),
 	}
 	return dynamically_find_function(module_name, support_modules)
 
