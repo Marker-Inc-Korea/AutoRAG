@@ -1,7 +1,8 @@
 import pandas as pd
+import pytest
 
 from autorag import generator_models
-from autorag.nodes.generator import llama_index_llm
+from autorag.nodes.generator import LlamaIndexLLM
 from tests.autorag.nodes.generator.test_generator_base import (
 	prompts,
 	check_generated_texts,
@@ -11,9 +12,14 @@ from tests.autorag.nodes.generator.test_generator_base import (
 from tests.mock import MockLLM
 
 
-def test_llama_index_llm():
-	llama_index_llm_original = llama_index_llm.__wrapped__
-	answers, tokens, log_probs = llama_index_llm_original(prompts, MockLLM())
+@pytest.fixture
+def llama_index_llm_instance():
+	generator_models["mock"] = MockLLM
+	return LlamaIndexLLM(project_dir=".", llm="mock", temperature=0.5, top_p=0.9)
+
+
+def test_llama_index_llm(llama_index_llm_instance):
+	answers, tokens, log_probs = llama_index_llm_instance._pure(prompts)
 	check_generated_texts(answers)
 	check_generated_tokens(tokens)
 	check_generated_log_probs(log_probs)
@@ -29,7 +35,7 @@ def test_llama_index_llm_node():
 	previous_result = pd.DataFrame(
 		{"prompts": prompts, "qid": ["id-1", "id-2", "id-3"]}
 	)
-	result_df = llama_index_llm(
+	result_df = LlamaIndexLLM.run_evaluator(
 		project_dir=".",
 		previous_result=previous_result,
 		llm="mock",
