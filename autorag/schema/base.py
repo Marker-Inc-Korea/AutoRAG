@@ -7,10 +7,6 @@ import pandas as pd
 
 class BaseModule(metaclass=ABCMeta):
 	@abstractmethod
-	def __init__(self, project_dir: Union[str, Path], *args, **kwargs):
-		pass
-
-	@abstractmethod
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		pass
 

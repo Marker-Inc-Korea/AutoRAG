@@ -33,6 +33,16 @@ def get_support_modules(module_name: str) -> Callable:
 			"autorag.nodes.queryexpansion",
 			"MultiQueryExpansion",
 		),
+		"QueryDecompose": ("autorag.nodes.queryexpansion", "QueryDecompose"),
+		"HyDE": ("autorag.nodes.queryexpansion", "HyDE"),
+		"PassQueryExpansion": (
+			"autorag.nodes.queryexpansion",
+			"PassQueryExpansion",
+		),
+		"MultiQueryExpansion": (
+			"autorag.nodes.queryexpansion",
+			"MultiQueryExpansion",
+		),
 		# retrieval
 		"bm25": ("autorag.nodes.retrieval", "bm25"),
 		"vectordb": ("autorag.nodes.retrieval", "vectordb"),
@@ -83,6 +93,18 @@ def get_support_modules(module_name: str) -> Callable:
 		"recency_filter": ("autorag.nodes.passagefilter", "RecencyFilter"),
 		"threshold_cutoff": ("autorag.nodes.passagefilter", "ThresholdCutoff"),
 		"percentile_cutoff": ("autorag.nodes.passagefilter", "PercentileCutoff"),
+		"PassPassageFilter": ("autorag.nodes.passagefilter", "PassPassageFilter"),
+		"SimilarityThresholdCutoff": (
+			"autorag.nodes.passagefilter",
+			"SimilarityThresholdCutoff",
+		),
+		"SimilarityPercentileCutoff": (
+			"autorag.nodes.passagefilter",
+			"SimilarityPercentileCutoff",
+		),
+		"RecencyFilter": ("autorag.nodes.passagefilter", "RecencyFilter"),
+		"ThresholdCutoff": ("autorag.nodes.passagefilter", "ThresholdCutoff"),
+		"PercentileCutoff": ("autorag.nodes.passagefilter", "PercentileCutoff"),
 		# passage_compressor
 		"tree_summarize": ("autorag.nodes.passagecompressor", "tree_summarize"),
 		"pass_compressor": ("autorag.nodes.passagecompressor", "pass_compressor"),
@@ -92,10 +114,16 @@ def get_support_modules(module_name: str) -> Callable:
 		"fstring": ("autorag.nodes.promptmaker", "Fstring"),
 		"long_context_reorder": ("autorag.nodes.promptmaker", "LongContextReorder"),
 		"window_replacement": ("autorag.nodes.promptmaker", "WindowReplacement"),
+		"Fstring": ("autorag.nodes.promptmaker", "Fstring"),
+		"LongContextReorder": ("autorag.nodes.promptmaker", "LongContextReorder"),
+		"WindowReplacement": ("autorag.nodes.promptmaker", "WindowReplacement"),
 		# generator
 		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"vllm": ("autorag.nodes.generator", "Vllm"),
 		"openai_llm": ("autorag.nodes.generator", "OpenAILLM"),
+		"LlamaIndexLLM": ("autorag.nodes.generator", "LlamaIndexLLM"),
+		"Vllm": ("autorag.nodes.generator", "Vllm"),
+		"OpenAILLM": ("autorag.nodes.generator", "OpenAILLM"),
 	}
 	return dynamically_find_function(module_name, support_modules)
 
