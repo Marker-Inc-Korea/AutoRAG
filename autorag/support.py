@@ -106,10 +106,11 @@ def get_support_modules(module_name: str) -> Callable:
 		"ThresholdCutoff": ("autorag.nodes.passagefilter", "ThresholdCutoff"),
 		"PercentileCutoff": ("autorag.nodes.passagefilter", "PercentileCutoff"),
 		# passage_compressor
-		"tree_summarize": ("autorag.nodes.passagecompressor", "tree_summarize"),
+		"tree_summarize": ("autorag.nodes.passagecompressor", "TreeSummarize"),
 		"pass_compressor": ("autorag.nodes.passagecompressor", "pass_compressor"),
 		"refine": ("autorag.nodes.passagecompressor", "refine"),
 		"longllmlingua": ("autorag.nodes.passagecompressor", "longllmlingua"),
+		"TreeSummarize": ("autorag.nodes.passagecompressor", "TreeSummarize"),
 		# prompt_maker
 		"fstring": ("autorag.nodes.promptmaker", "Fstring"),
 		"long_context_reorder": ("autorag.nodes.promptmaker", "LongContextReorder"),
