@@ -14,13 +14,19 @@ logger = logging.getLogger("AutoRAG")
 
 class BasePassageCompressor(BaseModule, metaclass=abc.ABCMeta):
 	def __init__(self, project_dir: str, *args, **kwargs):
-		logger.info(f"Initialize generator node - {self.__class__.__name__} module...")
+		logger.info(
+			f"Initialize passage compressor node - {self.__class__.__name__} module..."
+		)
 
 	def __del__(self):
-		logger.info(f"Deleting generator node - {self.__class__.__name__} module...")
+		logger.info(
+			f"Deleting passage compressor node - {self.__class__.__name__} module..."
+		)
 
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
-		logger.info(f"Running generator node - {self.__class__.__name__} module...")
+		logger.info(
+			f"Running passage compressor node - {self.__class__.__name__} module..."
+		)
 		assert all(
 			[
 				column in previous_result.columns

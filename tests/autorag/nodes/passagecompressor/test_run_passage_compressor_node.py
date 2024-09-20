@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from autorag import generator_models
-from autorag.nodes.passagecompressor import tree_summarize
+from autorag.nodes.passagecompressor import TreeSummarize, Refine
 from autorag.nodes.passagecompressor.run import run_passage_compressor_node
 from autorag.utils.util import load_summary_file
 from tests.mock import MockLLM
@@ -94,7 +94,7 @@ def node_line_dir():
 
 def test_run_passage_compressor_node(node_line_dir):
 	generator_models["mock"] = MockLLM
-	modules = [tree_summarize, tree_summarize]
+	modules = [TreeSummarize, Refine]
 	module_params = [
 		{"llm": "mock", "model": "gpt-3.5-turbo-16k", "batch": 4},
 		{"llm": "mock", "model": "gpt-3.5-turbo"},
@@ -143,7 +143,8 @@ def test_run_passage_compressor_node(node_line_dir):
 	assert summary_df["passage_compressor_retrieval_token_precision"][
 		0
 	] == pytest.approx(single_result_df["retrieval_token_precision"].mean())
-	assert summary_df["module_name"][0] == "tree_summarize"
+	assert summary_df["module_name"][0] == "TreeSummarize"
+	assert summary_df["module_name"][1] == "Refine"
 	assert summary_df["module_params"][0] == {
 		"llm": "mock",
 		"model": "gpt-3.5-turbo-16k",
