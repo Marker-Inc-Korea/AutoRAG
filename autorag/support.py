@@ -51,7 +51,11 @@ def get_support_modules(module_name: str) -> Callable:
 		# passage_augmenter
 		"prev_next_augmenter": (
 			"autorag.nodes.passageaugmenter",
-			"prev_next_augmenter",
+			"PrevNextPassageAugmenter",
+		),
+		"PrevNextPassageAugmenter": (
+			"autorag.nodes.passageaugmenter",
+			"PrevNextPassageAugmenter",
 		),
 		"pass_passage_augmenter": (
 			"autorag.nodes.passageaugmenter",

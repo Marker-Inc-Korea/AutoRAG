@@ -9,9 +9,17 @@ from autorag.utils import result_to_dataframe
 class PassPassageAugmenter(BasePassageAugmenter):
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		"""
+		Run the passage augmenter node - PassPassageAugmenter module.
+
+		:param previous_result: The previous result Dataframe.
+		:param top_k: You must input the top_k value to get the top k results.
+		:param kwargs: Not affected.
+		:return: DataFrame with retrieved_contents, retrieved_ids, and retrieve_scores columns
+		"""
 		top_k = kwargs.pop("top_k")
 
-		_, ids = self.cast_to_run(previous_result)
+		ids = self.cast_to_run(previous_result)
 		contents = previous_result["retrieved_contents"].tolist()
 		scores = previous_result["retrieve_scores"].tolist()
 

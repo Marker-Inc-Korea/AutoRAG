@@ -1,8 +1,9 @@
 from unittest.mock import patch
 
+import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.passageaugmenter import prev_next_augmenter
+from autorag.nodes.passageaugmenter import PrevNextPassageAugmenter
 
 from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
 	ids_list,
@@ -14,10 +15,13 @@ from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
 from tests.mock import mock_get_text_embedding_batch
 
 
-def test_prev_next_augmenter_next():
-	results = prev_next_augmenter.__wrapped__(
-		ids_list, corpus_data, num_passages=1, mode="next"
-	)
+@pytest.fixture
+def prev_next_augmenter_instance():
+	return PrevNextPassageAugmenter(project_dir=project_dir)
+
+
+def test_prev_next_augmenter_next(prev_next_augmenter_instance):
+	results = prev_next_augmenter_instance._pure(ids_list, num_passages=1, mode="next")
 	assert results == [
 		[doc_id_list[1], doc_id_list[2]],
 		[doc_id_list[3], doc_id_list[4]],
@@ -25,10 +29,8 @@ def test_prev_next_augmenter_next():
 	]
 
 
-def test_prev_next_augmenter_prev():
-	results = prev_next_augmenter.__wrapped__(
-		ids_list, corpus_data, num_passages=1, mode="prev"
-	)
+def test_prev_next_augmenter_prev(prev_next_augmenter_instance):
+	results = prev_next_augmenter_instance._pure(ids_list, num_passages=1, mode="prev")
 	assert results == [
 		[doc_id_list[0], doc_id_list[1]],
 		[doc_id_list[2], doc_id_list[3]],
@@ -36,10 +38,8 @@ def test_prev_next_augmenter_prev():
 	]
 
 
-def test_prev_next_augmenter_both():
-	results = prev_next_augmenter.__wrapped__(
-		ids_list, corpus_data, num_passages=1, mode="both"
-	)
+def test_prev_next_augmenter_both(prev_next_augmenter_instance):
+	results = prev_next_augmenter_instance._pure(ids_list, num_passages=1, mode="both")
 	assert results == [
 		[doc_id_list[0], doc_id_list[1], doc_id_list[2]],
 		[doc_id_list[2], doc_id_list[3], doc_id_list[4]],
@@ -47,10 +47,8 @@ def test_prev_next_augmenter_both():
 	]
 
 
-def test_prev_next_augmenter_multi_passages():
-	results = prev_next_augmenter.__wrapped__(
-		ids_list, corpus_data, num_passages=3, mode="prev"
-	)
+def test_prev_next_augmenter_multi_passages(prev_next_augmenter_instance):
+	results = prev_next_augmenter_instance._pure(ids_list, num_passages=3, mode="prev")
 	assert results == [
 		[doc_id_list[0], doc_id_list[1]],
 		[doc_id_list[0], doc_id_list[1], doc_id_list[2], doc_id_list[3]],
@@ -70,7 +68,7 @@ def test_prev_next_augmenter_multi_passages():
 	mock_get_text_embedding_batch,
 )
 def test_prev_next_augmenter_node():
-	result_df = prev_next_augmenter(
+	result_df = PrevNextPassageAugmenter.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, mode="next", top_k=2
 	)
 	contents = result_df["retrieved_contents"].tolist()
