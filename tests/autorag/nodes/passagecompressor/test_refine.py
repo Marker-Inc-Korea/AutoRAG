@@ -1,7 +1,11 @@
+from unittest.mock import patch
+
 import pandas as pd
+import pytest
+from llama_index.llms.openai import OpenAI
 
 from autorag import generator_models
-from autorag.nodes.passagecompressor.refine import refine
+from autorag.nodes.passagecompressor.refine import Refine
 from tests.autorag.nodes.passagecompressor.test_base_passage_compressor import (
 	queries,
 	retrieved_contents,
@@ -11,39 +15,57 @@ from tests.autorag.nodes.passagecompressor.test_base_passage_compressor import (
 from tests.mock import MockLLM
 
 
-def test_refine_default():
-	llm = MockLLM()
-	result = refine.__wrapped__(queries, retrieved_contents, [], [], llm)
+@pytest.fixture
+def refine_instance():
+	return Refine("project_dir", llm="mock")
+
+
+@pytest.fixture
+def refine_instance_chat():
+	return Refine("project_dir", llm="openai", model="gpt-4o-mini")
+
+
+async def mock_openai_apredict(self, prompt, *args, **kwargs):
+	return "What is the capital of France?"
+
+
+def test_refine_default(refine_instance):
+	result = refine_instance._pure(queries, retrieved_contents)
 	check_result(result)
 
 
-def test_refine_chat():
-	gpt_3 = MockLLM(model="gpt-3.5-turbo")
-	result = refine.__wrapped__(queries, retrieved_contents, [], [], gpt_3)
+@patch.object(
+	OpenAI,
+	"apredict",
+	mock_openai_apredict,
+)
+def test_refine_chat(refine_instance_chat):
+	result = refine_instance_chat._pure(queries, retrieved_contents)
 	check_result(result)
 
 
-def test_refine_custom_prompt():
-	llm = MockLLM()
+def test_refine_custom_prompt(refine_instance):
 	prompt = "This is a custom prompt. {context_msg} {query_str}"
-	result = refine.__wrapped__(queries, retrieved_contents, [], [], llm, prompt=prompt)
+	result = refine_instance._pure(queries, retrieved_contents, prompt=prompt)
 	check_result(result)
 	assert bool(result[0]) is True
 
 
-def test_refine_custom_prompt_chat():
-	gpt_3 = MockLLM(model="gpt-3.5-turbo")
+@patch.object(
+	OpenAI,
+	"apredict",
+	mock_openai_apredict,
+)
+def test_refine_custom_prompt_chat(refine_instance_chat):
 	prompt = "Query: {query_str} Passages: {context_msg}. Repeat the query."
-	result = refine.__wrapped__(
-		queries, retrieved_contents, [], [], gpt_3, chat_prompt=prompt
-	)
+	result = refine_instance_chat._pure(queries, retrieved_contents, chat_prompt=prompt)
 	check_result(result)
 	assert "What is the capital of France?" in result[0]
 
 
 def test_refine_node():
 	generator_models["mock"] = MockLLM
-	result = refine(
+	result = Refine.run_evaluator(
 		"project_dir",
 		df,
 		llm="mock",

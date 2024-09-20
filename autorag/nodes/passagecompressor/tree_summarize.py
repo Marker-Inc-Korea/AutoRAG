@@ -1,46 +1,15 @@
 from typing import List, Optional
 
-import pandas as pd
 from llama_index.core import PromptTemplate
-from llama_index.core.llms import LLM
 from llama_index.core.prompts import PromptType
 from llama_index.core.prompts.utils import is_chat_model
 from llama_index.core.response_synthesizers import TreeSummarize as ts
 
-from autorag.nodes.passagecompressor.base import BasePassageCompressor, make_llm
-from autorag.utils.util import get_event_loop, process_batch, result_to_dataframe
+from autorag.nodes.passagecompressor.base import LlamaIndexCompressor
+from autorag.utils.util import get_event_loop, process_batch
 
 
-class TreeSummarize(BasePassageCompressor):
-	param_list = ["prompt", "chat_prompt", "batch"]
-
-	def __init__(self, project_dir: str, **kwargs):
-		"""
-		Initialize passage compressor module.
-
-		:param project_dir: The project directory
-		:param llm: The llm name that will be used to summarize.
-			The LlamaIndex LLM model can be used in here.
-		:param kwargs: Extra parameter for init llm
-		"""
-		super().__init__(project_dir)
-		kwargs_dict = dict(
-			filter(lambda x: x[0] not in self.param_list, kwargs.items())
-		)
-		llm_name = kwargs_dict.pop("llm")
-		self.llm: LLM = make_llm(llm_name, kwargs_dict)
-
-	def __del__(self):
-		del self.llm
-		super().__del__()
-
-	@result_to_dataframe(["retrieved_contents"])
-	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
-		queries, retrieved_contents, _, _ = self.cast_to_run(previous_result)
-		param_dict = dict(filter(lambda x: x[0] in self.param_list, kwargs.items()))
-		result = self._pure(queries, retrieved_contents, **param_dict)
-		return list(map(lambda x: [x], result))
-
+class TreeSummarize(LlamaIndexCompressor):
 	def _pure(
 		self,
 		queries: List[str],

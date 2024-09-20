@@ -43,6 +43,37 @@ class BasePassageCompressor(BaseModule, metaclass=abc.ABCMeta):
 		return queries, retrieved_contents, retrieved_ids, retrieve_scores
 
 
+class LlamaIndexCompressor(BasePassageCompressor, metaclass=abc.ABCMeta):
+	param_list = ["prompt", "chat_prompt", "batch"]
+
+	def __init__(self, project_dir: str, **kwargs):
+		"""
+		Initialize passage compressor module.
+
+		:param project_dir: The project directory
+		:param llm: The llm name that will be used to summarize.
+			The LlamaIndex LLM model can be used in here.
+		:param kwargs: Extra parameter for init llm
+		"""
+		super().__init__(project_dir)
+		kwargs_dict = dict(
+			filter(lambda x: x[0] not in self.param_list, kwargs.items())
+		)
+		llm_name = kwargs_dict.pop("llm")
+		self.llm: LLM = make_llm(llm_name, kwargs_dict)
+
+	def __del__(self):
+		del self.llm
+		super().__del__()
+
+	@result_to_dataframe(["retrieved_contents"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		queries, retrieved_contents, _, _ = self.cast_to_run(previous_result)
+		param_dict = dict(filter(lambda x: x[0] in self.param_list, kwargs.items()))
+		result = self._pure(queries, retrieved_contents, **param_dict)
+		return list(map(lambda x: [x], result))
+
+
 def passage_compressor_node(func):
 	@functools.wraps(func)
 	@result_to_dataframe(["retrieved_contents"])
