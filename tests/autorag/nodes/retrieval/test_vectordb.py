@@ -12,7 +12,7 @@ import pytest
 from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import vectordb
+from autorag.nodes.retrieval import VectorDB
 from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
 from tests.autorag.nodes.retrieval.test_retrieval_base import (
 	queries,
@@ -61,7 +61,7 @@ def empty_chromadb():
 def project_dir_for_vectordb_node():
 	with tempfile.TemporaryDirectory() as test_project_dir:
 		sample_project_dir = os.path.join(resource_path, "sample_project")
-		# copy & paste all folders and files in sample_project folder
+		# copy & paste all folders and files in the sample_project folder
 		shutil.copytree(sample_project_dir, test_project_dir, dirs_exist_ok=True)
 
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
@@ -71,10 +71,18 @@ def project_dir_for_vectordb_node():
 			name="openai", metadata={"hnsw:space": "cosine"}
 		)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
-		corpus_df = pd.read_parquet(corpus_path)
+		corpus_df.to_parquet(corpus_path, index=False)
 		vectordb_ingest(collection, corpus_df, embedding_model)
 
 		yield test_project_dir
+
+
+@pytest.fixture
+def vectordb_instance(project_dir_for_vectordb_node):
+	vectordb = VectorDB(
+		project_dir=project_dir_for_vectordb_node, embedding_model="openai"
+	)
+	yield vectordb
 
 
 @patch.object(
@@ -82,14 +90,11 @@ def project_dir_for_vectordb_node():
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
 )
-def test_vectordb_retrieval(ingested_vectordb):
+def test_vectordb_retrieval(vectordb_instance):
 	top_k = 4
-	original_vectordb = vectordb.__wrapped__
-	id_result, score_result = original_vectordb(
+	id_result, score_result = vectordb_instance._pure(
 		queries,
 		top_k=top_k,
-		collection=ingested_vectordb,
-		embedding_model=embedding_model,
 	)
 	base_retrieval_test(id_result, score_result, top_k)
 
@@ -99,14 +104,11 @@ def test_vectordb_retrieval(ingested_vectordb):
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
 )
-def test_vectordb_retrieval_ids(ingested_vectordb):
+def test_vectordb_retrieval_ids(vectordb_instance):
 	ids = [["doc2", "doc3"], ["doc1", "doc2"], ["doc4", "doc5"]]
-	original_vectordb = vectordb.__wrapped__
-	id_result, score_result = original_vectordb(
+	id_result, score_result = vectordb_instance._pure(
 		queries,
 		top_k=4,
-		collection=ingested_vectordb,
-		embedding_model=embedding_model,
 		ids=ids,
 	)
 	assert id_result == ids
@@ -119,14 +121,11 @@ def test_vectordb_retrieval_ids(ingested_vectordb):
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
 )
-def test_vectordb_retrieval_ids_empty(ingested_vectordb):
+def test_vectordb_retrieval_ids_empty(vectordb_instance):
 	ids = [["doc2", "doc3"], [], ["doc4"]]
-	original_vectordb = vectordb.__wrapped__
-	id_result, score_result = original_vectordb(
+	id_result, score_result = vectordb_instance._pure(
 		queries,
 		top_k=4,
-		collection=ingested_vectordb,
-		embedding_model=embedding_model,
 		ids=ids,
 	)
 	assert id_result == ids
@@ -142,7 +141,7 @@ def test_vectordb_retrieval_ids_empty(ingested_vectordb):
 	mock_get_text_embedding_batch,
 )
 def test_vectordb_node(project_dir_for_vectordb_node):
-	result_df = vectordb(
+	result_df = VectorDB.run_evaluator(
 		project_dir=project_dir_for_vectordb_node,
 		previous_result=previous_result,
 		top_k=4,
@@ -157,7 +156,7 @@ def test_vectordb_node(project_dir_for_vectordb_node):
 	mock_get_text_embedding_batch,
 )
 def test_vectordb_node_ids(project_dir_for_vectordb_node):
-	result_df = vectordb(
+	result_df = VectorDB.run_evaluator(
 		project_dir=project_dir_for_vectordb_node,
 		previous_result=previous_result,
 		top_k=4,

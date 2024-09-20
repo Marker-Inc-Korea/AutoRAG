@@ -46,7 +46,8 @@ def get_support_modules(module_name: str) -> Callable:
 		# retrieval
 		"bm25": ("autorag.nodes.retrieval", "BM25"),
 		"BM25": ("autorag.nodes.retrieval", "BM25"),
-		"vectordb": ("autorag.nodes.retrieval", "vectordb"),
+		"vectordb": ("autorag.nodes.retrieval", "VectorDB"),
+		"VectorDB": ("autorag.nodes.retrieval", "VectorDB"),
 		"hybrid_rrf": ("autorag.nodes.retrieval", "hybrid_rrf"),
 		"hybrid_cc": ("autorag.nodes.retrieval", "hybrid_cc"),
 		# passage_augmenter

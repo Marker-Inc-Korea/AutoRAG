@@ -5,11 +5,8 @@ import os
 from pathlib import Path
 from typing import List, Union, Tuple
 
-import chromadb
 import pandas as pd
-import torch
 
-from autorag import embedding_models
 from autorag.schema import BaseModule
 from autorag.support import get_support_modules
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
@@ -78,16 +75,6 @@ def retrieval_node(func):
 			assert os.path.exists(
 				bm25_path
 			), f"bm25_path {bm25_path} does not exist. Please ingest first."
-		elif func.__name__ == "vectordb":
-			# check if chroma_path and file exist
-			chroma_path = os.path.join(resources_dir, "chroma")
-			embedding_model_str = kwargs.pop("embedding_model")
-			assert (
-				chroma_path is not None
-			), "chroma_path must be specified for using vectordb retrieval."
-			assert os.path.exists(
-				chroma_path
-			), f"chroma_path {chroma_path} does not exist. Please ingest first."
 
 		# find queries columns & type cast queries
 		assert (
@@ -105,27 +92,13 @@ def retrieval_node(func):
 			bm25_corpus = load_bm25_corpus(bm25_path)
 			ids, scores = func(queries=queries, bm25_corpus=bm25_corpus, **kwargs)
 		elif func.__name__ == "vectordb":
-			chroma_collection = load_chroma_collection(
-				db_path=chroma_path, collection_name=embedding_model_str
-			)
-			if embedding_model_str in embedding_models:
-				embedding_model = embedding_models[embedding_model_str]
-			else:
-				logger.error(
-					f"embedding_model_str {embedding_model_str} does not exist."
-				)
-				raise KeyError(
-					f"embedding_model_str {embedding_model_str} does not exist."
-				)
 			ids, scores = func(
 				queries=queries,
 				collection=chroma_collection,
 				embedding_model=embedding_model,
 				**kwargs,
 			)
-			del embedding_model
-			if torch.cuda.is_available():
-				torch.cuda.empty_cache()
+
 		elif func.__name__ in ["hybrid_rrf", "hybrid_cc"]:
 			if "ids" in kwargs and "scores" in kwargs:  # ordinary run_evaluate
 				ids, scores = func(**kwargs)
@@ -171,12 +144,6 @@ def retrieval_node(func):
 		return contents, ids, scores
 
 	return wrapper
-
-
-def load_chroma_collection(db_path: str, collection_name: str) -> chromadb.Collection:
-	db = chromadb.PersistentClient(path=db_path)
-	collection = db.get_collection(name=collection_name)
-	return collection
 
 
 def cast_queries(queries: Union[str, List[str]]) -> List[str]:
