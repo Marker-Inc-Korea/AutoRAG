@@ -1,3 +1,4 @@
+import abc
 import functools
 import logging
 import os
@@ -9,6 +10,7 @@ import pandas as pd
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
+from autorag.schema import BaseModule
 from autorag.utils import (
 	result_to_dataframe,
 	validate_qa_dataset,
@@ -20,6 +22,75 @@ from autorag.utils import (
 from autorag.utils.util import filter_dict_keys, select_top_k, embedding_query_content
 
 logger = logging.getLogger("AutoRAG")
+
+
+class BasePassageAugmenter(BaseModule, metaclass=abc.ABCMeta):
+	def __init__(self, project_dir: str, *args, **kwargs):
+		logger.info(
+			f"Initialize passage augmenter node - {self.__class__.__name__} module..."
+		)
+		data_dir = os.path.join(project_dir, "data")
+		corpus_df = pd.read_parquet(
+			os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+		)
+		validate_corpus_dataset(corpus_df)
+		self.corpus_df = corpus_df
+
+	def __del__(self):
+		logger.info(
+			f"Initialize passage augmenter node - {self.__class__.__name__} module..."
+		)
+
+	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
+		logger.info(
+			f"Running passage augmenter node - {self.__class__.__name__} module..."
+		)
+		validate_qa_dataset(previous_result)
+
+		# find queries columns
+		assert (
+			"query" in previous_result.columns
+		), "previous_result must have query column."
+		queries = previous_result["query"].tolist()
+
+		# find ids columns
+		assert (
+			"retrieved_ids" in previous_result.columns
+		), "previous_result must have retrieved_ids column."
+		ids = previous_result["retrieved_ids"].tolist()
+
+		return queries, ids
+
+	@staticmethod
+	def sort_by_scores(
+		augmented_contents,
+		augmented_ids,
+		augmented_scores,
+		top_k: int,
+		reverse: bool = True,
+	):
+		# sort by scores
+		df = pd.DataFrame(
+			{
+				"contents": augmented_contents,
+				"ids": augmented_ids,
+				"scores": augmented_scores,
+			}
+		)
+		df[["contents", "ids", "scores"]] = df.apply(
+			lambda row: sort_by_scores(row, reverse=reverse),
+			axis=1,
+			result_type="expand",
+		)
+
+		# select by top_k
+		results = select_top_k(df, ["contents", "ids", "scores"], top_k)
+
+		return (
+			results["contents"].tolist(),
+			results["ids"].tolist(),
+			results["scores"].tolist(),
+		)
 
 
 def passage_augmenter_node(func):

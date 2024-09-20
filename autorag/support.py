@@ -55,7 +55,11 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"pass_passage_augmenter": (
 			"autorag.nodes.passageaugmenter",
-			"pass_passage_augmenter",
+			"PassPassageAugmenter",
+		),
+		"PassPassageAugmenter": (
+			"autorag.nodes.passageaugmenter",
+			"PassPassageAugmenter",
 		),
 		# passage_reranker
 		"monot5": ("autorag.nodes.passagereranker", "monot5"),

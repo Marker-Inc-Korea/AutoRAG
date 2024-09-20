@@ -1,4 +1,4 @@
-from autorag.nodes.passageaugmenter import pass_passage_augmenter
+from autorag.nodes.passageaugmenter import PassPassageAugmenter
 
 from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
 	project_dir,
@@ -7,7 +7,7 @@ from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
 
 
 def test_pass_passage_augmenter():
-	result_df = pass_passage_augmenter(
+	result_df = PassPassageAugmenter.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, top_k=2
 	)
 	assert all(
