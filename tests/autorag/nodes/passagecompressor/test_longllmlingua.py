@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from autorag.nodes.passagecompressor import longllmlingua
+from autorag.nodes.passagecompressor import LongLLMLingua
 from tests.autorag.nodes.passagecompressor.test_base_passage_compressor import (
 	queries,
 	retrieved_contents,
@@ -12,13 +12,14 @@ from tests.autorag.nodes.passagecompressor.test_base_passage_compressor import (
 
 @pytest.mark.skip(reason="This test needs CUDA enabled machine.")
 def test_longllmlingua():
-	result = longllmlingua.__wrapped__(queries, retrieved_contents, [], [])
+	compressor = LongLLMLingua("project_dir")
+	result = compressor._pure(queries, retrieved_contents)
 	check_result(result)
 
 
 @pytest.mark.skip(reason="This test needs CUDA enabled machine.")
 def test_longllmlingua_node():
-	result = longllmlingua(
+	result = LongLLMLingua.run_evaluator(
 		"project_dir",
 		df,
 		target_token=75,

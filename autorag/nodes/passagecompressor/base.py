@@ -1,8 +1,6 @@
 import abc
-import functools
 import logging
-from pathlib import Path
-from typing import List, Union, Dict
+from typing import Dict
 
 import pandas as pd
 from llama_index.core.llms import LLM
@@ -29,8 +27,6 @@ class BasePassageCompressor(BaseModule, metaclass=abc.ABCMeta):
 				for column in [
 					"query",
 					"retrieved_contents",
-					"retrieved_ids",
-					"retrieve_scores",
 				]
 			]
 		), "previous_result must have retrieved_contents, retrieved_ids, and retrieve_scores columns."
@@ -38,9 +34,7 @@ class BasePassageCompressor(BaseModule, metaclass=abc.ABCMeta):
 
 		queries = previous_result["query"].tolist()
 		retrieved_contents = previous_result["retrieved_contents"].tolist()
-		retrieved_ids = previous_result["retrieved_ids"].tolist()
-		retrieve_scores = previous_result["retrieve_scores"].tolist()
-		return queries, retrieved_contents, retrieved_ids, retrieve_scores
+		return queries, retrieved_contents
 
 
 class LlamaIndexCompressor(BasePassageCompressor, metaclass=abc.ABCMeta):
@@ -68,78 +62,10 @@ class LlamaIndexCompressor(BasePassageCompressor, metaclass=abc.ABCMeta):
 
 	@result_to_dataframe(["retrieved_contents"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
-		queries, retrieved_contents, _, _ = self.cast_to_run(previous_result)
+		queries, retrieved_contents = self.cast_to_run(previous_result)
 		param_dict = dict(filter(lambda x: x[0] in self.param_list, kwargs.items()))
 		result = self._pure(queries, retrieved_contents, **param_dict)
 		return list(map(lambda x: [x], result))
-
-
-def passage_compressor_node(func):
-	@functools.wraps(func)
-	@result_to_dataframe(["retrieved_contents"])
-	def wrapper(
-		project_dir: Union[str, Path], previous_result: pd.DataFrame, *args, **kwargs
-	) -> List[List[str]]:
-		logger.info(f"Running generator node - {func.__name__} module...")
-		assert all(
-			[
-				column in previous_result.columns
-				for column in [
-					"query",
-					"retrieved_contents",
-					"retrieved_ids",
-					"retrieve_scores",
-				]
-			]
-		), "previous_result must have retrieved_contents, retrieved_ids, and retrieve_scores columns."
-		assert len(previous_result) > 0, "previous_result must have at least one row."
-
-		queries = previous_result["query"].tolist()
-		retrieved_contents = previous_result["retrieved_contents"].tolist()
-		retrieved_ids = previous_result["retrieved_ids"].tolist()
-		retrieve_scores = previous_result["retrieve_scores"].tolist()
-
-		if func.__name__ in ["tree_summarize", "refine"]:
-			param_list = [
-				"prompt",
-				"chat_prompt",
-				"context_window",
-				"num_output",
-				"batch",
-			]
-			param_dict = dict(filter(lambda x: x[0] in param_list, kwargs.items()))
-			kwargs_dict = dict(filter(lambda x: x[0] not in param_list, kwargs.items()))
-			llm_name = kwargs_dict.pop("llm")
-			llm = make_llm(llm_name, kwargs_dict)
-			result = func(
-				queries=queries,
-				contents=retrieved_contents,
-				scores=retrieve_scores,
-				ids=retrieved_ids,
-				llm=llm,
-				**param_dict,
-			)
-			del llm
-			result = list(map(lambda x: [x], result))
-		elif func.__name__ == "longllmlingua":
-			result = func(
-				queries=queries,
-				contents=retrieved_contents,
-				scores=retrieve_scores,
-				ids=retrieved_ids,
-				**kwargs,
-			)
-			result = list(map(lambda x: [x], result))
-		elif func.__name__ == "pass_compressor":
-			result = func(contents=retrieved_contents)
-		else:
-			raise ValueError(
-				f"{func.__name__} is not supported in passage compressor node."
-			)
-
-		return result
-
-	return wrapper
 
 
 def make_llm(llm_name: str, kwargs: Dict) -> LLM:
