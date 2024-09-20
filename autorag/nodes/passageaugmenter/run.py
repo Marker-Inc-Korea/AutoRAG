@@ -1,7 +1,7 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict
+from typing import List, Dict
 
 import pandas as pd
 
@@ -13,7 +13,7 @@ logger = logging.getLogger("AutoRAG")
 
 
 def run_passage_augmenter_node(
-	modules: List[Callable],
+	modules: List,
 	module_params: List[Dict],
 	previous_result: pd.DataFrame,
 	node_line_dir: str,
@@ -37,7 +37,7 @@ def run_passage_augmenter_node(
 	results, execution_times = zip(
 		*map(
 			lambda task: measure_speed(
-				task[0],
+				task[0].run_evaluator,
 				project_dir=project_dir,
 				previous_result=previous_result,
 				**task[1],
@@ -46,8 +46,14 @@ def run_passage_augmenter_node(
 		)
 	)
 	average_times = list(map(lambda x: x / len(results[0]), execution_times))
-	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
-				zip(retrieval_gt, previous_result["query"].tolist(), previous_result["generation_gt"].tolist())]
+	metric_inputs = [
+		MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt)
+		for ret_gt, query, gen_gt in zip(
+			retrieval_gt,
+			previous_result["query"].tolist(),
+			previous_result["generation_gt"].tolist(),
+		)
+	]
 
 	# run metrics before filtering
 	if strategies.get("metrics") is None:
