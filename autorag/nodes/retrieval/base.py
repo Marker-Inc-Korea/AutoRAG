@@ -1,19 +1,50 @@
+import abc
 import functools
 import logging
 import os
-import pickle
 from pathlib import Path
-from typing import List, Union, Tuple, Dict
+from typing import List, Union, Tuple
 
 import chromadb
 import pandas as pd
 import torch
 
 from autorag import embedding_models
+from autorag.schema import BaseModule
 from autorag.support import get_support_modules
 from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
 
 logger = logging.getLogger("AutoRAG")
+
+
+class BaseRetrieval(BaseModule, metaclass=abc.ABCMeta):
+	def __init__(self, project_dir: str, *args, **kwargs):
+		logger.info(f"Initialize retrieval node - {self.__class__.__name__}")
+
+		self.resources_dir = os.path.join(project_dir, "resources")
+		data_dir = os.path.join(project_dir, "data")
+		# fetch data from corpus_data
+		self.corpus_df = pd.read_parquet(
+			os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+		)
+
+	def __del__(self):
+		logger.info(f"Deleting retrieval node - {self.__class__.__name__} module...")
+
+	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
+		logger.info(f"Running retrieval node - {self.__class__.__name__} module...")
+		validate_qa_dataset(previous_result)
+		# find queries columns & type cast queries
+		assert (
+			"query" in previous_result.columns
+		), "previous_result must have query column."
+		if "queries" not in previous_result.columns:
+			previous_result["queries"] = previous_result["query"]
+		previous_result.loc[:, "queries"] = previous_result["queries"].apply(
+			cast_queries
+		)
+		queries = previous_result["queries"].tolist()
+		return queries
 
 
 def retrieval_node(func):
@@ -99,6 +130,7 @@ def retrieval_node(func):
 			if "ids" in kwargs and "scores" in kwargs:  # ordinary run_evaluate
 				ids, scores = func(**kwargs)
 			else:  # => for Runner.run
+				# TODO: At hybrid retrieval, you can "override run_evaluator"... Wow!!! So Magical Jax Structure so sexy an hot
 				if not (
 					"target_modules" in kwargs and "target_module_params" in kwargs
 				):
@@ -139,14 +171,6 @@ def retrieval_node(func):
 		return contents, ids, scores
 
 	return wrapper
-
-
-def load_bm25_corpus(bm25_path: str) -> Dict:
-	if bm25_path is None:
-		return {}
-	with open(bm25_path, "rb") as f:
-		bm25_corpus = pickle.load(f)
-	return bm25_corpus
 
 
 def load_chroma_collection(db_path: str, collection_name: str) -> chromadb.Collection:

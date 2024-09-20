@@ -1,11 +1,13 @@
+import os
 import pickle
+import shutil
 import tempfile
 from datetime import datetime
 
 import pandas as pd
 import pytest
 
-from autorag.nodes.retrieval import bm25
+from autorag.nodes.retrieval import BM25
 from autorag.nodes.retrieval.bm25 import (
 	bm25_ingest,
 	tokenize_ko_kiwi,
@@ -39,25 +41,31 @@ def ingested_bm25_path():
 		yield path.name
 
 
-def test_bm25_retrieval(ingested_bm25_path):
-	with open(ingested_bm25_path, "rb") as r:
-		bm25_corpus = pickle.load(r)
+@pytest.fixture
+def bm25_instance(ingested_bm25_path):
+	with tempfile.TemporaryDirectory() as temp_project_dir:
+		os.makedirs(os.path.join(temp_project_dir, "resources"))
+		os.makedirs(os.path.join(temp_project_dir, "data"))
+		bm25_path = os.path.join(
+			temp_project_dir, "resources", "bm25_porter_stemmer.pkl"
+		)
+		corpus_df.to_parquet(
+			os.path.join(temp_project_dir, "data", "corpus.parquet"), index=False
+		)
+		shutil.copy(ingested_bm25_path, bm25_path)
+		bm25 = BM25(project_dir=temp_project_dir)
+		yield bm25
+
+
+def test_bm25_retrieval(bm25_instance):
 	top_k = 3
-	original_bm25 = bm25.__wrapped__
-	id_result, score_result = original_bm25(
-		queries, top_k=top_k, bm25_corpus=bm25_corpus
-	)
+	id_result, score_result = bm25_instance._pure(queries, top_k=top_k)
 	base_retrieval_test(id_result, score_result, top_k)
 
 
-def test_bm25_retrieval_ids(ingested_bm25_path):
-	with open(ingested_bm25_path, "rb") as r:
-		bm25_corpus = pickle.load(r)
-	original_bm25 = bm25.__wrapped__
+def test_bm25_retrieval_ids(bm25_instance):
 	input_ids = [["doc2", "doc3"], ["doc1"], ["doc3", "doc4"]]
-	id_result, score_result = original_bm25(
-		queries, top_k=3, bm25_corpus=bm25_corpus, ids=input_ids
-	)
+	id_result, score_result = bm25_instance._pure(queries, top_k=3, ids=input_ids)
 	assert id_result == input_ids
 	assert len(score_result) == 3
 	assert len(score_result[0]) == 2
@@ -65,14 +73,9 @@ def test_bm25_retrieval_ids(ingested_bm25_path):
 	assert len(score_result[2]) == 2
 
 
-def test_bm25_retrieval_ids_empty(ingested_bm25_path):
-	with open(ingested_bm25_path, "rb") as r:
-		bm25_corpus = pickle.load(r)
-	original_bm25 = bm25.__wrapped__
+def test_bm25_retrieval_ids_empty(bm25_instance):
 	input_ids = [["doc2", "doc3"], [], ["doc3"]]
-	id_result, score_result = original_bm25(
-		queries, top_k=3, bm25_corpus=bm25_corpus, ids=input_ids
-	)
+	id_result, score_result = bm25_instance._pure(queries, top_k=3, ids=input_ids)
 	assert id_result == input_ids
 	assert len(score_result) == 3
 	assert len(score_result[0]) == 2
@@ -81,7 +84,7 @@ def test_bm25_retrieval_ids_empty(ingested_bm25_path):
 
 
 def test_bm25_node():
-	result_df = bm25(
+	result_df = BM25.run_evaluator(
 		project_dir=project_dir,
 		previous_result=previous_result,
 		top_k=4,
@@ -91,7 +94,7 @@ def test_bm25_node():
 
 
 def test_bm25_node_ids():
-	result_df = bm25(
+	result_df = BM25.run_evaluator(
 		project_dir=project_dir,
 		previous_result=previous_result,
 		top_k=4,
@@ -104,7 +107,7 @@ def test_bm25_node_ids():
 	assert len(score_result[0]) == 2
 
 
-def test_bm25_ingest(ingested_bm25_path):
+def test_bm25_ingest(ingested_bm25_path, bm25_instance):
 	with open(ingested_bm25_path, "rb") as r:
 		corpus = pickle.load(r)
 	assert set(corpus.keys()) == {"tokens", "passage_id", "tokenizer_name"}
@@ -115,12 +118,10 @@ def test_bm25_ingest(ingested_bm25_path):
 	assert len(corpus["tokens"]) == len(corpus["passage_id"]) == 5
 	assert set(corpus["passage_id"]) == {"doc1", "doc2", "doc3", "doc4", "doc5"}
 
-	bm25_origin = bm25.__wrapped__
 	top_k = 2
-	id_result, score_result = bm25_origin(
+	id_result, score_result = bm25_instance._pure(
 		[["What is test document?"], ["What is test document number 2?"]],
 		top_k=top_k,
-		bm25_corpus=corpus,
 	)
 	assert len(id_result) == len(score_result) == 2
 	for id_list, score_list in zip(id_result, score_result):
@@ -150,17 +151,9 @@ def test_duplicate_id_bm25_ingest(ingested_bm25_path):
 	assert len(corpus["tokens"]) == len(corpus["passage_id"]) == 8
 
 
-def test_other_method_bm25(ingested_bm25_path):
-	with open(ingested_bm25_path, "rb") as r:
-		corpus = pickle.load(r)
-	bm25_origin = bm25.__wrapped__
+def test_other_method_bm25():
 	with pytest.raises(AssertionError):
-		_, _ = bm25_origin(
-			[["What is test document?"], ["What is test document number 2?"]],
-			top_k=1,
-			bm25_corpus=corpus,
-			bm25_tokenizer="gpt2",
-		)
+		_ = BM25(project_dir=project_dir, bm25_tokenizer="space")
 
 
 def test_tokenize_ko_wiki():
