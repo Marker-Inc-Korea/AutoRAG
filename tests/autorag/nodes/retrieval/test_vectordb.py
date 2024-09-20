@@ -60,6 +60,24 @@ def empty_chromadb():
 @pytest.fixture
 def project_dir_for_vectordb_node():
 	with tempfile.TemporaryDirectory() as test_project_dir:
+		os.makedirs(os.path.join(test_project_dir, "resources"))
+		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
+		os.makedirs(chroma_path)
+		db = chromadb.PersistentClient(path=chroma_path)
+		collection = db.create_collection(
+			name="openai", metadata={"hnsw:space": "cosine"}
+		)
+		os.makedirs(os.path.join(test_project_dir, "data"))
+		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
+		corpus_df.to_parquet(corpus_path, index=False)
+		vectordb_ingest(collection, corpus_df, embedding_model)
+
+		yield test_project_dir
+
+
+@pytest.fixture
+def project_dir_for_vectordb_node_from_sample_project():
+	with tempfile.TemporaryDirectory() as test_project_dir:
 		sample_project_dir = os.path.join(resource_path, "sample_project")
 		# copy & paste all folders and files in the sample_project folder
 		shutil.copytree(sample_project_dir, test_project_dir, dirs_exist_ok=True)
@@ -71,8 +89,8 @@ def project_dir_for_vectordb_node():
 			name="openai", metadata={"hnsw:space": "cosine"}
 		)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
-		corpus_df.to_parquet(corpus_path, index=False)
-		vectordb_ingest(collection, corpus_df, embedding_model)
+		local_corpus_df = pd.read_parquet(corpus_path, engine="pyarrow")
+		vectordb_ingest(collection, local_corpus_df, embedding_model)
 
 		yield test_project_dir
 
@@ -140,9 +158,9 @@ def test_vectordb_retrieval_ids_empty(vectordb_instance):
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
 )
-def test_vectordb_node(project_dir_for_vectordb_node):
+def test_vectordb_node(project_dir_for_vectordb_node_from_sample_project):
 	result_df = VectorDB.run_evaluator(
-		project_dir=project_dir_for_vectordb_node,
+		project_dir=project_dir_for_vectordb_node_from_sample_project,
 		previous_result=previous_result,
 		top_k=4,
 		embedding_model="openai",
@@ -155,9 +173,9 @@ def test_vectordb_node(project_dir_for_vectordb_node):
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
 )
-def test_vectordb_node_ids(project_dir_for_vectordb_node):
+def test_vectordb_node_ids(project_dir_for_vectordb_node_from_sample_project):
 	result_df = VectorDB.run_evaluator(
-		project_dir=project_dir_for_vectordb_node,
+		project_dir=project_dir_for_vectordb_node_from_sample_project,
 		previous_result=previous_result,
 		top_k=4,
 		embedding_model="openai",

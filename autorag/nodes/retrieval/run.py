@@ -16,13 +16,13 @@ from autorag.utils.util import get_best_row, to_list
 
 logger = logging.getLogger("AutoRAG")
 
-semantic_module_names = ["vectordb"]
-lexical_module_names = ["bm25"]
-hybrid_module_names = ["hybrid_rrf", "hybrid_cc"]
+semantic_module_names = ["vectordb", "VectorDB"]
+lexical_module_names = ["bm25", "BM25"]
+hybrid_module_names = ["hybrid_rrf", "hybrid_cc", "HybridCC", "HybridRRF"]
 
 
 def run_retrieval_node(
-	modules: List[Callable],
+	modules: List,
 	module_params: List[Dict],
 	previous_result: pd.DataFrame,
 	node_line_dir: str,
@@ -55,8 +55,12 @@ def run_retrieval_node(
 		for inner_array in retrieval_gt
 	]
 	# make rows to metric_inputs
-	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
-				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
+	metric_inputs = [
+		MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt)
+		for ret_gt, query, gen_gt in zip(
+			retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist()
+		)
+	]
 
 	save_dir = os.path.join(node_line_dir, "retrieval")  # node name
 	if not os.path.exists(save_dir):
@@ -74,7 +78,7 @@ def run_retrieval_node(
 		result, execution_times = zip(
 			*map(
 				lambda task: measure_speed(
-					task[0],
+					task[0].run_evaluator,
 					project_dir=project_dir,
 					previous_result=previous_result,
 					**task[1],
@@ -346,8 +350,8 @@ def run_retrieval_node(
 
 def evaluate_retrieval_node(
 	result_df: pd.DataFrame,
-		metric_inputs: List[MetricInput],
-		metrics: Union[List[str], List[Dict]],
+	metric_inputs: List[MetricInput],
+	metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
 	"""
 	Evaluate retrieval node from retrieval node result dataframe.
@@ -463,7 +467,7 @@ def get_scores_by_ids(
 	module_name = get_best_row(module_summary_df)["module_name"]
 	module_params = get_best_row(module_summary_df)["module_params"]
 	module = get_support_modules(module_name)
-	result_df = module(
+	result_df = module.run_evaluator(
 		project_dir=project_dir,
 		previous_result=previous_result,
 		ids=ids,
@@ -490,11 +494,14 @@ def optimize_hybrid(
 	hybrid_module_func: Callable,
 	hybrid_module_param: Dict,
 	strategy: Dict,
-		input_metrics: List[MetricInput],
+	input_metrics: List[MetricInput],
 	project_dir,
 	previous_result,
 ):
-	if hybrid_module_func.__name__ == "hybrid_rrf":
+	if (
+		hybrid_module_func.__name__ == "HybridRRf"
+		or hybrid_module_func.__name__ == "hybrid_rrf"
+	):
 		weight_range = hybrid_module_param.pop("weight_range", (4, 80))
 		test_weight_size = weight_range[1] - weight_range[0] + 1
 	else:
@@ -507,7 +514,7 @@ def optimize_hybrid(
 
 	result_list = []
 	for weight_value in tqdm(weight_candidates):
-		result_df = hybrid_module_func(
+		result_df = hybrid_module_func.run_evaluator(
 			project_dir=project_dir,
 			previous_result=previous_result,
 			weight=weight_value,

@@ -79,23 +79,34 @@ class HybridCC(HybridRetrieval):
 		*args,
 		**kwargs,
 	):
-		data_dir = os.path.join(project_dir, "data")
-		corpus_df = pd.read_parquet(
-			os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
-		)
+		if "ids" in kwargs and "scores" in kwargs:
+			data_dir = os.path.join(project_dir, "data")
+			corpus_df = pd.read_parquet(
+				os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+			)
 
-		params = pop_params(hybrid_cc, kwargs)
-		assert (
-			"ids" in params and "scores" in params and "top_k" in params
-		), "ids, scores, and top_k must be specified."
+			params = pop_params(hybrid_cc, kwargs)
+			assert (
+				"ids" in params and "scores" in params and "top_k" in params
+			), "ids, scores, and top_k must be specified."
 
-		@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
-		def __cc(**cc_params):
-			ids, scores = hybrid_cc(**cc_params)
-			contents = fetch_contents(corpus_df, ids)
-			return contents, ids, scores
+			@result_to_dataframe(
+				["retrieved_contents", "retrieved_ids", "retrieve_scores"]
+			)
+			def __cc(**cc_params):
+				ids, scores = hybrid_cc(**cc_params)
+				contents = fetch_contents(corpus_df, ids)
+				return contents, ids, scores
 
-		return __cc(**params)
+			return __cc(**params)
+		else:
+			assert (
+				"target_modules" in kwargs and "target_module_params" in kwargs
+			), "target_modules and target_module_params must be specified if there is not ids and scores."
+			instance = cls(project_dir, *args, **kwargs)
+			result = instance.pure(previous_result, *args, **kwargs)
+			del instance
+			return result
 
 
 def hybrid_cc(
