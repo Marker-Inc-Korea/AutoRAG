@@ -50,7 +50,8 @@ def get_support_modules(module_name: str) -> Callable:
 		"VectorDB": ("autorag.nodes.retrieval", "VectorDB"),
 		"hybrid_rrf": ("autorag.nodes.retrieval", "HybridRRF"),
 		"HybridRRF": ("autorag.nodes.retrieval", "HybridRRF"),
-		"hybrid_cc": ("autorag.nodes.retrieval", "hybrid_cc"),
+		"hybrid_cc": ("autorag.nodes.retrieval", "HybridCC"),
+		"HybridCC": ("autorag.nodes.retrieval", "HybridCC"),
 		# passage_augmenter
 		"prev_next_augmenter": (
 			"autorag.nodes.passageaugmenter",
