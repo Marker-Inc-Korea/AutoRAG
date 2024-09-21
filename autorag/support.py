@@ -79,7 +79,8 @@ def get_support_modules(module_name: str) -> Callable:
 		"cohere_reranker": ("autorag.nodes.passagereranker", "CohereReranker"),
 		"CohereReranker": ("autorag.nodes.passagereranker", "CohereReranker"),
 		"rankgpt": ("autorag.nodes.passagereranker", "rankgpt"),
-		"jina_reranker": ("autorag.nodes.passagereranker", "jina_reranker"),
+		"jina_reranker": ("autorag.nodes.passagereranker", "JinaReranker"),
+		"JinaReranker": ("autorag.nodes.passagereranker", "JinaReranker"),
 		"colbert_reranker": ("autorag.nodes.passagereranker", "colbert_reranker"),
 		"sentence_transformer_reranker": (
 			"autorag.nodes.passagereranker",

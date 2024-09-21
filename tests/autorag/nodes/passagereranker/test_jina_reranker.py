@@ -1,16 +1,15 @@
-import asyncio
 from unittest.mock import patch
 
+import aiohttp
 import pytest
 from aioresponses import aioresponses
 
 import autorag
-from autorag.nodes.passagereranker import jina_reranker
+from autorag.nodes.passagereranker import JinaReranker
 from autorag.nodes.passagereranker.jina import jina_reranker_pure, JINA_API_URL
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	queries_example,
 	contents_example,
-	scores_example,
 	ids_example,
 	base_reranker_test,
 	project_dir,
@@ -29,13 +28,16 @@ async def test_jina_reranker_pure():
 			]
 		}
 		m.post(JINA_API_URL, payload=mock_response)
+		session = aiohttp.ClientSession()
+		session.headers.update(
+			{"Authorization": "Bearer mock_api_key", "Accept-Encoding": "identity"}
+		)
 		content_result, id_result, score_result = await jina_reranker_pure(
+			session,
 			queries_example[0],
 			contents_example[0],
-			scores_example[0],
 			ids_example[0],
 			top_k=2,
-			api_key="mock_api_key",
 		)
 		assert len(content_result) == 2
 		assert len(id_result) == 2
@@ -48,9 +50,7 @@ async def test_jina_reranker_pure():
 		assert score_result[0] >= score_result[1]
 
 
-async def mock_jina_reranker_pure(
-	query, contents, scores, ids, top_k, api_key, **kwargs
-):
+async def mock_jina_reranker_pure(session, query, contents, ids, top_k, **kwargs):
 	if query == queries_example[0]:
 		return (
 			[contents[1], contents[2], contents[0]][:top_k],
@@ -67,14 +67,18 @@ async def mock_jina_reranker_pure(
 		raise ValueError(f"Unexpected query: {query}")
 
 
+@pytest.fixture
+def jina_reranker_instance():
+	return JinaReranker(project_dir, "mock_api_key")
+
+
 @patch.object(
 	autorag.nodes.passagereranker.jina, "jina_reranker_pure", mock_jina_reranker_pure
 )
-def test_jina_reranker():
+def test_jina_reranker(jina_reranker_instance):
 	top_k = 3
-	original_jina_reranker = jina_reranker.__wrapped__
-	contents_result, id_result, score_result = original_jina_reranker(
-		queries_example, contents_example, scores_example, ids_example, top_k
+	contents_result, id_result, score_result = jina_reranker_instance._pure(
+		queries_example, contents_example, ids_example, top_k
 	)
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
@@ -82,14 +86,12 @@ def test_jina_reranker():
 @patch.object(
 	autorag.nodes.passagereranker.jina, "jina_reranker_pure", mock_jina_reranker_pure
 )
-def test_jina_reranker_batch_one():
+def test_jina_reranker_batch_one(jina_reranker_instance):
 	top_k = 3
 	batch = 1
-	original_jina_reranker = jina_reranker.__wrapped__
-	contents_result, id_result, score_result = original_jina_reranker(
+	contents_result, id_result, score_result = jina_reranker_instance._pure(
 		queries_example,
 		contents_example,
-		scores_example,
 		ids_example,
 		top_k,
 		batch=batch,
@@ -102,7 +104,7 @@ def test_jina_reranker_batch_one():
 )
 def test_jina_reranker_node():
 	top_k = 1
-	result_df = jina_reranker(
+	result_df = JinaReranker.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, top_k=top_k
 	)
 	base_reranker_node_test(result_df, top_k)
