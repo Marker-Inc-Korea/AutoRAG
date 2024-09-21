@@ -1,3 +1,4 @@
+import abc
 import functools
 import logging
 import os
@@ -6,18 +7,24 @@ from typing import List, Union, Tuple
 
 import pandas as pd
 
+from autorag.schema import BaseModule
 from autorag.utils import result_to_dataframe, validate_qa_dataset, fetch_contents
 
 logger = logging.getLogger("AutoRAG")
 
 
-def passage_reranker_node(func):
-	@functools.wraps(func)
-	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
-	def wrapper(
-		project_dir: Union[str, Path], previous_result: pd.DataFrame, *args, **kwargs
-	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
-		logger.info(f"Running passage reranker node - {func.__name__} module...")
+class BasePassageReranker(BaseModule, metaclass=abc.ABCMeta):
+	def __init__(self, project_dir: Union[str, Path], *args, **kwargs):
+		logger.info(
+			f"Initialize passage reranker node - {self.__class__.__name__} module..."
+		)
+
+	def __del__(self):
+		logger.info(
+			f"Deleting passage reranker node - {self.__class__.__name__} module..."
+		)
+
+	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		validate_qa_dataset(previous_result)
 
 		# find queries columns
@@ -44,6 +51,15 @@ def passage_reranker_node(func):
 		), "previous_result must have retrieved_ids column."
 		ids = previous_result["retrieved_ids"].tolist()
 
+		return queries, contents, scores, ids
+
+
+def passage_reranker_node(func):
+	@functools.wraps(func)
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def wrapper(
+		project_dir: Union[str, Path], previous_result: pd.DataFrame, *args, **kwargs
+	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		# time rerankers
 		if func.__name__ == "time_reranker":
 			corpus_df = pd.read_parquet(

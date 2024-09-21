@@ -5,7 +5,7 @@ from .flag_embedding_llm import flag_embedding_llm_reranker
 from .jina import jina_reranker
 from .koreranker import koreranker
 from .monot5 import monot5
-from .pass_reranker import pass_reranker
+from .pass_reranker import PassReranker
 from .rankgpt import rankgpt
 from .sentence_transformer import sentence_transformer_reranker
 from .tart.tart import tart
