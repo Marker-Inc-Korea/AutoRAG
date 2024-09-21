@@ -25,6 +25,9 @@ class BasePassageReranker(BaseModule, metaclass=abc.ABCMeta):
 		)
 
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
+		logger.info(
+			f"Running passage reranker node - {self.__class__.__name__} module..."
+		)
 		validate_qa_dataset(previous_result)
 
 		# find queries columns
