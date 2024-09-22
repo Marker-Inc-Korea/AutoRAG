@@ -63,7 +63,6 @@ class JinaReranker(BasePassageReranker):
 
 		:param queries: The list of queries to use for reranking
 		:param contents_list: The list of lists of contents to rerank
-		:param scores_list: The list of lists of scores retrieved from the initial ranking
 		:param ids_list: The list of lists of ids retrieved from the initial ranking
 		:param top_k: The number of passages to be retrieved
 		:param model: The model name for Cohere rerank.
