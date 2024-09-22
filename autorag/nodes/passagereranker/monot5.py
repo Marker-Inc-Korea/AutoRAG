@@ -13,6 +13,7 @@ from autorag.utils.util import (
 	flatten_apply,
 	select_top_k,
 	result_to_dataframe,
+	pop_params,
 )
 
 prediction_tokens = {
@@ -64,7 +65,10 @@ class MonoT5(BasePassageReranker):
 			model_name = model_name.replace("_", "/")
 		# Load the tokenizer and model from the pre-trained MonoT5 model
 		self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-		self.model = T5ForConditionalGeneration.from_pretrained(model_name).eval()
+		model_params = pop_params(T5ForConditionalGeneration.from_pretrained, kwargs)
+		self.model = T5ForConditionalGeneration.from_pretrained(
+			model_name, **model_params
+		).eval()
 
 		# Determine the device to run the model on (GPU if available, otherwise CPU)
 		self.device = "cuda" if torch.cuda.is_available() else "cpu"

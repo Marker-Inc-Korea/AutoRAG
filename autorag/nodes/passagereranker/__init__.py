@@ -6,7 +6,7 @@ from .jina import JinaReranker
 from .koreranker import KoReranker
 from .monot5 import MonoT5
 from .pass_reranker import PassReranker
-from .rankgpt import rankgpt
+from .rankgpt import RankGPT
 from .sentence_transformer import sentence_transformer_reranker
 from .tart.tart import tart
 from .time_reranker import time_reranker
