@@ -6,79 +6,114 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
-from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import flatten_apply, sort_by_scores, select_top_k
+from autorag.nodes.passagereranker.base import BasePassageReranker
+from autorag.utils.util import (
+	flatten_apply,
+	sort_by_scores,
+	select_top_k,
+	pop_params,
+	result_to_dataframe,
+)
 
 
-@passage_reranker_node
-def colbert_reranker(
-	queries: List[str],
-	contents_list: List[List[str]],
-	scores_list: List[List[float]],
-	ids_list: List[List[str]],
-	top_k: int,
-	batch: int = 64,
-	model_name: str = "colbert-ir/colbertv2.0",
-) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
-	"""
-	Rerank a list of contents with Colbert rerank models.
-	You can get more information about a Colbert model at https://huggingface.co/colbert-ir/colbertv2.0.
-	It uses BERT-based model, so recommend using CUDA gpu for faster reranking.
+class ColbertReranker(BasePassageReranker):
+	def __init__(
+		self,
+		project_dir: str,
+		model_name: str = "colbert-ir/colbertv2.0",
+		*args,
+		**kwargs,
+	):
+		"""
+		Initialize a colbert rerank model for reranking.
 
-	:param queries: The list of queries to use for reranking
-	:param contents_list: The list of lists of contents to rerank
-	:param scores_list: The list of lists of scores retrieved from the initial ranking
-	:param ids_list: The list of lists of ids retrieved from the initial ranking
-	:param top_k: The number of passages to be retrieved
-	:param batch: The number of queries to be processed in a batch
-	    Default is 64.
-	:param model_name: The model name for Colbert rerank.
-	    You can choose colbert model for reranking.
-	    Default is "colbert-ir/colbertv2.0".
-	:return: Tuple of lists containing the reranked contents, ids, and scores
-	"""
-	device = "cuda" if torch.cuda.is_available() else "cpu"
-	model = AutoModel.from_pretrained(model_name).to(device)
-	tokenizer = AutoTokenizer.from_pretrained(model_name)
+		:param project_dir: The project directory
+		:param model_name: The model name for Colbert rerank.
+			You can choose a colbert model for reranking.
+			The default is "colbert-ir/colbertv2.0".
+		:param kwargs: Extra parameter for the model.
+		"""
+		super().__init__(project_dir)
+		self.device = "cuda" if torch.cuda.is_available() else "cpu"
+		model_params = pop_params(AutoModel.from_pretrained, kwargs)
+		self.model = AutoModel.from_pretrained(model_name, **model_params).to(
+			self.device
+		)
+		self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-	# get query and content embeddings
-	query_embedding_list = get_colbert_embedding_batch(queries, model, tokenizer, batch)
-	content_embedding_list = flatten_apply(
-		get_colbert_embedding_batch,
-		contents_list,
-		model=model,
-		tokenizer=tokenizer,
-		batch_size=batch,
-	)
+	def __del__(self):
+		del self.model
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
+		super().__del__()
 
-	del model
-	if torch.cuda.is_available():
-		torch.cuda.empty_cache()
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		queries, contents, _, ids = self.cast_to_run(previous_result)
+		top_k = kwargs.pop("top_k")
+		batch = kwargs.pop("batch", 64)
+		return self._pure(queries, contents, ids, top_k, batch)
 
-	df = pd.DataFrame(
-		{
-			"ids": ids_list,
-			"query_embedding": query_embedding_list,
-			"contents": contents_list,
-			"content_embedding": content_embedding_list,
-		}
-	)
-	temp_df = df.explode("content_embedding")
-	temp_df["score"] = temp_df.apply(
-		lambda x: get_colbert_score(x["query_embedding"], x["content_embedding"]),
-		axis=1,
-	)
-	df["scores"] = temp_df.groupby(level=0, sort=False)["score"].apply(list).tolist()
-	df[["contents", "ids", "scores"]] = df.apply(
-		sort_by_scores, axis=1, result_type="expand"
-	)
-	results = select_top_k(df, ["contents", "ids", "scores"], top_k)
+	def _pure(
+		self,
+		queries: List[str],
+		contents_list: List[List[str]],
+		ids_list: List[List[str]],
+		top_k: int,
+		batch: int = 64,
+	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+		"""
+		Rerank a list of contents with Colbert rerank models.
+		You can get more information about a Colbert model at https://huggingface.co/colbert-ir/colbertv2.0.
+		It uses BERT-based model, so recommend using CUDA gpu for faster reranking.
 
-	return (
-		results["contents"].tolist(),
-		results["ids"].tolist(),
-		results["scores"].tolist(),
-	)
+		:param queries: The list of queries to use for reranking
+		:param contents_list: The list of lists of contents to rerank
+		:param ids_list: The list of lists of ids retrieved from the initial ranking
+		:param top_k: The number of passages to be retrieved
+		:param batch: The number of queries to be processed in a batch
+			Default is 64.
+
+		:return: Tuple of lists containing the reranked contents, ids, and scores
+		"""
+
+		# get query and content embeddings
+		query_embedding_list = get_colbert_embedding_batch(
+			queries, self.model, self.tokenizer, batch
+		)
+		content_embedding_list = flatten_apply(
+			get_colbert_embedding_batch,
+			contents_list,
+			model=self.model,
+			tokenizer=self.tokenizer,
+			batch_size=batch,
+		)
+		df = pd.DataFrame(
+			{
+				"ids": ids_list,
+				"query_embedding": query_embedding_list,
+				"contents": contents_list,
+				"content_embedding": content_embedding_list,
+			}
+		)
+		temp_df = df.explode("content_embedding")
+		temp_df["score"] = temp_df.apply(
+			lambda x: get_colbert_score(x["query_embedding"], x["content_embedding"]),
+			axis=1,
+		)
+		df["scores"] = (
+			temp_df.groupby(level=0, sort=False)["score"].apply(list).tolist()
+		)
+		df[["contents", "ids", "scores"]] = df.apply(
+			sort_by_scores, axis=1, result_type="expand"
+		)
+		results = select_top_k(df, ["contents", "ids", "scores"], top_k)
+
+		return (
+			results["contents"].tolist(),
+			results["ids"].tolist(),
+			results["scores"].tolist(),
+		)
 
 
 def get_colbert_embedding_batch(
