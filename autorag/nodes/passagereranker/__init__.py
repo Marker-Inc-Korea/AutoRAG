@@ -1,6 +1,6 @@
 from .cohere import CohereReranker
 from .colbert import ColbertReranker
-from .flag_embedding import flag_embedding_reranker
+from .flag_embedding import FlagEmbeddingReranker
 from .flag_embedding_llm import flag_embedding_llm_reranker
 from .jina import JinaReranker
 from .koreranker import KoReranker

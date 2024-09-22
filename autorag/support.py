@@ -90,7 +90,11 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"flag_embedding_reranker": (
 			"autorag.nodes.passagereranker",
-			"flag_embedding_reranker",
+			"FlagEmbeddingReranker",
+		),
+		"FlagEmbeddingReranker": (
+			"autorag.nodes.passagereranker",
+			"FlagEmbeddingReranker",
 		),
 		"flag_embedding_llm_reranker": (
 			"autorag.nodes.passagereranker",
