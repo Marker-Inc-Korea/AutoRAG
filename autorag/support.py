@@ -88,7 +88,11 @@ def get_support_modules(module_name: str) -> Callable:
 		"ColbertReranker": ("autorag.nodes.passagereranker", "ColbertReranker"),
 		"sentence_transformer_reranker": (
 			"autorag.nodes.passagereranker",
-			"sentence_transformer_reranker",
+			"SentenceTransformerReranker",
+		),
+		"SentenceTransformerReranker": (
+			"autorag.nodes.passagereranker",
+			"SentenceTransformerReranker",
 		),
 		"flag_embedding_reranker": (
 			"autorag.nodes.passagereranker",

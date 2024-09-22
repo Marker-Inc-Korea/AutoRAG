@@ -7,7 +7,7 @@ from .koreranker import KoReranker
 from .monot5 import MonoT5
 from .pass_reranker import PassReranker
 from .rankgpt import RankGPT
-from .sentence_transformer import sentence_transformer_reranker
+from .sentence_transformer import SentenceTransformerReranker
 from .tart.tart import tart
 from .time_reranker import time_reranker
 from .upr import upr
