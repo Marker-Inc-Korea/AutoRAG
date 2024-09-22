@@ -4,7 +4,7 @@ from .flag_embedding import FlagEmbeddingReranker
 from .flag_embedding_llm import FlagEmbeddingLLMReranker
 from .jina import JinaReranker
 from .koreranker import KoReranker
-from .monot5 import monot5
+from .monot5 import MonoT5
 from .pass_reranker import PassReranker
 from .rankgpt import rankgpt
 from .sentence_transformer import sentence_transformer_reranker
