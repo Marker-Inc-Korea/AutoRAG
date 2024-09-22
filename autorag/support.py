@@ -98,7 +98,11 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"flag_embedding_llm_reranker": (
 			"autorag.nodes.passagereranker",
-			"flag_embedding_llm_reranker",
+			"FlagEmbeddingLLMReranker",
+		),
+		"FlagEmbeddingLLMReranker": (
+			"autorag.nodes.passagereranker",
+			"FlagEmbeddingLLMReranker",
 		),
 		"time_reranker": ("autorag.nodes.passagereranker", "time_reranker"),
 		# passage_filter
