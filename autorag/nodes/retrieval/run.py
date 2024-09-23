@@ -499,14 +499,19 @@ def optimize_hybrid(
 	previous_result,
 ):
 	if (
-		hybrid_module_func.__name__ == "HybridRRf"
+		hybrid_module_func.__name__ == "HybridRRF"
 		or hybrid_module_func.__name__ == "hybrid_rrf"
 	):
 		weight_range = hybrid_module_param.pop("weight_range", (4, 80))
 		test_weight_size = weight_range[1] - weight_range[0] + 1
-	else:
+	elif (
+		hybrid_module_func.__name__ == "HybridCC"
+		or hybrid_module_func.__name__ == "hybrid_cc"
+	):
 		weight_range = hybrid_module_param.pop("weight_range", (0.0, 1.0))
 		test_weight_size = hybrid_module_param.pop("test_weight_size", 101)
+	else:
+		raise ValueError("You must input hybrid module function at hybrid_module_func.")
 
 	weight_candidates = np.linspace(
 		weight_range[0], weight_range[1], test_weight_size
