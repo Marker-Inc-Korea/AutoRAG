@@ -112,5 +112,4 @@ async def jina_reranker_pure(
 		id_result = list(map(lambda x: ids[x], indices))
 		content_result = list(map(lambda x: contents[x], indices))
 
-		await session.close()
 		return content_result, id_result, score_result
