@@ -72,7 +72,8 @@ def get_support_modules(module_name: str) -> Callable:
 		# passage_reranker
 		"monot5": ("autorag.nodes.passagereranker", "MonoT5"),
 		"MonoT5": ("autorag.nodes.passagereranker", "MonoT5"),
-		"tart": ("autorag.nodes.passagereranker", "tart"),
+		"tart": ("autorag.nodes.passagereranker", "Tart"),
+		"Tart": ("autorag.nodes.passagereranker", "Tart"),
 		"upr": ("autorag.nodes.passagereranker", "Upr"),
 		"Upr": ("autorag.nodes.passagereranker", "Upr"),
 		"koreranker": ("autorag.nodes.passagereranker", "KoReranker"),

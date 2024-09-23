@@ -5,7 +5,6 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	base_reranker_test,
 	queries_example,
 	contents_example,
-	scores_example,
 	ids_example,
 	base_reranker_node_test,
 	project_dir,
