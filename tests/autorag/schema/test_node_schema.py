@@ -1,4 +1,4 @@
-from autorag.nodes.retrieval import bm25, vectordb
+from autorag.nodes.retrieval import BM25, VectorDB
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.schema.module import Module
@@ -35,7 +35,7 @@ def test_get_param_combinations():
 	assert isinstance(module_node_params, list)
 	assert isinstance(modules, list)
 	assert len(modules) == 6
-	assert modules == [bm25, bm25, bm25, bm25, vectordb, vectordb]
+	assert modules == [BM25, BM25, BM25, BM25, VectorDB, VectorDB]
 	bm25_solution = [
 		{"param1": "value1", "key2": "value1", "key3": "value3", "key4": "value4"},
 		{"param1": "value1", "key2": "value1", "key3": "value3", "key4": "value5"},
@@ -47,10 +47,10 @@ def test_get_param_combinations():
 		{"param1": "value1", "key5": "value7", "key6": "value8"},
 	]
 	for module, module_params in zip(modules, module_node_params):
-		if module == bm25:
+		if module == BM25:
 			assert module_params in bm25_solution
 			bm25_solution.pop(bm25_solution.index(module_params))
-		elif module == vectordb:
+		elif module == VectorDB:
 			assert module_params in vectordb_solution
 			vectordb_solution.pop(vectordb_solution.index(module_params))
 		else:

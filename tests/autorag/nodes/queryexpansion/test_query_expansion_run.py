@@ -12,7 +12,7 @@ from llama_index.llms.openai import OpenAI
 from autorag.nodes.queryexpansion import QueryDecompose, HyDE
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
-from autorag.nodes.retrieval import bm25
+from autorag.nodes.retrieval import BM25
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import load_summary_file
 
@@ -57,7 +57,7 @@ def test_evaluate_one_query_expansion_node(node_line_dir):
 	sample_previous_result = previous_result.head(2)
 	sample_retrieval_gt = sample_previous_result["retrieval_gt"].tolist()
 
-	retrieval_funcs = [bm25, bm25]
+	retrieval_funcs = [BM25, BM25]
 	retrieval_params = [
 		{"top_k": 1, "bm25_tokenizer": "gpt2"},
 		{"top_k": 2, "bm25_tokenizer": "gpt2"},

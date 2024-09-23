@@ -8,8 +8,13 @@ import pandas as pd
 from tqdm import tqdm
 
 import autorag
-from autorag.nodes.retrieval.vectordb import vectordb_ingest, vectordb
-from autorag.utils.util import save_parquet_safe, fetch_contents
+from autorag.nodes.retrieval.vectordb import vectordb_ingest, vectordb_pure
+from autorag.utils.util import (
+	save_parquet_safe,
+	fetch_contents,
+	get_event_loop,
+	process_batch,
+)
 
 logger = logging.getLogger("AutoRAG")
 
@@ -171,10 +176,17 @@ def make_qa_with_existing_qa(
 
 	# embed corpus_df
 	vectordb_ingest(collection, corpus_df, embeddings)
-	vectordb_func = vectordb.__wrapped__
-	retrieved_ids, retrieve_scores = vectordb_func(
-		existing_query_df["query"].tolist(), top_k, collection, embeddings
+	query_embeddings = embeddings.get_text_embedding_batch(
+		existing_query_df["query"].tolist()
 	)
+
+	loop = get_event_loop()
+	tasks = [
+		vectordb_pure([query_embedding], top_k, collection)
+		for query_embedding in query_embeddings
+	]
+	results = loop.run_until_complete(process_batch(tasks, batch_size=cache_batch))
+	retrieved_ids = list(map(lambda x: x[0], results))
 
 	retrieved_contents: List[List[str]] = fetch_contents(corpus_df, retrieved_ids)
 	input_passage_strs: List[str] = list(
