@@ -9,5 +9,5 @@ from .pass_reranker import PassReranker
 from .rankgpt import RankGPT
 from .sentence_transformer import SentenceTransformerReranker
 from .tart.tart import tart
-from .time_reranker import time_reranker
+from .time_reranker import TimeReranker
 from .upr import upr
