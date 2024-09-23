@@ -2,7 +2,7 @@ import logging
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Optional
+from typing import List, Dict, Optional
 
 import pandas as pd
 
@@ -198,7 +198,7 @@ def run_query_expansion_node(
 
 
 def evaluate_one_query_expansion_node(
-	retrieval_funcs: List[Callable],
+	retrieval_funcs: List,
 	retrieval_params: List[Dict],
 	metric_inputs: List[MetricInput],
 	metrics: List[str],
@@ -211,7 +211,7 @@ def evaluate_one_query_expansion_node(
 	]
 	retrieval_results = list(
 		map(
-			lambda x: x[0](
+			lambda x: x[0].run_evaluator(
 				project_dir=project_dir, previous_result=previous_result, **x[1]
 			),
 			zip(retrieval_funcs, retrieval_params),
