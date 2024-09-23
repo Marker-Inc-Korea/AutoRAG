@@ -20,7 +20,7 @@ def extract_node_line_names(config_dict: Dict) -> List[str]:
 	"""
 	Extract node line names with the given config dictionary order.
 
-	:param config_dict: The yaml configuration dict for the pipeline.
+	:param config_dict: The YAML configuration dict for the pipeline.
 	    You can load this to access trail_folder/config.yaml.
 	:return: The list of node line names.
 	    It is the order of the node line names in the pipeline.
@@ -31,9 +31,9 @@ def extract_node_line_names(config_dict: Dict) -> List[str]:
 def extract_node_strategy(config_dict: Dict) -> Dict:
 	"""
 	Extract node strategies with the given config dictionary.
-	The return value is a dictionary of node type and its strategy.
+	The return value is a dictionary of the node type and its strategy.
 
-	:param config_dict: The yaml configuration dict for the pipeline.
+	:param config_dict: The YAML configuration dict for the pipeline.
 	    You can load this to access trail_folder/config.yaml.
 	:return: Key is node_type and value is strategy dict.
 	"""
@@ -125,17 +125,38 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
 class Runner:
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		self.config = config
-		self.project_dir = os.getcwd() if project_dir is None else project_dir
+		project_dir = os.getcwd() if project_dir is None else project_dir
 		self.app = Flask(__name__)
 		self.__add_api_route()
+
+		# init modules
+		node_lines = deepcopy(self.config["node_lines"])
+		self.module_instances = []
+		self.module_params = []
+		for node_line in node_lines:
+			for node in node_line["nodes"]:
+				if len(node["modules"]) != 1:
+					raise ValueError(
+						"The number of modules in a node must be 1 for using runner."
+						"Please use extract_best_config method for extracting yaml file from evaluated trial."
+					)
+				module = node["modules"][0]
+				module_type = module.pop("module_type")
+				module_params = module
+				module_instance = get_support_modules(module_type)(
+					project_dir=project_dir,
+					**module_params,
+				)
+				self.module_instances.append(module_instance)
+				self.module_params.append(module_params)
 
 	@classmethod
 	def from_yaml(cls, yaml_path: str, project_dir: Optional[str] = None):
 		"""
-		Load Runner from yaml file.
-		Must be extracted yaml file from evaluated trial using extract_best_config method.
+		Load Runner from the YAML file.
+		Must be extracted YAML file from the evaluated trial using the extract_best_config method.
 
-		:param yaml_path: The path of the yaml file.
+		:param yaml_path: The path of the YAML file.
 		:param project_dir: The path of the project directory.
 		    Default is the current directory.
 		:return: Initialized Runner.
@@ -151,7 +172,7 @@ class Runner:
 	@classmethod
 	def from_trial_folder(cls, trial_path: str):
 		"""
-		Load Runner from evaluated trial folder.
+		Load Runner from the evaluated trial folder.
 		Must already be evaluated using Evaluator class.
 		It sets the project_dir as the parent directory of the trial folder.
 
@@ -172,7 +193,6 @@ class Runner:
 		    Default is `generated_texts`, which is the output of the `generation` module.
 		:return: The result of the pipeline.
 		"""
-		node_lines = deepcopy(self.config["node_lines"])
 		previous_result = pd.DataFrame(
 			{
 				"qid": str(uuid.uuid4()),
@@ -181,26 +201,17 @@ class Runner:
 				"generation_gt": [""],
 			}
 		)  # pseudo qa data for execution
-		for node_line in node_lines:
-			for node in node_line["nodes"]:
-				if len(node["modules"]) != 1:
-					raise ValueError(
-						"The number of modules in a node must be 1 for using runner."
-						"Please use extract_best_config method for extracting yaml file from evaluated trial."
-					)
-				module = node["modules"][0]
-				module_type = module.pop("module_type")
-				module_params = module
-				new_result = get_support_modules(module_type)(
-					project_dir=self.project_dir,
-					previous_result=previous_result,
-					**module_params,
-				)
-				duplicated_columns = previous_result.columns.intersection(
-					new_result.columns
-				)
-				drop_previous_result = previous_result.drop(columns=duplicated_columns)
-				previous_result = pd.concat([drop_previous_result, new_result], axis=1)
+		for module_instance, module_param in zip(
+			self.module_instances, self.module_params
+		):
+			new_result = module_instance.pure(
+				previous_result=previous_result, **module_param
+			)
+			duplicated_columns = previous_result.columns.intersection(
+				new_result.columns
+			)
+			drop_previous_result = previous_result.drop(columns=duplicated_columns)
+			previous_result = pd.concat([drop_previous_result, new_result], axis=1)
 
 		return previous_result[result_column].tolist()[0]
 

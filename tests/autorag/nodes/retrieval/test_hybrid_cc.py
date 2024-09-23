@@ -1,6 +1,11 @@
-import pytest
+from unittest.mock import patch
 
-from autorag.nodes.retrieval.hybrid_cc import hybrid_cc, fuse_per_query
+import pandas as pd
+import pytest
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+from autorag.nodes.retrieval import HybridCC
+from autorag.nodes.retrieval.hybrid_cc import fuse_per_query, hybrid_cc
 from tests.autorag.nodes.retrieval.test_hybrid_base import (
 	sample_ids_2,
 	sample_scores_2,
@@ -9,7 +14,9 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
 	base_hybrid_weights_node_test,
 	sample_ids_non_overlap,
 	pseudo_project_dir,
+	previous_result,
 )
+from tests.mock import mock_get_text_embedding_batch
 
 
 def test_cc_fuse_per_query():
@@ -45,7 +52,7 @@ def test_cc_non_overlap():
 
 
 def test_hybrid_cc():
-	result_id, result_scores = hybrid_cc.__wrapped__(
+	result_id, result_scores = hybrid_cc(
 		sample_ids_3, sample_scores_3, top_k=3, weight=0.0, normalize_method="tmm"
 	)
 	assert result_id[0] == ["id-1", "id-4", "id-3"]
@@ -56,11 +63,13 @@ def test_hybrid_cc():
 
 def test_hybrid_cc_node(pseudo_project_dir):
 	retrieve_scores = [1.0, 0.23792372, 0.175]
-	base_hybrid_weights_node_test(hybrid_cc, pseudo_project_dir, retrieve_scores)
+	base_hybrid_weights_node_test(
+		HybridCC.run_evaluator, pseudo_project_dir, retrieve_scores
+	)
 
 
 def test_hybrid_cc_fixed_weight():
-	result_id, result_scores = hybrid_cc.__wrapped__(
+	result_id, result_scores = hybrid_cc(
 		sample_ids_3, sample_scores_3, top_k=3, normalize_method="tmm", weight=0.4
 	)
 	assert result_id[0] == ["id-1", "id-4", "id-2"]
@@ -69,3 +78,32 @@ def test_hybrid_cc_fixed_weight():
 	assert result_scores[1] == pytest.approx([1.0, 0.39428, 0.38], rel=1e-3)
 	assert isinstance(result_id, list)
 	assert isinstance(result_scores, list)
+
+
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
+def test_hybrid_cc_node_deploy(pseudo_project_dir):
+	modules = {
+		"target_modules": ("bm25", "vectordb"),
+		"target_module_params": [
+			{"top_k": 3},
+			{"embedding_model": "openai", "top_k": 3},
+		],
+		"top_k": 3,
+		"weight": 0.4,
+	}
+	hybrid_cc = HybridCC(project_dir=pseudo_project_dir, **modules)
+	result_df = hybrid_cc.pure(previous_result=previous_result, **modules)
+	assert len(result_df) == 3
+	assert isinstance(result_df, pd.DataFrame)
+	assert set(result_df.columns) == {
+		"retrieved_contents",
+		"retrieved_ids",
+		"retrieve_scores",
+	}
+	assert len(result_df["retrieved_ids"].tolist()[0]) == 3
+	assert len(result_df["retrieve_scores"].tolist()[0]) == 3
+	assert len(result_df["retrieved_contents"].tolist()[0]) == 3

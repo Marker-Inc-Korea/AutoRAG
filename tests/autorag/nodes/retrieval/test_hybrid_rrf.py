@@ -4,8 +4,8 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import hybrid_rrf
-from autorag.nodes.retrieval.hybrid_rrf import rrf_pure
+from autorag.nodes.retrieval import HybridRRF
+from autorag.nodes.retrieval.hybrid_rrf import rrf_pure, hybrid_rrf
 from tests.autorag.nodes.retrieval.test_hybrid_base import (
 	sample_ids,
 	sample_scores,
@@ -16,9 +16,7 @@ from tests.mock import mock_get_text_embedding_batch
 
 
 def test_hybrid_rrf():
-	result_id, result_scores = hybrid_rrf.__wrapped__(
-		sample_ids, sample_scores, top_k=3, weight=1
-	)
+	result_id, result_scores = hybrid_rrf(sample_ids, sample_scores, top_k=3, weight=1)
 	assert result_id == [["id-3", "id-1", "id-2"], ["id-4", "id-2", "id-3"]]
 	assert result_scores[0] == pytest.approx([1.0, (1 / 4) + (1 / 3), (1 / 3)])
 	assert result_scores[1] == pytest.approx([1.0, (1 / 4) + (1 / 3), (1 / 3)])
@@ -53,7 +51,7 @@ def test_hybrid_rrf_node(pseudo_project_dir):
 		"top_k": 3,
 		"weight": 1,
 	}
-	result_df = hybrid_rrf(
+	result_df = HybridRRF.run_evaluator(
 		project_dir=pseudo_project_dir, previous_result=previous_result, **modules
 	)
 	assert len(result_df) == 3
@@ -87,9 +85,8 @@ def test_hybrid_rrf_node_deploy(pseudo_project_dir):
 		"top_k": 3,
 		"weight": 1,
 	}
-	result_df = hybrid_rrf(
-		project_dir=pseudo_project_dir, previous_result=previous_result, **modules
-	)
+	hybrid_rrf = HybridRRF(project_dir=pseudo_project_dir, **modules)
+	result_df = hybrid_rrf.pure(previous_result=previous_result, **modules)
 	assert len(result_df) == 3
 	assert isinstance(result_df, pd.DataFrame)
 	assert set(result_df.columns) == {

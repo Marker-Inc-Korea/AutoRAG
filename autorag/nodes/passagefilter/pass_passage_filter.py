@@ -1,17 +1,14 @@
-from typing import List
+import pandas as pd
 
-from autorag.nodes.passagefilter.base import passage_filter_node
+from autorag.nodes.passagefilter.base import BasePassageFilter
+from autorag.utils import result_to_dataframe
 
 
-@passage_filter_node
-def pass_passage_filter(
-	queries: List[str],
-	contents_list: List[List[str]],
-	scores_list: List[List[float]],
-	ids_list: List[List[str]],
-):
-	"""
-	Do not perform filtering.
-	Return given passages, scores, and ids as is.
-	"""
-	return contents_list, ids_list, scores_list
+class PassPassageFilter(BasePassageFilter):
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		_, contents, scores, ids = self.cast_to_run(previous_result)
+		return contents, ids, scores
+
+	def _pure(self, *args, **kwargs):
+		pass

@@ -2,6 +2,7 @@ import os.path
 import pathlib
 import tempfile
 from distutils.dir_util import copy_tree
+from typing import Any
 from unittest.mock import patch
 
 import pandas as pd
@@ -12,7 +13,7 @@ from llama_index.llms.openai import OpenAI
 
 from autorag.deploy import extract_best_config
 from autorag.evaluator import Evaluator
-from autorag.nodes.retrieval import bm25, vectordb, hybrid_rrf
+from autorag.nodes.retrieval import BM25, VectorDB, HybridRRF
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
@@ -73,9 +74,9 @@ def test_load_node_line(evaluator):
 	assert node.modules[0].module_type == "bm25"
 	assert node.modules[1].module_type == "vectordb"
 	assert node.modules[2].module_type == "hybrid_rrf"
-	assert node.modules[0].module == bm25
-	assert node.modules[1].module == vectordb
-	assert node.modules[2].module == hybrid_rrf
+	assert node.modules[0].module == BM25
+	assert node.modules[1].module == VectorDB
+	assert node.modules[2].module == HybridRRF
 	assert node.modules[0].module_param == {
 		"bm25_tokenizer": ["facebook/opt-125m", "porter_stemmer"]
 	}
@@ -209,6 +210,11 @@ def test_start_trial(evaluator):
 	assert trial_summary_df["best_execution_time"][0] > 0
 
 
+@patch.object(
+	OpenAIEmbedding,
+	"get_text_embedding_batch",
+	mock_get_text_embedding_batch,
+)
 @pytest.mark.skip(reason="This test is too slow")
 def test_start_trial_full(evaluator):
 	evaluator.start_trial(os.path.join(resource_dir, "full.yaml"))
@@ -283,19 +289,6 @@ def test_start_trial_full(evaluator):
 			project_dir, "0", "retrieve_node_line", "passage_filter", "0.parquet"
 		)
 	)
-	assert os.path.exists(
-		os.path.join(project_dir, "0", "retrieve_node_line", "passage_compressor")
-	)
-	assert os.path.exists(
-		os.path.join(
-			project_dir, "0", "retrieve_node_line", "passage_compressor", "0.parquet"
-		)
-	)
-	assert os.path.exists(
-		os.path.join(
-			project_dir, "0", "retrieve_node_line", "passage_compressor", "1.parquet"
-		)
-	)
 	# 3. post_retrieve_node_line
 	assert os.path.exists(os.path.join(project_dir, "0", "post_retrieve_node_line"))
 	assert os.path.exists(
@@ -346,6 +339,24 @@ def test_start_trial_full(evaluator):
 	)
 
 
+async def mock_acomplete(self, prompt: str, formatted: bool = False, **kwargs: Any):
+	return CompletionResponse(text=prompt)
+
+
+async def mock_openai_apredict(self, prompt, *args, **kwargs):
+	return "What is the capital of France?"
+
+
+@patch.object(
+	OpenAI,
+	"acomplete",
+	mock_acomplete,
+)
+@patch.object(
+	OpenAI,
+	"apredict",
+	mock_openai_apredict,
+)
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_test_data_evaluate(test_evaluator):
 	trial_folder = os.path.join(resource_dir, "result_project", "0")

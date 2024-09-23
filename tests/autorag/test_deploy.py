@@ -131,7 +131,6 @@ def test_extract_node_strategy(full_config):
 		"query_expansion",
 		"retrieval",
 		"passage_reranker",
-		"passage_compressor",
 		"prompt_maker",
 		"generator",
 	}

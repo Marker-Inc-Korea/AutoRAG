@@ -10,7 +10,7 @@ import pytest
 from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import bm25, vectordb, hybrid_cc, hybrid_rrf
+from autorag.nodes.retrieval import BM25, VectorDB, HybridCC, HybridRRF
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file
@@ -52,7 +52,7 @@ def node_line_dir():
 	mock_get_text_embedding_batch,
 )
 def test_run_retrieval_node(node_line_dir):
-	modules = [bm25, vectordb, hybrid_rrf, hybrid_cc, hybrid_cc]
+	modules = [BM25, VectorDB, HybridRRF, HybridCC, HybridCC]
 	module_params = [
 		{"top_k": 4, "bm25_tokenizer": "gpt2"},
 		{"top_k": 4, "embedding_model": "openai"},
@@ -106,7 +106,7 @@ def test_run_retrieval_node(node_line_dir):
 	assert summary_df["filename"][0] == "0.parquet"
 	assert summary_df["retrieval_f1"][1] == bm25_top_k_df["retrieval_f1"].mean()
 	assert summary_df["retrieval_recall"][1] == bm25_top_k_df["retrieval_recall"].mean()
-	assert summary_df["module_name"][0] == "vectordb"
+	assert summary_df["module_name"][0] == "VectorDB"
 	assert summary_df["module_params"][0] == {"top_k": 4, "embedding_model": "openai"}
 	assert summary_df["execution_time"][0] > 0
 	# assert average times
@@ -223,7 +223,7 @@ def pseudo_node_dir():
 	mock_get_text_embedding_batch,
 )
 def test_run_retrieval_node_only_hybrid(node_line_dir):
-	modules = [hybrid_cc]
+	modules = [HybridCC]
 	module_params = [
 		{
 			"top_k": 4,
@@ -281,7 +281,7 @@ def test_run_retrieval_node_only_hybrid(node_line_dir):
 	assert (
 		summary_df["retrieval_recall"][0] == single_result_df["retrieval_recall"].mean()
 	)
-	assert summary_df["module_name"][0] == "hybrid_cc"
+	assert summary_df["module_name"][0] == "HybridCC"
 	assert summary_df["module_params"][0] == {
 		"top_k": 4,
 		"target_modules": ("bm25", "vectordb"),

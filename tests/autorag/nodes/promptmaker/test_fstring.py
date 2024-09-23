@@ -1,4 +1,6 @@
-from autorag.nodes.promptmaker import fstring
+import pytest
+
+from autorag.nodes.promptmaker.fstring import Fstring
 from tests.autorag.nodes.promptmaker.test_prompt_maker_base import (
 	prompt,
 	queries,
@@ -7,9 +9,13 @@ from tests.autorag.nodes.promptmaker.test_prompt_maker_base import (
 )
 
 
-def test_fstring():
-	fstring_original = fstring.__wrapped__
-	result_prompts = fstring_original(prompt, queries, retrieved_contents)
+@pytest.fixture
+def fstring_instance():
+	return Fstring("pseudo_project_dir")
+
+
+def test_fstring(fstring_instance):
+	result_prompts = fstring_instance._pure(prompt, queries, retrieved_contents)
 	assert len(result_prompts) == 2
 	assert isinstance(result_prompts, list)
 	assert (
@@ -23,7 +29,7 @@ def test_fstring():
 
 
 def test_fstring_node():
-	result = fstring(
+	result = Fstring.run_evaluator(
 		project_dir="pseudo_project_dir", previous_result=previous_result, prompt=prompt
 	)
 	assert len(result) == 2

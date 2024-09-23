@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.passageaugmenter import prev_next_augmenter
+from autorag.nodes.passageaugmenter import PrevNextPassageAugmenter
 from autorag.nodes.passageaugmenter.run import run_passage_augmenter_node
 from autorag.utils.util import load_summary_file
 from tests.autorag.nodes.passageaugmenter.test_base_passage_augmenter import (
@@ -37,7 +37,7 @@ def node_line_dir():
 	mock_get_text_embedding_batch,
 )
 def test_run_passage_augmenter_node(node_line_dir):
-	modules = [prev_next_augmenter]
+	modules = [PrevNextPassageAugmenter]
 	module_params = [{"top_k": 2, "num_passages": 1}]
 	strategies = {
 		"metrics": ["retrieval_f1", "retrieval_recall"],
@@ -84,7 +84,7 @@ def test_run_passage_augmenter_node(node_line_dir):
 	assert summary_df["passage_augmenter_retrieval_recall"][0] == pytest.approx(
 		result_df["retrieval_recall"].mean()
 	)
-	assert summary_df["module_name"][0] == "prev_next_augmenter"
+	assert summary_df["module_name"][0] == "PrevNextPassageAugmenter"
 	assert summary_df["module_params"][0] == {"top_k": 2, "num_passages": 1}
 	assert summary_df["execution_time"][0] > 0
 	# test the best file is saved properly

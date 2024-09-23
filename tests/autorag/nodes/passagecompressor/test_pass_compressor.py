@@ -1,6 +1,6 @@
 import pandas as pd
 
-from autorag.nodes.passagecompressor import pass_compressor
+from autorag.nodes.passagecompressor import PassCompressor
 
 queries = [
 	"What is the capital of France?",
@@ -29,5 +29,5 @@ def test_pass_compressor():
 			"retrieve_scores": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
 		}
 	)
-	result_df = pass_compressor("project_dir", df)
+	result_df = PassCompressor.run_evaluator("project_dir", df)
 	assert result_df["retrieved_contents"].tolist() == retrieved_contents

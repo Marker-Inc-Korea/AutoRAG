@@ -4,7 +4,7 @@ import pytest
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-from autorag.nodes.passagereranker import colbert_reranker
+from autorag.nodes.passagereranker import ColbertReranker
 from autorag.nodes.passagereranker.colbert import (
 	get_colbert_embedding_batch,
 	slice_tensor,
@@ -12,7 +12,6 @@ from autorag.nodes.passagereranker.colbert import (
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	queries_example,
 	contents_example,
-	scores_example,
 	ids_example,
 	base_reranker_test,
 	project_dir,
@@ -22,15 +21,19 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 from tests.delete_tests import is_github_action
 
 
+@pytest.fixture
+def colbert_reranker_instance():
+	return ColbertReranker(project_dir, "colbert-ir/colbertv2.0")
+
+
 @pytest.mark.skipif(
 	is_github_action(),
 	reason="Skipping this test on GitHub Actions because it uses local model.",
 )
-def test_colbert_reranker():
+def test_colbert_reranker(colbert_reranker_instance):
 	top_k = 2
-	original_colbert_reranker = colbert_reranker.__wrapped__
-	contents_result, id_result, score_result = original_colbert_reranker(
-		queries_example, contents_example, scores_example, ids_example, top_k
+	contents_result, id_result, score_result = colbert_reranker_instance._pure(
+		queries_example, contents_example, ids_example, top_k
 	)
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
@@ -39,12 +42,11 @@ def test_colbert_reranker():
 	is_github_action(),
 	reason="Skipping this test on GitHub Actions because it uses local model.",
 )
-def test_colbert_reranker_long():
+def test_colbert_reranker_long(colbert_reranker_instance):
 	top_k = 2
-	original_colbert_reranker = colbert_reranker.__wrapped__
 	contents_example[0][0] = contents_example[0][0] * 10000
-	contents_result, id_result, score_result = original_colbert_reranker(
-		queries_example, contents_example, scores_example, ids_example, top_k, batch=2
+	contents_result, id_result, score_result = colbert_reranker_instance._pure(
+		queries_example, contents_example, ids_example, top_k, batch=2
 	)
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
@@ -53,11 +55,10 @@ def test_colbert_reranker_long():
 	is_github_action(),
 	reason="Skipping this test on GitHub Actions because it uses local model.",
 )
-def test_colbert_reranker_one_batch():
+def test_colbert_reranker_one_batch(colbert_reranker_instance):
 	top_k = 2
-	original_colbert_reranker = colbert_reranker.__wrapped__
-	contents_result, id_result, score_result = original_colbert_reranker(
-		queries_example, contents_example, scores_example, ids_example, top_k, batch=1
+	contents_result, id_result, score_result = colbert_reranker_instance._pure(
+		queries_example, contents_example, ids_example, top_k, batch=1
 	)
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
@@ -68,7 +69,7 @@ def test_colbert_reranker_one_batch():
 )
 def test_colbert_reranker_node():
 	top_k = 1
-	result_df = colbert_reranker(
+	result_df = ColbertReranker.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, top_k=top_k
 	)
 	base_reranker_node_test(result_df, top_k)

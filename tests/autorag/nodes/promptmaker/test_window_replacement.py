@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from autorag.nodes.promptmaker import window_replacement
+from autorag.nodes.promptmaker import WindowReplacement
 from tests.autorag.nodes.promptmaker.test_prompt_maker_base import (
 	prompt,
 	queries,
@@ -23,9 +23,13 @@ def pseudo_project_dir():
 		yield project_dir
 
 
-def test_window_replacement():
-	window_replacement_original = window_replacement.__wrapped__
-	result_prompts = window_replacement_original(
+@pytest.fixture
+def window_replacement_instance(pseudo_project_dir):
+	return WindowReplacement(project_dir=pseudo_project_dir)
+
+
+def test_window_replacement(window_replacement_instance):
+	result_prompts = window_replacement_instance._pure(
 		prompt, queries, retrieved_contents, retrieved_metadata
 	)
 	assert len(result_prompts) == 2
@@ -41,7 +45,7 @@ def test_window_replacement():
 
 
 def test_window_replacement_node(pseudo_project_dir):
-	result = window_replacement(
+	result = WindowReplacement.run_evaluator(
 		project_dir=pseudo_project_dir, previous_result=previous_result, prompt=prompt
 	)
 	assert len(result) == 2

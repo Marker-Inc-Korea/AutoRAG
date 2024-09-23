@@ -1,66 +1,86 @@
 import os
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 import cohere
+import pandas as pd
 from cohere import RerankResponseResultsItem
 
-from autorag.nodes.passagereranker.base import passage_reranker_node
-from autorag.utils.util import get_event_loop, process_batch
+from autorag.nodes.passagereranker.base import BasePassageReranker
+from autorag.utils.util import get_event_loop, process_batch, result_to_dataframe
 
 
-@passage_reranker_node
-def cohere_reranker(
-	queries: List[str],
-	contents_list: List[List[str]],
-	scores_list: List[List[float]],
-	ids_list: List[List[str]],
-	top_k: int,
-	batch: int = 64,
-	model: str = "rerank-multilingual-v2.0",
-	api_key: Optional[str] = None,
-) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
-	"""
-	Rerank a list of contents with Cohere rerank models.
-	You can get the API key from https://cohere.com/rerank and set it in the environment variable COHERE_API_KEY.
+class CohereReranker(BasePassageReranker):
+	def __init__(self, project_dir: str, *args, **kwargs):
+		"""
+		Initialize Cohere rerank node.
 
-	:param queries: The list of queries to use for reranking
-	:param contents_list: The list of lists of contents to rerank
-	:param scores_list: The list of lists of scores retrieved from the initial ranking
-	:param ids_list: The list of lists of ids retrieved from the initial ranking
-	:param top_k: The number of passages to be retrieved
-	:param batch: The number of queries to be processed in a batch
-	:param model: The model name for Cohere rerank.
-	    You can choose between "rerank-multilingual-v2.0" and "rerank-english-v2.0".
-	    Default is "rerank-multilingual-v2.0".
-	:param api_key: The API key for Cohere rerank.
-	    You can set it in the environment variable COHERE_API_KEY.
-	    Or, you can directly set it on the config YAML file using this parameter.
-	    Default is env variable "COHERE_API_KEY".
-	:return: Tuple of lists containing the reranked contents, ids, and scores
-	"""
-	api_key = os.getenv("COHERE_API_KEY", None) if api_key is None else api_key
-	if api_key is None:
-		raise KeyError(
-			"Please set the API key for Cohere rerank in the environment variable COHERE_API_KEY "
-			"or directly set it on the config YAML file."
-		)
+		:param project_dir: The project directory path.
+		:param api_key: The API key for Cohere rerank.
+		    You can set it in the environment variable COHERE_API_KEY.
+		    Or, you can directly set it on the config YAML file using this parameter.
+		    Default is env variable "COHERE_API_KEY".
+		:param kwargs: Extra arguments that are not affected
+		"""
+		super().__init__(project_dir)
+		api_key = kwargs.pop("api_key", None)
+		api_key = os.getenv("COHERE_API_KEY", None) if api_key is None else api_key
+		if api_key is None:
+			raise KeyError(
+				"Please set the API key for Cohere rerank in the environment variable COHERE_API_KEY "
+				"or directly set it on the config YAML file."
+			)
 
-	cohere_client = cohere.AsyncClient(api_key)
+		self.cohere_client = cohere.AsyncClient(api_key)
 
-	# Run async cohere_rerank_pure function
-	tasks = [
-		cohere_rerank_pure(cohere_client, model, query, document, ids, top_k)
-		for query, document, ids in zip(queries, contents_list, ids_list)
-	]
-	loop = get_event_loop()
-	results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
-	content_result = list(map(lambda x: x[0], results))
-	id_result = list(map(lambda x: x[1], results))
-	score_result = list(map(lambda x: x[2], results))
+	def __del__(self):
+		del self.cohere_client
+		super().__del__()
 
-	del cohere_client
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		queries, contents, scores, ids = self.cast_to_run(previous_result)
+		top_k = kwargs.pop("top_k")
+		batch = kwargs.pop("batch", 64)
+		model = kwargs.pop("model", "rerank-multilingual-v2.0")
+		return self._pure(queries, contents, scores, ids, top_k, batch, model)
 
-	return content_result, id_result, score_result
+	def _pure(
+		self,
+		queries: List[str],
+		contents_list: List[List[str]],
+		scores_list: List[List[float]],
+		ids_list: List[List[str]],
+		top_k: int,
+		batch: int = 64,
+		model: str = "rerank-multilingual-v2.0",
+	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+		"""
+		Rerank a list of contents with Cohere rerank models.
+		You can get the API key from https://cohere.com/rerank and set it in the environment variable COHERE_API_KEY.
+
+		:param queries: The list of queries to use for reranking
+		:param contents_list: The list of lists of contents to rerank
+		:param scores_list: The list of lists of scores retrieved from the initial ranking
+		:param ids_list: The list of lists of ids retrieved from the initial ranking
+		:param top_k: The number of passages to be retrieved
+		:param batch: The number of queries to be processed in a batch
+		:param model: The model name for Cohere rerank.
+		    You can choose between "rerank-multilingual-v2.0" and "rerank-english-v2.0".
+		    Default is "rerank-multilingual-v2.0".
+		:return: Tuple of lists containing the reranked contents, ids, and scores
+		"""
+		# Run async cohere_rerank_pure function
+		tasks = [
+			cohere_rerank_pure(self.cohere_client, model, query, document, ids, top_k)
+			for query, document, ids in zip(queries, contents_list, ids_list)
+		]
+		loop = get_event_loop()
+		results = loop.run_until_complete(process_batch(tasks, batch_size=batch))
+		content_result = list(map(lambda x: x[0], results))
+		id_result = list(map(lambda x: x[1], results))
+		score_result = list(map(lambda x: x[2], results))
+
+		return content_result, id_result, score_result
 
 
 async def cohere_rerank_pure(

@@ -1,6 +1,8 @@
 from datetime import datetime, date
 
-from autorag.nodes.passagefilter import recency_filter
+import pytest
+
+from autorag.nodes.passagefilter import RecencyFilter
 from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	contents_example,
 	time_list,
@@ -13,9 +15,13 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 )
 
 
-def test_recency_filter():
-	original_recency_filter = recency_filter.__wrapped__
-	contents_result, id_result, score_result = original_recency_filter(
+@pytest.fixture
+def recency_filter_instance(project_dir_with_corpus):
+	return RecencyFilter(project_dir=project_dir_with_corpus)
+
+
+def test_recency_filter(recency_filter_instance):
+	contents_result, id_result, score_result = recency_filter_instance._pure(
 		contents_example,
 		scores_example,
 		ids_example,
@@ -35,7 +41,7 @@ def test_recency_filter():
 	base_passage_filter_test(contents_result, id_result, score_result)
 
 
-def test_recency_filter_date_time_list():
+def test_recency_filter_date_time_list(recency_filter_instance):
 	time_list_2 = [
 		[
 			date(2015, 1, 1),
@@ -50,8 +56,7 @@ def test_recency_filter_date_time_list():
 			datetime(2022, 3, 5, 12, 45, 00),
 		],
 	]
-	original_recency_filter = recency_filter.__wrapped__
-	contents_result, id_result, score_result = original_recency_filter(
+	contents_result, id_result, score_result = recency_filter_instance._pure(
 		contents_example,
 		scores_example,
 		ids_example,
@@ -71,9 +76,8 @@ def test_recency_filter_date_time_list():
 	base_passage_filter_test(contents_result, id_result, score_result)
 
 
-def test_recency_filter_all_filtered():
-	original_recency_filter = recency_filter.__wrapped__
-	contents_result, id_result, score_result = original_recency_filter(
+def test_recency_filter_all_filtered(recency_filter_instance):
+	contents_result, id_result, score_result = recency_filter_instance._pure(
 		contents_example,
 		scores_example,
 		ids_example,
@@ -89,9 +93,8 @@ def test_recency_filter_all_filtered():
 	base_passage_filter_test(contents_result, id_result, score_result)
 
 
-def test_recency_filter_minutes():
-	original_recency_filter = recency_filter.__wrapped__
-	contents_result, id_result, score_result = original_recency_filter(
+def test_recency_filter_minutes(recency_filter_instance):
+	contents_result, id_result, score_result = recency_filter_instance._pure(
 		contents_example,
 		scores_example,
 		ids_example,
@@ -107,9 +110,8 @@ def test_recency_filter_minutes():
 	base_passage_filter_test(contents_result, id_result, score_result)
 
 
-def test_recency_filter_seconds():
-	original_recency_filter = recency_filter.__wrapped__
-	contents_result, id_result, score_result = original_recency_filter(
+def test_recency_filter_seconds(recency_filter_instance):
+	contents_result, id_result, score_result = recency_filter_instance._pure(
 		contents_example,
 		scores_example,
 		ids_example,
@@ -126,7 +128,7 @@ def test_recency_filter_seconds():
 
 
 def test_recency_filter_node(project_dir_with_corpus):
-	result_df = recency_filter(
+	result_df = RecencyFilter.run_evaluator(
 		project_dir=project_dir_with_corpus,
 		previous_result=previous_result,
 		threshold=datetime(2021, 6, 30),

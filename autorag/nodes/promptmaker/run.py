@@ -1,7 +1,7 @@
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Callable, Dict, Optional, Union
+from typing import List, Dict, Optional, Union
 
 import pandas as pd
 import tokenlog
@@ -16,7 +16,7 @@ from autorag.utils.util import make_combinations, explode, split_dataframe
 
 
 def run_prompt_maker_node(
-	modules: List[Callable],
+	modules: List,
 	module_params: List[Dict],
 	previous_result: pd.DataFrame,
 	node_line_dir: str,
@@ -34,7 +34,7 @@ def run_prompt_maker_node(
 	When you don't set generator module at strategies, it will use the default generator module.
 	The default generator module is llama_index_llm with openai gpt-3.5-turbo model.
 
-	:param modules: Prompt maker modules to run.
+	:param modules: Prompt maker module classes to run.
 	:param module_params: Prompt maker module parameters.
 	:param previous_result: Previous result dataframe.
 	    Could be query expansion's best result or qa data.
@@ -54,7 +54,7 @@ def run_prompt_maker_node(
 	results, execution_times = zip(
 		*map(
 			lambda task: measure_speed(
-				task[0],
+				task[0].run_evaluator,
 				project_dir=project_dir,
 				previous_result=previous_result,
 				**task[1],
@@ -234,9 +234,9 @@ def make_generator_callable_params(strategy_dict: Dict):
 
 def evaluate_one_prompt_maker_node(
 	prompts: List[str],
-	generator_funcs: List[Callable],
+	generator_classes: List,
 	generator_params: List[Dict],
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 	project_dir,
 	strategy_name: str,
@@ -244,14 +244,16 @@ def evaluate_one_prompt_maker_node(
 	input_df = pd.DataFrame({"prompts": prompts})
 	generator_results = list(
 		map(
-			lambda x: x[0](project_dir=project_dir, previous_result=input_df, **x[1]),
-			zip(generator_funcs, generator_params),
+			lambda x: x[0].run_evaluator(
+				project_dir=project_dir, previous_result=input_df, **x[1]
+			),
+			zip(generator_classes, generator_params),
 		)
 	)
 	evaluation_results = list(
 		map(
 			lambda x: evaluate_generator_result(x[0], metric_inputs, metrics),
-			zip(generator_results, generator_funcs),
+			zip(generator_results, generator_classes),
 		)
 	)
 	metric_names = (
@@ -268,7 +270,7 @@ def evaluate_one_prompt_maker_node(
 
 def evaluate_generator_result(
 	result_df: pd.DataFrame,
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 ) -> pd.DataFrame:
 	@evaluate_generation(metric_inputs=metric_inputs, metrics=metrics)

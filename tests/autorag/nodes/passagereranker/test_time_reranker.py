@@ -1,4 +1,6 @@
-from autorag.nodes.passagereranker import time_reranker
+import pytest
+
+from autorag.nodes.passagereranker import TimeReranker
 
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	contents_example,
@@ -12,11 +14,15 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 )
 
 
-def test_time_reranker():
+@pytest.fixture
+def time_reranker_instance(project_dir_with_corpus):
+	return TimeReranker(project_dir_with_corpus)
+
+
+def test_time_reranker(time_reranker_instance):
 	top_k = 2
 
-	original_time_reranker = time_reranker.__wrapped__
-	contents_result, id_result, score_result = original_time_reranker(
+	contents_result, id_result, score_result = time_reranker_instance._pure(
 		contents_example, scores_example, ids_example, top_k, time_list
 	)
 	assert id_result[0] == [ids_example[0][1], ids_example[0][2]]
@@ -30,7 +36,7 @@ def test_time_reranker():
 
 def test_time_reranker_node(project_dir_with_corpus):
 	top_k = 1
-	result_df = time_reranker(
+	result_df = TimeReranker.run_evaluator(
 		project_dir=project_dir_with_corpus,
 		previous_result=previous_result,
 		top_k=top_k,

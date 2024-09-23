@@ -1,11 +1,55 @@
-from typing import List, Tuple
+import os
+from pathlib import Path
+from typing import List, Tuple, Union
 
 import pandas as pd
 
-from autorag.nodes.retrieval import retrieval_node
+from autorag.nodes.retrieval.base import HybridRetrieval
+from autorag.utils.util import pop_params, fetch_contents, result_to_dataframe
 
 
-@retrieval_node
+class HybridRRF(HybridRetrieval):
+	def _pure(self, ids, scores, top_k: int, weight: int = 60, rrf_k: int = -1):
+		return hybrid_rrf(ids, scores, top_k, weight, rrf_k)
+
+	@classmethod
+	def run_evaluator(
+		cls,
+		project_dir: Union[str, Path],
+		previous_result: pd.DataFrame,
+		*args,
+		**kwargs,
+	):
+		if "ids" in kwargs and "scores" in kwargs:
+			data_dir = os.path.join(project_dir, "data")
+			corpus_df = pd.read_parquet(
+				os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+			)
+
+			params = pop_params(hybrid_rrf, kwargs)
+			assert (
+				"ids" in params and "scores" in params and "top_k" in params
+			), "ids, scores, and top_k must be specified."
+
+			@result_to_dataframe(
+				["retrieved_contents", "retrieved_ids", "retrieve_scores"]
+			)
+			def __rrf(**rrf_params):
+				ids, scores = hybrid_rrf(**rrf_params)
+				contents = fetch_contents(corpus_df, ids)
+				return contents, ids, scores
+
+			return __rrf(**params)
+		else:
+			assert (
+				"target_modules" in kwargs and "target_module_params" in kwargs
+			), "target_modules and target_module_params must be specified if there is not ids and scores."
+			instance = cls(project_dir, *args, **kwargs)
+			result = instance.pure(previous_result, *args, **kwargs)
+			del instance
+			return result
+
+
 def hybrid_rrf(
 	ids: Tuple,
 	scores: Tuple,
@@ -18,11 +62,11 @@ def hybrid_rrf(
 	RRF (Rank Reciprocal Fusion) is a method to fuse multiple retrieval results.
 	It is common to fuse dense retrieval and sparse retrieval results using RRF.
 	To use this function, you must input ids and scores as tuple.
-	It is uniquer than other retrieval modules, because it does not really execute retrieval,
-	but just fuse the results of other retrieval functions.
+	It is more unique than other retrieval modules because it does not really execute retrieval but just fuses
+	the results of other retrieval functions.
 	So you have to run more than two retrieval modules before running this function.
 	And collect ids and scores result from each retrieval module.
-	Make it as tuple and input it to this function.
+	Make it as a tuple and input it to this function.
 
 	:param ids: The tuple of ids that you want to fuse.
 	    The length of this must be the same as the length of scores.
@@ -34,8 +78,8 @@ def hybrid_rrf(
 	    Default is 60.
 	    For more information, please visit our documentation.
 	:param rrf_k: (Deprecated) Hyperparameter for RRF.
-	    It was originally rrf_k value. Will remove at further version.
-	:return: The tuple of ids and fused scores that fused by RRF.
+	    It was originally rrf_k value. Will remove at a further version.
+	:return: The tuple of ids and fused scores that are fused by RRF.
 	"""
 	assert len(ids) == len(scores), "The length of ids and scores must be the same."
 	assert len(ids) > 1, "You must input more than one retrieval results."

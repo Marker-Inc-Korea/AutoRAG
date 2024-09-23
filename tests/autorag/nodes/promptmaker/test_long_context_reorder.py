@@ -1,4 +1,6 @@
-from autorag.nodes.promptmaker import long_context_reorder
+import pytest
+
+from autorag.nodes.promptmaker import LongContextReorder
 from tests.autorag.nodes.promptmaker.test_prompt_maker_base import (
 	prompt,
 	queries,
@@ -8,9 +10,13 @@ from tests.autorag.nodes.promptmaker.test_prompt_maker_base import (
 )
 
 
-def test_long_context_reorder():
-	long_context_reorder_original = long_context_reorder.__wrapped__
-	result_prompts = long_context_reorder_original(
+@pytest.fixture
+def long_context_reorder_instance():
+	return LongContextReorder(project_dir="pseudo_project_dir")
+
+
+def test_long_context_reorder(long_context_reorder_instance):
+	result_prompts = long_context_reorder_instance._pure(
 		prompt, queries, retrieved_contents, retrieve_scores
 	)
 	assert len(result_prompts) == 2
@@ -26,7 +32,7 @@ def test_long_context_reorder():
 
 
 def test_long_context_reorder_node():
-	result = long_context_reorder(
+	result = LongContextReorder.run_evaluator(
 		project_dir="pseudo_project_dir", previous_result=previous_result, prompt=prompt
 	)
 	assert len(result) == 2

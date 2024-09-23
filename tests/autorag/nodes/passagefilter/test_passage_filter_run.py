@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.passagefilter import similarity_threshold_cutoff
+from autorag.nodes.passagefilter import SimilarityThresholdCutoff
 from autorag.nodes.passagefilter.run import run_passage_filter_node
 from autorag.utils.util import load_summary_file
 from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
@@ -37,7 +37,7 @@ def node_line_dir():
 	mock_get_text_embedding_batch,
 )
 def test_run_passage_filter_node(node_line_dir):
-	modules = [similarity_threshold_cutoff]
+	modules = [SimilarityThresholdCutoff]
 	module_params = [{"threshold": 0.87}]
 	strategies = {
 		"metrics": ["retrieval_f1", "retrieval_recall"],
@@ -85,7 +85,7 @@ def test_run_passage_filter_node(node_line_dir):
 		summary_df["passage_filter_retrieval_recall"][0]
 		== result_df["retrieval_recall"].mean()
 	)
-	assert summary_df["module_name"][0] == "similarity_threshold_cutoff"
+	assert summary_df["module_name"][0] == "SimilarityThresholdCutoff"
 	assert summary_df["module_params"][0] == {"threshold": 0.87}
 	assert summary_df["execution_time"][0] > 0
 	# test the best file is saved properly

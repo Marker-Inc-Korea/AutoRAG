@@ -1,4 +1,4 @@
-from autorag.nodes.passagefilter import pass_passage_filter
+from autorag.nodes.passagefilter import PassPassageFilter
 from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 	project_dir,
 	previous_result,
@@ -9,7 +9,7 @@ from tests.autorag.nodes.passagefilter.test_passage_filter_base import (
 
 
 def test_pass_passage_filter():
-	result_df = pass_passage_filter(
+	result_df = PassPassageFilter.run_evaluator(
 		project_dir=project_dir,
 		previous_result=previous_result,
 	)
