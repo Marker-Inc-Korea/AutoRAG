@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import functools
 import glob
+import inspect
 import itertools
 import logging
 import os
@@ -598,3 +599,24 @@ def find_key_values(data, target_key: str) -> List[Any]:
 				values.extend(find_key_values(item, target_key))
 
 	return values
+
+
+def pop_params(func: Callable, kwargs: Dict) -> Dict:
+	"""
+	Pop parameters from the given func and return them.
+	It automatically deletes the parameters like "self" or "cls".
+
+	:param func: The function to pop parameters.
+	:param kwargs: kwargs to pop parameters.
+	:return: The popped parameters.
+	"""
+	ignore_params = ["self", "cls"]
+	target_params = list(inspect.signature(func).parameters.keys())
+	target_params = list(filter(lambda x: x not in ignore_params, target_params))
+
+	init_params = {}
+	kwargs_keys = list(kwargs.keys())
+	for key in kwargs_keys:
+		if key in target_params:
+			init_params[key] = kwargs.pop(key)
+	return init_params

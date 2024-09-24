@@ -11,9 +11,18 @@ from nltk import PorterStemmer
 from rank_bm25 import BM25Okapi
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
-from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
-from autorag.utils import validate_corpus_dataset
-from autorag.utils.util import get_event_loop, normalize_string
+from autorag.nodes.retrieval.base import (
+	evenly_distribute_passages,
+	BaseRetrieval,
+	get_bm25_pkl_name,
+)
+from autorag.utils import validate_corpus_dataset, fetch_contents
+from autorag.utils.util import (
+	get_event_loop,
+	normalize_string,
+	result_to_dataframe,
+	pop_params,
+)
 
 
 def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
@@ -80,6 +89,14 @@ def tokenize_space(texts: List[str]) -> List[List[str]]:
 	return list(map(tokenize_space_text, texts))
 
 
+def load_bm25_corpus(bm25_path: str) -> Dict:
+	if bm25_path is None:
+		return {}
+	with open(bm25_path, "rb") as f:
+		bm25_corpus = pickle.load(f)
+	return bm25_corpus
+
+
 BM25_TOKENIZER = {
 	"porter_stemmer": tokenize_porter_stemmer,
 	"ko_kiwi": tokenize_ko_kiwi,
@@ -89,74 +106,103 @@ BM25_TOKENIZER = {
 }
 
 
-@retrieval_node
-def bm25(
-	queries: List[List[str]],
-	top_k: int,
-	bm25_corpus: Dict,
-	bm25_tokenizer: str = "porter_stemmer",
-	ids: Optional[List[List[str]]] = None,
-) -> Tuple[List[List[str]], List[List[float]]]:
-	"""
-	BM25 retrieval function.
-	You have to load a pickle file that is already ingested.
+class BM25(BaseRetrieval):
+	def __init__(self, project_dir: str, *args, **kwargs):
+		"""
+		Initialize BM25 module.
+		(Retrieval)
 
-	:param queries: 2-d list of query strings.
-	    Each element of the list is a query strings of each row.
-	:param top_k: The number of passages to be retrieved.
-	:param bm25_corpus: A dictionary containing the bm25 corpus, which is doc_id from corpus and tokenized corpus.
-	    Its data structure looks like this:
+		:param project_dir: The project directory path.
+		:param bm25_tokenizer: The tokenizer name that is used to the BM25.
+		    It supports 'porter_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
+		    You can pass huggingface tokenizer name.
+		    Default is porter_stemmer.
+		:param kwargs: The optional arguments.
+		"""
 
-	    .. Code:: python
+		super().__init__(project_dir)
+		# check if bm25_path and file exist
+		bm25_tokenizer = kwargs.get("bm25_tokenizer", None)
+		if bm25_tokenizer is None:
+			bm25_tokenizer = "porter_stemmer"
+		bm25_path = os.path.join(self.resources_dir, get_bm25_pkl_name(bm25_tokenizer))
+		assert (
+			bm25_path is not None
+		), "bm25_path must be specified for using bm25 retrieval."
+		assert os.path.exists(
+			bm25_path
+		), f"bm25_path {bm25_path} does not exist. Please ingest first."
 
-	        {
-	            "tokens": [], # 2d list of tokens
-	            "passage_id": [], # 2d list of passage_id.
-	        }
-
-	:param bm25_tokenizer: The tokenizer name that uses to the BM25.
-	    It supports 'porter_stemmer', 'ko_kiwi', and huggingface `AutoTokenizer`.
-	    You can pass huggingface tokenizer name.
-	    Default is porter_stemmer.
-	:param ids: The optional list of ids that you want to retrieve.
-	    You don't need to specify this in the general use cases.
-	    Default is None.
-	:return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
-	    It will be a length of queries. And each element has a length of top_k.
-	"""
-	# check if bm25_corpus is valid
-	assert (
-		"tokens" and "passage_id" in list(bm25_corpus.keys())
-	), "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
-	tokenizer = select_bm25_tokenizer(bm25_tokenizer)
-	assert bm25_corpus["tokenizer_name"] == bm25_tokenizer, (
-		f"The bm25 corpus tokenizer is {bm25_corpus['tokenizer_name']}, but your input is {bm25_tokenizer}. "
-		f"You need to ingest again. Delete bm25 pkl file and re-ingest it."
-	)
-	bm25_instance = BM25Okapi(bm25_corpus["tokens"])
-
-	if ids is not None:
-		score_result = list(
-			map(
-				lambda query_list, id_list: get_bm25_scores(
-					query_list, id_list, tokenizer, bm25_instance, bm25_corpus
-				),
-				queries,
-				ids,
-			)
+		self.bm25_corpus = load_bm25_corpus(bm25_path)
+		assert (
+			"tokens" and "passage_id" in list(self.bm25_corpus.keys())
+		), "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
+		self.tokenizer = select_bm25_tokenizer(bm25_tokenizer)
+		assert self.bm25_corpus["tokenizer_name"] == bm25_tokenizer, (
+			f"The bm25 corpus tokenizer is {self.bm25_corpus['tokenizer_name']}, but your input is {bm25_tokenizer}. "
+			f"You need to ingest again. Delete bm25 pkl file and re-ingest it."
 		)
-		return ids, score_result
+		self.bm25_instance = BM25Okapi(self.bm25_corpus["tokens"])
 
-	# run async bm25_pure function
-	tasks = [
-		bm25_pure(input_queries, top_k, tokenizer, bm25_instance, bm25_corpus)
-		for input_queries in queries
-	]
-	loop = get_event_loop()
-	results = loop.run_until_complete(asyncio.gather(*tasks))
-	id_result = list(map(lambda x: x[0], results))
-	score_result = list(map(lambda x: x[1], results))
-	return id_result, score_result
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		queries = self.cast_to_run(previous_result)
+		pure_params = pop_params(self._pure, kwargs)
+		ids, scores = self._pure(queries, *args, **pure_params)
+		contents = fetch_contents(self.corpus_df, ids)
+		return contents, ids, scores
+
+	def _pure(
+		self,
+		queries: List[List[str]],
+		top_k: int,
+		ids: Optional[List[List[str]]] = None,
+	) -> Tuple[List[List[str]], List[List[float]]]:
+		"""
+		BM25 retrieval function.
+		You have to load a pickle file that is already ingested.
+
+		:param queries: 2-d list of query strings.
+		    Each element of the list is a query strings of each row.
+		:param top_k: The number of passages to be retrieved.
+		:param ids: The optional list of ids that you want to retrieve.
+		    You don't need to specify this in the general use cases.
+		    Default is None.
+		:return: The 2-d list contains a list of passage ids that retrieved from bm25 and 2-d list of its scores.
+		    It will be a length of queries. And each element has a length of top_k.
+		"""
+		if ids is not None:
+			score_result = list(
+				map(
+					lambda query_list, id_list: get_bm25_scores(
+						query_list,
+						id_list,
+						self.tokenizer,
+						self.bm25_instance,
+						self.bm25_corpus,
+					),
+					queries,
+					ids,
+				)
+			)
+			return ids, score_result
+
+		# run async bm25_pure function
+		tasks = [
+			bm25_pure(
+				input_queries,
+				top_k,
+				self.tokenizer,
+				self.bm25_instance,
+				self.bm25_corpus,
+			)
+			for input_queries in queries
+		]
+		loop = get_event_loop()
+		results = loop.run_until_complete(asyncio.gather(*tasks))
+		id_result = list(map(lambda x: x[0], results))
+		score_result = list(map(lambda x: x[1], results))
+		return id_result, score_result
 
 
 async def bm25_pure(

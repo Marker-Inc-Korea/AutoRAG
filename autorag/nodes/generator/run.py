@@ -1,6 +1,6 @@
 import os
 import pathlib
-from typing import Callable, List, Dict, Union
+from typing import List, Dict, Union
 
 import pandas as pd
 
@@ -12,7 +12,7 @@ from autorag.utils.util import to_list
 
 
 def run_generator_node(
-	modules: List[Callable],
+	modules: List,
 	module_params: List[Dict],
 	previous_result: pd.DataFrame,
 	node_line_dir: str,
@@ -47,7 +47,10 @@ def run_generator_node(
 	results, execution_times = zip(
 		*map(
 			lambda x: measure_speed(
-				x[0], project_dir=project_dir, previous_result=previous_result, **x[1]
+				x[0].run_evaluator,
+				project_dir=project_dir,
+				previous_result=previous_result,
+				**x[1],
 			),
 			zip(modules, module_params),
 		)
@@ -126,7 +129,9 @@ def run_generator_node(
 
 
 def evaluate_generator_node(
-		result_df: pd.DataFrame, metric_inputs: List[MetricInput], metrics: Union[List[str], List[Dict]]
+	result_df: pd.DataFrame,
+	metric_inputs: List[MetricInput],
+	metrics: Union[List[str], List[Dict]],
 ):
 	@evaluate_generation(metric_inputs=metric_inputs, metrics=metrics)
 	def evaluate_generation_module(df: pd.DataFrame):

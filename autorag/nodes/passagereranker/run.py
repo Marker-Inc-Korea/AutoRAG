@@ -1,7 +1,7 @@
 import logging
 import os
 import pathlib
-from typing import List, Callable, Dict
+from typing import List, Dict
 
 import pandas as pd
 
@@ -13,7 +13,7 @@ logger = logging.getLogger("AutoRAG")
 
 
 def run_passage_reranker_node(
-	modules: List[Callable],
+	modules: List,
 	module_params: List[Dict],
 	previous_result: pd.DataFrame,
 	node_line_dir: str,
@@ -48,13 +48,17 @@ def run_passage_reranker_node(
 		for inner_array in retrieval_gt
 	]
 	# make rows to metric_inputs
-	metric_inputs = [MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt) for ret_gt, query, gen_gt in
-				zip(retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist())]
+	metric_inputs = [
+		MetricInput(retrieval_gt=ret_gt, query=query, generation_gt=gen_gt)
+		for ret_gt, query, gen_gt in zip(
+			retrieval_gt, qa_df["query"].tolist(), qa_df["generation_gt"].tolist()
+		)
+	]
 
 	results, execution_times = zip(
 		*map(
 			lambda task: measure_speed(
-				task[0],
+				task[0].run_evaluator,
 				project_dir=project_dir,
 				previous_result=previous_result,
 				**task[1],

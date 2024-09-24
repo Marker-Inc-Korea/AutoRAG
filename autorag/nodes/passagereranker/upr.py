@@ -6,71 +6,98 @@ import torch
 from tqdm import tqdm
 from transformers import T5Tokenizer, T5ForConditionalGeneration
 
-from autorag.nodes.passagereranker.base import passage_reranker_node
+from autorag.nodes.passagereranker.base import BasePassageReranker
+from autorag.utils import result_to_dataframe
 from autorag.utils.util import select_top_k, sort_by_scores
 
 logger = logging.getLogger("AutoRAG")
 
 
-@passage_reranker_node
-def upr(
-	queries: List[str],
-	contents_list: List[List[str]],
-	scores_list: List[List[float]],
-	ids_list: List[List[str]],
-	top_k: int,
-	use_bf16: bool = False,
-	prefix_prompt: str = "Passage: ",
-	suffix_prompt: str = "Please write a question based on this passage.",
-) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
-	"""
-	Rerank a list of contents based on their relevance to a query using UPR.
-	UPR is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
-	The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
-	The default model is t5-large.
+class Upr(BasePassageReranker):
+	def __init__(
+		self,
+		project_dir: str,
+		use_bf16: bool = False,
+		prefix_prompt: str = "Passage: ",
+		suffix_prompt: str = "Please write a question based on this passage.",
+		*args,
+		**kwargs,
+	):
+		"""
+		Initialize the UPR reranker node.
 
-	:param queries: The list of queries to use for reranking
-	:param contents_list: The list of lists of contents to rerank
-	:param scores_list: The list of lists of scores retrieved from the initial ranking
-	:param ids_list: The list of lists of ids retrieved from the initial ranking
-	:param top_k: The number of passages to be retrieved
-	:param use_bf16: Whether to use bfloat16 for the model. Default is False.
-	:param prefix_prompt: The prefix prompt for the language model that generates question for reranking.
-	    Default is "Passage: ".
-	    The prefix prompt serves as the initial context or instruction for the language model.
-	    It sets the stage for what is expected in the output
-	:param suffix_prompt: The suffix prompt for the language model that generates question for reranking.
-	    Default is "Please write a question based on this passage.".
-	    The suffix prompt provides a cue or a closing instruction to the language model,
-	        signaling how to conclude the generated text or what format to follow at the end.
-	:return: tuple of lists containing the reranked contents, ids, and scores
-	"""
-	tqdm.pandas()
-	df = pd.DataFrame(
-		{
-			"query": queries,
-			"contents": contents_list,
-			"ids": ids_list,
-		}
-	)
+		:param project_dir: The project directory
+		:param use_bf16: Whether to use bfloat16 for the model. Default is False.
+		:param prefix_prompt: The prefix prompt for the language model that generates question for reranking.
+			Default is "Passage: ".
+			The prefix prompt serves as the initial context or instruction for the language model.
+			It sets the stage for what is expected in the output
+		:param suffix_prompt: The suffix prompt for the language model that generates question for reranking.
+			Default is "Please write a question based on this passage.".
+			The suffix prompt provides a cue or a closing instruction to the language model,
+				signaling how to conclude the generated text or what format to follow at the end.
+		:param kwargs: Extra arguments
+		"""
+		super().__init__(project_dir, *args, **kwargs)
 
-	scorer = UPRScorer(
-		suffix_prompt=suffix_prompt, prefix_prompt=prefix_prompt, use_bf16=use_bf16
-	)
+		self.scorer = UPRScorer(
+			suffix_prompt=suffix_prompt, prefix_prompt=prefix_prompt, use_bf16=use_bf16
+		)
 
-	df["scores"] = df.progress_apply(
-		lambda row: scorer.compute(query=row["query"], contents=row["contents"]), axis=1
-	)
-	del scorer
-	df[["contents", "ids", "scores"]] = df.apply(
-		lambda x: sort_by_scores(x, reverse=False), axis=1, result_type="expand"
-	)
-	results = select_top_k(df, ["contents", "ids", "scores"], top_k)
-	return (
-		results["contents"].tolist(),
-		results["ids"].tolist(),
-		results["scores"].tolist(),
-	)
+	def __del__(self):
+		del self.scorer
+		super().__del__()
+
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		queries, contents, _, ids = self.cast_to_run(previous_result)
+		top_k = kwargs.pop("top_k")
+		return self._pure(queries, contents, ids, top_k)
+
+	def _pure(
+		self,
+		queries: List[str],
+		contents_list: List[List[str]],
+		ids_list: List[List[str]],
+		top_k: int,
+	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
+		"""
+		Rerank a list of contents based on their relevance to a query using UPR.
+		UPR is a reranker based on UPR (https://github.com/DevSinghSachan/unsupervised-passage-reranking).
+		The language model will make a question based on the passage and rerank the passages by the likelihood of the question.
+		The default model is t5-large.
+
+		:param queries: The list of queries to use for reranking
+		:param contents_list: The list of lists of contents to rerank
+		:param ids_list: The list of lists of ids retrieved from the initial ranking
+		:param top_k: The number of passages to be retrieved
+
+		:return: tuple of lists containing the reranked contents, ids, and scores
+		"""
+		tqdm.pandas()
+		df = pd.DataFrame(
+			{
+				"query": queries,
+				"contents": contents_list,
+				"ids": ids_list,
+			}
+		)
+
+		df["scores"] = df.progress_apply(
+			lambda row: self.scorer.compute(
+				query=row["query"], contents=row["contents"]
+			),
+			axis=1,
+		)
+		df[["contents", "ids", "scores"]] = df.apply(
+			lambda x: sort_by_scores(x, reverse=False), axis=1, result_type="expand"
+		)
+		results = select_top_k(df, ["contents", "ids", "scores"], top_k)
+		return (
+			results["contents"].tolist(),
+			results["ids"].tolist(),
+			results["scores"].tolist(),
+		)
 
 
 class UPRScorer:

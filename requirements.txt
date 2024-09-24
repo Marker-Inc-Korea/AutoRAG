@@ -50,7 +50,7 @@ streamlit
 gradio
 
 ### Langchain ###
-langchain-core>=0.1.6
+langchain-core>=0.3.0
 langchain_unstructured
 langchain-upstage
 

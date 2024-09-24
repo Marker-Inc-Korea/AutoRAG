@@ -1,4 +1,4 @@
-from autorag.nodes.passagereranker import pass_reranker
+from autorag.nodes.passagereranker import PassReranker
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	project_dir,
 	previous_result,
@@ -8,7 +8,7 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 
 def test_pass_reranker():
 	top_k = 1
-	result_df = pass_reranker(
+	result_df = PassReranker.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, top_k=top_k
 	)
 	assert "retrieved_contents" in result_df.columns

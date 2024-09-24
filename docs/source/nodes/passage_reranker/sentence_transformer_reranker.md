@@ -14,7 +14,7 @@ passage reranking.
 
 - **batch** : The size of a batch. If you have limited CUDA memory, decrease the size of the batch. (default: 64)
 - **model_name** : The type of model you want to use for reranking. Default is "cross-encoder/ms-marco-MiniLM-L-2-v2."
-- **sentence_transformer_max_length** : The maximum length of the input text. (default: 512)
+- **max_length** : The maximum length of the input text. (default: 512)
 
 ## **Example config.yaml**
 

@@ -1,6 +1,6 @@
 import os.path
 import pathlib
-from typing import Callable, List, Dict
+from typing import List, Dict
 
 import pandas as pd
 
@@ -15,7 +15,7 @@ from autorag.utils.util import fetch_contents
 
 
 def run_passage_compressor_node(
-	modules: List[Callable],
+	modules: List,
 	module_params: List[Dict],
 	previous_result: pd.DataFrame,
 	node_line_dir: str,
@@ -58,7 +58,7 @@ def run_passage_compressor_node(
 	results, execution_times = zip(
 		*map(
 			lambda task: measure_speed(
-				task[0],
+				task[0].run_evaluator,
 				project_dir=project_dir,
 				previous_result=previous_result,
 				**task[1],
@@ -73,7 +73,10 @@ def run_passage_compressor_node(
 		map(lambda x: fetch_contents(corpus_data, x), qa_data["retrieval_gt"].tolist())
 	)
 
-	metric_inputs = [MetricInput(retrieval_gt_contents=ret_cont_gt) for ret_cont_gt in retrieval_gt_contents]
+	metric_inputs = [
+		MetricInput(retrieval_gt_contents=ret_cont_gt)
+		for ret_cont_gt in retrieval_gt_contents
+	]
 
 	# run metrics before filtering
 	if strategies.get("metrics") is None:
@@ -154,14 +157,16 @@ def run_passage_compressor_node(
 
 
 def evaluate_passage_compressor_node(
-		result_df: pd.DataFrame, metric_inputs: List[MetricInput], metrics: List[str]
+	result_df: pd.DataFrame, metric_inputs: List[MetricInput], metrics: List[str]
 ):
 	metric_funcs = {
 		retrieval_token_recall.__name__: retrieval_token_recall,
 		retrieval_token_precision.__name__: retrieval_token_precision,
 		retrieval_token_f1.__name__: retrieval_token_f1,
 	}
-	for metric_input, generated_text in zip(metric_inputs, result_df["retrieved_contents"].tolist()):
+	for metric_input, generated_text in zip(
+		metric_inputs, result_df["retrieved_contents"].tolist()
+	):
 		metric_input.retrieved_contents = generated_text
 	metrics = list(filter(lambda x: x in metric_funcs.keys(), metrics))
 	if len(metrics) <= 0:

@@ -9,10 +9,10 @@ import pytest
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.llms.openai import OpenAI
 
-from autorag.nodes.queryexpansion import query_decompose, hyde
+from autorag.nodes.queryexpansion import QueryDecompose, HyDE
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
-from autorag.nodes.retrieval import bm25
+from autorag.nodes.retrieval import BM25
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import load_summary_file
 
@@ -57,13 +57,15 @@ def test_evaluate_one_query_expansion_node(node_line_dir):
 	sample_previous_result = previous_result.head(2)
 	sample_retrieval_gt = sample_previous_result["retrieval_gt"].tolist()
 
-	retrieval_funcs = [bm25, bm25]
+	retrieval_funcs = [BM25, BM25]
 	retrieval_params = [
 		{"top_k": 1, "bm25_tokenizer": "gpt2"},
 		{"top_k": 2, "bm25_tokenizer": "gpt2"},
 	]
-	metric_inputs = [MetricInput(queries=queries, retrieval_gt=ret_gt) for queries, ret_gt in
-				zip(sample_expanded_queries, sample_retrieval_gt)]
+	metric_inputs = [
+		MetricInput(queries=queries, retrieval_gt=ret_gt)
+		for queries, ret_gt in zip(sample_expanded_queries, sample_retrieval_gt)
+	]
 
 	best_result = evaluate_one_query_expansion_node(
 		retrieval_funcs,
@@ -110,7 +112,7 @@ def base_query_expansion_test(best_result, node_line_dir):
 	}
 	assert len(summary_df) == 2
 	assert summary_df["filename"][0] == "0.parquet"
-	assert summary_df["module_name"][0] == "query_decompose"
+	assert summary_df["module_name"][0] == "QueryDecompose"
 	assert summary_df["module_params"][0] == {
 		"generator_module_type": "llama_index_llm",
 		"llm": "mock",
@@ -133,7 +135,7 @@ def test_run_query_expansion_node(node_line_dir):
 	qa_path = os.path.join(project_dir, "data", "qa.parquet")
 	previous_result = pd.read_parquet(qa_path)
 
-	modules = [query_decompose, hyde]
+	modules = [QueryDecompose, HyDE]
 	module_params = [
 		{"generator_module_type": "llama_index_llm", "llm": "mock", "batch": 7},
 		{"generator_module_type": "llama_index_llm", "llm": "mock"},
@@ -156,7 +158,7 @@ def test_run_query_expansion_node_default(node_line_dir):
 	qa_path = os.path.join(project_dir, "data", "qa.parquet")
 	previous_result = pd.read_parquet(qa_path)
 
-	modules = [query_decompose, hyde]
+	modules = [QueryDecompose, HyDE]
 	module_params = [
 		{"generator_module_type": "llama_index_llm", "llm": "mock", "batch": 7},
 		{"generator_module_type": "llama_index_llm", "llm": "mock"},
@@ -173,7 +175,7 @@ def test_run_query_expansion_one_module(node_line_dir):
 	qa_path = os.path.join(project_dir, "data", "qa.parquet")
 	previous_result = pd.read_parquet(qa_path)
 
-	modules = [query_decompose]
+	modules = [QueryDecompose]
 	module_params = [{"generator_module_type": "llama_index_llm", "llm": "mock"}]
 	strategies = {"metrics": metrics}
 	best_result = run_query_expansion_node(
@@ -212,7 +214,7 @@ def test_run_query_expansion_no_generator(node_line_dir):
 	qa_path = os.path.join(project_dir, "data", "qa.parquet")
 	previous_result = pd.read_parquet(qa_path)
 
-	modules = [query_decompose]
+	modules = [QueryDecompose]
 	module_params = [{}]
 	strategies = {"metrics": metrics}
 	best_result = run_query_expansion_node(

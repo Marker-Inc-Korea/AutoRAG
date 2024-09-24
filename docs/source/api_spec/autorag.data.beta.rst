@@ -14,6 +14,14 @@ Subpackages
 Submodules
 ----------
 
+autorag.data.beta.extract\_evidence module
+------------------------------------------
+
+.. automodule:: autorag.data.beta.extract_evidence
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.data.beta.sample module
 -------------------------------
 

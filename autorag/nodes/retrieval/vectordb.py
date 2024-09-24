@@ -1,98 +1,157 @@
+import logging
+import os
 from typing import List, Tuple, Optional
 
 import chromadb
 import pandas as pd
+import torch
 from chromadb import GetResult, QueryResult
 from chromadb.utils.batch_utils import create_batches
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval.base import retrieval_node, evenly_distribute_passages
+from autorag import embedding_models
+from autorag.nodes.retrieval.base import evenly_distribute_passages, BaseRetrieval
 from autorag.utils import validate_corpus_dataset, cast_corpus_dataset
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
 	openai_truncate_by_token,
 	flatten_apply,
+	result_to_dataframe,
+	pop_params,
+	fetch_contents,
 )
 
+logger = logging.getLogger("AutoRAG")
 
-@retrieval_node
-def vectordb(
-	queries: List[List[str]],
-	top_k: int,
-	collection: chromadb.Collection,
-	embedding_model: BaseEmbedding,
-	embedding_batch: int = 128,
-	ids: Optional[List[List[str]]] = None,
-) -> Tuple[List[List[str]], List[List[float]]]:
-	"""
-	VectorDB retrieval function.
-	You have to get a chroma collection that is already ingested.
-	You have to get an embedding model that is already used in ingesting.
 
-	:param queries: 2-d list of query strings.
-	    Each element of the list is a query strings of each row.
-	:param top_k: The number of passages to be retrieved.
-	:param collection: A chroma collection instance that will be used to retrieve passages.
-	:param embedding_model: An embedding model instance that will be used to embed queries.
-	:param embedding_batch: The number of queries to be processed in parallel.
-	    This is used to prevent API error at the query embedding.
-	    Default is 128.
-	:param ids: The optional list of ids that you want to retrieve.
-	    You don't need to specify this in the general use cases.
-	    Default is None.
+class VectorDB(BaseRetrieval):
+	def __init__(self, project_dir: str, embedding_model: str, **kwargs):
+		"""
+		Initialize VectorDB retrieval node.
 
-	:return: The 2-d list contains a list of passage ids that retrieved from vectordb and 2-d list of its scores.
-	    It will be a length of queries. And each element has a length of top_k.
-	"""
-	# check if bm25_corpus is valid
-	assert (
-		collection.count() > 0
-	), "collection must contain at least one document. Please check you ingested collection correctly."
-	# truncate queries and embedding execution here.
-	openai_embedding_limit = 8191
-	if isinstance(embedding_model, OpenAIEmbedding):
-		queries = list(
-			map(
-				lambda query_list: openai_truncate_by_token(
-					query_list, openai_embedding_limit, embedding_model.model_name
-				),
-				queries,
-			)
+		:param project_dir: The project directory path.
+		:param embedding_model: The embedding model name.
+			It will initialize from the autorag.embedding_models dictionary.
+			You can add your own models to the dictionary.
+			For more information, see https://docs.auto-rag.com/local_model.html#configure-the-embedding-model
+		:param kwargs: The optional arguments.
+			Not affected in the init method.
+		"""
+		super().__init__(project_dir)
+
+		# init chroma collection
+		chroma_path = os.path.join(self.resources_dir, "chroma")
+		assert (
+			chroma_path is not None
+		), "chroma_path must be specified for using vectordb retrieval."
+		assert os.path.exists(
+			chroma_path
+		), f"chroma_path {chroma_path} does not exist. Please ingest first."
+
+		self.chroma_collection = load_chroma_collection(
+			db_path=chroma_path, collection_name=embedding_model
 		)
 
-	query_embeddings = flatten_apply(
-		run_query_embedding_batch,
-		queries,
-		embedding_model=embedding_model,
-		batch_size=embedding_batch,
-	)
+		# init embedding model
+		if embedding_model in embedding_models:
+			self.embedding_model = embedding_models[embedding_model]
+		else:
+			logger.error(f"embedding_model_str {embedding_model} does not exist.")
+			raise KeyError(f"embedding_model_str {embedding_model} does not exist.")
 
-	# if ids are specified, fetch the ids score from Chroma
-	if ids is not None:
-		client = chromadb.Client()
-		score_result = list(
-			map(
-				lambda query_embedding_list, id_list: get_id_scores(
-					id_list, query_embedding_list, collection, client
-				),
-				query_embeddings,
-				ids,
+	def __del__(self):
+		del self.chroma_collection
+		del self.embedding_model
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
+		super().__del__()
+
+	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		queries = self.cast_to_run(previous_result)
+		pure_params = pop_params(self._pure, kwargs)
+		ids, scores = self._pure(queries, **pure_params)
+		contents = fetch_contents(self.corpus_df, ids)
+		return contents, ids, scores
+
+	def _pure(
+		self,
+		queries: List[List[str]],
+		top_k: int,
+		embedding_batch: int = 128,
+		ids: Optional[List[List[str]]] = None,
+	) -> Tuple[List[List[str]], List[List[float]]]:
+		"""
+		VectorDB retrieval function.
+		You have to get a chroma collection that is already ingested.
+		You have to get an embedding model that is already used in ingesting.
+
+		:param queries: 2-d list of query strings.
+		    Each element of the list is a query strings of each row.
+		:param top_k: The number of passages to be retrieved.
+		:param embedding_batch: The number of queries to be processed in parallel.
+		    This is used to prevent API error at the query embedding.
+		    Default is 128.
+		:param ids: The optional list of ids that you want to retrieve.
+		    You don't need to specify this in the general use cases.
+		    Default is None.
+
+		:return: The 2-d list contains a list of passage ids that retrieved from vectordb and 2-d list of its scores.
+		    It will be a length of queries. And each element has a length of top_k.
+		"""
+		# check if bm25_corpus is valid
+		assert (
+			self.chroma_collection.count() > 0
+		), "collection must contain at least one document. Please check you ingested collection correctly."
+		# truncate queries and embedding execution here.
+		openai_embedding_limit = 8191
+		if isinstance(self.embedding_model, OpenAIEmbedding):
+			queries = list(
+				map(
+					lambda query_list: openai_truncate_by_token(
+						query_list,
+						openai_embedding_limit,
+						self.embedding_model.model_name,
+					),
+					queries,
+				)
 			)
-		)
-		return ids, score_result
 
-	# run async vector_db_pure function
-	tasks = [
-		vectordb_pure(query_embedding, top_k, collection)
-		for query_embedding in query_embeddings
-	]
-	loop = get_event_loop()
-	results = loop.run_until_complete(process_batch(tasks, batch_size=embedding_batch))
-	id_result = list(map(lambda x: x[0], results))
-	score_result = list(map(lambda x: x[1], results))
-	return id_result, score_result
+		query_embeddings = flatten_apply(
+			run_query_embedding_batch,
+			queries,
+			embedding_model=self.embedding_model,
+			batch_size=embedding_batch,
+		)
+
+		# if ids are specified, fetch the ids score from Chroma
+		if ids is not None:
+			client = chromadb.Client()
+			score_result = list(
+				map(
+					lambda query_embedding_list, id_list: get_id_scores(
+						id_list, query_embedding_list, self.chroma_collection, client
+					),
+					query_embeddings,
+					ids,
+				)
+			)
+			return ids, score_result
+
+		# run async vector_db_pure function
+		tasks = [
+			vectordb_pure(query_embedding, top_k, self.chroma_collection)
+			for query_embedding in query_embeddings
+		]
+		loop = get_event_loop()
+		results = loop.run_until_complete(
+			process_batch(tasks, batch_size=embedding_batch)
+		)
+		id_result = list(map(lambda x: x[0], results))
+		score_result = list(map(lambda x: x[1], results))
+		return id_result, score_result
 
 
 async def vectordb_pure(
@@ -219,3 +278,9 @@ def get_id_scores(
 	id_scores_pd = pd.DataFrame(id_scores_dict)
 	temp_client.delete_collection("temp")
 	return id_scores_pd.max(axis=0).tolist()
+
+
+def load_chroma_collection(db_path: str, collection_name: str) -> chromadb.Collection:
+	db = chromadb.PersistentClient(path=db_path)
+	collection = db.get_collection(name=collection_name)
+	return collection

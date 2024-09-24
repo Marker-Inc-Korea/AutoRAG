@@ -36,6 +36,7 @@ from autorag.utils.util import (
 	to_list,
 	get_event_loop,
 	find_key_values,
+	pop_params,
 )
 from tests.mock import MockLLM
 
@@ -541,3 +542,68 @@ def test_find_key_values():
 	target_key = "a"
 	expected = [{"b": [{"a": 1}, {"c": {"a": 2}}]}, 1, 2, 3]
 	assert find_key_values(data, target_key) == expected
+
+
+def test_pop_params():
+	# Test function with no self or cls
+	def func_no_self_cls(param1, param2):
+		pass
+
+	kwargs = {"param1": "value1", "param2": "value2", "extra_param": "extra_value"}
+	expected = {"param1": "value1", "param2": "value2"}
+	result = pop_params(func_no_self_cls, kwargs)
+	assert result == expected
+	assert kwargs == {"extra_param": "extra_value"}
+
+	# Test function with self
+	class TestClass:
+		def func_with_self(self, param1, param2):
+			pass
+
+	kwargs = {
+		"param1": "value1",
+		"param2": "value2",
+		"extra_param": "extra_value",
+		"self": "self",
+	}
+	expected = {"param1": "value1", "param2": "value2"}
+	result = pop_params(TestClass.func_with_self, kwargs)
+	assert result == expected
+	assert kwargs == {"extra_param": "extra_value", "self": "self"}
+
+	# Test function with cls
+	class TestClassWithCls:
+		@classmethod
+		def func_with_cls(cls, param1, param2):
+			pass
+
+	kwargs = {
+		"param1": "value1",
+		"param2": "value2",
+		"extra_param": "extra_value",
+		"cls": "cls",
+	}
+	expected = {"param1": "value1", "param2": "value2"}
+	result = pop_params(TestClassWithCls.func_with_cls, kwargs)
+	assert result == expected
+	assert kwargs == {"extra_param": "extra_value", "cls": "cls"}
+
+	# Test function with no parameters
+	def func_no_params():
+		pass
+
+	kwargs = {"extra_param": "extra_value"}
+	expected = {}
+	result = pop_params(func_no_params, kwargs)
+	assert result == expected
+	assert kwargs == {"extra_param": "extra_value"}
+
+	# Test function with mixed parameters
+	def func_mixed(param1, param2, *args, **kwargs):
+		pass
+
+	kwargs = {"param1": "value1", "param2": "value2", "extra_param": "extra_value"}
+	expected = {"param1": "value1", "param2": "value2"}
+	result = pop_params(func_mixed, kwargs)
+	assert result == expected
+	assert kwargs == {"extra_param": "extra_value"}

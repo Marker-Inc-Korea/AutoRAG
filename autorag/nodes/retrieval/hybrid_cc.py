@@ -1,9 +1,12 @@
-from typing import Tuple, List
+import os
+from pathlib import Path
+from typing import Tuple, List, Union
 
 import numpy as np
 import pandas as pd
 
-from autorag.nodes.retrieval import retrieval_node
+from autorag.nodes.retrieval.base import HybridRetrieval
+from autorag.utils.util import pop_params, fetch_contents, result_to_dataframe
 
 
 def normalize_mm(scores: List[str], fixed_min_value: float = 0):
@@ -47,7 +50,65 @@ normalize_method_dict = {
 }
 
 
-@retrieval_node
+class HybridCC(HybridRetrieval):
+	def _pure(
+		self,
+		ids: Tuple,
+		scores: Tuple,
+		top_k: int,
+		weight: float,
+		normalize_method: str = "mm",
+		semantic_theoretical_min_value: float = -1.0,
+		lexical_theoretical_min_value: float = 0.0,
+	):
+		return hybrid_cc(
+			ids,
+			scores,
+			top_k,
+			weight,
+			normalize_method,
+			semantic_theoretical_min_value,
+			lexical_theoretical_min_value,
+		)
+
+	@classmethod
+	def run_evaluator(
+		cls,
+		project_dir: Union[str, Path],
+		previous_result: pd.DataFrame,
+		*args,
+		**kwargs,
+	):
+		if "ids" in kwargs and "scores" in kwargs:
+			data_dir = os.path.join(project_dir, "data")
+			corpus_df = pd.read_parquet(
+				os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+			)
+
+			params = pop_params(hybrid_cc, kwargs)
+			assert (
+				"ids" in params and "scores" in params and "top_k" in params
+			), "ids, scores, and top_k must be specified."
+
+			@result_to_dataframe(
+				["retrieved_contents", "retrieved_ids", "retrieve_scores"]
+			)
+			def __cc(**cc_params):
+				ids, scores = hybrid_cc(**cc_params)
+				contents = fetch_contents(corpus_df, ids)
+				return contents, ids, scores
+
+			return __cc(**params)
+		else:
+			assert (
+				"target_modules" in kwargs and "target_module_params" in kwargs
+			), "target_modules and target_module_params must be specified if there is not ids and scores."
+			instance = cls(project_dir, *args, **kwargs)
+			result = instance.pure(previous_result, *args, **kwargs)
+			del instance
+			return result
+
+
 def hybrid_cc(
 	ids: Tuple,
 	scores: Tuple,

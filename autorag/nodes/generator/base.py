@@ -1,3 +1,4 @@
+import abc
 import functools
 import logging
 from pathlib import Path
@@ -6,9 +7,27 @@ from typing import Union, Tuple, List
 import pandas as pd
 
 from autorag import generator_models
+from autorag.schema import BaseModule
 from autorag.utils import result_to_dataframe
 
 logger = logging.getLogger("AutoRAG")
+
+
+class BaseGenerator(BaseModule, metaclass=abc.ABCMeta):
+	def __init__(self, project_dir: str, llm: str, *args, **kwargs):
+		logger.info(f"Initialize generator node - {self.__class__.__name__}")
+		self.llm = llm
+
+	def __del__(self):
+		logger.info(f"Deleting generator module - {self.__class__.__name__}")
+
+	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
+		logger.info(f"Running generator node - {self.__class__.__name__} module...")
+		assert (
+			"prompts" in previous_result.columns
+		), "previous_result must contain prompts column."
+		prompts = previous_result["prompts"].tolist()
+		return prompts
 
 
 def generator_node(func):

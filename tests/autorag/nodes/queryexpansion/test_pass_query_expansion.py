@@ -1,4 +1,4 @@
-from autorag.nodes.queryexpansion import pass_query_expansion
+from autorag.nodes.queryexpansion import PassQueryExpansion
 from tests.autorag.nodes.queryexpansion.test_query_expansion_base import (
 	project_dir,
 	previous_result,
@@ -6,7 +6,7 @@ from tests.autorag.nodes.queryexpansion.test_query_expansion_base import (
 
 
 def test_pass_query_expansion():
-	result_df = pass_query_expansion(
+	result_df = PassQueryExpansion.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result
 	)
 	assert len(result_df) == 5
