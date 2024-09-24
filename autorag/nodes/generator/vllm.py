@@ -7,7 +7,7 @@ import torch
 
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils import result_to_dataframe
-from autorag.utils.util import pop_params
+from autorag.utils.util import pop_params, to_list
 
 
 class Vllm(BaseGenerator):
@@ -55,7 +55,7 @@ class Vllm(BaseGenerator):
 	@result_to_dataframe(["generated_texts", "generated_tokens", "generated_log_probs"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		prompts = self.cast_to_run(previous_result)
-		self._pure(prompts, **kwargs)
+		return self._pure(prompts, **kwargs)
 
 	def _pure(
 		self, prompts: List[str], **kwargs
@@ -85,7 +85,8 @@ class Vllm(BaseGenerator):
 		if "logprobs" not in kwargs:
 			kwargs["logprobs"] = 1
 
-		generate_params = SamplingParams(**kwargs)
+		sampling_params = pop_params(SamplingParams.from_optional, kwargs)
+		generate_params = SamplingParams(**sampling_params)
 		results: List[RequestOutput] = self.vllm_model.generate(
 			prompts, generate_params
 		)
@@ -100,4 +101,8 @@ class Vllm(BaseGenerator):
 				zip(log_probs, generated_token_ids),
 			)
 		)
-		return generated_texts, generated_token_ids, generated_log_probs
+		return (
+			to_list(generated_texts),
+			to_list(generated_token_ids),
+			to_list(generated_log_probs),
+		)
