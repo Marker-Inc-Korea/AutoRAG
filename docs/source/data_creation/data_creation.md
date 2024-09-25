@@ -32,4 +32,6 @@ tutorial.md
 qa_creation/qa_creation.md
 chunk/chunk.md
 parse/parse.md
+legacy/tutorial.md
+legacy/ragas.md
 ```
