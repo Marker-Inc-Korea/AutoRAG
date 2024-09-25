@@ -2,7 +2,7 @@
 
 RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
-![Thumbnail](https://github.com/user-attachments/assets/7b3bdd01-709c-4579-b9b6-152c34a390de)
+![Thumbnail](https://github.com/user-attachments/assets/6bab243d-a4b3-431a-8ac0-fe17336ab4de)
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
@@ -192,15 +192,21 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 First, you need to set the config yaml file for your RAG optimization.
 
+You can get various config yaml files at [here](./sample_config).
+We highly recommend using pre-made config yaml files for starter.
+
+If you want to make your own config yaml files, check out the [Config yaml file](#-create-your-own-config-yaml-file)
+section.
+
 Here is an example of the config yaml file to use `retrieval`, `prompt_maker`, and `generator` nodes.
 
 ```yaml
 node_lines:
-- node_line_name: retrieve_node_line
+- node_line_name: retrieve_node_line  # Set Node Line (Arbitrary Name)
   nodes:
-    - node_type: retrieval
+    - node_type: retrieval  # Set Retrieval Node
       strategy:
-        metrics: [retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr]
+        metrics: [retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr]  # Set Retrieval Metrics
       top_k: 3
       modules:
         - module_type: vectordb
@@ -208,11 +214,11 @@ node_lines:
         - module_type: bm25
         - module_type: hybrid_rrf
           weight_range: (4,80)
-- node_line_name: post_retrieve_node_line
+- node_line_name: post_retrieve_node_line  # Set Node Line (Arbitrary Name)
   nodes:
-    - node_type: prompt_maker
+    - node_type: prompt_maker  # Set Prompt Maker Node
       strategy:
-        metrics:
+        metrics:   # Set Generation Metrics
           - metric_name: meteor
           - metric_name: rouge
           - metric_name: sem_score
@@ -220,9 +226,9 @@ node_lines:
       modules:
         - module_type: fstring
           prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
-    - node_type: generator
+    - node_type: generator  # Set Generator Node
       strategy:
-        metrics:
+        metrics:  # Set Generation Metrics
           - metric_name: meteor
           - metric_name: rouge
           - metric_name: sem_score
@@ -232,12 +238,6 @@ node_lines:
           llm: gpt-4o-mini
           batch: 16
 ```
-
-You can get various config yaml files at [here](./sample_config).
-We highly recommend using pre-made config yaml files for starter.
-
-If you want to make your own config yaml files, check out the [Config yaml file](#-create-your-own-config-yaml-file)
-section.
 
 ### 2. Run AutoRAG
 
