@@ -29,13 +29,10 @@ _Muted by default, enable sound for voice-over_
 
 You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
-
-
 ## Colab Tutorial
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 
----
 
 # ⚡ Quick Install
 
@@ -45,25 +42,14 @@ We recommend using Python version 3.9 or higher for AutoRAG.
 pip install AutoRAG
 ```
 
-# AutoRAG Full Structure
+# AutoRAG Structure
 ![Thumbnail](https://github.com/user-attachments/assets/5ebc2d2f-91b6-4e95-8d6a-6dae2db2557a)
 
 ## Data Creation
+
 ![image](https://github.com/user-attachments/assets/5c86a66d-9c99-4a51-a307-8b12796d029f)
 
-asdfasdf
-
-## RAG Optimization
-![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
-
-asdfasdf
-
-### RAG Auto Optimization Visualization
-![real_final](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
-
-asdfasdf
-
-# ⚡ QuickStart
+## ⚡ QuickStart
 
 ## Data Creation
 
@@ -83,7 +69,13 @@ There is a template for your evaluation data for using AutoRAG.
   at [here](https://docs.auto-rag.com/data_creation/data_format.html).
 - Plus, you can get example datasets for testing AutoRAG at [here](./sample_dataset).
 
-## Auto RAG Optimization
+## RAG Optimization
+![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
+
+asdfasdf
+
+### RAG Auto Optimization Visualization
+![real_final](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
 
 ### 1. Run AutoRAG
 
@@ -218,7 +210,9 @@ autorag run_web --trial_path your/path/to/trial_path
 
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
----
+
+
+
 
 ## 📌 Supporting Data Creation Modules
 ![Data Creation](https://github.com/user-attachments/assets/97abe6f4-91a9-42e4-b193-11445001e174)
