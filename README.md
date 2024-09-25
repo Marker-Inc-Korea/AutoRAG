@@ -336,7 +336,7 @@ at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead
 
 ## ❗Supporting Evaluation Metrics
 
-![Metrics](https://github.com/user-attachments/assets/2d7a342a-6b95-4235-af82-d6537dcd02aa)
+![Metrics](https://github.com/user-attachments/assets/fab551cd-8892-4bda-acae-eff22ece94b3)
 
 You can check our all supporting Evaluation Metrics
 at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
