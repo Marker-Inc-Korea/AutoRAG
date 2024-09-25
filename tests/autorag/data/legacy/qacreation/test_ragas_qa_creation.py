@@ -4,13 +4,13 @@ import pathlib
 import pandas as pd
 import pytest
 
-from autorag.data.legacy.qacreation import generate_qa_ragas
+from autorag.data.legacy.qacreation.ragas import generate_qa_ragas
 from autorag.utils import validate_qa_dataset
 from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
-).parent.parent.parent
+).parent.parent.parent.parent
 resource_dir = os.path.join(root_dir, "resources")
 corpus_df = pd.read_parquet(os.path.join(resource_dir, "corpus_data_sample.parquet"))
 

@@ -22,7 +22,7 @@ from tests.mock import MockLLM, mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
-).parent.parent.parent
+).parent.parent.parent.parent
 resource_dir = os.path.join(root_dir, "resources")
 
 
