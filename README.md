@@ -35,6 +35,23 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 
 
+# Index
+
+- [Quick Install](#quick-install)
+- [Data Creation](#data-creation)
+  - [Parsing](#1-parsing)
+  - [Chunking](#2-chunking)
+  - [QA Creation](#3-qa-creation)
+- [RAG Optimization](#rag-optimization)
+    - [Set YAML File](#1-set-yaml-file)
+    - [Run AutoRAG](#2-run-autorag)
+    - [Run Dashboard](#3-run-dashboard)
+    - [Deploy your optimal RAG pipeline (for testing)](#4-deploy-your-optimal-rag-pipeline-for-testing)
+- [📌 Supporting Data Creation Modules](#-supporting-data-creation-modules)
+- [❗Supporting RAG Optimization Nodes & modules](#supporting-rag-optimization-nodes--modules)
+- [❗Supporting Evaluation Metrics](#supporting-evaluation-metrics)
+- [☎️ FaQ](#-faq)
+
 # Quick Install
 
 We recommend using Python version 3.10 or higher for AutoRAG.
