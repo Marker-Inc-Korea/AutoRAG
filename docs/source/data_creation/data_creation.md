@@ -22,7 +22,7 @@ In this new data creation pipeline, we have three schemas. `Raw`, `QA`, and `Cor
 You can use the corpus to generate the answer for the question.
 You have to make corpus data from your documents using parsing and chunking.
 
-To see the tutorial of the data creation, check [here](./tutorial.md).
+To see the tutorial of the data creation, check [here](tutorial.md).
 
 ```{toctree}
 ---

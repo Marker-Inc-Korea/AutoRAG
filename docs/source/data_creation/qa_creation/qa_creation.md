@@ -99,7 +99,7 @@ qa = qa.batch_apply(
 )
 ```
 
-To know more query generation methods, check this [page](./query_gen.md).
+To know more query generation methods, check this [page](query_gen.md).
 
 ### 4. Generate answers
 
@@ -124,7 +124,7 @@ qa = qa.batch_apply(
 )
 ```
 
-To know more answer generation methods, check this [page](./answer_gen.md).
+To know more answer generation methods, check this [page](answer_gen.md).
 
 ### 5. Filtering questions
 
@@ -145,7 +145,7 @@ qa = qa.filter(
 )
 ```
 
-To know more filtering methods, check this [page](./filter.md).
+To know more filtering methods, check this [page](filter.md).
 
 ### 6. Save the QA data
 
