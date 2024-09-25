@@ -15,7 +15,7 @@ at [here](https://docs.ragas.io/en/stable/concepts/testset_generation.html).
 
 You can generate QA set from corpus data using RAGAS.
 
-If you didn't make corpus data yet, you can make it by following the [tutorial](./tutorial.md).
+If you didn't make corpus data yet, you can make it by following the [tutorial](tutorial.md).
 
 ```python
 import pandas as pd
