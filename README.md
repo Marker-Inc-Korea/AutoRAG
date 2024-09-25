@@ -4,7 +4,6 @@ RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
 ![Thumbnail](https://github.com/user-attachments/assets/7b3bdd01-709c-4579-b9b6-152c34a390de)
 
-
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
 Making and evaluating all RAG modules is very time-consuming and hard to do.
