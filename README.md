@@ -33,6 +33,8 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 ## Colab Tutorial
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+- [Step 2: Data Creation | Create your own Data for RAG Optimization]()
+- [Step 3: Use Custom LLM & Embedding Model | Use Custom Model](https://colab.research.google.com/drive/12VpWcSTSOsLSyW0BKb-kPoEzK22ACxvS?usp=sharing)
 
 # Index
 
@@ -46,10 +48,10 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
     - [Run AutoRAG](#2-run-autorag)
     - [Run Dashboard](#3-run-dashboard)
     - [Deploy your optimal RAG pipeline (for testing)](#4-deploy-your-optimal-rag-pipeline-for-testing)
-- [📌 Supporting Data Creation Modules](#-supporting-data-creation-modules)
-- [❗Supporting RAG Optimization Nodes & modules](#supporting-rag-optimization-nodes--modules)
-- [❗Supporting Evaluation Metrics](#supporting-evaluation-metrics)
-- [☎️ FaQ](#-faq)
+- [Supporting Data Creation Modules](#-supporting-data-creation-modules)
+- [Supporting RAG Optimization Nodes & modules](#supporting-rag-optimization-nodes--modules)
+- [Supporting Evaluation Metrics](#supporting-evaluation-metrics)
+- [FaQ](#-faq)
 
 # Quick Install
 
