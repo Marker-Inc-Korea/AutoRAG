@@ -3,13 +3,13 @@ from unittest.mock import patch
 from llama_index.core.base.llms.types import ChatResponse, ChatMessage, MessageRole
 from llama_index.core.llms import MockLLM
 
-from autorag.data.beta.query.llama_gen_query import (
+from autorag.data.qa.query.llama_gen_query import (
 	factoid_query_gen,
 	concept_completion_query_gen,
 	two_hop_incremental,
 )
-from autorag.data.beta.schema import QA
-from tests.autorag.data.beta.query.base_test_query_gen import qa_df, multi_hop_qa_df
+from autorag.data.qa.schema import QA
+from tests.autorag.data.qa.query.base_test_query_gen import qa_df, multi_hop_qa_df
 
 llm = MockLLM()
 qa = QA(qa_df)

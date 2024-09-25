@@ -9,15 +9,15 @@ from openai.types.chat import (
 	ParsedChoice,
 )
 
-from autorag.data.beta.query.openai_gen_query import (
+from autorag.data.qa.query.openai_gen_query import (
 	Response,
 	factoid_query_gen,
 	concept_completion_query_gen,
 	two_hop_incremental,
 	TwoHopIncrementalResponse,
 )
-from autorag.data.beta.schema import QA
-from tests.autorag.data.beta.query.base_test_query_gen import qa_df, multi_hop_qa_df
+from autorag.data.qa.schema import QA
+from tests.autorag.data.qa.query.base_test_query_gen import qa_df, multi_hop_qa_df
 
 client = AsyncOpenAI()
 

@@ -6,7 +6,7 @@ from llama_index.llms.openai.utils import to_openai_message_dicts
 from openai import AsyncClient
 from pydantic import BaseModel
 
-from autorag.data.beta.filter.prompt import FILTER_PROMPT
+from autorag.data.qa.filter.prompt import FILTER_PROMPT
 
 dont_know_phrases = {
 	"en": [

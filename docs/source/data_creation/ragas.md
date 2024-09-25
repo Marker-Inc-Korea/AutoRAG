@@ -20,7 +20,7 @@ If you didn't make corpus data yet, you can make it by following the [tutorial](
 ```python
 import pandas as pd
 
-from autorag.data.qacreation.ragas import generate_qa_ragas
+from autorag.data.legacy.qacreation.ragas import generate_qa_ragas
 
 corpus_df = pd.read_parquet('path/to/corpus.parquet')
 qa_df = generate_qa_ragas(corpus_df, test_size=50)
@@ -42,7 +42,7 @@ You can access each question type by importing RAGAS evolution types.
 
 ```python
 from ragas.testset.evolutions import simple, reasoning, multi_context, conditional
-from autorag.data.qacreation.ragas import generate_qa_ragas
+from autorag.data.legacy.qacreation.ragas import generate_qa_ragas
 
 distributions = {  # uniform distribution
     simple: 0.25,
@@ -64,7 +64,7 @@ You can get a support list of models from Langchain at [here](https://python.lan
 Plus, you might need to use `ChatModel` class from Langchain.
 
 ```python
-from autorag.data.qacreation.ragas import generate_qa_ragas
+from autorag.data.legacy.qacreation.ragas import generate_qa_ragas
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 generator_llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.4)

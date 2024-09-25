@@ -15,8 +15,8 @@ It does not have specific constraints on how it generates the answer.
 ### OpenAI
 
 ```python
-from autorag.data.beta.schema import QA
-from autorag.data.beta.generation_gt.openai_gen_gt import make_basic_gen_gt
+from autorag.data.qa.schema import QA
+from autorag.data.qa.generation_gt.openai_gen_gt import make_basic_gen_gt
 from openai import AsyncOpenAI
 
 client = AsyncOpenAI()
@@ -27,8 +27,8 @@ result_qa = qa.batch_apply(make_basic_gen_gt, client=client)
 ### LlamaIndex
 
 ```python
-from autorag.data.beta.schema import QA
-from autorag.data.beta.generation_gt.llama_index_gen_gt import make_basic_gen_gt
+from autorag.data.qa.schema import QA
+from autorag.data.qa.generation_gt.llama_index_gen_gt import make_basic_gen_gt
 from llama_index.llms.openai import OpenAI
 
 llm = OpenAI()
@@ -44,8 +44,8 @@ It is usually just a word that is the answer to the question.
 ### OpenAI
 
 ```python
-from autorag.data.beta.schema import QA
-from autorag.data.beta.generation_gt.openai_gen_gt import make_concise_gen_gt
+from autorag.data.qa.schema import QA
+from autorag.data.qa.generation_gt.openai_gen_gt import make_concise_gen_gt
 from openai import AsyncOpenAI
 
 client = AsyncOpenAI()
@@ -56,8 +56,8 @@ result_qa = qa.batch_apply(make_concise_gen_gt, client=client)
 ### LlamaIndex
 
 ```python
-from autorag.data.beta.schema import QA
-from autorag.data.beta.generation_gt.llama_index_gen_gt import make_concise_gen_gt
+from autorag.data.qa.schema import QA
+from autorag.data.qa.generation_gt.llama_index_gen_gt import make_concise_gen_gt
 from llama_index.llms.openai import OpenAI
 
 llm = OpenAI()

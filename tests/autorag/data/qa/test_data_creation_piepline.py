@@ -3,14 +3,14 @@ from datetime import datetime
 import pandas as pd
 from llama_index.core.llms import MockLLM
 
-from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
-from autorag.data.beta.generation_gt.llama_index_gen_gt import (
+from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.qa.generation_gt.llama_index_gen_gt import (
 	make_basic_gen_gt,
 	make_concise_gen_gt,
 )
-from autorag.data.beta.query.llama_gen_query import factoid_query_gen
-from autorag.data.beta.sample import random_single_hop
-from autorag.data.beta.schema import Raw
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.sample import random_single_hop
+from autorag.data.qa.schema import Raw
 
 initial_raw = Raw(
 	pd.DataFrame(
