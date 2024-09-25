@@ -38,7 +38,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 # Quick Install
 
-We recommend using Python version 3.9 or higher for AutoRAG.
+We recommend using Python version 3.10 or higher for AutoRAG.
 
 ```bash
 pip install AutoRAG
@@ -48,21 +48,112 @@ pip install AutoRAG
 
 ![image](https://github.com/user-attachments/assets/5c86a66d-9c99-4a51-a307-8b12796d029f)
 
-asdf
+RAG Optimization requires two types of data: QA dataset and Corpus dataset.
+
+1. **QA** dataset file (qa.parquet)
+2. **Corpus** dataset file (corpus.parquet)
+
+**QA** dataset is important for accurate and reliable evaluation and optimization.
+
+**Corpus** dataset is critical to the performance of RAGs.
+This is because RAG uses the corpus to retrieve documents and generate answers using it.
 
 ## Quick Start
 
 ### 1. Parsing
 
-asdf
+#### Set YAML File
+
+```yaml
+modules:
+  - module_type: langchain_parse
+    parse_method: pdfminer
+```
+
+You can also use multiple Parse modules at once.
+However, in this case, you'll need to return a new process for each parsed result.
+
+#### Start Parsing
+
+```python
+from autorag.parser import Parser
+
+parser = Parser(data_path_glob="your/data/path/*")
+parser.start_parsing("your/path/to/parse_config.yaml")
+```
 
 ### 2. Chunking
 
-asdf
+#### Set YAML File
+
+```yaml
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: Token
+    chunk_size: 1024
+    chunk_overlap: 24
+    add_file_name: english
+```
+
+You can also use multiple Chunk modules at once.
+In this case, you need to use one corpus to create QA, and then map the rest of the corpus to QA Data.
+If the chunk method is different, the retrieval_gt will be different, so we need to remap it to the QA dataset.
+
+```python
+from autorag.chunker import Chunker
+
+chunker = Chunker.from_parquet(parsed_data_path="your/parsed/data/path")
+chunker.start_chunking("your/path/to/chunk_config.yaml")
+```
 
 ### 3. QA Creation
 
-asdf
+```python
+import pandas as pd
+from llama_index.llms.openai import OpenAI
+
+from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.beta.generation_gt.llama_index_gen_gt import (
+    make_basic_gen_gt,
+    make_concise_gen_gt,
+)
+from autorag.data.beta.schema import Raw, Corpus
+from autorag.data.beta.query.llama_gen_query import factoid_query_gen
+from autorag.data.beta.sample import random_single_hop
+
+llm = OpenAI()
+raw_df = pd.read_parquet("your/path/to/corpus.parquet")
+raw_instance = Raw(raw_df)
+
+corpus_df = pd.read_parquet("your/path/to/corpus.parquet")
+corpus_instance = Corpus(corpus_df, raw_instance)
+
+initial_qa = (
+    corpus_instance.sample(random_single_hop, n=3)
+    .map(
+        lambda df: df.reset_index(drop=True),
+    )
+    .make_retrieval_gt_contents()
+    .batch_apply(
+        factoid_query_gen,  # query generation
+        llm=llm,
+    )
+    .batch_apply(
+        make_basic_gen_gt,  # answer generation (basic)
+        llm=llm,
+    )
+    .batch_apply(
+        make_concise_gen_gt,  # answer generation (concise)
+        llm=llm,
+    )
+    .filter(
+        dontknow_filter_rule_based,  # filter don't know
+        lang="en",
+    )
+)
+
+initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
+```
 
 # RAG Optimization
 ![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
@@ -103,39 +194,6 @@ you can check `summary.csv` file that summarizes the evaluation results and the 
 
 For more details, you can check out how the folder structure looks like
 at [here](https://docs.auto-rag.com/optimization/folder_structure.html).
-
-### 3. Use a found optimal RAG pipeline
-
-You can use a found optimal RAG pipeline right away.
-It needs just a few lines of code, and you are ready to use!
-
-First, you need to build pipeline yaml file from your evaluated trial folder.
-You can find the trial folder in your current directory.
-Just looking folder like '0' or other numbers.
-
-```python
-from autorag.deploy import Runner
-
-runner = Runner.from_trial_folder('your/path/to/trial_folder')
-runner.run('your question')
-```
-
-Or, you can run this pipeline as api server.
-You can use python code or CLI command.
-Check out API endpoint at [here](https://docs.auto-rag.com/deploy/api_endpoint.html).
-
-```python
-from autorag.deploy import Runner
-
-runner = Runner.from_trial_folder('your/path/to/trial_folder')
-runner.run_api_server()
-```
-
-You can run api server with CLI command.
-
-```bash
-autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
-```
 
 ### 4. Run Dashboard
 
