@@ -2,7 +2,7 @@
 
 RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
-![Thumbnail](https://github.com/user-attachments/assets/5ebc2d2f-91b6-4e95-8d6a-6dae2db2557a)
+![Thumbnail](https://github.com/user-attachments/assets/7b3bdd01-709c-4579-b9b6-152c34a390de)
 
 
 There are many RAG pipelines and modules out there,
@@ -48,30 +48,33 @@ pip install AutoRAG
 
 ![image](https://github.com/user-attachments/assets/5c86a66d-9c99-4a51-a307-8b12796d029f)
 
-### 1. Prepare your evaluation data
+asdf
 
-For evaluation, you need to prepare just three files.
+## Quick Start
 
-1. **QA** dataset file (qa.parquet)
-2. **Corpus** dataset file (corpus.parquet)
-3. **Config yaml file** (config.yaml)
+### 1. Parsing
 
-There is a template for your evaluation data for using AutoRAG.
+asdf
 
-- Check out how to make evaluation data
-  at [here](https://docs.auto-rag.com/data_creation/tutorial.html).
-- Check out the evaluation data rule
-  at [here](https://docs.auto-rag.com/data_creation/data_format.html).
-- Plus, you can get example datasets for testing AutoRAG at [here](./sample_dataset).
+### 2. Chunking
+
+asdf
+
+### 3. QA Creation
+
+asdf
 
 # RAG Optimization
 ![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
 
-### RAG Auto Optimization Visualization
 ![real_final](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
 
+## Quick Start
 
-### 1. Run AutoRAG
+### 1. Set YAML File
+asdf
+
+### 2. Run AutoRAG
 
 You can get various config yaml files at [here](./sample_config).
 We highly recommend using pre-made config yaml files for starter.
