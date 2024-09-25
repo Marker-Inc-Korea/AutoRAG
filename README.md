@@ -75,6 +75,8 @@ However, in this case, you'll need to return a new process for each parsed resul
 
 #### Start Parsing
 
+You can parse your raw documents with just a few lines of code.
+
 ```python
 from autorag.parser import Parser
 
@@ -99,6 +101,10 @@ You can also use multiple Chunk modules at once.
 In this case, you need to use one corpus to create QA, and then map the rest of the corpus to QA Data.
 If the chunk method is different, the retrieval_gt will be different, so we need to remap it to the QA dataset.
 
+#### Start Chunking
+
+You can chunk your parsed results with just a few lines of code.
+
 ```python
 from autorag.chunker import Chunker
 
@@ -107,6 +113,8 @@ chunker.start_chunking("your/path/to/chunk_config.yaml")
 ```
 
 ### 3. QA Creation
+
+You can create QA dataset with just a few lines of code.
 
 ```python
 import pandas as pd
@@ -158,20 +166,64 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 # RAG Optimization
 ![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
 
-![real_final](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
+### How AutoRAG optimizes RAG pipeline?
+
+![rag_opt_gif](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
 
 ## Quick Start
 
 ### 1. Set YAML File
-asdf
 
-### 2. Run AutoRAG
+First, you need to set the config yaml file for your RAG optimization.
+
+Here is an example of the config yaml file to use `retrieval`, `prompt_maker`, and `generator` nodes.
+
+```yaml
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr]
+      top_k: 3
+      modules:
+        - module_type: vectordb
+          embedding_model: openai
+        - module_type: bm25
+        - module_type: hybrid_rrf
+          weight_range: (4,80)
+- node_line_name: post_retrieve_node_line
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics:
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+      modules:
+        - module_type: fstring
+          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    - node_type: generator
+      strategy:
+        metrics:
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+      modules:
+        - module_type: openai_llm
+          llm: gpt-4o-mini
+          batch: 16
+```
 
 You can get various config yaml files at [here](./sample_config).
 We highly recommend using pre-made config yaml files for starter.
 
 If you want to make your own config yaml files, check out the [Config yaml file](#-create-your-own-config-yaml-file)
 section.
+
+### 2. Run AutoRAG
 
 You can evaluate your RAG pipeline with just a few lines of code.
 
@@ -195,7 +247,7 @@ you can check `summary.csv` file that summarizes the evaluation results and the 
 For more details, you can check out how the folder structure looks like
 at [here](https://docs.auto-rag.com/optimization/folder_structure.html).
 
-### 4. Run Dashboard
+### 3. Run Dashboard
 
 You can run dashboard to easily see the result.
 
@@ -203,27 +255,13 @@ You can run dashboard to easily see the result.
 autorag dashboard --trial_dir /your/path/to/trial_dir
 ```
 
-- sample dashboard:
+#### sample dashboard
 
 ![dashboard](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/3798827d-31d7-4c4e-a9b1-54340b964e53)
 
-### 5. Deploy your RAG pipeline
+### 4. Deploy your optimal RAG pipeline (for testing)
 
-You can use your RAG pipeline from extracted pipeline yaml file.
-This extracted pipeline is great for sharing your RAG pipeline to others.
-
-You must run this at project folder, which contains datas in data folder, and ingested corpus for retrieval at resources
-folder.
-
-```python
-from autorag.deploy import extract_best_config
-
-pipeline_dict = extract_best_config(trial_path='your/path/to/trial_folder', output_path='your/path/to/pipeline.yaml')
-```
-
-### 6. Deploy your optimal RAG pipeline (for testing)
-
-### 6-1. Run as a CLI
+### 4-1. Run as a CLI
 
 You can use a found optimal RAG pipeline right away with extracted yaml file.
 
@@ -234,7 +272,7 @@ runner = Runner.from_yaml('your/path/to/pipeline.yaml')
 runner.run('your question')
 ```
 
-### 6-2. Run as an API server
+### 4-2. Run as an API server
 
 You can run this pipeline as an API server.
 
@@ -251,7 +289,7 @@ runner.run_api_server()
 autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
 ```
 
-### 6-3. Run as a Web Interface
+### 4-3. Run as a Web Interface
 
 you can run this pipeline as a web interface.
 
@@ -261,13 +299,9 @@ Check out web interface at [here](deploy/web.md).
 autorag run_web --trial_path your/path/to/trial_path
 ```
 
-- sample web interface:
+#### sample web interface
 
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
-
-
-
-
 
 ## 📌 Supporting Data Creation Modules
 ![Data Creation](https://github.com/user-attachments/assets/97abe6f4-91a9-42e4-b193-11445001e174)
@@ -275,8 +309,7 @@ autorag run_web --trial_path your/path/to/trial_path
 - You can check our all Parsing Modules at [here](https://edai.notion.site/Supporting-Parse-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
 - You can check our all Chunk Modules at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
 
-
-## ❗Supporting Nodes & modules
+## ❗Supporting RAG Optimization Nodes & modules
 
 ![module_1](https://github.com/user-attachments/assets/4a534fd4-800c-4878-bba3-5686d7e20a7c)
 ![module_2](https://github.com/user-attachments/assets/19c8faa1-e90d-4f4d-99bc-3fa1ded4a178)
