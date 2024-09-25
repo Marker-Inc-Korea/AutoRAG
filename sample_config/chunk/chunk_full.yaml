@@ -3,21 +3,30 @@ modules:
     chunk_method: [ Token, Sentence ]
     chunk_size: [ 1024, 512 ]
     chunk_overlap: 24
-    add_file_name: english
+    add_file_name: en
   - module_type: llama_index_chunk
     chunk_method: [ SentenceWindow ]
-    sentence_splitter: kiwi
     window_size: 3
-    add_file_name: english
+    add_file_name: en
   - module_type: llama_index_chunk
     chunk_method: [ Semantic_llama_index ]
     embed_model: openai
     buffer_size: 1
     breakpoint_percentile_threshold: 95
-    add_file_name: english
+    add_file_name: en
   - module_type: llama_index_chunk
     chunk_method: [ SemanticDoubleMerging ]
-    add_file_name: english
+    add_file_name: en
   - module_type: llama_index_chunk
     chunk_method: [ SimpleFile ]
-    add_file_name: english
+    add_file_name: en
+  - module_type: langchain_chunk
+    chunk_method: sentencetransformerstoken
+  - module_type: langchain_chunk
+    chunk_method: recursivecharacter
+    separators: [ " ", "\n" ]
+  - module_type: langchain_chunk
+    chunk_method: character
+    separator: ". "
+  - module_type: langchain_chunk
+    chunk_method: KonlpyTextSplitter

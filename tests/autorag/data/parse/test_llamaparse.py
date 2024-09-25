@@ -1,7 +1,7 @@
 from typing import List
 from unittest.mock import patch
 
-from autorag.data.parse import llama_parse as llamaparse
+from autorag.data.parse.llamaparse import llama_parse as llamaparse
 
 from tests.autorag.data.parse.test_parse_base import (
 	single_pdf_path_list,

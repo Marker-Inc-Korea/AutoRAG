@@ -1,7 +1,7 @@
 import os.path
 import tempfile
 
-from autorag.data.parse import table_hybrid_parse
+from autorag.data.parse.table_hybrid_parse import table_hybrid_parse
 from autorag.data.parse.table_hybrid_parse import save_page_by_table, get_page_from_path
 
 from tests.autorag.data.parse.test_parse_base import (
