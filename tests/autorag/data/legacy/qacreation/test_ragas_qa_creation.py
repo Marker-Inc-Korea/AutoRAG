@@ -4,7 +4,7 @@ import pathlib
 import pandas as pd
 import pytest
 
-from autorag.data.qacreation.ragas import generate_qa_ragas
+from autorag.data.legacy.qacreation import generate_qa_ragas
 from autorag.utils import validate_qa_dataset
 from tests.delete_tests import is_github_action
 

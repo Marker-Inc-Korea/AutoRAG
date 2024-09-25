@@ -7,8 +7,8 @@ import pytest
 from guidance import models
 from llama_index.core import SimpleDirectoryReader
 
-from autorag.data.corpus.llama_index import llama_documents_to_parquet
-from autorag.data.qacreation.simple import generate_simple_qa_dataset, generate_qa_row
+from autorag.data.legacy.corpus.llama_index import llama_documents_to_parquet
+from autorag.data.legacy.qacreation import generate_simple_qa_dataset, generate_qa_row
 from autorag.data.utils.util import get_file_metadata
 from autorag.utils.preprocess import validate_qa_dataset, validate_corpus_dataset
 from tests.delete_tests import is_github_action
