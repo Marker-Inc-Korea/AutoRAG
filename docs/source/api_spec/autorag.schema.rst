@@ -4,6 +4,14 @@ autorag.schema package
 Submodules
 ----------
 
+autorag.schema.base module
+--------------------------
+
+.. automodule:: autorag.schema.base
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.schema.metricinput module
 ---------------------------------
 

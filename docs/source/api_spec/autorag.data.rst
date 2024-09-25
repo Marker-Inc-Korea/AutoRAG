@@ -7,11 +7,10 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   autorag.data.beta
    autorag.data.chunk
-   autorag.data.corpus
+   autorag.data.legacy
    autorag.data.parse
-   autorag.data.qacreation
+   autorag.data.qa
    autorag.data.utils
 
 Module contents
