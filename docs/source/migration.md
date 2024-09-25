@@ -33,7 +33,7 @@ from autorag.data.legacy.qacreation import generate_qa_llama_index, make_single_
 ```
 
 ```python
-from autorag.data.query.llama_gen_query import factoid_query_gen
-from autorag.data.sample import random_single_hop
-from autorag.data.schema import Raw
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.sample import random_single_hop
+from autorag.data.qa.schema import Raw
 ```

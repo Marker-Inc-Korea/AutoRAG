@@ -28,13 +28,13 @@ This will just use the pre-made don't know sentences and filter the questions.
 This is not perfect, but it is a simple and fast way to filter unanswerable questions.
 
 ```python
-from autorag.data.beta.schema import QA
-from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.qa.schema import QA
+from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
 
 qa = QA(qa_df, corpus)
 filtered_qa = qa.filter(dontknow_filter_rule_based, lang="en").map(
-		lambda df: df.reset_index(drop=True) # reset index
-	)
+    lambda df: df.reset_index(drop=True)  # reset index
+)
 ```
 
 You can use "en" and "ko" language.
@@ -49,26 +49,26 @@ But since it uses the LLM, it is much slower and expensive than the rule-based d
 
 ```python
 from openai import AsyncOpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.filter.dontknow import dontknow_filter_openai
+from autorag.data.qa.schema import QA
+from autorag.data.qa.filter.dontknow import dontknow_filter_openai
 
 openai_client = AsyncOpenAI()
 qa = QA(qa_df, corpus)
 filtered_qa = qa.batch_filter(dontknow_filter_openai, client=openai_client, lang="en").map(
-        lambda df: df.reset_index(drop=True) # reset index
-    )
+    lambda df: df.reset_index(drop=True)  # reset index
+)
 ```
 
 - Llama Index
 
 ```python
 from llama_index.llms.ollama import Ollama
-from autorag.data.beta.schema import QA
-from autorag.data.beta.filter.dontknow import dontknow_filter_llama_index
+from autorag.data.qa.schema import QA
+from autorag.data.qa.filter.dontknow import dontknow_filter_llama_index
 
 llm = Ollama(model="llama3")
 qa = QA(qa_df, corpus)
 filtered_qa = qa.batch_filter(dontknow_filter_llama_index, llm=llm, lang="en").map(
-        lambda df: df.reset_index(drop=True) # reset index
-    )
+    lambda df: df.reset_index(drop=True)  # reset index
+)
 ```
