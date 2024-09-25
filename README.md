@@ -328,7 +328,7 @@ autorag run_web --trial_path your/path/to/trial_path
 
 ![module_1](https://github.com/user-attachments/assets/c2e4c7d2-0f46-4b13-bb21-0ffc19cc9492)
 ![module_2](https://github.com/user-attachments/assets/e013f04e-f69d-4dd7-96da-06e6b5921c3d)
-![module_3](https://github.com/user-attachments/assets/2373dec4-a85a-4780-aa15-de32a9f164ac)
+![module_3](https://github.com/user-attachments/assets/72490b97-81a1-4620-b9bd-5c5e0ead79a7)
 ![module_4](https://github.com/user-attachments/assets/7a8ee260-9c60-4a27-b708-5286d1c37851)
 
 You can check our all supporting Nodes & modules
