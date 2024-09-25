@@ -5,8 +5,8 @@ from unittest.mock import patch
 import pytest
 
 import autorag
-from autorag.data.parse import clova_ocr
 from autorag.data.parse.clova import (
+	clova_ocr,
 	pdf_to_images,
 	generate_image_info,
 	extract_text_from_fields,

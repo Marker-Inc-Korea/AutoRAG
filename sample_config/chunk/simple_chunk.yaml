@@ -1,0 +1,3 @@
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: Token

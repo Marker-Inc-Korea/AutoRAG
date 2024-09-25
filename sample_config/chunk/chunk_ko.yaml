@@ -1,0 +1,19 @@
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: [ Token, Sentence ]
+    chunk_size: [ 1024, 512 ]
+    chunk_overlap: 24
+    add_file_name: ko
+  - module_type: llama_index_chunk
+    chunk_method: [ SentenceWindow ]
+    sentence_splitter: kiwi
+    add_file_name: ko
+  - module_type: llama_index_chunk
+    chunk_method: [ Semantic_llama_index ]
+    embed_model: openai
+    add_file_name: ko
+  - module_type: llama_index_chunk
+    chunk_method: [ SimpleFile ]
+    add_file_name: ko
+  - module_type: langchain_chunk
+    chunk_method: KonlpyTextSplitter

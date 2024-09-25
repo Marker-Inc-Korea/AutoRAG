@@ -1,0 +1,6 @@
+modules:
+  - module_type: llama_parse
+    result_type: markdown
+    language: ko
+  - module_type: clova
+    table_detection: true
