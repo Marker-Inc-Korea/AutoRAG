@@ -37,8 +37,8 @@ It supports "en" and "ko" languages.
 
 ```python
 from openai import AsyncOpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.query.openai_gen_query import factoid_query_gen
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.openai_gen_query import factoid_query_gen
 
 openai_client = AsyncOpenAI()
 qa = QA(qa_df)
@@ -49,8 +49,8 @@ result_qa = qa.batch_apply(factoid_query_gen, client=openai_client, lang="ko")
 
 ```python
 from llama_index.llms.openai import OpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
 
 llm = OpenAI()
 qa = QA(qa_df)
@@ -68,8 +68,8 @@ It supports "en" and "ko" languages.
 
 ```python
 from openai import AsyncOpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.query.openai_gen_query import concept_completion_query_gen
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.openai_gen_query import concept_completion_query_gen
 
 openai_client = AsyncOpenAI()
 qa = QA(qa_df)
@@ -80,8 +80,8 @@ result_qa = qa.batch_apply(concept_completion_query_gen, client=openai_client, l
 
 ```python
 from llama_index.llms.openai import OpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.query.llama_gen_query import concept_completion_query_gen
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.llama_gen_query import concept_completion_query_gen
 
 llm = OpenAI()
 qa = QA(qa_df)
@@ -111,8 +111,8 @@ You can use "en" and "ko" language.
 
 ```python
 from openai import AsyncOpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.query.openai_gen_query import two_hop_incremental
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.openai_gen_query import two_hop_incremental
 
 openai_client = AsyncOpenAI()
 qa = QA(qa_df)
@@ -123,8 +123,8 @@ result_qa = qa.batch_apply(two_hop_incremental, client=openai_client)
 
 ```python
 from llama_index.llms.openai import OpenAI
-from autorag.data.beta.schema import QA
-from autorag.data.beta.query.llama_gen_query import two_hop_incremental
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.llama_gen_query import two_hop_incremental
 
 llm = OpenAI()
 qa = QA(qa_df)

@@ -46,14 +46,14 @@ The example is shown below, the `initial_raw_df` is selected raw data.
 ```python
 from llama_index.llms.openai import OpenAI
 
-from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
-from autorag.data.beta.generation_gt.llama_index_gen_gt import (
-	make_basic_gen_gt,
-	make_concise_gen_gt,
+from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.qa.generation_gt.llama_index_gen_gt import (
+    make_basic_gen_gt,
+    make_concise_gen_gt,
 )
-from autorag.data.beta.query.llama_gen_query import factoid_query_gen
-from autorag.data.beta.sample import random_single_hop
-from autorag.data.beta.schema import Raw
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.sample import random_single_hop
+from autorag.data.qa.schema import Raw
 
 initial_raw = Raw(initial_raw_df)
 initial_corpus = initial_raw.chunk(
@@ -138,7 +138,7 @@ It is highly recommending you to keep the initial `QA` instance.
 If not, you need to build `QA` instance again from the initial raw (parsed) data and corpus data.
 
 ```python
-from autorag.data.beta.schema import Raw, Corpus, QA
+from autorag.data.qa.schema import Raw, Corpus, QA
 
 raw = Raw(initial_raw_df)
 corpus = Corpus(initial_corpus_df, raw)

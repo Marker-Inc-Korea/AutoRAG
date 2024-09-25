@@ -6,7 +6,7 @@ from llama_index.llms.openai.utils import to_openai_message_dicts
 from openai import AsyncClient
 from pydantic import BaseModel
 
-from autorag.data.beta.query.prompt import QUERY_GEN_PROMPT
+from autorag.data.qa.query.prompt import QUERY_GEN_PROMPT
 
 
 class Response(BaseModel):
