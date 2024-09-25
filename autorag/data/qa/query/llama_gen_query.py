@@ -4,7 +4,7 @@ from typing import Dict, List
 from llama_index.core.base.llms.base import BaseLLM
 from llama_index.core.base.llms.types import ChatResponse, ChatMessage, MessageRole
 
-from autorag.data.beta.query.prompt import QUERY_GEN_PROMPT
+from autorag.data.qa.query.prompt import QUERY_GEN_PROMPT
 
 
 async def llama_index_generate_base(

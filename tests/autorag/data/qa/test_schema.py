@@ -2,8 +2,8 @@ import tempfile
 
 import pandas as pd
 
-from autorag.data.beta.schema import Raw, Corpus, QA
-from tests.autorag.data.beta.test_data_creation_piepline import initial_raw
+from autorag.data.qa.schema import Raw, Corpus, QA
+from tests.autorag.data.qa.test_data_creation_piepline import initial_raw
 
 
 def test_raw_add():
