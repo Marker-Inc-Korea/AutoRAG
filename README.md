@@ -48,10 +48,6 @@ pip install AutoRAG
 
 ![image](https://github.com/user-attachments/assets/5c86a66d-9c99-4a51-a307-8b12796d029f)
 
-explanation
-
-## QuickStart
-
 ### 1. Prepare your evaluation data
 
 For evaluation, you need to prepare just three files.
@@ -71,12 +67,9 @@ There is a template for your evaluation data for using AutoRAG.
 # RAG Optimization
 ![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
 
-asdfasdf
-
 ### RAG Auto Optimization Visualization
 ![real_final](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
 
-## QuickStart
 
 ### 1. Run AutoRAG
 
