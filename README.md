@@ -2,43 +2,8 @@
 
 RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
 
-Explore our 📖 [Document](https://docs.auto-rag.com)!!
+![Thumbnail](https://github.com/user-attachments/assets/5ebc2d2f-91b6-4e95-8d6a-6dae2db2557a)
 
-Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
-
----
-
-### 💪 Colab Tutorial
-
-- [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
-
----
-
-### 🚨 YouTube Tutorial
-
-https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
-
-_Muted by default, enable sound for voice-over_
-
-You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
-
----
-
-### ☎️ FaQ
-
-🛣️ [Support plans & Roadmap](https://edai.notion.site/Support-plans-Roadmap-02ca7c97376340c393885855e2d99630?pvs=4)
-
-💻 [Hardware Specs](https://edai.notion.site/Hardware-specs-28cefcf2a26246ffadc91e2f3dc3d61c?pvs=4)
-
-⭐ [Running AutoRAG](https://edai.notion.site/About-running-AutoRAG-44a8058307af42068fc218a073ee480b?pvs=4)
-
-🍯 [Tips/Tricks](https://edai.notion.site/Tips-Tricks-10708a0e36ff461cb8a5d4fb3279ff15?pvs=4)
-
-☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
-
----
-
-# 😁 Introduction
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
@@ -52,27 +17,25 @@ and find the best RAG pipeline for your own use-case.
 AutoRAG supports a simple way to evaluate many RAG module combinations.
 Try now and find the best RAG pipeline for your own use-case.
 
-# 📌AutoRAG Structure
+Explore our 📖 [Document](https://docs.auto-rag.com)!!
 
-![Node](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/79dda7ba-e9d8-4552-9e7b-6a5f9edc4c1a)
+Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
-## ❗Supporting Nodes & modules
+## YouTube Tutorial
 
-![module_1](https://github.com/user-attachments/assets/d49cc7b4-56a6-4b5f-bb3d-2fc5b962996b)
-![module_2](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/4db3d83f-3178-4b81-bad1-b751dcd31a13)
-You can check our all supporting Nodes & modules
-at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
 
-## ❗Supporting Evaluation Metrics
+_Muted by default, enable sound for voice-over_
 
-![Metrics](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/9f090e3c-d762-41cb-9f1d-cd8d7da137dd)
+You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
-You can check our all supporting Evaluation Metrics
-at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
 
-- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
-- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
-- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+
+## Colab Tutorial
+
+- [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+
+---
 
 # ⚡ Quick Install
 
@@ -82,7 +45,27 @@ We recommend using Python version 3.9 or higher for AutoRAG.
 pip install AutoRAG
 ```
 
+# AutoRAG Full Structure
+![Thumbnail](https://github.com/user-attachments/assets/5ebc2d2f-91b6-4e95-8d6a-6dae2db2557a)
+
+## Data Creation
+![image](https://github.com/user-attachments/assets/5c86a66d-9c99-4a51-a307-8b12796d029f)
+
+asdfasdf
+
+## RAG Optimization
+![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
+
+asdfasdf
+
+### RAG Auto Optimization Visualization
+![real_final](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
+
+asdfasdf
+
 # ⚡ QuickStart
+
+## Data Creation
 
 ### 1. Prepare your evaluation data
 
@@ -100,7 +83,9 @@ There is a template for your evaluation data for using AutoRAG.
   at [here](https://docs.auto-rag.com/data_creation/data_format.html).
 - Plus, you can get example datasets for testing AutoRAG at [here](./sample_dataset).
 
-### 2. Evaluate your data to various RAG modules
+## Auto RAG Optimization
+
+### 1. Run AutoRAG
 
 You can get various config yaml files at [here](./sample_config).
 We highly recommend using pre-made config yaml files for starter.
@@ -175,7 +160,7 @@ autorag dashboard --trial_dir /your/path/to/trial_dir
 
 ![dashboard](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/3798827d-31d7-4c4e-a9b1-54340b964e53)
 
-### 5. Share your RAG pipeline
+### 5. Deploy your RAG pipeline
 
 You can use your RAG pipeline from extracted pipeline yaml file.
 This extracted pipeline is great for sharing your RAG pipeline to others.
@@ -233,9 +218,50 @@ autorag run_web --trial_path your/path/to/trial_path
 
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
-# ⭐ Star History ⭐
+---
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Marker-Inc-Korea/AutoRAG&type=Date)](https://star-history.com/#Marker-Inc-Korea/AutoRAG&Date)
+## 📌 Supporting Data Creation Modules
+![Data Creation](https://github.com/user-attachments/assets/97abe6f4-91a9-42e4-b193-11445001e174)
+
+- You can check our all Parsing Modules at [here](https://edai.notion.site/Supporting-Parse-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
+- You can check our all Chunk Modules at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
+
+
+## ❗Supporting Nodes & modules
+
+![module_1](https://github.com/user-attachments/assets/4a534fd4-800c-4878-bba3-5686d7e20a7c)
+![module_2](https://github.com/user-attachments/assets/19c8faa1-e90d-4f4d-99bc-3fa1ded4a178)
+![module_3](https://github.com/user-attachments/assets/98a109e7-a4c1-4c74-a9fb-8361c3a12ac3)
+![module_4](https://github.com/user-attachments/assets/b355af15-d5ae-4b9e-9869-879c589f466f)
+
+You can check our all supporting Nodes & modules
+at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+
+## ❗Supporting Evaluation Metrics
+
+![Metrics](https://github.com/user-attachments/assets/2d7a342a-6b95-4235-af82-d6537dcd02aa)
+
+You can check our all supporting Evaluation Metrics
+at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+
+- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
+- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+
+
+## ☎️ FaQ
+
+🛣️ [Support plans & Roadmap](https://edai.notion.site/Support-plans-Roadmap-02ca7c97376340c393885855e2d99630?pvs=4)
+
+💻 [Hardware Specs](https://edai.notion.site/Hardware-specs-28cefcf2a26246ffadc91e2f3dc3d61c?pvs=4)
+
+⭐ [Running AutoRAG](https://edai.notion.site/About-running-AutoRAG-44a8058307af42068fc218a073ee480b?pvs=4)
+
+🍯 [Tips/Tricks](https://edai.notion.site/Tips-Tricks-10708a0e36ff461cb8a5d4fb3279ff15?pvs=4)
+
+☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
+
+---
 
 # ✨ Contributors ✨
 
