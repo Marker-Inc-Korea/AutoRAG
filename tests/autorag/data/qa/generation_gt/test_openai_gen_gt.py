@@ -9,13 +9,13 @@ from openai.types.chat import (
 	ParsedChatCompletionMessage,
 )
 
-from autorag.data.beta.generation_gt.openai_gen_gt import (
+from autorag.data.qa.generation_gt.openai_gen_gt import (
 	make_concise_gen_gt,
 	make_basic_gen_gt,
 	Response,
 )
-from autorag.data.beta.schema import QA
-from tests.autorag.data.beta.generation_gt.base_test_generation_gt import (
+from autorag.data.qa.schema import QA
+from tests.autorag.data.qa.generation_gt.base_test_generation_gt import (
 	qa_df,
 	check_generation_gt,
 )

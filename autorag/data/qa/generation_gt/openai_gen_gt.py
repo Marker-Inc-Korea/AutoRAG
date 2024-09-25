@@ -4,8 +4,8 @@ from typing import Dict
 from openai import AsyncClient
 from pydantic import BaseModel
 
-from autorag.data.beta.generation_gt.base import add_gen_gt
-from autorag.data.beta.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
+from autorag.data.qa.generation_gt.base import add_gen_gt
+from autorag.data.qa.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
 class Response(BaseModel):

@@ -5,8 +5,8 @@ from typing import Dict
 from llama_index.core.base.llms.base import BaseLLM
 from llama_index.core.base.llms.types import MessageRole, ChatMessage
 
-from autorag.data.beta.generation_gt.base import add_gen_gt
-from autorag.data.beta.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
+from autorag.data.qa.generation_gt.base import add_gen_gt
+from autorag.data.qa.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
 async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str):

@@ -12,13 +12,13 @@ from openai.types.chat import (
 )
 import openai.resources.beta.chat
 
-from autorag.data.beta.filter.dontknow import (
+from autorag.data.qa.filter.dontknow import (
 	dontknow_filter_rule_based,
 	dontknow_filter_openai,
 	Response,
 	dontknow_filter_llama_index,
 )
-from autorag.data.beta.schema import QA
+from autorag.data.qa.schema import QA
 
 en_qa_df = pd.DataFrame(
 	{

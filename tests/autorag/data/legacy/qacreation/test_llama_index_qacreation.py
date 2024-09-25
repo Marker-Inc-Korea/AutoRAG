@@ -8,7 +8,7 @@ import pytest
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.core.llms import MockLLM
 
-from autorag.data.qacreation.llama_index import (
+from autorag.data.legacy.qacreation.llama_index import (
 	async_qa_gen_llama_index,
 	generate_qa_llama_index_by_ratio,
 	generate_qa_llama_index,
@@ -18,7 +18,7 @@ from autorag.data.qacreation.llama_index import (
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
-).parent.parent.parent
+).parent.parent.parent.parent
 resource_dir = os.path.join(root_dir, "resources")
 
 content = """Fire and brimstone ( or , alternatively , brimstone and fire ) is an idiomatic expression of referring to God 's wrath in the Hebrew Bible ( Old Testament ) and the New Testament .

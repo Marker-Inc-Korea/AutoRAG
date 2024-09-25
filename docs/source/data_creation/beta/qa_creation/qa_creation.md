@@ -11,13 +11,13 @@ The sample QA creation pipeline looks like this.
 ```python
 from llama_index.llms.openai import OpenAI
 
-from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
-from autorag.data.beta.generation_gt.llama_index_gen_gt import (
+from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.qa.generation_gt.llama_index_gen_gt import (
     make_basic_gen_gt,
     make_concise_gen_gt,
 )
-from autorag.data.beta.query.llama_gen_query import factoid_query_gen
-from autorag.data.beta.sample import random_single_hop
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.sample import random_single_hop
 
 llm = OpenAI()
 initial_corpus = initial_raw.chunk(
@@ -57,7 +57,7 @@ You can get the initial chunk data from the raw data.
 And then sample it using the `sample` function.
 
 ```python
-from autorag.data.beta.sample import random_single_hop
+from autorag.data.qa.sample import random_single_hop
 
 qa = initial_corpus.sample(random_single_hop, n=3).map(
     lambda df: df.reset_index(drop=True),
@@ -90,7 +90,7 @@ In this example, we use the `factoid_query_gen` function to generate factoid que
 ```python
 from llama_index.llms.openai import OpenAI
 
-from autorag.data.beta.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
 
 llm = OpenAI()
 qa = qa.batch_apply(
@@ -108,7 +108,7 @@ After generating questions, you have to generate answers (generation gt).
 ```python
 from llama_index.llms.openai import OpenAI
 
-from autorag.data.beta.generation_gt.llama_index_gen_gt import (
+from autorag.data.qa.generation_gt.llama_index_gen_gt import (
     make_basic_gen_gt,
     make_concise_gen_gt,
 )
@@ -136,13 +136,13 @@ To filtering, we use `filter` method.
 ```python
 from llama_index.llms.openai import OpenAI
 
-from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
 
 llm = OpenAI()
 qa = qa.filter(
-        dontknow_filter_rule_based,  # filter don't know
-        lang="en",
-    )
+    dontknow_filter_rule_based,  # filter don't know
+    lang="en",
+)
 ```
 
 To know more filtering methods, check this [page](./filter.md).
