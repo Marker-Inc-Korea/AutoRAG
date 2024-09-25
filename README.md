@@ -34,7 +34,6 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 
-
 # Index
 
 - [Quick Install](#quick-install)
@@ -62,7 +61,7 @@ pip install AutoRAG
 
 # Data Creation
 
-![image](https://github.com/user-attachments/assets/5c86a66d-9c99-4a51-a307-8b12796d029f)
+![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
 
 RAG Optimization requires two types of data: QA dataset and Corpus dataset.
 
@@ -180,7 +179,7 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 ```
 
 # RAG Optimization
-![rag](https://github.com/user-attachments/assets/b4f48144-2866-46e6-aaf8-b43d09b70538)
+![rag](https://github.com/user-attachments/assets/214d842e-fc67-4113-9c24-c94158b00c23)
 
 ### How AutoRAG optimizes RAG pipeline?
 
@@ -320,17 +319,17 @@ autorag run_web --trial_path your/path/to/trial_path
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
 ## 📌 Supporting Data Creation Modules
-![Data Creation](https://github.com/user-attachments/assets/97abe6f4-91a9-42e4-b193-11445001e174)
+![Data Creation](https://github.com/user-attachments/assets/383876cc-0d02-4e5f-9528-87f36489640f)
 
 - You can check our all Parsing Modules at [here](https://edai.notion.site/Supporting-Parse-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
 - You can check our all Chunk Modules at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
 
 ## ❗Supporting RAG Optimization Nodes & modules
 
-![module_1](https://github.com/user-attachments/assets/4a534fd4-800c-4878-bba3-5686d7e20a7c)
-![module_2](https://github.com/user-attachments/assets/19c8faa1-e90d-4f4d-99bc-3fa1ded4a178)
-![module_3](https://github.com/user-attachments/assets/98a109e7-a4c1-4c74-a9fb-8361c3a12ac3)
-![module_4](https://github.com/user-attachments/assets/b355af15-d5ae-4b9e-9869-879c589f466f)
+![module_1](https://github.com/user-attachments/assets/c2e4c7d2-0f46-4b13-bb21-0ffc19cc9492)
+![module_2](https://github.com/user-attachments/assets/e013f04e-f69d-4dd7-96da-06e6b5921c3d)
+![module_3](https://github.com/user-attachments/assets/2373dec4-a85a-4780-aa15-de32a9f164ac)
+![module_4](https://github.com/user-attachments/assets/7a8ee260-9c60-4a27-b708-5286d1c37851)
 
 You can check our all supporting Nodes & modules
 at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
@@ -344,7 +343,7 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 
 - [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
 - [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
-- [Generation Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://github.com/user-attachments/assets/7d4a3069-9186-4854-885d-ca0f7bcc17e8)
 
 
 ## ☎️ FaQ
