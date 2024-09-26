@@ -14,7 +14,11 @@ from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 from deepeval.models import DeepEvalBaseLLM
-from deepeval.metrics import ContextualRelevancyMetric, ContextualRecallMetric
+from deepeval.metrics import (
+	ContextualRelevancyMetric,
+	ContextualRecallMetric,
+	ContextualPrecisionMetric,
+)
 from deepeval.evaluate import evaluate as deepeval_evaluate
 
 from autorag import embedding_models
