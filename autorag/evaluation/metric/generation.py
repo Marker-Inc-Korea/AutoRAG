@@ -20,6 +20,7 @@ from deepeval.metrics import (
 	ContextualPrecisionMetric,
 	FaithfulnessMetric,
 	HallucinationMetric,
+	SummarizationMetric,
 )
 from deepeval.evaluate import evaluate as deepeval_evaluate
 
@@ -543,6 +544,41 @@ def deepeval_hallucination(
 	)
 	deepeval_test_results = deepeval_evaluate(
 		test_cases=deepeval_test_cases, metrics=[deepeval_hallucination_metric]
+	)
+	results = [
+		convert_deepeval_test_result_to_score(test_result)
+		for test_result in deepeval_test_results
+	]
+
+	return results
+
+
+@autorag_metric_loop(fields_to_check=["query", "generated_texts"])
+def deepeval_summarization(
+	metric_inputs: List[MetricInput],
+	threshold: float = 0.5,
+	n: int = 5,
+	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
+	assessment_questions: Optional[List[str]] = None,
+	include_reason: bool = True,
+	async_mode: bool = True,
+	strict_mode: bool = False,
+) -> List[float]:
+	deepeval_test_cases = [
+		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
+	]
+	deepeval_summarization_metric = SummarizationMetric(
+		threshold=threshold,
+		n=n,
+		model=model,
+		assessment_questions=assessment_questions,
+		include_reason=include_reason,
+		async_mode=async_mode,
+		strict_mode=strict_mode,
+		verbose_mode=False,
+	)
+	deepeval_test_results = deepeval_evaluate(
+		test_cases=deepeval_test_cases, metrics=[deepeval_summarization_metric]
 	)
 	results = [
 		convert_deepeval_test_result_to_score(test_result)
