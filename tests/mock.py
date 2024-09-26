@@ -1,6 +1,6 @@
 import time
 from random import random
-from typing import Optional, Callable, Sequence, Any, List
+from typing import Optional, Callable, Sequence, Any, List, Union
 
 import tiktoken
 from llama_index.core.base.embeddings.base import Embedding
@@ -19,6 +19,9 @@ from openai.types.chat import (
 	ChatCompletionTokenLogprob,
 )
 from openai.types.chat.chat_completion import Choice, ChoiceLogprobs
+from deepeval.metrics.base_metric import BaseMetric
+from deepeval.models import DeepEvalBaseLLM
+from deepeval.test_case import LLMTestCase
 
 
 class MockLLM(CustomLLM):
@@ -138,3 +141,42 @@ def mock_get_text_embedding_batch(
 	**kwargs: Any,
 ) -> List[Embedding]:
 	return [[random() for _ in range(1536)] for _ in range(len(texts))]
+
+
+class MockDeepevalMetric(BaseMetric):
+	def __init__(
+		self,
+		threshold: float = 0.5,
+		n: int = 5,
+		model: Optional[Union[str, DeepEvalBaseLLM]] = None,
+		assessment_questions: Optional[List[str]] = None,
+		include_reason: bool = True,
+		async_mode=True,
+		strict_mode: bool = False,
+		verbose_mode: bool = False,
+	):
+		self.threshold = 1 if strict_mode else threshold
+
+		if assessment_questions is not None and len(assessment_questions) == 0:
+			self.assessment_questions = None
+		else:
+			self.assessment_questions = assessment_questions
+
+		self.include_reason = include_reason
+		self.n = n
+		self.async_mode = async_mode
+		self.strict_mode = strict_mode
+		self.verbose_mode = verbose_mode
+
+	def measure(self, test_case: LLMTestCase, *args, **kwargs) -> float:
+		return 0.1
+
+	async def a_measure(self, test_case: LLMTestCase, *args, **kwargs) -> float:
+		return 0.2
+
+	def is_successful(self) -> bool:
+		return True
+
+	@property
+	def __name__(self):
+		return "Mock Deepeval Base Metric"
