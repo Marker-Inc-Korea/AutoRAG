@@ -72,3 +72,43 @@ filtered_qa = qa.batch_filter(dontknow_filter_llama_index, llm=llm, lang="en").m
     lambda df: df.reset_index(drop=True)  # reset index
 )
 ```
+
+
+## 2. Passage Dependent Filtering
+
+Passage-dependent questions are those where the answer varies depending on the passage or context selected.
+Even if you have the greatest retrieval system, the system will not find the exact passage from the passage-dependent questions.
+
+Since the passage-dependent questions are almost impossible to get a ground truth passage,
+it will decrease the discriminative power of evaluation dataset.
+
+So, it is good to filter the passage-dependent questions after generating QA dataset.
+We use LLM as the filtering model.
+
+- OpenAI
+
+```python
+from openai import AsyncOpenAI
+from autorag.data.qa.schema import QA
+from autorag.data.qa.filter.passage_dependency import passage_dependency_filter_openai
+
+client = AsyncOpenAI()
+en_qa = QA(en_qa_df)
+result_en_qa = en_qa.batch_filter(
+    passage_dependency_filter_openai, client=client, lang="en"
+).map(lambda df: df.reset_index(drop=True))
+```
+
+- LlamaIndex
+
+```python
+from autorag.data.qa.schema import QA
+from llama_index.llms.openai import OpenAI
+from autorag.data.qa.filter.passage_dependency import passage_dependency_filter_llama_index
+
+llm = OpenAI(temperature=0, model="gpt-4o-mini")
+en_qa = QA(en_qa_df)
+result_en_qa = en_qa.batch_filter(
+    passage_dependency_filter_llama_index, llm=llm, lang="en"
+).map(lambda df: df.reset_index(drop=True))
+```

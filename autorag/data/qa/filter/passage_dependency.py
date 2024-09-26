@@ -25,7 +25,7 @@ async def passage_dependency_filter_openai(
 	The passage-dependent questions will not be good for RAG evaluation, because any retrieval system can't find the right passage with passage-dependent question.
 	For example, when someone asks "What is the highest score according to the table?" the answer will be different depending on the table.
 	And what is the table? The retrieval system can't find the right passage with this question.
-	    You can use this filter with the ` batch_filter ` function at `QA` class.
+	You can use this filter with the ` batch_filter ` function at `QA` class.
 
 	:param row: The row dict from QA dataset.
 	    :param client: The OpenAI client.
