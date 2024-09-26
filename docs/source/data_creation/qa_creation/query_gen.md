@@ -13,7 +13,7 @@ In OpenAI version of data creation, you can use only 'gpt-4o-2024-08-06' and 'gp
 If you want to use another model, use llama_index version instead.
 ```
 
-# Question types
+## Question types
 
 1. [Factoid](#1-factoid)
 2. [Concept Completion](#2-concept-completion)
