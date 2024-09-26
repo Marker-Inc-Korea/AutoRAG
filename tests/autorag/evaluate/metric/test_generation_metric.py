@@ -39,22 +39,97 @@ ko_generations = [
 	"요즘 세상에서는 예술가가 되려면, AI를 이겨야 한다.",
 ]
 
-metric_inputs = [MetricInput(generated_texts=gen, generation_gt=gen_gt) for gen, gen_gt in
-				 zip(generations, generation_gts)]
-ko_metric_inputs = [MetricInput(generated_texts=gen, generation_gt=gen_gt) for gen, gen_gt in
-					zip(ko_generations, ko_generation_gts)]
-def base_test_generation_metrics(func, solution, **kwargs):
+summarization_query_list = [
+	"""
+The 'coverage score' is calculated as the percentage of assessment questions
+for which both the summary and the original document provide a 'yes' answer. This
+method ensures that the summary not only includes key information from the original
+text but also accurately represents it. A higher coverage score indicates a
+more comprehensive and faithful summary, signifying that the summary effectively
+encapsulates the crucial points and details from the original content.
+""",
+	"""The 'coverage score' is calculated as the percentage of assessment questions
+for which both the summary and the original document provide a 'yes' answer. This
+method ensures that the summary not only includes key information from the original
+text but also accurately represents it. A higher coverage score indicates a
+more comprehensive and faithful summary, signifying that the summary effectively
+encapsulates the crucial points and details from the original content.""",
+]
+summarization_generated_texts_list = [
+	"""
+The coverage score quantifies how well a summary captures and
+accurately represents key information from the original text,
+with a higher score indicating greater comprehensiveness.
+""",
+	"""In the latest One Piece chapters, the story shifts focus to two key developments:
+
+The Straw Hat Crew's Separation: As they head toward Elbaf, the crew gets separated. Nami wakes up in a strange, Lego-like kingdom where she faces a dangerous, transforming creature. Luffy, Zoro, and Sanji come to her rescue, while other crew members’ fates, like Chopper, remain unknown​(
+Dexerto
+).
+
+Kuma’s Storyline: Bartholomew Kuma’s past continues to unfold. He’s shown making tough choices regarding his daughter, Bonney, and a deal with Vegapunk involving clone technology. His deepening ties with the Revolutionary Army and the threat from the Marines add further tension​(
+OtakuKart
+).""",
+]
+
+summarization_metric_inputs = [
+	MetricInput(generated_texts=gen, query=q)
+	for gen, q in zip(summarization_generated_texts_list, summarization_query_list)
+]
+similarity_generation_metric_inputs = [
+	MetricInput(generated_texts=gen, generation_gt=gen_gt)
+	for gen, gen_gt in zip(generations, generation_gts)
+]
+ko_similarity_generation_metric_inputs = [
+	MetricInput(generated_texts=gen, generation_gt=gen_gt)
+	for gen, gen_gt in zip(ko_generations, ko_generation_gts)
+]
+general_metric_inputs_with_gt = [
+	MetricInput(
+		query="What are the benefits of space exploration?",
+		retrieval_gt_contents=[
+			[
+				"Space exploration has led to technological advancements such as satellite communication, GPS, "
+				"and weather forecasting."
+			],
+			[
+				"It also contributes to scientific research, expanding our understanding of the universe, and fosters international cooperation in space missions."
+			],
+		],
+		retrieved_contents=[
+			"Space exploration has resulted in numerous technological advancements, including satellite technology, which has revolutionized communication and weather prediction.",
+			"It has also expanded our understanding of the cosmos and encouraged international collaboration in scientific research.",
+		],
+		generated_texts="The benefits of space exploration include technological innovations like satellite communications and GPS, which have improved life on Earth. Additionally, space exploration contributes to scientific knowledge and fosters international cooperation.",
+		generation_gt=[
+			"Space exploration brings technological advancements, such as satellites and GPS, that improve daily life. It also enhances our scientific understanding of the universe and encourages cooperation between nations."
+		],
+	),
+	MetricInput(
+		query="What are the major causes of climate change?",
+		retrieval_gt_contents=[
+			[
+				"The major causes of climate change include the burning of fossil fuels such as coal, oil, and gas, deforestation, and industrial activities."
+			],
+			[
+				"Human activities like agriculture and waste management also contribute to the increase in greenhouse gases, leading to climate change."
+			],
+		],
+		retrieved_contents=[
+			"Climate change is primarily driven by human activities like the burning of fossil fuels, which release carbon dioxide (CO2) and other greenhouse gases.",
+			"Deforestation and certain industrial activities also play a significant role in global warming.",
+		],
+		generated_texts="Climate change is caused by human activities such as the burning of fossil fuels, deforestation, and industrial production. These activities release large amounts of greenhouse gases into the atmosphere, leading to global warming and other climate-related changes.",
+		generation_gt=[
+			"The main causes of climate change are the burning of fossil fuels, deforestation, and industrial activities that emit greenhouse gases. These gases trap heat in the atmosphere, causing global warming."
+		],
+	),
+]
+
+
+def base_test_metrics(func, solution, metric_inputs, **kwargs):
 	scores = func(metric_inputs, **kwargs)
-	assert len(scores) == len(generation_gts)
-	assert all(isinstance(score, float) for score in scores)
-	assert all(
-		list(map(lambda x: x[0] == pytest.approx(x[1], 0.001), zip(scores, solution)))
-	)
-
-
-def ko_base_test_generation_metrics(func, solution, **kwargs):
-	scores = func(ko_metric_inputs, **kwargs)
-	assert len(scores) == len(ko_generation_gts)
+	assert len(scores) == len(metric_inputs)
 	assert all(isinstance(score, float) for score in scores)
 	assert all(
 		list(map(lambda x: x[0] == pytest.approx(x[1], 0.001), zip(scores, solution)))
@@ -62,17 +137,27 @@ def ko_base_test_generation_metrics(func, solution, **kwargs):
 
 
 def test_bleu():
-	base_test_generation_metrics(bleu, [51.1507, 23.5783, 100.0], lowercase=True)
+	base_test_metrics(
+		bleu,
+		[51.1507, 23.5783, 100.0],
+		similarity_generation_metric_inputs,
+		lowercase=True,
+	)
 
 
 def test_meteor():
-	base_test_generation_metrics(
-		meteor, [0.454033, 0.2985435, 0.64077828], alpha=0.85, beta=0.2, gamma=0.6
+	base_test_metrics(
+		meteor,
+		[0.454033, 0.2985435, 0.64077828],
+		similarity_generation_metric_inputs,
+		alpha=0.85,
+		beta=0.2,
+		gamma=0.6,
 	)
 
 
 def test_rouge():
-	base_test_generation_metrics(rouge, [0.909, 0.35714, 1.0])
+	base_test_metrics(rouge, [0.909, 0.35714, 1.0], similarity_generation_metric_inputs)
 
 
 @pytest.mark.skipif(
@@ -80,7 +165,9 @@ def test_rouge():
 	reason="Skipping this test on GitHub Actions. It use local model",
 )
 def test_sem_score():
-	base_test_generation_metrics(sem_score, [0.9005998, 0.7952, 1.0])
+	base_test_metrics(
+		sem_score, [0.9005998, 0.7952, 1.0], similarity_generation_metric_inputs
+	)
 
 
 @patch.object(
@@ -90,7 +177,7 @@ def test_sem_score():
 )
 def test_sem_score_other_model():
 	scores = sem_score(
-		metric_inputs=metric_inputs,
+		metric_inputs=similarity_generation_metric_inputs,
 		embedding_model=OpenAIEmbedding(),
 	)
 	assert len(scores) == len(generation_gts)
@@ -99,21 +186,40 @@ def test_sem_score_other_model():
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_g_eval_fluency():
-	base_test_generation_metrics(
-		g_eval, [3.0, 2.0, 2.0], metrics=["fluency"], model="gpt-3.5-turbo"
+	base_test_metrics(
+		g_eval,
+		[3.0, 2.0, 2.0],
+		similarity_generation_metric_inputs,
+		metrics=["fluency"],
+		model="gpt-3.5-turbo",
 	)
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_g_eval_full():
-	base_test_generation_metrics(g_eval, [3.5, 2.75, 2.0], model="gpt-4o-mini")
+	base_test_metrics(
+		g_eval,
+		[3.5, 2.75, 2.0],
+		similarity_generation_metric_inputs,
+		model="gpt-4o-mini",
+	)
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_bert_score_en():
-	base_test_generation_metrics(bert_score, [0.981902, 0.93164, 1.0], n_threads=8)
+	base_test_metrics(
+		bert_score,
+		[0.981902, 0.93164, 1.0],
+		similarity_generation_metric_inputs,
+		n_threads=8,
+	)
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_bert_score_ko():
-	ko_base_test_generation_metrics(bert_score, [1.0, 0.965312, 0.96309], lang="ko")
+	base_test_metrics(
+		bert_score,
+		[1.0, 0.965312, 0.96309],
+		ko_similarity_generation_metric_inputs,
+		lang="ko",
+	)
