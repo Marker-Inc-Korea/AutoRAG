@@ -40,9 +40,13 @@ class MetricInput:
 	def to_deepeval_testcase(self):
 		test_case = LLMTestCase(
 			input=self.query,
-			expected_output=self.generation_gt[0],
+			expected_output=self.generation_gt[0]
+			if self.generation_gt is not None
+			else None,
 			actual_output=self.generated_texts,
-			context=list(chain(*self.retrieval_gt_contents)),
+			context=list(chain(*self.retrieval_gt_contents))
+			if self.retrieval_gt_contents is not None
+			else None,
 			retrieval_context=self.retrieved_contents,
 			tools_called=None,
 			expected_tools=None,
