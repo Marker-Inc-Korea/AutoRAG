@@ -1,6 +1,6 @@
 # AutoRAG
 
-RAG AutoML tool for automatically finds an optimal RAG pipeline for your data.
+RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 
 ![Thumbnail](https://github.com/user-attachments/assets/6bab243d-a4b3-431a-8ac0-fe17336ab4de)
 
@@ -9,8 +9,8 @@ but you don’t know what pipeline is great for “your own data” and "your ow
 Making and evaluating all RAG modules is very time-consuming and hard to do.
 But without it, you will never know which RAG pipeline is the best for your own use-case.
 
-AutoRAG is a tool for finding optimal RAG pipeline for “your data.”
-You can evaluate various RAG modules automatically with your own evaluation data,
+AutoRAG is a tool for finding the optimal RAG pipeline for “your data.”
+You can evaluate various RAG modules automatically with your own evaluation data
 and find the best RAG pipeline for your own use-case.
 
 AutoRAG supports a simple way to evaluate many RAG module combinations.
@@ -111,11 +111,11 @@ modules:
     chunk_method: Token
     chunk_size: 1024
     chunk_overlap: 24
-    add_file_name: english
+    add_file_name: en
 ```
 
 You can also use multiple Chunk modules at once.
-In this case, you need to use one corpus to create QA, and then map the rest of the corpus to QA Data.
+In this case, you need to use one corpus to create QA and then map the rest of the corpus to QA Data.
 If the chunk method is different, the retrieval_gt will be different, so we need to remap it to the QA dataset.
 
 #### Start Chunking
@@ -137,14 +137,14 @@ You can create QA dataset with just a few lines of code.
 import pandas as pd
 from llama_index.llms.openai import OpenAI
 
-from autorag.data.beta.filter.dontknow import dontknow_filter_rule_based
-from autorag.data.beta.generation_gt.llama_index_gen_gt import (
+from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
+from autorag.data.qa.generation_gt.llama_index_gen_gt import (
     make_basic_gen_gt,
     make_concise_gen_gt,
 )
-from autorag.data.beta.schema import Raw, Corpus
-from autorag.data.beta.query.llama_gen_query import factoid_query_gen
-from autorag.data.beta.sample import random_single_hop
+from autorag.data.qa.schema import Raw, Corpus
+from autorag.data.qa.query.llama_gen_query import factoid_query_gen
+from autorag.data.qa.sample import random_single_hop
 
 llm = OpenAI()
 raw_df = pd.read_parquet("your/path/to/corpus.parquet")
@@ -191,15 +191,15 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 ### 1. Set YAML File
 
-First, you need to set the config yaml file for your RAG optimization.
+First, you need to set the config YAML file for your RAG optimization.
 
-You can get various config yaml files at [here](./sample_config).
-We highly recommend using pre-made config yaml files for starter.
+You can get various config YAML files at [here](./sample_config).
+We highly recommend using pre-made config YAML files for starter.
 
-If you want to make your own config yaml files, check out the [Config yaml file](#-create-your-own-config-yaml-file)
+If you want to make your own config YAML files, check out the [Config YAML file](#-create-your-own-config-yaml-file)
 section.
 
-Here is an example of the config yaml file to use `retrieval`, `prompt_maker`, and `generator` nodes.
+Here is an example of the config YAML file to use `retrieval`, `prompt_maker`, and `generator` nodes.
 
 ```yaml
 node_lines:
@@ -251,13 +251,13 @@ evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='
 evaluator.start_trial('your/path/to/config.yaml')
 ```
 
-or you can use command line interface
+or you can use the command line interface
 
 ```bash
 autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet
 ```
 
-Once it is done, you can see several files and folders created at your current directory.
+Once it is done, you can see several files and folders created in your current directory.
 At the trial folder named to numbers (like 0),
 you can check `summary.csv` file that summarizes the evaluation results and the best RAG pipeline for your data.
 
@@ -266,7 +266,7 @@ at [here](https://docs.auto-rag.com/optimization/folder_structure.html).
 
 ### 3. Run Dashboard
 
-You can run dashboard to easily see the result.
+You can run a dashboard to easily see the result.
 
 ```bash
 autorag dashboard --trial_dir /your/path/to/trial_dir
@@ -280,7 +280,7 @@ autorag dashboard --trial_dir /your/path/to/trial_dir
 
 ### 4-1. Run as a CLI
 
-You can use a found optimal RAG pipeline right away with extracted yaml file.
+You can use a found optimal RAG pipeline right away with the extracted YAML file.
 
 ```python
 from autorag.deploy import Runner
@@ -293,7 +293,7 @@ runner.run('your question')
 
 You can run this pipeline as an API server.
 
-Check out API endpoint at [here](deploy/api_endpoint.md).
+Check out the API endpoint at [here](deploy/api_endpoint.md).
 
 ```python
 from autorag.deploy import Runner
@@ -310,7 +310,7 @@ autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8
 
 you can run this pipeline as a web interface.
 
-Check out web interface at [here](deploy/web.md).
+Check out the web interface at [here](deploy/web.md).
 
 ```bash
 autorag run_web --trial_path your/path/to/trial_path

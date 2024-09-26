@@ -26,12 +26,10 @@ To see the tutorial of the data creation, check [here](tutorial.md).
 
 ```{toctree}
 ---
-maxdepth: 2
+maxdepth: 1
 ---
-tutorial.md
 qa_creation/qa_creation.md
 chunk/chunk.md
 parse/parse.md
-legacy/tutorial.md
-legacy/ragas.md
+legacy/legacy.md
 ```

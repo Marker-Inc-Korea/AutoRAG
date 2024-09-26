@@ -9,7 +9,7 @@ The supported filtering methods are below.
 1. [Rule-based Don't know Filter](#rule-based-dont-know-filter)
 2. [LLM-based Don't know Filter](#llm-based-dont-know-filter)
 
-# 1. Unanswerable question filtering
+## 1. Unanswerable question filtering
 
 Sometimes LLM generates unanswerable questions from the given passage.
 If unintended unanswerable questions are generated, the retrieval optimization performance will be lower.
