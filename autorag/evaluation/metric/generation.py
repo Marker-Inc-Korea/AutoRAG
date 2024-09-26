@@ -1,7 +1,7 @@
 import asyncio
 import itertools
 import os
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import evaluate
 import nltk
@@ -13,10 +13,18 @@ from openai import AsyncOpenAI
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
+from deepeval.models import DeepEvalBaseLLM
+from deepeval.metrics import (
+	ContextualRelevancyMetric,
+)
+from deepeval.evaluate import evaluate as deepeval_evaluate
 
 from autorag import embedding_models
-from autorag.evaluation.metric.util import autorag_metric_loop
-from autorag.evaluation.metric.util import calculate_cosine_similarity
+from autorag.evaluation.metric.util import (
+	autorag_metric_loop,
+	calculate_cosine_similarity,
+	convert_deepeval_test_result_to_score,
+)
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import (
 	get_event_loop,
@@ -377,3 +385,34 @@ def bert_score(
 	if torch.cuda.is_available():
 		torch.cuda.empty_cache()
 	return df.groupby(level=0)["bert_score"].max().tolist()
+
+
+@autorag_metric_loop(fields_to_check=["query", "generated_texts", "retrieved_contents"])
+def deepeval_contextual_relevancy(
+	metric_inputs: List[MetricInput],
+	threshold: float = 0.5,
+	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
+	include_reason: bool = True,
+	async_mode: bool = True,
+	strict_mode: bool = False,
+) -> List[float]:
+	deepeval_test_cases = [
+		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
+	]
+	deepeval_contextual_relevancy_metric = ContextualRelevancyMetric(
+		threshold=threshold,
+		model=model,
+		include_reason=include_reason,
+		async_mode=async_mode,
+		strict_mode=strict_mode,
+		verbose_mode=False,
+	)
+	deepeval_test_results = deepeval_evaluate(
+		test_cases=deepeval_test_cases, metrics=[deepeval_contextual_relevancy_metric]
+	)
+	results = [
+		convert_deepeval_test_result_to_score(test_result)
+		for test_result in deepeval_test_results
+	]
+
+	return results
