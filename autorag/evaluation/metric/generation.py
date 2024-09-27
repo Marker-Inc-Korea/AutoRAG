@@ -66,6 +66,7 @@ def bleu(
 	smooth_value: Optional[float] = None,
 	max_ngram_order: int = 4,
 	trg_lang: str = "",
+	effective_order: bool = True,
 	**kwargs,
 ) -> List[float]:
 	"""
@@ -77,6 +78,8 @@ def bleu(
 	:param smooth_value: The smoothing value for `floor` and `add-k` methods. `None` falls back to default value.
 	:param max_ngram_order: If given, it overrides the maximum n-gram order (default: 4) when computing precisions.
 	:param trg_lang: An optional language code to raise potential tokenizer warnings.
+	:param effective_order: If `True`, stop including n-gram orders for which precision is 0. This should be
+	`True`, if sentence-level BLEU will be computed.
 	"""
 	bleu_instance = BLEU(
 		tokenize=tokenize,
@@ -84,6 +87,7 @@ def bleu(
 		smooth_value=smooth_value,
 		max_ngram_order=max_ngram_order,
 		trg_lang=trg_lang,
+		effective_order=effective_order,
 		**kwargs,
 	)
 
