@@ -321,7 +321,7 @@ autorag run_web --trial_path your/path/to/trial_path
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
 ## 📌 Supporting Data Creation Modules
-![Data Creation](https://github.com/user-attachments/assets/383876cc-0d02-4e5f-9528-87f36489640f)
+![Data Creation](https://github.com/user-attachments/assets/0e5872de-2892-46b4-9ecd-e395671e324c)
 
 - You can check our all Parsing Modules at [here](https://edai.notion.site/Supporting-Parse-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
 - You can check our all Chunk Modules at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
