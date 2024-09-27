@@ -12,6 +12,14 @@ autorag.data.qa.filter.dontknow module
    :undoc-members:
    :show-inheritance:
 
+autorag.data.qa.filter.passage\_dependency module
+-------------------------------------------------
+
+.. automodule:: autorag.data.qa.filter.passage_dependency
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.data.qa.filter.prompt module
 ------------------------------------
 
