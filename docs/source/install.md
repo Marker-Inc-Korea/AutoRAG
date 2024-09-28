@@ -106,3 +106,38 @@ python -m pytest -n auto
 
 After this, please check out our documentation for contributors.
 We are writing this documentation for contributors, so please wait for a while.
+
+
+## Run from Dockerfile
+
+To build and run AutoRAG using Docker, follow the instructions below:
+
+### 1. Build the Docker Image
+
+Navigate to the directory where the `Dockerfile` is located and use the following command to build the production image:
+
+```bash
+docker build --target production -t autorag:prod .
+```
+
+2. Run the Docker Container
+Once the image is built, run the container with the appropriate configuration and data paths:
+
+```bash
+docker run --rm -it \
+  -v $(pwd)/sample_config:/usr/src/app/sample_config \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  autorag:prod evaluate \
+  --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
+  --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
+  --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
+  --project_dir /usr/src/app/projects/test01
+```
+
+Explanation: 
+ - -v $(pwd)/sample_config:/usr/src/app/sample_config: Mounts the sample_config directory from the host into the container, making it accessible at /usr/src/app/sample_config.
+
+ - -v $(pwd)/projects:/usr/src/app/projects: Mounts the projects directory from the host into the container, making it accessible at /usr/src/app/projects.
+
+ - autorag:prod evaluate: Runs the evaluate command inside the autorag:prod container.
+ - --config, --qa_data_path, --corpus_data_path, --project_dir: Specifies paths to the configuration file, QA dataset, corpus data, and project directory within the container.
