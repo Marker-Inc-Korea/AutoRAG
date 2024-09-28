@@ -1,7 +1,7 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+# Base stage: Install dependencies
+FROM python:3.10-slim AS base
 
-# Install necessary system dependencies
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y \
     build-essential \
@@ -13,30 +13,33 @@ RUN apt-get update && \
     tesseract-ocr-kor && \
     rm -rf /var/lib/apt/lists/*
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
 # Set work directory
 WORKDIR /usr/src/app
-
-# Install pip and setuptools
-RUN pip install --upgrade pip setuptools setuptools-scm
 
 # Copy project files
 COPY . /usr/src/app
 
-# Install project dependencies
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools setuptools-scm
 RUN pip install -r requirements.txt
 
-# Install pytest for running tests
-RUN pip install pytest
+# Test stage: Run tests if CI=true
+FROM base AS test
 
-# Run tests
-RUN pytest
+# Install testing dependencies
+RUN pip install pytest pytest-xdist
 
-# Define entrypoint for the container
-ENTRYPOINT ["python"]
+# Run tests if CI is set to true
+RUN pytest -o log_cli=true --log-cli-level=INFO -n auto tests
 
-# Default command to run the application
-CMD ["-m", "autorag.cli"]
+# Production stage: Create final image for production
+FROM base AS production
+
+COPY benchmark /usr/src/app/benchmark
+COPY projects /usr/src/app/projects
+COPY sample_config /usr/src/app/sample_config
+COPY sample_dataset /usr/src/app/sample_dataset
+
+# Set the entrypoint for the production application
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+# ENTRYPOINT ["bash"]
