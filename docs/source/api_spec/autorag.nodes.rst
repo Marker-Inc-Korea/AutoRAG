@@ -16,6 +16,17 @@ Subpackages
    autorag.nodes.queryexpansion
    autorag.nodes.retrieval
 
+Submodules
+----------
+
+autorag.nodes.util module
+-------------------------
+
+.. automodule:: autorag.nodes.util
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
