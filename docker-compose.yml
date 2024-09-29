@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  autorag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    volumes:
+      - ~/.cache/huggingface:/cache/huggingface
+      - ./sample_config:/usr/src/app/sample_config
+      - ./projects:/usr/src/app/projects
+    environment:
+      HF_HOME: /cache/huggingface
+      OPENAI_API_KEY: ${OPENAI_API_KEY}  # Include the OpenAI API key as an environment variable
+    command: >
+      evaluate --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml
+      --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet
+      --corpus_data_path /usr/src/app/projects/test01/corpus.parquet
+      --project_dir /usr/src/app/projects/test01

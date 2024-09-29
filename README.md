@@ -39,6 +39,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 # Index
 
 - [Quick Install](#quick-install)
+- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [Data Creation](#data-creation)
   - [Parsing](#1-parsing)
   - [Chunking](#2-chunking)
@@ -189,77 +190,22 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 ## 🐳 AutoRAG Docker Guide
 
-This guide provides a quick overview of how to build and run the AutoRAG Docker container for production use, with an example command to perform evaluation using specified configuration and data paths.
+This guide provides a quick overview of building and running the AutoRAG Docker container for production, with instructions on setting up the environment for evaluation using your configuration and data paths.
 
 ### 🚀 Building the Docker Image
 
-Build the production Docker image from the `Dockerfile` using the following command:
+Build and run the container using `docker-compose`:
 
 ```bash
-docker build --target production -t autorag:prod .
+docker-compose up --build
 ```
 
-- **`--target production`**: Builds only the `production` stage from the `Dockerfile`, excluding unnecessary stages (e.g., testing).
-- **`-t autorag:prod`**: Tags the resulting image as `autorag:prod`.
+#### Key Points in `docker-compose.yml`:
+- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface` in the container, enabling access to pre-downloaded models.
+- **`HF_HOME=/cache/huggingface`**: Sets the `HF_HOME` environment variable to use the custom cache directory.
+- **`OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment or `.env` file to the container for OpenAI API access.
 
-### 🏃‍♂️ Running the Docker Container
-
-Run the `autorag:prod` container to evaluate the model using specified configuration and data files:
-
-```bash
-docker run --rm -it \
-  autorag:prod evaluate \
-  --config ./sample_config/rag/simple/simple_openai.yaml \
-  --qa_data_path ./projects/test01/qa_validation.parquet \
-  --corpus_data_path ./projects/test01/corpus.parquet \
-  --project_dir ./projects/test01
-```
-
-#### Options:
-- **`--rm`**: Automatically removes the container when it exits, preventing clutter from temporary containers.
-- **`-it`**: Allows for interactive terminal access, enabling real-time feedback and command interaction.
-- **`evaluate`**: The command inside the container to start the evaluation process.
-- **`--config`**: Path to the configuration file (`simple_openai.yaml`) specifying model and pipeline settings.
-- **`--qa_data_path`**: Path to the QA dataset (`qa_validation.parquet`) used for model evaluation.
-- **`--corpus_data_path`**: Path to the corpus dataset (`corpus.parquet`) containing reference documents for the QA task.
-- **`--project_dir`**: Project directory (`test01`) that includes all relevant configurations and datasets for this evaluation.
-
-### 📁 Volume Mounts (Optional)
-
-If you prefer to link host directories dynamically instead of copying files into the Docker image, you can use volume mounts:
-
-```bash
-docker run --rm -it \
-  -v $(pwd)/sample_config:/usr/src/app/sample_config \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  autorag:prod evaluate \
-  --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
-  --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
-  --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
-  --project_dir /usr/src/app/projects/test01
-```
-
-- **`-v <host_path>:<container_path>`**: Maps a host directory to a directory inside the container, enabling seamless data access without rebuilding the image.
-
-### 🔧 Debugging and Shell Access
-
-To access the container for debugging or manual operations, use the following command to override the default entrypoint:
-
-```bash
-docker run --rm -it --entrypoint /bin/bash autorag:prod
-```
-
-This opens an interactive Bash shell inside the container, where you can inspect files, run commands, or troubleshoot issues.
-
-### 📝 Summary
-
-- **Build** the production image: `docker build --target production -t autorag:prod .`
-- **Run** the evaluation: `docker run --rm -it autorag:prod evaluate --config <config_path> --qa_data_path <qa_data_path> --corpus_data_path <corpus_data_path> --project_dir <project_dir>`
-- **Debug** the container: `docker run --rm -it --entrypoint /bin/bash autorag:prod`
-
-With these commands, you can efficiently build, run, and manage the AutoRAG container for various use cases and environments.
-
-
+For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
 
 ## Quick Start
 
