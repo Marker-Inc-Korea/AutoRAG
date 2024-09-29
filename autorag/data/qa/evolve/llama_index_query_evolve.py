@@ -35,3 +35,15 @@ async def conditional_evolve_ragas(
 		llm,
 		QUERY_EVOLVE_PROMPT["conditional_evolve_ragas"][lang],
 	)
+
+
+async def reasoning_evolve_ragas(
+	row: Dict,
+	llm: BaseLLM,
+	lang: str = "en",
+) -> Dict:
+	return await llama_index_generate_base(
+		row,
+		llm,
+		QUERY_EVOLVE_PROMPT["reasoning_evolve_ragas"][lang],
+	)

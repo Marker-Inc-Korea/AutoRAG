@@ -48,3 +48,14 @@ async def conditional_evolve_ragas(
 	return await query_evolve_openai_base(
 		row, client, QUERY_EVOLVE_PROMPT["conditional_evolve_ragas"][lang], model_name
 	)
+
+
+async def reasoning_evolve_ragas(
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-2024-08-06",
+	lang: str = "en",
+) -> Dict:
+	return await query_evolve_openai_base(
+		row, client, QUERY_EVOLVE_PROMPT["reasoning_evolve_ragas"][lang], model_name
+	)
