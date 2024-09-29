@@ -81,7 +81,7 @@ previous_result = pd.concat(
 
 @pytest.fixture
 def node_line_dir():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		data_dir = os.path.join(project_dir, "data")
 		os.makedirs(data_dir)
 		qa_data.to_parquet(os.path.join(data_dir, "qa.parquet"), index=False)

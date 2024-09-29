@@ -70,7 +70,7 @@ def module_params():
 
 @pytest.fixture
 def summary_path():
-	with tempfile.TemporaryDirectory() as tmp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
 		summary_path = os.path.join(tmp_dir, "summary.csv")
 		summary_df.to_csv(summary_path, index=False)
 		yield summary_path

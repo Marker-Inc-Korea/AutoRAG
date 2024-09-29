@@ -27,7 +27,7 @@ embedding_model = OpenAIEmbedding()
 
 @pytest.fixture
 def ingested_vectordb_node():
-	with tempfile.TemporaryDirectory() as node_chroma_path:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as node_chroma_path:
 		node_db = chromadb.PersistentClient(path=node_chroma_path)
 		node_collection = node_db.create_collection(
 			name="openai", metadata={"hnsw:space": "cosine"}

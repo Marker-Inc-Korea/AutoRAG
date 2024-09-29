@@ -38,7 +38,7 @@ metrics = ["retrieval_f1", "retrieval_recall"]
 
 @pytest.fixture
 def node_line_dir():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		sample_project_dir = os.path.join(resources_dir, "sample_project")
 		# copy & paste all folders and files in sample_project folder
 		shutil.copytree(sample_project_dir, project_dir, dirs_exist_ok=True)

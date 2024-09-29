@@ -45,7 +45,7 @@ def ingested_bm25_path():
 
 @pytest.fixture
 def bm25_instance(ingested_bm25_path):
-	with tempfile.TemporaryDirectory() as temp_project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_project_dir:
 		os.makedirs(os.path.join(temp_project_dir, "resources"))
 		os.makedirs(os.path.join(temp_project_dir, "data"))
 		bm25_path = os.path.join(

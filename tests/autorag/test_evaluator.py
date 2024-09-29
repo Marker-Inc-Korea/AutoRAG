@@ -27,7 +27,7 @@ resource_dir = os.path.join(root_dir, "resources")
 
 @pytest.fixture
 def evaluator():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		evaluator = Evaluator(
 			os.path.join(resource_dir, "qa_data_sample.parquet"),
 			os.path.join(resource_dir, "corpus_data_sample.parquet"),
@@ -38,7 +38,7 @@ def evaluator():
 
 @pytest.fixture
 def test_evaluator():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		evaluator = Evaluator(
 			os.path.join(resource_dir, "qa_test_data_sample.parquet"),
 			os.path.join(resource_dir, "corpus_data_sample.parquet"),

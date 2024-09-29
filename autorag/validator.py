@@ -67,7 +67,7 @@ class Validator:
 		with (
 			tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as qa_path,
 			tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as corpus_path,
-			tempfile.TemporaryDirectory() as temp_project_dir,
+			tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_project_dir,
 		):
 			sample_qa_df.to_parquet(qa_path.name, index=False)
 			sample_corpus_df.to_parquet(corpus_path.name, index=False)
