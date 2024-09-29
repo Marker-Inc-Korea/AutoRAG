@@ -108,23 +108,25 @@ After this, please check out our documentation for contributors.
 We are writing this documentation for contributors, so please wait for a while.
 
 
-## Run from Dockerfile
+## Run AutoRAG with 🐳 Docker
 
-To build and run AutoRAG using Docker, follow the instructions below:
+To run AutoRAG using Docker, follow these steps:
 
 ### 1. Build the Docker Image
-
-Navigate to the directory where the `Dockerfile` is located and use the following command to build the production image:
 
 ```bash
 docker build --target production -t autorag:prod .
 ```
 
-2. Run the Docker Container
-Once the image is built, run the container with the appropriate configuration and data paths:
+This command will build the production-ready Docker image, using only the `production` stage defined in the `Dockerfile`.
+
+### 2. Run the Docker Container
+
+Run the container with the following command:
 
 ```bash
 docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/sample_config:/usr/src/app/sample_config \
   -v $(pwd)/projects:/usr/src/app/projects \
   autorag:prod evaluate \
@@ -134,10 +136,78 @@ docker run --rm -it \
   --project_dir /usr/src/app/projects/test01
 ```
 
-Explanation: 
- - -v $(pwd)/sample_config:/usr/src/app/sample_config: Mounts the sample_config directory from the host into the container, making it accessible at /usr/src/app/sample_config.
+#### Explanation:
+- **`-v ~/.cache/huggingface:/root/.cache/huggingface`**: Mounts the host's Hugging Face cache to the container, allowing it to access pre-downloaded models.
+- **`-v $(pwd)/sample_config:/usr/src/app/sample_config`**: Mounts the local `sample_config` directory to the container.
+- **`-v $(pwd)/projects:/usr/src/app/projects`**: Mounts the local `projects` directory to the container.
+- **`autorag:prod evaluate`**: Executes the `evaluate` command inside the `autorag:prod` container.
+- **`--config`, `--qa_data_path`, `--corpus_data_path`, `--project_dir`**: Specifies paths to the configuration file, QA dataset, corpus data, and project directory.
 
- - -v $(pwd)/projects:/usr/src/app/projects: Mounts the projects directory from the host into the container, making it accessible at /usr/src/app/projects.
+### 3. Using a Custom Cache Directory with `HF_HOME`
 
- - autorag:prod evaluate: Runs the evaluate command inside the autorag:prod container.
- - --config, --qa_data_path, --corpus_data_path, --project_dir: Specifies paths to the configuration file, QA dataset, corpus data, and project directory within the container.
+Alternatively, you can mount the Hugging Face cache to a custom location inside the container and set the `HF_HOME` environment variable:
+
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/cache/huggingface \
+  -v $(pwd)/sample_config:/usr/src/app/sample_config \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e HF_HOME=/cache/huggingface \
+  autorag:prod evaluate \
+  --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
+  --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
+  --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
+  --project_dir /usr/src/app/projects/test01
+```
+
+#### Explanation:
+- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host's Hugging Face cache to `/cache/huggingface` inside the container.
+- **`-e HF_HOME=/cache/huggingface`**: Sets the `HF_HOME` environment variable to point to the mounted cache directory.
+
+### 4. Running with Docker Compose (Optional)
+
+If you prefer using Docker Compose, create a `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+
+services:
+  autorag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    volumes:
+      - ~/.cache/huggingface:/cache/huggingface
+      - ./sample_config:/usr/src/app/sample_config
+      - ./projects:/usr/src/app/projects
+    environment:
+      HF_HOME: /cache/huggingface
+    command: >
+      evaluate --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml
+      --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet
+      --corpus_data_path /usr/src/app/projects/test01/corpus.parquet
+      --project_dir /usr/src/app/projects/test01
+```
+
+Run with:
+
+```bash
+docker-compose up --build
+```
+
+### 5. Debugging and Manual Access
+
+To manually access the container for debugging or testing, start a Bash shell:
+
+```bash
+docker run --rm -it --entrypoint /bin/bash autorag:prod
+```
+
+This command allows you to explore the container’s filesystem, run commands manually, or inspect logs for troubleshooting.
+
+## Additional Notes
+
+- Ensure that the necessary directories (`sample_config` and `projects`) are present in the host system.
+- If running in a CI/CD pipeline, consider using environment variables or `.env` files to manage API keys and paths dynamically.
+
