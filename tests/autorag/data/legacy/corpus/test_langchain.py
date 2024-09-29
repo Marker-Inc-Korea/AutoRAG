@@ -5,7 +5,7 @@ import pytest
 from langchain_core.documents import Document
 
 from autorag.data.legacy.corpus import langchain_documents_to_parquet
-from tests.autorag.data.legacy.corpus.test_base import validate_corpus
+from tests.autorag.data.legacy.corpus.test_base_corpus_legacy import validate_corpus
 
 
 @pytest.fixture

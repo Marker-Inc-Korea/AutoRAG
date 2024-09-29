@@ -9,7 +9,7 @@ from autorag.data.legacy.corpus import (
 	llama_documents_to_parquet,
 	llama_text_node_to_parquet,
 )
-from tests.autorag.data.legacy.corpus.test_base import validate_corpus
+from tests.autorag.data.legacy.corpus.test_base_corpus_legacy import validate_corpus
 
 
 @pytest.fixture

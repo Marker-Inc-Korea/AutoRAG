@@ -16,7 +16,6 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	previous_result,
 	base_reranker_node_test,
 )
-from tests.delete_tests import is_github_action
 
 
 @pytest.mark.asyncio()
