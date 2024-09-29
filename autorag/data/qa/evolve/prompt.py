@@ -139,4 +139,57 @@ Output: """,
 			),
 		],
 	},
+	"compress_ragas": {
+		"en": [
+			ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""Rewrite the following question to make it more indirect and shorter while retaining the essence of the original question.
+    The goal is to create a question that conveys the same meaning but in a less direct manner. The rewritten question should shorter so use abbreviation wherever possible.""",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: What is the distance between the Earth and the Moon?
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="How far is the Moon from Earth?",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: What ingredients are required to bake a chocolate cake?
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="What's needed for a chocolate cake?",
+			),
+		],
+		"ko": [
+			ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""주어진 질문을 더 간접적이고 짧게 다시 작성하세요.
+        목표는 질문을 원래 질문의 본질을 유지하면서 너무 직설적이지 않게 만드는 것입니다.
+        약어 등을 사용하여 질문을 더 짧게 만드세요.""",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: 지구와 달 사이의 거리는 얼마입니까?
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="달은 지구에서 얼마나 떨어져 있나요?",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: 초콜릿 케이크를 굽기 위해 필요한 재료는 무엇입니까?
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="초콜릿 케이크에 필요한 것은 무엇인가요?",
+			),
+		],
+	},
 }

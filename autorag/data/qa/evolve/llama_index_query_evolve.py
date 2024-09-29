@@ -47,3 +47,18 @@ async def reasoning_evolve_ragas(
 		llm,
 		QUERY_EVOLVE_PROMPT["reasoning_evolve_ragas"][lang],
 	)
+
+
+async def compress_ragas(
+	row: Dict,
+	llm: BaseLLM,
+	lang: str = "en",
+) -> Dict:
+	original_query = row["query"]
+	user_prompt = f"Question: {original_query}\nOutput: "
+	messages = QUERY_EVOLVE_PROMPT["compress_ragas"][lang]
+	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
+
+	chat_response: ChatResponse = await llm.achat(messages=messages)
+	row["query"] = chat_response.message.content
+	return row

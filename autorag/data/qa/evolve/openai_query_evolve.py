@@ -59,3 +59,23 @@ async def reasoning_evolve_ragas(
 	return await query_evolve_openai_base(
 		row, client, QUERY_EVOLVE_PROMPT["reasoning_evolve_ragas"][lang], model_name
 	)
+
+
+async def compress_ragas(
+	row: Dict,
+	client: AsyncClient,
+	model_name: str = "gpt-4o-2024-08-06",
+	lang: str = "en",
+) -> Dict:
+	original_query = row["query"]
+	messages = QUERY_EVOLVE_PROMPT["compress_ragas"][lang]
+	user_prompt = f"Question: {original_query}\nOutput: "
+	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
+
+	completion = await client.beta.chat.completions.parse(
+		model=model_name,
+		messages=to_openai_message_dicts(messages),
+		response_format=Response,
+	)
+	row["query"] = completion.choices[0].message.parsed.evolved_query
+	return row
