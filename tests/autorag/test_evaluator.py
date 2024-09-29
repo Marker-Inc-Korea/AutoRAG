@@ -360,9 +360,13 @@ async def mock_openai_apredict(self, prompt, *args, **kwargs):
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_test_data_evaluate(test_evaluator):
 	trial_folder = os.path.join(resource_dir, "result_project", "0")
-	with tempfile.NamedTemporaryFile(mode="w+t", suffix=".yaml") as yaml_file:
+	with tempfile.NamedTemporaryFile(
+		mode="w+t", suffix=".yaml", delete=False
+	) as yaml_file:
 		extract_best_config(trial_folder, yaml_file.name)
 		test_evaluator.start_trial(yaml_file.name)
+		yaml_file.close()
+		os.unlink(yaml_file.name)
 
 	project_dir = test_evaluator.project_dir
 

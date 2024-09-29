@@ -1,3 +1,4 @@
+import os
 import tempfile
 
 import pandas as pd
@@ -172,8 +173,10 @@ def test_update_corpus():
 	pd.testing.assert_frame_equal(
 		new_qa.data[["qid", "retrieval_gt"]], expected_dataframe
 	)
-	with tempfile.NamedTemporaryFile(suffix=".parquet") as qa_path:
-		with tempfile.NamedTemporaryFile(suffix=".parquet") as corpus_path:
+	with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as qa_path:
+		with tempfile.NamedTemporaryFile(
+			suffix=".parquet", delete=False
+		) as corpus_path:
 			new_qa.to_parquet(qa_path.name, corpus_path.name)
 			loaded_qa = pd.read_parquet(qa_path.name, engine="pyarrow")
 			assert set(loaded_qa.columns) == {
@@ -184,3 +187,7 @@ def test_update_corpus():
 			}
 			loaded_corpus = pd.read_parquet(corpus_path.name, engine="pyarrow")
 			assert set(loaded_corpus.columns) == {"doc_id", "contents", "metadata"}
+			corpus_path.close()
+			os.unlink(corpus_path.name)
+		qa_path.close()
+		os.unlink(qa_path.name)

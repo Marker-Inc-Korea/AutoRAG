@@ -148,12 +148,16 @@ def test_summary_df_to_yaml():
 def test_extract_best_config(pseudo_trial_path):
 	yaml_dict = extract_best_config(pseudo_trial_path)
 	assert yaml_dict == solution_dict
-	with tempfile.NamedTemporaryFile(suffix="yaml", mode="w+t") as yaml_path:
+	with tempfile.NamedTemporaryFile(
+		suffix="yaml", mode="w+t", delete=False
+	) as yaml_path:
 		yaml_dict = extract_best_config(pseudo_trial_path, yaml_path.name)
 		assert yaml_dict == solution_dict
 		assert os.path.exists(yaml_path.name)
 		yaml_dict = yaml.safe_load(yaml_path)
 		assert yaml_dict == solution_dict
+		yaml_path.close()
+		os.unlink(yaml_path.name)
 
 
 def test_runner(evaluator):
@@ -173,10 +177,14 @@ def test_runner(evaluator):
 	runner_test(runner)
 	runner_test(runner)
 
-	with tempfile.NamedTemporaryFile(suffix="yaml", mode="w+t") as yaml_path:
+	with tempfile.NamedTemporaryFile(
+		suffix="yaml", mode="w+t", delete=False
+	) as yaml_path:
 		extract_best_config(os.path.join(project_dir, "0"), yaml_path.name)
 		runner = Runner.from_yaml(yaml_path.name, project_dir=project_dir)
 		runner_test(runner)
+		yaml_path.close()
+		os.unlink(yaml_path.name)
 
 
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")

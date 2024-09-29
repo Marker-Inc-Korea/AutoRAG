@@ -36,9 +36,11 @@ ko_texts = [
 
 @pytest.fixture
 def ingested_bm25_path():
-	with tempfile.NamedTemporaryFile(suffix=".pkl", mode="w+b") as path:
+	with tempfile.NamedTemporaryFile(suffix=".pkl", mode="w+b", delete=False) as path:
 		bm25_ingest(path.name, corpus_df)
 		yield path.name
+		path.close()
+		os.unlink(path.name)
 
 
 @pytest.fixture
