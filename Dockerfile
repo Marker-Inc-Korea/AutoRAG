@@ -38,7 +38,6 @@ RUN pytest -o log_cli=true --log-cli-level=INFO -n auto tests
 # Production stage: Create final image for production
 FROM base AS production
 
-COPY benchmark /usr/src/app/benchmark
 COPY projects /usr/src/app/projects
 
 # Set the entrypoint for the production application
