@@ -1,17 +1,15 @@
 services:
-  autorag:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: production
-    volumes:
-      - ~/.cache/huggingface:/cache/huggingface
-      - ./sample_config:/usr/src/app/sample_config
-      - ./projects:/usr/src/app/projects
-    environment:
-      HF_HOME: /cache/huggingface
-      OPENAI_API_KEY: ${OPENAI_API_KEY}  # Include the OpenAI API key as an environment variable
+  validate:
+    image: autorag:prod
     command: >
-      validate --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml
-      --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet
-      --corpus_data_path /usr/src/app/projects/test01/corpus.parquet
+      validate
+      --config /usr/src/app/projects/tutorial_1/config.yaml
+      --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet
+      --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ./projects:/usr/src/app/projects
+    stdin_open: true
+    tty: true

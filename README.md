@@ -192,18 +192,31 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 This guide provides a quick overview of building and running the AutoRAG Docker container for production, with instructions on setting up the environment for evaluation using your configuration and data paths.
 
-### 🚀 Building the Docker Image
+### 🚀 Building the Docker Image 
 
 Build and run the container using `docker-compose`:
 
+#### 1.Download dataset for [Turorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 ```bash
-docker-compose up --build
+mkdir projects/tutorial_1
+python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1 
 ```
 
-#### Key Points in `docker-compose.yml`:
+#### 1. Run validate 
+```bash 
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  autorag:prod validate \
+  --config /usr/src/app/projects/tutorial_1/config.yaml \
+  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
+  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet 
+```
+
+#### Key Points :
 - **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface` in the container, enabling access to pre-downloaded models.
-- **`HF_HOME=/cache/huggingface`**: Sets the `HF_HOME` environment variable to use the custom cache directory.
-- **`OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment or `.env` file to the container for OpenAI API access.
+- **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment. 
 
 For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
 
