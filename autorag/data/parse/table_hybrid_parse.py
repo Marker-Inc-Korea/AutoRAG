@@ -31,7 +31,7 @@ def table_hybrid_parse(
 	:return: tuple of lists containing the parsed texts, path and pages.
 	"""
 	# make save folder directory
-	with tempfile.TemporaryDirectory() as save_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as save_dir:
 		text_dir = os.path.join(save_dir, "text")
 		table_dir = os.path.join(save_dir, "table")
 

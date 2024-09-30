@@ -24,7 +24,7 @@ resources_dir = os.path.join(root_dir, "resources")
 
 @pytest.fixture
 def node_line_dir():
-	with tempfile.TemporaryDirectory() as test_project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as test_project_dir:
 		sample_project_dir = os.path.join(resources_dir, "sample_project")
 		# copy & paste all folders and files in sample_project folder
 		shutil.copytree(sample_project_dir, test_project_dir, dirs_exist_ok=True)
@@ -209,7 +209,7 @@ def pseudo_node_dir():
 		}
 	)
 
-	with tempfile.TemporaryDirectory() as node_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as node_dir:
 		summary_df.to_csv(os.path.join(node_dir, "summary.csv"))
 		bm25_df.to_parquet(os.path.join(node_dir, "0.parquet"))
 		vector_openai_df.to_parquet(os.path.join(node_dir, "1.parquet"))

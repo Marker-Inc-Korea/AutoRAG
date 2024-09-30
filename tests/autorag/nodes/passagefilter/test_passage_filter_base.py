@@ -65,7 +65,7 @@ previous_result["retrieval_recall"] = recall_example
 
 @pytest.fixture
 def project_dir_with_corpus():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		data_dir = os.path.join(temp_dir, "data")
 		os.makedirs(data_dir, exist_ok=True)
 		qa_data.to_parquet(os.path.join(data_dir, "qa.parquet"), index=False)

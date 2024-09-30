@@ -70,7 +70,7 @@ def module_params():
 
 @pytest.fixture
 def summary_path():
-	with tempfile.TemporaryDirectory() as tmp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
 		summary_path = os.path.join(tmp_dir, "summary.csv")
 		summary_df.to_csv(summary_path, index=False)
 		yield summary_path
@@ -141,10 +141,12 @@ def test_load_summary_file_recency_filter():
 			],
 		}
 	)
-	with tempfile.NamedTemporaryFile(suffix=".csv") as csv_file:
+	with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as csv_file:
 		df.to_csv(csv_file.name, index=False)
 		load_df = load_summary_file(csv_file.name)
 		assert load_df.equals(df)
+		csv_file.close()
+		os.unlink(csv_file.name)
 
 
 def test_convert_datetime_string():

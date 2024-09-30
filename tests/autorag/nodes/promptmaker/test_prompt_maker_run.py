@@ -88,7 +88,7 @@ def test_evaluate_one_prompt_maker_node():
 
 @pytest.fixture
 def node_line_dir():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		data_dir = os.path.join(project_dir, "data")
 		os.makedirs(data_dir)
 		qa_data = pd.DataFrame(

@@ -8,7 +8,7 @@ from tests.autorag.data.parse.test_parse_base import eng_text_glob
 
 
 def test_run_parser():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		modules = [langchain_parse, langchain_parse]
 		module_params = [{"parse_method": "pdfminer"}, {"parse_method": "pdfplumber"}]
 		data_path_glob = eng_text_glob
