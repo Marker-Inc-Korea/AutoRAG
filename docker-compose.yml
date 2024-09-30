@@ -13,3 +13,4 @@ services:
       - ./projects:/usr/src/app/projects
     stdin_open: true
     tty: true
+

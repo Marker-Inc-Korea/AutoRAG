@@ -202,7 +202,23 @@ mkdir projects/tutorial_1
 python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1 
 ```
 
-#### 1. Run validate 
+#### 2. Run `evaluate`
+> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $0.30.
+
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  autorag:prod evaluate \
+  --config /usr/src/app/projects/tutorial_1/config.yaml \
+  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
+  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
+  --project_dir /usr/src/app/projects/tutorial_1/
+```
+
+
+#### 3. Run validate 
 ```bash 
 docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
@@ -212,6 +228,30 @@ docker run --rm -it \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet 
+```
+
+
+#### 4. Run `dashboard`
+```bash 
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 8502:8502 \
+  autorag:prod dashboard \
+    --trial_dir /usr/src/app/projects/tutorial_1/0 
+```
+
+
+#### 4. Run `run_web`
+```bash 
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 8501:8501 \
+  autorag:prod run_web \
+  --yaml_path /usr/src/app/projects/tutorial_1/0/config.yaml --project_dir /usr/src/app/projects/tutorial_1
 ```
 
 #### Key Points :

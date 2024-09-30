@@ -16,12 +16,15 @@ RUN apt-get update && \
 # Set work directory
 WORKDIR /usr/src/app
 
-# Copy project files
-COPY . /usr/src/app
-
 # Install Python dependencies
 RUN pip install --upgrade pip setuptools setuptools-scm
+COPY requirements.txt /usr/src/app/requirements.txt
+
 RUN pip install -r requirements.txt
+
+# Copy project files
+COPY . /usr/src/app
+RUN pip install -e ./
 
 # Test stage: Run tests if CI=true
 FROM base AS test
@@ -37,8 +40,6 @@ FROM base AS production
 
 COPY benchmark /usr/src/app/benchmark
 COPY projects /usr/src/app/projects
-COPY sample_config /usr/src/app/sample_config
-COPY sample_dataset /usr/src/app/sample_dataset
 
 # Set the entrypoint for the production application
 ENTRYPOINT ["python", "-m", "autorag.cli"]
