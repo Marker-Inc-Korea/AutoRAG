@@ -205,7 +205,7 @@ It will evaluate your test dataset with the found RAG pipeline.
 
 ## Deploy your optimal RAG pipeline
 
-### 1. Run as a CLI
+### 1. Run as a Code
 
 You can use a found optimal RAG pipeline right away with an extracted YAML file.
 
@@ -213,6 +213,15 @@ You can use a found optimal RAG pipeline right away with an extracted YAML file.
 from autorag.deploy import Runner
 
 runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run('your question')
+```
+
+Or you can use the trial folder to run the pipeline without extracted YAML file.
+
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('/your/path/to/trial_dir')
 runner.run('your question')
 ```
 
@@ -226,6 +235,15 @@ Check out the API endpoint at [here](deploy/api_endpoint.md).
 from autorag.deploy import Runner
 
 runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner.run_api_server()
+```
+
+or
+
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('/your/path/to/trial_dir')
 runner.run_api_server()
 ```
 
@@ -249,8 +267,22 @@ from autorag.deploy import Runner
 runner = Runner.from_yaml('your/path/to/pipeline.yaml')
 runner.run_web()
 ```
+
+```python
+from autorag.deploy import Runner
+
+runner = Runner.from_trial_folder('/your/path/to/trial_dir')
+runner.run_web()
+```
+
+The cli will run the streamlit web interface, but the code is gradio version.
+
 ```bash
 autorag run_web --yaml_path your/path/to/pipeline.yaml
+```
+
+```bash
+autorag run_web --trial_path your/path/to/trial_dir
 ```
 
 ```{admonition} Want to specify project folder?
