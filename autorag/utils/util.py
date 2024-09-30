@@ -624,13 +624,19 @@ def pop_params(func: Callable, kwargs: Dict) -> Dict:
 
 def apply_recursive(func, data):
 	"""
-	Recursively apply a function to all elements in an Iterable and return as List.
+	Recursively apply a function to all elements in a list, tuple, set, np.ndarray, or pd.Series and return as List.
 
 	:param func: Function to apply to each element.
 	:param data: List or nested list.
 	:return: List with the function applied to each element.
 	"""
-	if isinstance(data, Iterable):
+	if (
+		isinstance(data, list)
+		or isinstance(data, tuple)
+		or isinstance(data, set)
+		or isinstance(data, np.ndarray)
+		or isinstance(data, pd.Series)
+	):
 		return [apply_recursive(func, item) for item in data]
 	else:
 		return func(data)

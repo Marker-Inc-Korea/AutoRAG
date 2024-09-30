@@ -633,6 +633,6 @@ def test_apply_recursive():
 	result = apply_recursive(lambda x: x * 2, data)
 	assert result == 10
 
-	data = [(4, 5), (6, 7), [5, [6, 7]]]
+	data = [(4, 5), (6, 7), [5, [6, 7]], np.array([4, 5]), pd.Series([4, 5])]
 	result = apply_recursive(lambda x: x * 2, data)
-	assert result == [[8, 10], [12, 14], [10, [12, 14]]]
+	assert result == [[8, 10], [12, 14], [10, [12, 14]], [8, 10], [8, 10]]
