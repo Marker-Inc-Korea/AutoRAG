@@ -83,7 +83,7 @@ modules_with_weights = {
 
 @pytest.fixture
 def pseudo_project_dir():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		corpus_df = pd.DataFrame(
 			{
 				"doc_id": [

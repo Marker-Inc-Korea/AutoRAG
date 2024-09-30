@@ -16,7 +16,7 @@ parsed_data_path = os.path.join(data_dir, "sample_parsed.parquet")
 
 @pytest.fixture
 def chunker():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		chunker = Chunker.from_parquet(
 			parsed_data_path=parsed_data_path, project_dir=project_dir
 		)
@@ -25,7 +25,7 @@ def chunker():
 
 @pytest.fixture
 def chunker_test_fixture():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		chunker = Chunker.from_parquet(
 			parsed_data_path=parsed_data_path, project_dir=project_dir
 		)

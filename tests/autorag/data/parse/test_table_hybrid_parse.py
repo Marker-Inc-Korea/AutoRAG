@@ -80,7 +80,7 @@ def test_table_hybrid_parse_only_table_node():
 
 
 def test_save_page_by_table():
-	with tempfile.TemporaryDirectory() as save_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as save_dir:
 		text_dir = os.path.join(save_dir, "text")
 		table_dir = os.path.join(save_dir, "table")
 		os.makedirs(text_dir, exist_ok=True)

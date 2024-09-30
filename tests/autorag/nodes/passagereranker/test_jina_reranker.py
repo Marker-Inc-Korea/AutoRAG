@@ -16,7 +16,6 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	previous_result,
 	base_reranker_node_test,
 )
-from tests.delete_tests import is_github_action
 
 
 @pytest.mark.asyncio()
@@ -73,7 +72,6 @@ def jina_reranker_instance():
 	return JinaReranker(project_dir, "mock_api_key")
 
 
-@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 @patch.object(
 	autorag.nodes.passagereranker.jina, "jina_reranker_pure", mock_jina_reranker_pure
 )
@@ -85,7 +83,6 @@ def test_jina_reranker(jina_reranker_instance):
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
-@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 @patch.object(
 	autorag.nodes.passagereranker.jina, "jina_reranker_pure", mock_jina_reranker_pure
 )
@@ -102,7 +99,6 @@ def test_jina_reranker_batch_one(jina_reranker_instance):
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
-@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 @patch.object(
 	autorag.nodes.passagereranker.jina, "jina_reranker_pure", mock_jina_reranker_pure
 )

@@ -16,7 +16,7 @@ from tests.autorag.nodes.promptmaker.test_prompt_maker_base import (
 
 @pytest.fixture
 def pseudo_project_dir():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		data_dir = os.path.join(project_dir, "data")
 		os.makedirs(data_dir)
 		corpus_df.to_parquet(os.path.join(data_dir, "corpus.parquet"))
