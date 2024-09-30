@@ -620,3 +620,17 @@ def pop_params(func: Callable, kwargs: Dict) -> Dict:
 		if key in target_params:
 			init_params[key] = kwargs.pop(key)
 	return init_params
+
+
+def apply_recursive(func, data):
+	"""
+	Recursively apply a function to all elements in an Iterable and return as List.
+
+	:param func: Function to apply to each element.
+	:param data: List or nested list.
+	:return: List with the function applied to each element.
+	"""
+	if isinstance(data, Iterable):
+		return [apply_recursive(func, item) for item in data]
+	else:
+		return func(data)
