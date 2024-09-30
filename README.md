@@ -198,7 +198,6 @@ Build and run the container using `docker-compose`:
 
 #### 1.Download dataset for [Turorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 ```bash
-mkdir projects/tutorial_1
 python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
 ```
 
@@ -210,7 +209,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autorag:prod evaluate \
+  autoraghq/autorag:all evaluate \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
@@ -224,7 +223,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autorag:prod validate \
+  autoraghq/autorag:all validate \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
@@ -238,7 +237,7 @@ docker run --rm -it \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
   -p 8502:8502 \
-  autorag:prod dashboard \
+  autoraghq/autorag:all dashboard \
     --trial_dir /usr/src/app/projects/tutorial_1/0
 ```
 
@@ -250,7 +249,7 @@ docker run --rm -it \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
   -p 8501:8501 \
-  autorag:prod run_web --trial_path ./projects/tutorial_1/0
+  autoraghq/autorag:all run_web --trial_path ./projects/tutorial_1/0
 ```
 
 #### Key Points :
