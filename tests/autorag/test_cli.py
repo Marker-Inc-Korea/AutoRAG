@@ -13,7 +13,7 @@ resource_dir = os.path.join(root_dir, "resources")
 
 
 def test_evaluator_cli():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		result = subprocess.run(
 			[
 				"autorag",
@@ -84,7 +84,7 @@ def test_run_api():
 
 
 def test_extract_best_config_cli():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		trial_path = os.path.join(resource_dir, "result_project", "0")
 		output_path = os.path.join(project_dir, "best.yaml")
 		subprocess.run(
@@ -101,7 +101,7 @@ def test_extract_best_config_cli():
 
 
 def test_restart_evaluate():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		original_path = os.path.join(resource_dir, "result_project")
 		copy_tree(original_path, project_dir)
 		trial_path = os.path.join(project_dir, "1")
@@ -110,7 +110,7 @@ def test_restart_evaluate():
 
 
 def test_restart_evaluate_leads_start_evaluate():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		original_path = os.path.join(resource_dir, "result_project")
 		copy_tree(original_path, project_dir)
 		trial_path = os.path.join(project_dir, "3")

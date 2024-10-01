@@ -7,7 +7,7 @@ from tests.autorag.data.chunk.test_chunk_base import parsed_result
 
 
 def test_run_chunker():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		modules = [llama_index_chunk]
 		module_params = [{"chunk_method": "token"}]
 		summary_df = run_chunker(modules, module_params, parsed_result, temp_dir)

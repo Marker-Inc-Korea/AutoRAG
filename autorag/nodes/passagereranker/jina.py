@@ -30,7 +30,7 @@ class JinaReranker(BasePassageReranker):
 					"API key is not provided."
 					"You can set it as an argument or as an environment variable 'JINAAI_API_KEY'"
 				)
-		self.session = aiohttp.ClientSession()
+		self.session = aiohttp.ClientSession(loop=get_event_loop())
 		self.session.headers.update(
 			{"Authorization": f"Bearer {api_key}", "Accept-Encoding": "identity"}
 		)

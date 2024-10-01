@@ -349,14 +349,15 @@ autorag dashboard --trial_dir /your/path/to/trial_dir
 
 ### 4. Deploy your optimal RAG pipeline (for testing)
 
-### 4-1. Run as a CLI
+### 4-1. Run as a Code
 
-You can use a found optimal RAG pipeline right away with the extracted YAML file.
+You can use an optimal RAG pipeline right away from the trial folder.
+The trial folder is the directory used in the running dashboard. (like 0, 1, 2, ...)
 
 ```python
 from autorag.deploy import Runner
 
-runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner = Runner.from_trial_folder('/your/path/to/trial_dir')
 runner.run('your question')
 ```
 
@@ -369,13 +370,15 @@ Check out the API endpoint at [here](deploy/api_endpoint.md).
 ```python
 from autorag.deploy import Runner
 
-runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner = Runner.from_trial_folder('/your/path/to/trial_dir')
 runner.run_api_server()
 ```
 
 ```bash
 autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
 ```
+
+The cli command uses extracted config YAML file. If you want to know it more, check out [here](https://docs.auto-rag.com/tutorial.html#extract-pipeline-and-evaluate-test-dataset).
 
 ### 4-3. Run as a Web Interface
 

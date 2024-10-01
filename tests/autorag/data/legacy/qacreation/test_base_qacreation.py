@@ -28,13 +28,15 @@ resource_dir = os.path.join(root_dir, "resources")
 
 @pytest.fixture
 def qa_parquet_filepath():
-	with tempfile.NamedTemporaryFile(suffix=".parquet") as f:
+	with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
 		yield f.name
+		f.close()
+		os.unlink(f.name)
 
 
 @pytest.fixture
 def chroma_persistent_client():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		client = chromadb.PersistentClient(temp_dir)
 		yield client
 

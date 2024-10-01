@@ -154,7 +154,7 @@ It will create a default metadata for you. (like `last_modified_datetime` with `
 ```
 
 ```{attention}
-Please check that you reset the indicies of your dataset files.
+Please check that you reset the indices of your dataset files.
 If not, it can occur unexpected behavior.
 ```
 

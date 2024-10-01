@@ -65,9 +65,9 @@ class Validator:
 
 		# start Evaluate at temp project directory
 		with (
-			tempfile.NamedTemporaryFile(suffix=".parquet") as qa_path,
-			tempfile.NamedTemporaryFile(suffix=".parquet") as corpus_path,
-			tempfile.TemporaryDirectory() as temp_project_dir,
+			tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as qa_path,
+			tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as corpus_path,
+			tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_project_dir,
 		):
 			sample_qa_df.to_parquet(qa_path.name, index=False)
 			sample_corpus_df.to_parquet(corpus_path.name, index=False)
@@ -78,5 +78,9 @@ class Validator:
 				project_dir=temp_project_dir,
 			)
 			evaluator.start_trial(yaml_path)
+			qa_path.close()
+			corpus_path.close()
+			os.unlink(qa_path.name)
+			os.unlink(corpus_path.name)
 
 		logger.info("Validation complete.")
