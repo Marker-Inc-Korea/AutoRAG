@@ -13,9 +13,41 @@ To install AutoRAG, you can use pip:
 pip install AutoRAG
 ```
 
+Plus, it is recommended to install PyOpenSSL and nltk libraries for full features.
+
+```bash
+pip install --upgrade pyOpenSSL
+pip install nltk
+python3 -c "import nltk; nltk.download('punkt_tab')"
+python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
+```
+
 ```{admonition} Trouble with installation?
 Do you have any trouble with installation?
 First, you can check out the [troubleshooting](troubleshooting.md) page.
+```
+
+### Note for Windows Users
+AutoRAG is not fully supported on Windows yet. There are several constraints for Windows users.
+
+1. TART, UPR, and MonoT5 passage rerankers does not support Windows.
+2. Parsing might be not working properly in the Windows environment.
+3. Cannot use FlagEmbedding passage reranker with `batch` setting with 1. The default batch is 64.
+
+Due to the constraints, we recommend using Docker images for running AutoRAG on Windows.
+
+Plus, you MAKE SURE UPGRADE UP TO v0.3.1 for Windows users.
+
+### Installation for Parsing 🌲
+
+For parsing you need to install some local packages like [libmagic](https://man7.org/linux/man-pages/man3/libmagic.3.html),
+[tesseract](https://github.com/tesseract-ocr/tesseract), and [poppler](https://poppler.freedesktop.org/).
+The installation method depends upon your OS.
+
+After installing this, you can install AutoRAG with parsing like below.
+
+```bash
+pip install AutoRAG[parse]
 ```
 
 ### Installation for Korean 🇰🇷
@@ -106,3 +138,75 @@ python -m pytest -n auto
 
 After this, please check out our documentation for contributors.
 We are writing this documentation for contributors, so please wait for a while.
+
+
+## Run AutoRAG with 🐳 Docker
+
+To run AutoRAG using Docker, follow these steps:
+
+### 1. Build the Docker Image
+
+```bash
+docker build --target production -t autorag:prod .
+```
+
+This command will build the production-ready Docker image, using only the `production` stage defined in the `Dockerfile`.
+
+### 2. Run the Docker Container
+
+Run the container with the following command:
+
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/sample_config:/usr/src/app/sample_config \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  autoraghq/autorag:all evaluate \
+  --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
+  --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
+  --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
+  --project_dir /usr/src/app/projects/test01
+```
+
+#### Explanation:
+- **`-v ~/.cache/huggingface:/root/.cache/huggingface`**: Mounts the host's Hugging Face cache to the container, allowing it to access pre-downloaded models.
+- **`-v $(pwd)/sample_config:/usr/src/app/sample_config`**: Mounts the local `sample_config` directory to the container.
+- **`-v $(pwd)/projects:/usr/src/app/projects`**: Mounts the local `projects` directory to the container.
+- **`autoraghq/autorag:all evaluate`**: Executes the `evaluate` command inside the `autoraghq/autorag:all` container.
+- **`--config`, `--qa_data_path`, `--corpus_data_path`, `--project_dir`**: Specifies paths to the configuration file, QA dataset, corpus data, and project directory.
+
+### 3. Using a Custom Cache Directory with `HF_HOME`
+
+Alternatively, you can mount the Hugging Face cache to a custom location inside the container and set the `HF_HOME` environment variable:
+
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/cache/huggingface \
+  -v $(pwd)/sample_config:/usr/src/app/sample_config \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e HF_HOME=/cache/huggingface \
+  autoraghq/autorag:all evaluate \
+  --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
+  --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
+  --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
+  --project_dir /usr/src/app/projects/test01
+```
+
+#### Explanation:
+- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host's Hugging Face cache to `/cache/huggingface` inside the container.
+- **`-e HF_HOME=/cache/huggingface`**: Sets the `HF_HOME` environment variable to point to the mounted cache directory.
+
+### 5. Debugging and Manual Access
+
+To manually access the container for debugging or testing, start a Bash shell:
+
+```bash
+docker run --rm -it --entrypoint /bin/bash autoraghq/autorag:all
+```
+
+This command allows you to explore the container’s filesystem, run commands manually, or inspect logs for troubleshooting.
+
+## Additional Notes
+
+- Ensure that the necessary directories (`sample_config` and `projects`) are present in the host system.
+- If running in a CI/CD pipeline, consider using environment variables or `.env` files to manage API keys and paths dynamically.

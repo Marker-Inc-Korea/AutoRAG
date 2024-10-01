@@ -27,13 +27,13 @@ load_file_name = "test_corpus.parquet"
 
 @pytest.fixture
 def load_dir():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		yield temp_dir
 
 
 @pytest.fixture
 def output_filedir():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		yield temp_dir
 
 

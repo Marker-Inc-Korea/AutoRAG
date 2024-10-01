@@ -24,9 +24,9 @@ resources_dir = os.path.join(root_dir, "resources")
 
 @pytest.fixture
 def node_line_dir():
-	with tempfile.TemporaryDirectory() as test_project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as test_project_dir:
 		sample_project_dir = os.path.join(resources_dir, "sample_project")
-		# copy & paste all folders and files in sample_project folder
+		# copy & paste all folders and files in the sample_project folder
 		shutil.copytree(sample_project_dir, test_project_dir, dirs_exist_ok=True)
 
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
@@ -39,9 +39,9 @@ def node_line_dir():
 		corpus_df = pd.read_parquet(corpus_path)
 		vectordb_ingest(collection, corpus_df, MockEmbedding(1536))
 
-		test_trail_dir = os.path.join(test_project_dir, "test_trial")
-		os.makedirs(test_trail_dir)
-		node_line_dir = os.path.join(test_trail_dir, "test_node_line")
+		test_trial_dir = os.path.join(test_project_dir, "test_trial")
+		os.makedirs(test_trial_dir)
+		node_line_dir = os.path.join(test_trial_dir, "test_node_line")
 		os.makedirs(node_line_dir)
 		yield node_line_dir
 
@@ -209,7 +209,7 @@ def pseudo_node_dir():
 		}
 	)
 
-	with tempfile.TemporaryDirectory() as node_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as node_dir:
 		summary_df.to_csv(os.path.join(node_dir, "summary.csv"))
 		bm25_df.to_parquet(os.path.join(node_dir, "0.parquet"))
 		vector_openai_df.to_parquet(os.path.join(node_dir, "1.parquet"))

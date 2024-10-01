@@ -8,6 +8,7 @@ import pandas as pd
 from autorag.nodes.retrieval.run import evaluate_retrieval_node
 from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
+from autorag.utils.util import apply_recursive, to_list
 
 logger = logging.getLogger("AutoRAG")
 
@@ -26,13 +27,7 @@ def run_passage_augmenter_node(
 		os.path.join(project_dir, "data", "qa.parquet"), engine="pyarrow"
 	)
 	retrieval_gt = qa_df["retrieval_gt"].tolist()
-	retrieval_gt = [
-		[
-			[str(uuid) for uuid in sub_array] if sub_array.size > 0 else []
-			for sub_array in inner_array
-		]
-		for inner_array in retrieval_gt
-	]
+	retrieval_gt = apply_recursive(lambda x: str(x), to_list(retrieval_gt))
 
 	results, execution_times = zip(
 		*map(
