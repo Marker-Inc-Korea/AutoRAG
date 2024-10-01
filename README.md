@@ -39,6 +39,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 # Index
 
 - [Quick Install](#quick-install)
+- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [Data Creation](#data-creation)
   - [Parsing](#1-parsing)
   - [Chunking](#2-chunking)
@@ -186,6 +187,74 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 ### How AutoRAG optimizes RAG pipeline?
 
 ![rag_opt_gif](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
+
+## 🐳 AutoRAG Docker Guide
+
+This guide provides a quick overview of building and running the AutoRAG Docker container for production, with instructions on setting up the environment for evaluation using your configuration and data paths.
+
+### 🚀 Building the Docker Image
+
+#### 1.Download dataset for [Turorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+```bash
+python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
+```
+
+#### 2. Run `evaluate`
+> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $0.30.
+
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  autoraghq/autorag:all evaluate \
+  --config /usr/src/app/projects/tutorial_1/config.yaml \
+  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
+  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
+  --project_dir /usr/src/app/projects/tutorial_1/
+```
+
+
+#### 3. Run validate
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  autoraghq/autorag:all validate \
+  --config /usr/src/app/projects/tutorial_1/config.yaml \
+  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
+  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
+```
+
+
+#### 4. Run `dashboard`
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 8502:8502 \
+  autoraghq/autorag:all dashboard \
+    --trial_dir /usr/src/app/projects/tutorial_1/0
+```
+
+
+#### 4. Run `run_web`
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 8501:8501 \
+  autoraghq/autorag:all run_web --trial_path ./projects/tutorial_1/0
+```
+
+#### Key Points :
+- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface` in the container, enabling access to pre-downloaded models.
+- **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment.
+
+For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
 
 ## Quick Start
 
