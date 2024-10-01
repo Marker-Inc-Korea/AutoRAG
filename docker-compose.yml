@@ -1,6 +1,6 @@
 services:
   validate:
-    image: autorag:prod
+    image: autoraghq/autorag:all
     command: >
       validate
       --config /usr/src/app/projects/tutorial_1/config.yaml
@@ -13,4 +13,3 @@ services:
       - ./projects:/usr/src/app/projects
     stdin_open: true
     tty: true
-
