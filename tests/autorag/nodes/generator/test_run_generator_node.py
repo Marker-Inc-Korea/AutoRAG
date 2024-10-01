@@ -41,7 +41,7 @@ previous_df = pd.DataFrame(
 
 @pytest.fixture
 def node_line_dir():
-	with tempfile.TemporaryDirectory() as temp_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp_dir:
 		os.makedirs(os.path.join(temp_dir, "data"))
 		qa_df.to_parquet(os.path.join(temp_dir, "data", "qa.parquet"), index=False)
 		trial_dir = os.path.join(temp_dir, "test_trial")

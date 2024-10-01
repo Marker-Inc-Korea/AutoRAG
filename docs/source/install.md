@@ -13,9 +13,41 @@ To install AutoRAG, you can use pip:
 pip install AutoRAG
 ```
 
+Plus, it is recommended to install PyOpenSSL and nltk libraries for full features.
+
+```bash
+pip install --upgrade pyOpenSSL
+pip install nltk
+python3 -c "import nltk; nltk.download('punkt_tab')"
+python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
+```
+
 ```{admonition} Trouble with installation?
 Do you have any trouble with installation?
 First, you can check out the [troubleshooting](troubleshooting.md) page.
+```
+
+### Note for Windows Users
+AutoRAG is not fully supported on Windows yet. There are several constraints for Windows users.
+
+1. TART, UPR, and MonoT5 passage rerankers does not support Windows.
+2. Parsing might be not working properly in the Windows environment.
+3. Cannot use FlagEmbedding passage reranker with `batch` setting with 1. The default batch is 64.
+
+Due to the constraints, we recommend using Docker images for running AutoRAG on Windows.
+
+Plus, you MAKE SURE UPGRADE UP TO v0.3.1 for Windows users.
+
+### Installation for Parsing 🌲
+
+For parsing you need to install some local packages like [libmagic](https://man7.org/linux/man-pages/man3/libmagic.3.html),
+[tesseract](https://github.com/tesseract-ocr/tesseract), and [poppler](https://poppler.freedesktop.org/).
+The installation method depends upon your OS.
+
+After installing this, you can install AutoRAG with parsing like below.
+
+```bash
+pip install AutoRAG[parse]
 ```
 
 ### Installation for Korean 🇰🇷

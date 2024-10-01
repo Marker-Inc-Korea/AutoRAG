@@ -34,7 +34,7 @@ embedding_model = MockEmbedding(1536)
 
 @pytest.fixture
 def ingested_vectordb():
-	with tempfile.TemporaryDirectory() as chroma_path:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as chroma_path:
 		db = chromadb.PersistentClient(path=chroma_path)
 		collection = db.create_collection(
 			name="test_vectordb_retrieval", metadata={"hnsw:space": "cosine"}
@@ -48,7 +48,7 @@ def ingested_vectordb():
 
 @pytest.fixture
 def empty_chromadb():
-	with tempfile.TemporaryDirectory() as chroma_path:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as chroma_path:
 		db = chromadb.PersistentClient(path=chroma_path)
 		collection = db.create_collection(
 			name="test_vectordb_retrieval", metadata={"hnsw:space": "cosine"}
@@ -59,7 +59,7 @@ def empty_chromadb():
 
 @pytest.fixture
 def project_dir_for_vectordb_node():
-	with tempfile.TemporaryDirectory() as test_project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as test_project_dir:
 		os.makedirs(os.path.join(test_project_dir, "resources"))
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
 		os.makedirs(chroma_path)
@@ -77,7 +77,7 @@ def project_dir_for_vectordb_node():
 
 @pytest.fixture
 def project_dir_for_vectordb_node_from_sample_project():
-	with tempfile.TemporaryDirectory() as test_project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as test_project_dir:
 		sample_project_dir = os.path.join(resource_path, "sample_project")
 		# copy & paste all folders and files in the sample_project folder
 		shutil.copytree(sample_project_dir, test_project_dir, dirs_exist_ok=True)

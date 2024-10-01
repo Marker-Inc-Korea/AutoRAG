@@ -16,14 +16,14 @@ data_glob = os.path.join(resource_dir, "parse_data", "eng_text", "*")
 
 @pytest.fixture
 def parser():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		parser = Parser(data_path_glob=data_glob, project_dir=project_dir)
 		yield parser
 
 
 @pytest.fixture
 def test_parser():
-	with tempfile.TemporaryDirectory() as project_dir:
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
 		parser = Parser(data_path_glob=data_glob, project_dir=project_dir)
 		yield parser
 
