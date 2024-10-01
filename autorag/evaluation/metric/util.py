@@ -21,6 +21,9 @@ def autorag_metric(fields_to_check: List[str]):
 		@convert_inputs_to_list
 		def wrapper(metric_inputs: List[MetricInput], **kwargs) -> List[float]:
 			"""
+			Use 'for loop' to run each metric input.
+			Put the single metric input into the metric function.
+
 			:param metric_inputs: A list MetricInput schema for AutoRAG metric.
 			:param kwargs: The additional arguments for metric function.
 			:return: A list of computed metric scores.
@@ -44,6 +47,8 @@ def autorag_metric_loop(fields_to_check: List[str]):
 		@convert_inputs_to_list
 		def wrapper(metric_inputs: List[MetricInput], **kwargs) -> List[float]:
 			"""
+			Put the list of metric inputs into the metric function.
+
 			:param metric_inputs: A list MetricInput schema for AutoRAG metric.
 			:param kwargs: The additional arguments for metric function.
 			:return: A list of computed metric scores.
