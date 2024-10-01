@@ -194,8 +194,6 @@ This guide provides a quick overview of building and running the AutoRAG Docker 
 
 ### 🚀 Building the Docker Image
 
-Build and run the container using `docker-compose`:
-
 #### 1.Download dataset for [Turorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 ```bash
 python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
