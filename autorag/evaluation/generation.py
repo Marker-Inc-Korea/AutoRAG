@@ -21,7 +21,7 @@ GENERATION_METRIC_FUNC_DICT = {
 
 
 def evaluate_generation(
-		metric_inputs: List[MetricInput], metrics: Union[List[str], List[Dict]]
+	metric_inputs: List[MetricInput], metrics: Union[List[str], List[Dict]]
 ):
 	def decorator_evaluate_generation(func: Callable):
 		@functools.wraps(func)
@@ -55,7 +55,6 @@ def evaluate_generation(
 						f"{metric_name} will be ignored."
 					)
 				else:
-
 					metric_scores[metric_name] = GENERATION_METRIC_FUNC_DICT[
 						metric_name
 					](
