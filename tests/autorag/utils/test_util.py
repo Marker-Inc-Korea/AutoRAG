@@ -37,6 +37,7 @@ from autorag.utils.util import (
 	get_event_loop,
 	find_key_values,
 	pop_params,
+	apply_recursive,
 )
 from tests.mock import MockLLM
 
@@ -609,3 +610,29 @@ def test_pop_params():
 	result = pop_params(func_mixed, kwargs)
 	assert result == expected
 	assert kwargs == {"extra_param": "extra_value"}
+
+
+def test_apply_recursive():
+	data = [1, 2, 3, 4]
+	result = apply_recursive(lambda x: x * 2, data)
+	assert result == [2, 4, 6, 8]
+
+	data = [[1, 2], [3, 4]]
+	result = apply_recursive(lambda x: x * 2, data)
+	assert result == [[2, 4], [6, 8]]
+
+	data = [[1, [2, 3]], [4, [5, 6]]]
+	result = apply_recursive(lambda x: x * 2, data)
+	assert result == [[2, [4, 6]], [8, [10, 12]]]
+
+	data = []
+	result = apply_recursive(lambda x: x * 2, data)
+	assert result == []
+
+	data = 5
+	result = apply_recursive(lambda x: x * 2, data)
+	assert result == 10
+
+	data = [(4, 5), (6, 7), [5, [6, 7]], np.array([4, 5]), pd.Series([4, 5])]
+	result = apply_recursive(lambda x: x * 2, data)
+	assert result == [[8, 10], [12, 14], [10, [12, 14]], [8, 10], [8, 10]]
