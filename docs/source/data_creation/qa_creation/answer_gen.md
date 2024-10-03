@@ -19,9 +19,8 @@ from autorag.data.qa.schema import QA
 from autorag.data.qa.generation_gt.openai_gen_gt import make_basic_gen_gt
 from openai import AsyncOpenAI
 
-client = AsyncOpenAI()
 qa = QA(qa_df)
-result_qa = qa.batch_apply(make_basic_gen_gt, client=client)
+result_qa = qa.batch_apply(make_basic_gen_gt, client=AsyncOpenAI())
 ```
 
 ### LlamaIndex
@@ -48,9 +47,8 @@ from autorag.data.qa.schema import QA
 from autorag.data.qa.generation_gt.openai_gen_gt import make_concise_gen_gt
 from openai import AsyncOpenAI
 
-client = AsyncOpenAI()
 qa = QA(qa_df)
-result_qa = qa.batch_apply(make_concise_gen_gt, client=client)
+result_qa = qa.batch_apply(make_concise_gen_gt, client=AsyncOpenAI())
 ```
 
 ### LlamaIndex

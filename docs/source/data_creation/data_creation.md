@@ -1,14 +1,5 @@
 # Data Creation
 
-```{warning}
-This is the beta version of new Data Creation.
-This will be the main data creation pipeline at the AutoRAG v0.3 release.
-At the time, the legacy version of data creation will be deprecated.
-
-Plus, It is developing version. So there are some features that doesn't implemented yet.
-And have potential bugs.
-```
-
 Data creation is the crucial process to use AutoRAG. Because AutoRAG needs an evaluation dataset for optimizing the RAG pipelines.
 The following guide covers how to use LLM to create data in a form that AutoRAG can use.
 
