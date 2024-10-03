@@ -99,7 +99,7 @@ async def clova_ocr_pure(
 			raise RuntimeError(
 				f"Invalid response from Clova API: {resp_json['detail']}"
 			)
-		if resp_json["images"][0]["tables"]:
+		if "tables" in resp_json["images"][0].keys():
 			table_html = json_to_html_table(
 				resp_json["images"][0]["tables"][0]["cells"]
 			)
