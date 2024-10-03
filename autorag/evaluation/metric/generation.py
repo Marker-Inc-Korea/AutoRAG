@@ -15,9 +15,6 @@ from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.metrics import (
-	ContextualRelevancyMetric,
-	ContextualRecallMetric,
-	ContextualPrecisionMetric,
 	FaithfulnessMetric,
 	HallucinationMetric,
 	SummarizationMetric,
@@ -397,103 +394,6 @@ def bert_score(
 	if torch.cuda.is_available():
 		torch.cuda.empty_cache()
 	return df.groupby(level=0)["bert_score"].max().tolist()
-
-
-@autorag_metric_loop(fields_to_check=["query", "generated_texts", "retrieved_contents"])
-def deepeval_contextual_relevancy(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_contextual_relevancy_metric = ContextualRelevancyMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_contextual_relevancy_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
-
-
-@autorag_metric_loop(
-	fields_to_check=["query", "generation_gt", "generated_texts", "retrieved_contents"]
-)
-def deepeval_contextual_recall(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_contextual_recall_metric = ContextualRecallMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_contextual_recall_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
-
-
-@autorag_metric_loop(
-	fields_to_check=["query", "generation_gt", "generated_texts", "retrieved_contents"]
-)
-def deepeval_contextual_precision(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_contextual_precision_metric = ContextualPrecisionMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_contextual_precision_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
 
 
 @autorag_metric_loop(fields_to_check=["query", "generated_texts", "retrieved_contents"])
