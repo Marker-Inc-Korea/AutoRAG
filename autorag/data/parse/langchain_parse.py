@@ -1,4 +1,5 @@
 import multiprocessing as mp
+from itertools import chain
 from typing import List, Tuple
 
 from autorag.data import parse_modules
@@ -20,6 +21,7 @@ def langchain_parse(
 	if parse_method in ["directory", "unstructured"]:
 		results = parse_all_files(data_path_list, parse_method, **kwargs)
 		texts, path = results[0], results[1]
+		pages = [-1] * len(texts)
 
 	else:
 		num_workers = mp.cpu_count()
@@ -30,14 +32,14 @@ def langchain_parse(
 				[(data_path, parse_method, kwargs) for data_path in data_path_list],
 			)
 
-		texts, path = zip(*results)
-		texts, path = list(texts), list(path)
-	pages = [-1] * len(texts)
+		texts, path, pages = (list(chain.from_iterable(item)) for item in zip(*results))
 
 	return texts, path, pages
 
 
-def langchain_parse_pure(data_path: str, parse_method: str, kwargs) -> Tuple[str, str]:
+def langchain_parse_pure(
+	data_path: str, parse_method: str, kwargs
+) -> Tuple[List[str], List[str], List[int]]:
 	"""
 	Parses a single file using the specified parse method.
 
@@ -54,12 +56,18 @@ def langchain_parse_pure(data_path: str, parse_method: str, kwargs) -> Tuple[str
 
 	# Load the text from the file
 	documents = parse_instance.load()
-	text = documents[0].page_content
+
+	texts = list(map(lambda x: x.page_content, documents))
+	path = [data_path] * len(texts)
+	if parse_method in ["pymupdf", "pdfplumber", "pypdf", "pypdfium2"]:
+		pages = list(range(1, len(documents) + 1))
+	else:
+		pages = [-1] * len(texts)
 
 	# Clean up the parse instance
 	del parse_instance
 
-	return text, data_path
+	return texts, path, pages
 
 
 def parse_all_files(

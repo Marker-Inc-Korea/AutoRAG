@@ -8,7 +8,7 @@ modules:
     jq_schema: .messages[].content
   - module_type: clova
     table_detection: true
-  - module_type: llama_parse
+  - module_type: llamaparse
     result_type: markdown
     language: ko
   - module_type: table_hybrid_parse

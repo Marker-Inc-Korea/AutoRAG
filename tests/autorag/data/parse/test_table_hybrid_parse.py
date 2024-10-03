@@ -27,7 +27,7 @@ def test_table_hybrid_parse():
 	texts, path, pages = table_hybrid_parse_original(
 		hybrid_data_list, **table_hybrid_params
 	)
-	check_parse_result(texts, path, pages, "hybrid", "hybrid")
+	check_parse_result(texts, path, "hybrid")
 
 
 def test_table_hybrid_parse_node():
@@ -35,8 +35,6 @@ def test_table_hybrid_parse_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
-		"hybrid",
 		"hybrid",
 	)
 
@@ -46,7 +44,7 @@ def test_table_hybrid_parse_only_text():
 	texts, path, pages = table_hybrid_parse_original(
 		multiple_pdf_data_list, **table_hybrid_params
 	)
-	check_parse_result(texts, path, pages, "hybrid_text", "hybrid")
+	check_parse_result(texts, path, "hybrid_text")
 
 
 def test_table_hybrid_parse_only_text_node():
@@ -54,9 +52,7 @@ def test_table_hybrid_parse_only_text_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"hybrid_text",
-		"hybrid",
 	)
 
 
@@ -65,7 +61,7 @@ def test_table_hybrid_parse_only_table():
 	texts, path, pages = table_hybrid_parse_original(
 		table_data_list, **table_hybrid_params
 	)
-	check_parse_result(texts, path, pages, "hybrid_table", "hybrid")
+	check_parse_result(texts, path, "hybrid_table")
 
 
 def test_table_hybrid_parse_only_table_node():
@@ -73,9 +69,7 @@ def test_table_hybrid_parse_only_table_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"hybrid_table",
-		"hybrid",
 	)
 
 

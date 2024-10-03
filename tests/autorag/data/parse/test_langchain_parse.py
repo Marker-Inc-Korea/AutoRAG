@@ -26,7 +26,8 @@ def test_langchain_parse_single_pdf():
 	texts, path, pages = langchain_parse_original(
 		single_pdf_path_list, parse_method="pdfminer"
 	)
-	check_parse_result(texts, path, pages, "single_pdf", "langchain")
+	check_parse_result(texts, path, "single_pdf")
+	assert pages == [-1]
 
 
 def test_langchain_parse_single_pdf_node():
@@ -34,10 +35,28 @@ def test_langchain_parse_single_pdf_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"single_pdf",
-		"langchain",
 	)
+	assert result_df["page"].tolist() == [-1]
+
+
+def test_langchain_parse_single_pdf_pages():
+	langchain_parse_original = langchain_parse.__wrapped__
+	texts, path, pages = langchain_parse_original(
+		single_pdf_path_list, parse_method="pymupdf"
+	)
+	check_parse_result(texts, path, "single_pdf")
+	assert pages == [1, 2]
+
+
+def test_langchain_parse_single_pdf_pages_node():
+	result_df = langchain_parse(korean_text_glob, parse_method="pymupdf")
+	check_parse_result(
+		result_df["texts"].tolist(),
+		result_df["path"].tolist(),
+		"single_pdf",
+	)
+	assert result_df["page"].tolist() == [1, 2]
 
 
 def test_langchain_parse_multiple_pdf():
@@ -45,7 +64,8 @@ def test_langchain_parse_multiple_pdf():
 	texts, path, pages = langchain_parse_original(
 		multiple_pdf_data_list, parse_method="pdfminer"
 	)
-	check_parse_result(texts, path, pages, "multiple_pdf", "langchain")
+	check_parse_result(texts, path, "multiple_pdf")
+	assert pages == [-1, -1]
 
 
 def test_langchain_parse_multiple_pdf_node():
@@ -53,16 +73,34 @@ def test_langchain_parse_multiple_pdf_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"multiple_pdf",
-		"langchain",
 	)
+	assert result_df["page"].tolist() == [-1, -1]
+
+
+def test_langchain_parse_multiple_pdf_pages():
+	langchain_parse_original = langchain_parse.__wrapped__
+	texts, path, pages = langchain_parse_original(
+		multiple_pdf_data_list, parse_method="pymupdf"
+	)
+	check_parse_result(texts, path, "multiple_pdf")
+	assert pages == [1, 1]
+
+
+def test_langchain_parse_multiple_pdf_pages_node():
+	result_df = langchain_parse(eng_text_glob, parse_method="pymupdf")
+	check_parse_result(
+		result_df["texts"].tolist(),
+		result_df["path"].tolist(),
+		"multiple_pdf",
+	)
+	assert result_df["page"].tolist() == [1, 1]
 
 
 def test_langchain_csv():
 	langchain_parse_original = langchain_parse.__wrapped__
 	texts, path, pages = langchain_parse_original(csv_data_list, parse_method="csv")
-	check_parse_result(texts, path, pages, "csv", "langchain")
+	check_parse_result(texts, path, "csv")
 
 
 def test_langchain_csv_node():
@@ -70,9 +108,7 @@ def test_langchain_csv_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"csv",
-		"langchain",
 	)
 
 
@@ -81,7 +117,7 @@ def test_langchain_json():
 	texts, path, pages = langchain_parse_original(
 		json_data_list, parse_method="json", jq_schema=".content"
 	)
-	check_parse_result(texts, path, pages, "json", "langchain")
+	check_parse_result(texts, path, "json")
 	assert texts == ["This is a sample JSON file"]
 
 
@@ -90,9 +126,7 @@ def test_langchain_json_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"json",
-		"langchain",
 	)
 
 
@@ -101,7 +135,7 @@ def test_langchain_markdown():
 	texts, path, pages = langchain_parse_original(
 		markdown_data_list, parse_method="unstructuredmarkdown"
 	)
-	check_parse_result(texts, path, pages, "markdown", "langchain")
+	check_parse_result(texts, path, "markdown")
 
 
 def test_langchain_markdown_node():
@@ -109,16 +143,14 @@ def test_langchain_markdown_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"markdown",
-		"langchain",
 	)
 
 
 def test_langchain_html():
 	langchain_parse_original = langchain_parse.__wrapped__
 	texts, path, pages = langchain_parse_original(html_data_list, parse_method="bshtml")
-	check_parse_result(texts, path, pages, "html", "langchain")
+	check_parse_result(texts, path, "html")
 
 
 def test_langchain_html_node():
@@ -126,9 +158,7 @@ def test_langchain_html_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"html",
-		"langchain",
 	)
 
 
@@ -137,7 +167,7 @@ def test_langchain_xml():
 	texts, path, pages = langchain_parse_original(
 		xml_data_list, parse_method="unstructuredxml"
 	)
-	check_parse_result(texts, path, pages, "xml", "langchain")
+	check_parse_result(texts, path, "xml")
 
 
 def test_langchain_xml_node():
@@ -145,9 +175,7 @@ def test_langchain_xml_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"xml",
-		"langchain",
 	)
 
 
@@ -156,7 +184,7 @@ def test_langchain_all_files_unstructured():
 	texts, path, pages = langchain_parse_original(
 		all_files_data_list, parse_method="unstructured"
 	)
-	check_parse_result(texts, path, pages, "all_files_unstructured", "langchain")
+	check_parse_result(texts, path, "all_files_unstructured")
 
 
 def test_langchain_all_files_unstructured_node():
@@ -164,9 +192,7 @@ def test_langchain_all_files_unstructured_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"all_files_unstructured",
-		"langchain",
 	)
 
 
@@ -178,15 +204,11 @@ def test_langchain_all_files_directory():
 	texts, path, pages = langchain_parse_original(
 		all_files_data_list, path=folder_path, glob=glob_path, parse_method="directory"
 	)
-	check_parse_result(texts, path, pages, "all_files_directory", "langchain")
+	check_parse_result(texts, path, "all_files_directory")
 
 
 def test_langchain_all_files_directory_node():
 	result_df = langchain_parse(all_files_glob, parse_method="directory")
 	check_parse_result(
-		result_df["texts"].tolist(),
-		result_df["path"].tolist(),
-		result_df["page"].tolist(),
-		"all_files_directory",
-		"langchain",
+		result_df["texts"].tolist(), result_df["path"].tolist(), "all_files_directory"
 	)

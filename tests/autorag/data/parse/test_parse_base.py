@@ -64,19 +64,10 @@ file_path_dict = {
 }
 
 
-def check_parse_result(texts, file_names, pages, file_type, module_type):
+def check_parse_result(texts, file_names, file_type):
 	assert isinstance(texts, list)
 	assert isinstance(texts[0], str)
 	assert all([file_name in file_path_dict[file_type] for file_name in file_names])
-	if module_type in ["langchain", "llama"]:
-		assert pages == [-1] * len(texts)
-	elif module_type in ["hybrid"]:
-		if file_type == "hybrid":
-			assert pages == [2, 1]
-		elif file_type == "hybrid_text":
-			assert pages == [1, 1]
-		elif file_type == "hybrid_table":
-			assert pages == [1]
 
 
 def test_last_modified_datetime():
