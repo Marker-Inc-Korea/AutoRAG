@@ -1,4 +1,5 @@
 from typing import List, Tuple
+from itertools import chain
 
 from llama_parse import LlamaParse
 
@@ -30,15 +31,18 @@ def llama_parse(
 
 	del parse_instance
 
-	texts, path = zip(*results)
-	pages = [-1] * len(texts)
+	texts, path, pages = (list(chain.from_iterable(item)) for item in zip(*results))
 
-	return list(texts), list(path), pages
+	return texts, path, pages
 
 
-async def llama_parse_pure(data_path: str, parse_instance) -> Tuple[str, str]:
+async def llama_parse_pure(
+	data_path: str, parse_instance
+) -> Tuple[List[str], List[str], List[int]]:
 	documents = await parse_instance.aload_data(data_path)
 
-	text = documents[0].text
+	texts = list(map(lambda x: x.text, documents))
+	path = [data_path] * len(texts)
+	pages = list(range(1, len(documents) + 1))
 
-	return text, data_path
+	return texts, path, pages

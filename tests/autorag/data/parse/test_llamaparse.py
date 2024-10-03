@@ -25,7 +25,8 @@ def test_llama_parse_single_pdf():
 	texts, path, pages = llama_parse_original(
 		single_pdf_path_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_parse_result(texts, path, pages, "single_pdf", "llama")
+	check_parse_result(texts, path, "single_pdf")
+	assert pages == [1]
 	assert texts == ["I love AutoRAG"]
 
 
@@ -35,10 +36,9 @@ def test_llama_parse_single_pdf_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"single_pdf",
-		"llama",
 	)
+	assert result_df["page"].tolist() == [1]
 	assert result_df["texts"].tolist() == ["I love AutoRAG"]
 
 
@@ -48,7 +48,8 @@ def test_llama_parse_multiple_pdf():
 	texts, path, pages = llama_parse_original(
 		multiple_pdf_data_list, url="mock_url", api_key="mock_api_key"
 	)
-	check_parse_result(texts, path, pages, "multiple_pdf", "llama")
+	check_parse_result(texts, path, "multiple_pdf")
+	assert pages == [1, 1]
 	assert texts == ["I love AutoRAG", "I love AutoRAG"]
 
 
@@ -58,8 +59,7 @@ def test_llama_parse_multiple_pdf_node():
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
-		result_df["page"].tolist(),
 		"multiple_pdf",
-		"llama",
 	)
+	assert result_df["page"].tolist() == [1, 1]
 	assert result_df["texts"].tolist() == ["I love AutoRAG", "I love AutoRAG"]
