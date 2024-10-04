@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import pandas as pd
+from llama_index.core.base.llms.base import BaseLLM
 from transformers import AutoTokenizer
 
 from autorag import generator_models
@@ -43,7 +44,7 @@ class LlamaIndexLLM(BaseGenerator):
 					)
 			kwargs["tokenizer_name"] = kwargs["model_name"]
 		llm_class = generator_models[self.llm]
-		self.llm_instance = llm_class(**pop_params(llm_class.__init__, kwargs))
+		self.llm_instance: BaseLLM = llm_class(**pop_params(llm_class.__init__, kwargs))
 
 	def __del__(self):
 		super().__del__()

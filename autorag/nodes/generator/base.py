@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Union, Tuple, List
 
 import pandas as pd
+from llama_index.core.output_parsers import PydanticOutputParser
 
 from autorag import generator_models
 from autorag.schema import BaseModule
@@ -28,6 +29,20 @@ class BaseGenerator(BaseModule, metaclass=abc.ABCMeta):
 		), "previous_result must contain prompts column."
 		prompts = previous_result["prompts"].tolist()
 		return prompts
+
+	def structured_output(self, prompts: List[str], output_cls):
+		response, _, _ = self._pure(prompts)
+		parser = PydanticOutputParser(output_cls)
+		result = []
+		for res in response:
+			try:
+				result.append(parser.parse(res))
+			except Exception as e:
+				logger.warning(
+					f"Error parsing response: {e} \nSo returning None instead in this case."
+				)
+				result.append(None)
+		return result
 
 
 def generator_node(func):
