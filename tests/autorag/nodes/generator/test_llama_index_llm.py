@@ -3,7 +3,6 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 from llama_index.core.base.llms.types import CompletionResponse
-from llama_index.core.output_parsers import PydanticOutputParser
 from llama_index.llms.openai import OpenAI
 from pydantic import BaseModel
 
