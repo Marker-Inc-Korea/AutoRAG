@@ -10,6 +10,7 @@ from autorag.data.legacy.corpus import (
 	llama_text_node_to_parquet,
 )
 from tests.autorag.data.legacy.corpus.test_base_corpus_legacy import validate_corpus
+from tests.delete_tests import is_github_action
 
 
 @pytest.fixture
@@ -20,6 +21,10 @@ def parquet_filepath():
 		os.unlink(temp_file.name)
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_llama_documents_to_parquet(parquet_filepath):
 	documents = [
 		Document(
@@ -32,6 +37,10 @@ def test_llama_documents_to_parquet(parquet_filepath):
 	validate_corpus(result_df, 5, parquet_filepath)
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_llama_text_node_to_parquet(parquet_filepath):
 	sample_text_node = TextNode(
 		text="test text",
