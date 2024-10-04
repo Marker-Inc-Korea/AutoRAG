@@ -3,12 +3,10 @@ import pathlib
 import uuid
 from typing import Callable
 
-import guidance
 import pandas as pd
-from guidance import models, gen
 
 
-def generate_qa_row(llm: models.Model, corpus_data_row):
+def generate_qa_row(llm, corpus_data_row):
 	"""
 	this sample code to generate rag dataset using OpenAI chat model
 
@@ -16,6 +14,9 @@ def generate_qa_row(llm: models.Model, corpus_data_row):
 	:param corpus_data_row: need "contents" column
 	:return: should to be dict which has "query", "generation_gt" columns at least.
 	"""
+	from guidance import gen
+	import guidance
+
 	temp_llm = llm
 	with guidance.user():
 		temp_llm += f"""
@@ -48,7 +49,7 @@ def generate_qa_row(llm: models.Model, corpus_data_row):
 
 
 def generate_simple_qa_dataset(
-	llm: models.Model,
+	llm,
 	corpus_data: pd.DataFrame,
 	output_filepath: str,
 	generate_row_function: Callable,
