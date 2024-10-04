@@ -50,6 +50,7 @@ gradio
 langchain-core>=0.3.0
 langchain-unstructured>=0.1.5
 langchain-upstage
+langchain-community
 
 # autorag dashboard
 panel
