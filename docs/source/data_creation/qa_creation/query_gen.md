@@ -40,9 +40,8 @@ from openai import AsyncOpenAI
 from autorag.data.qa.schema import QA
 from autorag.data.qa.query.openai_gen_query import factoid_query_gen
 
-openai_client = AsyncOpenAI()
 qa = QA(qa_df)
-result_qa = qa.batch_apply(factoid_query_gen, client=openai_client, lang="ko")
+result_qa = qa.batch_apply(factoid_query_gen, client=AsyncOpenAI(), lang="ko")
 ```
 
 - LlamaIndex
@@ -71,9 +70,8 @@ from openai import AsyncOpenAI
 from autorag.data.qa.schema import QA
 from autorag.data.qa.query.openai_gen_query import concept_completion_query_gen
 
-openai_client = AsyncOpenAI()
 qa = QA(qa_df)
-result_qa = qa.batch_apply(concept_completion_query_gen, client=openai_client, lang="ko")
+result_qa = qa.batch_apply(concept_completion_query_gen, client=AsyncOpenAI(), lang="ko")
 ```
 
 - LlamaIndex
@@ -114,9 +112,8 @@ from openai import AsyncOpenAI
 from autorag.data.qa.schema import QA
 from autorag.data.qa.query.openai_gen_query import two_hop_incremental
 
-openai_client = AsyncOpenAI()
 qa = QA(qa_df)
-result_qa = qa.batch_apply(two_hop_incremental, client=openai_client)
+result_qa = qa.batch_apply(two_hop_incremental, client=AsyncOpenAI())
 ```
 
 - LlamaIndex
