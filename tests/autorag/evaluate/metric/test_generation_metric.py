@@ -3,7 +3,15 @@ from unittest.mock import patch
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.evaluation.metric import bleu, meteor, rouge, sem_score, g_eval, bert_score
+from autorag.evaluation.metric import (
+	bleu,
+	meteor,
+	rouge,
+	sem_score,
+	g_eval,
+	bert_score,
+	deepeval_faithfulness,
+)
 from autorag.schema.metricinput import MetricInput
 from tests.delete_tests import is_github_action
 from tests.mock import mock_get_text_embedding_batch
@@ -17,6 +25,25 @@ generation_gts = [
 		"To be a lawyer these days, you can overcome by AI.",
 	],
 ]
+
+retrieval_gt_contents = [
+	[
+		[
+			"The dog bite something easily. Actually the dog can bite a human. When you see a dog, you should be careful."
+		]
+	],
+	[
+		[
+			"The artist is a person who creates art. The artist can be a painter, a sculptor, or a musician."
+		]
+	],
+	[
+		[
+			"AI is a technology that can simulate human intelligence. AI can be used in various fields such as healthcare, finance, and transportation. So its potential is huge."
+		]
+	],
+]
+
 generations = [
 	"The dog bit the man.",
 	"It really like to be a programmer, but I think artist is my passion.",
@@ -77,8 +104,14 @@ summarization_metric_inputs = [
 	for gen, q in zip(summarization_generated_texts_list, summarization_query_list)
 ]
 similarity_generation_metric_inputs = [
-	MetricInput(generated_texts=gen, generation_gt=gen_gt)
-	for gen, gen_gt in zip(generations, generation_gts)
+	MetricInput(
+		generated_texts=gen,
+		generation_gt=gen_gt,
+		retrieval_gt_contents=retrieval_gt_content,
+	)
+	for gen, gen_gt, retrieval_gt_content in zip(
+		generations, generation_gts, retrieval_gt_contents
+	)
 ]
 ko_similarity_generation_metric_inputs = [
 	MetricInput(generated_texts=gen, generation_gt=gen_gt)
@@ -133,6 +166,17 @@ def base_test_metrics(func, solution, metric_inputs, **kwargs):
 	assert all(isinstance(score, float) for score in scores)
 	assert all(
 		list(map(lambda x: x[0] == pytest.approx(x[1], 0.001), zip(scores, solution)))
+	)
+
+
+def test_deepeval_faithfulness():
+	base_test_metrics(
+		deepeval_faithfulness,
+		[1.0, 1.0, 1.0],
+		similarity_generation_metric_inputs,
+		generator_module_type="openai_llm",
+		lang="en",
+		llm="gpt-4o-mini-2024-07-18",
 	)
 
 

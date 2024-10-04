@@ -10,9 +10,6 @@ from .generation import (
 	deepeval_toxicity,
 	deepeval_hallucination,
 	deepeval_summarization,
-	deepeval_contextual_relevancy,
-	deepeval_contextual_recall,
-	deepeval_contextual_precision,
 	deepeval_answer_relevancy,
 )
 from .retrieval import (
