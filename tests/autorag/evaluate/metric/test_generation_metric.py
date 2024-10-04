@@ -169,6 +169,10 @@ def base_test_metrics(func, solution, metric_inputs, **kwargs):
 	)
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it uses OpenAI API but hard to mock.",
+)
 def test_deepeval_faithfulness():
 	base_test_metrics(
 		deepeval_faithfulness,

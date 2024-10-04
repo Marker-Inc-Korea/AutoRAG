@@ -78,12 +78,3 @@ def autorag_metric_loop(fields_to_check: List[str]):
 		return wrapper
 
 	return decorator_autorag_generation_metric
-
-
-def convert_deepeval_test_result_to_score(deepeval_test_result):
-	if deepeval_test_result.success:
-		metric_data = deepeval_test_result.metrics_data[0]
-		if metric_data.success:
-			return metric_data.score
-	else:
-		return 0.0

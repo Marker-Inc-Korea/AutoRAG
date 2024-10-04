@@ -1,10 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Callable, Any, Union
-from itertools import chain
 
 import numpy as np
 import pandas as pd
-from deepeval.test_case import LLMTestCase
 
 
 @dataclass
@@ -36,22 +34,6 @@ class MetricInput:
 				return False
 
 		return True
-
-	def to_deepeval_testcase(self):
-		test_case = LLMTestCase(
-			input=self.query,
-			expected_output=self.generation_gt[0]
-			if self.generation_gt is not None
-			else None,
-			actual_output=self.generated_texts,
-			context=list(chain(*self.retrieval_gt_contents))
-			if self.retrieval_gt_contents is not None
-			else None,
-			retrieval_context=self.retrieved_contents,
-			tools_called=None,
-			expected_tools=None,
-		)
-		return test_case
 
 	@classmethod
 	def from_dataframe(cls, qa_data: pd.DataFrame) -> List["MetricInput"]:

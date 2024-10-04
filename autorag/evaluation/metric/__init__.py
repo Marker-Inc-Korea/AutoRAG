@@ -6,11 +6,6 @@ from .generation import (
 	g_eval,
 	bert_score,
 	deepeval_faithfulness,
-	deepeval_bias,
-	deepeval_toxicity,
-	deepeval_hallucination,
-	deepeval_summarization,
-	deepeval_answer_relevancy,
 )
 from .retrieval import (
 	retrieval_f1,

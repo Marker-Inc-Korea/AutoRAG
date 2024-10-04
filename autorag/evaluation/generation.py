@@ -11,12 +11,22 @@ from autorag.evaluation.metric.generation import (
 	sem_score,
 	g_eval,
 	bert_score,
+	deepeval_faithfulness,
 )
 from autorag.evaluation.util import cast_metrics
 from autorag.schema.metricinput import MetricInput
 
 GENERATION_METRIC_FUNC_DICT = {
-	func.__name__: func for func in [bleu, meteor, rouge, sem_score, g_eval, bert_score]
+	func.__name__: func
+	for func in [
+		bleu,
+		meteor,
+		rouge,
+		sem_score,
+		g_eval,
+		bert_score,
+		deepeval_faithfulness,
+	]
 }
 
 

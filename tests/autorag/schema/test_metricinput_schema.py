@@ -1,7 +1,5 @@
 import pandas as pd
 import pytest
-from deepeval.test_case import LLMTestCase
-
 
 from autorag.schema.metricinput import MetricInput
 
@@ -50,18 +48,6 @@ def test_is_fields_notnone(sample_metric_input):
 	assert not sample_metric_input.is_fields_notnone(
 		["query", "queries", "retrieval_gt_contents"]
 	)
-
-
-def test_to_deepeval_testcase(total_metric_input):
-	test_case = total_metric_input.to_deepeval_testcase()
-	assert isinstance(test_case, LLMTestCase)
-	assert test_case.input == "What is the capital of France?"
-	assert test_case.expected_output == "The capital of France is Paris."
-	assert test_case.actual_output == "The president of France is Emmanuel Macron."
-	assert test_case.context == ["Paris", "France", "Emmanuel Macron", "President"]
-	assert test_case.retrieval_context == ["Paris", "Emmanuel Macron"]
-	assert test_case.tools_called is None
-	assert test_case.expected_tools is None
 
 
 def test_from_dataframe_multiple_rows():

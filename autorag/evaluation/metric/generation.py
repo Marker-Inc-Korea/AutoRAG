@@ -1,7 +1,7 @@
 import asyncio
 import itertools
 import os
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import evaluate
 import nltk
@@ -14,22 +14,12 @@ from pydantic import BaseModel
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
-from deepeval.models import DeepEvalBaseLLM
-from deepeval.metrics import (
-	HallucinationMetric,
-	SummarizationMetric,
-	ToxicityMetric,
-	AnswerRelevancyMetric,
-	BiasMetric,
-)
-from deepeval.evaluate import evaluate as deepeval_evaluate
 
 from autorag import embedding_models
 from autorag.evaluation.metric.deepeval_prompt import FaithfulnessTemplate
 from autorag.evaluation.metric.util import (
 	autorag_metric_loop,
 	calculate_cosine_similarity,
-	convert_deepeval_test_result_to_score,
 )
 from autorag.nodes.generator import OpenAILLM
 from autorag.nodes.generator.base import BaseGenerator
@@ -513,164 +503,3 @@ def bert_score(
 	if torch.cuda.is_available():
 		torch.cuda.empty_cache()
 	return df.groupby(level=0)["bert_score"].max().tolist()
-
-
-@autorag_metric_loop(
-	fields_to_check=["query", "retrieval_gt_contents", "generated_texts"]
-)
-def deepeval_hallucination(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_hallucination_metric = HallucinationMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_hallucination_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
-
-
-@autorag_metric_loop(fields_to_check=["query", "generated_texts"])
-def deepeval_summarization(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	n: int = 5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	assessment_questions: Optional[List[str]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_summarization_metric = SummarizationMetric(
-		threshold=threshold,
-		n=n,
-		model=model,
-		assessment_questions=assessment_questions,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_summarization_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
-
-
-@autorag_metric_loop(fields_to_check=["query", "generated_texts"])
-def deepeval_toxicity(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_toxicity_metric = ToxicityMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_toxicity_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
-
-
-@autorag_metric_loop(fields_to_check=["query", "generated_texts"])
-def deepeval_answer_relevancy(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_answer_relevancy_metric = AnswerRelevancyMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_answer_relevancy_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
-
-
-@autorag_metric_loop(fields_to_check=["query", "generated_texts"])
-def deepeval_bias(
-	metric_inputs: List[MetricInput],
-	threshold: float = 0.5,
-	model: Optional[Union[str, DeepEvalBaseLLM]] = None,
-	include_reason: bool = True,
-	async_mode: bool = True,
-	strict_mode: bool = False,
-) -> List[float]:
-	deepeval_test_cases = [
-		metric_input.to_deepeval_testcase() for metric_input in metric_inputs
-	]
-	deepeval_bias_metric = BiasMetric(
-		threshold=threshold,
-		model=model,
-		include_reason=include_reason,
-		async_mode=async_mode,
-		strict_mode=strict_mode,
-		verbose_mode=False,
-	)
-	deepeval_test_results = deepeval_evaluate(
-		test_cases=deepeval_test_cases, metrics=[deepeval_bias_metric]
-	)
-	results = [
-		convert_deepeval_test_result_to_score(test_result)
-		for test_result in deepeval_test_results
-	]
-
-	return results
