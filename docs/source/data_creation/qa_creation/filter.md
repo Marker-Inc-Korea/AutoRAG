@@ -52,9 +52,8 @@ from openai import AsyncOpenAI
 from autorag.data.qa.schema import QA
 from autorag.data.qa.filter.dontknow import dontknow_filter_openai
 
-openai_client = AsyncOpenAI()
 qa = QA(qa_df, corpus)
-filtered_qa = qa.batch_filter(dontknow_filter_openai, client=openai_client, lang="en").map(
+filtered_qa = qa.batch_filter(dontknow_filter_openai, client=AsyncOpenAI(), lang="en").map(
     lambda df: df.reset_index(drop=True)  # reset index
 )
 ```
@@ -92,10 +91,9 @@ from openai import AsyncOpenAI
 from autorag.data.qa.schema import QA
 from autorag.data.qa.filter.passage_dependency import passage_dependency_filter_openai
 
-client = AsyncOpenAI()
 en_qa = QA(en_qa_df)
 result_en_qa = en_qa.batch_filter(
-    passage_dependency_filter_openai, client=client, lang="en"
+    passage_dependency_filter_openai, client=AsyncOpenAI(), lang="en"
 ).map(lambda df: df.reset_index(drop=True))
 ```
 
