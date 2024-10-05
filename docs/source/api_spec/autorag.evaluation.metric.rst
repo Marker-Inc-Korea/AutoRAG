@@ -4,6 +4,14 @@ autorag.evaluation.metric package
 Submodules
 ----------
 
+autorag.evaluation.metric.deepeval\_prompt module
+-------------------------------------------------
+
+.. automodule:: autorag.evaluation.metric.deepeval_prompt
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.evaluation.metric.generation module
 -------------------------------------------
 
