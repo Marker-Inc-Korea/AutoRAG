@@ -7,7 +7,7 @@ from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import result_to_dataframe
 
 
-class MxBaiReranker(BasePassageReranker):
+class MixedbreadAIReranker(BasePassageReranker):
 	def __init__(
 		self,
 		project_dir: str,
@@ -20,7 +20,7 @@ class MxBaiReranker(BasePassageReranker):
 
 		:param project_dir: The project directory path.
 		:param model_name: The name of the mixedbread-ai model to use for reranking
-			Note: default model name is √
+			Note: default model name is 'mixedbread-ai/mxbai-rerank-large-v1'
 		:param kwargs: Extra arguments that are not affected
 		"""
 		super().__init__(project_dir)
@@ -56,7 +56,7 @@ class MxBaiReranker(BasePassageReranker):
 		"""
 		content_result, id_result, score_result = zip(
 			*[
-				mxbai_rerank_pure(self.model, query, document, ids, top_k)
+				mixedbreadai_rerank_pure(self.model, query, document, ids, top_k)
 				for query, document, ids in zip(queries, contents_list, ids_list)
 			]
 		)
@@ -64,7 +64,7 @@ class MxBaiReranker(BasePassageReranker):
 		return content_result, id_result, score_result
 
 
-def mxbai_rerank_pure(
+def mixedbreadai_rerank_pure(
 	model: CrossEncoder,
 	query: str,
 	documents: List[str],

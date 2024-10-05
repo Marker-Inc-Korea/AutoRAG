@@ -68,18 +68,18 @@ autorag.nodes.passagereranker.koreranker module
    :undoc-members:
    :show-inheritance:
 
-autorag.nodes.passagereranker.monot5 module
--------------------------------------------
+autorag.nodes.passagereranker.mixedbreadai module
+-------------------------------------------------
 
-.. automodule:: autorag.nodes.passagereranker.monot5
+.. automodule:: autorag.nodes.passagereranker.mixedbreadai
    :members:
    :undoc-members:
    :show-inheritance:
 
-autorag.nodes.passagereranker.mxbai module
-------------------------------------------
+autorag.nodes.passagereranker.monot5 module
+-------------------------------------------
 
-.. automodule:: autorag.nodes.passagereranker.mxbai
+.. automodule:: autorag.nodes.passagereranker.monot5
    :members:
    :undoc-members:
    :show-inheritance:

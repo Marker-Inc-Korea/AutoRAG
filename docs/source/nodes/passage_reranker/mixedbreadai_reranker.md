@@ -5,9 +5,9 @@ myst:
       description: Learn about cohere reranker module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,MxBai Reranker
 ---
-# MxBai Reranker
+# Mixedbread AI Reranker
 
-The `MxBai Reranker` module is a reranker that uses the mixedbread-ai rerank model. This model rerank passages based on their relevance to a
+The `Mixedbread AI Reranker` module is a reranker that uses the mixedbread-ai rerank model. This model rerank passages based on their relevance to a
 given query.
 
 ## **Module Parameters**
