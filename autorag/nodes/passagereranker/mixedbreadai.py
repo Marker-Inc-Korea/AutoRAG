@@ -86,7 +86,7 @@ def mixedbreadai_rerank_pure(
 	results = model.rank(query, documents, return_documents=True, top_k=top_k)
 	reranked_scores: List[float] = list(map(lambda x: x["score"], results))
 	reranked_scores_float = list(map(float, reranked_scores))
+	reranked_contents: List[str] = list(map(lambda x: x["text"], results))
 	indices = list(map(lambda x: x["corpus_id"], results))
-	reranked_contents: List[str] = list(map(lambda i: documents[i], indices))
 	reranked_ids: List[str] = list(map(lambda i: ids[i], indices))
 	return reranked_contents, reranked_ids, reranked_scores_float
