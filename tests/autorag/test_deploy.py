@@ -207,15 +207,24 @@ def test_runner_api_server(evaluator):
 
 	# Use the TestClient to make a request to the server
 	response = client.post(
-		"/run",
+		"/v1/run",
 		json={
 			"query": "What is the best movie in Korea? Have Korea movie ever won Oscar?",
 			"result_column": "retrieved_contents",
 		},
 	)
 	assert response.status_code == 200
-	assert "retrieved_contents" in response.json
-	retrieved_contents = response.json["retrieved_contents"]
+	assert "result" in response.json
+	retrieved_contents = response.json["result"]
 	assert len(retrieved_contents) == 10
 	assert isinstance(retrieved_contents, list)
 	assert isinstance(retrieved_contents[0], str)
+
+	retrieved_contents = response.json["retrieved_passage"]
+	assert len(retrieved_contents) == 10
+	assert isinstance(retrieved_contents[0]["content"], str)
+	assert isinstance(retrieved_contents[0]["doc_id"], str)
+	assert retrieved_contents[0]["filepath"] is None
+	assert retrieved_contents[0]["file_page"] is None
+	assert retrieved_contents[0]["start_idx"] is None
+	assert retrieved_contents[0]["end_idx"] is None

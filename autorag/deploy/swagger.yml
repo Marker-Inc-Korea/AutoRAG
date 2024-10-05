@@ -30,9 +30,13 @@ paths:
               schema:
                 type: object
                 properties:
-                  generated_text:
-                    type: string
-                    description: The generated text
+                  result:
+                    oneOf:
+                      - type: string
+                      - type: array
+                        items:
+                          type: string
+                    description: The result text or list of texts
                   retrieved_passage:
                     type: array
                     items:
@@ -44,19 +48,23 @@ paths:
                           type: string
                         filepath:
                           type: string
+                          nullable: true
                         file_page:
                           type: integer
+                          nullable: true
                         start_idx:
                           type: integer
+                          nullable: true
                         end_idx:
                           type: integer
+                          nullable: true
 
   /v1/stream:
     post:
       summary: Stream generated text with retrieved passages
       description: >
         This endpoint streams the generated text line by line. The `retrieved_passage`
-        is sent first, followed by the `generated_text` streamed incrementally.
+        is sent first, followed by the `result` streamed incrementally.
       requestBody:
         required: true
         content:
@@ -81,9 +89,13 @@ paths:
               schema:
                 type: object
                 properties:
-                  generated_text:
-                    type: string
-                    description: The generated text (streamed line by line)
+                  result:
+                    oneOf:
+                      - type: string
+                      - type: array
+                        items:
+                          type: string
+                    description: The result text or list of texts (streamed line by line)
                   retrieved_passage:
                     type: array
                     items:
@@ -95,12 +107,16 @@ paths:
                           type: string
                         filepath:
                           type: string
+                        nullable: true
                         file_page:
                           type: integer
+                          nullable: true
                         start_idx:
                           type: integer
+                          nullable: true
                         end_idx:
                           type: integer
+                          nullable: true
 
   /version:
     get:
