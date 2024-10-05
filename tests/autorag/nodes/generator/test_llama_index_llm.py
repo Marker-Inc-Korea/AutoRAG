@@ -1,5 +1,10 @@
+from unittest.mock import patch
+
 import pandas as pd
 import pytest
+from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.llms.openai import OpenAI
+from pydantic import BaseModel
 
 from autorag import generator_models
 from autorag.nodes.generator import LlamaIndexLLM
@@ -45,3 +50,42 @@ def test_llama_index_llm_node():
 	check_generated_texts(result_df["generated_texts"].tolist())
 	check_generated_tokens(result_df["generated_tokens"].tolist())
 	check_generated_log_probs(result_df["generated_log_probs"].tolist())
+
+
+async def mock_openai_acomplete(self, messages, **kwargs):
+	return CompletionResponse(
+		text="""'```json
+{
+  "name": "John Doe",
+  "phone_number": "1234567890",
+  "age": 30,
+  "is_dead": false
+}
+```'"""
+	)
+
+
+@patch.object(
+	OpenAI,
+	"acomplete",
+	mock_openai_acomplete,
+)
+def test_llama_index_llm_structured_output():
+	class TestResponse(BaseModel):
+		name: str
+		phone_number: str
+		age: int
+		is_dead: bool
+
+	prompt = """You must transform the user introduction to json format. You have to extract four information: name, phone number, age, and is_dead.
+Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I am alive. I am good at soccer."""
+
+	response = LlamaIndexLLM(
+		"project_dir", llm="openai", model="gpt-4o-mini"
+	).structured_output([prompt], TestResponse)
+	output = response[0]
+	assert isinstance(output, TestResponse)
+	assert output.name == "John Doe"
+	assert output.phone_number == "1234567890"
+	assert output.age == 30
+	assert output.is_dead is False

@@ -46,9 +46,7 @@ def evaluate_retrieval_contents(metric_inputs: List[MetricInput], metrics: List[
 				else:
 					metric_func = metric_funcs[metric]
 					# Extract each required field from all payloads
-					metric_scores = metric_func(
-						metric_inputs=metric_inputs
-					)
+					metric_scores = metric_func(metric_inputs=metric_inputs)
 					metrics_scores[metric] = metric_scores
 
 			metric_result_df = pd.DataFrame(metrics_scores)

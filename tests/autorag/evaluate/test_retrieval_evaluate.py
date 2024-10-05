@@ -32,8 +32,12 @@ ids = [
 	[f"pred-{i}" for i in range(4, 8)],
 	[retrieval_gt[3][0][0], "pred-8", "pred-9", "pred-10"],
 ]
-metric_inputs = [MetricInput(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt) for ret_gt, queries, gen_gt in
-				 zip(retrieval_gt, queries_example, generation_gt_example)]
+metric_inputs = [
+	MetricInput(retrieval_gt=ret_gt, queries=queries, generation_gt=gen_gt)
+	for ret_gt, queries, gen_gt in zip(
+		retrieval_gt, queries_example, generation_gt_example
+	)
+]
 
 
 @evaluate_retrieval(

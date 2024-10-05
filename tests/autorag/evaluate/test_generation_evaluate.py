@@ -48,7 +48,7 @@ def pseudo_generation():
 
 @evaluate_generation(
 	metric_inputs=[MetricInput(generation_gt=gen_gt) for gen_gt in generation_gts],
-	metrics=["bleu", "meteor", "donggeon_metric"]
+	metrics=["bleu", "meteor", "donggeon_metric"],
 )
 def pseudo_generation_with_log_probs():
 	return pseudo_generations, pseudo_tokens, pseudo_log_probs

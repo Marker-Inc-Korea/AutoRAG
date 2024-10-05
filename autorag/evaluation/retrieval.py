@@ -29,7 +29,7 @@ RETRIEVAL_METRIC_FUNC_DICT = {
 
 
 def evaluate_retrieval(
-		metric_inputs: List[MetricInput],
+	metric_inputs: List[MetricInput],
 	metrics: Union[List[str], List[Dict]],
 ):
 	def decorator_evaluate_retrieval(
@@ -56,7 +56,6 @@ def evaluate_retrieval(
 			metric_names, metric_params = cast_metrics(metrics)
 
 			for metric_name, metric_param in zip(metric_names, metric_params):
-
 				if metric_name in RETRIEVAL_METRIC_FUNC_DICT:
 					metric_func = RETRIEVAL_METRIC_FUNC_DICT[metric_name]
 					metric_scores[metric_name] = metric_func(

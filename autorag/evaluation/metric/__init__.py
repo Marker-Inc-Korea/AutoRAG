@@ -1,4 +1,12 @@
-from .generation import bleu, meteor, rouge, sem_score, g_eval, bert_score
+from .generation import (
+	bleu,
+	meteor,
+	rouge,
+	sem_score,
+	g_eval,
+	bert_score,
+	deepeval_faithfulness,
+)
 from .retrieval import (
 	retrieval_f1,
 	retrieval_recall,

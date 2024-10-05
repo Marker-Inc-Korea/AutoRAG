@@ -18,6 +18,7 @@ from autorag.data.legacy.qacreation import (
 	generate_answers,
 )
 from autorag.utils import validate_qa_dataset
+from tests.delete_tests import is_github_action
 from tests.mock import MockLLM, mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
@@ -56,6 +57,10 @@ async def acomplete_qa_creation(self, messages, **kwargs: Any):
 	"acomplete",
 	acomplete_qa_creation,
 )
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_single_content_qa(qa_parquet_filepath):
 	corpus_df = pd.read_parquet(
 		os.path.join(resource_dir, "corpus_data_sample.parquet")
@@ -83,6 +88,10 @@ def test_single_content_qa(qa_parquet_filepath):
 	"acomplete",
 	acomplete_qa_creation,
 )
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_single_content_qa_long_cache_batch(qa_parquet_filepath):
 	corpus_df = pd.read_parquet(
 		os.path.join(resource_dir, "corpus_data_sample.parquet")
@@ -109,6 +118,10 @@ def test_single_content_qa_long_cache_batch(qa_parquet_filepath):
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
+)
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
 )
 def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
 	corpus_df = pd.read_parquet(
@@ -138,6 +151,10 @@ def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
+)
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
 )
 def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
 	corpus_df = pd.read_parquet(
@@ -170,6 +187,10 @@ def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
+)
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
 )
 def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(
 	chroma_persistent_client, qa_parquet_filepath
@@ -204,6 +225,10 @@ def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
+)
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
 )
 def test_make_qa_with_existing_qa_persistent_client_with_gen_gt(
 	chroma_persistent_client, qa_parquet_filepath

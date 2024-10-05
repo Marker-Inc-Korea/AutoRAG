@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import pandas as pd
+from llama_index.core.base.llms.base import BaseLLM
 from transformers import AutoTokenizer
 
 from autorag import generator_models
@@ -32,7 +33,13 @@ class LlamaIndexLLM(BaseGenerator):
 				"You can check valid llm names from autorag.generator_models."
 			)
 		self.batch = batch
-		if self.llm == "huggingfacellm":
+		llm_class = generator_models[self.llm]
+
+		if llm_class.class_name() in [
+			"HuggingFace_LLM",
+			"HuggingFaceInferenceAPI",
+			"TextGenerationInference",
+		]:
 			model_name = kwargs.pop("model", None)
 			if model_name is not None:
 				kwargs["model_name"] = model_name
@@ -42,8 +49,7 @@ class LlamaIndexLLM(BaseGenerator):
 						"`model` or `model_name` parameter must be provided for using huggingfacellm."
 					)
 			kwargs["tokenizer_name"] = kwargs["model_name"]
-		llm_class = generator_models[self.llm]
-		self.llm_instance = llm_class(**pop_params(llm_class.__init__, kwargs))
+		self.llm_instance: BaseLLM = llm_class(**pop_params(llm_class.__init__, kwargs))
 
 	def __del__(self):
 		super().__del__()

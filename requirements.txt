@@ -17,14 +17,12 @@ click  # for cli
 Flask # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
-guidance # for qa data creation
 cohere>=5.8.0 # for cohere services
 tokenlog>=0.0.2 # for token logging
 aiohttp # for async http requests
 bert_score # for bert score
 sentence-transformers # for sentence transformer reranker
 FlagEmbedding # for flag embedding reranker
-ragas # evaluation data generation & evaluation
 llmlingua # for longllmlingua
 peft
 
@@ -52,6 +50,7 @@ gradio
 langchain-core>=0.3.0
 langchain-unstructured>=0.1.5
 langchain-upstage
+langchain-community>=0.3.0
 
 # autorag dashboard
 panel

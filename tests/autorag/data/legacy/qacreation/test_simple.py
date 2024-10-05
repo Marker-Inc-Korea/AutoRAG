@@ -4,7 +4,6 @@ import tempfile
 
 import pandas as pd
 import pytest
-from guidance import models
 from llama_index.core import SimpleDirectoryReader
 
 from autorag.data.legacy.corpus.llama_index import llama_documents_to_parquet
@@ -42,6 +41,8 @@ def output_filedir():
 	reason="Skipping this test on GitHub Actions because it will be deprecated.",
 )
 def test_generate_simple_qa_dataset(load_dir, output_filedir):
+	from guidance import models
+
 	loader = SimpleDirectoryReader(file_metadata=get_file_metadata, input_dir=raw_dir)
 
 	documents = loader.load_data(show_progress=True, num_workers=0)

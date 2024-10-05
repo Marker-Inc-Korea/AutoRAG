@@ -1,8 +1,10 @@
+import time
 from unittest.mock import patch
 
 import openai.resources.chat
 import pandas as pd
 import pytest
+from pydantic import BaseModel
 
 from autorag.nodes.generator import OpenAILLM
 from tests.autorag.nodes.generator.test_generator_base import (
@@ -12,6 +14,12 @@ from tests.autorag.nodes.generator.test_generator_base import (
 	check_generated_log_probs,
 )
 from tests.mock import mock_openai_chat_create
+import openai.resources.beta.chat
+from openai.types.chat import (
+	ParsedChatCompletion,
+	ParsedChatCompletionMessage,
+	ParsedChoice,
+)
 
 
 @pytest.fixture
@@ -71,3 +79,56 @@ def test_openai_llm_truncate(openai_llm_instance):
 	check_generated_texts(answers)
 	check_generated_tokens(tokens)
 	check_generated_log_probs(log_probs)
+
+
+class TestResponse(BaseModel):
+	name: str
+	phone_number: str
+	age: int
+	is_dead: bool
+
+
+async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[TestResponse]:
+	return ParsedChatCompletion(
+		id="test_id",
+		choices=[
+			ParsedChoice(
+				finish_reason="stop",
+				index=0,
+				message=ParsedChatCompletionMessage(
+					parsed=TestResponse(
+						name="John Doe",
+						phone_number="1234567890",
+						age=30,
+						is_dead=False,
+					),
+					role="assistant",
+				),
+			)
+		],
+		created=int(time.time()),
+		model="gpt-4o-mini-2024-07-18",
+		object="chat.completion",
+	)
+
+
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_openai_llm_structured():
+	llm = OpenAILLM(project_dir=".", llm="gpt-4o-mini-2024-07-18")
+	prompt = """You must transform the user introduction to json format. You have to extract four information: name, phone number, age, and is_dead.
+Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I am alive. I am good at soccer."""
+
+	response = llm.structured_output([prompt], TestResponse)
+	assert isinstance(response[0], TestResponse)
+	assert response[0].name == "John Doe"
+	assert response[0].phone_number == "1234567890"
+	assert response[0].age == 30
+	assert response[0].is_dead is False
+
+	llm = OpenAILLM(project_dir=".", llm="gpt-3.5-turbo")
+	with pytest.raises(ValueError):
+		llm.structured_output([prompt], TestResponse)

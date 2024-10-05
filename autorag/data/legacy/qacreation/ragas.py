@@ -5,8 +5,6 @@ import pandas as pd
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from ragas.testset import TestsetGenerator
-from ragas.testset.evolutions import simple, reasoning, multi_context
 
 from autorag.data.utils.util import corpus_df_to_langchain_documents
 from autorag.utils import cast_qa_dataset
@@ -37,6 +35,9 @@ def generate_qa_ragas(
 	    You can input 'with_debugging_logs', 'is_async', 'raise_exceptions', and 'run_config'.
 	:return: QA dataset dataframe.
 	"""
+	from ragas.testset import TestsetGenerator
+	from ragas.testset.evolutions import simple, reasoning, multi_context
+
 	if generator_llm is None:
 		generator_llm = ChatOpenAI(model="gpt-3.5-turbo-16k")
 	if critic_llm is None:

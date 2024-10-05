@@ -139,6 +139,59 @@ class OpenAILLM(BaseGenerator):
 		logprob_result = list(map(lambda x: x[2], result))
 		return answer_result, token_result, logprob_result
 
+	def structured_output(self, prompts: List[str], output_cls, **kwargs):
+		supported_models = [
+			"gpt-4o-mini-2024-07-18",
+			"gpt-4o-2024-08-06",
+		]
+		if self.llm not in supported_models:
+			raise ValueError(
+				f"{self.llm} is not a valid model name for structured output. "
+				f"Please select the model between {supported_models}"
+			)
+
+		if kwargs.get("logprobs") is not None:
+			kwargs.pop("logprobs")
+			logger.warning(
+				"parameter logprob does not effective. It always set to False."
+			)
+		if kwargs.get("n") is not None:
+			kwargs.pop("n")
+			logger.warning("parameter n does not effective. It always set to 1.")
+
+		# TODO: fix this after updating tiktoken for the o1 model. It is not yet supported yet.
+		prompts = list(
+			map(
+				lambda prompt: truncate_by_token(
+					prompt, self.tokenizer, self.max_token_size
+				),
+				prompts,
+			)
+		)
+
+		openai_chat_params = pop_params(self.client.beta.chat.completions.parse, kwargs)
+		loop = get_event_loop()
+		tasks = [
+			self.get_structured_result(prompt, output_cls, **openai_chat_params)
+			for prompt in prompts
+		]
+		result = loop.run_until_complete(process_batch(tasks, self.batch))
+		return result
+
+	async def get_structured_result(self, prompt: str, output_cls, **kwargs):
+		response = await self.client.beta.chat.completions.parse(
+			model=self.llm,
+			messages=[
+				{"role": "system", "content": "Structured Output"},
+				{"role": "user", "content": prompt},
+			],
+			response_format=output_cls,
+			logprobs=False,
+			n=1,
+			**kwargs,
+		)
+		return response.choices[0].message.parsed
+
 	async def get_result(self, prompt: str, **kwargs):
 		response = await self.client.chat.completions.create(
 			model=self.llm,

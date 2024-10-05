@@ -15,6 +15,7 @@ from autorag.data.legacy.qacreation.llama_index import (
 	generate_basic_answer,
 	generate_answers,
 )
+from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
@@ -55,6 +56,10 @@ async def acomplete_qa_creation(self, messages, **kwargs):
 
 @patch.object(MockLLM, "acomplete", acomplete_qa_creation)
 @pytest.mark.asyncio()
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 async def test_async_qa_gen_llama_index():
 	result = await async_qa_gen_llama_index(
 		content, llm=MockLLM(), prompt=sample_prompt, question_num=3
@@ -68,6 +73,10 @@ async def test_async_qa_gen_llama_index():
 
 
 @patch.object(MockLLM, "acomplete", acomplete_qa_creation)
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_qa_gen_llama_index(contents):
 	llm = MockLLM()
 	result = generate_qa_llama_index(llm, contents, sample_prompt)
@@ -75,6 +84,10 @@ def test_qa_gen_llama_index(contents):
 
 
 @patch.object(MockLLM, "acomplete", acomplete_qa_creation)
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_qa_gen_llama_index_by_ratio(contents):
 	ratio_dict = {
 		str(os.path.join(prompt_dir, "prompt1.txt")): 1,
@@ -86,6 +99,10 @@ def test_qa_gen_llama_index_by_ratio(contents):
 	check_multi_qa_gen(result)
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 def test_generate_answers(contents, questions):
 	llm = MockLLM()
 	result = generate_answers(llm, contents, questions)
@@ -94,6 +111,10 @@ def test_generate_answers(contents, questions):
 
 
 @pytest.mark.asyncio()
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it will be deprecated.",
+)
 async def test_generate_basic_answer():
 	llm = MockLLM()
 	query = "What is Fire and brimstone?"

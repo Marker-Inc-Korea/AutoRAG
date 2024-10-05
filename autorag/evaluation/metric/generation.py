@@ -10,19 +10,27 @@ import torch
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from openai import AsyncOpenAI
+from pydantic import BaseModel
 from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
 from autorag import embedding_models
-from autorag.evaluation.metric.util import autorag_metric_loop
-from autorag.evaluation.metric.util import calculate_cosine_similarity
+from autorag.evaluation.metric.deepeval_prompt import FaithfulnessTemplate
+from autorag.evaluation.metric.util import (
+	autorag_metric_loop,
+	calculate_cosine_similarity,
+)
+from autorag.nodes.generator import OpenAILLM
+from autorag.nodes.generator.base import BaseGenerator
 from autorag.schema.metricinput import MetricInput
+from autorag.support import get_support_modules
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
 	openai_truncate_by_token,
 	convert_inputs_to_list,
+	pop_params,
 )
 
 
@@ -55,6 +63,120 @@ def huggingface_evaluate(
 	result = list(
 		map(lambda x: compute_score(x.generation_gt, x.generated_texts), metric_inputs)
 	)
+	return result
+
+
+def make_generator_instance(generator_module_type: str, llm: str, **kwargs):
+	llm_class = get_support_modules(generator_module_type)
+	init_params = pop_params(llm_class.__init__, kwargs)
+	return llm_class(project_dir="", llm=llm, **init_params)
+
+
+@autorag_metric_loop(fields_to_check=["retrieval_gt_contents", "generated_texts"])
+def deepeval_faithfulness(
+	metric_inputs: List[MetricInput],
+	generator_module_type: str = "openai_llm",
+	lang: str = "en",
+	llm: str = "gpt-4o-2024-08-06",
+	batch: int = 16,
+	**kwargs,
+) -> List[float]:
+	"""
+	Compute deepeval faithfulness metric.
+	Its default model is gpt-4o-2024-08-06.
+	Since it uses OpenAI model, please be aware of the expensive cost.
+
+	:param metric_inputs: The list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
+	:param generator_module_type: Generator module type.
+	The default is "openai_llm".
+		You can use like "llama_index_llm" or "vllm".
+	:param lang: The prompt language that you want to use.
+	"en" and "ko" are supported.
+	Korean prompt is not officially supported by DeepEval, but it can be translated by AutoRAG developers.
+		Default is "en".
+	:param llm: The model name to use for generation.
+		Or llm if using llama_index_llm.
+		The default is "gpt-4o-2024-08-06".
+	:param batch: The batch size for processing.
+		Default is 16.
+	:param kwargs: The extra parameters for initializing the llm instance.
+	:return: The metric scores.
+	"""
+
+	class Truth(BaseModel):
+		truths: List[str]
+
+	class Claim(BaseModel):
+		claims: List[str]
+
+	class Verdict(BaseModel):
+		verdict: str
+		reason: Optional[str]
+
+	class FaithfulnessVerdicts(BaseModel):
+		verdicts: List[Verdict]
+
+	def calculate_score(verdicts: List[Verdict]) -> float:
+		number_of_verdicts = len(verdicts)
+		if number_of_verdicts == 0:
+			return 1
+
+		faithfulness_count = 0
+		for verdict in verdicts:
+			if verdict.verdict.strip().lower() != "no":
+				faithfulness_count += 1
+
+		score = faithfulness_count / number_of_verdicts
+		return score
+
+	retrieval_contexts = list(map(lambda x: x.retrieval_gt_contents, metric_inputs))
+	truth_prompts = list(
+		map(lambda x: FaithfulnessTemplate.generate_truths(x, lang), retrieval_contexts)
+	)
+
+	generated_texts = list(map(lambda x: x.generated_texts, metric_inputs))
+	claim_prompts = list(
+		map(lambda x: FaithfulnessTemplate.generate_claims(x, lang), generated_texts)
+	)
+
+	generator: BaseGenerator = make_generator_instance(
+		generator_module_type, llm=llm, batch=batch, **kwargs
+	)
+	if isinstance(generator, OpenAILLM):  # Because of the event loop error at the httpx
+		# TODO: Fix the httpx APIConnectionError at the many repetitive request to the OpenAILLM on the same instance
+		truth_responses: List[Truth] = generator.structured_output(truth_prompts, Truth)
+		claim_responses: List[Claim] = make_generator_instance(
+			generator_module_type, llm=llm, batch=batch, **kwargs
+		).structured_output(claim_prompts, Claim)
+		verdict_prompts = list(
+			map(
+				lambda claim, truth: FaithfulnessTemplate.generate_verdicts(
+					"\n\n".join(claim.claims), "\n\n".join(truth.truths), lang
+				),
+				claim_responses,
+				truth_responses,
+			)
+		)
+		verdict_responses: List[FaithfulnessVerdicts] = make_generator_instance(
+			generator_module_type, llm=llm, batch=batch, **kwargs
+		).structured_output(verdict_prompts, FaithfulnessVerdicts)
+	else:
+		truth_responses: List[Truth] = generator.structured_output(truth_prompts, Truth)
+		claim_responses: List[Claim] = generator.structured_output(claim_prompts, Claim)
+		verdict_prompts = list(
+			map(
+				lambda claim, truth: FaithfulnessTemplate.generate_verdicts(
+					"\n\n".join(claim.claims), "\n\n".join(truth.truths), lang
+				),
+				claim_responses,
+				truth_responses,
+			)
+		)
+		verdict_responses: List[FaithfulnessVerdicts] = generator.structured_output(
+			verdict_prompts, FaithfulnessVerdicts
+		)
+
+	result = list(map(lambda x: calculate_score(x.verdicts), verdict_responses))
 	return result
 
 
