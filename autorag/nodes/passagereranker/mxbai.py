@@ -16,10 +16,10 @@ class MxBaiReranker(BasePassageReranker):
 		**kwargs,
 	):
 		"""
-		Initialize Cohere rerank node.
+		Initialize mixedbread-ai rerank node.
 
 		:param project_dir: The project directory path.
-		:param model_name: The name of the MonoT5 model to use for reranking
+		:param model_name: The name of the mixedbread-ai model to use for reranking
 			Note: default model name is 'mixedbread-ai/mxbai-rerank-large-v1'
 		:param kwargs: Extra arguments that are not affected
 		"""
@@ -45,8 +45,7 @@ class MxBaiReranker(BasePassageReranker):
 		top_k: int,
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
-		Rerank a list of contents with Cohere rerank models.
-		You can get the API key from https://cohere.com/rerank and set it in the environment variable COHERE_API_KEY.
+		Rerank a list of contents with mixedbread-ai rerank models.
 
 		:param queries: The list of queries to use for reranking
 		:param contents_list: The list of lists of contents to rerank
@@ -73,9 +72,10 @@ def mxbai_rerank_pure(
 	top_k: int,
 ) -> Tuple[List[str], List[str], List[float]]:
 	"""
-	Rerank a list of contents with Cohere rerank models.
+	Rerank a list of contents with mixedbread-ai rerank models.
 
-	:param model: The model name for Cohere rerank
+	:param model: The model to use for reranking.
+	It should be a CrossEncoder model
 	:param query: The query to use for reranking
 	:param documents: The list of contents to rerank
 	:param ids: The list of ids corresponding to the documents
