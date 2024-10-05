@@ -96,44 +96,7 @@ class ApiRunner(BaseRunner):
 
 			# Simulate processing the query
 			generated_text = previous_result[data.result_column].tolist()[0]
-			retrieved_ids: List[str] = previous_result["retrieved_ids"].tolist()[0]
-			contents = fetch_contents(self.corpus_df, [retrieved_ids])[0]
-			if "path" in self.corpus_df.columns:
-				paths = fetch_contents(
-					self.corpus_df, [retrieved_ids], column_name="path"
-				)[0]
-			else:
-				paths = [None] * len(retrieved_ids)
-			metadatas = fetch_contents(
-				self.corpus_df, [retrieved_ids], column_name="metadata"
-			)[0]
-			if "start_end_idx" in self.corpus_df.columns:
-				start_end_indices = fetch_contents(
-					self.corpus_df, [retrieved_ids], column_name="start_end_idx"
-				)[0]
-			else:
-				start_end_indices = [None] * len(retrieved_ids)
-			retrieved_passage = list(
-				map(
-					lambda content,
-					doc_id,
-					path,
-					metadata,
-					start_end_idx: RetrievedPassage(
-						content=content,
-						doc_id=doc_id,
-						filepath=path,
-						file_page=metadata.get("page", None),
-						start_idx=start_end_idx[0] if start_end_idx else None,
-						end_idx=start_end_idx[1] if start_end_idx else None,
-					),
-					contents,
-					retrieved_ids,
-					paths,
-					metadatas,
-					start_end_indices,
-				)
-			)
+			retrieved_passage = self.extract_retrieve_passage(previous_result)
 
 			response = RunResponse(
 				result=generated_text, retrieved_passage=retrieved_passage
@@ -142,15 +105,34 @@ class ApiRunner(BaseRunner):
 			return jsonify(response.model_dump()), 200
 
 		@self.app.route("/v1/stream", methods=["POST"])
-		def stream_query():
+		async def stream_query():
 			try:
-				_ = QueryRequest(**request.json)
+				data = QueryRequest(**request.json)
 			except ValidationError as e:
 				return jsonify(e.errors()), 400
 
-			# TODO: Implement real processing
+			previous_result = pd.DataFrame(
+				{
+					"qid": str(uuid.uuid4()),
+					"query": [data.query],
+					"retrieval_gt": [[]],
+					"generation_gt": [""],
+				}
+			)  # pseudo qa data for execution
 
-			def generate():
+			for module_instance, module_param in zip(
+				self.module_instances, self.module_params
+			):
+				new_result = module_instance.pure(
+					previous_result=previous_result, **module_param
+				)
+				duplicated_columns = previous_result.columns.intersection(
+					new_result.columns
+				)
+				drop_previous_result = previous_result.drop(columns=duplicated_columns)
+				previous_result = pd.concat([drop_previous_result, new_result], axis=1)
+
+			async def generate():
 				# Simulate streaming the retrieved passage
 				passage = RetrievedPassage(
 					content="Sample content",
@@ -200,3 +182,39 @@ class ApiRunner(BaseRunner):
 		"""
 		logger.info(f"Run api server at {host}:{port}")
 		self.app.run(host=host, port=port, **kwargs)
+
+	def extract_retrieve_passage(self, df: pd.DataFrame) -> List[RetrievedPassage]:
+		retrieved_ids: List[str] = df["retrieved_ids"].tolist()[0]
+		contents = fetch_contents(self.corpus_df, [retrieved_ids])[0]
+		if "path" in self.corpus_df.columns:
+			paths = fetch_contents(self.corpus_df, [retrieved_ids], column_name="path")[
+				0
+			]
+		else:
+			paths = [None] * len(retrieved_ids)
+		metadatas = fetch_contents(
+			self.corpus_df, [retrieved_ids], column_name="metadata"
+		)[0]
+		if "start_end_idx" in self.corpus_df.columns:
+			start_end_indices = fetch_contents(
+				self.corpus_df, [retrieved_ids], column_name="start_end_idx"
+			)[0]
+		else:
+			start_end_indices = [None] * len(retrieved_ids)
+		return list(
+			map(
+				lambda content, doc_id, path, metadata, start_end_idx: RetrievedPassage(
+					content=content,
+					doc_id=doc_id,
+					filepath=path,
+					file_page=metadata.get("page", None),
+					start_idx=start_end_idx[0] if start_end_idx else None,
+					end_idx=start_end_idx[1] if start_end_idx else None,
+				),
+				contents,
+				retrieved_ids,
+				paths,
+				metadatas,
+				start_end_indices,
+			)
+		)

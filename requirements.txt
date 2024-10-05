@@ -26,7 +26,7 @@ llmlingua # for longllmlingua
 peft
 
 ### API server ###
-Flask # for api server
+Flask[async] # for api server
 flask-swagger
 flask-swagger-ui
 
