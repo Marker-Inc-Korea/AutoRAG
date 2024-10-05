@@ -1,0 +1,119 @@
+openapi: 3.0.0
+info:
+  title: Example API
+  version: 1.0.0
+paths:
+  /v1/run:
+    post:
+      summary: Run a query and get generated text with retrieved passages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The query string
+                result_column:
+                  type: string
+                  description: The result column name
+                  default: generated_texts
+              required:
+                - query
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_text:
+                    type: string
+                    description: The generated text
+                  retrieved_passage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        content:
+                          type: string
+                        doc_id:
+                          type: string
+                        filepath:
+                          type: string
+                        file_page:
+                          type: integer
+                        start_idx:
+                          type: integer
+                        end_idx:
+                          type: integer
+
+  /v1/stream:
+    post:
+      summary: Stream generated text with retrieved passages
+      description: >
+        This endpoint streams the generated text line by line. The `retrieved_passage`
+        is sent first, followed by the `generated_text` streamed incrementally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The query string
+                result_column:
+                  type: string
+                  description: The result column name
+                  default: generated_texts
+              required:
+                - query
+      responses:
+        '200':
+          description: Successful response with streaming
+          content:
+            text/event-stream:
+              schema:
+                type: object
+                properties:
+                  generated_text:
+                    type: string
+                    description: The generated text (streamed line by line)
+                  retrieved_passage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        content:
+                          type: string
+                        doc_id:
+                          type: string
+                        filepath:
+                          type: string
+                        file_page:
+                          type: integer
+                        start_idx:
+                          type: integer
+                        end_idx:
+                          type: integer
+
+  /version:
+    get:
+      summary: Get the API version
+      description: Returns the current version of the API as a string.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    description: The version of the API

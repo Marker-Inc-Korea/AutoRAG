@@ -13,6 +13,7 @@ from autorag.deploy import (
 	extract_node_line_names,
 	extract_node_strategy,
 )
+from autorag.deploy.api import ApiRunner
 from autorag.evaluator import Evaluator
 from tests.delete_tests import is_github_action
 
@@ -200,7 +201,7 @@ def test_runner_full(evaluator):
 def test_runner_api_server(evaluator):
 	project_dir = evaluator.project_dir
 	evaluator.start_trial(os.path.join(resource_dir, "simple_mock.yaml"))
-	runner = Runner.from_trial_folder(os.path.join(project_dir, "0"))
+	runner = ApiRunner.from_trial_folder(os.path.join(project_dir, "0"))
 
 	client = runner.app.test_client()
 
