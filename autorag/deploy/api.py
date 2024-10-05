@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import pathlib
@@ -7,19 +6,23 @@ from typing import Dict, Optional, List, Union
 
 import pandas as pd
 from flask_swagger_ui import get_swaggerui_blueprint
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, stream_with_context
 from pydantic import BaseModel, ValidationError
 
 from autorag.deploy.base import BaseRunner
+from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils import fetch_contents
+from autorag.utils.util import get_event_loop
 
 logger = logging.getLogger("AutoRAG")
 
 deploy_dir = pathlib.Path(__file__).parent
+root_dir = pathlib.Path(__file__).parent.parent
 
 SWAGGER_URL = "/api/docs"
 API_URL = "/api/spec"
 YAML_PATH = os.path.join(deploy_dir, "swagger.yaml")
+VERSION_PATH = os.path.join(root_dir, "VERSION")
 
 
 class QueryRequest(BaseModel):
@@ -45,6 +48,9 @@ class VersionResponse(BaseModel):
 	version: str
 
 
+empty_run_response = RunResponse(result="", retrieved_passage=[])
+
+
 class ApiRunner(BaseRunner):
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		super().__init__(config, project_dir)
@@ -55,12 +61,15 @@ class ApiRunner(BaseRunner):
 			os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
 		)
 
+		with open(VERSION_PATH, "r") as f:
+			version = f.read().strip()
+
 		swagger_ui_blueprint = get_swaggerui_blueprint(
 			SWAGGER_URL,
 			API_URL,
 			config={
 				"app_name": "AutoRAG API",
-				"version": 0.3,
+				"version": version,
 			},
 		)
 		self.app.register_blueprint(swagger_ui_blueprint, url_prefix=SWAGGER_URL)
@@ -105,56 +114,72 @@ class ApiRunner(BaseRunner):
 			return jsonify(response.model_dump()), 200
 
 		@self.app.route("/v1/stream", methods=["POST"])
-		async def stream_query():
+		def stream_query():
 			try:
 				data = QueryRequest(**request.json)
 			except ValidationError as e:
 				return jsonify(e.errors()), 400
 
-			previous_result = pd.DataFrame(
-				{
-					"qid": str(uuid.uuid4()),
-					"query": [data.query],
-					"retrieval_gt": [[]],
-					"generation_gt": [""],
-				}
-			)  # pseudo qa data for execution
-
-			for module_instance, module_param in zip(
-				self.module_instances, self.module_params
-			):
-				new_result = module_instance.pure(
-					previous_result=previous_result, **module_param
-				)
-				duplicated_columns = previous_result.columns.intersection(
-					new_result.columns
-				)
-				drop_previous_result = previous_result.drop(columns=duplicated_columns)
-				previous_result = pd.concat([drop_previous_result, new_result], axis=1)
-
 			async def generate():
-				# Simulate streaming the retrieved passage
-				passage = RetrievedPassage(
-					content="Sample content",
-					doc_id="123",
-					filepath="/path/to/doc",
-					file_page=1,
-					start_idx=0,
-					end_idx=10,
-				)
-				yield f"data: {json.dumps({'retrieved_passage': [passage.model_dump_json()]})}\n\n"
-				# Simulate streaming the generated text
-				for line in ["Generated text line 1", "Generated text line 2"]:
-					yield f"data: {line}\n\n"
+				previous_result = pd.DataFrame(
+					{
+						"qid": str(uuid.uuid4()),
+						"query": [data.query],
+						"retrieval_gt": [[]],
+						"generation_gt": [""],
+					}
+				)  # pseudo qa data for execution
 
-			return Response(generate(), mimetype="text/event-stream")
+				for module_instance, module_param in zip(
+					self.module_instances, self.module_params
+				):
+					if not isinstance(module_instance, BaseGenerator):
+						new_result = module_instance.pure(
+							previous_result=previous_result, **module_param
+						)
+						duplicated_columns = previous_result.columns.intersection(
+							new_result.columns
+						)
+						drop_previous_result = previous_result.drop(
+							columns=duplicated_columns
+						)
+						previous_result = pd.concat(
+							[drop_previous_result, new_result], axis=1
+						)
+					else:
+						retrieved_passages = self.extract_retrieve_passage(
+							previous_result
+						)
+						response = RunResponse(
+							result="", retrieved_passage=retrieved_passages
+						)
+						yield jsonify(response.model_dump()), 200
+						# Start streaming of the result
+						assert len(previous_result) == 1
+						prompt: str = previous_result["prompts"].tolist()[0]
+						stream = await module_instance.stream(
+							prompt=prompt, **module_param
+						)
+						async for delta in stream:
+							response = RunResponse(
+								result=delta, retrieved_passage=empty_run_response
+							)
+							yield jsonify(response.model_dump()), 200
+
+			loop = get_event_loop()
+			iterator = iter_over_async(generate(), loop)
+			ctx = stream_with_context(iterator)
+			response = Response(ctx, content_type="text/plain")
+			response.headers["X-Accel-Buffering"] = "no"
+			response.headers["Transfer-Encoding"] = "chunked"
+			return response
 
 		@self.app.route("/version", methods=["GET"])
 		def get_version():
-			response = VersionResponse(version="0.3.0")
+			with open(VERSION_PATH, "r") as f:
+				version = f.read().strip()
+			response = VersionResponse(version=version)
 			return jsonify(response.model_dump()), 200
-
-		# TODO: Separate between retrieval and generation
 
 	def run_api_server(self, host: str = "0.0.0.0", port: int = 8000, **kwargs):
 		"""
@@ -218,3 +243,20 @@ class ApiRunner(BaseRunner):
 				start_end_indices,
 			)
 		)
+
+
+def iter_over_async(ait, loop):
+	ait = ait.__aiter__()
+
+	async def get_next():
+		try:
+			obj = await ait.__anext__()
+			return False, obj
+		except StopAsyncIteration:
+			return True, None
+
+	while True:
+		done, obj = loop.run_until_complete(get_next())
+		if done:
+			break
+		yield obj

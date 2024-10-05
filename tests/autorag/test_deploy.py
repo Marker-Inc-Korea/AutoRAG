@@ -1,3 +1,4 @@
+import logging
 import os
 import pathlib
 import tempfile
@@ -20,6 +21,8 @@ from tests.delete_tests import is_github_action
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
 
+logger = logging.getLogger("AutoRAG")
+
 
 @pytest.fixture
 def evaluator():
@@ -30,6 +33,12 @@ def evaluator():
 			project_dir=project_dir,
 		)
 		yield evaluator
+
+
+@pytest.fixture
+def evaluator_trial_done(evaluator):
+	evaluator.start_trial(os.path.join(resource_dir, "simple_with_llm.yaml"))
+	yield evaluator
 
 
 @pytest.fixture
@@ -228,3 +237,18 @@ def test_runner_api_server(evaluator):
 	assert retrieved_contents[0]["file_page"] is None
 	assert retrieved_contents[0]["start_idx"] is None
 	assert retrieved_contents[0]["end_idx"] is None
+
+
+def test_runner_api_server_stream(evaluator_trial_done):
+	project_dir = evaluator_trial_done.project_dir
+	runner = ApiRunner.from_trial_folder(os.path.join(project_dir, "0"))
+
+	client = runner.app.test_client()
+	response = client.post(
+		"/v1/stream",
+		json={
+			"query": "What is the best movie in Korea? Have Korea movie ever won Oscar?",
+		},
+	)
+	for s in response.response:
+		logger.info(s)

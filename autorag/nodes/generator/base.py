@@ -45,7 +45,7 @@ class BaseGenerator(BaseModule, metaclass=abc.ABCMeta):
 		return result
 
 	@abc.abstractmethod
-	async def stream(self, prompt: str):
+	async def stream(self, prompt: str, **kwargs):
 		pass
 
 
