@@ -76,6 +76,14 @@ autorag.nodes.passagereranker.monot5 module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.mxbai module
+------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.mxbai
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.pass\_reranker module
 ---------------------------------------------------
 

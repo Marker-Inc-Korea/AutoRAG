@@ -20,7 +20,7 @@ class MxBaiReranker(BasePassageReranker):
 
 		:param project_dir: The project directory path.
 		:param model_name: The name of the mixedbread-ai model to use for reranking
-			Note: default model name is 'mixedbread-ai/mxbai-rerank-large-v1'
+			Note: default model name is √
 		:param kwargs: Extra arguments that are not affected
 		"""
 		super().__init__(project_dir)
