@@ -5,23 +5,19 @@ import uuid
 from typing import Dict, Optional, List, Union
 
 import pandas as pd
-from flask_swagger_ui import get_swaggerui_blueprint
-from flask import Flask, request, jsonify, Response, stream_with_context
+from quart import Quart, request, jsonify
+from quart.helpers import stream_with_context
 from pydantic import BaseModel, ValidationError
 
 from autorag.deploy.base import BaseRunner
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils import fetch_contents
-from autorag.utils.util import get_event_loop
 
 logger = logging.getLogger("AutoRAG")
 
 deploy_dir = pathlib.Path(__file__).parent
 root_dir = pathlib.Path(__file__).parent.parent
 
-SWAGGER_URL = "/api/docs"
-API_URL = "/api/spec"
-YAML_PATH = os.path.join(deploy_dir, "swagger.yaml")
 VERSION_PATH = os.path.join(root_dir, "VERSION")
 
 
@@ -48,38 +44,28 @@ class VersionResponse(BaseModel):
 	version: str
 
 
-empty_run_response = RunResponse(result="", retrieved_passage=[])
+empty_retrieved_passage = RetrievedPassage(
+	content="", doc_id="", filepath=None, file_page=None, start_idx=None, end_idx=None
+)
 
 
 class ApiRunner(BaseRunner):
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		super().__init__(config, project_dir)
-		self.app = Flask(__name__)
+		self.app = Quart(__name__)
 
 		data_dir = os.path.join(project_dir, "data")
 		self.corpus_df = pd.read_parquet(
 			os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
 		)
-
-		with open(VERSION_PATH, "r") as f:
-			version = f.read().strip()
-
-		swagger_ui_blueprint = get_swaggerui_blueprint(
-			SWAGGER_URL,
-			API_URL,
-			config={
-				"app_name": "AutoRAG API",
-				"version": version,
-			},
-		)
-		self.app.register_blueprint(swagger_ui_blueprint, url_prefix=SWAGGER_URL)
 		self.__add_api_route()
 
 	def __add_api_route(self):
 		@self.app.route("/v1/run", methods=["POST"])
-		def run_query():
+		async def run_query():
 			try:
-				data = QueryRequest(**request.json)
+				data = await request.get_json()
+				data = QueryRequest(**data)
 			except ValidationError as e:
 				return jsonify(e.errors()), 400
 
@@ -114,12 +100,14 @@ class ApiRunner(BaseRunner):
 			return jsonify(response.model_dump()), 200
 
 		@self.app.route("/v1/stream", methods=["POST"])
-		def stream_query():
+		async def stream_query():
 			try:
-				data = QueryRequest(**request.json)
+				data = await request.get_json()
+				data = QueryRequest(**data)
 			except ValidationError as e:
 				return jsonify(e.errors()), 400
 
+			@stream_with_context
 			async def generate():
 				previous_result = pd.DataFrame(
 					{
@@ -153,26 +141,20 @@ class ApiRunner(BaseRunner):
 						response = RunResponse(
 							result="", retrieved_passage=retrieved_passages
 						)
-						yield jsonify(response.model_dump()), 200
+						yield response.model_dump_json().encode("utf-8")
 						# Start streaming of the result
 						assert len(previous_result) == 1
 						prompt: str = previous_result["prompts"].tolist()[0]
-						stream = await module_instance.stream(
+						async for delta in module_instance.stream(
 							prompt=prompt, **module_param
-						)
-						async for delta in stream:
+						):
 							response = RunResponse(
-								result=delta, retrieved_passage=empty_run_response
+								result=delta,
+								retrieved_passage=[empty_retrieved_passage],
 							)
-							yield jsonify(response.model_dump()), 200
+							yield response.model_dump_json().encode("utf-8")
 
-			loop = get_event_loop()
-			iterator = iter_over_async(generate(), loop)
-			ctx = stream_with_context(iterator)
-			response = Response(ctx, content_type="text/plain")
-			response.headers["X-Accel-Buffering"] = "no"
-			response.headers["Transfer-Encoding"] = "chunked"
-			return response
+			return generate(), 200, {"X-Something": "value"}
 
 		@self.app.route("/version", methods=["GET"])
 		def get_version():
@@ -243,20 +225,3 @@ class ApiRunner(BaseRunner):
 				start_end_indices,
 			)
 		)
-
-
-def iter_over_async(ait, loop):
-	ait = ait.__aiter__()
-
-	async def get_next():
-		try:
-			obj = await ait.__anext__()
-			return False, obj
-		except StopAsyncIteration:
-			return True, None
-
-	while True:
-		done, obj = loop.run_until_complete(get_next())
-		if done:
-			break
-		yield obj
