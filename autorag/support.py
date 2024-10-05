@@ -117,6 +117,8 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"time_reranker": ("autorag.nodes.passagereranker", "TimeReranker"),
 		"TimeReranker": ("autorag.nodes.passagereranker", "TimeReranker"),
+		"mxbai_reranker": ("autorag.nodes.passagereranker", "MxBaiReranker"),
+		"MxBaiReranker": ("autorag.nodes.passagereranker", "MxBaiReranker"),
 		# passage_filter
 		"pass_passage_filter": ("autorag.nodes.passagefilter", "PassPassageFilter"),
 		"similarity_threshold_cutoff": (
