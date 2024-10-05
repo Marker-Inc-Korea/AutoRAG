@@ -44,6 +44,10 @@ class BaseGenerator(BaseModule, metaclass=abc.ABCMeta):
 				result.append(None)
 		return result
 
+	@abc.abstractmethod
+	async def stream(self, prompt: str):
+		pass
+
 
 def generator_node(func):
 	@functools.wraps(func)
