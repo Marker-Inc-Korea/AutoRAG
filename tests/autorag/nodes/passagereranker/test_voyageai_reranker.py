@@ -78,6 +78,9 @@ def test_voyageai_reranker_batch_one(voyageai_reranker_instance):
 def test_voyageai_reranker_node():
 	top_k = 1
 	result_df = VoyageAIReranker.run_evaluator(
-		project_dir=project_dir, previous_result=previous_result, top_k=top_k
+		project_dir=project_dir,
+		previous_result=previous_result,
+		top_k=top_k,
+		api_key="mock_api_key",
 	)
 	base_reranker_node_test(result_df, top_k)
