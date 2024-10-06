@@ -4,7 +4,6 @@ import pytest
 
 import autorag
 from autorag.nodes.passagereranker import MixedbreadAIReranker
-from autorag.nodes.passagereranker.mixedbreadai import mixedbreadai_rerank_pure
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	queries_example,
 	contents_example,
