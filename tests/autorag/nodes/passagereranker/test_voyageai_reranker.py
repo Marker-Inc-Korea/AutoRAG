@@ -57,24 +57,6 @@ def test_voyageai_reranker(voyageai_reranker_instance):
 	"voyageai_rerank_pure",
 	mock_voyageai_reranker_pure,
 )
-def test_voyageai_reranker_batch_one(voyageai_reranker_instance):
-	top_k = 3
-	batch = 1
-	contents_result, id_result, score_result = voyageai_reranker_instance._pure(
-		queries_example,
-		contents_example,
-		ids_example,
-		top_k,
-		batch=batch,
-	)
-	base_reranker_test(contents_result, id_result, score_result, top_k)
-
-
-@patch.object(
-	autorag.nodes.passagereranker.voyageai,
-	"voyageai_rerank_pure",
-	mock_voyageai_reranker_pure,
-)
 def test_voyageai_reranker_node():
 	top_k = 1
 	result_df = VoyageAIReranker.run_evaluator(

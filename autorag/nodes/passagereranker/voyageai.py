@@ -28,10 +28,9 @@ class VoyageAIReranker(BasePassageReranker):
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
 		top_k = kwargs.pop("top_k")
-		batch = kwargs.pop("batch", 64)
 		model = kwargs.pop("model", "rerank-2")
 		truncation = kwargs.pop("truncation", True)
-		return self._pure(queries, contents, ids, top_k, batch, model, truncation)
+		return self._pure(queries, contents, ids, top_k, model, truncation)
 
 	def _pure(
 		self,
@@ -39,7 +38,6 @@ class VoyageAIReranker(BasePassageReranker):
 		contents_list: List[List[str]],
 		ids_list: List[List[str]],
 		top_k: int,
-		batch: int = 64,
 		model: str = "rerank-2",
 		truncation: bool = True,
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
@@ -51,7 +49,6 @@ class VoyageAIReranker(BasePassageReranker):
 		:param contents_list: The list of lists of contents to rerank
 		:param ids_list: The list of lists of ids retrieved from the initial ranking
 		:param top_k: The number of passages to be retrieved
-		:param batch: The number of queries to be processed in a batch
 		:param model: The model name for VoyageAI rerank.
 		    You can choose between "rerank-2" and "rerank-2-lite".
 		    Default is "rerank-2".
