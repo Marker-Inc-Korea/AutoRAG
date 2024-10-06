@@ -179,6 +179,6 @@ def openvino_run_model(
 		else:
 			scores = outputs[0].flatten()
 
-		scores = list(1 / (1 + np.exp(-scores)))
+		scores = list(map(float, (1 / (1 + np.exp(-np.array(scores))))))
 		results.extend(scores)
 	return results
