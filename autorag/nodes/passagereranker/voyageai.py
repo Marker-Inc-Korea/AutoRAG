@@ -52,7 +52,7 @@ class VoyageAIReranker(BasePassageReranker):
 		:param ids_list: The list of lists of ids retrieved from the initial ranking
 		:param top_k: The number of passages to be retrieved
 		:param batch: The number of queries to be processed in a batch
-		:param model: The model name for Cohere rerank.
+		:param model: The model name for VoyageAI rerank.
 		    You can choose between "rerank-2" and "rerank-2-lite".
 		    Default is "rerank-2".
 		:param truncation: Whether to truncate the input to satisfy the 'context length limit' on the query and the documents.
@@ -80,10 +80,10 @@ def voyageai_rerank_pure(
 	truncation: bool = True,
 ) -> Tuple[List[str], List[str], List[float]]:
 	"""
-	Rerank a list of contents with Cohere rerank models.
+	Rerank a list of contents with VoyageAI rerank models.
 
 	:param voyage_client: The Voyage Client to use for reranking
-	:param model: The model name for Cohere rerank
+	:param model: The model name for VoyageAI rerank
 	:param query: The query to use for reranking
 	:param documents: The list of contents to rerank
 	:param ids: The list of ids corresponding to the documents
