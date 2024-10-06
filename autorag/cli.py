@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import nest_asyncio
 
 from autorag import dashboard
 from autorag.deploy import extract_best_config as original_extract_best_config
@@ -48,16 +49,27 @@ def evaluate(config, qa_data_path, corpus_data_path, project_dir):
 
 
 @click.command()
-@click.option("--config_path", type=str, help="Path to extracted config yaml file.")
+@click.option(
+	"--config_path", type=str, help="Path to extracted config yaml file.", default=None
+)
 @click.option("--host", type=str, default="0.0.0.0", help="Host address")
 @click.option("--port", type=int, default=8000, help="Port number")
-# TODO: Add trial directory option
+@click.option(
+	"--trial_dir",
+	type=click.Path(file_okay=False, dir_okay=True, exists=True),
+	default=None,
+	help="Path to trial directory.",
+)
 @click.option(
 	"--project_dir", help="Path to project directory.", type=str, default=None
 )
-def run_api(config_path, host, port, project_dir):
-	runner = ApiRunner.from_yaml(config_path, project_dir=project_dir)
+def run_api(config_path, host, port, trial_dir, project_dir):
+	if trial_dir is None:
+		runner = ApiRunner.from_yaml(config_path, project_dir=project_dir)
+	else:
+		runner = ApiRunner.from_trial_folder(trial_dir)
 	logger.info(f"Running API server at {host}:{port}...")
+	nest_asyncio.apply()
 	runner.run_api_server(host, port)
 
 
