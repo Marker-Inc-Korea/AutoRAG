@@ -18,7 +18,7 @@ class VoyageAIReranker(BasePassageReranker):
 				"or directly set it on the config YAML file."
 			)
 
-		self.voyage_client = voyageai.Client()
+		self.voyage_client = voyageai.Client(api_key=api_key)
 
 	def __del__(self):
 		del self.voyage_client
