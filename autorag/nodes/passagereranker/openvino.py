@@ -3,6 +3,7 @@ from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
+import torch
 from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
@@ -95,6 +96,8 @@ class OpenVINOReranker(BasePassageReranker):
 	def __del__(self):
 		del self.model
 		del self.tokenizer
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])

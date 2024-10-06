@@ -81,6 +81,8 @@ class MonoT5(BasePassageReranker):
 	def __del__(self):
 		del self.model
 		del self.tokenizer
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
