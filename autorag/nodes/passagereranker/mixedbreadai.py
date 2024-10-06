@@ -24,6 +24,10 @@ class MixedbreadAIReranker(BasePassageReranker):
 		Initialize mixedbread-ai rerank node.
 
 		:param project_dir: The project directory path.
+		:param api_key: The API key for MixedbreadAI rerank.
+		    You can set it in the environment variable MXBAI_API_KEY.
+		    Or, you can directly set it on the config YAML file using this parameter.
+		    Default is env variable "MXBAI_API_KEY".
 		:param kwargs: Extra arguments that are not affected
 		"""
 		super().__init__(project_dir)
@@ -59,15 +63,16 @@ class MixedbreadAIReranker(BasePassageReranker):
 		batch: int = 8,
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
-		        Rerank a list of contents with mixedbread-ai rerank models.
+		Rerank a list of contents with mixedbread-ai rerank models.
+		You can get the API key from https://www.mixedbread.ai/api-reference#quick-start-guide and set it in the environment variable MXBAI_API_KEY.
 
-		        :param queries: The list of queries to use for reranking
-		        :param contents_list: The list of lists of contents to rerank
-		        :param ids_list: The list of lists of ids retrieved from the initial ranking
-		        :param top_k: The number of passages to be retrieved
-		        :param model: The model name for mixedbread-ai rerank.
-		            You can choose between "mixedbread-ai/mxbai-rerank-large-v1", "mixedbread-ai/mxbai-rerank-base-v1" and "mixedbread-ai/mxbai-rerank-xsmall-v1".
-		            Default is "mixedbread-ai/mxbai-rerank-large-v1".
+		:param queries: The list of queries to use for reranking
+		:param contents_list: The list of lists of contents to rerank
+		:param ids_list: The list of lists of ids retrieved from the initial ranking
+		:param top_k: The number of passages to be retrieved
+		:param model: The model name for mixedbread-ai rerank.
+			You can choose between "mixedbread-ai/mxbai-rerank-large-v1", "mixedbread-ai/mxbai-rerank-base-v1" and "mixedbread-ai/mxbai-rerank-xsmall-v1".
+			Default is "mixedbread-ai/mxbai-rerank-large-v1".
 		:param batch: The number of queries to be processed in a batch
 		        :return: Tuple of lists containing the reranked contents, ids, and scores
 		"""
