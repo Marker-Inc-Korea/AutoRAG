@@ -13,12 +13,12 @@ Hugging Face rerank model can be supported by OpenVINO through `OpenVINOReranker
 ## **Module Parameters**
 
 - **batch** : The size of a batch. If you have limited CUDA memory, decrease the size of the batch. (default: 64)
-- **model_id_or_path** : The type of model id or path you want to use for reranking. Default is id "BAAI/bge-reranker-large"
+- **model** : The type of model id or path you want to use for reranking. Default is id "BAAI/bge-reranker-large"
 
 ## **Example config.yaml**
 
 ```yaml
 - module_type: openvino_reranker
   batch: 32
-  model_id_or_path: "BAAI/bge-reranker-large"
+  model: "BAAI/bge-reranker-large"
 ```

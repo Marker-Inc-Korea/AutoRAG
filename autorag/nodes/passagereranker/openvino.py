@@ -26,7 +26,7 @@ class OpenVINOReranker(BasePassageReranker):
 	def __init__(
 		self,
 		project_dir: str,
-		model_id_or_path: str = "BAAI/bge-reranker-large",
+		model: str = "BAAI/bge-reranker-large",
 		*args,
 		**kwargs,
 	):
@@ -80,18 +80,18 @@ class OpenVINOReranker(BasePassageReranker):
 			OVModelForSequenceClassification.from_pretrained, kwargs
 		)
 
-		if require_model_export(model_id_or_path):
+		if require_model_export(model):
 			# use remote model
 			self.model = OVModelForSequenceClassification.from_pretrained(
-				model_id_or_path, export=True, **model_kwargs
+				model, export=True, **model_kwargs
 			)
 		else:
 			# use local model
 			self.model = OVModelForSequenceClassification.from_pretrained(
-				model_id_or_path, **model_kwargs
+				model, **model_kwargs
 			)
 
-		self.tokenizer = AutoTokenizer.from_pretrained(model_id_or_path)
+		self.tokenizer = AutoTokenizer.from_pretrained(model)
 
 	def __del__(self):
 		del self.model
