@@ -72,6 +72,9 @@ def test_mixedbreadai_reranker_batch_one(mixedbreadai_reranker_instance):
 def test_mixedbreadai_node():
 	top_k = 1
 	result_df = MixedbreadAIReranker.run_evaluator(
-		project_dir=project_dir, previous_result=previous_result, top_k=top_k
+		project_dir=project_dir,
+		previous_result=previous_result,
+		top_k=top_k,
+		api_key="mock",
 	)
 	base_reranker_node_test(result_df, top_k)
