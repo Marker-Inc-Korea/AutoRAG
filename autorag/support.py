@@ -117,6 +117,8 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"time_reranker": ("autorag.nodes.passagereranker", "TimeReranker"),
 		"TimeReranker": ("autorag.nodes.passagereranker", "TimeReranker"),
+		"openvino_reranker": ("autorag.nodes.passagereranker", "OpenVINOReranker"),
+		"OpenVINOReranker": ("autorag.nodes.passagereranker", "OpenVINOReranker"),
 		# passage_filter
 		"pass_passage_filter": ("autorag.nodes.passagefilter", "PassPassageFilter"),
 		"similarity_threshold_cutoff": (

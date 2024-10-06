@@ -76,6 +76,14 @@ autorag.nodes.passagereranker.monot5 module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.openvino module
+---------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.openvino
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.pass\_reranker module
 ---------------------------------------------------
 
