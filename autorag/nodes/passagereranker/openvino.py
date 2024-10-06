@@ -1,4 +1,3 @@
-from itertools import chain
 from pathlib import Path
 from typing import Any, List, Tuple
 
@@ -167,23 +166,12 @@ def openvino_run_model(
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
 	for batch_texts in tqdm(batch_input_texts):
-		flattened_batch_texts = list(chain.from_iterable(batch_texts))
-		length = model.request.inputs[0].get_partial_shape()[1]
-		if length.is_dynamic:
-			input_tensors = tokenizer(
-				flattened_batch_texts,
-				padding=True,
-				truncation=True,
-				return_tensors="pt",
-			)
-		else:
-			input_tensors = tokenizer(
-				flattened_batch_texts,
-				padding="max_length",
-				max_length=length.get_length(),
-				truncation=True,
-				return_tensors="pt",
-			)
+		input_tensors = tokenizer(
+			batch_texts,
+			padding=True,
+			truncation=True,
+			return_tensors="pt",
+		)
 
 		outputs = model(**input_tensors, return_dict=True)
 		if outputs[0].shape[1] > 1:
