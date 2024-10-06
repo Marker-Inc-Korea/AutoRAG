@@ -1,4 +1,5 @@
 import logging
+import os
 from unittest.mock import patch
 
 import pandas as pd
@@ -103,7 +104,12 @@ Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I 
 async def test_llama_index_llm_stream():
 	import asyncstdlib as a
 
-	llm_instance = LlamaIndexLLM(project_dir=".", llm="openai", model="gpt-4o-mini")
+	llm_instance = LlamaIndexLLM(
+		project_dir=".",
+		llm="openai",
+		model="gpt-4o-mini",
+		api_key=os.getenv("OPENAI_API_KEY"),
+	)
 	result = []
 	async for i, s in a.enumerate(
 		llm_instance.stream("Hello. Tell me about who is Kai Havertz")
