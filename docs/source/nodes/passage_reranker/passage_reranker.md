@@ -70,5 +70,5 @@ sentence_transformer_reranker.md
 flag_embedding_reranker.md
 flag_embedding_llm_reranker.md
 time_reranker.md
-mxbai_reranker.md
+mixedbreadai_reranker.md
 ```
