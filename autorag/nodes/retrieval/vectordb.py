@@ -106,7 +106,7 @@ class VectorDB(BaseRetrieval):
 			self.chroma_collection.count() > 0
 		), "collection must contain at least one document. Please check you ingested collection correctly."
 		# truncate queries and embedding execution here.
-		openai_embedding_limit = 8191
+		openai_embedding_limit = 8000
 		if isinstance(self.embedding_model, OpenAIEmbedding):
 			queries = list(
 				map(
@@ -195,7 +195,7 @@ def vectordb_ingest(
 ):
 	"""
 	Ingest given corpus data to the chromadb collection.
-	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8191 tokens.
+	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8000 tokens.
 	Plus, when the corpus content is empty (whitespace), it will be ignored.
 	And if there is a document id that already exists in the collection, it will be ignored.
 
@@ -220,9 +220,7 @@ def vectordb_ingest(
 
 		# truncate by token if embedding_model is OpenAIEmbedding
 		if isinstance(embedding_model, OpenAIEmbedding):
-			openai_embedding_limit = (
-				8191  # all openai embedding models have 8191 max token input
-			)
+			openai_embedding_limit = 8000
 			new_contents = openai_truncate_by_token(
 				new_contents, openai_embedding_limit, embedding_model.model_name
 			)

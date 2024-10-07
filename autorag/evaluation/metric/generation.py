@@ -334,7 +334,7 @@ def sem_score(
 
 	embedding_model.embed_batch_size = batch
 
-	openai_embedding_max_length = 8191
+	openai_embedding_max_length = 8000
 	if isinstance(embedding_model, OpenAIEmbedding):
 		generations = openai_truncate_by_token(
 			generations, openai_embedding_max_length, embedding_model.model_name
