@@ -25,6 +25,7 @@ sentence-transformers # for sentence transformer reranker
 FlagEmbedding # for flag embedding reranker
 llmlingua # for longllmlingua
 peft
+optimum[openvino,nncf] # for openvino reranker
 mixedbread-ai # for mixedbread-ai reranker
 
 ### LlamaIndex ###

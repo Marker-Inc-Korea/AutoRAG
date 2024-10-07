@@ -11,4 +11,5 @@ from .sentence_transformer import SentenceTransformerReranker
 from .tart.tart import Tart
 from .time_reranker import TimeReranker
 from .upr import Upr
+from .openvino import OpenVINOReranker
 from .mixedbreadai import MixedbreadAIReranker
