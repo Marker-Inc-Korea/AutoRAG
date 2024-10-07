@@ -78,6 +78,13 @@ class MonoT5(BasePassageReranker):
 		self.token_false_id = self.tokenizer.convert_tokens_to_ids(token_false)
 		self.token_true_id = self.tokenizer.convert_tokens_to_ids(token_true)
 
+	def __del__(self):
+		del self.model
+		del self.tokenizer
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
+		super().__del__()
+
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries, contents, _, ids = self.cast_to_run(previous_result)

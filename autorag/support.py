@@ -117,6 +117,8 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"time_reranker": ("autorag.nodes.passagereranker", "TimeReranker"),
 		"TimeReranker": ("autorag.nodes.passagereranker", "TimeReranker"),
+		"openvino_reranker": ("autorag.nodes.passagereranker", "OpenVINOReranker"),
+		"OpenVINOReranker": ("autorag.nodes.passagereranker", "OpenVINOReranker"),
 		"voyageai_reranker": ("autorag.nodes.passagereranker", "VoyageAIReranker"),
 		"VoyageAIReranker": ("autorag.nodes.passagereranker", "VoyageAIReranker"),
 		# passage_filter
