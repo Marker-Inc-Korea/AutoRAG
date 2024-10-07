@@ -4,7 +4,7 @@ import pandas as pd
 import voyageai
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
-from autorag.utils.util import result_to_dataframe
+from autorag.utils.util import result_to_dataframe, get_event_loop, process_batch
 
 
 class VoyageAIReranker(BasePassageReranker):
@@ -18,7 +18,7 @@ class VoyageAIReranker(BasePassageReranker):
 				"or directly set it on the config YAML file."
 			)
 
-		self.voyage_client = voyageai.Client(api_key=api_key)
+		self.voyage_client = voyageai.AsyncClient(api_key=api_key)
 
 	def __del__(self):
 		del self.voyage_client
@@ -28,9 +28,10 @@ class VoyageAIReranker(BasePassageReranker):
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
 		top_k = kwargs.pop("top_k")
+		batch = kwargs.pop("batch", 8)
 		model = kwargs.pop("model", "rerank-2")
 		truncation = kwargs.pop("truncation", True)
-		return self._pure(queries, contents, ids, top_k, model, truncation)
+		return self._pure(queries, contents, ids, top_k, model, batch, truncation)
 
 	def _pure(
 		self,
@@ -39,6 +40,7 @@ class VoyageAIReranker(BasePassageReranker):
 		ids_list: List[List[str]],
 		top_k: int,
 		model: str = "rerank-2",
+		batch: int = 8,
 		truncation: bool = True,
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
@@ -52,22 +54,25 @@ class VoyageAIReranker(BasePassageReranker):
 		:param model: The model name for VoyageAI rerank.
 		    You can choose between "rerank-2" and "rerank-2-lite".
 		    Default is "rerank-2".
+		:param batch: The number of queries to be processed in a batch
 		:param truncation: Whether to truncate the input to satisfy the 'context length limit' on the query and the documents.
 		:return: Tuple of lists containing the reranked contents, ids, and scores
 		"""
-		content_result, id_result, score_result = zip(
-			*[
-				voyageai_rerank_pure(
-					self.voyage_client, model, query, document, ids, top_k, truncation
-				)
-				for query, document, ids in zip(queries, contents_list, ids_list)
-			]
-		)
+		tasks = [
+			voyageai_rerank_pure(
+				self.client, query, contents, ids, top_k=top_k, model=model
+			)
+			for query, contents, ids in zip(queries, contents_list, ids_list)
+		]
+		loop = get_event_loop()
+		results = loop.run_until_complete(process_batch(tasks, batch))
 
-		return content_result, id_result, score_result
+		content_result, id_result, score_result = zip(*results)
+
+		return list(content_result), list(id_result), list(score_result)
 
 
-def voyageai_rerank_pure(
+async def voyageai_rerank_pure(
 	voyage_client: voyageai.Client,
 	model: str,
 	query: str,
@@ -88,7 +93,7 @@ def voyageai_rerank_pure(
 	:param truncation: Whether to truncate the input to satisfy the 'context length limit' on the query and the documents.
 	:return: Tuple of lists containing the reranked contents, ids, and scores
 	"""
-	rerank_results = voyage_client.rerank(
+	rerank_results = await voyage_client.rerank(
 		model=model,
 		query=query,
 		documents=documents,
