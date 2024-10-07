@@ -330,7 +330,7 @@ def sem_score(
 	generations = [metric_input.generated_texts for metric_input in metric_inputs]
 	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	if embedding_model is None:
-		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]
+		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]()
 
 	embedding_model.embed_batch_size = batch
 

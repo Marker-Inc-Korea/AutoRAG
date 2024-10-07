@@ -499,7 +499,7 @@ def embedding_query_content(
 	flatten_contents = list(itertools.chain.from_iterable(contents_list))
 
 	openai_embedding_limit = 8191  # all openai embedding model has 8191 max token input
-	if isinstance(embedding_model, OpenAIEmbedding):
+	if isinstance(embedding_model._instance, OpenAIEmbedding):
 		queries = openai_truncate_by_token(
 			queries, openai_embedding_limit, embedding_model.model_name
 		)
