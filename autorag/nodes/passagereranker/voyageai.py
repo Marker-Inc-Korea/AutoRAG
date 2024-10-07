@@ -60,7 +60,7 @@ class VoyageAIReranker(BasePassageReranker):
 		"""
 		tasks = [
 			voyageai_rerank_pure(
-				self.client, query, contents, ids, top_k=top_k, model=model
+				self.voyage_client, model, query, contents, ids, top_k, truncation
 			)
 			for query, contents, ids in zip(queries, contents_list, ids_list)
 		]
@@ -73,7 +73,7 @@ class VoyageAIReranker(BasePassageReranker):
 
 
 async def voyageai_rerank_pure(
-	voyage_client: voyageai.Client,
+	voyage_client: voyageai.AsyncClient,
 	model: str,
 	query: str,
 	documents: List[str],
