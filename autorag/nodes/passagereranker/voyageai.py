@@ -103,9 +103,7 @@ async def voyageai_rerank_pure(
 	reranked_scores: List[float] = list(
 		map(lambda x: x.relevance_score, rerank_results.results)
 	)
-	reranked_contents: List[str] = list(
-		map(lambda x: x.document, rerank_results.results)
-	)
 	indices = list(map(lambda x: x.index, rerank_results.results))
+	reranked_contents: List[str] = list(map(lambda i: documents[i], indices))
 	reranked_ids: List[str] = list(map(lambda i: ids[i], indices))
 	return reranked_contents, reranked_ids, reranked_scores
