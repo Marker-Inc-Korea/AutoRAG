@@ -2,7 +2,11 @@ from unittest.mock import patch
 
 import pytest
 
-import autorag
+import mixedbread_ai.client
+from mixedbread_ai.types.reranking_response import RerankingResponse
+from mixedbread_ai.types.ranked_document import RankedDocument
+from mixedbread_ai.types.usage import Usage
+
 from autorag.nodes.passagereranker import MixedbreadAIReranker
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	queries_example,
@@ -15,21 +19,29 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 )
 
 
-async def mock_mixedbreadai_reranker(client, query, documents, ids, top_k, **kwargs):
-	if query == queries_example[0]:
-		return (
-			[documents[1], documents[2], documents[0]][:top_k],
-			[ids[1], ids[2], ids[0]][:top_k],
-			[0.8, 0.2, 0.1][:top_k],
-		)
-	elif query == queries_example[1]:
-		return (
-			[documents[1], documents[0], documents[2]][:top_k],
-			[ids[1], ids[0], ids[2]][:top_k],
-			[0.8, 0.2, 0.1][:top_k],
-		)
-	else:
-		raise ValueError(f"Unexpected query: {query}")
+async def mock_mixedbreadai_reranker(
+	self,
+	*,
+	query,
+	input,
+	model,
+	top_k,
+	**kwargs,
+):
+	mock_usage = Usage(prompt_tokens=100, total_tokens=150, completion_tokens=50)
+	mock_documents = [
+		RankedDocument(index=1, score=0.8, input="Document 1", object=None),
+		RankedDocument(index=2, score=0.2, input="Document 2", object=None),
+		RankedDocument(index=0, score=0.1, input="Document 3", object=None),
+	]
+	return RerankingResponse(
+		usage=mock_usage,
+		model="mock-model",
+		data=mock_documents[:top_k],
+		object=None,
+		top_k=top_k,
+		return_input=False,
+	)
 
 
 @pytest.fixture
@@ -38,9 +50,7 @@ def mixedbreadai_reranker_instance():
 
 
 @patch.object(
-	autorag.nodes.passagereranker.mixedbreadai,
-	"mixedbreadai_rerank_pure",
-	mock_mixedbreadai_reranker,
+	mixedbread_ai.client.AsyncMixedbreadAI, "reranking", mock_mixedbreadai_reranker
 )
 def test_mixedbreadai_reranker(mixedbreadai_reranker_instance):
 	top_k = 1
@@ -51,9 +61,7 @@ def test_mixedbreadai_reranker(mixedbreadai_reranker_instance):
 
 
 @patch.object(
-	autorag.nodes.passagereranker.mixedbreadai,
-	"mixedbreadai_rerank_pure",
-	mock_mixedbreadai_reranker,
+	mixedbread_ai.client.AsyncMixedbreadAI, "reranking", mock_mixedbreadai_reranker
 )
 def test_mixedbreadai_reranker_batch_one(mixedbreadai_reranker_instance):
 	top_k = 1
@@ -65,9 +73,7 @@ def test_mixedbreadai_reranker_batch_one(mixedbreadai_reranker_instance):
 
 
 @patch.object(
-	autorag.nodes.passagereranker.mixedbreadai,
-	"mixedbreadai_rerank_pure",
-	mock_mixedbreadai_reranker,
+	mixedbread_ai.client.AsyncMixedbreadAI, "reranking", mock_mixedbreadai_reranker
 )
 def test_mixedbreadai_node():
 	top_k = 1
