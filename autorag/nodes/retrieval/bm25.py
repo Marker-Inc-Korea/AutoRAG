@@ -152,16 +152,12 @@ class BM25(BaseRetrieval):
 			bm25_tokenizer = "porter_stemmer"
 		bm25_path = os.path.join(self.resources_dir, get_bm25_pkl_name(bm25_tokenizer))
 
-		if not os.path.exists(bm25_path):
-			print(f"bm25_path {bm25_path} does not exist. Ingesting corpus...")
-			# Assuming `corpus_data` is provided in kwargs
-			corpus_data = pd.read_parquet("data/corpus.parquet")
-			if corpus_data is not None:
-				bm25_ingest(bm25_path, corpus_data, bm25_tokenizer)
-			else:
-				raise ValueError(
-					"Corpus data must be provided to ingest and create the BM25 corpus."
-				)
+		assert (
+			bm25_path is not None
+		), "bm25_path must be specified for using bm25 retrieval."
+		assert os.path.exists(
+			bm25_path
+		), f"bm25_path {bm25_path} does not exist. Please ingest first."
 
 		self.bm25_corpus = load_bm25_corpus(bm25_path)
 		assert (
