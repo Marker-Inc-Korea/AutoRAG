@@ -3,9 +3,6 @@ name: Docker Push
 on:
   push:
     branches: [ "main" ]
-    tags: [ "v*.*.*" ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
   DOCKER_REPO: "autoraghq/autorag"
