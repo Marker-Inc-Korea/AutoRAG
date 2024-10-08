@@ -38,6 +38,6 @@ def cast_metrics(
 
 def cast_embedding_model(key, value):
 	if key == "embedding_model":
-		return key, embedding_models[value]
+		return key, embedding_models[value]()
 	else:
 		return key, value

@@ -1,0 +1,27 @@
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: retrieval  # represents run_node function
+      strategy:  # essential for every node
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10 # node param, which adapt to every module in this node.
+      modules:
+        - module_type: bm25 # for testing env variable
+          bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu]
+        generator_modules:
+          - module_type: llama_index_llm
+            llm: mock
+      modules:
+        - module_type: fstring
+          prompt: "Tell me something about the question: {query} \n\n {retrieved_contents}"
+    - node_type: generator
+      strategy:
+        metrics:
+          - metric_name: bleu
+      modules:
+        - module_type: openai_llm
+          llm: gpt-4o-mini
+          temperature: 0.5

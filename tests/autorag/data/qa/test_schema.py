@@ -186,7 +186,13 @@ def test_update_corpus():
 				"generation_gt",
 			}
 			loaded_corpus = pd.read_parquet(corpus_path.name, engine="pyarrow")
-			assert set(loaded_corpus.columns) == {"doc_id", "contents", "metadata"}
+			assert set(loaded_corpus.columns) == {
+				"doc_id",
+				"contents",
+				"metadata",
+				"path",
+				"start_end_idx",
+			}
 			corpus_path.close()
 			os.unlink(corpus_path.name)
 		qa_path.close()

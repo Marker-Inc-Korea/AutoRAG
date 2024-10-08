@@ -178,11 +178,40 @@ class OpenAILLM(BaseGenerator):
 		result = loop.run_until_complete(process_batch(tasks, self.batch))
 		return result
 
+	async def stream(self, prompt: str, **kwargs):
+		if kwargs.get("logprobs") is not None:
+			kwargs.pop("logprobs")
+			logger.warning(
+				"parameter logprob does not effective. It always set to False."
+			)
+		if kwargs.get("n") is not None:
+			kwargs.pop("n")
+			logger.warning("parameter n does not effective. It always set to 1.")
+
+		prompt = truncate_by_token(prompt, self.tokenizer, self.max_token_size)
+
+		openai_chat_params = pop_params(self.client.chat.completions.create, kwargs)
+
+		stream = await self.client.chat.completions.create(
+			model=self.llm,
+			messages=[
+				{"role": "user", "content": prompt},
+			],
+			logprobs=False,
+			n=1,
+			stream=True,
+			**openai_chat_params,
+		)
+		result = ""
+		async for chunk in stream:
+			if chunk.choices[0].delta.content is not None:
+				result += chunk.choices[0].delta.content
+				yield result
+
 	async def get_structured_result(self, prompt: str, output_cls, **kwargs):
 		response = await self.client.beta.chat.completions.parse(
 			model=self.llm,
 			messages=[
-				{"role": "system", "content": "Structured Output"},
 				{"role": "user", "content": prompt},
 			],
 			response_format=output_cls,

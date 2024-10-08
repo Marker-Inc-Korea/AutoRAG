@@ -6,12 +6,10 @@ from typing import Optional, Dict, List
 
 import pandas as pd
 import yaml
-from pydantic import BaseModel
-import gradio as gr
-from flask import Flask, request
 
 from autorag.support import get_support_modules
 from autorag.utils.util import load_summary_file
+
 
 logger = logging.getLogger("AutoRAG")
 
@@ -122,12 +120,12 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
 	return yaml_dict
 
 
-class Runner:
+class BaseRunner:
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		self.config = config
 		project_dir = os.getcwd() if project_dir is None else project_dir
-		self.app = Flask(__name__)
-		self.__add_api_route()
+		# self.app = Flask(__name__)
+		# self.__add_api_route()
 
 		# init modules
 		node_lines = deepcopy(self.config["node_lines"])
@@ -158,7 +156,7 @@ class Runner:
 
 		:param yaml_path: The path of the YAML file.
 		:param project_dir: The path of the project directory.
-		    Default is the current directory.
+			Default is the current directory.
 		:return: Initialized Runner.
 		"""
 		with open(yaml_path, "r") as f:
@@ -182,6 +180,8 @@ class Runner:
 		config = extract_best_config(trial_path)
 		return cls(config, project_dir=os.path.dirname(trial_path))
 
+
+class Runner(BaseRunner):
 	def run(self, query: str, result_column: str = "generated_texts"):
 		"""
 		Run the pipeline with query.
@@ -214,72 +214,3 @@ class Runner:
 			previous_result = pd.concat([drop_previous_result, new_result], axis=1)
 
 		return previous_result[result_column].tolist()[0]
-
-	def __add_api_route(self):
-		@self.app.route("/run", methods=["POST"])
-		def run_pipeline():
-			runner_input = RunnerInput(**request.json)
-			query = runner_input.query
-			result_column = runner_input.result_column
-			result = self.run(query, result_column)
-			return {result_column: result}
-
-	def run_api_server(self, host: str = "0.0.0.0", port: int = 8000, **kwargs):
-		"""
-		Run the pipeline as api server.
-		You can send POST request to `http://host:port/run` with json body like below:
-
-		.. Code:: json
-
-		    {
-		        "query": "your query",
-		        "result_column": "generated_texts"
-		    }
-
-		And it returns json response like below:
-
-		.. Code:: json
-
-		    {
-		        "answer": "your answer"
-		    }
-
-		:param host: The host of the api server.
-		:param port: The port of the api server.
-		:param kwargs: Other arguments for Flask app.run.
-		"""
-		logger.info(f"Run api server at {host}:{port}")
-		self.app.run(host=host, port=port, **kwargs)
-
-	def run_web(
-		self,
-		server_name: str = "0.0.0.0",
-		server_port: int = 7680,
-		share: bool = False,
-		**kwargs,
-	):
-		"""
-		Run web interface to interact pipeline.
-		You can access the web interface at `http://server_name:server_port` in your browser
-
-		:param server_name: The host of the web. Default is 0.0.0.0.
-		:param server_port: The port of the web. Default is 7680.
-		:param share: Whether to create a publicly shareable link. Default is False.
-		:param kwargs: Other arguments for gr.ChatInterface.launch.
-		"""
-
-		logger.info(f"Run web interface at http://{server_name}:{server_port}")
-
-		def get_response(message, _):
-			return self.run(message)
-
-		gr.ChatInterface(
-			get_response, title="📚 AutoRAG", retry_btn=None, undo_btn=None
-		).launch(
-			server_name=server_name, server_port=server_port, share=share, **kwargs
-		)
-
-
-class RunnerInput(BaseModel):
-	query: str
-	result_column: str = "generated_texts"
