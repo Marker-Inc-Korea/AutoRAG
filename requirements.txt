@@ -61,7 +61,3 @@ seaborn
 ipykernel
 ipywidgets
 ipywidgets_bokeh
-
-#Japanese morphological analyzer
-sudachipy>=0.6.8
-sudachidict_core
