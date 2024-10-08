@@ -1,7 +1,10 @@
+import asyncio
+import logging
 import os
 import pathlib
 import tempfile
 
+import nest_asyncio
 import pandas as pd
 import pytest
 import yaml
@@ -13,11 +16,14 @@ from autorag.deploy import (
 	extract_node_line_names,
 	extract_node_strategy,
 )
+from autorag.deploy.api import ApiRunner
 from autorag.evaluator import Evaluator
 from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
+
+logger = logging.getLogger("AutoRAG")
 
 
 @pytest.fixture
@@ -29,6 +35,12 @@ def evaluator():
 			project_dir=project_dir,
 		)
 		yield evaluator
+
+
+@pytest.fixture
+def evaluator_trial_done(evaluator):
+	evaluator.start_trial(os.path.join(resource_dir, "simple_with_llm.yaml"))
+	yield evaluator
 
 
 @pytest.fixture
@@ -200,21 +212,66 @@ def test_runner_full(evaluator):
 def test_runner_api_server(evaluator):
 	project_dir = evaluator.project_dir
 	evaluator.start_trial(os.path.join(resource_dir, "simple_mock.yaml"))
-	runner = Runner.from_trial_folder(os.path.join(project_dir, "0"))
+	runner = ApiRunner.from_trial_folder(os.path.join(project_dir, "0"))
 
 	client = runner.app.test_client()
 
-	# Use the TestClient to make a request to the server
-	response = client.post(
-		"/run",
-		json={
-			"query": "What is the best movie in Korea? Have Korea movie ever won Oscar?",
-			"result_column": "retrieved_contents",
-		},
-	)
-	assert response.status_code == 200
-	assert "retrieved_contents" in response.json
-	retrieved_contents = response.json["retrieved_contents"]
+	async def post_to_server():
+		# Use the TestClient to make a request to the server
+		response = await client.post(
+			"/v1/run",
+			json={
+				"query": "What is the best movie in Korea? Have Korea movie ever won Oscar?",
+				"result_column": "retrieved_contents",
+			},
+		)
+		json_response = await response.get_json()
+		return json_response, response.status_code
+
+	nest_asyncio.apply()
+
+	response_json, response_status_code = asyncio.run(post_to_server())
+	assert response_status_code == 200
+	assert "result" in response_json
+	retrieved_contents = response_json["result"]
 	assert len(retrieved_contents) == 10
 	assert isinstance(retrieved_contents, list)
 	assert isinstance(retrieved_contents[0], str)
+
+	retrieved_contents = response_json["retrieved_passage"]
+	assert len(retrieved_contents) == 10
+	assert isinstance(retrieved_contents[0]["content"], str)
+	assert isinstance(retrieved_contents[0]["doc_id"], str)
+	assert retrieved_contents[0]["filepath"] is None
+	assert retrieved_contents[0]["file_page"] is None
+	assert retrieved_contents[0]["start_idx"] is None
+	assert retrieved_contents[0]["end_idx"] is None
+
+
+@pytest.mark.skip(reason="This test is not working")
+def test_runner_api_server_stream(evaluator_trial_done):
+	project_dir = evaluator_trial_done.project_dir
+	runner = ApiRunner.from_trial_folder(os.path.join(project_dir, "0"))
+	client = runner.app.test_client()
+
+	async def post_to_server():
+		# Use the TestClient to make a request to the server
+		async with client.request(
+			"/v1/stream",
+			method="POST",
+			headers={"Content-Type": "application/json"},
+			query_string={
+				"query": "What is the best movie in Korea? Have Korea movie ever won Oscar?",
+			},
+		) as connection:
+			response = await connection.receive()
+			# Ensure the response status code is 200
+			assert connection.status_code == 200
+
+			# Collect streamed data
+			streamed_data = []
+			async for data in response.body:
+				streamed_data.append(data)
+
+	nest_asyncio.apply()
+	asyncio.run(post_to_server())

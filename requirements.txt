@@ -14,7 +14,6 @@ rouge_score  # for rouge score
 rich  # for pretty logging
 chromadb>=0.5.0 # for vectordb retrieval
 click  # for cli
-Flask # for api server
 torch  # for monot5 reranker
 sentencepiece  # for monot5 reranker
 cohere>=5.8.0 # for cohere services
@@ -27,6 +26,9 @@ llmlingua # for longllmlingua
 peft
 optimum[openvino,nncf] # for openvino reranker
 mixedbread-ai # for mixedbread-ai reranker
+
+### API server ###
+quart
 
 ### LlamaIndex ###
 llama-index>=0.11.0

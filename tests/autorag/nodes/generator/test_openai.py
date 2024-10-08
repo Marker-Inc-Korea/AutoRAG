@@ -13,6 +13,7 @@ from tests.autorag.nodes.generator.test_generator_base import (
 	check_generated_tokens,
 	check_generated_log_probs,
 )
+from tests.delete_tests import is_github_action
 from tests.mock import mock_openai_chat_create
 import openai.resources.beta.chat
 from openai.types.chat import (
@@ -132,3 +133,22 @@ Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I 
 	llm = OpenAILLM(project_dir=".", llm="gpt-3.5-turbo")
 	with pytest.raises(ValueError):
 		llm.structured_output([prompt], TestResponse)
+
+
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
+)
+@pytest.mark.asyncio()
+async def test_openai_llm_stream():
+	import asyncstdlib as a
+
+	llm_instance = OpenAILLM(project_dir=".", llm="gpt-4o-mini-2024-07-18")
+	result = []
+	async for i, s in a.enumerate(
+		llm_instance.stream("Hello. Tell me about who is Kai Havertz")
+	):
+		assert isinstance(s, str)
+		result.append(s)
+		if i >= 1:
+			assert len(result[i]) >= len(result[i - 1])

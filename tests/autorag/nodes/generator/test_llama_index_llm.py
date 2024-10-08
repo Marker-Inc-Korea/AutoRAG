@@ -1,3 +1,5 @@
+import logging
+import os
 from unittest.mock import patch
 
 import pandas as pd
@@ -14,7 +16,10 @@ from tests.autorag.nodes.generator.test_generator_base import (
 	check_generated_tokens,
 	check_generated_log_probs,
 )
+from tests.delete_tests import is_github_action
 from tests.mock import MockLLM
+
+logger = logging.getLogger("AutoRAG")
 
 
 @pytest.fixture
@@ -89,3 +94,27 @@ Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I 
 	assert output.phone_number == "1234567890"
 	assert output.age == 30
 	assert output.is_dead is False
+
+
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
+)
+@pytest.mark.asyncio()
+async def test_llama_index_llm_stream():
+	import asyncstdlib as a
+
+	llm_instance = LlamaIndexLLM(
+		project_dir=".",
+		llm="openai",
+		model="gpt-4o-mini",
+		api_key=os.getenv("OPENAI_API_KEY"),
+	)
+	result = []
+	async for i, s in a.enumerate(
+		llm_instance.stream("Hello. Tell me about who is Kai Havertz")
+	):
+		assert isinstance(s, str)
+		result.append(s)
+		if i >= 1:
+			assert len(result[i]) >= len(result[i - 1])

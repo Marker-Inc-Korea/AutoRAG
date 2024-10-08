@@ -139,6 +139,23 @@ But from an early version of AutoRAG, it only supports text.
 Plus, we have plans to support chunking optimization for your data.
 ```
 
+### path (Optional, but recommended)
+
+The origin path of the passage. When you insert this, you will track what path the passage comes from.
+It is really useful for debugging or displaying the origin of the passage when the passage is retrieved.
+
+When you use AutoRAG original parsing and chunking, this will be automatically filled.
+
+The type is `string`.
+
+### start_end_idx (Optional but recommended)
+
+The start and end index of the passage in the original parsed document. With this, you can update QA with this new corpus when you have raw data.
+
+This will be automatically filled when you use AutoRAG original parsing and chunking.
+
+The type is the tuple of int (start, end).
+
 ### metadata
 
 Metadata for your passages.
@@ -147,6 +164,12 @@ It is a dictionary that contains information.
 You must include `last_modified_datetime` key at metadata.
 We recommend you to include modified datetime of your passages, but it is okay to put `datetime.now()` if you don't want to use time-related feature.
 The value of `last_modified_datetime` must be an instance of python `datetime.datetime` class.
+
+For optional metadata, you can put 'page'. This will be helpful when you want to display the origin of the passage.
+
+Plus, for using prev_next_augmenter, you must include `prev_id` and `next_id` in the metadata.
+
+These will be filled when you use AutoRAG original parsing and chunking.
 
 ```{tip}
 If you don't have any metadata, you can put an empty dictionary.

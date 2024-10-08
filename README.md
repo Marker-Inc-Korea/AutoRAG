@@ -366,14 +366,17 @@ You can run this pipeline as an API server.
 Check out the API endpoint at [here](deploy/api_endpoint.md).
 
 ```python
-from autorag.deploy import Runner
+import nest_asyncio
+from autorag.deploy import ApiRunner
 
-runner = Runner.from_trial_folder('/your/path/to/trial_dir')
+nest_asyncio.apply()
+
+runner = ApiRunner.from_trial_folder('/your/path/to/trial_dir')
 runner.run_api_server()
 ```
 
 ```bash
-autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+autorag run_api --trial_dir your/path/to/trial_dir --host 0.0.0.0 --port 8000
 ```
 
 The cli command uses extracted config YAML file. If you want to know it more, check out [here](https://docs.auto-rag.com/tutorial.html#extract-pipeline-and-evaluate-test-dataset).
