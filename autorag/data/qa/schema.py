@@ -79,7 +79,7 @@ class Corpus:
 		"""
 		if not save_path.endswith(".parquet"):
 			raise ValueError("save_path must be ended with .parquet")
-		save_df = self.data[["doc_id", "contents", "metadata"]].reset_index(drop=True)
+		save_df = self.data.reset_index(drop=True)
 		save_df.to_parquet(save_path)
 
 	def batch_apply(

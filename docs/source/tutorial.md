@@ -232,23 +232,29 @@ You can run this pipeline as an API server.
 Check out the API endpoint at [here](deploy/api_endpoint.md).
 
 ```python
-from autorag.deploy import Runner
+from autorag.deploy import ApiRunner
+import nest_asyncio
 
-runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+nest_asyncio.apply()
+
+runner = ApiRunner.from_yaml('your/path/to/pipeline.yaml', project_dir='your/project/directory')
 runner.run_api_server()
 ```
 
 or
 
 ```python
-from autorag.deploy import Runner
+from autorag.deploy import ApiRunner
+import nest_asyncio
 
-runner = Runner.from_trial_folder('/your/path/to/trial_dir')
+nest_asyncio.apply()
+
+runner = ApiRunner.from_trial_folder('/your/path/to/trial_dir')
 runner.run_api_server()
 ```
 
 ```bash
-autorag run_api --config_path your/path/to/pipeline.yaml --host 0.0.0.0 --port 8000
+autorag run_api --trial_dir /trial/dir/0 --host 0.0.0.0 --port 8000
 ```
 
 ```{admonition} Want to specify project folder?
@@ -262,16 +268,16 @@ you can run this pipeline as a web interface.
 Check out the web interface at [here](deploy/web.md).
 
 ```python
-from autorag.deploy import Runner
+from autorag.deploy import GradioRunner
 
-runner = Runner.from_yaml('your/path/to/pipeline.yaml')
+runner = GradioRunner.from_yaml('your/path/to/pipeline.yaml')
 runner.run_web()
 ```
 
 ```python
-from autorag.deploy import Runner
+from autorag.deploy import GradioRunner
 
-runner = Runner.from_trial_folder('/your/path/to/trial_dir')
+runner = GradioRunner.from_trial_folder('/your/path/to/trial_dir')
 runner.run_web()
 ```
 
