@@ -330,11 +330,11 @@ def sem_score(
 	generations = [metric_input.generated_texts for metric_input in metric_inputs]
 	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	if embedding_model is None:
-		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]
+		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]()
 
 	embedding_model.embed_batch_size = batch
 
-	openai_embedding_max_length = 8191
+	openai_embedding_max_length = 8000
 	if isinstance(embedding_model, OpenAIEmbedding):
 		generations = openai_truncate_by_token(
 			generations, openai_embedding_max_length, embedding_model.model_name
