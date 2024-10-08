@@ -166,7 +166,7 @@ def make_qa_with_existing_qa(
 		content_size = len(corpus_df)
 
 	logger.info("Loading local embedding model...")
-	embeddings = autorag.embedding_models[embedding_model]
+	embeddings = autorag.embedding_models[embedding_model]()
 
 	# Vector DB creation
 	if collection is None:

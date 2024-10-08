@@ -35,7 +35,7 @@ class PrevNextPassageAugmenter(BasePassageAugmenter):
 		self.slim_corpus_df = slim_corpus_df
 
 		# init embedding model
-		self.embedding_model = embedding_models[embedding_model]
+		self.embedding_model = embedding_models[embedding_model]()
 
 	def __del__(self):
 		del self.embedding_model

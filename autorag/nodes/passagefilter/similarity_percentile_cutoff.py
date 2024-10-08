@@ -25,7 +25,7 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		"""
 		super().__init__(project_dir, *args, **kwargs)
 		embedding_model_str = kwargs.pop("embedding_model", "openai")
-		self.embedding_model = embedding_models[embedding_model_str]
+		self.embedding_model = embedding_models[embedding_model_str]()
 
 	def __del__(self):
 		super().__del__()
