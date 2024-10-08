@@ -220,7 +220,7 @@ class Evaluator:
 				)
 				# get embedding_model
 				if embedding_model_str in embedding_models:
-					embedding_model = embedding_models[embedding_model_str]
+					embedding_model = embedding_models[embedding_model_str]()
 				else:
 					logger.error(
 						f"embedding_model_str {embedding_model_str} does not exist."
