@@ -95,28 +95,31 @@ def load_bm25_corpus(bm25_path: str) -> Dict:
 	with open(bm25_path, "rb") as f:
 		bm25_corpus = pickle.load(f)
 	return bm25_corpus
+
+
 def tokenize_ja_sudachipy(texts: List[str]) -> List[List[str]]:
-    try:
-        from sudachipy import dictionary, tokenizer
-    except ImportError:
-        raise ImportError(
-            "You need to install SudachiPy to use 'sudachipy' tokenizer. "
-            "Please install SudachiPy by running 'pip install sudachipy'."
-        )
+	try:
+		from sudachipy import dictionary, tokenizer
+	except ImportError:
+		raise ImportError(
+			"You need to install SudachiPy to use 'sudachipy' tokenizer. "
+			"Please install SudachiPy by running 'pip install sudachipy'."
+		)
 
-    # Initialize SudachiPy with the default tokenizer
-    tokenizer_obj = dictionary.Dictionary(dict="core").create()
-    
-    # Choose the tokenizer mode: NORMAL, SEARCH, A
-    mode = tokenizer.Tokenizer.SplitMode.A
+	# Initialize SudachiPy with the default tokenizer
+	tokenizer_obj = dictionary.Dictionary(dict="core").create()
 
-    # Tokenize the input texts
-    tokenized_list = []
-    for text in texts:
-        tokens = tokenizer_obj.tokenize(text, mode)
-        tokenized_list.append([token.surface() for token in tokens])
-    
-    return tokenized_list
+	# Choose the tokenizer mode: NORMAL, SEARCH, A
+	mode = tokenizer.Tokenizer.SplitMode.A
+
+	# Tokenize the input texts
+	tokenized_list = []
+	for text in texts:
+		tokens = tokenizer_obj.tokenize(text, mode)
+		tokenized_list.append([token.surface() for token in tokens])
+
+	return tokenized_list
+
 
 BM25_TOKENIZER = {
 	"porter_stemmer": tokenize_porter_stemmer,
@@ -124,7 +127,7 @@ BM25_TOKENIZER = {
 	"space": tokenize_space,
 	"ko_kkma": tokenize_ko_kkma,
 	"ko_okt": tokenize_ko_okt,
-	"sudachipy": tokenize_ja_sudachipy
+	"sudachipy": tokenize_ja_sudachipy,
 }
 
 
@@ -148,15 +151,17 @@ class BM25(BaseRetrieval):
 		if bm25_tokenizer is None:
 			bm25_tokenizer = "porter_stemmer"
 		bm25_path = os.path.join(self.resources_dir, get_bm25_pkl_name(bm25_tokenizer))
-		
+
 		if not os.path.exists(bm25_path):
 			print(f"bm25_path {bm25_path} does not exist. Ingesting corpus...")
-            # Assuming `corpus_data` is provided in kwargs
+			# Assuming `corpus_data` is provided in kwargs
 			corpus_data = pd.read_parquet("data/corpus.parquet")
 			if corpus_data is not None:
 				bm25_ingest(bm25_path, corpus_data, bm25_tokenizer)
 			else:
-				raise ValueError("Corpus data must be provided to ingest and create the BM25 corpus.")
+				raise ValueError(
+					"Corpus data must be provided to ingest and create the BM25 corpus."
+				)
 
 		self.bm25_corpus = load_bm25_corpus(bm25_path)
 		assert (
