@@ -67,19 +67,19 @@ ko_generations = [
 ]
 
 ja_generation_gts = [
-    ["犬が男を噛んだ。", "男が犬を噛んだ。"],
-    ["私は芸術家になりたかったが、結局プログラマーになった。"],
-    [
-        "最近では、芸術家になるためにはAIに打ち勝つ必要がある。",
-        "最近では、プログラマーになるためにはAIに打ち勝つ必要がある。",
-        "最近では、弁護士になるためにはAIに打ち勝つ必要がある。",
-    ],
+	["犬が男を噛んだ。", "男が犬を噛んだ。"],
+	["私は芸術家になりたかったが、結局プログラマーになった。"],
+	[
+		"最近では、芸術家になるためにはAIに打ち勝つ必要がある。",
+		"最近では、プログラマーになるためにはAIに打ち勝つ必要がある。",
+		"最近では、弁護士になるためにはAIに打ち勝つ必要がある。",
+	],
 ]
 
 ja_generations = [
-    "犬が男を噛んだ。",
-    "本当にプログラマーになることになったが、芸術家になるのが自分の情熱だ。",
-    "最近では、芸術家になるためにはAIに打ち勝つ必要がある。",
+	"犬が男を噛んだ。",
+	"本当にプログラマーになることになったが、芸術家になるのが自分の情熱だ。",
+	"最近では、芸術家になるためにはAIに打ち勝つ必要がある。",
 ]
 
 summarization_query_list = [
@@ -134,8 +134,8 @@ ko_similarity_generation_metric_inputs = [
 	for gen, gen_gt in zip(ko_generations, ko_generation_gts)
 ]
 ja_similarity_generation_metric_inputs = [
-    MetricInput(generated_texts=gen, generation_gt=gen_gt)
-    for gen, gen_gt in zip(ja_generations, ja_generation_gts)
+	MetricInput(generated_texts=gen, generation_gt=gen_gt)
+	for gen, gen_gt in zip(ja_generations, ja_generation_gts)
 ]
 general_metric_inputs_with_gt = [
 	MetricInput(
@@ -292,11 +292,12 @@ def test_bert_score_ko():
 		lang="ko",
 	)
 
+
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_bert_score_ja():
-    base_test_metrics(
-        bert_score,
-        [0.965312, 0.96309, 1.0],
-        ja_similarity_generation_metric_inputs,
-        lang="ja",
-    )
+	base_test_metrics(
+		bert_score,
+		[0.965312, 0.96309, 1.0],
+		ja_similarity_generation_metric_inputs,
+		lang="ja",
+	)
