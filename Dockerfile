@@ -1,4 +1,4 @@
-# Base stage: Install dependencies
+# Base stage: Install common dependencies
 FROM python:3.10-slim AS base
 
 # Install system dependencies
@@ -19,27 +19,43 @@ WORKDIR /usr/src/app
 # Install Python dependencies
 RUN pip install --upgrade pip setuptools setuptools-scm
 COPY requirements.txt /usr/src/app/requirements.txt
-
 RUN pip install -r requirements.txt
 
 # Copy project files
 COPY . /usr/src/app
 RUN pip install -e ./
 
-# Test stage: Run tests if CI=true
+# Test stage
 FROM base AS test
-
-# Install testing dependencies
 RUN pip install pytest pytest-xdist
 
-# Run tests if CI is set to true
-RUN pytest -o log_cli=true --log-cli-level=INFO -n auto tests
+# Ko stage
+FROM base AS ko
+RUN pip install --no-cache-dir kiwipiepy>=0.18.0 konlpy
+ENTRYPOINT ["python", "-m", "autorag.cli"]
 
-# Production stage: Create final image for production
+# Dev stage
+FROM base AS dev
+RUN pip install --no-cache-dir ruff pre-commit
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# Parsing stage
+FROM base AS parsing
+RUN pip install --no-cache-dir PyMuPDF pdfminer.six pdfplumber unstructured jq "unstructured[pdf]" "PyPDF2<3.0" pdf2image
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# Parsing stage
+FROM base AS all
+# TODO
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# Production stage (includes all features)
 FROM base AS production
+RUN pip install --no-cache-dir \
+    kiwipiepy>=0.18.0 konlpy \
+    ruff pre-commit \
+    PyMuPDF pdfminer.six pdfplumber unstructured jq "unstructured[pdf]" "PyPDF2<3.0" pdf2image
 
 COPY projects /usr/src/app/projects
 
-# Set the entrypoint for the production application
 ENTRYPOINT ["python", "-m", "autorag.cli"]
-# ENTRYPOINT ["bash"]
