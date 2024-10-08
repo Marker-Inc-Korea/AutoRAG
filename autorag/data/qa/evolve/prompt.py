@@ -71,6 +71,41 @@ Output: """,
 				content="백신은 신체의 면역 체계를 어떻게 활용해서 질병을 예방합니까?",
 			),
 		],
+        "ja":[
+            ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""提供された質問に条件に関する内容を追加して、複雑さを高めます。
+質問のContextに影響を与えるシナリオや条件を含めて、質問をより複雑にすることが目標です。
+質問を再作成するときは、次のルールに従います。
+    1. 再作成された質問は100文字を超えてはいけません。 可能であれば略語を使用します。
+    2. 再作成された質問は合理的でなければならず、人が理解して回答できるものでなければなりません。
+    3. 再作成された質問は、現在のContextで完全に答えられる必要があります。
+    4. 「提供された文」、「段落によると?」、「Contextによると」などのフレーズは質問に表示されません。
+    5. 日本語で質問を書きましょう。
+""",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: 植物の根の機能は何ですか？
+Context: 植物の根は土壌から水や栄養分を吸収し、植物を地面に固定し、栄養分を蓄えます。
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="植物の根は土壌栄養分と安定性に対してどのような役割をしますか？",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: ワクチンは病気をどのように予防しますか?
+Context: ワクチンは、体の免疫反応を刺激して病原体を認識し、戦う抗体を生成することで病気から守ります。
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="ワクチンは体の免疫システムをどのように活用して病気を予防しますか？",
+			),
+            
+		]
 	},
 	"reasoning_evolve_ragas": {
 		"en": [
@@ -138,6 +173,39 @@ Output: """,
 				content="리스트가 변수들을 모아 놓은 것을 나타낸다면, 어떤 메서드를 사용해야 항목을 하나 더 추가할 수 있습니까?",
 			),
 		],
+        "ja":[
+            ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""与えられたContextに基づいて既存の質問を複雑にして、様々な論理的思考が必要な質問として書き直しましょう。
+質問に答えるためには、与えられたContextの情報を使って様々な論理的思考や推論をしなければなりません。
+質問を再作成するときに従うべきルール:
+1. 再作成された質問は、Contextにある情報だけで完全に答えられる必要があります。
+2. 100文字を超える質問を作成してはいけません。 可能であれば略語を使います。
+3. 質問が明確で曖昧にならないようにしましょう。
+4. 「提供されたContextに基づいて」、「当該段落によると」などのフレーズは、質問に含まれてはいけません。
+5. 日本語で質問を書きましょう。""",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: フランスの首都はどこですか？,
+Context: フランスは西ヨーロッパにある国です。 パリ、リヨン、マルセイユを含むいくつかの都市があります。 パリはエッフェル塔やルーブル博物館のような文化的ランドマークとして有名なだけでなく、行政の中心地としても知られています。
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="エッフェル塔と行政の中心地、二つの単語はどんな都市を指していますか？",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: Pythonでappend() メソッドは何をしますか？
+Context: Pythonで、リストは 1 つの変数に複数の項目を保存するために使用されます。 リストは、データを保存するために使用される 4 つの組み込みデータ タイプの 1 つです。 append()メソッドは、リストの最後に新しい項目を追加します。
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="리스트가 변수들을 모아 놓은 것을 나타낸다면, 어떤 메서드를 사용해야 항목을 하나 더 추가할 수 있습니까?",
+			),
+		],
 	},
 	"compress_ragas": {
 		"en": [
@@ -191,5 +259,31 @@ Output: """,
 				content="초콜릿 케이크에 필요한 것은 무엇인가요?",
 			),
 		],
+        "ja":[
+            ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""与えられた質問をより間接的かつ短く書き換えます。
+目標は、質問を元の質問の本質を保ちながら、あまりストレートにならないようにすることです。
+略語などを使用して、質問をより短くします。""",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: 地球と月の間の距離はどれくらいですか？
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="月は地球からどれくらい離れていますか？",
+			),
+			ChatMessage(
+				role=MessageRole.USER,
+				content="""Question: チョコレートケーキを焼くために必要な材料は何ですか？
+Output: """,
+			),
+			ChatMessage(
+				role=MessageRole.ASSISTANT,
+				content="チョコレートケーキに必要なものは何ですか？",
+			),
+		]
 	},
 }

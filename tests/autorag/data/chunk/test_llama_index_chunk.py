@@ -87,6 +87,29 @@ def test_llama_index_chunk_file_name_eng_node():
 	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9
 
+def test_llama_index_chunk_file_name_ja(chunk_instance):
+	llama_index_chunk_original = llama_index_chunk.__wrapped__
+	doc_id, contents, path, start_end_idx, metadata = llama_index_chunk_original(
+		base_texts,
+		chunk_instance,
+		file_name_language="ja", 
+		metadata_list=base_metadata,
+	)
+	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
+	assert len(contents) == 4
+	assert contents == expect_texts["token_ja"] 
+	assert path == expect_token_path
+	assert start_end_idx == expect_token_idx
+
+
+def test_llama_index_chunk_file_name_ja_node():
+	result_df = llama_index_chunk(
+		parsed_result, chunk_method="token", add_file_name="ja"
+	)
+	check_chunk_result_node(result_df)
+	assert len(result_df["doc_id"].tolist()) == 9
+
+
 
 @pytest.fixture
 def chunk_instance_sentence_splitter():

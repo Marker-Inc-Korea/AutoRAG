@@ -91,7 +91,7 @@ def deepeval_faithfulness(
 	The default is "openai_llm".
 		You can use like "llama_index_llm" or "vllm".
 	:param lang: The prompt language that you want to use.
-	"en" and "ko" are supported.
+	"en", "ko" and "ja" are supported.
 	Korean prompt is not officially supported by DeepEval, but it can be translated by AutoRAG developers.
 		Default is "en".
 	:param llm: The model name to use for generation.
@@ -330,11 +330,11 @@ def sem_score(
 	generations = [metric_input.generated_texts for metric_input in metric_inputs]
 	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	if embedding_model is None:
-		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]()
+		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]
 
 	embedding_model.embed_batch_size = batch
 
-	openai_embedding_max_length = 8000
+	openai_embedding_max_length = 8191
 	if isinstance(embedding_model, OpenAIEmbedding):
 		generations = openai_truncate_by_token(
 			generations, openai_embedding_max_length, embedding_model.model_name

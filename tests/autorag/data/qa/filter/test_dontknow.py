@@ -41,12 +41,24 @@ ko_qa_df = pd.DataFrame(
 	}
 )
 
+ja_qa_df = pd.DataFrame(
+    {
+        "generation_gt": [
+            ["わかりません", "これはテストです"],
+            ["答えがわかりません", "これは別のテストです"],
+            ["これは大丈夫です", "すべて問題ありません"],
+        ]
+    }
+)
+
 dont_know_lang = [
 	"I don't know what to say",
 	"I do not know the answer",
 	"몰라요",
 	"모르겠습니다",
 	"모르겠어요",
+	"わかりません", 
+    "答えがわかりません",
 ]
 
 # Expected data after filtering
@@ -54,6 +66,9 @@ expected_df_en = pd.DataFrame({"generation_gt": [["This is fine", "All good"]]})
 
 expected_df_ko = pd.DataFrame(
 	{"generation_gt": [["이것은 괜찮습니다", "모든 것이 좋습니다"]]}
+)
+expected_df_ja = pd.DataFrame(
+    {"generation_gt": [["これは大丈夫です", "すべて問題ありません"]]}
 )
 
 
@@ -100,6 +115,12 @@ def test_dontknow_filter_rule_based():
 		lambda df: df.reset_index(drop=True)
 	)
 	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
+	# Test for Japanese
+	ja_qa = QA(ja_qa_df)
+	result_ja_qa = ja_qa.filter(dontknow_filter_rule_based, lang="ja").map(
+        lambda df: df.reset_index(drop=True)
+    )
+	pd.testing.assert_frame_equal(result_ja_qa.data, expected_df_ja)
 
 
 @patch.object(
@@ -122,6 +143,13 @@ def test_dontknow_filter_openai():
 	).map(lambda df: df.reset_index(drop=True))
 	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
 
+	# Test for Japanese
+	ja_qa = QA(ja_qa_df)
+	result_ja_qa = ja_qa.batch_filter(
+        dontknow_filter_openai, client=client, lang="ja"
+    ).map(lambda df: df.reset_index(drop=True))
+	pd.testing.assert_frame_equal(result_ja_qa.data, expected_df_ja)
+
 
 @patch.object(
 	OpenAI,
@@ -141,3 +169,9 @@ def test_dontknow_filter_llama_index():
 		dontknow_filter_llama_index, llm=llm, lang="ko"
 	).map(lambda df: df.reset_index(drop=True))
 	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
+
+	ja_qa = QA(ja_qa_df)
+	result_ja_qa = ja_qa.batch_filter(
+        dontknow_filter_llama_index, llm=llm, lang="ja"
+    ).map(lambda df: df.reset_index(drop=True))
+	pd.testing.assert_frame_equal(result_ja_qa.data, expected_df_ja)

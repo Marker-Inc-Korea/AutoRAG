@@ -89,6 +89,17 @@ def test_factoid_query_gen_ko():
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
 
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_factoid_query_gen_ja():
+	qa = QA(qa_df)
+	new_qa = qa.batch_apply(factoid_query_gen, client=client, lang="ja")
+	assert "query" in new_qa.data.columns
+	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
+	assert len(new_qa.data) == len(qa_df)
 
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
@@ -102,6 +113,17 @@ def test_concept_completion_query_gen_ko():
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
 
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_concept_completion_query_gen_ja():
+	qa = QA(qa_df)
+	new_qa = qa.batch_apply(concept_completion_query_gen, client=client, lang="ja")
+	assert "query" in new_qa.data.columns
+	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
+	assert len(new_qa.data) == len(qa_df)
 
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
@@ -111,6 +133,18 @@ def test_concept_completion_query_gen_ko():
 def test_two_hop_incremental():
 	qa = QA(multi_hop_qa_df)
 	new_qa = qa.batch_apply(two_hop_incremental, client=client)
+	assert "query" in new_qa.data.columns
+	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
+	assert len(new_qa.data) == len(multi_hop_qa_df)
+
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_two_hop_response,
+)
+def test_two_hop_incremental_ja():
+	qa = QA(multi_hop_qa_df)
+	new_qa = qa.batch_apply(two_hop_incremental, client=client, lang="ja")
 	assert "query" in new_qa.data.columns
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(multi_hop_qa_df)
