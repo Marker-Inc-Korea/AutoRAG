@@ -1,0 +1,91 @@
+name: Docker Push
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  DOCKER_REPO: "autoraghq/autorag"
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.version_changed.outputs.changed }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4.2.0
+
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v45.0.3
+
+    - name: Check for VERSION file change
+      id: version_changed
+      env:
+        ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+      run: |
+        echo "changed=false" >> $GITHUB_OUTPUT
+        if echo "${ALL_CHANGED_FILES}" | grep -q 'VERSION'; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        fi
+
+  build-and-push:
+    needs: check-version
+    if: needs.check-version.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant: [all] # [all, ko, dev, parsing]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4.2.0
+
+    - name: Read VERSION file
+      run: echo "VERSION=$(cat autorag/VERSION)" >> $GITHUB_ENV
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3.7.1
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3.3.0
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v5.5.1
+      with:
+        images: ${{ env.DOCKER_REPO }}
+        tags: |
+          type=raw,value=${{ env.VERSION }}-${{ matrix.variant }}
+          type=raw,value=${{ matrix.variant }},enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+          type=raw,value=latest-${{ matrix.variant }},enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v6.9.0
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        # push: ${{ github.event_name != 'pull_request' && matrix.variant != 'test' }}
+        tags: ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          TARGET_STAGE=${{ matrix.variant }}
+
+    - name: Tag and push 'all' for production
+      run: |
+        docker pull ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
+        docker tag ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}} ${{ env.DOCKER_REPO }}:latest
+        docker push ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
+        docker push ${{ env.DOCKER_REPO }}:latest
+
+    # - name: Update Docker Hub description
+    #   uses: peter-evans/dockerhub-description@v3
+    #   with:
+    #     username: ${{ secrets.DOCKER_HUB_USERNAME }}
+    #     password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+    #     repository: ${{ env.DOCKER_REPO }}
+    #     short-description: ${{ github.event.repository.description }}
