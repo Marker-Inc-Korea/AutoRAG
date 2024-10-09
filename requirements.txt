@@ -25,6 +25,7 @@ FlagEmbedding # for flag embedding reranker
 llmlingua # for longllmlingua
 peft
 optimum[openvino,nncf] # for openvino reranker
+voyageai # for voyageai reranker
 mixedbread-ai # for mixedbread-ai reranker
 
 ### API server ###

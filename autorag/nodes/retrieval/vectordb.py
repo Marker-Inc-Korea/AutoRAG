@@ -21,6 +21,7 @@ from autorag.utils.util import (
 	result_to_dataframe,
 	pop_params,
 	fetch_contents,
+	apply_recursive,
 )
 
 logger = logging.getLogger("AutoRAG")
@@ -269,7 +270,8 @@ def get_id_scores(
 	)
 	assert len(query_result["ids"]) == len(query_result["distances"])
 	id_scores_dict = {id_: [] for id_ in ids}
-	for id_list, score_list in zip(query_result["ids"], query_result["distances"]):
+	score_result = apply_recursive(lambda x: 1 - x, query_result["distances"])
+	for id_list, score_list in zip(query_result["ids"], score_result):
 		for id_ in list(id_scores_dict.keys()):
 			id_idx = id_list.index(id_)
 			id_scores_dict[id_].append(score_list[id_idx])
