@@ -29,5 +29,6 @@ passages = [
 		"meta": {"additional": "info5"},
 	},
 ]
+
 rerankrequest = RerankRequest(query=query, passages=passages)
 results = ranker.rerank(rerankrequest)
