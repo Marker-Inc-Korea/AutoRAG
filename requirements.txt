@@ -4,7 +4,6 @@ tqdm
 tiktoken>=0.7.0  # for counting token
 openai>=1.0.0
 rank_bm25  # for bm25 retrieval
-transformers
 pyyaml  # for yaml file
 pyarrow  # for pandas with parquet
 fastparquet  # for pandas with parquet
@@ -14,17 +13,9 @@ rouge_score  # for rouge score
 rich  # for pretty logging
 chromadb>=0.5.0 # for vectordb retrieval
 click  # for cli
-torch  # for monot5 reranker
-sentencepiece  # for monot5 reranker
 cohere>=5.8.0 # for cohere services
 tokenlog>=0.0.2 # for token logging
 aiohttp # for async http requests
-bert_score # for bert score
-sentence-transformers # for sentence transformer reranker
-FlagEmbedding # for flag embedding reranker
-llmlingua # for longllmlingua
-peft
-optimum[openvino,nncf] # for openvino reranker
 voyageai # for voyageai reranker
 mixedbread-ai # for mixedbread-ai reranker
 
@@ -37,12 +28,9 @@ llama-index-core>=0.11.0
 llama-index-readers-file
 # Embeddings
 llama-index-embeddings-openai
-llama-index-embeddings-huggingface
 # LLMs
 llama-index-llms-openai>=0.2.7
-llama-index-llms-huggingface
 llama-index-llms-openai-like
-llama-index-llms-ollama
 # Retriever
 llama-index-retrievers-bm25
 

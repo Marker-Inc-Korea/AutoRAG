@@ -24,11 +24,12 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
-dynamic = ["version", "dependencies"]
+dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [tool.setuptools.dynamic]
 version = { file = ["autorag/VERSION"] }
 dependencies = { file = ["requirements.txt"] }
+optional-dependencies.local = { file = ["local_requirements.txt"] }
 
 [tool.setuptools]
 include-package-data = true
@@ -48,7 +49,7 @@ ko = ["kiwipiepy >= 0.18.0", "konlpy"]
 dev = ["ruff", "pre-commit"]
 parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
 ja = ["sudachipy>=0.6.8", "sudachidict_core"]
-all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[ja]"]
+all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[ja]", "AutoRAG[local]"]
 
 [project.entry-points.console_scripts]
 autorag = "autorag.cli:cli"
