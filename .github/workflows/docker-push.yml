@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        variant: [all] # [all, ko, dev, parsing]
+        variant: [api, parse] # [ko, ja, dev, parsing, api]
     steps:
     - name: Checkout code
       uses: actions/checkout@v4.2.0

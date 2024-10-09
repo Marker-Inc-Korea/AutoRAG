@@ -48,10 +48,10 @@ ko = ["kiwipiepy >= 0.18.0", "konlpy"]
 dev = ["ruff", "pre-commit"]
 parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
 ja = ["sudachipy>=0.6.8", "sudachidict_core"]
-local = ["torch", "sentencepiece", "bert_score", "optimum[openvino,nncf]", "peft", "llmlingua", "FlagEmbedding",
+gpu = ["torch", "sentencepiece", "bert_score", "optimum[openvino,nncf]", "peft", "llmlingua", "FlagEmbedding",
     "sentence-transformers", "transformers", "llama-index-llms-ollama", "llama-index-embeddings-huggingface",
     "llama-index-llms-huggingface"]
-all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[ja]", "AutoRAG[local]"]
+all = ["AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[ja]", "AutoRAG[gpu]"]
 
 [project.entry-points.console_scripts]
 autorag = "autorag.cli:cli"
