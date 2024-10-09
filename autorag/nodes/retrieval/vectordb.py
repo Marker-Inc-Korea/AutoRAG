@@ -21,6 +21,7 @@ from autorag.utils.util import (
 	result_to_dataframe,
 	pop_params,
 	fetch_contents,
+	apply_recursive,
 )
 
 logger = logging.getLogger("AutoRAG")
@@ -56,7 +57,7 @@ class VectorDB(BaseRetrieval):
 
 		# init embedding model
 		if embedding_model in embedding_models:
-			self.embedding_model = embedding_models[embedding_model]
+			self.embedding_model = embedding_models[embedding_model]()
 		else:
 			logger.error(f"embedding_model_str {embedding_model} does not exist.")
 			raise KeyError(f"embedding_model_str {embedding_model} does not exist.")
@@ -106,7 +107,7 @@ class VectorDB(BaseRetrieval):
 			self.chroma_collection.count() > 0
 		), "collection must contain at least one document. Please check you ingested collection correctly."
 		# truncate queries and embedding execution here.
-		openai_embedding_limit = 8191
+		openai_embedding_limit = 8000
 		if isinstance(self.embedding_model, OpenAIEmbedding):
 			queries = list(
 				map(
@@ -195,7 +196,7 @@ def vectordb_ingest(
 ):
 	"""
 	Ingest given corpus data to the chromadb collection.
-	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8191 tokens.
+	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8000 tokens.
 	Plus, when the corpus content is empty (whitespace), it will be ignored.
 	And if there is a document id that already exists in the collection, it will be ignored.
 
@@ -220,9 +221,7 @@ def vectordb_ingest(
 
 		# truncate by token if embedding_model is OpenAIEmbedding
 		if isinstance(embedding_model, OpenAIEmbedding):
-			openai_embedding_limit = (
-				8191  # all openai embedding models have 8191 max token input
-			)
+			openai_embedding_limit = 8000
 			new_contents = openai_truncate_by_token(
 				new_contents, openai_embedding_limit, embedding_model.model_name
 			)
@@ -271,7 +270,8 @@ def get_id_scores(
 	)
 	assert len(query_result["ids"]) == len(query_result["distances"])
 	id_scores_dict = {id_: [] for id_ in ids}
-	for id_list, score_list in zip(query_result["ids"], query_result["distances"]):
+	score_result = apply_recursive(lambda x: 1 - x, query_result["distances"])
+	for id_list, score_list in zip(query_result["ids"], score_result):
 		for id_ in list(id_scores_dict.keys()):
 			id_idx = id_list.index(id_)
 			id_scores_dict[id_].append(score_list[id_idx])

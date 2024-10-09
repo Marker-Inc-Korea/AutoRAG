@@ -371,16 +371,16 @@ def test_process_batch():
 def test_openai_truncate_by_token():
 	base_text = "This is a test text."
 	t1 = base_text * 5
-	t2 = base_text * 2000
+	t2 = base_text * 200000
 	t3 = base_text * 20
 
-	truncated = openai_truncate_by_token([t1, t2, t3], 8192, "text-embedding-ada-002")
+	truncated = openai_truncate_by_token([t1, t2, t3], 8000, "text-embedding-ada-002")
 	assert len(truncated) == 3
 	assert truncated[0] == base_text * 5
 	assert len(truncated[1]) < len(t2)
 	assert (
 		len(tiktoken.encoding_for_model("text-embedding-ada-002").encode(truncated[1]))
-		== 8192
+		== 8000
 	)
 	assert len(truncated[2]) == len(t3)
 

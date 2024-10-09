@@ -12,6 +12,7 @@ import pytest
 from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
+from autorag import embedding_models
 from autorag.nodes.retrieval import VectorDB
 from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
 from tests.autorag.nodes.retrieval.test_retrieval_base import (
