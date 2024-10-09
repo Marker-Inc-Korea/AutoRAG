@@ -24,7 +24,7 @@ If you want to use another model, use llama_index version instead.
 Factoid questions are those seeking brief, factual information that can be easily verified.
 They typically require a yes or no answer or a brief explanation and often inquire about specific details such as dates, names, places, or events.
 
-It supports "en" and "ko" languages.
+It supports "en" , "ko" or "ja" languages.
 
 ### Factoid Example
 
@@ -59,7 +59,7 @@ result_qa = qa.batch_apply(factoid_query_gen, llm=llm, lang="ko")
 ## 2. Concept Completion
 A “concept completion” question asks directly about the essence or identity of a concept.
 
-It supports "en" and "ko" languages.
+It supports "en", "ko" or "ja" languages.
 
 ### Usage
 
@@ -95,7 +95,7 @@ After that, it evolves a question from the second document to the multi-hop ques
 
 We recommend you to use `openai` version, because it is more stable at the result. It uses structured output.
 
-You can use "en" and "ko" language.
+You can use "en" , "ko" or "ja" language.
 
 ### Example
 

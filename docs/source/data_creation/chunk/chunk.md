@@ -21,7 +21,7 @@ chunker.start_chunking("your/path/to/chunk_config.yaml")
 ## Features
 
 ### 1. Add File Name
-You need to set one of 'en'(=English) and 'ko'(=Korean) for the `add_file_name` parameter.
+You need to set one of 'en'(=English), 'ko'(=Korean) or 'ja'(=Japanese)for the `add_file_name`parameter.
 The 'add_file_name' feature is to add a file_name to chunked_contents.
 This is used to prevent hallucination by retrieving contents from the wrong document.
 Default form of English is `"file_name: {file_name}\n contents: {content}"`

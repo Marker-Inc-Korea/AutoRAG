@@ -91,7 +91,7 @@ def deepeval_faithfulness(
 	The default is "openai_llm".
 		You can use like "llama_index_llm" or "vllm".
 	:param lang: The prompt language that you want to use.
-	"en" and "ko" are supported.
+	"en", "ko" and "ja" are supported.
 	Korean prompt is not officially supported by DeepEval, but it can be translated by AutoRAG developers.
 		Default is "en".
 	:param llm: The model name to use for generation.

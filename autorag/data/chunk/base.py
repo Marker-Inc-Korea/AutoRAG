@@ -115,7 +115,14 @@ def add_file_name(
 				zip(chunk_texts, file_names),
 			)
 		)
+	elif file_name_language == 'ja':
+				return list(
+			map(
+				lambda x: f"ファイル名: {x[1]}\n 内容: {x[0]}",
+				zip(chunk_texts, file_names),
+			)
+		)
 	else:
 		raise ValueError(
-			f"Unsupported file_name_language: {file_name_language}. Choose from 'en' or 'ko'."
+			f"Unsupported file_name_language: {file_name_language}. Choose from 'en' ,'ko' or 'ja."
 		)
