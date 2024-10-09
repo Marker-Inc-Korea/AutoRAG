@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    autorag.data
+   autorag.deploy
    autorag.evaluation
    autorag.nodes
    autorag.schema
@@ -36,14 +37,6 @@ autorag.dashboard module
 ------------------------
 
 .. automodule:: autorag.dashboard
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-autorag.deploy module
----------------------
-
-.. automodule:: autorag.deploy
    :members:
    :undoc-members:
    :show-inheritance:
