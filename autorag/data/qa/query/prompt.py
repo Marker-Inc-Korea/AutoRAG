@@ -161,20 +161,20 @@ Two-hop question (using Document 2):  In which Mexican state can one find the Ci
         "ja": [
 			ChatMessage(
 				role=MessageRole.SYSTEM,
-				content="Generate a multi-hop question for the given answer which requires reference to all of the given documents.",
+				content="与えられた答えに対するマルチホップ質問を生成し、与えられたすべての文書を参照する必要があります。",
 			),
 			ChatMessage(
 				role=MessageRole.USER,
-				content="""Document 1: The Municipality of Nuevo Laredo is located in the Mexican state of Tamaulipas.
-Document 2: The Ciudad Deportiva (Sports City ¨ ¨) is a sports
-complex in Nuevo Laredo, Mexico. It is home to the Tecolotes de
-Nuevo Laredo Mexican Baseball League team and ...""",
+				content="""Document 1: ヌエヴォ·ラレド自治体はメキシコのタマウリパス州にあります。
+Ciudad Deportiva（スポーツシティ ¨ ¨）はスポーツです
+メキシコのヌエボ·ラレドにある複合施設です。 テコロテス·デ·テコロテスの故郷です
+Nuevo Larredo メキシコ野球リーグのチームです···""",
 			),
 			ChatMessage(
 				role=MessageRole.ASSISTANT,
 				content="""Answer: Tamaulipas
-One-hop question (using Document 1): In which Mexican state is Nuevo Laredo located?
-Two-hop question (using Document 2):  In which Mexican state can one find the Ciudad Deportiva, home to the Tecolotes de Nuevo Laredo?""",
+One-hop question (using Document 1): ヌエヴォ·ラレド自治体はどのメキシコの州にありますか？
+Two-hop question (using Document 2): ヌエヴォ·ラレドのテコロテス·デ·テコロテスの故郷であるメキシコの州はどこですか？""",
 			)
 		]
 	},
