@@ -31,7 +31,7 @@ async def passage_dependency_filter_openai(
 	    :param client: The OpenAI client.
 	    :param model_name: The model name.
 	            You have to use gpt-4o-2024-08-06 or gpt-4o-mini-2024-07-18.
-	    :param lang: The supported language is en or ko.
+	    :param lang: The supported language is en, ko or ja.
 	:return: False if the row question is a passage-dependent question (to be filtered).
 	"""
 	assert "query" in row.keys(), "query column is not in the row."
@@ -69,7 +69,7 @@ async def passage_dependency_filter_llama_index(
 	:param row: The row dict from QA dataset.
 	:param llm: The Llama index llm instance.
 	            It will be good if you set max tokens to low for saving tokens.
-	    :param lang: The supported language is en or ko.
+	    :param lang: The supported language is en, ko or ja.
 	:return: False if the row question is a passage-dependent question (to be filtered).
 	"""
 	assert "query" in row.keys(), "query column is not in the row."

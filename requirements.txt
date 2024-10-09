@@ -29,7 +29,6 @@ voyageai # for voyageai reranker
 
 ### API server ###
 quart
-
 ### LlamaIndex ###
 llama-index>=0.11.0
 llama-index-core>=0.11.0

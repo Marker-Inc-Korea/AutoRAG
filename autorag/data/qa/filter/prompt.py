@@ -16,6 +16,13 @@ If the answer implies 'I don't know', return True. If not, return False.""",
 만약 해당 문장이 '모른다고' 답한 것이라면, True를 반환하세요. 그렇지 않다면 False를 반환하세요.""",
 			)
 		],
+        "ja":[
+            ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""次の文章はある質問に対する答えです。 該当文章が質問に対して「知らない」と答えたのか判断します。
+もし、その文章が「知らない」と答えたのであれば、Trueを返します。 そうでなければFalseを返します。""",
+			)
+		]
 	},
 	"passage_dependency": {
 		"en": [
@@ -48,5 +55,19 @@ Please return True if the input question is passage dependent. Else return False
 입력된 질문이 단락 의존적이라면 True를 반환하고, 그렇지 않으면 False를 반환하세요.""",
 			)
 		],
+        "ja":[
+            ChatMessage(
+				role=MessageRole.SYSTEM,
+				content="""あなたは「段落依存」の質問を認識する分類器です。
+「段落依存」とは、どの段落が選択されるかによって答えが変わる質問を意味します。
+たとえば、「与えられた表によると、最も高い点数は何ですか？」という質問は、段落依存の質問です。 なぜなら、表がどんなものかによってその答えが変わるからです。
+
+一方、次の文章は段落依存的ではありません。
+KBO野球史上1試合で最も高い点数は何ですか?またはフランスの首都は何ですか?'
+このような文章は段落に関係なく同じ答えを持ちます。
+
+入力された質問が段落依存的である場合はTrueを返し、そうでない場合はFalseを返します。""",
+			)
+		]
 	},
 }
