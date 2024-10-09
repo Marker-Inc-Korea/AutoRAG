@@ -71,8 +71,8 @@ Output: """,
 				content="백신은 신체의 면역 체계를 어떻게 활용해서 질병을 예방합니까?",
 			),
 		],
-        "ja":[
-            ChatMessage(
+		"ja": [
+			ChatMessage(
 				role=MessageRole.SYSTEM,
 				content="""提供された質問に条件に関する内容を追加して、複雑さを高めます。
 質問のContextに影響を与えるシナリオや条件を含めて、質問をより複雑にすることが目標です。
@@ -104,8 +104,7 @@ Output: """,
 				role=MessageRole.ASSISTANT,
 				content="ワクチンは体の免疫システムをどのように活用して病気を予防しますか？",
 			),
-            
-		]
+		],
 	},
 	"reasoning_evolve_ragas": {
 		"en": [
@@ -173,8 +172,8 @@ Output: """,
 				content="리스트가 변수들을 모아 놓은 것을 나타낸다면, 어떤 메서드를 사용해야 항목을 하나 더 추가할 수 있습니까?",
 			),
 		],
-        "ja":[
-            ChatMessage(
+		"ja": [
+			ChatMessage(
 				role=MessageRole.SYSTEM,
 				content="""与えられたContextに基づいて既存の質問を複雑にして、様々な論理的思考が必要な質問として書き直しましょう。
 質問に答えるためには、与えられたContextの情報を使って様々な論理的思考や推論をしなければなりません。
@@ -203,7 +202,7 @@ Output: """,
 			),
 			ChatMessage(
 				role=MessageRole.ASSISTANT,
-				content="리스트가 변수들을 모아 놓은 것을 나타낸다면, 어떤 메서드를 사용해야 항목을 하나 더 추가할 수 있습니까?",
+				content="リストが変数を集めたものである場合、どのメソッドを使えば項目を一つ追加することができますか？",
 			),
 		],
 	},
@@ -259,8 +258,8 @@ Output: """,
 				content="초콜릿 케이크에 필요한 것은 무엇인가요?",
 			),
 		],
-        "ja":[
-            ChatMessage(
+		"ja": [
+			ChatMessage(
 				role=MessageRole.SYSTEM,
 				content="""与えられた質問をより間接的かつ短く書き換えます。
 目標は、質問を元の質問の本質を保ちながら、あまりストレートにならないようにすることです。
@@ -284,6 +283,6 @@ Output: """,
 				role=MessageRole.ASSISTANT,
 				content="チョコレートケーキに必要なものは何ですか？",
 			),
-		]
+		],
 	},
 }
