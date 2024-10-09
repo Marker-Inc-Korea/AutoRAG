@@ -40,6 +40,7 @@ class FlashRankReranker(BasePassageReranker):
 		:param model: The model name for FlashRank rerank.
 		    You can get the list of available models from https://github.com/PrithivirajDamodaran/FlashRank.
 		    Default is "ms-marco-TinyBERT-L-2-v2".
+		    Not support “rank_zephyr_7b_v1_full” due to parallel inference issue.
 		:param kwargs: Extra arguments that are not affected
 		"""
 		super().__init__(project_dir)
