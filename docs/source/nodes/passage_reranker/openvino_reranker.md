@@ -6,7 +6,7 @@ myst:
       keywords: AutoRAG,RAG,Advanced RAG,Reranker,OpenVINO Reranker
 ---
 # OpenVINO Reranker
-[OpenVINO™]() is an open-source toolkit for optimizing and deploying AI inference. The OpenVINO™ Runtime supports various hardware devices including x86 and ARM CPUs, and Intel GPUs. It can help to boost deep learning performance in Computer Vision, Automatic Speech Recognition, Natural Language Processing and other common tasks.
+[OpenVINO™](https://github.com/openvinotoolkit/openvino) is an open-source toolkit for optimizing and deploying AI inference. The OpenVINO™ Runtime supports various hardware devices including x86 and ARM CPUs, and Intel GPUs. It can help to boost deep learning performance in Computer Vision, Automatic Speech Recognition, Natural Language Processing and other common tasks.
 
 Hugging Face rerank model can be supported by OpenVINO through `OpenVINOReranker` class.
 
