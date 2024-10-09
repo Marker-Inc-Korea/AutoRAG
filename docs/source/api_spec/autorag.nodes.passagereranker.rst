@@ -132,6 +132,14 @@ autorag.nodes.passagereranker.upr module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.voyageai module
+---------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.voyageai
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
