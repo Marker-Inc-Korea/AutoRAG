@@ -37,7 +37,7 @@ filtered_qa = qa.filter(dontknow_filter_rule_based, lang="en").map(
 )
 ```
 
-You can use "en" and "ko" language.
+You can use "en", "ko"  or "ja" language.
 
 ### LLM-based Don't know Filter
 

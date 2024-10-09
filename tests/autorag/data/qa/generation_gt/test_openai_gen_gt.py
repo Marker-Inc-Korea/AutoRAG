@@ -76,6 +76,15 @@ def test_make_basic_gen_gt_ko():
 	result_qa = qa.batch_apply(make_basic_gen_gt, client=client, lang="ko")
 	check_generation_gt(result_qa)
 
+@patch.object(
+	openai.resources.beta.chat.completions.AsyncCompletions,
+	"parse",
+	mock_gen_gt_response,
+)
+def test_make_basic_gen_gt_ja():
+	qa = QA(qa_df)
+	result_qa = qa.batch_apply(make_basic_gen_gt, client=client, lang="ja")
+	check_generation_gt(result_qa)
 
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,

@@ -72,5 +72,6 @@ flag_embedding_llm_reranker.md
 time_reranker.md
 openvino_reranker.md
 voyageai_reranker.md
+mixedbreadai_reranker.md
 flashrank_reranker.md
 ```

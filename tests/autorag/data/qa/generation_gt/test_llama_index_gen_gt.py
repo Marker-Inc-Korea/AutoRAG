@@ -30,6 +30,11 @@ def test_make_basic_gen_gt_ko():
 	result_qa = qa.batch_apply(make_basic_gen_gt, llm=llm, lang="ko")
 	check_generation_gt(result_qa)
 
+def test_make_basic_gen_gt_ja():
+	qa = QA(qa_df)
+	result_qa = qa.batch_apply(make_basic_gen_gt, llm=llm, lang="ja")
+	check_generation_gt(result_qa)
+
 
 def test_make_multiple_gen_gt():
 	qa = QA(qa_df)

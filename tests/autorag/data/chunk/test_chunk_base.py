@@ -61,6 +61,16 @@ expect_texts = {
 		"file_name: gunn_chelsea_sad_story.pdf\n"
 		" contents: estdside_gunn always loses. I love this story.",
 	],
+	"token_ja": [
+		"ファイル名: jeffrey_tigers_sad_story.pdf\n"
+		" 内容: The Kia Tigers lost the Korean Series this year and failed to win the "
+		"championship. jeffrey went to gwangju to the Korean Series, but they lost",
+		"ファイル名: jeffrey_tigers_sad_story.pdf\n 内容: there. I love this story.",
+		"ファイル名: gunn_chelsea_sad_story.pdf\n"
+		" 内容: minsing's Real Madrid were crushed by Ulsan Hyundai of Korea's BOBB. "
+		"minsing's Man United beat estdside_gunn's Chelsea.",
+		"ファイル名: gunn_chelsea_sad_story.pdf\n 内容: estdside_gunn always loses. I love this story.",
+	],
 	"character_ko": [
 		f"파일 제목: jeffrey_tigers_sad_story.pdf\n 내용: {character_expect_texts[0]}",
 		f"파일 제목: jeffrey_tigers_sad_story.pdf\n 내용: {character_expect_texts[1]}",
@@ -78,6 +88,15 @@ expect_texts = {
 		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[4]}",
 		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[5]}",
 		f"file_name: gunn_chelsea_sad_story.pdf\n contents: {character_expect_texts[6]}",
+	],
+	"character_ja": [
+		f"ファイル名: jeffrey_tigers_sad_story.pdf\n 内容: {character_expect_texts[0]}",
+		f"ファイル名: jeffrey_tigers_sad_story.pdf\n 内容: {character_expect_texts[1]}",
+		f"ファイル名: jeffrey_tigers_sad_story.pdf\n 内容: {character_expect_texts[2]}",
+		f"ファイル名: gunn_chelsea_sad_story.pdf\n 内容: {character_expect_texts[3]}",
+		f"ファイル名: gunn_chelsea_sad_story.pdf\n 内容: {character_expect_texts[4]}",
+		f"ファイル名: gunn_chelsea_sad_story.pdf\n 内容: {character_expect_texts[5]}",
+		f"ファイル名: gunn_chelsea_sad_story.pdf\n 内容: {character_expect_texts[6]}",
 	],
 	"overlap": [
 		"The Kia Tigers lost the Korean Series this year and failed to win the championship. jeffrey went to gwangju to the Korean Series, but they lost",

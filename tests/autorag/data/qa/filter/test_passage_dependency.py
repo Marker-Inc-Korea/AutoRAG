@@ -41,6 +41,17 @@ ko_qa_df = pd.DataFrame(
 	}
 )
 
+ja_qa_df = pd.DataFrame(
+    {
+        "query": [
+            "研究論文で言及された最も重要な発見は何ですか？",
+            "この判例に記述された判決は何ですか？",
+            "Advanced RAGシステムにおけるリランカーの役割は何ですか?",
+            "KBOリーグで最新の30本塁打30盗塁の記録保持者は誰ですか?",
+        ]
+    }
+)
+
 expected_df_en = pd.DataFrame(
 	{
 		"query": [
@@ -59,11 +70,23 @@ expected_df_ko = pd.DataFrame(
 	}
 )
 
+expected_df_ja = pd.DataFrame(
+    {
+        "query": [
+            "Advanced RAGシステムにおけるリランカーの役割は何ですか?",
+            "KBOリーグで最新の30本塁打30盗塁の記録保持者は誰ですか?",
+        ]
+    }
+)
+
+
 passage_dependent_response = [
 	"What is the most significant discovery mentioned in the research paper?",
 	"What was the ruling in the case described in this legal brief?",
 	"연구 논문에서 언급된 가장 중요한 발견은 무엇입니까?",
 	"이 판결문에 기술된 사건의 판결은 무엇이었습니까?",
+	"研究論文で言及された最も重要な発見は何ですか？",
+    "この判例に記述された判決は何ですか？",
 ]
 
 
@@ -124,6 +147,12 @@ def test_passage_dependency_filter_openai():
 	).map(lambda df: df.reset_index(drop=True))
 	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
 
+	ja_qa = QA(ja_qa_df)
+	result_ja_qa = ja_qa.batch_filter(
+        passage_dependency_filter_openai, client=client, lang="ja"
+    ).map(lambda df: df.reset_index(drop=True))
+	pd.testing.assert_frame_equal(result_ja_qa.data, expected_df_ja)
+
 
 @patch.object(
 	OpenAI,
@@ -143,3 +172,10 @@ def test_passage_dependency_filter_llama_index():
 		passage_dependency_filter_llama_index, llm=llm, lang="ko"
 	).map(lambda df: df.reset_index(drop=True))
 	pd.testing.assert_frame_equal(result_ko_qa.data, expected_df_ko)
+
+	ja_qa = QA(ja_qa_df)
+	result_ja_qa = ja_qa.batch_filter(
+        passage_dependency_filter_llama_index, llm=llm, lang="ja"
+    ).map(lambda df: df.reset_index(drop=True))
+	pd.testing.assert_frame_equal(result_ja_qa.data, expected_df_ja)
+

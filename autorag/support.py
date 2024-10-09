@@ -121,6 +121,14 @@ def get_support_modules(module_name: str) -> Callable:
 		"OpenVINOReranker": ("autorag.nodes.passagereranker", "OpenVINOReranker"),
 		"voyageai_reranker": ("autorag.nodes.passagereranker", "VoyageAIReranker"),
 		"VoyageAIReranker": ("autorag.nodes.passagereranker", "VoyageAIReranker"),
+		"mixedbreadai_reranker": (
+			"autorag.nodes.passagereranker",
+			"MixedbreadAIReranker",
+		),
+		"MixedbreadAIReranker": (
+			"autorag.nodes.passagereranker",
+			"MixedbreadAIReranker",
+		),
 		"flashrank_reranker": ("autorag.nodes.passagereranker", "FlashRankReranker"),
 		"FlashRankReranker": ("autorag.nodes.passagereranker", "FlashRankReranker"),
 		# passage_filter
