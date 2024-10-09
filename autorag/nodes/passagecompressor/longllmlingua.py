@@ -1,11 +1,9 @@
 from typing import List, Optional
 
 import pandas as pd
-import torch
-from llmlingua import PromptCompressor
 
 from autorag.nodes.passagecompressor.base import BasePassageCompressor
-from autorag.utils.util import pop_params, result_to_dataframe
+from autorag.utils.util import pop_params, result_to_dataframe, empty_cuda_cache
 
 
 # TODO: Parallel Processing Refactoring at #460
@@ -15,14 +13,20 @@ class LongLLMLingua(BasePassageCompressor):
 	def __init__(
 		self, project_dir: str, model_name: str = "NousResearch/Llama-2-7b-hf", **kwargs
 	):
+		try:
+			from llmlingua import PromptCompressor
+		except ImportError:
+			raise ImportError(
+				"LongLLMLingua is not installed. Please install it by running `pip install llmlingua`."
+			)
+
 		super().__init__(project_dir)
 		model_init_params = pop_params(PromptCompressor.__init__, kwargs)
 		self.llm_lingua = PromptCompressor(model_name=model_name, **model_init_params)
 
 	def __del__(self):
 		del self.llm_lingua
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents"])
@@ -69,7 +73,7 @@ class LongLLMLingua(BasePassageCompressor):
 def llmlingua_pure(
 	query: str,
 	contents: List[str],
-	llm_lingua: PromptCompressor,
+	llm_lingua,
 	instructions: str,
 	target_token: int = 300,
 	**kwargs,
@@ -86,6 +90,12 @@ def llmlingua_pure(
 	:param kwargs: Additional keyword arguments.
 	:return: The compressed text.
 	"""
+	try:
+		from llmlingua import PromptCompressor
+	except ImportError:
+		raise ImportError(
+			"LongLLMLingua is not installed. Please install it by running `pip install llmlingua`."
+		)
 	# split by "\n\n" (recommended by LongLLMLingua authors)
 	new_context_texts = [c for context in contents for c in context.split("\n\n")]
 	compress_prompt_params = pop_params(PromptCompressor.compress_prompt, kwargs)

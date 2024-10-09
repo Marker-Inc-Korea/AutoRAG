@@ -2,8 +2,6 @@ from itertools import chain
 from typing import List, Tuple
 
 import pandas as pd
-import torch
-import torch.nn.functional as F
 from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
@@ -17,12 +15,19 @@ from autorag.utils.util import (
 	flatten_apply,
 	select_top_k,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
 class Tart(BasePassageReranker):
 	def __init__(self, project_dir: str, *args, **kwargs):
 		super().__init__(project_dir)
+		try:
+			import torch
+		except ImportError:
+			raise ImportError(
+				"torch is not installed. Please install torch first to use TART reranker."
+			)
 		model_name = "facebook/tart-full-flan-t5-xl"
 		self.model = EncT5ForSequenceClassification.from_pretrained(model_name)
 		self.tokenizer = EncT5Tokenizer.from_pretrained(model_name)
@@ -32,8 +37,7 @@ class Tart(BasePassageReranker):
 	def __del__(self):
 		del self.model
 		del self.tokenizer
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
@@ -107,6 +111,13 @@ class Tart(BasePassageReranker):
 def tart_run_model(
 	input_texts, contents_list, model, batch_size: int, tokenizer, device
 ):
+	try:
+		import torch
+		import torch.nn.functional as F
+	except ImportError:
+		raise ImportError(
+			"torch is not installed. Please install torch first to use TART reranker."
+		)
 	flattened_texts = list(chain.from_iterable(input_texts))
 	flattened_contents = list(chain.from_iterable(contents_list))
 	batch_input_texts = make_batch(flattened_texts, batch_size)
