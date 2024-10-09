@@ -136,7 +136,7 @@ class FlashRankReranker(BasePassageReranker):
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries, contents, _, ids = self.cast_to_run(previous_result)
 		top_k = kwargs.pop("top_k")
-		batch = kwargs.pop("batch", 8)
+		batch = kwargs.pop("batch", 64)
 		return self._pure(queries, contents, ids, top_k, batch)
 
 	def _pure(
@@ -145,7 +145,7 @@ class FlashRankReranker(BasePassageReranker):
 		contents_list: List[List[str]],
 		ids_list: List[List[str]],
 		top_k: int,
-		batch: int = 8,
+		batch: int = 64,
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
 		Rerank a list of contents with FlashRank rerank models.
