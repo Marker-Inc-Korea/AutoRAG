@@ -3,7 +3,6 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -21,6 +20,7 @@ class KoReranker(BasePassageReranker):
 		super().__init__(project_dir)
 		try:
 			import torch
+			from transformers import AutoModelForSequenceClassification, AutoTokenizer
 		except ImportError:
 			raise ImportError("For using KoReranker, please install torch first.")
 

@@ -6,7 +6,8 @@ RUN apt-get update && \
     apt-get install -y \
     build-essential \
     gcc \
-    libssl-dev
+    libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /usr/src/app
@@ -36,6 +37,9 @@ RUN pip install "AutoRAG[ja]"
 ENTRYPOINT ["python", "-m", "autorag.cli"]
 
 FROM base AS api
+RUN rm -rf ./sample_dataset
+RUN rm -rf ./tests
+RUN rm -rf ./docs
 ENTRYPOINT ["python", "-m", "autorag.cli"]
 
 # Parsing stage

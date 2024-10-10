@@ -7,8 +7,6 @@ from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 
-from transformers import AutoTokenizer
-
 
 from autorag.utils.util import (
 	make_batch,
@@ -33,6 +31,7 @@ class OpenVINOReranker(BasePassageReranker):
 
 		try:
 			from huggingface_hub import HfApi
+			from transformers import AutoTokenizer
 		except ImportError as e:
 			raise ValueError(
 				"Could not import huggingface_hub python package. "

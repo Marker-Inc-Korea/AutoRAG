@@ -3,7 +3,6 @@ from typing import List, Tuple
 
 import pandas as pd
 from tqdm import tqdm
-from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils import result_to_dataframe
@@ -103,6 +102,7 @@ class UPRScorer:
 	def __init__(self, suffix_prompt: str, prefix_prompt: str, use_bf16: bool = False):
 		try:
 			import torch
+			from transformers import T5Tokenizer, T5ForConditionalGeneration
 		except ImportError:
 			raise ImportError(
 				"torch is not installed. Please install torch to use UPRReranker."

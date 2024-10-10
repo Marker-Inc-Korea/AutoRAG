@@ -3,7 +3,6 @@ from typing import List, Tuple
 
 import pandas as pd
 from tqdm import tqdm
-from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -62,6 +61,7 @@ class MonoT5(BasePassageReranker):
 		super().__init__(project_dir)
 		try:
 			import torch
+			from transformers import T5Tokenizer, T5ForConditionalGeneration
 		except ImportError:
 			raise ImportError("For using MonoT5 Reranker, please install torch first.")
 		# replace '_' to '/'

@@ -3,7 +3,6 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -36,6 +35,7 @@ class ColbertReranker(BasePassageReranker):
 		super().__init__(project_dir)
 		try:
 			import torch
+			from transformers import AutoModel, AutoTokenizer
 		except ImportError:
 			raise ImportError(
 				"Pytorch is not installed. Please install pytorch to use Colbert reranker."
