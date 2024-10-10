@@ -39,13 +39,19 @@ def cli():
 @click.option(
 	"--project_dir", help="Path to project directory.", type=str, default=None
 )
-def evaluate(config, qa_data_path, corpus_data_path, project_dir):
+@click.option(
+	"--skip_validation",
+	help="Skip validation or not. Default is False.",
+	type=bool,
+	default=False,
+)
+def evaluate(config, qa_data_path, corpus_data_path, project_dir, skip_validation):
 	if not config.endswith(".yaml") and not config.endswith(".yml"):
 		raise ValueError(f"Config file {config} is not a parquet file.")
 	if not os.path.exists(config):
 		raise ValueError(f"Config file {config} does not exist.")
 	evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir=project_dir)
-	evaluator.start_trial(config)
+	evaluator.start_trial(config, skip_validation=skip_validation)
 
 
 @click.command()

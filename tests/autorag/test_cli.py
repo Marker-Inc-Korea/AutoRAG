@@ -26,6 +26,8 @@ def test_evaluator_cli():
 				os.path.join(resource_dir, "corpus_data_sample.parquet"),
 				"--project_dir",
 				project_dir,
+				"--skip_validation",
+				"true",
 			]
 		)
 		assert result.returncode == 0
