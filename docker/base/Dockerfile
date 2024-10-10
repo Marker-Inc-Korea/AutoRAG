@@ -16,7 +16,7 @@ WORKDIR /usr/src/app
 RUN pip install --upgrade pip setuptools setuptools-scm
 
 # Copy project files
-COPY . /usr/src/app
+COPY ../.. /usr/src/app
 RUN pip install -e ./ # Install project dependencies and AutoRAG as editable
 
 # Ko stage

@@ -67,7 +67,7 @@ jobs:
       uses: docker/build-push-action@v6.9.0
       with:
         context: .
-        file: ./Dockerfile
+        file: ./docker/base/Dockerfile
         push: true
         # push: ${{ github.event_name != 'pull_request' && matrix.variant != 'test' }}
         tags: ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
