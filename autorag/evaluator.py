@@ -105,7 +105,7 @@ class Evaluator:
 			logger.info(ascii_art)
 			logger.info(
 				"Start Validation input data and config YAML file first. "
-				"If you want to skip this, put the --skip-validation flag or "
+				"If you want to skip this, put the --skip_validation flag or "
 				"`skip_validation` at the start_trial function."
 			)
 			from autorag.validator import Validator  # resolve circular import
