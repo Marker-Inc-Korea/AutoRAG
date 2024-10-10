@@ -2,13 +2,11 @@ import logging
 from typing import List, Tuple
 
 import pandas as pd
-import torch
 from tqdm import tqdm
-from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils import result_to_dataframe
-from autorag.utils.util import select_top_k, sort_by_scores
+from autorag.utils.util import select_top_k, sort_by_scores, empty_cuda_cache
 
 logger = logging.getLogger("AutoRAG")
 
@@ -102,6 +100,13 @@ class Upr(BasePassageReranker):
 
 class UPRScorer:
 	def __init__(self, suffix_prompt: str, prefix_prompt: str, use_bf16: bool = False):
+		try:
+			import torch
+			from transformers import T5Tokenizer, T5ForConditionalGeneration
+		except ImportError:
+			raise ImportError(
+				"torch is not installed. Please install torch to use UPRReranker."
+			)
 		model_name = "t5-large"
 		self.device = "cuda" if torch.cuda.is_available() else "cpu"
 		self.tokenizer = T5Tokenizer.from_pretrained(model_name)
@@ -112,6 +117,12 @@ class UPRScorer:
 		self.prefix_prompt = prefix_prompt
 
 	def compute(self, query: str, contents: List[str]) -> List[float]:
+		try:
+			import torch
+		except ImportError:
+			raise ImportError(
+				"torch is not installed. Please install torch to use UPRReranker."
+			)
 		query_token = self.tokenizer(
 			query, max_length=128, truncation=True, return_tensors="pt"
 		)
@@ -148,5 +159,4 @@ class UPRScorer:
 	def __del__(self):
 		del self.model
 		del self.tokenizer
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()

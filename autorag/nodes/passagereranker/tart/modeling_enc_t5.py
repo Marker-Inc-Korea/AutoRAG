@@ -2,12 +2,11 @@
 
 import copy
 
-import torch
-from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.t5.modeling_t5 import T5Config, T5PreTrainedModel, T5Stack
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
+
+from autorag.utils.util import empty_cuda_cache
 
 
 class EncT5ForSequenceClassification(T5PreTrainedModel):
@@ -17,6 +16,10 @@ class EncT5ForSequenceClassification(T5PreTrainedModel):
 
 	def __init__(self, config: T5Config, dropout=0.1):
 		super().__init__(config)
+		try:
+			from torch import nn
+		except ImportError:
+			raise ImportError("Please install PyTorch to use TART reranker.")
 		self.num_labels = config.num_labels
 		self.config = config
 
@@ -38,6 +41,10 @@ class EncT5ForSequenceClassification(T5PreTrainedModel):
 		self.device_map = None
 
 	def parallelize(self, device_map=None):
+		try:
+			import torch
+		except ImportError:
+			raise ImportError("Please install PyTorch to use TART reranker.")
 		self.device_map = (
 			get_device_map(len(self.encoder.block), range(torch.cuda.device_count()))
 			if device_map is None
@@ -53,7 +60,7 @@ class EncT5ForSequenceClassification(T5PreTrainedModel):
 		self.encoder = self.encoder.to("cpu")
 		self.model_parallel = False
 		self.device_map = None
-		torch.cuda.empty_cache()
+		empty_cuda_cache()
 
 	def get_input_embeddings(self):
 		return self.shared
@@ -84,6 +91,11 @@ class EncT5ForSequenceClassification(T5PreTrainedModel):
 		output_hidden_states=None,
 		return_dict=None,
 	):
+		try:
+			import torch
+			from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+		except ImportError:
+			raise ImportError("Please install PyTorch to use TART reranker.")
 		return_dict = (
 			return_dict if return_dict is not None else self.config.use_return_dict
 		)

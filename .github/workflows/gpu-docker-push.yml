@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        variant: [api, parsing] # [ko, ja, dev, parsing, api]
+        variant: [gpu, gpu-parsing] # [ko, ja, dev, parsing, api]
     steps:
     - name: Checkout code
       uses: actions/checkout@v4.2.0
@@ -67,7 +67,7 @@ jobs:
       uses: docker/build-push-action@v6.9.0
       with:
         context: .
-        file: ./docker/base/Dockerfile
+        file: ./docker/gpu/Dockerfile
         push: true
         # push: ${{ github.event_name != 'pull_request' && matrix.variant != 'test' }}
         tags: ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}

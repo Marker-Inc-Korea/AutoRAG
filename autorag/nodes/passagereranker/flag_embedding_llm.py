@@ -1,8 +1,6 @@
 from typing import List, Tuple
 
 import pandas as pd
-import torch
-from FlagEmbedding import FlagLLMReranker
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.nodes.passagereranker.flag_embedding import flag_embedding_run_model
@@ -12,6 +10,7 @@ from autorag.utils.util import (
 	select_top_k,
 	pop_params,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
@@ -32,14 +31,19 @@ class FlagEmbeddingLLMReranker(BasePassageReranker):
 		:param kwargs: Extra parameter for FlagEmbedding.FlagReranker
 		"""
 		super().__init__(project_dir)
+		try:
+			from FlagEmbedding import FlagLLMReranker
+		except ImportError:
+			raise ImportError(
+				"FlagEmbeddingLLMReranker requires the 'FlagEmbedding' package to be installed."
+			)
 		model_params = pop_params(FlagLLMReranker.__init__, kwargs)
 		model_params.pop("model_name_or_path", None)
 		self.model = FlagLLMReranker(model_name_or_path=model_name, **model_params)
 
 	def __del__(self):
 		del self.model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])

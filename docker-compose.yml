@@ -1,6 +1,6 @@
 services:
   validate:
-    image: autoraghq/autorag:all
+    image: autoraghq/autorag:api
     command: >
       validate
       --config /usr/src/app/projects/tutorial_1/config.yaml

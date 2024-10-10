@@ -5,14 +5,11 @@ import sys
 from random import random
 from typing import List
 
-import transformers
 from llama_index.core import MockEmbedding
 from llama_index.core.llms.mock import MockLLM
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
-from llama_index.llms.huggingface import HuggingFaceLLM
-from llama_index.llms.ollama import Ollama
+
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai_like import OpenAILike
 from langchain_openai.embeddings import OpenAIEmbeddings
@@ -49,43 +46,6 @@ class MockEmbeddingRandom(MockEmbedding):
 		return [random() for _ in range(self.embed_dim)]
 
 
-embedding_models = {
-	# llama index
-	"openai": LazyInit(
-		OpenAIEmbedding
-	),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
-	"openai_embed_3_large": LazyInit(
-		OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_LARGE
-	),
-	"openai_embed_3_small": LazyInit(
-		OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_SMALL
-	),
-	# you can use your own model in this way.
-	"huggingface_baai_bge_small": LazyInit(
-		HuggingFaceEmbedding, model_name="BAAI/bge-small-en-v1.5"
-	),
-	"huggingface_cointegrated_rubert_tiny2": LazyInit(
-		HuggingFaceEmbedding, model_name="cointegrated/rubert-tiny2"
-	),
-	"huggingface_all_mpnet_base_v2": LazyInit(
-		HuggingFaceEmbedding,
-		model_name="sentence-transformers/all-mpnet-base-v2",
-		max_length=512,
-	),
-	"huggingface_bge_m3": LazyInit(HuggingFaceEmbedding, model_name="BAAI/bge-m3"),
-	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
-	# langchain
-	"openai_langchain": LazyInit(OpenAIEmbeddings),
-}
-
-generator_models = {
-	"openai": OpenAI,
-	"huggingfacellm": HuggingFaceLLM,
-	"openailike": OpenAILike,
-	"ollama": Ollama,
-	"mock": MockLLM,
-}
-
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"
 logging.basicConfig(
 	level="INFO", format=rich_format, handlers=[RichHandler(rich_tracebacks=True)]
@@ -100,4 +60,72 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-transformers.logging.set_verbosity_error()
+
+embedding_models = {
+	# llama index
+	"openai": LazyInit(
+		OpenAIEmbedding
+	),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
+	"openai_embed_3_large": LazyInit(
+		OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_LARGE
+	),
+	"openai_embed_3_small": LazyInit(
+		OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_SMALL
+	),
+	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
+	# langchain
+	"openai_langchain": LazyInit(OpenAIEmbeddings),
+}
+
+try:
+	# you can use your own model in this way.
+	from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+
+	embedding_models["huggingface_baai_bge_small"] = LazyInit(
+		HuggingFaceEmbedding, model_name="BAAI/bge-small-en-v1.5"
+	)
+	embedding_models["huggingface_cointegrated_rubert_tiny2"] = LazyInit(
+		HuggingFaceEmbedding, model_name="cointegrated/rubert-tiny2"
+	)
+	embedding_models["huggingface_all_mpnet_base_v2"] = LazyInit(
+		HuggingFaceEmbedding,
+		model_name="sentence-transformers/all-mpnet-base-v2",
+		max_length=512,
+	)
+	embedding_models["huggingface_bge_m3"] = LazyInit(
+		HuggingFaceEmbedding, model_name="BAAI/bge-m3"
+	)
+except ImportError:
+	logger.info(
+		"You are using API version of AutoRAG."
+		"To use local version, run pip install 'AutoRAG[gpu]'"
+	)
+
+generator_models = {
+	"openai": OpenAI,
+	"openailike": OpenAILike,
+	"mock": MockLLM,
+}
+
+try:
+	from llama_index.llms.huggingface import HuggingFaceLLM
+	from llama_index.llms.ollama import Ollama
+
+	generator_models["huggingfacellm"] = HuggingFaceLLM
+	generator_models["ollama"] = Ollama
+except ImportError:
+	logger.info(
+		"You are using API version of AutoRAG."
+		"To use local version, run pip install 'AutoRAG[gpu]'"
+	)
+
+
+try:
+	import transformers
+
+	transformers.logging.set_verbosity_error()
+except ImportError:
+	logger.info(
+		"You are using API version of AutoRAG."
+		"To use local version, run pip install 'AutoRAG[gpu]'"
+	)

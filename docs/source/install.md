@@ -38,6 +38,14 @@ Due to the constraints, we recommend using Docker images for running AutoRAG on 
 
 Plus, you MAKE SURE UPGRADE UP TO v0.3.1 for Windows users.
 
+### Installation for Local Models 🏠
+
+For using local models, you need to install some additional dependencies.
+
+```bash
+pip install "AutoRAG[gpu]"
+```
+
 ### Installation for Parsing 🌲
 
 For parsing you need to install some local packages like [libmagic](https://man7.org/linux/man-pages/man3/libmagic.3.html),
@@ -47,7 +55,7 @@ The installation method depends upon your OS.
 After installing this, you can install AutoRAG with parsing like below.
 
 ```bash
-pip install AutoRAG[parse]
+pip install "AutoRAG[parse]"
 ```
 
 ### Installation for Korean 🇰🇷
@@ -55,7 +63,7 @@ pip install AutoRAG[parse]
 You can install optional dependencies for the Korean language.
 
 ```bash
-pip install AutoRAG[ko]
+pip install "AutoRAG[ko]"
 ```
 
 And after that, you have to install **jdk 17** for using `konlpy`.
@@ -63,6 +71,12 @@ Plus, remember to set environment PATH for jdk.
 (JAVA_HOME and PATH)
 
 The instruction for Mac users is [here](https://velog.io/@yoonsy/M1%EC%B9%A9-Mac%EC%97%90-konlpy-%EC%84%A4%EC%B9%98%ED%95%98%EA%B8%B0).
+
+### Installation for Japanese 🇯🇵
+
+```bash
+pip install "AutoRAG[ja]"
+```
 
 ## Setup OPENAI API KEY
 To use LLM and embedding models, it is common to use OpenAI models.
@@ -142,6 +156,8 @@ We are writing this documentation for contributors, so please wait for a while.
 
 ## Run AutoRAG with 🐳 Docker
 
+Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or `autoraghq/autorag:gpu-parsing`
+
 To run AutoRAG using Docker, follow these steps:
 
 ### 1. Build the Docker Image
@@ -161,7 +177,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/sample_config:/usr/src/app/sample_config \
   -v $(pwd)/projects:/usr/src/app/projects \
-  autoraghq/autorag:all evaluate \
+  autoraghq/autorag:api evaluate \
   --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
   --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
   --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
@@ -185,7 +201,7 @@ docker run --rm -it \
   -v $(pwd)/sample_config:/usr/src/app/sample_config \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e HF_HOME=/cache/huggingface \
-  autoraghq/autorag:all evaluate \
+  autoraghq/autorag:api evaluate \
   --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
   --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
   --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
@@ -201,10 +217,29 @@ docker run --rm -it \
 To manually access the container for debugging or testing, start a Bash shell:
 
 ```bash
-docker run --rm -it --entrypoint /bin/bash autoraghq/autorag:all
+docker run --rm -it --entrypoint /bin/bash autoraghq/autorag:api
 ```
 
 This command allows you to explore the container’s filesystem, run commands manually, or inspect logs for troubleshooting.
+
+### 6. Use gpu version
+
+To use the gpu version, you must install CUDA and cuDNN in your host system.
+It built on the cuda 11.8 version and pytorch docker image.
+
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/cache/huggingface \
+  -v $(pwd)/sample_config:/usr/src/app/sample_config \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e HF_HOME=/cache/huggingface \
+  --gpus all \ # Be sure to add this line
+  autoraghq/autorag:gpu evaluate \
+  --config /usr/src/app/sample_config/rag/simple/simple_openai.yaml \
+  --qa_data_path /usr/src/app/projects/test01/qa_validation.parquet \
+  --corpus_data_path /usr/src/app/projects/test01/corpus.parquet \
+  --project_dir /usr/src/app/projects/test01
+```
 
 ## Additional Notes
 

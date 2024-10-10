@@ -4,7 +4,6 @@ from typing import List, Tuple, Optional
 
 import chromadb
 import pandas as pd
-import torch
 from chromadb import GetResult, QueryResult
 from chromadb.utils.batch_utils import create_batches
 from llama_index.core.embeddings import BaseEmbedding
@@ -22,6 +21,7 @@ from autorag.utils.util import (
 	pop_params,
 	fetch_contents,
 	apply_recursive,
+	empty_cuda_cache,
 )
 
 logger = logging.getLogger("AutoRAG")
@@ -65,8 +65,7 @@ class VectorDB(BaseRetrieval):
 	def __del__(self):
 		del self.chroma_collection
 		del self.embedding_model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])

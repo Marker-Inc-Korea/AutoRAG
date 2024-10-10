@@ -1,8 +1,6 @@
 from typing import List, Tuple, Iterable
 
 import pandas as pd
-import torch
-from FlagEmbedding import FlagReranker
 from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
@@ -13,6 +11,7 @@ from autorag.utils.util import (
 	select_top_k,
 	pop_params,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
@@ -29,14 +28,19 @@ class FlagEmbeddingReranker(BasePassageReranker):
 		:param kwargs: Extra parameter for FlagEmbedding.FlagReranker
 		"""
 		super().__init__(project_dir)
+		try:
+			from FlagEmbedding import FlagReranker
+		except ImportError:
+			raise ImportError(
+				"FlagEmbeddingReranker requires the 'FlagEmbedding' package to be installed."
+			)
 		model_params = pop_params(FlagReranker.__init__, kwargs)
 		model_params.pop("model_name_or_path", None)
 		self.model = FlagReranker(model_name_or_path=model_name, **model_params)
 
 	def __del__(self):
 		del self.model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
@@ -93,6 +97,10 @@ class FlagEmbeddingReranker(BasePassageReranker):
 
 
 def flag_embedding_run_model(input_texts, model, batch_size: int):
+	try:
+		import torch
+	except ImportError:
+		raise ImportError("FlagEmbeddingReranker requires PyTorch to be installed.")
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
 	for batch_texts in tqdm(batch_input_texts):

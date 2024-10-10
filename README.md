@@ -62,6 +62,17 @@ We recommend using Python version 3.10 or higher for AutoRAG.
 pip install AutoRAG
 ```
 
+If you want to use the local models, you need to install gpu version.
+
+```bash
+pip install "AutoRAG[gpu]"
+```
+
+Or for parsing, you can use the parsing version.
+```bash
+pip install "AutoRAG[gpu,parse]"
+```
+
 # Data Creation
 
 ![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
@@ -194,7 +205,9 @@ This guide provides a quick overview of building and running the AutoRAG Docker 
 
 ### 🚀 Building the Docker Image
 
-#### 1.Download dataset for [Turorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or `autoraghq/autorag:gpu-parsing`
+
+#### 1.Download dataset for [Tutorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
 ```bash
 python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
 ```
@@ -207,7 +220,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:all evaluate \
+  autoraghq/autorag:api evaluate \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
@@ -221,7 +234,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:all validate \
+  autoraghq/autorag:api validate \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
@@ -235,7 +248,7 @@ docker run --rm -it \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
   -p 8502:8502 \
-  autoraghq/autorag:all dashboard \
+  autoraghq/autorag:api dashboard \
     --trial_dir /usr/src/app/projects/tutorial_1/0
 ```
 
@@ -247,7 +260,7 @@ docker run --rm -it \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
   -p 8501:8501 \
-  autoraghq/autorag:all run_web --trial_path ./projects/tutorial_1/0
+  autoraghq/autorag:api run_web --trial_path ./projects/tutorial_1/0
 ```
 
 #### Key Points :

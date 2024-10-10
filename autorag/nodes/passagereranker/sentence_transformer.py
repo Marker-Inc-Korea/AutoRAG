@@ -1,8 +1,6 @@
 from typing import List, Tuple
 
 import pandas as pd
-import torch
-from sentence_transformers import CrossEncoder
 from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
@@ -13,6 +11,7 @@ from autorag.utils.util import (
 	sort_by_scores,
 	pop_params,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
@@ -33,14 +32,20 @@ class SentenceTransformerReranker(BasePassageReranker):
 		:param kwargs: The CrossEncoder parameters
 		"""
 		super().__init__(project_dir, *args, **kwargs)
+		try:
+			import torch
+			from sentence_transformers import CrossEncoder
+		except ImportError:
+			raise ImportError(
+				"You have to install AutoRAG[gpu] to use SentenceTransformerReranker"
+			)
 		self.device = "cuda" if torch.cuda.is_available() else "cpu"
 		model_params = pop_params(CrossEncoder.__init__, kwargs)
 		self.model = CrossEncoder(model_name, device=self.device, **model_params)
 
 	def __del__(self):
 		del self.model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
@@ -110,6 +115,12 @@ class SentenceTransformerReranker(BasePassageReranker):
 
 
 def sentence_transformer_run_model(input_texts, model, batch_size: int):
+	try:
+		import torch
+	except ImportError:
+		raise ImportError(
+			"You have to install AutoRAG[gpu] to use SentenceTransformerReranker"
+		)
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
 	for batch_texts in tqdm(batch_input_texts):

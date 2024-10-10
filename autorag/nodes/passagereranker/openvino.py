@@ -3,13 +3,9 @@ from typing import Any, List, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
 from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
-
-from transformers import AutoTokenizer
-from optimum.intel.openvino import OVModelForSequenceClassification
 
 
 from autorag.utils.util import (
@@ -19,6 +15,7 @@ from autorag.utils.util import (
 	select_top_k,
 	result_to_dataframe,
 	pop_params,
+	empty_cuda_cache,
 )
 
 
@@ -34,6 +31,7 @@ class OpenVINOReranker(BasePassageReranker):
 
 		try:
 			from huggingface_hub import HfApi
+			from transformers import AutoTokenizer
 		except ImportError as e:
 			raise ValueError(
 				"Could not import huggingface_hub python package. "
@@ -76,6 +74,14 @@ class OpenVINOReranker(BasePassageReranker):
 			except Exception:
 				return True
 
+		try:
+			from optimum.intel.openvino import OVModelForSequenceClassification
+		except ImportError:
+			raise ImportError(
+				"Please install optimum package to use OpenVINOReranker"
+				"pip install 'optimum[openvino,nncf]'"
+			)
+
 		model_kwargs = pop_params(
 			OVModelForSequenceClassification.from_pretrained, kwargs
 		)
@@ -96,8 +102,7 @@ class OpenVINOReranker(BasePassageReranker):
 	def __del__(self):
 		del self.model
 		del self.tokenizer
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])

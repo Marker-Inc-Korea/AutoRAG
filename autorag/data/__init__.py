@@ -1,3 +1,4 @@
+import logging
 from typing import List, Callable
 
 from langchain_community.document_loaders import (
@@ -33,6 +34,8 @@ from langchain.text_splitter import (
 )
 
 from autorag import LazyInit
+
+logger = logging.getLogger("AutoRAG")
 
 parse_modules = {
 	# PDF
@@ -82,19 +85,24 @@ chunk_modules = {
 	"konlpy": KonlpyTextSplitter,
 }
 
-
-def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
+try:
 	from kiwipiepy import Kiwi
 
-	kiwi = Kiwi()
+	def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
+		kiwi = Kiwi()
 
-	def split(text: str) -> List[str]:
-		kiwi_result = kiwi.split_into_sents(text)
-		sentences = list(map(lambda x: x.text, kiwi_result))
+		def split(text: str) -> List[str]:
+			kiwi_result = kiwi.split_into_sents(text)
+			sentences = list(map(lambda x: x.text, kiwi_result))
 
-		return sentences
+			return sentences
 
-	return split
+		return split
 
+	sentence_splitter_modules = {"kiwi": LazyInit(split_by_sentence_kiwi)}
 
-sentence_splitter_modules = {"kiwi": LazyInit(split_by_sentence_kiwi)}
+except ImportError:
+	logger.info(
+		"You did not install korean version of AutoRAG."
+		"To use korean version, run pip install 'AutoRAG[ko]'"
+	)

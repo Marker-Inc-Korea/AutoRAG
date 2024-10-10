@@ -3,7 +3,6 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import torch.cuda
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
@@ -12,6 +11,7 @@ from autorag.nodes.passagefilter.similarity_threshold_cutoff import (
 	embedding_query_content,
 )
 from autorag.utils import result_to_dataframe
+from autorag.utils.util import empty_cuda_cache
 
 
 class SimilarityPercentileCutoff(BasePassageFilter):
@@ -31,8 +31,7 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		super().__del__()
 		del self.embedding_model
 
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):

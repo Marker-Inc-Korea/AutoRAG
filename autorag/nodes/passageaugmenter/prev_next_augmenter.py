@@ -2,7 +2,6 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-import torch.cuda
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
@@ -12,6 +11,7 @@ from autorag.utils.util import (
 	fetch_contents,
 	embedding_query_content,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
@@ -39,8 +39,7 @@ class PrevNextPassageAugmenter(BasePassageAugmenter):
 
 	def __del__(self):
 		del self.embedding_model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])

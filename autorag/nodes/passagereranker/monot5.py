@@ -2,9 +2,7 @@ from itertools import chain
 from typing import List, Tuple
 
 import pandas as pd
-import torch
 from tqdm import tqdm
-from transformers import T5Tokenizer, T5ForConditionalGeneration
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -14,6 +12,7 @@ from autorag.utils.util import (
 	select_top_k,
 	result_to_dataframe,
 	pop_params,
+	empty_cuda_cache,
 )
 
 prediction_tokens = {
@@ -60,6 +59,11 @@ class MonoT5(BasePassageReranker):
 		:param kwargs: The extra arguments for the MonoT5 reranker
 		"""
 		super().__init__(project_dir)
+		try:
+			import torch
+			from transformers import T5Tokenizer, T5ForConditionalGeneration
+		except ImportError:
+			raise ImportError("For using MonoT5 Reranker, please install torch first.")
 		# replace '_' to '/'
 		if "_" in model_name:
 			model_name = model_name.replace("_", "/")
@@ -81,8 +85,7 @@ class MonoT5(BasePassageReranker):
 	def __del__(self):
 		del self.model
 		del self.tokenizer
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
@@ -157,6 +160,10 @@ def monot5_run_model(
 	token_false_id,
 	token_true_id,
 ):
+	try:
+		import torch
+	except ImportError:
+		raise ImportError("For using MonoT5 Reranker, please install torch first.")
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
 	for batch_texts in tqdm(batch_input_texts):

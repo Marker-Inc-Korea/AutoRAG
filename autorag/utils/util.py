@@ -640,3 +640,13 @@ def apply_recursive(func, data):
 		return [apply_recursive(func, item) for item in data]
 	else:
 		return func(data)
+
+
+def empty_cuda_cache():
+	try:
+		import torch
+
+		if torch.cuda.is_available():
+			torch.cuda.empty_cache()
+	except ImportError:
+		pass
