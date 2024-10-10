@@ -76,6 +76,8 @@ class Evaluator:
 			raise ValueError(
 				f"Corpus data path {corpus_data_path} is not a parquet file."
 			)
+		self.qa_data_path = qa_data_path
+		self.corpus_data_path = corpus_data_path
 		self.qa_data = pd.read_parquet(qa_data_path, engine="pyarrow")
 		self.corpus_data = pd.read_parquet(corpus_data_path, engine="pyarrow")
 		self.qa_data = cast_qa_dataset(self.qa_data)
@@ -98,8 +100,20 @@ class Evaluator:
 		if not os.path.exists(corpus_path_in_project):
 			self.corpus_data.to_parquet(corpus_path_in_project, index=False)
 
-	def start_trial(self, yaml_path: str):
-		logger.info(ascii_art)
+	def start_trial(self, yaml_path: str, skip_validation: bool = False):
+		if not skip_validation:
+			logger.info(ascii_art)
+			logger.info(
+				"Start Validation input data and config YAML file first. "
+				"If you want to skip this, put the --skip-validation flag or "
+				"`skip_validation` at the start_trial function."
+			)
+			from autorag.validator import Validator  # resolve circular import
+
+			validator = Validator(
+				qa_data_path=self.qa_data_path, corpus_data_path=self.corpus_data_path
+			)
+			validator.validate(yaml_path)
 
 		trial_name = self.__get_new_trial_name()
 		self.__make_trial_dir(trial_name)
