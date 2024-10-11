@@ -2,9 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -13,6 +11,7 @@ from autorag.utils.util import (
 	select_top_k,
 	pop_params,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
@@ -34,6 +33,13 @@ class ColbertReranker(BasePassageReranker):
 		:param kwargs: Extra parameter for the model.
 		"""
 		super().__init__(project_dir)
+		try:
+			import torch
+			from transformers import AutoModel, AutoTokenizer
+		except ImportError:
+			raise ImportError(
+				"Pytorch is not installed. Please install pytorch to use Colbert reranker."
+			)
 		self.device = "cuda" if torch.cuda.is_available() else "cpu"
 		model_params = pop_params(AutoModel.from_pretrained, kwargs)
 		self.model = AutoModel.from_pretrained(model_name, **model_params).to(
@@ -43,8 +49,7 @@ class ColbertReranker(BasePassageReranker):
 
 	def __del__(self):
 		del self.model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
@@ -119,6 +124,12 @@ class ColbertReranker(BasePassageReranker):
 def get_colbert_embedding_batch(
 	input_strings: List[str], model, tokenizer, batch_size: int
 ) -> List[np.array]:
+	try:
+		import torch
+	except ImportError:
+		raise ImportError(
+			"Pytorch is not installed. Please install pytorch to use Colbert reranker."
+		)
 	encoding = tokenizer(
 		input_strings,
 		return_tensors="pt",
@@ -164,6 +175,12 @@ def slice_tokenizer_result(tokenizer_output, batch_size):
 
 
 def slice_tensor(input_tensor, batch_size):
+	try:
+		import torch
+	except ImportError:
+		raise ImportError(
+			"Pytorch is not installed. Please install pytorch to use Colbert reranker."
+		)
 	# Calculate the number of full batches
 	num_full_batches = input_tensor.size(0) // batch_size
 

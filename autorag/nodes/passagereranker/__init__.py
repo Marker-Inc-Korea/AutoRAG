@@ -8,7 +8,6 @@ from .monot5 import MonoT5
 from .pass_reranker import PassReranker
 from .rankgpt import RankGPT
 from .sentence_transformer import SentenceTransformerReranker
-from .tart.tart import Tart
 from .time_reranker import TimeReranker
 from .upr import Upr
 from .openvino import OpenVINOReranker

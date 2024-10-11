@@ -1,0 +1,131 @@
+node_lines:
+- node_line_name: pre_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: query_expansion
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        speed_threshold: 10
+        top_k: 10
+        retrieval_modules:
+          - module_type: vectordb
+            embedding_model: openai
+      modules:
+        - module_type: pass_query_expansion
+        - module_type: query_decompose
+          generator_module_type: llama_index_llm
+          llm: openai
+          model: [ gpt-3.5-turbo-16k ]
+        - module_type: hyde
+          generator_module_type: llama_index_llm
+          llm: openai
+          model: [ gpt-3.5-turbo-16k ]
+          max_token: 64
+        - module_type: multi_query_expansion
+          generator_module_type: llama_index_llm
+          llm: openai
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision,
+                   retrieval_ndcg, retrieval_map, retrieval_mrr ]
+        speed_threshold: 10
+      top_k: 10
+      modules:
+        - module_type: bm25
+        - module_type: vectordb
+          embedding_model: openai
+          embedding_batch: 256
+        - module_type: hybrid_rrf
+          weight_range: (4,80)
+        - module_type: hybrid_cc
+          normalize_method: [ mm, tmm, z, dbsf ]
+          weight_range: (0.0, 1.0)
+          test_weight_size: 101
+    - node_type: passage_augmenter
+      strategy:
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+        speed_threshold: 5
+      top_k: 5
+      embedding_model: openai
+      modules:
+        - module_type: pass_passage_augmenter
+        - module_type: prev_next_augmenter
+          mode: next
+    - node_type: passage_reranker
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        speed_threshold: 10
+      top_k: 5
+      modules:
+        - module_type: pass_reranker
+        - module_type: cohere_reranker
+        - module_type: rankgpt
+        - module_type: time_reranker
+    - node_type: passage_filter
+      strategy:
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+        speed_threshold: 5
+      modules:
+        - module_type: pass_passage_filter
+        - module_type: similarity_threshold_cutoff
+          threshold: 0.85
+        - module_type: similarity_percentile_cutoff
+          percentile: 0.6
+        - module_type: recency_filter
+          threshold: 2015-01-01
+        - module_type: threshold_cutoff
+          threshold: 0.85
+        - module_type: percentile_cutoff
+          percentile: 0.6
+    - node_type: passage_compressor
+      strategy:
+        metrics: [retrieval_token_f1, retrieval_token_recall, retrieval_token_precision]
+        speed_threshold: 10
+      modules:
+        - module_type: pass_compressor
+        - module_type: tree_summarize
+          llm: openai
+          model: gpt-4o-mini
+        - module_type: refine
+          llm: openai
+          model: gpt-3.5-turbo-16k
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+        speed_threshold: 10
+        generator_modules:
+          - module_type: llama_index_llm
+            llm: openai
+            model: gpt-4o-mini
+      modules:
+        - module_type: fstring
+          prompt: ["Tell me something about the question: {query} \n\n {retrieved_contents}" ]
+        - module_type: long_context_reorder
+          prompt: [ "Tell me something about the question: {query} \n\n {retrieved_contents}" ]
+        - module_type: window_replacement
+          prompt: [ "Tell me something about the question: {query} \n\n {retrieved_contents}" ]
+    - node_type: generator
+      strategy:
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai
+        speed_threshold: 10
+      modules:
+        - module_type: llama_index_llm
+          llm: [openai]
+          model: gpt-4o-mini
+          temperature: 1.0
+        - module_type: openai_llm
+          llm: gpt-4o-mini
+          temperature: 0.8

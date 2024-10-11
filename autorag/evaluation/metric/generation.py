@@ -6,7 +6,6 @@ from typing import List, Optional
 import evaluate
 import nltk
 import pandas as pd
-import torch
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from openai import AsyncOpenAI
@@ -31,6 +30,7 @@ from autorag.utils.util import (
 	openai_truncate_by_token,
 	convert_inputs_to_list,
 	pop_params,
+	empty_cuda_cache,
 )
 
 
@@ -330,7 +330,7 @@ def sem_score(
 	generations = [metric_input.generated_texts for metric_input in metric_inputs]
 	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	if embedding_model is None:
-		embedding_model = embedding_models["huggingface_all_mpnet_base_v2"]()
+		embedding_model = embedding_models.get("huggingface_all_mpnet_base_v2")()
 
 	embedding_model.embed_batch_size = batch
 
@@ -366,8 +366,7 @@ def sem_score(
 		result.append(max(similarity_scores))
 
 	del embedding_model
-	if torch.cuda.is_available():
-		torch.cuda.empty_cache()
+	empty_cuda_cache()
 
 	return result
 
@@ -500,6 +499,6 @@ def bert_score(
 	)["f1"]
 
 	del evaluator
-	if torch.cuda.is_available():
-		torch.cuda.empty_cache()
+	empty_cuda_cache()
+
 	return df.groupby(level=0)["bert_score"].max().tolist()

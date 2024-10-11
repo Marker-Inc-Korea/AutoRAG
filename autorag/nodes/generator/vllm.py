@@ -3,7 +3,6 @@ from copy import deepcopy
 from typing import List, Tuple
 
 import pandas as pd
-import torch
 
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils import result_to_dataframe
@@ -36,18 +35,21 @@ class Vllm(BaseGenerator):
 				kwargs.pop(key)
 
 	def __del__(self):
-		if torch.cuda.is_available():
-			from vllm.distributed.parallel_state import (
-				destroy_model_parallel,
-			)
+		try:
+			import torch
 
-			destroy_model_parallel()
-			del self.vllm_model
-			gc.collect()
-			torch.cuda.empty_cache()
-			torch.distributed.destroy_process_group()
-			torch.cuda.synchronize()
-		else:
+			if torch.cuda.is_available():
+				from vllm.distributed.parallel_state import (
+					destroy_model_parallel,
+				)
+
+				destroy_model_parallel()
+				del self.vllm_model
+				gc.collect()
+				torch.cuda.empty_cache()
+				torch.distributed.destroy_process_group()
+				torch.cuda.synchronize()
+		except ImportError:
 			del self.vllm_model
 
 		super().__del__()

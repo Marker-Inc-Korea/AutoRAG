@@ -2,9 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
 from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -13,12 +11,18 @@ from autorag.utils.util import (
 	flatten_apply,
 	select_top_k,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
 class KoReranker(BasePassageReranker):
 	def __init__(self, project_dir: str, *args, **kwargs):
 		super().__init__(project_dir)
+		try:
+			import torch
+			from transformers import AutoModelForSequenceClassification, AutoTokenizer
+		except ImportError:
+			raise ImportError("For using KoReranker, please install torch first.")
 
 		model_path = "Dongjin-kr/ko-reranker"
 		self.tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -30,8 +34,7 @@ class KoReranker(BasePassageReranker):
 
 	def __del__(self):
 		del self.model
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
@@ -100,6 +103,10 @@ class KoReranker(BasePassageReranker):
 
 
 def koreranker_run_model(input_texts, model, tokenizer, device, batch_size: int):
+	try:
+		import torch
+	except ImportError:
+		raise ImportError("For using KoReranker, please install torch first.")
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
 	for batch_texts in tqdm(batch_input_texts):
