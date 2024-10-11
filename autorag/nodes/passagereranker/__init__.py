@@ -13,3 +13,4 @@ from .upr import Upr
 from .openvino import OpenVINOReranker
 from .voyageai import VoyageAIReranker
 from .mixedbreadai import MixedbreadAIReranker
+from .flashrank import FlashRankReranker

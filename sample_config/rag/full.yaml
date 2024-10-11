@@ -76,6 +76,7 @@ node_lines:
         - module_type: openvino_reranker
         - module_type: voyageai_reranker
         - module_type: mixedbreadai_reranker
+        - module_type: flashrank_reranker
     - node_type: passage_filter
       strategy:
         metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
