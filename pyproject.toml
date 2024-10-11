@@ -50,7 +50,7 @@ parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstruc
 ja = ["sudachipy>=0.6.8", "sudachidict_core"]
 gpu = ["torch", "sentencepiece", "bert_score", "optimum[openvino,nncf]", "peft", "llmlingua", "FlagEmbedding",
     "sentence-transformers", "transformers", "llama-index-llms-ollama", "llama-index-embeddings-huggingface",
-    "llama-index-llms-huggingface"]
+    "llama-index-llms-huggingface", "onnxruntime"]
 all = ["AutoRAG[gpu]", "AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[ja]"]
 
 [project.entry-points.console_scripts]

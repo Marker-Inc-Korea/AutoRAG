@@ -2,9 +2,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-import torch
-from tokenizers import AddedToken, Tokenizer
-import onnxruntime as ort
 import numpy as np
 import os
 import zipfile
@@ -15,7 +12,13 @@ from typing import List, Dict, Tuple
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils import result_to_dataframe
-from autorag.utils.util import flatten_apply, sort_by_scores, select_top_k, make_batch
+from autorag.utils.util import (
+	flatten_apply,
+	sort_by_scores,
+	select_top_k,
+	make_batch,
+	empty_cuda_cache,
+)
 
 model_url = "https://huggingface.co/prithivida/flashrank/resolve/main/{}.zip"
 
@@ -44,6 +47,12 @@ class FlashRankReranker(BasePassageReranker):
 		:param kwargs: Extra arguments that are not affected
 		"""
 		super().__init__(project_dir)
+		try:
+			from tokenizers import Tokenizer
+		except ImportError:
+			raise ImportError(
+				"Tokenizer is not installed. Please install tokenizers to use FlashRank reranker."
+			)
 
 		cache_dir = kwargs.pop("cache_dir", "/tmp")
 		max_length = kwargs.pop("max_length", 512)
@@ -53,14 +62,20 @@ class FlashRankReranker(BasePassageReranker):
 		self._prepare_model_dir(model)
 		model_file = model_file_map[model]
 
+		try:
+			import onnxruntime as ort
+		except ImportError:
+			raise ImportError(
+				"onnxruntime is not installed. Please install onnxruntime to use FlashRank reranker."
+			)
+
 		self.session = ort.InferenceSession(str(self.model_dir / model_file))
 		self.tokenizer: Tokenizer = self._get_tokenizer(max_length)
 
 	def __del__(self):
 		del self.session
 		del self.tokenizer
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	def _prepare_model_dir(self, model_name: str):
@@ -95,7 +110,13 @@ class FlashRankReranker(BasePassageReranker):
 			zip_ref.extractall(self.cache_dir)
 		os.remove(local_zip_file)
 
-	def _get_tokenizer(self, max_length: int = 512) -> Tokenizer:
+	def _get_tokenizer(self, max_length: int = 512):
+		try:
+			from tokenizers import AddedToken, Tokenizer
+		except ImportError:
+			raise ImportError(
+				"Pytorch is not installed. Please install pytorch to use FlashRank reranker."
+			)
 		config = json.load(open(str(self.model_dir / "config.json")))
 		tokenizer_config = json.load(
 			open(str(self.model_dir / "tokenizer_config.json"))
