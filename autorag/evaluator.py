@@ -9,7 +9,6 @@ from typing import List, Dict, Optional
 
 import chromadb
 import pandas as pd
-import torch
 import yaml
 
 from autorag import embedding_models
@@ -33,6 +32,7 @@ from autorag.utils.util import (
 	convert_string_to_tuple_in_dict,
 	convert_env_in_dict,
 	explode,
+	empty_cuda_cache,
 )
 
 logger = logging.getLogger("AutoRAG")
@@ -252,8 +252,7 @@ class Evaluator:
 					f"VectorDB corpus embedding complete with {embedding_model_str}."
 				)
 				del embedding_model
-				if torch.cuda.is_available():
-					torch.cuda.empty_cache()
+				empty_cuda_cache()
 		else:
 			logger.info("No ingestion needed.")
 

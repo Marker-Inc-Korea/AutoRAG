@@ -1,6 +1,6 @@
 import pytest
 
-from autorag.nodes.passagereranker import Tart
+from autorag.nodes.passagereranker.tart import Tart
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	base_reranker_test,
 	queries_example,
