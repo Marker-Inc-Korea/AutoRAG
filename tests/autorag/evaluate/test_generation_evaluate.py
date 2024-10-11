@@ -40,7 +40,13 @@ pseudo_log_probs = list(map(lambda x: [0.1] * len(x), pseudo_tokens))
 
 @evaluate_generation(
 	metric_inputs=[MetricInput(generation_gt=gen_gt) for gen_gt in generation_gts],
-	metrics=["bleu", "meteor", "rouge", "sem_score", "g_eval"],
+	metrics=[
+		{"metric_name": "bleu"},
+		{"metric_name": "meteor"},
+		{"metric_name": "rouge"},
+		{"metric_name": "sem_score", "embedding_model": "openai"},
+		{"metric_name": "g_eval"},
+	],
 )
 def pseudo_generation():
 	return pseudo_generations

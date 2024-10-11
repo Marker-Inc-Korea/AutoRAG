@@ -2,7 +2,6 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import torch.cuda
 from llama_index.core.base.llms.types import ChatMessage, ChatResponse
 from llama_index.core.llms import LLM
 from llama_index.core.postprocessor.rankGPT_rerank import RankGPTRerank
@@ -17,6 +16,7 @@ from autorag.utils.util import (
 	process_batch,
 	pop_params,
 	result_to_dataframe,
+	empty_cuda_cache,
 )
 
 
@@ -46,8 +46,7 @@ class RankGPT(BasePassageReranker):
 
 	def __del__(self):
 		del self.llm
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
 		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])

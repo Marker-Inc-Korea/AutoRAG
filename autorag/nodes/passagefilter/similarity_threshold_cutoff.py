@@ -2,12 +2,15 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-import torch.cuda
 
 from autorag import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import BasePassageFilter
-from autorag.utils.util import embedding_query_content, result_to_dataframe
+from autorag.utils.util import (
+	embedding_query_content,
+	result_to_dataframe,
+	empty_cuda_cache,
+)
 
 
 class SimilarityThresholdCutoff(BasePassageFilter):
@@ -24,11 +27,9 @@ class SimilarityThresholdCutoff(BasePassageFilter):
 		self.embedding_model = embedding_models[embedding_model_str]()
 
 	def __del__(self):
-		super().__del__()
 		del self.embedding_model
-
-		if torch.cuda.is_available():
-			torch.cuda.empty_cache()
+		empty_cuda_cache()
+		super().__del__()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
