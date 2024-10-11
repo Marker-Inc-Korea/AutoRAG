@@ -52,6 +52,14 @@ autorag.nodes.passagereranker.flag\_embedding\_llm module
    :undoc-members:
    :show-inheritance:
 
+autorag.nodes.passagereranker.flashrank module
+----------------------------------------------
+
+.. automodule:: autorag.nodes.passagereranker.flashrank
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.nodes.passagereranker.jina module
 -----------------------------------------
 
