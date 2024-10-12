@@ -145,7 +145,7 @@ class ApiRunner(BaseRunner):
 						# Start streaming of the result
 						assert len(previous_result) == 1
 						prompt: str = previous_result["prompts"].tolist()[0]
-						async for delta in module_instance.stream(
+						async for delta in module_instance.astream(
 							prompt=prompt, **module_param
 						):
 							response = RunResponse(

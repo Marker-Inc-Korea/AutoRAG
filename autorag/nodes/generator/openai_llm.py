@@ -178,7 +178,7 @@ class OpenAILLM(BaseGenerator):
 		result = loop.run_until_complete(process_batch(tasks, self.batch))
 		return result
 
-	async def stream(self, prompt: str, **kwargs):
+	async def astream(self, prompt: str, **kwargs):
 		if kwargs.get("logprobs") is not None:
 			kwargs.pop("logprobs")
 			logger.warning(
@@ -207,6 +207,9 @@ class OpenAILLM(BaseGenerator):
 			if chunk.choices[0].delta.content is not None:
 				result += chunk.choices[0].delta.content
 				yield result
+
+	def stream(self, prompt: str, **kwargs):
+		raise NotImplementedError("stream method is not implemented yet.")
 
 	async def get_structured_result(self, prompt: str, output_cls, **kwargs):
 		response = await self.client.beta.chat.completions.parse(

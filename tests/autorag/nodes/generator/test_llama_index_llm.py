@@ -101,7 +101,7 @@ Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I 
 	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
 )
 @pytest.mark.asyncio()
-async def test_llama_index_llm_stream():
+async def test_llama_index_llm_astream():
 	import asyncstdlib as a
 
 	llm_instance = LlamaIndexLLM(
@@ -112,7 +112,7 @@ async def test_llama_index_llm_stream():
 	)
 	result = []
 	async for i, s in a.enumerate(
-		llm_instance.stream("Hello. Tell me about who is Kai Havertz")
+		llm_instance.astream("Hello. Tell me about who is Kai Havertz")
 	):
 		assert isinstance(s, str)
 		result.append(s)
