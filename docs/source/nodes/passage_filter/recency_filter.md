@@ -26,7 +26,7 @@ Plus, the value of the metadata must be `datetime.datetime` object.
   If the time is later than a threshold, the content will be filtered out.
   This is essential to run the module, so you have to set this parameter.
 
-  📌 **threshold** format should be one of the following three!
+  📌 **threshold_datetime** format should be one of the following three!
   - `YYYY-MM-DD`
   - `YYYY-MM-DD HH:MM`
   - `YYYY-MM-DD HH:MM:SS`
@@ -36,5 +36,5 @@ Plus, the value of the metadata must be `datetime.datetime` object.
 ```yaml
 modules:
   - module_type: recency_filter
-    threshold: 2015-01-01
+    threshold_datetime: 2015-01-01
 ```
