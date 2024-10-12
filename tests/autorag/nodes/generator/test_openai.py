@@ -140,13 +140,13 @@ Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I 
 	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
 )
 @pytest.mark.asyncio()
-async def test_openai_llm_stream():
+async def test_openai_llm_astream():
 	import asyncstdlib as a
 
 	llm_instance = OpenAILLM(project_dir=".", llm="gpt-4o-mini-2024-07-18")
 	result = []
 	async for i, s in a.enumerate(
-		llm_instance.stream("Hello. Tell me about who is Kai Havertz")
+		llm_instance.astream("Hello. Tell me about who is Kai Havertz")
 	):
 		assert isinstance(s, str)
 		result.append(s)

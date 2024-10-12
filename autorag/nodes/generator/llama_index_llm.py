@@ -86,8 +86,12 @@ class LlamaIndexLLM(BaseGenerator):
 		pseudo_log_probs = list(map(lambda x: [0.5] * len(x), tokenized_ids))
 		return generated_texts, tokenized_ids, pseudo_log_probs
 
-	async def stream(self, prompt: str, **kwargs):
+	async def astream(self, prompt: str, **kwargs):
 		async for completion_response in await self.llm_instance.astream_complete(
 			prompt
 		):
+			yield completion_response.text
+
+	def stream(self, prompt: str, **kwargs):
+		for completion_response in self.llm_instance.stream_complete(prompt):
 			yield completion_response.text

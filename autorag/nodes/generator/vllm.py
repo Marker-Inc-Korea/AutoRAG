@@ -109,5 +109,8 @@ class Vllm(BaseGenerator):
 			to_list(generated_log_probs),
 		)
 
-	async def stream(self, prompt: str, **kwargs):
+	async def astream(self, prompt: str, **kwargs):
+		raise NotImplementedError
+
+	def stream(self, prompt: str, **kwargs):
 		raise NotImplementedError
