@@ -173,7 +173,7 @@ def yaml_to_markdown(yaml_filepath):
 	return markdown_content
 
 
-def run(trial_dir: str):
+def run(trial_dir: str, port: int = 7690):
 	trial_summary_md = make_trial_summary_md(trial_dir=trial_dir)
 	trial_summary_tab = pn.pane.Markdown(trial_summary_md, sizing_mode="stretch_width")
 
@@ -196,4 +196,4 @@ def run(trial_dir: str):
 	template = pn.template.FastListTemplate(
 		site="AutoRAG", title="Dashboard", main=[tabs], raw_css=[CSS]
 	).servable()
-	template.show()
+	template.show(port=port)

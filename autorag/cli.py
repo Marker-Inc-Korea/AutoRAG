@@ -136,8 +136,11 @@ def run_web(
 	type=click.Path(dir_okay=True, file_okay=False, exists=True),
 	required=True,
 )
-def run_dashboard(trial_dir: str):
-	dashboard.run(trial_dir)
+@click.option(
+	"--port", type=int, default=7690, help="Port number. The default is 7690."
+)
+def run_dashboard(trial_dir: str, port: int):
+	dashboard.run(trial_dir, port=port)
 
 
 @click.command()
