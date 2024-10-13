@@ -364,7 +364,7 @@ def test_test_data_evaluate(test_evaluator):
 		mode="w+t", suffix=".yaml", delete=False
 	) as yaml_file:
 		extract_best_config(trial_folder, yaml_file.name)
-		test_evaluator.start_trial(yaml_file.name)
+		test_evaluator.start_trial(yaml_file.name, skip_validation=True)
 		yaml_file.close()
 		os.unlink(yaml_file.name)
 

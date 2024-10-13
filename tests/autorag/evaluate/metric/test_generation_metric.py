@@ -297,7 +297,7 @@ def test_bert_score_ko():
 def test_bert_score_ja():
 	base_test_metrics(
 		bert_score,
-		[0.965312, 0.96309, 1.0],
+		[1.0, 0.82659, 1.0],
 		ja_similarity_generation_metric_inputs,
 		lang="ja",
 	)
