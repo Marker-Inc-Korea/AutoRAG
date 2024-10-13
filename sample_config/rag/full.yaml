@@ -88,7 +88,7 @@ node_lines:
         - module_type: similarity_percentile_cutoff
           percentile: 0.6
         - module_type: recency_filter
-          threshold: 2015-01-01
+          threshold_datetime: 2015-01-01 3:45:07
         - module_type: threshold_cutoff
           threshold: 0.85
         - module_type: percentile_cutoff

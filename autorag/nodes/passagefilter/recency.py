@@ -35,7 +35,7 @@ class RecencyFilter(BasePassageFilter):
 		scores_list: List[List[float]],
 		ids_list: List[List[str]],
 		time_list: List[List[datetime]],
-		threshold: Union[datetime, date],
+		threshold_datetime: Union[datetime, date],
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
 		Filter out the contents that are below the threshold datetime.
@@ -46,16 +46,24 @@ class RecencyFilter(BasePassageFilter):
 		:param scores_list: The list of lists of scores retrieved
 		:param ids_list: The list of lists of ids retrieved
 		:param time_list: The list of lists of datetime retrieved
-		:param threshold: The threshold to cut off
+		:param threshold_datetime: The threshold to cut off.
+			In recency filter, you have to use the datetime.datetime object or datetime.date object.
+			All you need to do is to set the date at your YAML file.
+			For example, you can write "2010-09-09 3:45:06" or "2010-09-09" in the YAML file.
 		:return: Tuple of lists containing the filtered contents, ids, and scores
 		"""
-		if not (isinstance(threshold, datetime) or isinstance(threshold, date)):
+		if not (
+			isinstance(threshold_datetime, datetime)
+			or isinstance(threshold_datetime, date)
+		):
 			raise ValueError(
-				f"Threshold should be a datetime object, but got {type(threshold)}"
+				f"Threshold should be a datetime object, but got {type(threshold_datetime)}"
 			)
 
-		if not isinstance(threshold, datetime):
-			threshold = datetime.combine(threshold, datetime.min.time())
+		if not isinstance(threshold_datetime, datetime):
+			threshold_datetime = datetime.combine(
+				threshold_datetime, datetime.min.time()
+			)
 
 		time_list = [
 			list(
@@ -90,7 +98,7 @@ class RecencyFilter(BasePassageFilter):
 				scores_list,
 				ids_list,
 				time_list,
-				[threshold] * len(contents_list),
+				[threshold_datetime] * len(contents_list),
 			)
 		)
 

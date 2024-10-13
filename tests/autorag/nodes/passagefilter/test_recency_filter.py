@@ -26,7 +26,7 @@ def test_recency_filter(recency_filter_instance):
 		scores_example,
 		ids_example,
 		time_list,
-		threshold=date(2021, 6, 30),
+		threshold_datetime=date(2021, 6, 30),
 	)
 	assert id_result[0] == [ids_example[0][1], ids_example[0][2], ids_example[0][3]]
 	assert id_result[1] == [ids_example[1][2], ids_example[1][3]]
@@ -61,7 +61,7 @@ def test_recency_filter_date_time_list(recency_filter_instance):
 		scores_example,
 		ids_example,
 		time_list_2,
-		threshold=date(2021, 6, 30),
+		threshold_datetime=date(2021, 6, 30),
 	)
 	assert id_result[0] == [ids_example[0][1], ids_example[0][2], ids_example[0][3]]
 	assert id_result[1] == [ids_example[1][2], ids_example[1][3]]
@@ -82,7 +82,7 @@ def test_recency_filter_all_filtered(recency_filter_instance):
 		scores_example,
 		ids_example,
 		time_list,
-		threshold=datetime(2040, 6, 30),
+		threshold_datetime=datetime(2040, 6, 30),
 	)
 	assert id_result[0] == [ids_example[0][3]]
 	assert id_result[1] == [ids_example[1][3]]
@@ -99,7 +99,7 @@ def test_recency_filter_minutes(recency_filter_instance):
 		scores_example,
 		ids_example,
 		time_list,
-		threshold=datetime(2022, 3, 5, 12, 35),
+		threshold_datetime=datetime(2022, 3, 5, 12, 35),
 	)
 	assert id_result[0] == [ids_example[0][3]]
 	assert id_result[1] == [ids_example[1][2], ids_example[1][3]]
@@ -116,7 +116,7 @@ def test_recency_filter_seconds(recency_filter_instance):
 		scores_example,
 		ids_example,
 		time_list,
-		threshold=datetime(2022, 3, 5, 12, 40, 30),
+		threshold_datetime=datetime(2022, 3, 5, 12, 40, 30),
 	)
 	assert id_result[0] == [ids_example[0][3]]
 	assert id_result[1] == [ids_example[1][3]]
@@ -131,6 +131,6 @@ def test_recency_filter_node(project_dir_with_corpus):
 	result_df = RecencyFilter.run_evaluator(
 		project_dir=project_dir_with_corpus,
 		previous_result=previous_result,
-		threshold=datetime(2021, 6, 30),
+		threshold_datetime=datetime(2021, 6, 30),
 	)
 	base_passage_filter_node_test(result_df)
