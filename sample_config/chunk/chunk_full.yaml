@@ -29,4 +29,4 @@ modules:
     chunk_method: character
     separator: ". "
   - module_type: langchain_chunk
-    chunk_method: KonlpyTextSplitter
+    chunk_method: Konlpy
