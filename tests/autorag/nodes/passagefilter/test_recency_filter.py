@@ -131,6 +131,6 @@ def test_recency_filter_node(project_dir_with_corpus):
 	result_df = RecencyFilter.run_evaluator(
 		project_dir=project_dir_with_corpus,
 		previous_result=previous_result,
-		threshold=datetime(2021, 6, 30),
+		threshold_datetime=datetime(2021, 6, 30),
 	)
 	base_passage_filter_node_test(result_df)
