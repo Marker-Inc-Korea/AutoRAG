@@ -85,24 +85,25 @@ chunk_modules = {
 	"konlpy": KonlpyTextSplitter,
 }
 
-try:
-	from kiwipiepy import Kiwi
 
-	def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
-		kiwi = Kiwi()
+def split_by_sentence_kiwi() -> Callable[[str], List[str]]:
+	try:
+		from kiwipiepy import Kiwi
+	except ImportError:
+		raise ImportError(
+			"You need to install kiwipiepy to use 'ko_kiwi' tokenizer. "
+			"Please install kiwipiepy by running 'pip install kiwipiepy'. "
+			"Or install Korean version of AutoRAG by running 'pip install AutoRAG[ko]'."
+		)
+	kiwi = Kiwi()
 
-		def split(text: str) -> List[str]:
-			kiwi_result = kiwi.split_into_sents(text)
-			sentences = list(map(lambda x: x.text, kiwi_result))
+	def split(text: str) -> List[str]:
+		kiwi_result = kiwi.split_into_sents(text)
+		sentences = list(map(lambda x: x.text, kiwi_result))
 
-			return sentences
+		return sentences
 
-		return split
+	return split
 
-	sentence_splitter_modules = {"kiwi": LazyInit(split_by_sentence_kiwi)}
 
-except ImportError:
-	logger.info(
-		"You did not install korean version of AutoRAG."
-		"To use korean version, run pip install 'AutoRAG[ko]'"
-	)
+sentence_splitter_modules = {"kiwi": LazyInit(split_by_sentence_kiwi)}
