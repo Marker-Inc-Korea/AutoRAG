@@ -454,6 +454,14 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 
 ☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
 
+## 💬 Talk with Founders
+
+Talk with us! We are always open to talk with you.
+
+- 🎤 [Talk with Jeffrey](https://zcal.co/autorag-jeffrey/autorag-demo-15min)
+
+- 🦜 [Talk with Bwook](https://zcal.co/i/tcuLtmq5)
+
 ---
 
 # ✨ Contributors ✨
