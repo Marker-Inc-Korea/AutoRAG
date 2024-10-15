@@ -30,6 +30,12 @@ _Muted by default, enable sound for voice-over_
 
 You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
+## Use AutoRAG in HuggingFace Space 🚀
+
+- [💬 Naive RAG Chatbot](https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot)
+- [✏️ AutoRAG Data Creation](https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation)
+- [🚀 AutoRAG RAG Pipeline Optimization](https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization)
+
 ## Colab Tutorial
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
@@ -74,6 +80,9 @@ pip install "AutoRAG[gpu,parse]"
 ```
 
 # Data Creation
+<a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
+</a>
 
 ![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
 
@@ -193,6 +202,12 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 ```
 
 # RAG Optimization
+
+<a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
+</a>
+
+
 ![rag](https://github.com/user-attachments/assets/214d842e-fc67-4113-9c24-c94158b00c23)
 
 ### How AutoRAG optimizes RAG pipeline?
@@ -447,6 +462,14 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 🍯 [Tips/Tricks](https://edai.notion.site/Tips-Tricks-10708a0e36ff461cb8a5d4fb3279ff15?pvs=4)
 
 ☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
+
+## 💬 Talk with Founders
+
+Talk with us! We are always open to talk with you.
+
+- 🎤 [Talk with Jeffrey](https://zcal.co/autorag-jeffrey/autorag-demo-15min)
+
+- 🦜 [Talk with Bwook](https://zcal.co/i/tcuLtmq5)
 
 ---
 
