@@ -33,8 +33,19 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 ## Use AutoRAG in HuggingFace Space 🚀
 
 - [💬 Naive RAG Chatbot](https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot)
+<a href="https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
+</a>
+
 - [✏️ AutoRAG Data Creation](https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation)
+<a href="https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
+</a>
+
 - [🚀 AutoRAG RAG Pipeline Optimization](https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization)
+<a href="https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
+</a>
 
 ## Colab Tutorial
 
