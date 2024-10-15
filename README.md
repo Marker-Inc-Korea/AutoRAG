@@ -81,7 +81,7 @@ pip install "AutoRAG[gpu,parse]"
 
 # Data Creation
 <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation">
-<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
 
 ![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
@@ -204,7 +204,7 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 # RAG Optimization
 
 <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization">
-<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
+<img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
 
 
