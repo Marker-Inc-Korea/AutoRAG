@@ -32,32 +32,33 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 <h2>Use AutoRAG in HuggingFace Space 🚀</h2>
 
-<div style="display: flex; justify-content: space-between; align-items: center;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
   <a href="https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot" style="font-size: 18px; text-decoration: none;">
     💬 Naive RAG Chatbot
   </a>
   <a href="https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot">
-    <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" align="right" style="width:150px;height:auto;">
+    <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
   </a>
 </div>
 
-<div style="display: flex; justify-content: space-between; align-items: center;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
   <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation" style="font-size: 18px; text-decoration: none;">
     ✏️ AutoRAG Data Creation
   </a>
   <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation">
-    <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" align="right" style="width:150px;height:auto;">
+    <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
   </a>
 </div>
 
-<div style="display: flex; justify-content: space-between; align-items: center;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
   <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization" style="font-size: 18px; text-decoration: none;">
     🚀 AutoRAG RAG Pipeline Optimization
   </a>
   <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization">
-    <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" align="right" style="width:150px;height:auto;">
+    <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:100px;height:auto;">
   </a>
 </div>
+
 
 
 ## Colab Tutorial
