@@ -1,0 +1,30 @@
+node_lines:
+  - node_line_name: retrieve_node_line  # Arbitrary node line name
+    nodes:
+      - node_type: retrieval
+        strategy:
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+        top_k: 3
+        modules:
+          - module_type: vectordb
+            embedding_model: openai
+  - node_line_name: post_retrieve_node_line  # Arbitrary node line name
+    nodes:
+      - node_type: prompt_maker
+        strategy:
+          metrics: [ bleu, meteor, rouge ]
+        modules:
+          - module_type: fstring
+            prompt: "주어진 passage만을 이용하여 question에 따라 답하시오 passage: {retrieved_contents} \n\n Question: {query} \n\n Answer:"
+      - node_type: generator
+        strategy:
+          metrics:
+            - metric_name: rouge
+            - embedding_model: openai
+              metric_name: sem_score
+            - metric_name: bert_score
+              lang: ko
+        modules:
+          - module_type: llama_index_llm
+            llm: openai
+            model: [ gpt-4o-mini ]
