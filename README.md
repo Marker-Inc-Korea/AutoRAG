@@ -30,6 +30,12 @@ _Muted by default, enable sound for voice-over_
 
 You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
+## Use AutoRAG in HuggingFace Space 🚀
+
+- [💬 Naive RAG Chatbot](https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot)
+- [✏️ AutoRAG Data Creation](https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation)
+- [🚀 AutoRAG RAG Pipeline Optimization](https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization)
+
 ## Colab Tutorial
 
 - [Step 1: Basic of AutoRAG | Optimizing your RAG pipeline](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
