@@ -168,7 +168,7 @@ from autorag.data.qa.query.llama_gen_query import factoid_query_gen
 from autorag.data.qa.sample import random_single_hop
 
 llm = OpenAI()
-raw_df = pd.read_parquet("your/path/to/corpus.parquet")
+raw_df = pd.read_parquet("your/path/to/parsed.parquet")
 raw_instance = Raw(raw_df)
 
 corpus_df = pd.read_parquet("your/path/to/corpus.parquet")
