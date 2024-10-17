@@ -45,6 +45,7 @@ To change the LLM model type, you can change the `llm` parameter to the followin
 | HuggingFaceLLM | huggingfacellm |
 |   OpenAILike   |   openailike   |
 |     Ollama     |     ollama     |
+|    Bedrock     |    bedrock     |
 
 For example, if you want to use `OpenAILike` model, you can set `llm` parameter to `openailike`.
 
