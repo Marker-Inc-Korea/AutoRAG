@@ -23,4 +23,4 @@ node_lines:
           - module_type: llama_index_llm
             llm: bedrock
             model: amazon.titan-text-express-v1
-            profile_name: autorag_bobb
+            profile_name: your_profile_name # Plz replace this with your profile name
