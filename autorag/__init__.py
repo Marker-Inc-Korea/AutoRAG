@@ -8,6 +8,7 @@ from typing import List, Any
 from llama_index.core import MockEmbedding
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.core.llms.mock import MockLLM
+from llama_index.llms.bedrock import Bedrock
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 
@@ -61,7 +62,6 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-
 embedding_models = {
 	# llama index
 	"openai": LazyInit(
@@ -102,32 +102,30 @@ except ImportError:
 		"To use local version, run pip install 'AutoRAG[gpu]'"
 	)
 
+
+class AutoRAGBedrock(Bedrock):
+	async def acomplete(
+		self, prompt: str, formatted: bool = False, **kwargs: Any
+	) -> CompletionResponse:
+		return self.complete(prompt, formatted=formatted, **kwargs)
+
+
 generator_models = {
 	"openai": OpenAI,
 	"openailike": OpenAILike,
 	"mock": MockLLM,
+	"bedrock": AutoRAGBedrock,
 }
 
 try:
 	from llama_index.llms.huggingface import HuggingFaceLLM
 	from llama_index.llms.ollama import Ollama
-	from llama_index.llms.bedrock import Bedrock
 
-	class AutoRAGBedrock(Bedrock):
-		async def acomplete(
-			self, prompt: str, formatted: bool = False, **kwargs: Any
-		) -> CompletionResponse:
-			return self.complete(prompt, formatted=formatted, **kwargs)
-
-	generator_models["huggingfacellm"] = HuggingFaceLLM
-	generator_models["ollama"] = Ollama
-	generator_models["bedrock"] = AutoRAGBedrock
 except ImportError:
 	logger.info(
 		"You are using API version of AutoRAG."
 		"To use local version, run pip install 'AutoRAG[gpu]'"
 	)
-
 
 try:
 	import transformers
