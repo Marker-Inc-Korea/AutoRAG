@@ -8,6 +8,28 @@ myst:
 # Available List
 
 📌 You can check our all supporting Nodes & modules
+
+
+<style>
+table.table.table-my-special-table {
+    border-collapse: collapse; 
+    border:1px solid #69899F;
+} 
+table.table.table-my-special-table td{
+    border:1px dotted #000000;
+    padding:5px;
+}
+table.table.table-my-special-table td:first-child{
+    border-left:0px solid #000000;
+}
+table.table.table-my-special-table th{
+   border:2px solid #69899F;
+   padding:5px;
+}
+
+</style>
+
+
 <table class="table table-my-special-table">
   <tr>
     <th>Nodes</th>
@@ -54,24 +76,6 @@ myst:
     <td>prev_next_augmenter</td>
   </tr>
   <tr>
-
-
-table.table.table-my-special-table {
-    border-collapse: collapse; 
-    border:1px solid #69899F;
-} 
-table.table.table-my-special-table td{
-    border:1px dotted #000000;
-    padding:5px;
-}
-table.table.table-my-special-table td:first-child{
-    border-left:0px solid #000000;
-}
-table.table.table-my-special-table th{
-   border:2px solid #69899F;
-   padding:5px;
-}
-
 
   </tr>
   <tr>
