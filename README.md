@@ -4,6 +4,14 @@ RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 
 ![Thumbnail](https://github.com/user-attachments/assets/6bab243d-a4b3-431a-8ac0-fe17336ab4de)
 
+![Discord](https://img.shields.io/discord/1204010535272587264) ![PyPI - Downloads](https://img.shields.io/pypi/dm/AutoRAG)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?style=flat-square&logo=linkedin)](https://www.linkedin.com/company/104375108/admin/dashboard/)
+![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/AutoRAG_HQ)
+[![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Follow-orange?style=flat-square&logo=huggingface)](https://huggingface.co/AutoRAG)
+[![Static Badge](https://img.shields.io/badge/Roadmap-5D3FD3)](https://github.com/orgs/Auto-RAG/projects/1/views/2)
+
+
+
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
 Making and evaluating all RAG modules is very time-consuming and hard to do.
@@ -453,7 +461,7 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 
 ## ☎️ FaQ
 
-🛣️ [Support plans & Roadmap](https://edai.notion.site/Support-plans-Roadmap-02ca7c97376340c393885855e2d99630?pvs=4)
+🛣️ [Roadmap](https://github.com/orgs/Auto-RAG/projects/1/views/2)
 
 💻 [Hardware Specs](https://edai.notion.site/Hardware-specs-28cefcf2a26246ffadc91e2f3dc3d61c?pvs=4)
 
