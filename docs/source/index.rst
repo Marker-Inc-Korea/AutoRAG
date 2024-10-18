@@ -57,12 +57,21 @@ Of course, you can use your own local LLM or embedding model with AutoRAG. Go to
 If you face any trouble? Check out our `troubleshooting <https://docs.auto-rag.com/troubleshooting.html>`__ guide.
 Also, feel free to ask your question at our `github issue <https://github.com/Marker-Inc-Korea/AutoRAG/issues>`__ or `Discord <https://discord.gg/P4DYXfmSAs>`__ channel.
 
+🗣️ Talk with Founders
+************************************
+* Jeffrey Kim : https://zcal.co/autorag-jeffrey/autorag-demo-15min
+* Bobb Kim : https://zcal.co/i/tcuLtmq5
 
 👨‍👩‍👧‍👦 Ecosystem
 ************************************
 * Github Repo : https://github.com/Marker-Inc-Korea/AutoRAG
+* HomePage : https://auto-rag.com
 * PyPI : https://pypi.org/project/AutoRAG/
 * Discord : https://discord.gg/P4DYXfmSAs
+* Roadmap : https://github.com/orgs/Auto-RAG/projects/1/views/2
+* HuggingFace : https://huggingface.co/AutoRAG
+* LinkedIn : https://www.linkedin.com/company/autorag/
+* X (Twitter) : https://twitter.com/AutoRAG_HQ
 
 
 .. toctree::
