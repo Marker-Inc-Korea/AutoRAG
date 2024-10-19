@@ -16,11 +16,11 @@ table.table.table-my-special-table {
     border:1px solid #69899F;
 } 
 table.table.table-my-special-table td{
-    border:1px dotted #000000;
+    border:1px dotted #69899F;
     padding:5px;
 }
 table.table.table-my-special-table td:first-child{
-    border-left:0px solid #000000;
+    border-left:0px solid #69899F;
 }
 table.table.table-my-special-table th{
    border:2px solid #69899F;
@@ -29,7 +29,7 @@ table.table.table-my-special-table th{
 
 </style>
 
-<table>
+<table class="table table-my-special-table">
   <tbody>
     <tr>
       <td>Nodes</td>
