@@ -1,7 +1,10 @@
 from abc import abstractmethod
 from typing import List, Tuple
 
+from llama_index.embeddings.openai import OpenAIEmbedding
+
 from autorag import embedding_models
+from autorag.utils.util import openai_truncate_by_token
 
 
 class BaseVectorStore:
@@ -36,5 +39,21 @@ class BaseVectorStore:
 		pass
 
 	@abstractmethod
+	async def is_exist(self, ids: List[str]) -> List[bool]:
+		"""
+		Check if the ids exist in the Vector DB.
+		"""
+		pass
+
+	@abstractmethod
 	async def delete(self, ids: List[str]):
 		pass
+
+	def truncated_inputs(self, inputs: List[str]) -> List[str]:
+		if isinstance(self.embedding, OpenAIEmbedding):
+			openai_embedding_limit = 8000
+			results = openai_truncate_by_token(
+				inputs, openai_embedding_limit, self.embedding.model_name
+			)
+			return results
+		return inputs

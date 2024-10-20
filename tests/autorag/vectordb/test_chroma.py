@@ -32,6 +32,11 @@ async def test_add_and_query_documents(chroma_ephemeral):
 	assert len(embeddings) == 1
 	assert len(embeddings[0]) == 768
 
+	exist = await chroma_ephemeral.is_exist([ids[0], "doc3"])
+	assert len(exist) == 2
+	assert exist[0] is True
+	assert exist[1] is False
+
 
 @pytest.mark.asyncio
 async def test_delete_documents(chroma_ephemeral):

@@ -64,6 +64,7 @@ class Chroma(BaseVectorStore):
 		)
 
 	async def add(self, ids: List[str], texts: List[str]):
+		texts = self.truncated_inputs(texts)
 		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
 		if isinstance(self.collection, AsyncCollection):
 			await self.collection.add(ids=ids, embeddings=text_embeddings)
@@ -80,9 +81,18 @@ class Chroma(BaseVectorStore):
 		fetch_embeddings = fetch_result["embeddings"]
 		return fetch_embeddings
 
+	async def is_exist(self, ids: List[str]) -> List[bool]:
+		if isinstance(self.collection, AsyncCollection):
+			fetched_result = await self.collection.get(ids, include=[])
+		else:
+			fetched_result = self.collection.get(ids, include=[])
+		existed_ids = fetched_result["ids"]
+		return list(map(lambda x: x in existed_ids, ids))
+
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
 	) -> Tuple[List[List[str]], List[List[float]]]:
+		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(queries)

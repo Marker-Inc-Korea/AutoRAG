@@ -144,6 +144,7 @@ def make_qa_with_existing_qa(
 	:param kwargs: The keyword arguments for qa_creation_func.
 	:return: QA dataset dataframe.
 	"""
+	raise DeprecationWarning("This function is deprecated.")
 	assert (
 		"query" in existing_query_df.columns
 	), "existing_query_df must have 'query' column."

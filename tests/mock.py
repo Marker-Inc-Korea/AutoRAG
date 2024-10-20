@@ -138,3 +138,9 @@ def mock_get_text_embedding_batch(
 	**kwargs: Any,
 ) -> List[Embedding]:
 	return [[random() for _ in range(1536)] for _ in range(len(texts))]
+
+
+async def mock_aget_text_embedding_batch(
+	self, texts: List[str], show_progress: bool = False, **kwargs: Any
+):
+	return [[random() for _ in range(1536)] for _ in range(len(texts))]
