@@ -15,6 +15,14 @@ def calculate_cosine_similarity(a, b):
 	return similarity
 
 
+def calculate_l2_distance(a, b):
+	return np.linalg.norm(a - b)
+
+
+def calculate_inner_product(a, b):
+	return np.dot(a, b)
+
+
 def autorag_metric(fields_to_check: List[str]):
 	def decorator_autorag_metric(func):
 		@functools.wraps(func)

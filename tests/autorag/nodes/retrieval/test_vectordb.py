@@ -12,9 +12,9 @@ import pytest
 from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag import embedding_models
 from autorag.nodes.retrieval import VectorDB
 from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
+from autorag.vectordb.chroma import Chroma
 from tests.autorag.nodes.retrieval.test_retrieval_base import (
 	queries,
 	corpus_df,
@@ -255,15 +255,28 @@ def test_long_ids_ingest(empty_chromadb):
 	vectordb_ingest(empty_chromadb, content_df, embedding_model)
 
 
-def test_get_id_scores(ingested_vectordb):
-	ids = ["doc2", "doc3", "doc4"]
-	embedding_model = MockEmbedding(1536)
-	queries = [
-		"다이노스 오! 권희동~ 엔씨 오 권희동 오 권희동 권희동 안타~",
-		"두산의 헨리 라모스 오오오 라모스 시원하게 화끈하게 날려버려라",
-	]
-	query_embeddings = embedding_model.get_text_embedding_batch(queries)
-	client = chromadb.Client()
-	scores = get_id_scores(ids, query_embeddings, ingested_vectordb, client)
-	assert len(scores) == 3
-	assert isinstance(scores[0], float)
+def test_get_id_scores():
+	query_embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]]
+	content_embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]]
+	similarity_metric = "cosine"
+
+	scores = get_id_scores(query_embeddings, content_embeddings, similarity_metric)
+
+	assert len(scores) == len(content_embeddings)
+	assert all(isinstance(score, float) for score in scores)
+	assert scores == pytest.approx([1.0, 1.0, 1.0])
+
+	similarity_metric = "l2"
+	scores = get_id_scores(query_embeddings, content_embeddings, similarity_metric)
+	assert len(scores) == len(content_embeddings)
+	assert all(isinstance(score, float) for score in scores)
+	assert scores == pytest.approx(
+		[1.0, 1.0, 1.0]
+	)  # Assuming zero distance for identical vectors
+
+	# Test for inner product
+	similarity_metric = "ip"
+	scores = get_id_scores(query_embeddings, content_embeddings, similarity_metric)
+	assert len(scores) == len(content_embeddings)
+	assert all(isinstance(score, float) for score in scores)
+	assert scores == pytest.approx([0.5, 1.22, 1.94])

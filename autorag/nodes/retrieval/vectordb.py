@@ -3,13 +3,18 @@ import os
 from typing import List, Tuple, Optional
 
 import chromadb
+import numpy as np
 import pandas as pd
-from chromadb import GetResult, QueryResult
 from chromadb.utils.batch_utils import create_batches
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag import embedding_models
+from autorag.evaluation.metric.util import (
+	calculate_l2_distance,
+	calculate_inner_product,
+	calculate_cosine_similarity,
+)
 from autorag.nodes.retrieval.base import evenly_distribute_passages, BaseRetrieval
 from autorag.utils import validate_corpus_dataset, cast_corpus_dataset
 from autorag.utils.util import (
@@ -20,9 +25,10 @@ from autorag.utils.util import (
 	result_to_dataframe,
 	pop_params,
 	fetch_contents,
-	apply_recursive,
 	empty_cuda_cache,
+	convert_inputs_to_list,
 )
+from autorag.vectordb.chroma import Chroma
 
 logger = logging.getLogger("AutoRAG")
 
@@ -51,8 +57,12 @@ class VectorDB(BaseRetrieval):
 			chroma_path
 		), f"chroma_path {chroma_path} does not exist. Please ingest first."
 
-		self.chroma_collection = load_chroma_collection(
-			db_path=chroma_path, collection_name=embedding_model
+		# TODO: load any vector store from YAML file at here
+		self.vector_store = Chroma(
+			embedding_model=embedding_model,
+			collection_name=embedding_model,
+			client_type="persistent",
+			path=chroma_path,
 		)
 
 		# init embedding model
@@ -63,7 +73,7 @@ class VectorDB(BaseRetrieval):
 			raise KeyError(f"embedding_model_str {embedding_model} does not exist.")
 
 	def __del__(self):
-		del self.chroma_collection
+		del self.vector_store
 		del self.embedding_model
 		empty_cuda_cache()
 		super().__del__()
@@ -102,8 +112,9 @@ class VectorDB(BaseRetrieval):
 		    It will be a length of queries. And each element has a length of top_k.
 		"""
 		# check if bm25_corpus is valid
+		# TODO: available at other Vector DB?
 		assert (
-			self.chroma_collection.count() > 0
+			self.vector_store.collection.count() > 0
 		), "collection must contain at least one document. Please check you ingested collection correctly."
 		# truncate queries and embedding execution here.
 		openai_embedding_limit = 8000
@@ -128,14 +139,19 @@ class VectorDB(BaseRetrieval):
 
 		# if ids are specified, fetch the ids score from Chroma
 		if ids is not None:
-			client = chromadb.Client()
+			content_embeddings = list(
+				map(lambda id_list: self.vector_store.fetch(id_list), ids)
+			)
+
 			score_result = list(
 				map(
-					lambda query_embedding_list, id_list: get_id_scores(
-						id_list, query_embedding_list, self.chroma_collection, client
+					lambda query_embedding_list, content_embedding_list: get_id_scores(
+						query_embedding_list,
+						content_embedding_list,
+						similarity_metric=self.vector_store.similarity_metric,
 					),
 					query_embeddings,
-					ids,
+					content_embeddings,
 				)
 			)
 			return ids, score_result
@@ -249,34 +265,40 @@ def run_query_embedding_batch(
 	return result
 
 
-def get_id_scores(
-	ids: List[str],
-	query_embeddings: List[List[float]],
-	collection: chromadb.Collection,
-	temp_client: chromadb.Client,
-) -> List[float]:
-	if len(ids) == 0 or ids is None or not bool(ids):
-		return []
+@convert_inputs_to_list
+def get_id_scores(  # To find the uncalculated score when fuse the scores for the hybrid retrieval
+	query_embeddings: List[
+		List[float]
+	],  # `queries` is input. This is one user input query.
+	content_embeddings: List[List[float]],
+	similarity_metric: str,
+) -> List[
+	float
+]:  # The most high scores among each query. The length of a result is the same as the contents length.
+	"""
+	Calculate the highest similarity scores between query embeddings and content embeddings.
 
-	id_results: GetResult = collection.get(ids, include=["embeddings"])
-	temp_collection = temp_client.create_collection(
-		name="temp", metadata={"hnsw:space": "cosine"}
-	)
-	temp_collection.add(ids=id_results["ids"], embeddings=id_results["embeddings"])
+	:param query_embeddings: A list of lists containing query embeddings.
+	:param content_embeddings: A list of lists containing content embeddings.
+	:param similarity_metric: The similarity metric to use ('l2', 'ip', or 'cosine').
+	:return: A list of the highest similarity scores for each content embedding.
+	"""
+	metric_func_dict = {
+		"l2": lambda x, y: 1 - calculate_l2_distance(x, y),
+		"ip": calculate_inner_product,
+		"cosine": calculate_cosine_similarity,
+	}
+	metric_func = metric_func_dict[similarity_metric]
+	query_embeddings = np.array(query_embeddings)
+	content_embeddings = np.array(content_embeddings)
 
-	query_result: QueryResult = temp_collection.query(
-		query_embeddings=query_embeddings, n_results=len(ids)
-	)
-	assert len(query_result["ids"]) == len(query_result["distances"])
-	id_scores_dict = {id_: [] for id_ in ids}
-	score_result = apply_recursive(lambda x: 1 - x, query_result["distances"])
-	for id_list, score_list in zip(query_result["ids"], score_result):
-		for id_ in list(id_scores_dict.keys()):
-			id_idx = id_list.index(id_)
-			id_scores_dict[id_].append(score_list[id_idx])
-	id_scores_pd = pd.DataFrame(id_scores_dict)
-	temp_client.delete_collection("temp")
-	return id_scores_pd.max(axis=0).tolist()
+	result = []
+	for content_embedding in content_embeddings:
+		scores = []
+		for query_embedding in query_embeddings:
+			scores.append(metric_func(query_embedding, content_embedding))
+		result.append(max(scores))
+	return result
 
 
 def load_chroma_collection(db_path: str, collection_name: str) -> chromadb.Collection:
