@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
-from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import VectorDB
