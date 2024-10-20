@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Sequence
+from typing import List, Optional, Dict, Tuple
 
 from chromadb import (
 	EphemeralClient,
@@ -6,23 +6,22 @@ from chromadb import (
 	DEFAULT_TENANT,
 	DEFAULT_DATABASE,
 	CloudClient,
-	HttpClient,
+	AsyncHttpClient,
 )
-from chromadb.api.types import IncludeEnum
+from chromadb.api.models.AsyncCollection import AsyncCollection
+from chromadb.api.types import IncludeEnum, QueryResult
 
+from autorag.utils.util import apply_recursive
 from autorag.vectordb.base import BaseVectorStore
-from langchain_chroma.vectorstores import Chroma as LangchainChroma
 
 
 class Chroma(BaseVectorStore):
-	support_algorithms = ["l2", "ip", "cosine"]
-
 	def __init__(
 		self,
 		embedding_model: str,
 		collection_name: str,
 		client_type: str = "persistent",
-		search_method: str = "cosine",
+		similarity_metric: str = "cosine",
 		path: str = None,
 		host: str = "localhost",
 		port: int = 8000,
@@ -34,12 +33,12 @@ class Chroma(BaseVectorStore):
 	):
 		super().__init__(embedding_model)
 		if client_type == "ephemeral":
-			client = EphemeralClient(tenant=tenant, database=database)
+			self.client = EphemeralClient(tenant=tenant, database=database)
 		elif client_type == "persistent":
 			assert path is not None, "path must be provided for persistent client"
-			client = PersistentClient(path=path, tenant=tenant, database=database)
+			self.client = PersistentClient(path=path, tenant=tenant, database=database)
 		elif client_type == "http":
-			client = HttpClient(
+			self.client = AsyncHttpClient(
 				host=host,
 				port=port,
 				ssl=ssl,
@@ -48,7 +47,7 @@ class Chroma(BaseVectorStore):
 				database=database,
 			)
 		elif client_type == "cloud":
-			client = CloudClient(
+			self.client = CloudClient(
 				tenant=tenant,
 				database=database,
 				api_key=api_key,
@@ -59,19 +58,49 @@ class Chroma(BaseVectorStore):
 				"supported client types are: ephemeral, persistent, http, cloud"
 			)
 
-		assert (
-			search_method in self.support_algorithms
-		), f"search method {search_method} is not supported"
-		self.langchain_vector_store = LangchainChroma(
-			collection_name=collection_name,
-			collection_metadata={"hnsw:space": search_method},
-			client=client,
-			embedding_function=self.embedding_function,
-			persist_directory=path,
+		self.collection = self.client.get_or_create_collection(
+			name=collection_name,
+			metadata={"hnsw:space": similarity_metric},
 		)
 
-	def fetch(self, ids: Sequence[str]) -> List[str]:
-		collection = self.langchain_vector_store._collection
-		fetch_result = collection.get(ids, include=[IncludeEnum.documents])
-		fetch_documents = fetch_result["documents"]
-		return fetch_documents
+	async def add(self, ids: List[str], texts: List[str]):
+		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
+		if isinstance(self.collection, AsyncCollection):
+			await self.collection.add(ids=ids, embeddings=text_embeddings)
+		else:
+			self.collection.add(ids=ids, embeddings=text_embeddings)
+
+	async def fetch(self, ids: List[str]) -> List[List[float]]:
+		if isinstance(self.collection, AsyncCollection):
+			fetch_result = await self.collection.get(
+				ids, include=[IncludeEnum.embeddings]
+			)
+		else:
+			fetch_result = self.collection.get(ids, include=[IncludeEnum.embeddings])
+		fetch_embeddings = fetch_result["embeddings"]
+		return fetch_embeddings
+
+	async def query(
+		self, queries: List[str], top_k: int, **kwargs
+	) -> Tuple[List[List[str]], List[List[float]]]:
+		query_embeddings: List[
+			List[float]
+		] = await self.embedding.aget_text_embedding_batch(queries)
+		if isinstance(self.collection, AsyncCollection):
+			query_result: QueryResult = await self.collection.query(
+				query_embeddings=query_embeddings, n_results=top_k
+			)
+		else:
+			query_result: QueryResult = self.collection.query(
+				query_embeddings=query_embeddings, n_results=top_k
+			)
+		ids = query_result["ids"]
+		scores = query_result["distances"]
+		scores = apply_recursive(lambda x: 1 - x, scores)
+		return ids, scores
+
+	async def delete(self, ids: List[str]):
+		if isinstance(self.collection, AsyncCollection):
+			await self.collection.delete(ids)
+		else:
+			self.collection.delete(ids)
