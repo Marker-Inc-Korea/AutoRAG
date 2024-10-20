@@ -370,6 +370,24 @@ def flatten_apply(
 	return df.groupby(level=0, sort=False)["result"].apply(list).tolist()
 
 
+async def aflatten_apply(
+	func: Callable, nested_list: List[List[Any]], **kwargs
+) -> List[List[Any]]:
+	"""
+	This function flattens the input list and applies the function to the elements.
+	After that, it reconstructs the list to the original shape.
+	Its speciality is that the first dimension length of the list can be different from each other.
+
+	:param func: The function that applies to the flattened list.
+	:param nested_list: The nested list to be flattened.
+	:return: The list that is reconstructed after applying the function.
+	"""
+	df = pd.DataFrame({"col1": nested_list})
+	df = df.explode("col1")
+	df["result"] = await func(df["col1"].tolist(), **kwargs)
+	return df.groupby(level=0, sort=False)["result"].apply(list).tolist()
+
+
 def sort_by_scores(row, reverse=True):
 	"""
 	Sorts each row by 'scores' column.
