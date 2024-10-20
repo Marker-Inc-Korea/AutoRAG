@@ -9,7 +9,6 @@ from typing import List, Dict, Optional
 
 import chromadb
 import pandas as pd
-import yaml
 
 from autorag import embedding_models
 from autorag.node_line import run_node_line
@@ -29,10 +28,9 @@ from autorag.utils import (
 )
 from autorag.utils.util import (
 	load_summary_file,
-	convert_string_to_tuple_in_dict,
-	convert_env_in_dict,
 	explode,
 	empty_cuda_cache,
+	load_yaml_config,
 )
 
 logger = logging.getLogger("AutoRAG")
@@ -284,16 +282,7 @@ class Evaluator:
 
 	@staticmethod
 	def _load_node_lines(yaml_path: str) -> Dict[str, List[Node]]:
-		if not os.path.exists(yaml_path):
-			raise ValueError(f"YAML file {yaml_path} does not exist.")
-		with open(yaml_path, "r", encoding="utf-8") as stream:
-			try:
-				yaml_dict = yaml.safe_load(stream)
-			except yaml.YAMLError as exc:
-				raise ValueError(f"YAML file {yaml_path} could not be loaded.") from exc
-
-		yaml_dict = convert_string_to_tuple_in_dict(yaml_dict)
-		yaml_dict = convert_env_in_dict(yaml_dict)
+		yaml_dict = load_yaml_config(yaml_path)
 		node_lines = yaml_dict["node_lines"]
 		node_line_dict = {}
 		for node_line in node_lines:

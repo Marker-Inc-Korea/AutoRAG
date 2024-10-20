@@ -18,6 +18,7 @@ import pandas as pd
 import tiktoken
 import unicodedata
 
+import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
@@ -668,3 +669,24 @@ def empty_cuda_cache():
 			torch.cuda.empty_cache()
 	except ImportError:
 		pass
+
+
+def load_yaml_config(yaml_path: str) -> Dict:
+	"""
+	Load a YAML configuration file for AutoRAG.
+	It contains safe loading, converting string to tuple, and insert environment variables.
+
+	:param yaml_path: The path of the YAML configuration file.
+	:return: The loaded configuration dictionary.
+	"""
+	if not os.path.exists(yaml_path):
+		raise ValueError(f"YAML file {yaml_path} does not exist.")
+	with open(yaml_path, "r", encoding="utf-8") as stream:
+		try:
+			yaml_dict = yaml.safe_load(stream)
+		except yaml.YAMLError as exc:
+			raise ValueError(f"YAML file {yaml_path} could not be loaded.") from exc
+
+	yaml_dict = convert_string_to_tuple_in_dict(yaml_dict)
+	yaml_dict = convert_env_in_dict(yaml_dict)
+	return yaml_dict
