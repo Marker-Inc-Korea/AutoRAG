@@ -12,6 +12,7 @@ evaluate  # for meteor and other scores
 rouge_score  # for rouge score
 rich  # for pretty logging
 chromadb>=0.5.0 # for vectordb retrieval
+langchain-chroma
 click  # for cli
 cohere>=5.8.0 # for cohere services
 tokenlog>=0.0.2 # for token logging
