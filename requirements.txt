@@ -19,7 +19,7 @@ aiohttp # for async http requests
 voyageai # for voyageai reranker
 mixedbread-ai # for mixedbread-ai reranker
 llama-index-llms-bedrock
-sklearn
+scikit-learn
 
 ### API server ###
 quart
