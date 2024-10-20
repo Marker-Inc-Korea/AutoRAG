@@ -68,7 +68,7 @@ class VectorDB(BaseRetrieval):
 
 		# init embedding model
 		if embedding_model in embedding_models:
-			self.embedding_model = embedding_models[embedding_model]()
+			self.embedding_model = self.vector_store.embedding
 		else:
 			logger.error(f"embedding_model_str {embedding_model} does not exist.")
 			raise KeyError(f"embedding_model_str {embedding_model} does not exist.")
