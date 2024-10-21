@@ -2,13 +2,11 @@ import logging
 import os
 from typing import List, Tuple, Optional
 
-import chromadb
 import numpy as np
 import pandas as pd
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag import embedding_models
 from autorag.evaluation.metric.util import (
 	calculate_l2_distance,
 	calculate_inner_product,
@@ -28,50 +26,32 @@ from autorag.utils.util import (
 	convert_inputs_to_list,
 	make_batch,
 )
+from autorag.vectordb import load_vectordb_from_yaml
 from autorag.vectordb.base import BaseVectorStore
-from autorag.vectordb.chroma import Chroma
 
 logger = logging.getLogger("AutoRAG")
 
 
 class VectorDB(BaseRetrieval):
-	def __init__(self, project_dir: str, embedding_model: str, **kwargs):
+	def __init__(self, project_dir: str, vectordb: str = "default", **kwargs):
 		"""
 		Initialize VectorDB retrieval node.
 
 		:param project_dir: The project directory path.
-		:param embedding_model: The embedding model name.
-			It will initialize from the autorag.embedding_models dictionary.
-			You can add your own models to the dictionary.
-			For more information, see https://docs.auto-rag.com/local_model.html#configure-the-embedding-model
+		:param vectordb: The vectordb name.
+			You must configure the vectordb name in the config.yaml file.
+			If you don't configure, it uses the default vectordb.
 		:param kwargs: The optional arguments.
 			Not affected in the init method.
 		"""
 		super().__init__(project_dir)
 
-		# init chroma collection
-		chroma_path = os.path.join(self.resources_dir, "chroma")
-		assert (
-			chroma_path is not None
-		), "chroma_path must be specified for using vectordb retrieval."
-		assert os.path.exists(
-			chroma_path
-		), f"chroma_path {chroma_path} does not exist. Please ingest first."
-
-		# TODO: load any vector store from YAML file at here
-		self.vector_store = Chroma(
-			embedding_model=embedding_model,
-			collection_name=embedding_model,
-			client_type="persistent",
-			path=chroma_path,
+		vectordb_config_path = os.path.join(self.resources_dir, "vectordb.yaml")
+		self.vector_store = load_vectordb_from_yaml(
+			vectordb_config_path, vectordb, project_dir
 		)
 
-		# init embedding model
-		if embedding_model in embedding_models:
-			self.embedding_model = self.vector_store.embedding
-		else:
-			logger.error(f"embedding_model_str {embedding_model} does not exist.")
-			raise KeyError(f"embedding_model_str {embedding_model} does not exist.")
+		self.embedding_model = self.vector_store.embedding
 
 	def __del__(self):
 		del self.vector_store
@@ -117,6 +97,25 @@ class VectorDB(BaseRetrieval):
 		assert (
 			self.vector_store.collection.count() > 0
 		), "collection must contain at least one document. Please check you ingested collection correctly."
+
+		# if ids are specified, fetch the ids score from Chroma
+		if ids is not None:
+			return self.__get_ids_scores(queries, ids, embedding_batch)
+
+		# run async vector_db_pure function
+		tasks = [
+			vectordb_pure(query_list, top_k, self.vector_store)
+			for query_list in queries
+		]
+		loop = get_event_loop()
+		results = loop.run_until_complete(
+			process_batch(tasks, batch_size=embedding_batch)
+		)
+		id_result = list(map(lambda x: x[0], results))
+		score_result = list(map(lambda x: x[1], results))
+		return id_result, score_result
+
+	def __get_ids_scores(self, queries, ids, embedding_batch: int):
 		# truncate queries and embedding execution here.
 		openai_embedding_limit = 8000
 		if isinstance(self.embedding_model, OpenAIEmbedding):
@@ -131,54 +130,39 @@ class VectorDB(BaseRetrieval):
 				)
 			)
 
-		# if ids are specified, fetch the ids score from Chroma
-		if ids is not None:
-			query_embeddings = flatten_apply(
-				run_query_embedding_batch,
-				queries,
-				embedding_model=self.embedding_model,
-				batch_size=embedding_batch,
-			)
-
-			loop = get_event_loop()
-
-			async def run_fetch(ids):
-				final_result = []
-				for id_list in ids:
-					if len(id_list) == 0:
-						final_result.append([])
-					else:
-						result = await self.vector_store.fetch(id_list)
-						final_result.append(result)
-				return final_result
-
-			content_embeddings = loop.run_until_complete(run_fetch(ids))
-
-			score_result = list(
-				map(
-					lambda query_embedding_list, content_embedding_list: get_id_scores(
-						query_embedding_list,
-						content_embedding_list,
-						similarity_metric=self.vector_store.similarity_metric,
-					),
-					query_embeddings,
-					content_embeddings,
-				)
-			)
-			return ids, score_result
-
-		# run async vector_db_pure function
-		tasks = [
-			vectordb_pure(query_list, top_k, self.vector_store)
-			for query_list in queries
-		]
-		loop = get_event_loop()
-		results = loop.run_until_complete(
-			process_batch(tasks, batch_size=embedding_batch)
+		query_embeddings = flatten_apply(
+			run_query_embedding_batch,
+			queries,
+			embedding_model=self.embedding_model,
+			batch_size=embedding_batch,
 		)
-		id_result = list(map(lambda x: x[0], results))
-		score_result = list(map(lambda x: x[1], results))
-		return id_result, score_result
+
+		loop = get_event_loop()
+
+		async def run_fetch(ids):
+			final_result = []
+			for id_list in ids:
+				if len(id_list) == 0:
+					final_result.append([])
+				else:
+					result = await self.vector_store.fetch(id_list)
+					final_result.append(result)
+			return final_result
+
+		content_embeddings = loop.run_until_complete(run_fetch(ids))
+
+		score_result = list(
+			map(
+				lambda query_embedding_list, content_embedding_list: get_id_scores(
+					query_embedding_list,
+					content_embedding_list,
+					similarity_metric=self.vector_store.similarity_metric,
+				),
+				query_embeddings,
+				content_embeddings,
+			)
+		)
+		return ids, score_result
 
 
 async def vectordb_pure(
@@ -214,12 +198,12 @@ async def vectordb_ingest(
 	embedding_batch: int = 128,
 ):
 	"""
-	Ingest given corpus data to the chromadb collection.
+	Ingest given corpus data to the vectordb.
 	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8000 tokens.
 	Plus, when the corpus content is empty (whitespace), it will be ignored.
 	And if there is a document id that already exists in the collection, it will be ignored.
 
-	:param vectordb: The vector store instance that you want to ingest.
+	:param vectordb: A vector store instance that you want to ingest.
 	:param corpus_data: The corpus data that contains doc_id and contents columns.
 	:param embedding_batch: The number of chunks that will be processed in parallel.
 	"""
@@ -286,9 +270,3 @@ def get_id_scores(  # To find the uncalculated score when fuse the scores for th
 			)
 		result.append(max(scores))
 	return result
-
-
-def load_chroma_collection(db_path: str, collection_name: str) -> chromadb.Collection:
-	db = chromadb.PersistentClient(path=db_path)
-	collection = db.get_collection(name=collection_name)
-	return collection

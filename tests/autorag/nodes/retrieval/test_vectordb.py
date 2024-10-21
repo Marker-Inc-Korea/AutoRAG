@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import VectorDB
@@ -62,12 +63,25 @@ def project_dir_for_vectordb_node():
 		os.makedirs(os.path.join(test_project_dir, "resources"))
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
 		os.makedirs(chroma_path)
+
+		chroma_config = {
+			"client_type": "persistent",
+			"path": chroma_path,
+			"embedding_model": "mock",
+			"collection_name": "mock",
+			"similarity_metric": "cosine",
+		}
+		vectordb_config_path = os.path.join(
+			test_project_dir, "resources", "vectordb.yaml"
+		)
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump(
+				{"vectordb": [{"name": "mock", "db_type": "chroma", **chroma_config}]},
+				f,
+			)
+
 		chroma = Chroma(
-			client_type="persistent",
-			path=chroma_path,
-			embedding_model="mock",
-			collection_name="mock",
-			similarity_metric="cosine",
+			**chroma_config,
 		)
 		os.makedirs(os.path.join(test_project_dir, "data"))
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
@@ -85,13 +99,23 @@ def project_dir_for_vectordb_node_from_sample_project():
 
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
 		os.makedirs(chroma_path)
-		chroma = Chroma(
-			client_type="persistent",
-			path=chroma_path,
-			embedding_model="mock",
-			collection_name="mock",
-			similarity_metric="cosine",
+		chroma_config = {
+			"client_type": "persistent",
+			"path": chroma_path,
+			"embedding_model": "mock",
+			"collection_name": "mock",
+			"similarity_metric": "cosine",
+		}
+		vectordb_config_path = os.path.join(
+			test_project_dir, "resources", "vectordb.yaml"
 		)
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump(
+				{"vectordb": [{"name": "mock", "db_type": "chroma", **chroma_config}]},
+				f,
+			)
+
+		chroma = Chroma(**chroma_config)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
 		local_corpus_df = pd.read_parquet(corpus_path, engine="pyarrow")
 		asyncio.run(vectordb_ingest(chroma, local_corpus_df))
@@ -102,7 +126,8 @@ def project_dir_for_vectordb_node_from_sample_project():
 @pytest.fixture
 def vectordb_instance(project_dir_for_vectordb_node):
 	vectordb = VectorDB(
-		project_dir=project_dir_for_vectordb_node, embedding_model="mock"
+		project_dir=project_dir_for_vectordb_node,
+		vectordb="mock",
 	)
 	yield vectordb
 
@@ -147,7 +172,7 @@ def test_vectordb_node(project_dir_for_vectordb_node_from_sample_project):
 		project_dir=project_dir_for_vectordb_node_from_sample_project,
 		previous_result=previous_result,
 		top_k=4,
-		embedding_model="mock",
+		vectordb="mock",
 	)
 	base_retrieval_node_test(result_df)
 
@@ -157,7 +182,7 @@ def test_vectordb_node_ids(project_dir_for_vectordb_node_from_sample_project):
 		project_dir=project_dir_for_vectordb_node_from_sample_project,
 		previous_result=previous_result,
 		top_k=4,
-		embedding_model="mock",
+		vectordb="mock",
 		ids=searchable_input_ids,
 	)
 	contents = result_df["retrieved_contents"].tolist()

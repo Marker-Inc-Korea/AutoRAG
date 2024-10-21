@@ -9,6 +9,7 @@ from typing import List, Dict, Optional
 
 import chromadb
 import pandas as pd
+import yaml
 
 from autorag import embedding_models
 from autorag.node_line import run_node_line
@@ -121,8 +122,18 @@ class Evaluator:
 		shutil.copy(
 			yaml_path, os.path.join(self.project_dir, trial_name, "config.yaml")
 		)
+		vectordb_config_path = os.path.join(
+			self.project_dir, "resources", "vectordb.yaml"
+		)
+		yaml_dict = load_yaml_config(yaml_path)
+		vectordb = yaml_dict.get("vectordb", [])
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump({"vectordb": vectordb}, f)
+
 		node_lines = self._load_node_lines(yaml_path)
-		self.__embed(node_lines)
+		self.__embed(
+			node_lines
+		)  # TODO: Change the ingest logic for external vector DBs
 
 		trial_summary_df = pd.DataFrame(
 			columns=[

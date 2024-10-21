@@ -22,7 +22,7 @@ node_lines:
         - module_type: ${BM25} # for testing env variable
           bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
         - module_type: vectordb
-          embedding_model: [chroma_default, chroma_large]
+          vectordb: [chroma_default, chroma_large]
           embedding_batch: 50
         - module_type: hybrid_rrf
           weight_range: (4, 30)
