@@ -18,6 +18,7 @@ import pandas as pd
 import tiktoken
 import unicodedata
 
+import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 from pydantic import BaseModel as BM
 from pydantic.v1 import BaseModel
@@ -370,6 +371,24 @@ def flatten_apply(
 	return df.groupby(level=0, sort=False)["result"].apply(list).tolist()
 
 
+async def aflatten_apply(
+	func: Callable, nested_list: List[List[Any]], **kwargs
+) -> List[List[Any]]:
+	"""
+	This function flattens the input list and applies the function to the elements.
+	After that, it reconstructs the list to the original shape.
+	Its speciality is that the first dimension length of the list can be different from each other.
+
+	:param func: The function that applies to the flattened list.
+	:param nested_list: The nested list to be flattened.
+	:return: The list that is reconstructed after applying the function.
+	"""
+	df = pd.DataFrame({"col1": nested_list})
+	df = df.explode("col1")
+	df["result"] = await func(df["col1"].tolist(), **kwargs)
+	return df.groupby(level=0, sort=False)["result"].apply(list).tolist()
+
+
 def sort_by_scores(row, reverse=True):
 	"""
 	Sorts each row by 'scores' column.
@@ -650,3 +669,24 @@ def empty_cuda_cache():
 			torch.cuda.empty_cache()
 	except ImportError:
 		pass
+
+
+def load_yaml_config(yaml_path: str) -> Dict:
+	"""
+	Load a YAML configuration file for AutoRAG.
+	It contains safe loading, converting string to tuple, and insert environment variables.
+
+	:param yaml_path: The path of the YAML configuration file.
+	:return: The loaded configuration dictionary.
+	"""
+	if not os.path.exists(yaml_path):
+		raise ValueError(f"YAML file {yaml_path} does not exist.")
+	with open(yaml_path, "r", encoding="utf-8") as stream:
+		try:
+			yaml_dict = yaml.safe_load(stream)
+		except yaml.YAMLError as exc:
+			raise ValueError(f"YAML file {yaml_path} could not be loaded.") from exc
+
+	yaml_dict = convert_string_to_tuple_in_dict(yaml_dict)
+	yaml_dict = convert_env_in_dict(yaml_dict)
+	return yaml_dict

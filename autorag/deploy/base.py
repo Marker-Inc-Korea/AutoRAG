@@ -8,8 +8,7 @@ import pandas as pd
 import yaml
 
 from autorag.support import get_support_modules
-from autorag.utils.util import load_summary_file
-
+from autorag.utils.util import load_summary_file, load_yaml_config
 
 logger = logging.getLogger("AutoRAG")
 
@@ -124,8 +123,6 @@ class BaseRunner:
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		self.config = config
 		project_dir = os.getcwd() if project_dir is None else project_dir
-		# self.app = Flask(__name__)
-		# self.__add_api_route()
 
 		# init modules
 		node_lines = deepcopy(self.config["node_lines"])
@@ -159,12 +156,7 @@ class BaseRunner:
 			Default is the current directory.
 		:return: Initialized Runner.
 		"""
-		with open(yaml_path, "r") as f:
-			try:
-				config = yaml.safe_load(f)
-			except yaml.YAMLError as exc:
-				logger.error(exc)
-				raise exc
+		config = load_yaml_config(yaml_path)
 		return cls(config, project_dir=project_dir)
 
 	@classmethod

@@ -29,10 +29,9 @@ from autorag.utils import (
 )
 from autorag.utils.util import (
 	load_summary_file,
-	convert_string_to_tuple_in_dict,
-	convert_env_in_dict,
 	explode,
 	empty_cuda_cache,
+	load_yaml_config,
 )
 
 logger = logging.getLogger("AutoRAG")
@@ -85,6 +84,7 @@ class Evaluator:
 		self.project_dir = project_dir if project_dir is not None else os.getcwd()
 		if not os.path.exists(self.project_dir):
 			os.makedirs(self.project_dir)
+		os.environ["PROJECT_DIR"] = self.project_dir
 
 		validate_qa_from_corpus_dataset(self.qa_data, self.corpus_data)
 
@@ -122,8 +122,18 @@ class Evaluator:
 		shutil.copy(
 			yaml_path, os.path.join(self.project_dir, trial_name, "config.yaml")
 		)
+		vectordb_config_path = os.path.join(
+			self.project_dir, "resources", "vectordb.yaml"
+		)
+		yaml_dict = load_yaml_config(yaml_path)
+		vectordb = yaml_dict.get("vectordb", [])
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump({"vectordb": vectordb}, f)
+
 		node_lines = self._load_node_lines(yaml_path)
-		self.__embed(node_lines)
+		self.__embed(
+			node_lines
+		)  # TODO: Change the ingest logic for external vector DBs
 
 		trial_summary_df = pd.DataFrame(
 			columns=[
@@ -284,16 +294,7 @@ class Evaluator:
 
 	@staticmethod
 	def _load_node_lines(yaml_path: str) -> Dict[str, List[Node]]:
-		if not os.path.exists(yaml_path):
-			raise ValueError(f"YAML file {yaml_path} does not exist.")
-		with open(yaml_path, "r", encoding="utf-8") as stream:
-			try:
-				yaml_dict = yaml.safe_load(stream)
-			except yaml.YAMLError as exc:
-				raise ValueError(f"YAML file {yaml_path} could not be loaded.") from exc
-
-		yaml_dict = convert_string_to_tuple_in_dict(yaml_dict)
-		yaml_dict = convert_env_in_dict(yaml_dict)
+		yaml_dict = load_yaml_config(yaml_path)
 		node_lines = yaml_dict["node_lines"]
 		node_line_dict = {}
 		for node_line in node_lines:
