@@ -83,6 +83,7 @@ class Evaluator:
 		self.project_dir = project_dir if project_dir is not None else os.getcwd()
 		if not os.path.exists(self.project_dir):
 			os.makedirs(self.project_dir)
+		os.environ["PROJECT_DIR"] = self.project_dir
 
 		validate_qa_from_corpus_dataset(self.qa_data, self.corpus_data)
 
