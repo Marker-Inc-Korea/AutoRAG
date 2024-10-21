@@ -28,7 +28,11 @@ class BasePromptMaker(BaseModule, metaclass=ABCMeta):
 		assert (
 			"retrieved_contents" in previous_result.columns
 		), "previous_result must have retrieved_contents column."
+		assert (
+			"chat_summary" in previous_result.columns
+		)
 		query = previous_result["query"].tolist()
 		retrieved_contents = previous_result["retrieved_contents"].tolist()
 		prompt = kwargs.pop("prompt")
-		return query, retrieved_contents, prompt
+		chat_summary = previous_result["chat_summary"].tolist()
+		return query, retrieved_contents, chat_summary, prompt

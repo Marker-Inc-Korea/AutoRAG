@@ -1,0 +1,103 @@
+node_lines:
+- node_line_name: pre_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: query_expansion
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        speed_threshold: 10
+        top_k: 50
+        retrieval_modules:
+          - module_type: bm25
+          - module_type: vectordb
+            embedding_model: openai_embed_3_large
+      modules:
+        - module_type: pass_query_expansion
+        - module_type: query_decompose
+          generator_modules:
+            - module_type: openai_llm
+              llm: [gpt-4o]
+        - module_type: hyde
+          generator_modules:
+            - module_type: openai_llm
+              llm: [gpt-4o]
+              max_token: 64
+        - module_type: multi_query_expansion
+          generator_modules:
+            - module_type: openai_llm
+              llm: [gpt-4o]
+              temperature: [ 0.2, 1.0 ]
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision,
+                   retrieval_ndcg, retrieval_map, retrieval_mrr ]
+        speed_threshold: 10
+      top_k: [7,10,20,30]
+      modules:
+        - module_type: bm25
+        - module_type: vectordb
+          embedding_model: openai_embed_3_large
+        - module_type: hybrid_rrf
+          rrf_k: [1, 3, 5, 10]
+        - module_type: hybrid_cc
+          normalize_method: [ mm, tmm, z, dbsf ]
+          weight_range: (0.0, 1.0)
+          test_weight_size: 51
+    - node_type: passage_reranker
+      strategy:
+        metrics: [ retrieval_f1, retrieval_recall, retrieval_precision,
+                   retrieval_ndcg, retrieval_map, retrieval_mrr ]
+        speed_threshold: 10
+      top_k: 15
+      modules:
+        - module_type: pass_reranker
+        - module_type: tart
+        - module_type: upr
+        - module_type: rankgpt
+        - module_type: colbert_reranker
+        - module_type: sentence_transformer_reranker
+        - module_type: flag_embedding_reranker
+          batch: 16
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics:
+          - metric_name: bleu
+          - metric_name: meteor
+          - metric_name: rouge
+          - metric_name: sem_score
+            embedding_model: openai_embed_3_large
+          - metric_name: g_eval
+        spopenai_llmeed_threshold: 10
+        generator_modules:
+          - module_type:
+            llm: [gpt-4o]
+      modules:
+        - module_type: fstring
+          prompt: ["Give me a contextually relevant answer to the following question with the provided retrieved contents. Query: {query} \n\n {summary} \n\n Retrieved Contents: {retrieved_contents}",
+                   "Question: {query} \n\n {summary} \n\n Something to read: {retrieved_contents} \n What's your answer?"]
+        - module_type: long_context_reorder
+          prompt: ["Give me a contextually relevant answer to the following question with the provided retrieved contents. Query: {query} \n\n {summary} \n\n Retrieved Contents: {retrieved_contents}",
+                    "Question: {query} \n {summary} \n Relevant Knowledge: {retrieved_contents} \n What's your answer?" ]
+    - node_type: generator
+      strategy:
+        metrics:
+           - metric_name: rouge
+           - metric_name: bleu
+           - metric_name: meteor
+           - metric_name: sem_score
+             embedding_model: openai_embed_3_large
+           - metric_name: g_eval
+             metrics: [consistency, fluency, relevance, coherence]
+             model: gpt-4
+           - metric_name: bert_score
+             lang: en
+             batch: 32
+        speed_threshold: 10
+        token_threshold: 4000
+      modules:
+        - module_type: openai_llm
+          llm: [gpt-4, gpt-4o]
+          temperature: [0.1, 1.0]

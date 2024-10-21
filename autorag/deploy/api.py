@@ -23,6 +23,7 @@ VERSION_PATH = os.path.join(root_dir, "VERSION")
 
 class QueryRequest(BaseModel):
 	query: str
+	summary: Optional[str] = ""
 	result_column: Optional[str] = "generated_texts"
 
 
@@ -73,6 +74,7 @@ class ApiRunner(BaseRunner):
 				{
 					"qid": str(uuid.uuid4()),
 					"query": [data.query],
+					"chat_summary": [data.summary],
 					"retrieval_gt": [[]],
 					"generation_gt": [""],
 				}
@@ -113,6 +115,7 @@ class ApiRunner(BaseRunner):
 					{
 						"qid": str(uuid.uuid4()),
 						"query": [data.query],
+						"chat_summary": [data.summary],
 						"retrieval_gt": [[]],
 						"generation_gt": [""],
 					}
