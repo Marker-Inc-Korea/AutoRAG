@@ -166,7 +166,7 @@ class BaseRunner:
 		Must already be evaluated using Evaluator class.
 		It sets the project_dir as the parent directory of the trial folder.
 
-		:param `trial_path: The path of the trial folder.
+		:param trial_path: The path of the trial folder.
 		:return: Initialized Runner.
 		"""
 		config = extract_best_config(trial_path)
