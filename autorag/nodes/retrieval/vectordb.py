@@ -242,7 +242,6 @@ async def filter_exist_ids_from_retrieval_gt(
 async def vectordb_ingest(
 	vectordb: BaseVectorStore,
 	corpus_data: pd.DataFrame,
-	embedding_batch: int = 128,
 ):
 	"""
 	Ingest given corpus data to the vectordb.
@@ -250,10 +249,10 @@ async def vectordb_ingest(
 	Plus, when the corpus content is empty (whitespace), it will be ignored.
 	And if there is a document id that already exists in the collection, it will be ignored.
 
-	:param vectordb: A vector store instance that you want to ingest.
+	:param vectordb: A vector stores instance that you want to ingest.
 	:param corpus_data: The corpus data that contains doc_id and contents columns.
-	:param embedding_batch: The number of chunks that will be processed in parallel.
 	"""
+	embedding_batch = vectordb.embedding_batch
 	if not corpus_data.empty:
 		new_contents = corpus_data["contents"].tolist()
 		new_ids = corpus_data["doc_id"].tolist()

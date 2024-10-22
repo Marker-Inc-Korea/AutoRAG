@@ -17,7 +17,7 @@ node_lines:
           - module_type: bm25
             bm25_tokenizer: [ porter_stemmer, ko_kiwi, space, gpt2, ko_okt, ko_kkma, sudachipy ]
           - module_type: vectordb
-            vectordb: default
+            vectordb: chroma_large
       modules:
         - module_type: pass_query_expansion
         - module_type: query_decompose
@@ -44,7 +44,7 @@ node_lines:
       modules:
         - module_type: bm25
         - module_type: vectordb
-          vectordb: [default, chroma_large]
+          vectordb: chroma_large
           embedding_batch: 256
         - module_type: hybrid_rrf
           weight_range: (4,80)
