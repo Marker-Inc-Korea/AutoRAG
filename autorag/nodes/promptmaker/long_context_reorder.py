@@ -13,14 +13,16 @@ logger = logging.getLogger("AutoRAG")
 class LongContextReorder(BasePromptMaker):
 	@result_to_dataframe(["prompts"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
-		query, retrieved_contents, prompt = self.cast_to_run(
+		query, retrieved_contents, chat_summary,prompt = self.cast_to_run(
 			previous_result, *args, **kwargs
 		)
+		
 		assert (
 			"retrieve_scores" in previous_result.columns
 		), "previous_result must have retrieve_scores column."
 		retrieve_scores = previous_result["retrieve_scores"].tolist()
-		return self._pure(prompt, query, retrieved_contents, retrieve_scores)
+		
+		return self._pure(prompt, query, retrieved_contents, retrieve_scores,chat_summary)
 
 	def _pure(
 		self,
@@ -28,6 +30,7 @@ class LongContextReorder(BasePromptMaker):
 		queries: List[str],
 		retrieved_contents: List[List[str]],
 		retrieve_scores: List[List[float]],
+		chat_summary: str#List[str]
 	) -> List[str]:
 		"""
 		Models struggle to access significant details found
@@ -58,11 +61,13 @@ class LongContextReorder(BasePromptMaker):
 			_query: str,
 			_retrieved_contents: List[str],
 			_retrieve_scores: List[float],
+			_chat_summary: str
 		) -> str:
 			if isinstance(_retrieved_contents, np.ndarray):
 				_retrieved_contents = _retrieved_contents.tolist()
 			if not len(_retrieved_contents) == len(_retrieve_scores):
 				logger.info("If you use a summarizer, the reorder will not proceed.")
+				
 				return _prompt.format(
 					query=_query, retrieved_contents="\n\n".join(_retrieved_contents)
 				)
@@ -73,11 +78,15 @@ class LongContextReorder(BasePromptMaker):
 			content_result, score_result = zip(*sorted_content_scores)
 			_retrieved_contents.append(content_result[0])
 			contents_str = "\n\n".join(_retrieved_contents)
-			return _prompt.format(query=_query, retrieved_contents=contents_str)
+			
+			return _prompt.format(query=_query, retrieved_contents=contents_str,chat_summary=_chat_summary)
+		
+	
 
+		
 		return list(
 			map(
-				lambda x: long_context_reorder_row(prompt, x[0], x[1], x[2]),
-				zip(queries, retrieved_contents, retrieve_scores),
+				lambda x: long_context_reorder_row(prompt, x[0], x[1], x[2],x[3]),
+				zip(queries, retrieved_contents, retrieve_scores,chat_summary),
 			)
 		)

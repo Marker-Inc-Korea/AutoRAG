@@ -16,6 +16,9 @@ paths:
                 query:
                   type: string
                   description: The query string
+                chat_summary:
+                  type: string
+                  description: The summary of the chat 
                 result_column:
                   type: string
                   description: The result column name

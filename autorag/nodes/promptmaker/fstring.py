@@ -15,7 +15,7 @@ class Fstring(BasePromptMaker):
 		return self._pure(prompt, query, retrieved_contents, chat_summary)
 
 	def _pure(
-		self, prompt: str, queries: List[str], retrieved_contents: List[List[str]], chat_summary: List[str]
+		self, prompt: str, queries: List[str], retrieved_contents: List[List[str]], chat_summary: str
 	) -> List[str]:
 		"""
 		Make a prompt using f-string from a query and retrieved_contents.
@@ -44,7 +44,7 @@ class Fstring(BasePromptMaker):
 
 		return list(
 			map(
-				lambda x: fstring_row(prompt, x[0], x[1], chat_summary[0]),
-				zip(queries, retrieved_contents),
+				lambda x: fstring_row(prompt, x[0], x[1],x[2]),
+				zip(queries, retrieved_contents,chat_summary),
 			)
 		)

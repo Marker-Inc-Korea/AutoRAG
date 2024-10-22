@@ -23,7 +23,7 @@ VERSION_PATH = os.path.join(root_dir, "VERSION")
 
 class QueryRequest(BaseModel):
 	query: str
-	summary: Optional[str] = ""
+	chat_summary: Optional[str] = ""
 	result_column: Optional[str] = "generated_texts"
 
 
@@ -67,14 +67,16 @@ class ApiRunner(BaseRunner):
 			try:
 				data = await request.get_json()
 				data = QueryRequest(**data)
+				
 			except ValidationError as e:
 				return jsonify(e.errors()), 400
-
+			
+		
 			previous_result = pd.DataFrame(
 				{
 					"qid": str(uuid.uuid4()),
 					"query": [data.query],
-					"chat_summary": [data.summary],
+					"chat_summary": [data.chat_summary],
 					"retrieval_gt": [[]],
 					"generation_gt": [""],
 				}
@@ -92,6 +94,7 @@ class ApiRunner(BaseRunner):
 				previous_result = pd.concat([drop_previous_result, new_result], axis=1)
 
 			# Simulate processing the query
+			
 			generated_text = previous_result[data.result_column].tolist()[0]
 			retrieved_passage = self.extract_retrieve_passage(previous_result)
 
@@ -115,7 +118,7 @@ class ApiRunner(BaseRunner):
 					{
 						"qid": str(uuid.uuid4()),
 						"query": [data.query],
-						"chat_summary": [data.summary],
+						"chat_summary": [data.chat_summary],
 						"retrieval_gt": [[]],
 						"generation_gt": [""],
 					}
