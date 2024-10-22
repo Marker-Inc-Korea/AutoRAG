@@ -7,15 +7,17 @@ from datetime import datetime
 from itertools import chain
 from typing import List, Dict, Optional
 
-import chromadb
 import pandas as pd
 import yaml
 
-from autorag import embedding_models
 from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.base import get_bm25_pkl_name
 from autorag.nodes.retrieval.bm25 import bm25_ingest
-from autorag.nodes.retrieval.vectordb import vectordb_ingest
+from autorag.nodes.retrieval.vectordb import (
+	vectordb_ingest,
+	filter_exist_ids,
+	filter_exist_ids_from_retrieval_gt,
+)
 from autorag.schema import Node
 from autorag.schema.node import (
 	module_type_exists,
@@ -30,9 +32,10 @@ from autorag.utils import (
 from autorag.utils.util import (
 	load_summary_file,
 	explode,
-	empty_cuda_cache,
 	load_yaml_config,
+	get_event_loop,
 )
+from autorag.vectordb import load_all_vectordb_from_yaml
 
 logger = logging.getLogger("AutoRAG")
 
@@ -84,7 +87,6 @@ class Evaluator:
 		self.project_dir = project_dir if project_dir is not None else os.getcwd()
 		if not os.path.exists(self.project_dir):
 			os.makedirs(self.project_dir)
-		os.environ["PROJECT_DIR"] = self.project_dir
 
 		validate_qa_from_corpus_dataset(self.qa_data, self.corpus_data)
 
@@ -100,7 +102,26 @@ class Evaluator:
 		if not os.path.exists(corpus_path_in_project):
 			self.corpus_data.to_parquet(corpus_path_in_project, index=False)
 
-	def start_trial(self, yaml_path: str, skip_validation: bool = False):
+	def start_trial(
+		self, yaml_path: str, skip_validation: bool = False, full_ingest: bool = True
+	):
+		"""
+		Start AutoRAG trial.
+		The trial means one experiment to optimize the RAG pipeline.
+		It consists of ingesting corpus data, running all nodes and modules, evaluating and finding the optimal modules.
+
+		:param yaml_path: The config YAML path
+		:param skip_validation: If True, it skips the validation step.
+			The validation step checks the input config YAML file is well formatted,
+			and there is any problem with the system settings.
+			Default is False.
+		:param full_ingest: If True, it checks the whole corpus data from corpus.parquet that exists in the Vector DB.
+			If your corpus is huge and don't want to check the whole vector DB, please set it to False.
+		:return: None
+		"""
+		# Make Resources directory
+		os.makedirs(os.path.join(self.project_dir, "resources"), exist_ok=True)
+
 		if not skip_validation:
 			logger.info(ascii_art)
 			logger.info(
@@ -115,6 +136,8 @@ class Evaluator:
 			)
 			validator.validate(yaml_path)
 
+		os.environ["PROJECT_DIR"] = self.project_dir
+
 		trial_name = self.__get_new_trial_name()
 		self.__make_trial_dir(trial_name)
 
@@ -122,18 +145,29 @@ class Evaluator:
 		shutil.copy(
 			yaml_path, os.path.join(self.project_dir, trial_name, "config.yaml")
 		)
+		yaml_dict = load_yaml_config(yaml_path)
+		vectordb = yaml_dict.get("vectordb", [])
+
 		vectordb_config_path = os.path.join(
 			self.project_dir, "resources", "vectordb.yaml"
 		)
-		yaml_dict = load_yaml_config(yaml_path)
-		vectordb = yaml_dict.get("vectordb", [])
 		with open(vectordb_config_path, "w") as f:
 			yaml.safe_dump({"vectordb": vectordb}, f)
 
 		node_lines = self._load_node_lines(yaml_path)
-		self.__embed(
-			node_lines
-		)  # TODO: Change the ingest logic for external vector DBs
+		self.__ingest_bm25_full(node_lines)
+
+		# Ingest VectorDB corpus
+		if any(
+			list(
+				map(
+					lambda nodes: module_type_exists(nodes, "vectordb"),
+					node_lines.values(),
+				)
+			)
+		):
+			loop = get_event_loop()
+			loop.run_until_complete(self.__ingest_vectordb(yaml_path, full_ingest))
 
 		trial_summary_df = pd.DataFrame(
 			columns=[
@@ -163,7 +197,7 @@ class Evaluator:
 
 		logger.info("Evaluation complete.")
 
-	def __embed(self, node_lines: Dict[str, List[Node]]):
+	def __ingest_bm25_full(self, node_lines: Dict[str, List[Node]]):
 		if any(
 			list(
 				map(
@@ -171,7 +205,6 @@ class Evaluator:
 				)
 			)
 		):
-			# ingest BM25 corpus
 			logger.info("Embedding BM25 corpus...")
 			bm25_tokenizer_list = list(
 				chain.from_iterable(
@@ -193,78 +226,6 @@ class Evaluator:
 				# ingest because bm25 supports update new corpus data
 				bm25_ingest(bm25_dir, self.corpus_data, bm25_tokenizer=bm25_tokenizer)
 			logger.info("BM25 corpus embedding complete.")
-
-		if any(
-			list(
-				map(
-					lambda nodes: module_type_exists(nodes, "vectordb"),
-					node_lines.values(),
-				)
-			)
-		):
-			# load embedding_models in nodes
-			embedding_models_list = list(
-				chain.from_iterable(
-					map(
-						lambda nodes: self._find_embedding_model(nodes),
-						node_lines.values(),
-					)
-				)
-			)
-
-			# get embedding batch size in nodes
-			embedding_batch_list = list(
-				chain.from_iterable(
-					map(
-						lambda nodes: extract_values_from_nodes(
-							nodes, "embedding_batch"
-						),
-						node_lines.values(),
-					)
-				)
-			)
-			if len(embedding_batch_list) == 0:
-				embedding_batch = 100
-			else:
-				embedding_batch = embedding_batch_list[0]
-
-			# duplicate check in embedding_models
-			embedding_models_list = list(set(embedding_models_list))
-
-			vectordb_dir = os.path.join(self.project_dir, "resources", "chroma")
-			vectordb = chromadb.PersistentClient(path=vectordb_dir)
-
-			for embedding_model_str in embedding_models_list:
-				# ingest VectorDB corpus
-				logger.info(f"Embedding VectorDB corpus with {embedding_model_str}...")
-
-				# Get the collection with GET or CREATE, as it may already exist
-				collection = vectordb.get_or_create_collection(
-					name=embedding_model_str, metadata={"hnsw:space": "cosine"}
-				)
-				# get embedding_model
-				if embedding_model_str in embedding_models:
-					embedding_model = embedding_models[embedding_model_str]()
-				else:
-					logger.error(
-						f"embedding_model_str {embedding_model_str} does not exist."
-					)
-					raise KeyError(
-						f"embedding_model_str {embedding_model_str} does not exist."
-					)
-				vectordb_ingest(
-					collection,
-					self.corpus_data,
-					embedding_model,
-					embedding_batch=embedding_batch,
-				)
-				logger.info(
-					f"VectorDB corpus embedding complete with {embedding_model_str}."
-				)
-				del embedding_model
-				empty_cuda_cache()
-		else:
-			logger.info("No ingestion needed.")
 
 	def __get_new_trial_name(self) -> str:
 		trial_json_path = os.path.join(self.project_dir, "trial.json")
@@ -561,3 +522,18 @@ class Evaluator:
 			filter(lambda x: x is not None, embedding_models_list)
 		)
 		return list(set(embedding_models_list))
+
+	async def __ingest_vectordb(self, yaml_path, full_ingest: bool):
+		vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+		if full_ingest is True:
+			# get the target ingest corpus from the whole corpus
+			for vectordb in vectordb_list:
+				target_corpus = await filter_exist_ids(vectordb, self.corpus_data)
+				await vectordb_ingest(vectordb, target_corpus)
+		else:
+			# get the target ingest corpus from the retrieval gt only
+			for vectordb in vectordb_list:
+				target_corpus = await filter_exist_ids_from_retrieval_gt(
+					vectordb, self.qa_data, self.corpus_data
+				)
+				await vectordb_ingest(vectordb, target_corpus)

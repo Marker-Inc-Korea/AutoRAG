@@ -20,6 +20,7 @@ class Chroma(BaseVectorStore):
 		self,
 		embedding_model: str,
 		collection_name: str,
+		embedding_batch: int = 100,
 		client_type: str = "persistent",
 		similarity_metric: str = "cosine",
 		path: str = None,
@@ -31,7 +32,7 @@ class Chroma(BaseVectorStore):
 		tenant: str = DEFAULT_TENANT,
 		database: str = DEFAULT_DATABASE,
 	):
-		super().__init__(embedding_model)
+		super().__init__(embedding_model, similarity_metric, embedding_batch)
 		if client_type == "ephemeral":
 			self.client = EphemeralClient(tenant=tenant, database=database)
 		elif client_type == "persistent":

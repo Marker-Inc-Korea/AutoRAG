@@ -13,7 +13,12 @@ import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import VectorDB
-from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
+from autorag.nodes.retrieval.vectordb import (
+	vectordb_ingest,
+	get_id_scores,
+	filter_exist_ids_from_retrieval_gt,
+	filter_exist_ids,
+)
 from autorag.vectordb.chroma import Chroma
 from tests.autorag.nodes.retrieval.test_retrieval_base import (
 	queries,
@@ -258,6 +263,101 @@ async def test_long_ids_ingest(openai_chroma):
 		}
 	)
 	await vectordb_ingest(openai_chroma, content_df)
+
+
+@pytest.mark.asyncio
+async def test_filter_exist_ids_from_retrieval_gt(mock_chroma):
+	last_modified_datetime = datetime.now()
+	ingested_df = pd.DataFrame(
+		{
+			"doc_id": ["id2"],
+			"contents": ["content2"],
+			"metadata": [{"last_modified_datetime": last_modified_datetime}],
+		}
+	)
+	await vectordb_ingest(mock_chroma, ingested_df)
+
+	# Create sample qa_data and corpus_data
+	qa_data = pd.DataFrame(
+		{
+			"qid": ["qid1"],
+			"query": ["query1"],
+			"retrieval_gt": [[["id1", "id2"], ["id3"]]],
+			"generation_gt": [["jaxjax"]],
+		}
+	)
+	corpus_data = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id2", "id3", "id4"],
+			"contents": ["content1", "content2", "content3", "content4"],
+			"metadata": [
+				{"last_modified_datetime": last_modified_datetime} for _ in range(4)
+			],
+		}
+	)
+
+	# Call the function
+	result = await filter_exist_ids_from_retrieval_gt(mock_chroma, qa_data, corpus_data)
+
+	# Expected result
+	expected_result = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id3"],
+			"contents": ["content1", "content3"],
+			"metadata": [
+				{
+					"last_modified_datetime": last_modified_datetime,
+					"prev_id": None,
+					"next_id": None,
+				}
+				for _ in range(2)
+			],
+		}
+	)
+
+	# Assert the result
+	pd.testing.assert_frame_equal(result.reset_index(drop=True), expected_result)
+
+
+@pytest.mark.asyncio
+async def test_filter_exist_ids(mock_chroma):
+	last_modified_datetime = datetime.now()
+	ingested_df = pd.DataFrame(
+		{
+			"doc_id": ["id2"],
+			"contents": ["content2"],
+			"metadata": [{"last_modified_datetime": last_modified_datetime}],
+		}
+	)
+	await vectordb_ingest(mock_chroma, ingested_df)
+
+	corpus_data = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id2", "id3", "id4"],
+			"contents": ["content1", "content2", "content3", "content4"],
+			"metadata": [
+				{"last_modified_datetime": last_modified_datetime} for _ in range(4)
+			],
+		}
+	)
+
+	result = await filter_exist_ids(mock_chroma, corpus_data)
+
+	expected_result = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id3", "id4"],
+			"contents": ["content1", "content3", "content4"],
+			"metadata": [
+				{
+					"last_modified_datetime": last_modified_datetime,
+					"prev_id": None,
+					"next_id": None,
+				}
+				for _ in range(3)
+			],
+		}
+	)
+	pd.testing.assert_frame_equal(result.reset_index(drop=True), expected_result)
 
 
 def test_get_id_scores():

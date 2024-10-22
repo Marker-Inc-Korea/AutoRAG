@@ -1,3 +1,4 @@
+import itertools
 import logging
 import os
 from typing import List, Tuple, Optional
@@ -13,7 +14,12 @@ from autorag.evaluation.metric.util import (
 	calculate_cosine_similarity,
 )
 from autorag.nodes.retrieval.base import evenly_distribute_passages, BaseRetrieval
-from autorag.utils import validate_corpus_dataset, cast_corpus_dataset
+from autorag.utils import (
+	validate_corpus_dataset,
+	cast_corpus_dataset,
+	cast_qa_dataset,
+	validate_qa_dataset,
+)
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
@@ -192,21 +198,10 @@ async def vectordb_pure(
 	return list(id_result), list(score_result)
 
 
-async def vectordb_ingest(
+async def filter_exist_ids(
 	vectordb: BaseVectorStore,
 	corpus_data: pd.DataFrame,
-	embedding_batch: int = 128,
-):
-	"""
-	Ingest given corpus data to the vectordb.
-	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8000 tokens.
-	Plus, when the corpus content is empty (whitespace), it will be ignored.
-	And if there is a document id that already exists in the collection, it will be ignored.
-
-	:param vectordb: A vector store instance that you want to ingest.
-	:param corpus_data: The corpus data that contains doc_id and contents columns.
-	:param embedding_batch: The number of chunks that will be processed in parallel.
-	"""
+) -> pd.DataFrame:
 	corpus_data = cast_corpus_dataset(corpus_data)
 	validate_corpus_dataset(corpus_data)
 	ids = corpus_data["doc_id"].tolist()
@@ -215,10 +210,52 @@ async def vectordb_ingest(
 	existed_bool_list = await vectordb.is_exist(ids=ids)
 	# Assuming 'ids' is the key in the response
 	new_passage = corpus_data[~pd.Series(existed_bool_list)]
+	return new_passage
 
-	if not new_passage.empty:
-		new_contents = new_passage["contents"].tolist()
-		new_ids = new_passage["doc_id"].tolist()
+
+async def filter_exist_ids_from_retrieval_gt(
+	vectordb: BaseVectorStore,
+	qa_data: pd.DataFrame,
+	corpus_data: pd.DataFrame,
+) -> pd.DataFrame:
+	qa_data = cast_qa_dataset(qa_data)
+	validate_qa_dataset(qa_data)
+	corpus_data = cast_corpus_dataset(corpus_data)
+	validate_corpus_dataset(corpus_data)
+	retrieval_gt = (
+		qa_data["retrieval_gt"]
+		.apply(lambda x: list(itertools.chain.from_iterable(x)))
+		.tolist()
+	)
+	retrieval_gt = list(itertools.chain.from_iterable(retrieval_gt))
+	retrieval_gt = list(set(retrieval_gt))
+
+	existed_bool_list = await vectordb.is_exist(ids=retrieval_gt)
+	add_ids = []
+	for ret_gt, is_exist in zip(retrieval_gt, existed_bool_list):
+		if not is_exist:
+			add_ids.append(ret_gt)
+	new_passage = corpus_data[corpus_data["doc_id"].isin(add_ids)]
+	return new_passage
+
+
+async def vectordb_ingest(
+	vectordb: BaseVectorStore,
+	corpus_data: pd.DataFrame,
+):
+	"""
+	Ingest given corpus data to the vectordb.
+	It truncates corpus content when the embedding model is OpenAIEmbedding to the 8000 tokens.
+	Plus, when the corpus content is empty (whitespace), it will be ignored.
+	And if there is a document id that already exists in the collection, it will be ignored.
+
+	:param vectordb: A vector stores instance that you want to ingest.
+	:param corpus_data: The corpus data that contains doc_id and contents columns.
+	"""
+	embedding_batch = vectordb.embedding_batch
+	if not corpus_data.empty:
+		new_contents = corpus_data["contents"].tolist()
+		new_ids = corpus_data["doc_id"].tolist()
 		content_batches = make_batch(new_contents, embedding_batch)
 		id_batches = make_batch(new_ids, embedding_batch)
 		for content_batch, id_batch in zip(content_batches, id_batches):

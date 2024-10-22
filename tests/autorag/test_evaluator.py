@@ -19,7 +19,7 @@ from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
 from autorag.utils.util import load_summary_file
 from tests.delete_tests import is_github_action
-from tests.mock import mock_get_text_embedding_batch
+from tests.mock import mock_get_text_embedding_batch, mock_aget_text_embedding_batch
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
@@ -81,8 +81,7 @@ def test_load_node_line(evaluator):
 		"bm25_tokenizer": ["facebook/opt-125m", "porter_stemmer"]
 	}
 	assert node.modules[1].module_param == {
-		"embedding_model": ["openai", "openai"],
-		"embedding_batch": 50,
+		"vectordb": ["openai_embed_3_large", "openai_embed_3_small"],
 	}
 	assert node.modules[2].module_param == {"weight_range": (4, 30)}
 	assert nodes[2].node_type == "passage_filter"
@@ -92,6 +91,11 @@ def test_load_node_line(evaluator):
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
+)
+@patch.object(
+	OpenAIEmbedding,
+	"aget_text_embedding_batch",
+	mock_aget_text_embedding_batch,
 )
 def test_start_trial(evaluator):
 	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))

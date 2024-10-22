@@ -1,3 +1,17 @@
+vectordb:
+  - name: openai_embed_3_small
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_small
+    collection_name: openai_embed_3_small
+    path: ${PROJECT_DIR}/resources/chroma
+  - name: openai_embed_3_large
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_large
+    collection_name: openai_embed_3_large
+    path: ${PROJECT_DIR}/resources/chroma
+    embedding_batch: 50
 node_lines:
 - node_line_name: retrieve_node_line
   nodes:
@@ -10,7 +24,7 @@ node_lines:
           - module_type: bm25
             bm25_tokenizer: [ porter_stemmer, space ]
           - module_type: vectordb
-            embedding_model: openai_embed_3_small
+            vectordb: openai_embed_3_small
       modules:
         - module_type: hyde
           generator_module_type: llama_index_llm
@@ -23,8 +37,7 @@ node_lines:
         - module_type: ${BM25} # for testing env variable
           bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
         - module_type: vectordb
-          embedding_model: [openai, openai]
-          embedding_batch: 50
+          vectordb: [openai_embed_3_large, openai_embed_3_small]
         - module_type: hybrid_rrf
           weight_range: (4, 30)
     - node_type: passage_filter

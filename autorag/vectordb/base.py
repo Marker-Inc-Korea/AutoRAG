@@ -10,8 +10,15 @@ from autorag.utils.util import openai_truncate_by_token
 class BaseVectorStore:
 	support_similarity_metrics = ["l2", "ip", "cosine"]
 
-	def __init__(self, embedding_model: str, similarity_metric: str = "cosine"):
+	def __init__(
+		self,
+		embedding_model: str,
+		similarity_metric: str = "cosine",
+		embedding_batch: int = 100,
+	):
 		self.embedding = embedding_models[embedding_model]()
+		self.embedding_batch = embedding_batch
+		self.embedding.embed_batch_size = embedding_batch
 		assert (
 			similarity_metric in self.support_similarity_metrics
 		), f"search method {similarity_metric} is not supported"
