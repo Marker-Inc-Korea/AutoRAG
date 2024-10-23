@@ -57,6 +57,10 @@ async def test_add_and_query_documents(milvus_instance):
 	assert exist[1] is False
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="This test needs milvus uri and token which is confidential.",
+)
 @pytest.mark.asyncio
 async def test_delete_documents(milvus_instance):
 	# Add documents
