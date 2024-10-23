@@ -1,16 +1,17 @@
 vectordb:
-  - name: chroma_default
+  - name: openai_embed_3_small
     db_type: chroma
     client_type: persistent
-    embedding_model: mock
-    collection_name: openai
+    embedding_model: openai_embed_3_small
+    collection_name: openai_embed_3_small
     path: ${PROJECT_DIR}/resources/chroma
-  - name: chroma_large
-    db_type: chroma
-    client_type: persistent
-    embedding_model: mock
+  - name: openai_embed_3_large
+    db_type: milvus
+    embedding_model: openai_embed_3_large
     collection_name: openai_embed_3_large
-    path: ${PROJECT_DIR}/resources/chroma
+    uri: ${MILVUS_URI}
+    token: ${MILVUS_TOKEN}
+    embedding_batch: 50
 node_lines:
 - node_line_name: retrieve_node_line
   nodes:
@@ -22,7 +23,6 @@ node_lines:
         - module_type: ${BM25} # for testing env variable
           bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
         - module_type: vectordb
-          vectordb: [chroma_default, chroma_large]
-          embedding_batch: 50
+          vectordb: [openai_embed_3_large, openai_embed_3_small]
         - module_type: hybrid_rrf
           weight_range: (4, 30)

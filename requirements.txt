@@ -20,6 +20,7 @@ voyageai # for voyageai reranker
 mixedbread-ai # for mixedbread-ai reranker
 llama-index-llms-bedrock
 scikit-learn
+pymilvus # for using milvus vectordb
 
 ### API server ###
 quart

@@ -80,7 +80,7 @@ def test_hybrid_rrf_node_deploy(pseudo_project_dir):
 		"target_modules": ("bm25", "vectordb"),
 		"target_module_params": [
 			{"top_k": 3},
-			{"embedding_model": "openai", "top_k": 3},
+			{"vectordb": "test_default", "top_k": 3},
 		],
 		"top_k": 3,
 		"weight": 1,

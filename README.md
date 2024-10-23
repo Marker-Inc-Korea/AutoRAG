@@ -316,7 +316,7 @@ node_lines:
       top_k: 3
       modules:
         - module_type: vectordb
-          embedding_model: openai
+          vectordb: default
         - module_type: bm25
         - module_type: hybrid_rrf
           weight_range: (4,80)

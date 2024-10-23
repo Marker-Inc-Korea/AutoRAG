@@ -120,6 +120,25 @@ solution_dict = {
 @pytest.fixture
 def pseudo_trial_path():
 	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
+		os.makedirs(os.path.join(project_dir, "resources"))
+		vectordb_config_path = os.path.join(project_dir, "resources", "vectordb.yaml")
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump(
+				{
+					"vectordb": [
+						{
+							"name": "default",
+							"db_type": "chroma",
+							"client_type": "persistent",
+							"embedding_model": "openai",
+							"collection_name": "openai",
+							"path": os.path.join(project_dir, "resources", "chroma"),
+						}
+					]
+				},
+				f,
+			)
+
 		trial_path = os.path.join(project_dir, "0")
 		os.makedirs(trial_path)
 		summary_df.to_csv(os.path.join(trial_path, "summary.csv"), index=False)
@@ -159,15 +178,20 @@ def test_summary_df_to_yaml():
 
 def test_extract_best_config(pseudo_trial_path):
 	yaml_dict = extract_best_config(pseudo_trial_path)
-	assert yaml_dict == solution_dict
+	assert yaml_dict["node_lines"] == solution_dict["node_lines"]
 	with tempfile.NamedTemporaryFile(
 		suffix="yaml", mode="w+t", delete=False
 	) as yaml_path:
 		yaml_dict = extract_best_config(pseudo_trial_path, yaml_path.name)
-		assert yaml_dict == solution_dict
+		assert yaml_dict["node_lines"] == solution_dict["node_lines"]
 		assert os.path.exists(yaml_path.name)
 		yaml_dict = yaml.safe_load(yaml_path)
-		assert yaml_dict == solution_dict
+		assert yaml_dict["node_lines"] == solution_dict["node_lines"]
+		assert yaml_dict["vectordb"][0]["name"] == "default"
+		assert yaml_dict["vectordb"][0]["db_type"] == "chroma"
+		assert yaml_dict["vectordb"][0]["client_type"] == "persistent"
+		assert yaml_dict["vectordb"][0]["embedding_model"] == "openai"
+		assert yaml_dict["vectordb"][0]["collection_name"] == "openai"
 		yaml_path.close()
 		os.unlink(yaml_path.name)
 

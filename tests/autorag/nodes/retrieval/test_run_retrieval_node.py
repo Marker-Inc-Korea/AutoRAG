@@ -4,16 +4,18 @@ import shutil
 import tempfile
 from unittest.mock import patch
 
-import chromadb
 import pandas as pd
 import pytest
+import yaml
 from llama_index.core import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
+import autorag
 from autorag.nodes.retrieval import BM25, VectorDB, HybridCC, HybridRRF
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
-from autorag.utils.util import load_summary_file
+from autorag.utils.util import load_summary_file, get_event_loop
+from autorag.vectordb.chroma import Chroma
 from tests.mock import mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
@@ -31,13 +33,34 @@ def node_line_dir():
 
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
 		os.makedirs(chroma_path)
-		db = chromadb.PersistentClient(path=chroma_path)
-		collection = db.create_collection(
-			name="openai", metadata={"hnsw:space": "cosine"}
-		)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
 		corpus_df = pd.read_parquet(corpus_path)
-		vectordb_ingest(collection, corpus_df, MockEmbedding(1536))
+		autorag.embedding_models["mock_1536"] = autorag.LazyInit(
+			MockEmbedding, embed_dim=1536
+		)
+		chroma_config = {
+			"client_type": "persistent",
+			"embedding_model": "mock_1536",
+			"collection_name": "openai",
+			"path": chroma_path,
+			"similarity_metric": "cosine",
+		}
+		chroma = Chroma(**chroma_config)
+		loop = get_event_loop()
+		loop.run_until_complete(vectordb_ingest(chroma, corpus_df))
+
+		chroma_config_path = os.path.join(
+			test_project_dir, "resources", "vectordb.yaml"
+		)
+		with open(chroma_config_path, "w") as f:
+			yaml.safe_dump(
+				{
+					"vectordb": [
+						{**chroma_config, "name": "test_mock", "db_type": "chroma"}
+					]
+				},
+				f,
+			)
 
 		test_trial_dir = os.path.join(test_project_dir, "test_trial")
 		os.makedirs(test_trial_dir)
@@ -55,7 +78,7 @@ def test_run_retrieval_node(node_line_dir):
 	modules = [BM25, VectorDB, HybridRRF, HybridCC, HybridCC]
 	module_params = [
 		{"top_k": 4, "bm25_tokenizer": "gpt2"},
-		{"top_k": 4, "embedding_model": "openai"},
+		{"top_k": 4, "vectordb": "test_mock"},
 		{"top_k": 4, "weight_range": (5, 70)},
 		{"top_k": 4, "weight_range": (0.3, 0.7), "test_weight_size": 40},
 		{"top_k": 4, "weight_range": (0.1, 0.9), "test_weight_size": 8},
@@ -107,7 +130,7 @@ def test_run_retrieval_node(node_line_dir):
 	assert summary_df["retrieval_f1"][1] == bm25_top_k_df["retrieval_f1"].mean()
 	assert summary_df["retrieval_recall"][1] == bm25_top_k_df["retrieval_recall"].mean()
 	assert summary_df["module_name"][0] == "VectorDB"
-	assert summary_df["module_params"][0] == {"top_k": 4, "embedding_model": "openai"}
+	assert summary_df["module_params"][0] == {"top_k": 4, "vectordb": "test_mock"}
 	assert summary_df["execution_time"][0] > 0
 	# assert average times
 	assert summary_df["execution_time"][0] + summary_df["execution_time"][
@@ -231,7 +254,7 @@ def test_run_retrieval_node_only_hybrid(node_line_dir):
 			"weight": 0.3,
 			"target_module_params": (
 				{"top_k": 3},
-				{"top_k": 3, "embedding_model": "openai"},
+				{"top_k": 3, "vectordb": "test_mock"},
 			),
 		},
 	]
@@ -288,7 +311,7 @@ def test_run_retrieval_node_only_hybrid(node_line_dir):
 		"weight": 0.3,
 		"target_module_params": (
 			{"top_k": 3},
-			{"top_k": 3, "embedding_model": "openai"},
+			{"top_k": 3, "vectordb": "test_mock"},
 		),
 	}
 	assert summary_df["execution_time"][0] > 0

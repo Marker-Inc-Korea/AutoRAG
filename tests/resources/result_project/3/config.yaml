@@ -1,4 +1,10 @@
-# need to delete when there are full modules implemented
+vectordb:
+  - name: mock_chroma
+    db_type: chroma
+    client_type: persistent
+    path: ${PROJECT_DIR}/resources/chroma
+    collection_name: mock_chroma
+    embedding_model: mock
 node_lines:
   - node_line_name: retrieve_node_line
     nodes:
@@ -9,6 +15,6 @@ node_lines:
         modules:
           - module_type: ${BM25} # for testing env variable
           - module_type: vectordb
-            embedding_model: [ mock, mock ]
+            vectordb: mock_chroma
           - module_type: hybrid_rrf
             weight_range: (4, 40)

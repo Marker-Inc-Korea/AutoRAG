@@ -1,5 +1,6 @@
 import logging
 import os
+import pathlib
 import uuid
 from copy import deepcopy
 from typing import Optional, Dict, List
@@ -8,8 +9,7 @@ import pandas as pd
 import yaml
 
 from autorag.support import get_support_modules
-from autorag.utils.util import load_summary_file
-
+from autorag.utils.util import load_summary_file, load_yaml_config
 
 logger = logging.getLogger("AutoRAG")
 
@@ -94,13 +94,13 @@ def summary_df_to_yaml(summary_df: pd.DataFrame, config_dict: Dict) -> Dict:
 
 def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> Dict:
 	"""
-	Extract the optimal pipeline from evaluated trial.
+	Extract the optimal pipeline from the evaluated trial.
 
 	:param trial_path: The path to the trial directory that you want to extract the pipeline from.
 	    Must already be evaluated.
 	:param output_path: Output path that pipeline yaml file will be saved.
 	    Must be .yaml or .yml file.
-	    If None, it does not save yaml file and just return dict values.
+	    If None, it does not save YAML file and just returns dict values.
 	    Default is None.
 	:return: The dictionary of the extracted pipeline.
 	"""
@@ -114,18 +114,42 @@ def extract_best_config(trial_path: str, output_path: Optional[str] = None) -> D
 	with open(config_yaml_path, "r") as f:
 		config_dict = yaml.safe_load(f)
 	yaml_dict = summary_df_to_yaml(trial_summary_df, config_dict)
+	yaml_dict["vectordb"] = extract_vectordb_config(trial_path)
 	if output_path is not None:
 		with open(output_path, "w") as f:
 			yaml.safe_dump(yaml_dict, f)
 	return yaml_dict
 
 
+def extract_vectordb_config(trial_path: str) -> List[Dict]:
+	# get vectordb.yaml file
+	project_dir = pathlib.PurePath(os.path.realpath(trial_path)).parent
+	vectordb_config_path = os.path.join(project_dir, "resources", "vectordb.yaml")
+	if not os.path.exists(vectordb_config_path):
+		raise ValueError(f"vectordb.yaml does not exist in {vectordb_config_path}.")
+	with open(vectordb_config_path, "r") as f:
+		vectordb_dict = yaml.safe_load(f)
+	result = vectordb_dict.get("vectordb", [])
+	if len(result) != 0:
+		return result
+	# return default setting of chroma
+	return [
+		{
+			"name": "default",
+			"db_type": "chroma",
+			"client_type": "persistent",
+			"embedding_model": "openai",
+			"collection_name": "openai",
+			"path": os.path.join(project_dir, "resources", "chroma"),
+		}
+	]
+
+
 class BaseRunner:
 	def __init__(self, config: Dict, project_dir: Optional[str] = None):
 		self.config = config
 		project_dir = os.getcwd() if project_dir is None else project_dir
-		# self.app = Flask(__name__)
-		# self.__add_api_route()
+		os.environ["PROJECT_DIR"] = project_dir
 
 		# init modules
 		node_lines = deepcopy(self.config["node_lines"])
@@ -159,12 +183,7 @@ class BaseRunner:
 			Default is the current directory.
 		:return: Initialized Runner.
 		"""
-		with open(yaml_path, "r") as f:
-			try:
-				config = yaml.safe_load(f)
-			except yaml.YAMLError as exc:
-				logger.error(exc)
-				raise exc
+		config = load_yaml_config(yaml_path)
 		return cls(config, project_dir=project_dir)
 
 	@classmethod
