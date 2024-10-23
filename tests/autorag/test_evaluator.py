@@ -214,6 +214,30 @@ def test_start_trial(evaluator):
 	assert trial_summary_df["best_execution_time"][0] > 0
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="This test needs milvus uri and token which is confidential.",
+)
+def test_start_trial_milvus(evaluator):
+	evaluator.start_trial(os.path.join(resource_dir, "simple_milvus.yaml"))
+	project_dir = evaluator.project_dir
+	assert os.path.exists(os.path.join(project_dir, "0"))
+	assert os.path.exists(os.path.join(project_dir, "data"))
+	assert os.path.exists(os.path.join(project_dir, "resources"))
+	assert os.path.exists(os.path.join(project_dir, "trial.json"))
+	assert os.path.exists(os.path.join(project_dir, "0", "config.yaml"))
+	assert os.path.exists(os.path.join(project_dir, "0", "retrieve_node_line"))
+	assert os.path.exists(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval")
+	)
+	assert os.path.exists(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "0.parquet")
+	)
+	assert os.path.exists(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "1.parquet")
+	)
+
+
 @patch.object(
 	OpenAIEmbedding,
 	"get_text_embedding_batch",

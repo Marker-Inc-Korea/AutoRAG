@@ -1,10 +1,21 @@
+import logging
 from typing import List, Tuple, Optional
 
-from pymilvus import DataType, FieldSchema, CollectionSchema, connections, Collection
+from pymilvus import (
+	DataType,
+	FieldSchema,
+	CollectionSchema,
+	connections,
+	Collection,
+	MilvusException,
+)
 from pymilvus.orm import utility
 
 from autorag.utils.util import apply_recursive
 from autorag.vectordb import BaseVectorStore
+
+
+logger = logging.getLogger("AutoRAG")
 
 
 class Milvus(BaseVectorStore):
@@ -116,7 +127,11 @@ class Milvus(BaseVectorStore):
 		return ids, distances
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
-		self.collection.load(timeout=self.timeout)
+		try:
+			self.collection.load(timeout=self.timeout)
+		except MilvusException as e:
+			logger.warning(f"Failed to load collection: {e}")
+			return [[]] * len(ids)
 		# Fetch vectors by IDs
 		results = self.collection.query(
 			expr=f"id in {ids}", output_fields=["id", "vector"], timeout=self.timeout
@@ -126,7 +141,10 @@ class Milvus(BaseVectorStore):
 		return result
 
 	async def is_exist(self, ids: List[str]) -> List[bool]:
-		self.collection.load(timeout=self.timeout)
+		try:
+			self.collection.load(timeout=self.timeout)
+		except MilvusException:
+			return [False] * len(ids)
 		# Check the existence of IDs
 		results = self.collection.query(
 			expr=f"id in {ids}", output_fields=["id"], timeout=self.timeout
