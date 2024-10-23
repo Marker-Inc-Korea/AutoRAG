@@ -1,7 +1,10 @@
+from random import random
+from typing import List, Any
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from llama_index.core.base.embeddings.base import Embedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import HybridCC
@@ -80,17 +83,12 @@ def test_hybrid_cc_fixed_weight():
 	assert isinstance(result_scores, list)
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_hybrid_cc_node_deploy(pseudo_project_dir):
 	modules = {
 		"target_modules": ("bm25", "vectordb"),
 		"target_module_params": [
 			{"top_k": 3},
-			{"embedding_model": "openai", "top_k": 3},
+			{"vectordb": "test_default", "top_k": 3},
 		],
 		"top_k": 3,
 		"weight": 0.4,
