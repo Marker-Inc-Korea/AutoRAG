@@ -266,6 +266,7 @@ class Evaluator:
 
 	def restart_trial(self, trial_path: str):
 		logger.info(ascii_art)
+		os.environ["PROJECT_DIR"] = self.project_dir
 		# Check if trial_path exists
 		if not os.path.exists(trial_path):
 			raise ValueError(f"Trial path {trial_path} does not exist.")
