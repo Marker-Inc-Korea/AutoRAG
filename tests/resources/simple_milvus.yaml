@@ -1,0 +1,28 @@
+vectordb:
+  - name: openai_embed_3_small
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_small
+    collection_name: openai_embed_3_small
+    path: ${PROJECT_DIR}/resources/chroma
+  - name: openai_embed_3_large
+    db_type: milvus
+    embedding_model: openai_embed_3_large
+    collection_name: openai_embed_3_large
+    uri: ${MILVUS_URI}
+    token: ${MILVUS_TOKEN}
+    embedding_batch: 50
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: retrieval  # represents run_node function
+      strategy:  # essential for every node
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10 # node param, which adapt to every module in this node.
+      modules:
+        - module_type: ${BM25} # for testing env variable
+          bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
+        - module_type: vectordb
+          vectordb: [openai_embed_3_large, openai_embed_3_small]
+        - module_type: hybrid_rrf
+          weight_range: (4, 30)

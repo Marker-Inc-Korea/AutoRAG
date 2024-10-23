@@ -98,12 +98,6 @@ class VectorDB(BaseRetrieval):
 		:return: The 2-d list contains a list of passage ids that retrieved from vectordb and 2-d list of its scores.
 		    It will be a length of queries. And each element has a length of top_k.
 		"""
-		# check if bm25_corpus is valid
-		# TODO: available at other Vector DB?
-		assert (
-			self.vector_store.collection.count() > 0
-		), "collection must contain at least one document. Please check you ingested collection correctly."
-
 		# if ids are specified, fetch the ids score from Chroma
 		if ids is not None:
 			return self.__get_ids_scores(queries, ids, embedding_batch)

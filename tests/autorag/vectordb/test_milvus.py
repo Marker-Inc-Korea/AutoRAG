@@ -4,8 +4,13 @@ import os
 import pytest
 
 from autorag.vectordb.milvus import Milvus
+from tests.delete_tests import is_github_action
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="This test needs milvus uri and token which is confidential.",
+)
 @pytest.fixture
 def milvus_instance():
 	milvus = Milvus(
@@ -21,6 +26,10 @@ def milvus_instance():
 	milvus.collection.drop()
 
 
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="This test needs milvus uri and token which is confidential.",
+)
 @pytest.mark.asyncio
 async def test_add_and_query_documents(milvus_instance):
 	# Add documents
