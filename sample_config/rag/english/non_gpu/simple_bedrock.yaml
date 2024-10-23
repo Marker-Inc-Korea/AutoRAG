@@ -1,0 +1,33 @@
+vectordb:
+  - name: mpnet_base_chroma
+    db_type: chroma
+    client_type: persistent
+    embedding_model: huggingface_all_mpnet_base_v2
+    collection_name: huggingface_all_mpnet_base_v2
+    path: ${PROJECT_DIR}/data/chroma
+node_lines:
+  - node_line_name: retrieve_node_line
+    nodes:
+      - node_type: retrieval
+        strategy:
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
+        top_k: 3
+        modules:
+          - module_type: vectordb
+            vectordb: mpnet_base_chroma
+  - node_line_name: post_retrieve_node_line
+    nodes:
+      - node_type: prompt_maker
+        strategy:
+          metrics: [ meteor, rouge, bert_score ]
+        modules:
+          - module_type: fstring
+            prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+      - node_type: generator
+        strategy:
+          metrics: [ meteor, rouge, bert_score ]
+        modules:
+          - module_type: llama_index_llm
+            llm: bedrock
+            model: amazon.titan-text-express-v1
+            profile_name: your_profile_name # Plz replace this with your profile name

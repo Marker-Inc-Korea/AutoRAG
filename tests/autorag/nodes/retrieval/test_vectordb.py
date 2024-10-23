@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pathlib
 import shutil
@@ -6,15 +7,19 @@ import uuid
 from datetime import datetime
 from unittest.mock import patch
 
-import chromadb
 import pandas as pd
 import pytest
-from llama_index.core import MockEmbedding
+import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag import embedding_models
 from autorag.nodes.retrieval import VectorDB
-from autorag.nodes.retrieval.vectordb import vectordb_ingest, get_id_scores
+from autorag.nodes.retrieval.vectordb import (
+	vectordb_ingest,
+	get_id_scores,
+	filter_exist_ids_from_retrieval_gt,
+	filter_exist_ids,
+)
+from autorag.vectordb.chroma import Chroma
 from tests.autorag.nodes.retrieval.test_retrieval_base import (
 	queries,
 	corpus_df,
@@ -23,39 +28,38 @@ from tests.autorag.nodes.retrieval.test_retrieval_base import (
 	base_retrieval_node_test,
 	searchable_input_ids,
 )
-from tests.mock import mock_get_text_embedding_batch
+from tests.mock import mock_aget_text_embedding_batch
 
 root_dir = pathlib.PurePath(
 	os.path.dirname(os.path.realpath(__file__))
 ).parent.parent.parent
 resource_path = os.path.join(root_dir, "resources")
 
-embedding_model = MockEmbedding(1536)
+
+@pytest.fixture
+def mock_chroma():
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as chroma_path:
+		chroma = Chroma(
+			client_type="persistent",
+			path=chroma_path,
+			embedding_model="mock",
+			collection_name="test_vectordb_retrieval",
+			similarity_metric="cosine",
+		)
+		yield chroma
 
 
 @pytest.fixture
-def ingested_vectordb():
+def openai_chroma():
 	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as chroma_path:
-		db = chromadb.PersistentClient(path=chroma_path)
-		collection = db.create_collection(
-			name="test_vectordb_retrieval", metadata={"hnsw:space": "cosine"}
+		chroma = Chroma(
+			client_type="persistent",
+			path=chroma_path,
+			embedding_model="openai",
+			collection_name="test_vectordb_retrieval",
+			similarity_metric="cosine",
 		)
-
-		vectordb_ingest(collection, corpus_df, embedding_model)
-
-		assert collection.count() == 5
-		yield collection
-
-
-@pytest.fixture
-def empty_chromadb():
-	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as chroma_path:
-		db = chromadb.PersistentClient(path=chroma_path)
-		collection = db.create_collection(
-			name="test_vectordb_retrieval", metadata={"hnsw:space": "cosine"}
-		)
-
-		yield collection
+		yield chroma
 
 
 @pytest.fixture
@@ -64,15 +68,30 @@ def project_dir_for_vectordb_node():
 		os.makedirs(os.path.join(test_project_dir, "resources"))
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
 		os.makedirs(chroma_path)
-		db = chromadb.PersistentClient(path=chroma_path)
-		collection = db.create_collection(
-			name="openai", metadata={"hnsw:space": "cosine"}
+
+		chroma_config = {
+			"client_type": "persistent",
+			"path": chroma_path,
+			"embedding_model": "mock",
+			"collection_name": "mock",
+			"similarity_metric": "cosine",
+		}
+		vectordb_config_path = os.path.join(
+			test_project_dir, "resources", "vectordb.yaml"
+		)
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump(
+				{"vectordb": [{"name": "mock", "db_type": "chroma", **chroma_config}]},
+				f,
+			)
+
+		chroma = Chroma(
+			**chroma_config,
 		)
 		os.makedirs(os.path.join(test_project_dir, "data"))
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
 		corpus_df.to_parquet(corpus_path, index=False)
-		vectordb_ingest(collection, corpus_df, embedding_model)
-
+		asyncio.run(vectordb_ingest(chroma, corpus_df))
 		yield test_project_dir
 
 
@@ -85,13 +104,26 @@ def project_dir_for_vectordb_node_from_sample_project():
 
 		chroma_path = os.path.join(test_project_dir, "resources", "chroma")
 		os.makedirs(chroma_path)
-		db = chromadb.PersistentClient(path=chroma_path)
-		collection = db.create_collection(
-			name="openai", metadata={"hnsw:space": "cosine"}
+		chroma_config = {
+			"client_type": "persistent",
+			"path": chroma_path,
+			"embedding_model": "mock",
+			"collection_name": "mock",
+			"similarity_metric": "cosine",
+		}
+		vectordb_config_path = os.path.join(
+			test_project_dir, "resources", "vectordb.yaml"
 		)
+		with open(vectordb_config_path, "w") as f:
+			yaml.safe_dump(
+				{"vectordb": [{"name": "mock", "db_type": "chroma", **chroma_config}]},
+				f,
+			)
+
+		chroma = Chroma(**chroma_config)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
 		local_corpus_df = pd.read_parquet(corpus_path, engine="pyarrow")
-		vectordb_ingest(collection, local_corpus_df, embedding_model)
+		asyncio.run(vectordb_ingest(chroma, local_corpus_df))
 
 		yield test_project_dir
 
@@ -99,16 +131,12 @@ def project_dir_for_vectordb_node_from_sample_project():
 @pytest.fixture
 def vectordb_instance(project_dir_for_vectordb_node):
 	vectordb = VectorDB(
-		project_dir=project_dir_for_vectordb_node, embedding_model="openai"
+		project_dir=project_dir_for_vectordb_node,
+		vectordb="mock",
 	)
 	yield vectordb
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_vectordb_retrieval(vectordb_instance):
 	top_k = 4
 	id_result, score_result = vectordb_instance._pure(
@@ -118,11 +146,6 @@ def test_vectordb_retrieval(vectordb_instance):
 	base_retrieval_test(id_result, score_result, top_k)
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_vectordb_retrieval_ids(vectordb_instance):
 	ids = [["doc2", "doc3"], ["doc1", "doc2"], ["doc4", "doc5"]]
 	id_result, score_result = vectordb_instance._pure(
@@ -135,11 +158,6 @@ def test_vectordb_retrieval_ids(vectordb_instance):
 	assert all([len(score_list) == 2 for score_list in score_result])
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_vectordb_retrieval_ids_empty(vectordb_instance):
 	ids = [["doc2", "doc3"], [], ["doc4"]]
 	id_result, score_result = vectordb_instance._pure(
@@ -154,32 +172,22 @@ def test_vectordb_retrieval_ids_empty(vectordb_instance):
 	assert len(score_result[2]) == 1
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_vectordb_node(project_dir_for_vectordb_node_from_sample_project):
 	result_df = VectorDB.run_evaluator(
 		project_dir=project_dir_for_vectordb_node_from_sample_project,
 		previous_result=previous_result,
 		top_k=4,
-		embedding_model="openai",
+		vectordb="mock",
 	)
 	base_retrieval_node_test(result_df)
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_vectordb_node_ids(project_dir_for_vectordb_node_from_sample_project):
 	result_df = VectorDB.run_evaluator(
 		project_dir=project_dir_for_vectordb_node_from_sample_project,
 		previous_result=previous_result,
 		top_k=4,
-		embedding_model="openai",
+		vectordb="mock",
 		ids=searchable_input_ids,
 	)
 	contents = result_df["retrieved_contents"].tolist()
@@ -192,12 +200,13 @@ def test_vectordb_node_ids(project_dir_for_vectordb_node_from_sample_project):
 
 @patch.object(
 	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
+	"aget_text_embedding_batch",
+	mock_aget_text_embedding_batch,
 )
-def test_duplicate_id_vectordb_ingest(ingested_vectordb):
-	vectordb_ingest(ingested_vectordb, corpus_df, embedding_model)
-	assert ingested_vectordb.count() == 5
+@pytest.mark.asyncio
+async def test_duplicate_id_vectordb_ingest(openai_chroma):
+	await vectordb_ingest(openai_chroma, corpus_df)
+	assert openai_chroma.collection.count() == 5
 
 	new_doc_id = ["doc4", "doc5", "doc6", "doc7", "doc8"]
 	new_contents = [
@@ -211,27 +220,28 @@ def test_duplicate_id_vectordb_ingest(ingested_vectordb):
 	new_corpus_df = pd.DataFrame(
 		{"doc_id": new_doc_id, "contents": new_contents, "metadata": new_metadata}
 	)
-	vectordb_ingest(ingested_vectordb, new_corpus_df, embedding_model)
+	await vectordb_ingest(openai_chroma, new_corpus_df)
 
-	assert ingested_vectordb.count() == 8
+	assert openai_chroma.collection.count() == 8
 
 
 @patch.object(
 	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
+	"aget_text_embedding_batch",
+	mock_aget_text_embedding_batch,
 )
-def test_long_text_vectordb_ingest(ingested_vectordb):
+@pytest.mark.asyncio
+async def test_long_text_vectordb_ingest(openai_chroma):
+	await vectordb_ingest(openai_chroma, corpus_df)
 	new_doc_id = ["doc6", "doc7"]
 	new_contents = ["This is a test" * 20000, "This is a test" * 40000]
 	new_metadata = [{"datetime": datetime.now()} for _ in range(2)]
 	new_corpus_df = pd.DataFrame(
 		{"doc_id": new_doc_id, "contents": new_contents, "metadata": new_metadata}
 	)
-	assert isinstance(embedding_model, MockEmbedding)
-	vectordb_ingest(ingested_vectordb, new_corpus_df, embedding_model)
+	await vectordb_ingest(openai_chroma, new_corpus_df)
 
-	assert ingested_vectordb.count() == 7
+	assert openai_chroma.collection.count() == 7
 
 
 def mock_get_text_embedding_batch(self, texts, **kwargs):
@@ -239,10 +249,10 @@ def mock_get_text_embedding_batch(self, texts, **kwargs):
 
 
 @patch.object(
-	OpenAIEmbedding, "get_text_embedding_batch", mock_get_text_embedding_batch
+	OpenAIEmbedding, "aget_text_embedding_batch", mock_aget_text_embedding_batch
 )
-def test_long_ids_ingest(empty_chromadb):
-	embedding_model = OpenAIEmbedding()
+@pytest.mark.asyncio
+async def test_long_ids_ingest(openai_chroma):
 	content_df = pd.DataFrame(
 		{
 			"doc_id": [str(uuid.uuid4()) for _ in range(10000)],
@@ -252,18 +262,126 @@ def test_long_ids_ingest(empty_chromadb):
 			],
 		}
 	)
-	vectordb_ingest(empty_chromadb, content_df, embedding_model)
+	await vectordb_ingest(openai_chroma, content_df)
 
 
-def test_get_id_scores(ingested_vectordb):
-	ids = ["doc2", "doc3", "doc4"]
-	embedding_model = MockEmbedding(1536)
-	queries = [
-		"다이노스 오! 권희동~ 엔씨 오 권희동 오 권희동 권희동 안타~",
-		"두산의 헨리 라모스 오오오 라모스 시원하게 화끈하게 날려버려라",
-	]
-	query_embeddings = embedding_model.get_text_embedding_batch(queries)
-	client = chromadb.Client()
-	scores = get_id_scores(ids, query_embeddings, ingested_vectordb, client)
-	assert len(scores) == 3
-	assert isinstance(scores[0], float)
+@pytest.mark.asyncio
+async def test_filter_exist_ids_from_retrieval_gt(mock_chroma):
+	last_modified_datetime = datetime.now()
+	ingested_df = pd.DataFrame(
+		{
+			"doc_id": ["id2"],
+			"contents": ["content2"],
+			"metadata": [{"last_modified_datetime": last_modified_datetime}],
+		}
+	)
+	await vectordb_ingest(mock_chroma, ingested_df)
+
+	# Create sample qa_data and corpus_data
+	qa_data = pd.DataFrame(
+		{
+			"qid": ["qid1"],
+			"query": ["query1"],
+			"retrieval_gt": [[["id1", "id2"], ["id3"]]],
+			"generation_gt": [["jaxjax"]],
+		}
+	)
+	corpus_data = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id2", "id3", "id4"],
+			"contents": ["content1", "content2", "content3", "content4"],
+			"metadata": [
+				{"last_modified_datetime": last_modified_datetime} for _ in range(4)
+			],
+		}
+	)
+
+	# Call the function
+	result = await filter_exist_ids_from_retrieval_gt(mock_chroma, qa_data, corpus_data)
+
+	# Expected result
+	expected_result = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id3"],
+			"contents": ["content1", "content3"],
+			"metadata": [
+				{
+					"last_modified_datetime": last_modified_datetime,
+					"prev_id": None,
+					"next_id": None,
+				}
+				for _ in range(2)
+			],
+		}
+	)
+
+	# Assert the result
+	pd.testing.assert_frame_equal(result.reset_index(drop=True), expected_result)
+
+
+@pytest.mark.asyncio
+async def test_filter_exist_ids(mock_chroma):
+	last_modified_datetime = datetime.now()
+	ingested_df = pd.DataFrame(
+		{
+			"doc_id": ["id2"],
+			"contents": ["content2"],
+			"metadata": [{"last_modified_datetime": last_modified_datetime}],
+		}
+	)
+	await vectordb_ingest(mock_chroma, ingested_df)
+
+	corpus_data = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id2", "id3", "id4"],
+			"contents": ["content1", "content2", "content3", "content4"],
+			"metadata": [
+				{"last_modified_datetime": last_modified_datetime} for _ in range(4)
+			],
+		}
+	)
+
+	result = await filter_exist_ids(mock_chroma, corpus_data)
+
+	expected_result = pd.DataFrame(
+		{
+			"doc_id": ["id1", "id3", "id4"],
+			"contents": ["content1", "content3", "content4"],
+			"metadata": [
+				{
+					"last_modified_datetime": last_modified_datetime,
+					"prev_id": None,
+					"next_id": None,
+				}
+				for _ in range(3)
+			],
+		}
+	)
+	pd.testing.assert_frame_equal(result.reset_index(drop=True), expected_result)
+
+
+def test_get_id_scores():
+	query_embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]]
+	content_embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]]
+	similarity_metric = "cosine"
+
+	scores = get_id_scores(query_embeddings, content_embeddings, similarity_metric)
+
+	assert len(scores) == len(content_embeddings)
+	assert all(isinstance(score, float) for score in scores)
+	assert scores == pytest.approx([1.0, 1.0, 1.0])
+
+	similarity_metric = "l2"
+	scores = get_id_scores(query_embeddings, content_embeddings, similarity_metric)
+	assert len(scores) == len(content_embeddings)
+	assert all(isinstance(score, float) for score in scores)
+	assert scores == pytest.approx(
+		[1.0, 1.0, 1.0]
+	)  # Assuming zero distance for identical vectors
+
+	# Test for inner product
+	similarity_metric = "ip"
+	scores = get_id_scores(query_embeddings, content_embeddings, similarity_metric)
+	assert len(scores) == len(content_embeddings)
+	assert all(isinstance(score, float) for score in scores)
+	assert scores == pytest.approx([0.5, 1.22, 1.94])

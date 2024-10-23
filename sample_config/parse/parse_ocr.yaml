@@ -1,6 +1,6 @@
 modules:
   - module_type: langchain_parse
-    parse_method: upstagelayoutanalysis
+    parse_method: upstagedocumentparse
   - module_type: llama_parse
     result_type: markdown
   - module_type: clova

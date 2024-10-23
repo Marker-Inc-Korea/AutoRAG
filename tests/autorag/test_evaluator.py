@@ -18,8 +18,9 @@ from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
 from autorag.utils.util import load_summary_file
+from autorag.vectordb.milvus import Milvus
 from tests.delete_tests import is_github_action
-from tests.mock import mock_get_text_embedding_batch
+from tests.mock import mock_get_text_embedding_batch, mock_aget_text_embedding_batch
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
@@ -81,8 +82,7 @@ def test_load_node_line(evaluator):
 		"bm25_tokenizer": ["facebook/opt-125m", "porter_stemmer"]
 	}
 	assert node.modules[1].module_param == {
-		"embedding_model": ["openai", "openai"],
-		"embedding_batch": 50,
+		"vectordb": ["openai_embed_3_large", "openai_embed_3_small"],
 	}
 	assert node.modules[2].module_param == {"weight_range": (4, 30)}
 	assert nodes[2].node_type == "passage_filter"
@@ -92,6 +92,11 @@ def test_load_node_line(evaluator):
 	OpenAIEmbedding,
 	"get_text_embedding_batch",
 	mock_get_text_embedding_batch,
+)
+@patch.object(
+	OpenAIEmbedding,
+	"aget_text_embedding_batch",
+	mock_aget_text_embedding_batch,
 )
 def test_start_trial(evaluator):
 	evaluator.start_trial(os.path.join(resource_dir, "simple.yaml"))
@@ -208,6 +213,39 @@ def test_start_trial(evaluator):
 	assert trial_summary_df["best_module_name"][1] == best_row["module_name"]
 	assert trial_summary_df["best_module_params"][1] == best_row["module_params"]
 	assert trial_summary_df["best_execution_time"][0] > 0
+
+
+@pytest.mark.skipif(
+	is_github_action(),
+	reason="This test needs milvus uri and token which is confidential.",
+)
+def test_start_trial_milvus(evaluator):
+	milvus = Milvus(
+		uri=os.environ["MILVUS_URI"],
+		token=os.environ["MILVUS_TOKEN"],
+		embedding_model="openai_embed_3_large",
+		collection_name="openai_embed_3_large",
+	)
+	milvus.delete_collection()
+	del milvus
+
+	evaluator.start_trial(os.path.join(resource_dir, "simple_milvus.yaml"))
+	project_dir = evaluator.project_dir
+	assert os.path.exists(os.path.join(project_dir, "0"))
+	assert os.path.exists(os.path.join(project_dir, "data"))
+	assert os.path.exists(os.path.join(project_dir, "resources"))
+	assert os.path.exists(os.path.join(project_dir, "trial.json"))
+	assert os.path.exists(os.path.join(project_dir, "0", "config.yaml"))
+	assert os.path.exists(os.path.join(project_dir, "0", "retrieve_node_line"))
+	assert os.path.exists(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval")
+	)
+	assert os.path.exists(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "0.parquet")
+	)
+	assert os.path.exists(
+		os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "1.parquet")
+	)
 
 
 @patch.object(

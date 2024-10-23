@@ -54,7 +54,7 @@ node_lines:
         retrieval_modules:
           - module_type: bm25
           - module_type: vectordb
-            embedding_model: openai
+            vectordb: default
       modules:
         - module_type: pass_query_expansion
         - module_type: query_decompose
