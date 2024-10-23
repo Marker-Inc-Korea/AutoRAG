@@ -121,16 +121,22 @@ To change the embedding model, you can change the `embedding_model` parameter to
 |                             [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)                             |          huggingface_bge_m3           |
 
 For example, if you want to use OpenAI text embedding large model, you can set `embedding_model` parameter
-to `openai_embed_3_large`.
+to `openai_embed_3_large` when setting vectordb.
 
 ```yaml
+vectordb:
+  - name: chroma_openai
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_large
+    collection_name: openai_embed_3_large
 nodes:
   - node_line_name: node_line_1
     nodes:
       - node_type: retrieval
         modules:
           - module_type: vectordb
-            embedding_model: openai
+            vectordb: chroma_openai
 ```
 
 ### Add your embedding models

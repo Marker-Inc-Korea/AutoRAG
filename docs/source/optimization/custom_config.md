@@ -95,10 +95,14 @@ node_lines:
         modules:
           - module_type: bm25
           - module_type: vectordb
-            embedding_model: openai
+            vectordb: default
           - module_type: hybrid_rrf
             target_modules: ('bm25', 'vectordb')
             rrf_k: [3, 5, 10]
+```
+
+```{attention}
+Above YAML file is not working. For more information, please check out the [hybrid rrf](https://docs.auto-rag.com/nodes/retrieval/hybrid_rrf.html) module.
 ```
 
 ```{admonition} What is tuple in the yaml file?
@@ -121,16 +125,15 @@ node_lines:
   - node_line_name: node_line_1
     nodes:
       - node_type: retrieval
-        top_k: 10
+        top_k: ${TOP-K}
         strategy:
           metrics: [sem_score]
         modules:
           - module_type: vectordb
-            embedding_model: openai
-            api_key: ${OPENAI_API_KEY}
+            vectordb: default
 ```
 
-Look the `api_key` parameter. You can use environment variable directly in the YAML file.
+Look the `TOP-K` parameter. You can use environment variable directly in the YAML file.
 
 Use '${}' to use an environment variable in the YAML file.
 
