@@ -10,7 +10,7 @@ node_lines:
           - module_type: bm25
             bm25_tokenizer: [ porter_stemmer, space, gpt2 ]
           - module_type: vectordb
-            embedding_model: openai
+            vectordb: default
       modules:
         - module_type: pass_query_expansion
         - module_type: query_decompose
@@ -37,8 +37,7 @@ node_lines:
       modules:
         - module_type: bm25
         - module_type: vectordb
-          embedding_model: openai
-          embedding_batch: 256
+          vectordb: default
         - module_type: hybrid_rrf
           weight_range: (4,80)
         - module_type: hybrid_cc
