@@ -86,6 +86,13 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    local_model.md
 
 .. toctree::
+   :maxdepth: 1
+   :caption: Vector DB
+    :hidden:
+
+    vectordb/vectordb.md
+
+.. toctree::
    :maxdepth: 2
    :caption: Data Creation
    :hidden:
