@@ -21,9 +21,7 @@ def milvus_instance():
 		similarity_metric="ip",
 	)
 	yield milvus
-	milvus.collection.release()
-	milvus.collection.drop_index()
-	milvus.collection.drop()
+	milvus.delete_collection()
 
 
 @pytest.mark.skipif(
