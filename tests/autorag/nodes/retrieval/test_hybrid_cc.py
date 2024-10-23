@@ -1,11 +1,5 @@
-from random import random
-from typing import List, Any
-from unittest.mock import patch
-
 import pandas as pd
 import pytest
-from llama_index.core.base.embeddings.base import Embedding
-from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import HybridCC
 from autorag.nodes.retrieval.hybrid_cc import fuse_per_query, hybrid_cc
@@ -19,7 +13,6 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
 	pseudo_project_dir,
 	previous_result,
 )
-from tests.mock import mock_get_text_embedding_batch
 
 
 def test_cc_fuse_per_query():
