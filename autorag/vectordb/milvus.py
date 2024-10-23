@@ -156,3 +156,9 @@ class Milvus(BaseVectorStore):
 	async def delete(self, ids: List[str]):
 		# Delete entries by IDs
 		self.collection.delete(expr=f"id in {ids}", timeout=self.timeout)
+
+	def delete_collection(self):
+		# Delete the collection
+		self.collection.release(timeout=self.timeout)
+		self.collection.drop_index(timeout=self.timeout)
+		self.collection.drop(timeout=self.timeout)

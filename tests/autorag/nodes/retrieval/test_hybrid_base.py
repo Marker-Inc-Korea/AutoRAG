@@ -2,13 +2,14 @@ import os
 import tempfile
 from datetime import datetime
 
-import chromadb
 import pandas as pd
 import pytest
-from llama_index.core import MockEmbedding
+import yaml
 
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
+from autorag.utils.util import get_event_loop
+from autorag.vectordb.chroma import Chroma
 
 sample_ids = (
 	[["id-1", "id-2", "id-3"], ["id-2", "id-3", "id-4"]],
@@ -132,11 +133,32 @@ def pseudo_project_dir():
 		os.makedirs(resource_dir)
 		bm25_ingest(os.path.join(resource_dir, "bm25_porter_stemmer.pkl"), corpus_df)
 		chroma_path = os.path.join(resource_dir, "chroma")
-		db = chromadb.PersistentClient(path=chroma_path)
-		collection = db.create_collection(
-			name="openai", metadata={"hnsw:space": "cosine"}
+
+		vectordb_config_path = os.path.join(resource_dir, "vectordb.yaml")
+		with open(vectordb_config_path, "w") as f:
+			vectordb_dict = {
+				"vectordb": [
+					{
+						"name": "test_default",
+						"db_type": "chroma",
+						"embedding_model": "mock",
+						"collection_name": "openai",
+						"path": chroma_path,
+						"similarity_metric": "cosine",
+					}
+				]
+			}
+			yaml.safe_dump(vectordb_dict, f)
+
+		chroma = Chroma(
+			embedding_model="mock",
+			collection_name="openai",
+			similarity_metric="cosine",
+			client_type="persistent",
+			path=chroma_path,
 		)
-		vectordb_ingest(collection, corpus_df, MockEmbedding(embed_dim=1536))
+		loop = get_event_loop()
+		loop.run_until_complete(vectordb_ingest(chroma, corpus_df))
 		yield project_dir
 
 

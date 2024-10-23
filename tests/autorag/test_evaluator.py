@@ -18,6 +18,7 @@ from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.utils import validate_qa_dataset, validate_corpus_dataset
 from autorag.utils.util import load_summary_file
+from autorag.vectordb.milvus import Milvus
 from tests.delete_tests import is_github_action
 from tests.mock import mock_get_text_embedding_batch, mock_aget_text_embedding_batch
 
@@ -219,6 +220,15 @@ def test_start_trial(evaluator):
 	reason="This test needs milvus uri and token which is confidential.",
 )
 def test_start_trial_milvus(evaluator):
+	milvus = Milvus(
+		uri=os.environ["MILVUS_URI"],
+		token=os.environ["MILVUS_TOKEN"],
+		embedding_model="openai_embed_3_large",
+		collection_name="openai_embed_3_large",
+	)
+	milvus.delete_collection()
+	del milvus
+
 	evaluator.start_trial(os.path.join(resource_dir, "simple_milvus.yaml"))
 	project_dir = evaluator.project_dir
 	assert os.path.exists(os.path.join(project_dir, "0"))

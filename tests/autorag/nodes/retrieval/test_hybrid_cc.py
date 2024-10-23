@@ -1,8 +1,5 @@
-from unittest.mock import patch
-
 import pandas as pd
 import pytest
-from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import HybridCC
 from autorag.nodes.retrieval.hybrid_cc import fuse_per_query, hybrid_cc
@@ -16,7 +13,6 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
 	pseudo_project_dir,
 	previous_result,
 )
-from tests.mock import mock_get_text_embedding_batch
 
 
 def test_cc_fuse_per_query():
@@ -80,17 +76,12 @@ def test_hybrid_cc_fixed_weight():
 	assert isinstance(result_scores, list)
 
 
-@patch.object(
-	OpenAIEmbedding,
-	"get_text_embedding_batch",
-	mock_get_text_embedding_batch,
-)
 def test_hybrid_cc_node_deploy(pseudo_project_dir):
 	modules = {
 		"target_modules": ("bm25", "vectordb"),
 		"target_module_params": [
 			{"top_k": 3},
-			{"embedding_model": "openai", "top_k": 3},
+			{"vectordb": "test_default", "top_k": 3},
 		],
 		"top_k": 3,
 		"weight": 0.4,
