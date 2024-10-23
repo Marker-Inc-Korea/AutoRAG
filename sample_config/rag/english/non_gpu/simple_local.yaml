@@ -1,4 +1,10 @@
-# This config YAML file does not contain any optimization.
+vectordb:
+  - name: baai_chroma
+    db_type: chroma
+    client_type: persistent
+    embedding_model: huggingface_baai_bge_small
+    collection_name: huggingface_baai_bge_small
+    path: ${PROJECT_DIR}/data/chroma
 node_lines:
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
@@ -8,7 +14,7 @@ node_lines:
       top_k: 3
       modules:
         - module_type: vectordb
-          embedding_model: huggingface_baai_bge_small
+          vectordb: baai_chroma
 - node_line_name: post_retrieve_node_line  # Arbitrary node line name
   nodes:
     - node_type: prompt_maker

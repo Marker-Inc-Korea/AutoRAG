@@ -7,7 +7,7 @@ node_lines:
         top_k: 3
         modules:
           - module_type: vectordb
-            embedding_model: openai
+            vectordb: default
   - node_line_name: post_retrieve_node_line  # Arbitrary node line name
     nodes:
       - node_type: prompt_maker
