@@ -38,12 +38,12 @@ from autorag.data.qa.sample import random_single_hop
 from autorag.data.qa.schema import Raw
 ```
 
-# v0.3.6 migration guide
+# v0.3.7 migration guide
 
 At v0.3.6, there are changes of the vectordb.
 You have to specify what vectordb you want to use at the config YAML file.
 
-- v0.3.5 version (previous v0.3.6)
+- v0.3.6 version (previous v0.3.7)
 
 ```yaml
 node_lines:
@@ -62,7 +62,7 @@ node_lines:
           weight_range: (4, 30)
 ```
 
-- v0.3.6 version
+- v0.3.7 version
 
 ```yaml
 vectordb:
