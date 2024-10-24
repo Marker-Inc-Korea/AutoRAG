@@ -13,6 +13,7 @@ Subpackages
    autorag.nodes
    autorag.schema
    autorag.utils
+   autorag.vectordb
 
 Submodules
 ----------
