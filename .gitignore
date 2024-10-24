@@ -162,3 +162,11 @@ pytest.ini
 .DS_Store
 projects/tutorial_1
 !projects/tutorial_1/config.yaml
+
+ProjectTest
+eval
+resources
+data
+braxted_test_*.py
+docker-compose-admin.yml
+requirements.lock

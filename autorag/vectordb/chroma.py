@@ -7,6 +7,7 @@ from chromadb import (
 	DEFAULT_DATABASE,
 	CloudClient,
 	AsyncHttpClient,
+	HttpClient
 )
 from chromadb.api.models.AsyncCollection import AsyncCollection
 from chromadb.api.types import IncludeEnum, QueryResult
@@ -38,8 +39,17 @@ class Chroma(BaseVectorStore):
 		elif client_type == "persistent":
 			assert path is not None, "path must be provided for persistent client"
 			self.client = PersistentClient(path=path, tenant=tenant, database=database)
-		elif client_type == "http":
+		elif client_type == "http_async":
 			self.client = AsyncHttpClient(
+				host=host,
+				port=port,
+				ssl=ssl,
+				headers=headers,
+				tenant=tenant,
+				database=database,
+			)
+		elif client_type == "http":
+			self.client = HttpClient(
 				host=host,
 				port=port,
 				ssl=ssl,
