@@ -5,11 +5,13 @@ import functools
 import glob
 import inspect
 import itertools
+import json
 import logging
 import os
 import re
 import string
 from copy import deepcopy
+from json import JSONDecoder
 from typing import List, Callable, Dict, Optional, Any, Collection, Iterable
 
 from asyncio import AbstractEventLoop
@@ -690,3 +692,47 @@ def load_yaml_config(yaml_path: str) -> Dict:
 	yaml_dict = convert_string_to_tuple_in_dict(yaml_dict)
 	yaml_dict = convert_env_in_dict(yaml_dict)
 	return yaml_dict
+
+
+def decode_multiple_json_from_bytes(byte_data: bytes) -> list:
+	"""
+	Decode multiple JSON objects from bytes received from SSE server.
+
+	Args:
+		byte_data: Bytes containing one or more JSON objects
+
+	Returns:
+		List of decoded JSON objects
+	"""
+	# Decode bytes to string
+	try:
+		text_data = byte_data.decode("utf-8").strip()
+	except UnicodeDecodeError:
+		raise ValueError("Invalid byte data: Unable to decode as UTF-8")
+
+	# Initialize decoder and result list
+	decoder = JSONDecoder()
+	result = []
+
+	# Keep track of position in string
+	pos = 0
+	text_data = text_data.strip()
+
+	while pos < len(text_data):
+		try:
+			# Try to decode next JSON object
+			json_obj, json_end = decoder.raw_decode(text_data[pos:])
+			result.append(json_obj)
+
+			# Move position to end of current JSON object
+			pos += json_end
+
+			# Skip any whitespace
+			while pos < len(text_data) and text_data[pos].isspace():
+				pos += 1
+
+		except json.JSONDecodeError:
+			# If we can't decode at current position, move forward one character
+			pos += 1
+
+	return result
