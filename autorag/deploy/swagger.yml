@@ -30,35 +30,53 @@ paths:
               schema:
                 type: object
                 properties:
-                  result:
-                    oneOf:
-                      - type: string
-                      - type: array
-                        items:
-                          type: string
-                    description: The result text or list of texts
+                  type:
+                    type: string
+                    enum:
+                      - generated_text
+                      - retrieved_passage
+                    description: |
+                      When the type is "generated_text", only "generated_text" is returned.
+                      The other fields are None. When the type is "retrieved_passage", only
+                      "retrieved_passage" and "passage_index" are returned. The other fields are None.
+                  generated_text:
+                    type: string
+                    nullable: true
+                    description: |
+                      The generated text, only present when "type" is "generated_text".
                   retrieved_passage:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        content:
-                          type: string
-                        doc_id:
-                          type: string
-                        filepath:
-                          type: string
-                          nullable: true
-                        file_page:
-                          type: integer
-                          nullable: true
-                        start_idx:
-                          type: integer
-                          nullable: true
-                        end_idx:
-                          type: integer
-                          nullable: true
-
+                    type: object
+                    nullable: true
+                    properties:
+                      content:
+                        type: string
+                      doc_id:
+                        type: string
+                      filepath:
+                        type: string
+                        nullable: true
+                      file_page:
+                        type: integer
+                        nullable: true
+                      start_idx:
+                        type: integer
+                        nullable: true
+                      end_idx:
+                        type: integer
+                        nullable: true
+                  passage_index:
+                    type: integer
+                    nullable: true
+                    description: |
+                      The index of the retrieved passage, only present when "type" is "retrieved_passage".
+                required:
+                  - type
+                oneOf:
+                  - required:
+                      - generated_text
+                  - required:
+                      - retrieved_passage
+                      - passage_index
   /v1/stream:
     post:
       summary: Stream generated text with retrieved passages

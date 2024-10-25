@@ -11,7 +11,6 @@ sacrebleu  # for bleu score
 evaluate  # for meteor and other scores
 rouge_score  # for rouge score
 rich  # for pretty logging
-chromadb>=0.5.0 # for vectordb retrieval
 click  # for cli
 cohere>=5.8.0 # for cohere services
 tokenlog>=0.0.2 # for token logging
@@ -20,10 +19,14 @@ voyageai # for voyageai reranker
 mixedbread-ai # for mixedbread-ai reranker
 llama-index-llms-bedrock
 scikit-learn
+
+### Vector DB ###
 pymilvus # for using milvus vectordb
+chromadb>=0.5.0 # for chroma vectordb
 
 ### API server ###
 quart
+pyngrok
 ### LlamaIndex ###
 llama-index>=0.11.0
 llama-index-core>=0.11.0
