@@ -67,20 +67,20 @@ jobs:
       uses: docker/build-push-action@v6.9.0
       with:
         context: .
-        file: ./docker/base/Dockerfile
+        file: Dockerfile.base
         push: true
         # push: ${{ github.event_name != 'pull_request' && matrix.variant != 'test' }}
-        tags: ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
+        tags: ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           TARGET_STAGE=${{ matrix.variant }}
 
     - name: Tag and push 'all' for production
       run: |
-        docker pull ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
-        docker tag ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}} ${{ env.DOCKER_REPO }}:latest
-        docker push ${{ env.DOCKER_REPO }}:${{ env.VERSION }}-${{matrix.variant}}
-        docker push ${{ env.DOCKER_REPO }}:latest
+        docker pull ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
+        docker tag ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }} ${{ env.DOCKER_REPO }}:${{matrix.variant}}-latest
+        docker push ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
+        docker push ${{ env.DOCKER_REPO }}:${{matrix.variant}}-latest
 
     # - name: Update Docker Hub description
     #   uses: peter-evans/dockerhub-description@v3
