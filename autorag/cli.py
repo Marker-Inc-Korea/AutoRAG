@@ -8,6 +8,7 @@ from typing import Optional
 
 import click
 import nest_asyncio
+from tqdm import tqdm
 
 from autorag import dashboard
 from autorag.deploy import extract_best_config as original_extract_best_config
@@ -51,7 +52,9 @@ def evaluate(config, qa_data_path, corpus_data_path, project_dir, skip_validatio
 	if not os.path.exists(config):
 		raise ValueError(f"Config file {config} does not exist.")
 	evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir=project_dir)
-	evaluator.start_trial(config, skip_validation=skip_validation)
+	with tqdm(total=100, desc="Evaluating") as pbar:
+		evaluator.start_trial(config, skip_validation=skip_validation)
+		pbar.update(100)
 
 
 @click.command()
@@ -76,7 +79,9 @@ def run_api(config_path, host, port, trial_dir, project_dir):
 		runner = ApiRunner.from_trial_folder(trial_dir)
 	logger.info(f"Running API server at {host}:{port}...")
 	nest_asyncio.apply()
-	runner.run_api_server(host, port)
+	with tqdm(total=100, desc="Running API") as pbar:
+		runner.run_api_server(host, port)
+		pbar.update(100)
 
 
 @click.command()
@@ -108,26 +113,32 @@ def run_web(
 	elif yaml_path and trial_path:
 		raise ValueError("yaml_path and trial_path cannot be given at the same time.")
 	elif yaml_path and not project_dir:
-		subprocess.run(
-			["streamlit", "run", web_py_path, "--", "--yaml_path", yaml_path]
-		)
+		with tqdm(total=100, desc="Running Web") as pbar:
+			subprocess.run(
+				["streamlit", "run", web_py_path, "--", "--yaml_path", yaml_path]
+			)
+			pbar.update(100)
 	elif yaml_path and project_dir:
-		subprocess.run(
-			[
-				"streamlit",
-				"run",
-				web_py_path,
-				"--",
-				"--yaml_path",
-				yaml_path,
-				"--project_dir",
-				project_dir,
-			]
-		)
+		with tqdm(total=100, desc="Running Web") as pbar:
+			subprocess.run(
+				[
+					"streamlit",
+					"run",
+					web_py_path,
+					"--",
+					"--yaml_path",
+					yaml_path,
+					"--project_dir",
+					project_dir,
+				]
+			)
+			pbar.update(100)
 	elif trial_path:
-		subprocess.run(
-			["streamlit", "run", web_py_path, "--", "--trial_path", trial_path]
-		)
+		with tqdm(total=100, desc="Running Web") as pbar:
+			subprocess.run(
+				["streamlit", "run", web_py_path, "--", "--trial_path", trial_path]
+			)
+			pbar.update(100)
 
 
 @click.command()

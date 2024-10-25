@@ -16,6 +16,7 @@ from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai_like import OpenAILike
 from langchain_openai.embeddings import OpenAIEmbeddings
 from rich.logging import RichHandler
+from tqdm import tqdm
 
 version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "VERSION")
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
+from tqdm import tqdm
 
 from autorag.data.chunk.run import run_chunker
 from autorag.data.utils.util import load_yaml, get_param_combinations
@@ -46,12 +47,13 @@ class Chunker:
 		input_modules, input_params = get_param_combinations(modules)
 
 		logger.info("Chunking Start...")
-		run_chunker(
-			modules=input_modules,
-			module_params=input_params,
-			parsed_result=self.parsed_raw,
-			trial_path=os.path.join(self.project_dir, trial_name),
-		)
+		for _ in tqdm(range(1), desc="Chunking Progress"):
+			run_chunker(
+				modules=input_modules,
+				module_params=input_params,
+				parsed_result=self.parsed_raw,
+				trial_path=os.path.join(self.project_dir, trial_name),
+			)
 		logger.info("Chunking Done!")
 
 	def __get_new_trial_name(self) -> str:
