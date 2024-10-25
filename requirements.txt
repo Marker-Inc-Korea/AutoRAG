@@ -50,6 +50,7 @@ langchain-community>=0.3.0
 # autorag dashboard
 panel
 seaborn
+flask<3.0.0
 blinker==1.4 # google-colab 1.0.0 required
 ipykernel==5.5.6 # google-colab 1.0.0 required
 ipywidgets
