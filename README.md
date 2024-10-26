@@ -30,6 +30,16 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 ---
 
+Do you have any difficulties in optimizing your RAG pipeline?
+Or is it hard to set up things to use AutoRAG?
+Try [**AutoRAG Cloud**](https://tally.so/r/n0jOrZ) beta.
+We will help you to run AutoRAG and optimize.
+Plus, we can help you to build RAG evaluation dataset.
+
+Starts with 9.99$ per optimization.
+
+---
+
 ## YouTube Tutorial
 
 https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
