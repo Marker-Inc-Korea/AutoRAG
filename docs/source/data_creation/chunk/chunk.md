@@ -129,11 +129,7 @@ chunker.start_chunking("your/path/to/chunk_config.yaml")
 If you set `project_dir` parameter, you can check the result in the project directory.
 If not, you can check the result in the current directory.
 
-The way to check the result is the same as the `Evaluator` and `Parser` in AutoRAG.
-
-A `trial_folder` is created in `project_dir` first.
-
-If the chunking is completed successfully, the following three types of files are created in the trial_folder.
+If the chunking is completed successfully, the following three types of files are created in the `project_dir`.
 
 1. Chunked Result
 2. Used YAML file
