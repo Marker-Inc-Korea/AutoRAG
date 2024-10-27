@@ -2,9 +2,10 @@ import logging
 import os
 import pathlib
 import uuid
-from typing import Dict, Optional, List, Union
+from typing import Dict, Optional, List, Union, Literal
 
 import pandas as pd
+from pyngrok import ngrok
 from quart import Quart, request, jsonify
 from quart.helpers import stream_with_context
 from pydantic import BaseModel, ValidationError
@@ -40,13 +41,20 @@ class RunResponse(BaseModel):
 	retrieved_passage: List[RetrievedPassage]
 
 
+class StreamResponse(BaseModel):
+	"""
+	When the type is generated_text, only generated_text is returned. The other fields are None.
+	When the type is retrieved_passage, only retrieved_passage and passage_index are returned. The other fields are None.
+	"""
+
+	type: Literal["generated_text", "retrieved_passage"]
+	generated_text: Optional[str]
+	retrieved_passage: Optional[RetrievedPassage]
+	passage_index: Optional[int]
+
+
 class VersionResponse(BaseModel):
 	version: str
-
-
-empty_retrieved_passage = RetrievedPassage(
-	content="", doc_id="", filepath=None, file_page=None, start_idx=None, end_idx=None
-)
 
 
 class ApiRunner(BaseRunner):
@@ -138,19 +146,28 @@ class ApiRunner(BaseRunner):
 						retrieved_passages = self.extract_retrieve_passage(
 							previous_result
 						)
-						response = RunResponse(
-							result="", retrieved_passage=retrieved_passages
-						)
-						yield response.model_dump_json().encode("utf-8")
+						for i, retrieved_passage in enumerate(retrieved_passages):
+							yield (
+								StreamResponse(
+									type="retrieved_passage",
+									generated_text=None,
+									retrieved_passage=retrieved_passage,
+									passage_index=i,
+								)
+								.model_dump_json()
+								.encode("utf-8")
+							)
 						# Start streaming of the result
 						assert len(previous_result) == 1
 						prompt: str = previous_result["prompts"].tolist()[0]
 						async for delta in module_instance.astream(
 							prompt=prompt, **module_param
 						):
-							response = RunResponse(
-								result=delta,
-								retrieved_passage=[empty_retrieved_passage],
+							response = StreamResponse(
+								type="generated_text",
+								generated_text=delta,
+								retrieved_passage=None,
+								passage_index=None,
 							)
 							yield response.model_dump_json().encode("utf-8")
 
@@ -163,31 +180,23 @@ class ApiRunner(BaseRunner):
 			response = VersionResponse(version=version)
 			return jsonify(response.model_dump()), 200
 
-	def run_api_server(self, host: str = "0.0.0.0", port: int = 8000, **kwargs):
+	def run_api_server(
+		self, host: str = "0.0.0.0", port: int = 8000, remote: bool = True, **kwargs
+	):
 		"""
-		Run the pipeline as api server.
-		You can send POST request to `http://host:port/run` with json body like below:
-
-		.. Code:: json
-
-		    {
-		        "query": "your query",
-		        "result_column": "generated_texts"
-		    }
-
-		And it returns json response like below:
-
-		.. Code:: json
-
-		    {
-		        "answer": "your answer"
-		    }
+		Run the pipeline as an api server.
+		Here is api endpoint documentation => https://docs.auto-rag.com/deploy/api_endpoint.html
 
 		:param host: The host of the api server.
 		:param port: The port of the api server.
+		:param remote: Whether to expose the api server to the public internet using ngrok.
 		:param kwargs: Other arguments for Flask app.run.
 		"""
 		logger.info(f"Run api server at {host}:{port}")
+		if remote:
+			http_tunnel = ngrok.connect(str(port), "http")
+			public_url = http_tunnel.public_url
+			logger.info(f"Public API URL: {public_url}")
 		self.app.run(host=host, port=port, **kwargs)
 
 	def extract_retrieve_passage(self, df: pd.DataFrame) -> List[RetrievedPassage]:

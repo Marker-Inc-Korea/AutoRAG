@@ -30,6 +30,16 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 ---
 
+Do you have any difficulties in optimizing your RAG pipeline?
+Or is it hard to set up things to use AutoRAG?
+Try [**AutoRAG Cloud**](https://tally.so/r/n0jOrZ) beta.
+We will help you to run AutoRAG and optimize.
+Plus, we can help you to build RAG evaluation dataset.
+
+Starts with 9.99$ per optimization.
+
+---
+
 ## YouTube Tutorial
 
 https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/c0d23896-40c0-479f-a17b-aa2ec3183a26
@@ -430,6 +440,15 @@ autorag run_web --trial_path your/path/to/trial_path
 #### sample web interface
 
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
+
+### Use advanced web interface
+
+You can deploy the advanced web interface featured by [Kotaemon](https://github.com/Cinnamon/kotaemon) to the fly.io.
+Go [here](https://github.com/vkehfdl1/AutoRAG-web-kotaemon) to use it and deploy to the fly.io.
+
+Example :
+
+![Kotaemon Example](https://velog.velcdn.com/images/autorag/post/5e71b8d9-3e59-4e63-9191-355a1a5aa3a0/image.png)
 
 ## 📌 Supporting Data Creation Modules
 ![Data Creation](https://github.com/user-attachments/assets/0e5872de-2892-46b4-9ecd-e395671e324c)
