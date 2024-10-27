@@ -9,7 +9,7 @@ def run_parser(
 	modules: List[Callable],
 	module_params: List[Dict],
 	data_path_glob: str,
-	trial_path: str,
+	project_dir: str,
 ):
 	results, execution_times = zip(
 		*map(
@@ -21,7 +21,7 @@ def run_parser(
 
 	# save results to parquet files
 	filepaths = list(
-		map(lambda x: os.path.join(trial_path, f"{x}.parquet"), range(len(modules)))
+		map(lambda x: os.path.join(project_dir, f"{x}.parquet"), range(len(modules)))
 	)
 	list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))
 	filenames = list(map(lambda x: os.path.basename(x), filepaths))
@@ -34,5 +34,5 @@ def run_parser(
 			"execution_time": average_times,
 		}
 	)
-	summary_df.to_csv(os.path.join(trial_path, "summary.csv"), index=False)
+	summary_df.to_csv(os.path.join(project_dir, "summary.csv"), index=False)
 	return summary_df
