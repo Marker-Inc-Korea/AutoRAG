@@ -267,11 +267,11 @@ class QA:
 		Find the matched passage from new_corpus.
 
 		:param evidence_indices: The evidence indices at the corresponding Raw.
-			Its shape is the same as the retrieval_gt.
+		        Its shape is the same as the retrieval_gt.
 		:param evidence_paths: The evidence paths at the corresponding Raw.
-			Its shape is the same as the retrieval_gt.
+		        Its shape is the same as the retrieval_gt.
 		:param path_corpus_dict: The key is the path name, and the value is the corpus dataframe that only contains the path in the key.
-			You can make it using `QA.__make_path_corpus_dict`.
+		        You can make it using `QA.__make_path_corpus_dict`.
 		:return:
 		"""
 		result = []

@@ -9,7 +9,7 @@ from autorag.data.qa.generation_gt.base import add_gen_gt
 from autorag.data.qa.generation_gt.prompt import GEN_GT_SYSTEM_PROMPT
 
 
-async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str):
+async def make_gen_gt_llama_index(row: Dict, llm: BaseLLM, system_prompt: str) -> Dict:
 	retrieval_gt_contents = list(
 		itertools.chain.from_iterable(row["retrieval_gt_contents"])
 	)
@@ -35,3 +35,7 @@ async def make_concise_gen_gt(row: Dict, llm: BaseLLM, lang: str = "en") -> Dict
 
 async def make_basic_gen_gt(row: Dict, llm: BaseLLM, lang: str = "en") -> Dict:
 	return await make_gen_gt_llama_index(row, llm, GEN_GT_SYSTEM_PROMPT["basic"][lang])
+
+
+async def make_custom_gen_gt(row: Dict, llm: BaseLLM, system_prompt: str) -> Dict:
+	return await make_gen_gt_llama_index(row, llm, system_prompt)

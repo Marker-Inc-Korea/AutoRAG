@@ -13,13 +13,11 @@ async def llama_index_generate_base(
 	messages: List[ChatMessage],
 ) -> Dict:
 	context = list(itertools.chain.from_iterable(row["retrieval_gt_contents"]))
-	context_str = "Text:\n" + "\n".join(
-		[f"{i + 1}. {c}" for i, c in enumerate(context)]
-	)
+	context_str = "\n".join([f"{i + 1}. {c}" for i, c in enumerate(context)])
 	user_prompt = f"Text:\n{context_str}\n\nGenerated Question from the Text:\n"
-	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
-
-	chat_response: ChatResponse = await llm.achat(messages=messages)
+	user_message = ChatMessage(role=MessageRole.USER, content=user_prompt)
+	new_messages = [*messages, user_message]
+	chat_response: ChatResponse = await llm.achat(messages=new_messages)
 	row["query"] = chat_response.message.content
 	return row
 
@@ -62,3 +60,11 @@ async def two_hop_incremental(
 	response = chat_response.message.content
 	row["query"] = response.split(":")[-1].strip()
 	return row
+
+
+async def custom_query_gen(
+	row: Dict,
+	llm: BaseLLM,
+	messages: List[ChatMessage],
+) -> Dict:
+	return await llama_index_generate_base(row, llm, messages)

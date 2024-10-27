@@ -87,24 +87,25 @@ def test_langchain_chunk_file_name_eng_node():
 	check_chunk_result_node(result_df)
 	assert len(result_df["doc_id"].tolist()) == 9
 
+
 def test_langchain_chunk_file_name_ja(chunk_instance):
-    langchain_chunk_original = langchain_chunk.__wrapped__
-    doc_id, contents, path, start_end_idx, metadata = langchain_chunk_original(
-        base_texts,
-        chunk_instance,
-        file_name_language="ja",  
-        metadata_list=base_metadata,
-    )
-    check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
-    assert len(contents) == 7
-    assert contents == expect_texts["character_ja"] 
-    assert path == expect_character_path
-    assert start_end_idx == expect_character_idx
+	langchain_chunk_original = langchain_chunk.__wrapped__
+	doc_id, contents, path, start_end_idx, metadata = langchain_chunk_original(
+		base_texts,
+		chunk_instance,
+		file_name_language="ja",
+		metadata_list=base_metadata,
+	)
+	check_chunk_result(doc_id, contents, path, start_end_idx, metadata)
+	assert len(contents) == 7
+	assert contents == expect_texts["character_ja"]
+	assert path == expect_character_path
+	assert start_end_idx == expect_character_idx
 
 
 def test_langchain_chunk_file_name_ja_node(chunk_instance):
-    result_df = langchain_chunk(
-        parsed_result, chunk_method="character", add_file_name="ja" 
-    )
-    check_chunk_result_node(result_df)
-    assert len(result_df["doc_id"].tolist()) == 9
+	result_df = langchain_chunk(
+		parsed_result, chunk_method="character", add_file_name="ja"
+	)
+	check_chunk_result_node(result_df)
+	assert len(result_df["doc_id"].tolist()) == 9
