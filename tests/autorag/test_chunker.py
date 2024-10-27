@@ -35,10 +35,10 @@ def chunker_test_fixture():
 def test_start_chunking(chunker):
 	chunker.start_chunking(os.path.join(resource_dir, "simple_chunk.yaml"))
 	project_dir = chunker.project_dir
-	assert os.path.exists(os.path.join(project_dir, "0"))
-	assert os.path.exists(os.path.join(project_dir, "0", "chunk_config.yaml"))
-	assert os.path.exists(os.path.join(project_dir, "0", "0.parquet"))
-	chunk_result = pd.read_parquet(os.path.join(project_dir, "0", "0.parquet"))
+	assert os.path.exists(project_dir)
+	assert os.path.exists(os.path.join(project_dir, "chunk_config.yaml"))
+	assert os.path.exists(os.path.join(project_dir, "0.parquet"))
+	chunk_result = pd.read_parquet(os.path.join(project_dir, "0.parquet"))
 	expect_result_columns = ["doc_id", "contents", "metadata"]
 	assert all(
 		[
@@ -46,7 +46,7 @@ def test_start_chunking(chunker):
 			for expect_column in expect_result_columns
 		]
 	)
-	summary_df = load_summary_file(os.path.join(project_dir, "0", "summary.csv"))
+	summary_df = load_summary_file(os.path.join(project_dir, "summary.csv"))
 	expect_summary_columns = [
 		"filename",
 		"module_name",
