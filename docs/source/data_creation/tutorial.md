@@ -8,42 +8,90 @@ However, since the advent of LLM, creating synthetic data has become one of the 
 The following guide covers how to use LLM to create data in a form that AutoRAG can use.
 
 ---
-![Data Creation](../../_static/data_creation.png)
+![Data Creation](../_static/data_creation_pipeline.png)
 
-## 1. Parse
-You can make different parsing results from the raw data using the parsing YAML file.
-The sample parsing YAML file looks like this.
+## 1. Parsing
+
+### Set YAML File
 
 ```yaml
 modules:
   - module_type: langchain_parse
-    parse_method: [pdfminer, pdfplumber]
+    parse_method: pdfminer
 ```
 
-With this YAML file, you can get the parsed data with pdfminer and pdfplumber.
+You can also use multiple Parse modules at once.
+However, in this case, you'll need to return a new process for each parsed result.
 
-You can execute this parsing YAML file by using the following code.
+### Start Parsing
+
+You can parse your raw documents with just a few lines of code.
 
 ```python
 from autorag.parser import Parser
 
-filepaths = "./data/*.pdf"
-parser = Parser(filepaths, "./parse_project_dir")
-parser.start_parsing("./parsing.yaml")
+parser = Parser(data_path_glob="your/data/path/*", project_dir="./parse_project_dir")
+parser.start_parsing("your/path/to/parse_config.yaml")
 ```
 
 Then you can check out the parsing result in the `./parse_project_dir` directory.
 
 For more details about parsing, please refer [here](./parse/parse.md).
 
-## 2. QA Creation
+## 2. Chunking
 
-From the parsed results, you can select the best parsed data for AutoRAG.
-After you selected, you can create QA data for the AutoRAG.
+### Set YAML File
 
-The example is shown below, the `initial_raw_df` is selected raw data.
+```yaml
+modules:
+  - module_type: llama_index_chunk
+    chunk_method: Token
+    chunk_size: 1024
+    chunk_overlap: 24
+    add_file_name: en
+```
+
+You can also use multiple Chunk modules at once.
+In this case, you need to use one corpus to create QA and then map the rest of the corpus to QA Data.
+
+If the chunk method is different, the retrieval_gt will be different, so we need to remap it to the QA dataset.
+
+### Start Chunking
+
+You can chunk your parsed results with just a few lines of code.
 
 ```python
+from autorag.chunker import Chunker
+
+chunker = Chunker.from_parquet(parsed_data_path="your/parsed/data/path", project_dir="./chunk_project_dir")
+chunker.start_chunking("your/path/to/chunk_config.yaml")
+```
+
+Then you can check out the chunking result in the `./chunk_project_dir` directory.
+
+For more details about chunking, please refer [here](./chunk/chunk.md).
+
+## 3. QA Creation
+
+### Before you start QA Creation
+
+Corpus and QA are one set.
+If multiple corpus are created using multiple chunk methods, each corpus needs its own QA dataset that is mapped.
+
+Therefore, if you have multiple corpus, you need to create an initial QA using one corpus and remap the QA for the remaining corpus to create multiple QA - Corpus Sets.
+
+Chapter 3(QA Creation) describes how to create an Initial QA with one corpus.
+Chapter 4(QA - Corpus mapping) describes how to remap the QAs for the rest of the corpus.
+
+If you created your corpus using only one chunking method, you don't need Chapter 4.
+However, if you have created a corpus using multiple chunking methods and want to perform chunking optimization, you should refer to Chapter 4.
+
+### Start QA Creation
+
+You can create QA dataset with just a few lines of code.
+
+```python
+import pandas as pd
 from llama_index.llms.openai import OpenAI
 
 from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
@@ -51,81 +99,47 @@ from autorag.data.qa.generation_gt.llama_index_gen_gt import (
     make_basic_gen_gt,
     make_concise_gen_gt,
 )
+from autorag.data.qa.schema import Raw, Corpus
 from autorag.data.qa.query.llama_gen_query import factoid_query_gen
 from autorag.data.qa.sample import random_single_hop
-from autorag.data.qa.schema import Raw
 
-initial_raw = Raw(initial_raw_df)
-initial_corpus = initial_raw.chunk(
-    "llama_index_chunk", chunk_method="token", chunk_size=128, chunk_overlap=5
-)
 llm = OpenAI()
+raw_df = pd.read_parquet("your/path/to/parsed.parquet")
+raw_instance = Raw(raw_df)
+
+corpus_df = pd.read_parquet("your/path/to/corpus.parquet")
+corpus_instance = Corpus(corpus_df, raw_instance)
+
 initial_qa = (
-    initial_corpus.sample(random_single_hop, n=3)
+    corpus_instance.sample(random_single_hop, n=3)
     .map(
         lambda df: df.reset_index(drop=True),
     )
     .make_retrieval_gt_contents()
     .batch_apply(
-        factoid_query_gen,
+        factoid_query_gen,  # query generation
         llm=llm,
     )
     .batch_apply(
-        make_basic_gen_gt,
+        make_basic_gen_gt,  # answer generation (basic)
         llm=llm,
     )
     .batch_apply(
-        make_concise_gen_gt,
+        make_concise_gen_gt,  # answer generation (concise)
         llm=llm,
     )
     .filter(
-        dontknow_filter_rule_based,
+        dontknow_filter_rule_based,  # filter don't know
         lang="en",
     )
 )
-initial_qa.to_parquet("./initial_qa.parquet", "./initial_corpus.parquet")
+
+initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 ```
-
-We recommend you find the optimal pipeline first from this initial data.
-Check out [here](../../tutorial.md) to see the optimization tutorial.
-
-## 3. Chunking Optimization
-
-After finding the initial optimal pipeline, this time you are to optimize the chunking method.
-First, you can create various chunking results from the parsed data.
-
-The chunking YAML file looks like this.
-
-```yaml
-modules:
-  - module_type: llama_index_chunk
-    chunk_method: [ Token, Sentence ]
-    chunk_size: [ 1024, 512 ]
-    chunk_overlap: 24
-    add_file_name: english
-  - module_type: llama_index_chunk
-    chunk_method: [ SentenceWindow ]
-    sentence_splitter: kiwi
-    window_size: 3
-    add_file_name: english
-```
-
-With this YAML file, you can get the chunked data with Token, Sentence, and SentenceWindow with different chunk sizes.
-
-You can execute this chunking YAML file by using the following code.
-
-```python
-from autorag.chunker import Chunker
-
-chunker = Chunker.from_parquet("./initial_raw.parquet", "./chunk_project_dir")
-chunker.start_chunking("./chunking.yaml")
-```
-
-Then you can check out the chunking result in the `./chunk_project_dir` directory.
-
-For more details about chunking, please refer [here](./chunk/chunk.md).
 
 ## 4. QA - Corpus mapping
+
+If you have multiple corpus data, you can map the rest of the corpus to the QA dataset.
 
 For the chunking optimization, you can evaluate RAG performance with different corpus data.
 You already have the optimal pipeline from the initial QA data,

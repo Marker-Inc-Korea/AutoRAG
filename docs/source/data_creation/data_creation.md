@@ -5,6 +5,8 @@ The following guide covers how to use LLM to create data in a form that AutoRAG 
 
 ## Basic Concepts
 
+![Data Creation Pipeline](../_static/data_creation_pipeline.png)
+
 In this new data creation pipeline, we have three schemas. `Raw`, `QA`, and `Corpus`.
 
 - `Raw`: Raw data after you parsed your documents. You can use this data to create `Corpus` data.

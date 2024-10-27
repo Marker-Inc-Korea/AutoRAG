@@ -31,12 +31,12 @@ def test_parser():
 def test_start_parsing(parser):
 	parser.start_parsing(os.path.join(resource_dir, "simple_parse.yaml"))
 	project_dir = parser.project_dir
-	assert os.path.exists(os.path.join(project_dir, "0"))
-	assert os.path.exists(os.path.join(project_dir, "0", "parse_config.yaml"))
-	assert os.path.exists(os.path.join(project_dir, "0", "0.parquet"))
-	pdfminer_result = pd.read_parquet(os.path.join(project_dir, "0", "0.parquet"))
-	assert os.path.exists(os.path.join(project_dir, "0", "1.parquet"))
-	pdfplumber_result = pd.read_parquet(os.path.join(project_dir, "0", "1.parquet"))
+	assert os.path.exists(project_dir)
+	assert os.path.exists(os.path.join(project_dir, "parse_config.yaml"))
+	assert os.path.exists(os.path.join(project_dir, "0.parquet"))
+	pdfminer_result = pd.read_parquet(os.path.join(project_dir, "0.parquet"))
+	assert os.path.exists(os.path.join(project_dir, "1.parquet"))
+	pdfplumber_result = pd.read_parquet(os.path.join(project_dir, "1.parquet"))
 
 	expect_result_columns = ["texts", "path", "page", "last_modified_datetime"]
 	assert all(
@@ -51,7 +51,7 @@ def test_start_parsing(parser):
 			for expect_column in expect_result_columns
 		]
 	)
-	summary_df = load_summary_file(os.path.join(project_dir, "0", "summary.csv"))
+	summary_df = load_summary_file(os.path.join(project_dir, "summary.csv"))
 	expect_summary_columns = [
 		"filename",
 		"module_name",
