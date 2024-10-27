@@ -55,7 +55,7 @@ class FaithfulnessTemplate:
 
 JSON:
 """
-		elif lang == "ja": 
+		elif lang == "ja":
 			return f"""与えられたテキストに基づいて、そこから推測できる事実に基づく主張のリストを生成してください。
 
 例:

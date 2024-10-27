@@ -44,10 +44,10 @@ Users do not know the passage source of the question, so it should not be mentio
 	5.	질문을 한국어로 작성하세요.""",
 			)
 		],
-        "ja": [
-            ChatMessage(
+		"ja": [
+			ChatMessage(
 				role=MessageRole.SYSTEM,
-                content="""あなたは与えられたTextを「実は質問」に変換するAIです。
+				content="""あなたは与えられたTextを「実は質問」に変換するAIです。
 
 事実質問(factoid questions)とは、事実的な情報を求める質問であり、容易に検証できる回答を必要とします。 一般的に、「はい/いいえ」の返答や簡単な説明を要求し、日付、名前、場所、または事件のような具体的な詳細事項について尋ねる質問です。
 
@@ -63,9 +63,9 @@ Users do not know the passage source of the question, so it should not be mentio
 	3. Textで事実的情報を要求する質問を作らなければなりません。 つまり、Textに基づいて質問を作成します。
 	4. 質問に「与えられたTextで」または「提供された段落で」のような表現を含めてはいけません。
 ユーザーは質問の出所がTextだということを知らないので、必ずしもその出所を言及してはいけません。
-	5. 質問を日本語で作成しなさい。"""
+	5. 質問を日本語で作成しなさい。""",
 			)
-		]
+		],
 	},
 	"concept_completion": {
 		"en": [
@@ -101,10 +101,10 @@ Users do not know the passage source of the question, so it should not be mentio
 6.	질문을 한국어로 작성하세요.""",
 			)
 		],
-        "ja":[
-            ChatMessage(
+		"ja": [
+			ChatMessage(
 				role=MessageRole.SYSTEM,
-                content="""あなたはTextを「概念完成」の質問に変換するAIです。
+				content="""あなたはTextを「概念完成」の質問に変換するAIです。
 「概念完成」の質問は概念の本質やアイデンティティについて直接的に尋ねる質問です。
 
 次の指示に従います。
@@ -115,9 +115,9 @@ Users do not know the passage source of the question, so it should not be mentio
 4. Textの特定のキーワードを必ず質問に含みます。
 5. 質問に「与えられたTextで」または「提供された段落で」のような表現を含めてはいけません。
 ユーザーは質問の出所がTextだということを知らないので、必ずしもその出所を言及してはいけません。
-6. 質問を日本語で書きましょう。"""
+6. 質問を日本語で書きましょう。""",
 			)
-		]
+		],
 	},
 	"two_hop_incremental": {
 		"en": [
@@ -158,7 +158,7 @@ One-hop question (using Document 1): In which Mexican state is Nuevo Laredo loca
 Two-hop question (using Document 2):  In which Mexican state can one find the Ciudad Deportiva, home to the Tecolotes de Nuevo Laredo?""",
 			),
 		],
-        "ja": [
+		"ja": [
 			ChatMessage(
 				role=MessageRole.SYSTEM,
 				content="与えられた答えに対するマルチホップ質問を生成し、与えられたすべての文書を参照する必要があります。",
@@ -175,7 +175,7 @@ Nuevo Larredo メキシコ野球リーグのチームです···""",
 				content="""Answer: Tamaulipas
 One-hop question (using Document 1): ヌエヴォ·ラレド自治体はどのメキシコの州にありますか？
 Two-hop question (using Document 2): ヌエヴォ·ラレドのテコロテス·デ·テコロテスの故郷であるメキシコの州はどこですか？""",
-			)
-		]
+			),
+		],
 	},
 }

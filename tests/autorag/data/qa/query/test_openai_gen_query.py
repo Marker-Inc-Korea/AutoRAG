@@ -89,6 +89,7 @@ def test_factoid_query_gen_ko():
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
 
+
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
 	"parse",
@@ -100,6 +101,7 @@ def test_factoid_query_gen_ja():
 	assert "query" in new_qa.data.columns
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
+
 
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
@@ -113,6 +115,7 @@ def test_concept_completion_query_gen_ko():
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
 
+
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
 	"parse",
@@ -125,6 +128,7 @@ def test_concept_completion_query_gen_ja():
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(qa_df)
 
+
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
 	"parse",
@@ -136,6 +140,7 @@ def test_two_hop_incremental():
 	assert "query" in new_qa.data.columns
 	assert all(isinstance(query, str) for query in new_qa.data["query"].tolist())
 	assert len(new_qa.data) == len(multi_hop_qa_df)
+
 
 @patch.object(
 	openai.resources.beta.chat.completions.AsyncCompletions,
