@@ -18,6 +18,7 @@ If you want to use another model, use llama_index version instead.
 1. [Factoid](#1-factoid)
 2. [Concept Completion](#2-concept-completion)
 3. [Two-hop Incremental](#3-two-hop-incremental)
+4. [Custom](#4-custom)
 
 
 ## 1. Factoid
@@ -126,4 +127,32 @@ from autorag.data.qa.query.llama_gen_query import two_hop_incremental
 llm = OpenAI()
 qa = QA(qa_df)
 result_qa = qa.batch_apply(two_hop_incremental, llm=llm)
+```
+
+## 4. Custom
+You can generate questions with custom prompts. You can generate questions in ways other than the ones AutoRAG provides by default by creating a list of `ChatMessage` in the llama index, or you can generate questions in languages other than "en", "ko" and "ja".
+### Usage
+- LlamaIndex
+```python
+from autorag.data.qa.schema import QA
+from autorag.data.qa.query.llama_gen_query import custom_query_gen
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
+from llama_index.llms.openai import OpenAI
+
+messages = [
+    ChatMessage(
+        role=MessageRole.SYSTEM,
+        content="""As an expert AI assistant, create one question that can be directly answered from the provided **Text**.
+Ensure question:
+
+- Is clearly based on information within the **Text** and avoids assumptions or external context.
+- Excludes any introductory phrases, such as "In the given text...", "Based on the context...", "Here are some questions baesd on context...".
+- should include question sentence only.
+- Is concise, relevant, and encourages specific, direct answers.
+- has to be same as system language.
+""",
+    )
+]
+llm = OpenAI()
+result_qa = qa.batch_apply(custom_query_gen, llm=llm, messages=messages)
 ```
