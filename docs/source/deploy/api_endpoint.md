@@ -37,11 +37,21 @@ runner.run_api_server()
 autorag run_api --trial_dir /trial/dir/0 --host 0.0.0.0 --port 8000
 ```
 
+## Use NGrok Tunnel for public access
+
+For accessing the API server from the public, you can use the NGrok tunnel service.
+It automatically creates ngrok tunnel to your local server.
+
+You can see the logs of the public URL like below:
+
+```
+INFO     [api.py:199] >> Public API URL:          api.py:199
+         https://8a31-14-52-132-205.ngrok-free.app
+```
+This is the URL to your local server, so use it as the host at request.
+
+
 ## API Endpoint
-
-Certainly! To generate API endpoint documentation in Markdown format from the provided OpenAPI specification, we need to break down each endpoint and describe its purpose, request parameters, and response structure. Here's how you can document the API:
-
----
 
 ## Example API Documentation
 
@@ -92,8 +102,9 @@ Certainly! To generate API endpoint documentation in Markdown format from the pr
     - **Content Type**: `text/event-stream`
     - **Schema**:
       - **Properties**:
-        - `result` (string or array of strings): The result text or list of texts (streamed line by line).
-        - `retrieved_passage` (array of objects): List of retrieved passages.
+        - `type` (generated_text or retrieved_passage): If it is generated_text, you can see only the generated text. If it is retrieved_passage, you can see the retrieved passage and passage_index.
+        - `generated_text` (string): The generated text from the generator (LLM). The result of the RAG system.
+        - `retrieved_passage` (object): Retrieved passage.
           - **Properties**:
             - `content` (string): The content of the passage.
             - `doc_id` (string): Document ID.
@@ -101,6 +112,7 @@ Certainly! To generate API endpoint documentation in Markdown format from the pr
             - `file_page` (integer, nullable): File page number.
             - `start_idx` (integer, nullable): Start index.
             - `end_idx` (integer, nullable): End index.
+        - `passage_index` (integer): Index of the retrieved passage.
 
 ---
 
@@ -133,7 +145,7 @@ Here's the Python client code for each endpoint:
 
 ```python
 import requests
-import json
+from autorag.utils.util import decode_multiple_json_from_bytes
 
 # Base URL of the API
 BASE_URL = "http://example.com:8000"  # Replace with the actual base URL of the API
@@ -156,17 +168,24 @@ def stream_query(query, result_column="generated_texts"):
         "query": query,
         "result_column": result_column
     }
-    response = requests.post(url, json=payload, stream=True)
-    if response.status_code == 200:
-        for i, chunk in enumerate(response.iter_content(chunk_size=None)):
-            if chunk:
-                # Decode the chunk and print it
-                data = json.loads(chunk.decode("utf-8"))
-                if i == 0:
-                    retrieved_passages = data["retrieved_passage"] # The retrieved passages
-                print(data["result"], end="")
-    else:
-        response.raise_for_status()
+    with requests.Session() as session:
+      response = session.post(url, json=payload, stream=True)
+      retrieved_passages = [] # This will store retrieved passages
+
+      # Check if the request was successful
+      if response.status_code == 200:
+          # Process the streaming response
+          for i, chunk in enumerate(response.iter_content(chunk_size=None)):
+              if chunk:
+                  data_list = decode_multiple_json_from_bytes(chunk)
+                  for data in data_list:
+                      if data["type"] == "retrieved_passage":
+                          retrieved_passages.append(data["retrieved_passage"])
+                      else:
+                          print(data["generated_text"], end="") # Stream the generated texts
+      else:
+          print(f"Request failed with status code: {response.status_code}")
+          print(f"Response content: {response.text}")
 
 def get_version():
     url = f"{BASE_URL}/version"
