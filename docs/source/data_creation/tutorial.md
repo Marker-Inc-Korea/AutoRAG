@@ -141,22 +141,6 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 If you have multiple corpus data, you can map the rest of the corpus to the QA dataset.
 
-The chunking YAML file looks like this.
-
-```yaml
-modules:
-  - module_type: llama_index_chunk
-    chunk_method: [ Token, Sentence ]
-    chunk_size: [ 1024, 512 ]
-    chunk_overlap: 24
-    add_file_name: english
-  - module_type: llama_index_chunk
-    chunk_method: [ SentenceWindow ]
-    sentence_splitter: kiwi
-    window_size: 3
-    add_file_name: english
-```
-
 For the chunking optimization, you can evaluate RAG performance with different corpus data.
 You already have the optimal pipeline from the initial QA data,
 so you can use this pipeline to evaluate the RAG performance with different corpus data.
@@ -180,8 +164,3 @@ new_qa = qa.update_corpus(Corpus(new_corpus_df, raw))
 Now `new_qa` have new `retrieval_gt` data for the new corpus.
 
 Now with the new corpus data and new qa datas, you can evaluate the RAG performance with different corpus data.
-
-### 📌 Chunking Optimization
-Currently, to perform Chunking Optimization, you need to create multiple QA to Corpus Sets, and run the RAG Optimize experiment multiple times.
-However, in the future, we will develop a way to perform Chunking Optimization without running the RAG Optimize experiment n times.
-Coming soon. 🚀
