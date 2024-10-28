@@ -409,7 +409,7 @@ runner.run('your question')
 
 You can run this pipeline as an API server.
 
-Check out the API endpoint at [here](deploy/api_endpoint.md).
+Check out the API endpoint at [here](./docs/source/deploy/api_endpoint.md).
 
 ```python
 import nest_asyncio
