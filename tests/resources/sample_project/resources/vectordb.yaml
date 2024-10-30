@@ -1,0 +1,13 @@
+vectordb:
+  - name: chroma_small
+    db_type: chroma
+    client_type: persistent
+    collection_name: chroma_small
+    embedding_model: mock
+    path: ${PROJECT_DIR}/resources/chroma
+  - name: chroma_large
+    db_type: chroma
+    client_type: persistent
+    collection_name: chroma_large
+    embedding_model: mock_1536
+    path: ${PROJECT_DIR}/resources/chroma
