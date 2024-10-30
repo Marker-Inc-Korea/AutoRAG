@@ -31,8 +31,8 @@ There will be several reasons for this error.
       from autorag.evaluator import Evaluator
 
       evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet',
-                            project_dir='your/path/to/project_directory', skip_validation=True)
-      evaluator.start_trial('your/path/to/config.yaml')
+                            project_dir='your/path/to/project_directory',)
+      evaluator.start_trial('your/path/to/config.yaml', skip_validation=True)
      ```
      or
      ```bash
