@@ -18,7 +18,7 @@ node_lines:
           prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
     - node_type: generator
       strategy:
-        metrics: [bleu, meteor, rouge]
+        metrics: [bleu, rouge]
       modules:
         - module_type: llama_index_llm
           llm: openai

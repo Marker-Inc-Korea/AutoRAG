@@ -25,7 +25,7 @@ node_lines:
             prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
       - node_type: generator
         strategy:
-          metrics: [ meteor, rouge, bert_score ]
+          metrics: [ bleu, rouge, bert_score ]
         modules:
           - module_type: llama_index_llm
             llm: bedrock
