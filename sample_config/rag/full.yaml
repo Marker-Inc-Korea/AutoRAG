@@ -4,7 +4,7 @@ vectordb:
     client_type: persistent
     embedding_model: openai_embed_3_large
     collection_name: openai_embed_3_large
-    path: ${PROJECT_DIR}/data/chroma
+    path: ${PROJECT_DIR}/resources/chroma
 node_lines:
 - node_line_name: pre_retrieve_node_line  # Arbitrary node line name
   nodes:
