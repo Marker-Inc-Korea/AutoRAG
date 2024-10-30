@@ -47,7 +47,7 @@ def cli():
 )
 def evaluate(config, qa_data_path, corpus_data_path, project_dir, skip_validation):
 	if not config.endswith(".yaml") and not config.endswith(".yml"):
-		raise ValueError(f"Config file {config} is not a parquet file.")
+		raise ValueError(f"Config file {config} is not a yaml or yml file.")
 	if not os.path.exists(config):
 		raise ValueError(f"Config file {config} does not exist.")
 	evaluator = Evaluator(qa_data_path, corpus_data_path, project_dir=project_dir)

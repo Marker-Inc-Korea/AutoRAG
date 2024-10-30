@@ -244,7 +244,7 @@ def meteor(
 	    Default is 0.5.
 	:return: A list of computed metric scores.
 	"""
-	nltk.download("punkt_tab")
+	nltk.download("punkt", quiet=True)
 	meteor_instance = evaluate.load("meteor")
 	result = huggingface_evaluate(
 		meteor_instance,
