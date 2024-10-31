@@ -15,6 +15,13 @@ In this new data creation pipeline, we have three schemas. `Raw`, `QA`, and `Cor
 You can use the corpus to generate the answer for the question.
 You have to make corpus data from your documents using parsing and chunking.
 
+In other words,
+`Raw` : parsed data
+`Corpus` : chunked data
+`QA` : Question & Answer dataset based on the corpus
+
+![](../_static/qa/data_creation_schema.png)
+
 To see the tutorial of the data creation, check [here](tutorial.md).
 
 ```{toctree}

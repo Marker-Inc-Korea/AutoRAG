@@ -3,9 +3,49 @@ myst:
    html_meta:
       title: AutoRAG - RAG generation metrics
       description: Learn how to evaluate RAG generations (answers) in AutoRAG
-      keywords: AutoRAG,RAG,RAG evaluation,RAG metrics,RAG metric,LLM metric
+      keywords: AutoRAG,RAG,RAG evaluation,RAG metrics,RAG metric,LLM metric,event loop AutoRAG
 ---
 # TroubleShooting
+
+## Frequently Asked Questions
+
+### 1. Error when using AutoRAG on Jupyter Notebook or API server
+
+If you face event loop-related issue while using Jupyter notebook, please run this before using AutoRAG.
+
+```python3
+import nest_asyncio
+nest_asyncio.apply()
+```
+
+### 2. Corpus id not found in corpus_data.
+
+When you face error like `ValueError: doc_id: 0eec7e3a-e1c0-4d33-8cc5-7e604b30339b not found in corpus_data.`
+There will be several reasons for this error.
+
+1. Check there is a passage augmenter on your YAML file.
+   - The passage augmenter is not supporting a validation process now. But starting a trial runs validation process as default.
+     So you need to disable running validation while starting a trial.
+
+     ```python
+      from autorag.evaluator import Evaluator
+
+      evaluator = Evaluator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='your/path/to/corpus.parquet',
+                            project_dir='your/path/to/project_directory',)
+      evaluator.start_trial('your/path/to/config.yaml', skip_validation=True)
+     ```
+     or
+     ```bash
+      autorag evaluate --config your/path/to/default_config.yaml --qa_data_path your/path/to/qa.parquet --corpus_data_path your/path/to/corpus.parquet --project_dir ./your/project/directory --skip_validation true
+     ```
+
+2. Delete the project directory or use another project directory
+
+It might be you changed your corpus data, but don’t use the new project directory.
+In AutoRAG, the project directory must be separated for each new corpus data or QA data.
+Which means one dataset per one project directory is needed.
+
+If you’re facing this error after you edit your corpus data, please use another project directory.
 
 ## 1. Installation
 
@@ -125,18 +165,7 @@ The error appears to be a VRAM out-of-memory error.
 In this case, try lowering the `batch` (which can be set as a module parameter in YAML) as much as possible,
 If that doesn't work, we recommend using a quantized model (if available)!
 
-## 5. UnicodeDecodeError
-
-Error reading a parquet file on Windows!
-
-The workaround on Windows is to use `engine='pyarrow'`,
-This is something that needs to be fixed inside AutoRAG.
-
-We’ll try to fix it in the [issue](https://github.com/Marker-Inc-Korea/AutoRAG/issues/494) :)
-
-For now, please use Mac or Linux (or WSL on Windows)!
-
-## 6. Ollama `RequestTimeOut` Error
+## 5. Ollama `RequestTimeOut` Error
 
 If you encounter `RequestTimeOut` error, you can adjust the `timeout` parameter in the `ollama` module.
 
