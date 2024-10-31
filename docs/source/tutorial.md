@@ -83,6 +83,13 @@ validator = Validator(qa_data_path='your/path/to/qa.parquet', corpus_data_path='
 validator.validate('your/path/to/default_config.yaml')
 ```
 
+```{warning}
+Are you using passage augmenter? From now, the passage augmenter do not support validation. So it will occur error all time when you run validation.
+
+If you are using passage augmenter, please disable validation process.
+Here is the [how to disable validation](https://docs.auto-rag.com/troubleshooting.html).
+```
+
 ### Run AutoRAG optimization
 
 Run below code at CLI, then AutoRAG automatically evaluate your dataset and find the best RAG pipeline for your dataset.

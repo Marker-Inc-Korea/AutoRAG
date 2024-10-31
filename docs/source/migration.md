@@ -2,9 +2,9 @@
 
 1. [v0.3 migration guide](#v03-migration-guide)
 
-# v0.3 migration guide
+## v0.3 migration guide
 
-## Data Creation
+### Data Creation
 
 From the v0.3 version, the previous data creation library goes into the `legacy` package.
 Instead of legacy data creation, the `beta` package is introduced.
@@ -38,7 +38,7 @@ from autorag.data.qa.sample import random_single_hop
 from autorag.data.qa.schema import Raw
 ```
 
-# v0.3.7 migration guide
+## v0.3.7 migration guide
 
 At v0.3.6, there are changes of the vectordb.
 You have to specify what vectordb you want to use at the config YAML file.
