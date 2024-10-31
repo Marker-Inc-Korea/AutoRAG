@@ -17,8 +17,14 @@ from autorag.validator import Validator
 
 logger = logging.getLogger("AutoRAG")
 
+autorag_dir = os.path.dirname(os.path.realpath(__file__))
+version_file = os.path.join(autorag_dir, "VERSION")
+with open(version_file, "r") as f:
+	__version__ = f.read().strip()
+
 
 @click.group()
+@click.version_option(__version__)
 def cli():
 	pass
 
