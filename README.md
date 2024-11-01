@@ -221,7 +221,7 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 # RAG Optimization
 
-<a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization">
+<a href="https://huggingface.co/spaces/AutoRAG/RAG-Pipeline-Optimization">
 <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
 
