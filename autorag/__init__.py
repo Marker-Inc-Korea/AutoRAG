@@ -121,6 +121,9 @@ try:
 	from llama_index.llms.huggingface import HuggingFaceLLM
 	from llama_index.llms.ollama import Ollama
 
+	generator_models["huggingfacellm"] = HuggingFaceLLM
+	generator_models["ollama"] = Ollama
+
 except ImportError:
 	logger.info(
 		"You are using API version of AutoRAG."
