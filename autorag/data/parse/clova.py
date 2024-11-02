@@ -79,6 +79,7 @@ async def clova_ocr_pure(
 	table_detection: bool = False,
 ) -> Tuple[str, str, int]:
 	session = aiohttp.ClientSession()
+	table_html = ""
 	headers = {"X-OCR-SECRET": api_key, "Content-Type": "application/json"}
 
 	# Convert image data to base64
