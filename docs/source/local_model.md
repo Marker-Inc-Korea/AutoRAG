@@ -34,18 +34,17 @@ The following modules can use generator module, which including `llama_index_llm
 - [multi_query_expansion](nodes/query_expansion/multi_query_expansion.md)
 - [tree_summarize](nodes/passage_compressor/tree_summarize.md)
 
-### Supporting LLM models
 
-We support most of the llm that LlamaIndex is supporting.
-To change the LLM model type, you can change the `llm` parameter to the following values:
+### Supporting LLM Models
 
-| LLM Model Type | llm parameter  |
-|:--------------:|:--------------:|
-|     OpenAI     |     openai     |
-| HuggingFaceLLM | huggingfacellm |
-|   OpenAILike   |   openailike   |
-|     Ollama     |     ollama     |
-|    Bedrock     |    bedrock     |
+We support most of the LLMs that LlamaIndex supports. You can use different types of LLM interfaces by configuring the `llm` parameter:
+
+| LLM Model Type | llm parameter  | Description |
+|:--------------:|:--------------:|-------------|
+|     OpenAI     |     openai     | For OpenAI models (GPT-3.5, GPT-4) |
+|   OpenAILike   |   openailike   | For models with OpenAI-compatible APIs (e.g., Mistral, Claude) |
+|     Ollama     |     ollama     | For locally running Ollama models |
+|    Bedrock     |    bedrock     | For AWS Bedrock models |
 
 For example, if you want to use `OpenAILike` model, you can set `llm` parameter to `openailike`.
 
@@ -68,6 +67,52 @@ You can set the model parameter for LlamaIndex LLM initialization.
 The most frequently used parameters are `model`, `max_token`, and `temperature`.
 Please check what you can set for the model parameter
 at [LlamaIndex LLM](https://docs.llamaindex.ai/en/stable/module_guides/models/llms/).
+
+#### Using HuggingFace Models
+
+There are two main ways to use HuggingFace models:
+
+1. **Through OpenAILike Interface** (Recommended for hosted API endpoints):
+```yaml
+nodes:
+  - node_line_name: node_line_1
+    nodes:
+      - node_type: generator
+        modules:
+          - module_type: llama_index_llm
+            llm: openailike
+            model: mistralai/Mistral-7B-Instruct-v0.2
+            api_base: your_api_base
+            api_key: your_api_key
+```
+
+2. **Through Direct HuggingFace Integration** (For local deployment):
+```yaml
+nodes:
+  - node_line_name: node_line_1
+    nodes:
+      - node_type: generator
+        modules:
+          - module_type: llama_index_llm
+            llm: huggingface
+            model_name: mistralai/Mistral-7B-Instruct-v0.2
+            device_map: "auto"
+            model_kwargs:
+              torch_dtype: "float16"
+```
+
+#### Common Parameters
+
+The most frequently used parameters for LLM configuration are:
+
+- `model`: The model identifier or name
+- `max_tokens`: Maximum number of tokens in the response
+- `temperature`: Controls randomness in the output (0.0 to 1.0)
+- `api_base`: API endpoint URL (for hosted models)
+- `api_key`: Authentication key (if required)
+
+For a complete list of available parameters, please refer to the
+[LlamaIndex LLM documentation](https://docs.llamaindex.ai/en/stable/module_guides/models/llms/).
 
 ### Add more LLM models
 
