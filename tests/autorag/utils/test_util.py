@@ -384,6 +384,11 @@ def test_openai_truncate_by_token():
 	)
 	assert len(truncated[2]) == len(t3)
 
+	truncated = openai_truncate_by_token([t1, t3], 8000, "solar-1-mini-embedding")
+	assert len(truncated) == 2
+	assert truncated[0] == base_text * 5
+	assert truncated[1] == base_text * 20
+
 
 def test_split_dataframe():
 	df = pd.DataFrame({"a": list(range(10)), "b": list(range(10, 20))})

@@ -334,7 +334,11 @@ def save_parquet_safe(df: pd.DataFrame, filepath: str, upsert: bool = False):
 def openai_truncate_by_token(
 	texts: List[str], token_limit: int, model_name: str
 ) -> List[str]:
-	tokenizer = tiktoken.encoding_for_model(model_name)
+	try:
+		tokenizer = tiktoken.encoding_for_model(model_name)
+	except KeyError:
+		# This is not a real OpenAI model
+		return texts
 
 	def truncate_text(text: str, limit: int, tokenizer):
 		tokens = tokenizer.encode(text)
