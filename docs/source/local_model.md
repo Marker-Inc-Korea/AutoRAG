@@ -33,7 +33,7 @@ The following modules can use generator module, which including `llama_index_llm
 - [query_decompose](nodes/query_expansion/query_decompose.md)
 - [multi_query_expansion](nodes/query_expansion/multi_query_expansion.md)
 - [tree_summarize](nodes/passage_compressor/tree_summarize.md)
-
+- [refine](nodes/passage_compressor/refine.md)
 
 ### Supporting LLM Models
 
