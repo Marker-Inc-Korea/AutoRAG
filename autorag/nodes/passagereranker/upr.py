@@ -79,7 +79,7 @@ class Upr(BasePassageReranker):
 			}
 		)
 
-		df["scores"] = df.progress_apply(
+		df["scores"] = df.apply(
 			lambda row: self.scorer.compute(
 				query=row["query"], contents=row["contents"]
 			),
