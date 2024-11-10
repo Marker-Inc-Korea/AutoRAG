@@ -2,7 +2,6 @@ from itertools import chain
 from typing import List, Tuple
 
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.nodes.passagereranker.tart.modeling_enc_t5 import (
@@ -123,9 +122,7 @@ def tart_run_model(
 	batch_input_texts = make_batch(flattened_texts, batch_size)
 	batch_contents_list = make_batch(flattened_contents, batch_size)
 	results = []
-	for batch_texts, batch_contents in tqdm(
-		zip(batch_input_texts, batch_contents_list)
-	):
+	for batch_texts, batch_contents in zip(batch_input_texts, batch_contents_list):
 		feature = tokenizer(
 			batch_texts,
 			batch_contents,

@@ -1,7 +1,6 @@
 from typing import List, Tuple, Iterable
 
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -103,7 +102,7 @@ def flag_embedding_run_model(input_texts, model, batch_size: int):
 		raise ImportError("FlagEmbeddingReranker requires PyTorch to be installed.")
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
-	for batch_texts in tqdm(batch_input_texts):
+	for batch_texts in batch_input_texts:
 		with torch.no_grad():
 			pred_scores = model.compute_score(sentence_pairs=batch_texts)
 		if batch_size == 1 or not isinstance(pred_scores, Iterable):
