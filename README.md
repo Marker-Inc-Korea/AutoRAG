@@ -515,3 +515,18 @@ We are developing AutoRAG as open-source.
 So this project welcomes contributions and suggestions. Feel free to contribute to this project.
 
 Plus, check out our detailed documentation at [here](https://docs.auto-rag.com/index.html).
+
+
+## Citation
+
+```bibtex
+@misc{kim2024autoragautomatedframeworkoptimization,
+      title={AutoRAG: Automated Framework for optimization of Retrieval Augmented Generation Pipeline},
+      author={Dongkyu Kim and Byoungwook Kim and Donggeon Han and Matouš Eibich},
+      year={2024},
+      eprint={2410.20878},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2410.20878},
+}
+```

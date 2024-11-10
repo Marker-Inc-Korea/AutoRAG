@@ -2,7 +2,6 @@ import logging
 from typing import List, Tuple
 
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils import result_to_dataframe
@@ -72,7 +71,6 @@ class Upr(BasePassageReranker):
 
 		:return: tuple of lists containing the reranked contents, ids, and scores
 		"""
-		tqdm.pandas()
 		df = pd.DataFrame(
 			{
 				"query": queries,
