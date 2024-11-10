@@ -45,15 +45,17 @@ class Validator:
 		# Determine the sample size and log a warning if qa_cnt is larger than available records
 		available_records = len(self.qa_data)
 		safe_sample_size = min(qa_cnt, available_records)  # 먼저 safe_sample_size 계산
-		
+
 		if safe_sample_size < qa_cnt:
 			logger.warning(
 				f"Minimal Requested sample size ({qa_cnt}) is larger than available records ({available_records}). "
 				f"Sampling will be limited to {safe_sample_size} records. "
 			)
-		
+
 		# safe sample QA data
-		sample_qa_df = self.qa_data.sample(n=safe_sample_size, random_state=random_state)
+		sample_qa_df = self.qa_data.sample(
+			n=safe_sample_size, random_state=random_state
+		)
 		sample_qa_df.reset_index(drop=True, inplace=True)
 
 		# get doc_id

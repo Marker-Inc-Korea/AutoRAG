@@ -30,6 +30,8 @@ from autorag.utils.util import (
 	find_trial_dir,
 	find_node_summary_files,
 	normalize_unicode,
+	demojize,
+	preprocess_text,
 	dict_to_markdown,
 	dict_to_markdown_table,
 	convert_inputs_to_list,
@@ -425,6 +427,12 @@ def test_find_node_summary_files():
 	assert all(os.path.basename(path) == "summary.csv" for path in node_summary_paths)
 
 
+def test_demojize():
+	str = "👍엄지엄지척"
+	new_str = demojize(str)
+	assert new_str == ":thumbs_up:엄지엄지척"
+
+
 def test_normalize_unicode():
 	str1 = "전국보행자전용도로표준데이터"
 	str2 = "전국보행자전용도로표준데이터"
@@ -437,6 +445,23 @@ def test_normalize_unicode():
 
 	assert len(new_str1) == 14
 	assert len(new_str2) == 14
+	assert new_str1 == new_str2
+
+
+def test_preprocess():
+	str1 = (
+		"👍전국보행자전용도로표준데이터👍"  # ":thumbs_up:" is added on both sides + 22
+	)
+	str2 = "👍전국보행자전용도로표준데이터👍"
+	assert len(str1) == 16
+	assert len(str2) == 36
+	assert str1 != str2
+
+	new_str1 = preprocess_text(str1)
+	new_str2 = preprocess_text(str2)
+
+	assert len(new_str1) == 36
+	assert len(new_str2) == 36
 	assert new_str1 == new_str2
 
 

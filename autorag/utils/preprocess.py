@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from autorag.utils.util import normalize_unicode
+from autorag.utils.util import preprocess_text
 
 
 def validate_qa_dataset(df: pd.DataFrame):
@@ -60,9 +60,9 @@ def cast_qa_dataset(df: pd.DataFrame):
 	), "query must be string type."
 	df["retrieval_gt"] = df["retrieval_gt"].apply(cast_retrieval_gt)
 	df["generation_gt"] = df["generation_gt"].apply(cast_generation_gt)
-	df["query"] = df["query"].apply(normalize_unicode)
+	df["query"] = df["query"].apply(preprocess_text)
 	df["generation_gt"] = df["generation_gt"].apply(
-		lambda x: list(map(normalize_unicode, x))
+		lambda x: list(map(preprocess_text, x))
 	)
 	return df
 
@@ -104,13 +104,13 @@ def cast_corpus_dataset(df: pd.DataFrame):
 		lambda x: make_prev_next_id_metadata(x, "next_id")
 	)
 
-	df["contents"] = df["contents"].apply(normalize_unicode)
+	df["contents"] = df["contents"].apply(preprocess_text)
 
 	def normalize_unicode_metadata(metadata: dict):
 		result = {}
 		for key, value in metadata.items():
 			if isinstance(value, str):
-				result[key] = normalize_unicode(value)
+				result[key] = preprocess_text(value)
 			else:
 				result[key] = value
 		return result
