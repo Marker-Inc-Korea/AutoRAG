@@ -1,7 +1,6 @@
 from typing import List, Tuple
 
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -123,7 +122,7 @@ def sentence_transformer_run_model(input_texts, model, batch_size: int):
 		)
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
-	for batch_texts in tqdm(batch_input_texts):
+	for batch_texts in batch_input_texts:
 		with torch.no_grad():
 			pred_scores = model.predict(sentences=batch_texts, apply_softmax=True)
 		results.extend(pred_scores.tolist())

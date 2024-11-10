@@ -2,7 +2,6 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -141,7 +140,7 @@ def get_colbert_embedding_batch(
 	input_batches = slice_tokenizer_result(encoding, batch_size)
 	result_embedding = []
 	with torch.no_grad():
-		for encoding_batch in tqdm(input_batches):
+		for encoding_batch in input_batches:
 			result_embedding.append(model(**encoding_batch).last_hidden_state)
 	total_tensor = torch.cat(
 		result_embedding, dim=0

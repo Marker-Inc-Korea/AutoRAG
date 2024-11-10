@@ -6,7 +6,6 @@ from typing import List, Callable, Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.evaluation import evaluate_retrieval
 from autorag.schema.metricinput import MetricInput
@@ -512,7 +511,7 @@ def optimize_hybrid(
 	).tolist()
 
 	result_list = []
-	for weight_value in tqdm(weight_candidates):
+	for weight_value in weight_candidates:
 		result_df = hybrid_module_func.run_evaluator(
 			project_dir=project_dir,
 			previous_result=previous_result,
