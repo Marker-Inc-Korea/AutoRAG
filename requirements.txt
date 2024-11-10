@@ -19,6 +19,7 @@ voyageai # for voyageai reranker
 mixedbread-ai # for mixedbread-ai reranker
 llama-index-llms-bedrock
 scikit-learn
+emoji
 
 ### Vector DB ###
 pymilvus # for using milvus vectordb
