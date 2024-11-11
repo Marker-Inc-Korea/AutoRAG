@@ -95,4 +95,4 @@ node_lines:
           weight_range: (4, 30)
 ```
 
-For more information about vectordb, you can refer to the [vectordb documentation](./vectordb/vectordb.md).
+For more information about vectordb, you can refer to the [vectordb documentation](integration/vectordb/vectordb.md).

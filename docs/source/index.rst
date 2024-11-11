@@ -114,6 +114,14 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    optimization/strategies.md
    optimization/sample_config.md
 
+.. toctree::
+   :maxdepth: 3
+   :caption: Integration
+   :hidden:
+
+   integration/llm/llm.md
+   integration/vectordb/vectordb.md
+
 
 .. toctree::
    :maxdepth: 2
