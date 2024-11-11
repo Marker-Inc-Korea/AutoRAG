@@ -15,6 +15,7 @@ from json import JSONDecoder
 from typing import List, Callable, Dict, Optional, Any, Collection, Iterable
 
 from asyncio import AbstractEventLoop
+import emoji
 import numpy as np
 import pandas as pd
 import tiktoken
@@ -334,7 +335,11 @@ def save_parquet_safe(df: pd.DataFrame, filepath: str, upsert: bool = False):
 def openai_truncate_by_token(
 	texts: List[str], token_limit: int, model_name: str
 ) -> List[str]:
-	tokenizer = tiktoken.encoding_for_model(model_name)
+	try:
+		tokenizer = tiktoken.encoding_for_model(model_name)
+	except KeyError:
+		# This is not a real OpenAI model
+		return texts
 
 	def truncate_text(text: str, limit: int, tokenizer):
 		tokens = tokenizer.encode(text)
@@ -462,6 +467,14 @@ def find_node_summary_files(trial_dir: str) -> List[str]:
 	]
 
 	return filtered_files
+
+
+def preprocess_text(text: str) -> str:
+	return normalize_unicode(demojize(text))
+
+
+def demojize(text: str) -> str:
+	return emoji.demojize(text)
 
 
 def normalize_unicode(text: str) -> str:
@@ -699,10 +712,10 @@ def decode_multiple_json_from_bytes(byte_data: bytes) -> list:
 	Decode multiple JSON objects from bytes received from SSE server.
 
 	Args:
-		byte_data: Bytes containing one or more JSON objects
+	        byte_data: Bytes containing one or more JSON objects
 
 	Returns:
-		List of decoded JSON objects
+	        List of decoded JSON objects
 	"""
 	# Decode bytes to string
 	try:

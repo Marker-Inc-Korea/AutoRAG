@@ -2,7 +2,6 @@ from itertools import chain
 from typing import List, Tuple
 
 import pandas as pd
-from tqdm import tqdm
 
 from autorag.nodes.passagereranker.base import BasePassageReranker
 from autorag.utils.util import (
@@ -166,7 +165,7 @@ def monot5_run_model(
 		raise ImportError("For using MonoT5 Reranker, please install torch first.")
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
-	for batch_texts in tqdm(batch_input_texts):
+	for batch_texts in batch_input_texts:
 		flattened_batch_texts = list(chain.from_iterable(batch_texts))
 		input_encodings = tokenizer(
 			flattened_batch_texts,
