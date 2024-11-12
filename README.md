@@ -240,8 +240,6 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 ### How AutoRAG optimizes RAG pipeline?
 
-![Image](https://github.com/user-attachments/assets/9a864504-92b6-4eac-ac91-a20482abbf2c)
-
 ![Image](https://github.com/user-attachments/assets/97073df5-f32b-49c4-b12f-4d09467370ae)
 
 ![Image](https://github.com/user-attachments/assets/9489e803-f47a-49d4-97ec-0dd9b270394f)
