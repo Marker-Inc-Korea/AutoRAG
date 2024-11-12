@@ -119,8 +119,10 @@ This is because RAG uses the corpus to retrieve documents and generate answers u
 
 ### 📌 Supporting Data Creation Modules
 
-- [Supporting Parsing Modules](https://edai.notion.site/Supporting-Parsing-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
-- [Supporting Chunking Modules](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
+![Image](https://github.com/user-attachments/assets/4476ba1e-9c40-499a-a72b-cc36fea63add)
+
+- [Supporting Parsing Modules List](https://edai.notion.site/Supporting-Parsing-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
+- [Supporting Chunking Modules List](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
 
 
 ## Quick Start
@@ -240,7 +242,11 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 ## How AutoRAG optimizes RAG pipeline?
 
-![Image](https://github.com/user-attachments/assets/97073df5-f32b-49c4-b12f-4d09467370ae)
+Here is the AutoRAG RAG Structure that only show Nodes.
+
+![Image](https://github.com/user-attachments/assets/cbc60938-e211-4fbf-be74-31bd9a997581)
+
+Here is the image showing all the nodes and modules.
 
 ![Image](https://github.com/user-attachments/assets/9489e803-f47a-49d4-97ec-0dd9b270394f)
 
@@ -248,7 +254,7 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 ### 📌 Supporting RAG Optimization Nodes & modules
 
-- [Supporting RAG Modules](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+- [Supporting RAG Modules list](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
 
 ## Metrics
 
