@@ -108,3 +108,16 @@ When you add new LLM model, you should add class itself, not the instance.
 
 Plus, it must follow LlamaIndex LLM's interface.
 ```
+
+
+### Integration list
+
+```{toctree}
+---
+maxdepth: 1
+---
+aws_bedrock.md
+huggingface_llm.md
+nvidia_nim.md
+ollama.md
+```

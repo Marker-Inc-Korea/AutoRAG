@@ -1,6 +1,6 @@
 Certainly! I'll create documentation for the `Chroma` class, including information about initializing it with a YAML configuration file and explaining the differences between the various client types. Let's break this down step-by-step.
 
-### Chroma Vector Store Documentation
+# Chroma
 
 The `Chroma` class is a vector store implementation that extends the `BaseVectorStore` class. It provides functionality for storing, retrieving, and querying vector embeddings using various client types.
 You can visit the Chroma Vector DB site at [here](https://www.trychroma.com/).

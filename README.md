@@ -10,7 +10,7 @@ RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Follow-orange?style=flat-square&logo=huggingface)](https://huggingface.co/AutoRAG)
 [![Static Badge](https://img.shields.io/badge/Roadmap-5D3FD3)](https://github.com/orgs/Auto-RAG/projects/1/views/2)
 
-
+<img src=https://github.com/user-attachments/assets/9a4d0381-a161-457f-a787-e7eb3593ce00 width="251.5" height="55.2"/>
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
@@ -63,19 +63,19 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 # Index
 
 - [Quick Install](#quick-install)
-- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [Data Creation](#data-creation)
   - [Parsing](#1-parsing)
   - [Chunking](#2-chunking)
   - [QA Creation](#3-qa-creation)
 - [RAG Optimization](#rag-optimization)
-    - [Set YAML File](#1-set-yaml-file)
-    - [Run AutoRAG](#2-run-autorag)
-    - [Run Dashboard](#3-run-dashboard)
-    - [Deploy your optimal RAG pipeline (for testing)](#4-deploy-your-optimal-rag-pipeline-for-testing)
-- [Supporting Data Creation Modules](#-supporting-data-creation-modules)
-- [Supporting RAG Optimization Nodes & modules](#supporting-rag-optimization-nodes--modules)
-- [Supporting Evaluation Metrics](#supporting-evaluation-metrics)
+    - [How AutoRAG optimizes RAG pipeline?](#how-autorag-optimizes-rag-pipeline)
+    - [Metrics](#metrics)
+    - [Quick Start](#quick-start-1)
+      - [Set YAML File](#1-set-yaml-file)
+      - [Run AutoRAG](#2-run-autorag)
+      - [Run Dashboard](#3-run-dashboard)
+      - [Deploy your optimal RAG pipeline](#4-deploy-your-optimal-rag-pipeline)
+- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [FaQ](#-faq)
 
 # Quick Install
@@ -98,9 +98,12 @@ pip install "AutoRAG[gpu,parse]"
 ```
 
 # Data Creation
+
 <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation">
 <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
+
+![Image](https://github.com/user-attachments/assets/146d005d-dcb9-4460-a8b3-25126e5e3dc2)
 
 ![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
 
@@ -113,6 +116,14 @@ RAG Optimization requires two types of data: QA dataset and Corpus dataset.
 
 **Corpus** dataset is critical to the performance of RAGs.
 This is because RAG uses the corpus to retrieve documents and generate answers using it.
+
+### 📌 Supporting Data Creation Modules
+
+![Image](https://github.com/user-attachments/assets/c6f15fab-6c69-4627-9685-6c218b66f5d6)
+
+- [Supporting Parsing Modules List](https://edai.notion.site/Supporting-Parsing-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
+- [Supporting Chunking Modules List](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
+
 
 ## Quick Start
 
@@ -225,82 +236,40 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
 
+![Image](https://github.com/user-attachments/assets/b814928d-54a4-4b96-af34-adba0ac6803b)
 
 ![rag](https://github.com/user-attachments/assets/214d842e-fc67-4113-9c24-c94158b00c23)
 
-### How AutoRAG optimizes RAG pipeline?
+## How AutoRAG optimizes RAG pipeline?
+
+Here is the AutoRAG RAG Structure that only show Nodes.
+
+![Image](https://github.com/user-attachments/assets/cbc60938-e211-4fbf-be74-31bd9a997581)
+
+Here is the image showing all the nodes and modules.
+
+![Image](https://github.com/user-attachments/assets/9489e803-f47a-49d4-97ec-0dd9b270394f)
 
 ![rag_opt_gif](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
 
-## 🐳 AutoRAG Docker Guide
+### 📌 Supporting RAG Optimization Nodes & modules
 
-This guide provides a quick overview of building and running the AutoRAG Docker container for production, with instructions on setting up the environment for evaluation using your configuration and data paths.
+- [Supporting RAG Modules list](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
 
-### 🚀 Building the Docker Image
+## Metrics
 
-Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or `autoraghq/autorag:gpu-parsing`
+The metrics used by each node in AutoRAG are shown below.
 
-#### 1.Download dataset for [Tutorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
-```bash
-python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
-```
+![Image](https://github.com/user-attachments/assets/5b342f68-d25c-4cba-aa85-1e257801afea)
 
-#### 2. Run `evaluate`
-> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $0.30.
+![Image](https://github.com/user-attachments/assets/393d3ad6-1bde-4e75-b314-5c150eadaeee)
 
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:api evaluate \
-  --config /usr/src/app/projects/tutorial_1/config.yaml \
-  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
-  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
-  --project_dir /usr/src/app/projects/tutorial_1/
-```
+- [Supporting metrics list](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
 
-
-#### 3. Run validate
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:api validate \
-  --config /usr/src/app/projects/tutorial_1/config.yaml \
-  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
-  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
-```
-
-
-#### 4. Run `dashboard`
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  -p 8502:8502 \
-  autoraghq/autorag:api dashboard \
-    --trial_dir /usr/src/app/projects/tutorial_1/0
-```
-
-
-#### 4. Run `run_web`
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  -p 8501:8501 \
-  autoraghq/autorag:api run_web --trial_path ./projects/tutorial_1/0
-```
-
-#### Key Points :
-- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface` in the container, enabling access to pre-downloaded models.
-- **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment.
-
-For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
+Here is the detailed information about the metrics that AutoRAG supports.
+- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
+- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://github.com/user-attachments/assets/7d4a3069-9186-4854-885d-ca0f7bcc17e8)
 
 ## Quick Start
 
@@ -308,11 +277,12 @@ For more detailed instructions, refer to the [Docker Installation Guide](./docs/
 
 First, you need to set the config YAML file for your RAG optimization.
 
-You can get various config YAML files at [here](./sample_config).
 We highly recommend using pre-made config YAML files for starter.
 
-If you want to make your own config YAML files, check out the [Config YAML file](#-create-your-own-config-yaml-file)
-section.
+- [Get Sample YAML](./sample_config/rag)
+  - [Sample YAML Guide](https://docs.auto-rag.com/optimization/sample_config.html)
+- [Make Custom YAML Guide](https://docs.auto-rag.com/optimization/custom_config.html)
+
 
 Here is an example of the config YAML file to use `retrieval`, `prompt_maker`, and `generator` nodes.
 
@@ -391,7 +361,7 @@ autorag dashboard --trial_dir /your/path/to/trial_dir
 
 ![dashboard](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/3798827d-31d7-4c4e-a9b1-54340b964e53)
 
-### 4. Deploy your optimal RAG pipeline (for testing)
+### 4. Deploy your optimal RAG pipeline
 
 ### 4-1. Run as a Code
 
@@ -450,33 +420,75 @@ Example :
 
 ![Kotaemon Example](https://velog.velcdn.com/images/autorag/post/5e71b8d9-3e59-4e63-9191-355a1a5aa3a0/image.png)
 
-## 📌 Supporting Data Creation Modules
-![Data Creation](https://github.com/user-attachments/assets/0e5872de-2892-46b4-9ecd-e395671e324c)
+## 🐳 AutoRAG Docker Guide
 
-- You can check our all Parsing Modules at [here](https://edai.notion.site/Supporting-Parse-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
-- You can check our all Chunk Modules at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
+This guide provides a quick overview of building and running the AutoRAG Docker container for production, with instructions on setting up the environment for evaluation using your configuration and data paths.
 
-## ❗Supporting RAG Optimization Nodes & modules
+### 🚀 Building the Docker Image
 
-![module_1](https://github.com/user-attachments/assets/c2e4c7d2-0f46-4b13-bb21-0ffc19cc9492)
-![module_2](https://github.com/user-attachments/assets/e013f04e-f69d-4dd7-96da-06e6b5921c3d)
-![module_3](https://github.com/user-attachments/assets/72490b97-81a1-4620-b9bd-5c5e0ead79a7)
-![module_4](https://github.com/user-attachments/assets/7a8ee260-9c60-4a27-b708-5286d1c37851)
+Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or `autoraghq/autorag:gpu-parsing`
 
-You can check our all supporting Nodes & modules
-at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+#### 1.Download dataset for [Tutorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+```bash
+python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
+```
 
-## ❗Supporting Evaluation Metrics
+#### 2. Run `evaluate`
+> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $0.30.
 
-![Metrics](https://github.com/user-attachments/assets/fab551cd-8892-4bda-acae-eff22ece94b3)
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  autoraghq/autorag:api evaluate \
+  --config /usr/src/app/projects/tutorial_1/config.yaml \
+  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
+  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
+  --project_dir /usr/src/app/projects/tutorial_1/
+```
 
-You can check our all supporting Evaluation Metrics
-at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
 
-- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
-- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
-- [Generation Metrics](https://github.com/user-attachments/assets/7d4a3069-9186-4854-885d-ca0f7bcc17e8)
+#### 3. Run validate
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  autoraghq/autorag:api validate \
+  --config /usr/src/app/projects/tutorial_1/config.yaml \
+  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
+  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
+```
 
+
+#### 4. Run `dashboard`
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 8502:8502 \
+  autoraghq/autorag:api dashboard \
+    --trial_dir /usr/src/app/projects/tutorial_1/0
+```
+
+
+#### 4. Run `run_web`
+```bash
+docker run --rm -it \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/projects:/usr/src/app/projects \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 8501:8501 \
+  autoraghq/autorag:api run_web --trial_path ./projects/tutorial_1/0
+```
+
+#### Key Points :
+- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface` in the container, enabling access to pre-downloaded models.
+- **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment.
+
+For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
 
 ## ☎️ FaQ
 
@@ -489,6 +501,18 @@ at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba
 🍯 [Tips/Tricks](https://edai.notion.site/Tips-Tricks-10708a0e36ff461cb8a5d4fb3279ff15?pvs=4)
 
 ☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
+
+## Thanks for shoutout
+
+### Company
+
+<a href="https://www.linkedin.com/posts/llamaindex_rag-pipelines-have-a-lot-of-hyperparameters-activity-7182053546593247232-HFMN/">
+<img src="https://github.com/user-attachments/assets/b8fdaaf6-543a-4019-8dbe-44191a5269b9" alt="llama index" style="width:200px;height:auto;">
+</a>
+
+### Individual
+- [Shubham Saboo](https://www.linkedin.com/posts/shubhamsaboo_just-found-the-solution-to-the-biggest-rag-activity-7255404464054939648-ISQ8/)
+- [Kalyan KS](https://www.linkedin.com/posts/kalyanksnlp_rag-autorag-llms-activity-7258677155574788097-NgS0/)
 
 ## 💬 Talk with Founders
 
