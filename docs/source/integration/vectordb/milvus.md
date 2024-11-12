@@ -1,4 +1,4 @@
-# Milvus Vector Database Documentation
+# Milvus
 
 The `Milvus` class is a vector database implementation that allows you to store, query, and manage vector embeddings. It's designed to work with various embedding models and provides an efficient way to perform similarity searches.
 
