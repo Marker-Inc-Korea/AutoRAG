@@ -264,7 +264,7 @@ The metrics used by each node in AutoRAG are shown below.
 
 ![Image](https://github.com/user-attachments/assets/393d3ad6-1bde-4e75-b314-5c150eadaeee)
 
-- [Supporting metrics](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+- [Supporting metrics list](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
 
 Here is the detailed information about the metrics that AutoRAG supports.
 - [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
@@ -501,6 +501,18 @@ For more detailed instructions, refer to the [Docker Installation Guide](./docs/
 🍯 [Tips/Tricks](https://edai.notion.site/Tips-Tricks-10708a0e36ff461cb8a5d4fb3279ff15?pvs=4)
 
 ☎️ [TroubleShooting](https://medium.com/@autorag/autorag-troubleshooting-5cf872b100e3)
+
+## Thanks for shoutout
+
+### Company
+
+<a href="https://www.linkedin.com/posts/llamaindex_rag-pipelines-have-a-lot-of-hyperparameters-activity-7182053546593247232-HFMN/">
+<img src="https://github.com/user-attachments/assets/b8fdaaf6-543a-4019-8dbe-44191a5269b9" alt="llama index" style="width:200px;height:auto;">
+</a>
+
+### Individual
+- [Shubham Saboo](https://www.linkedin.com/posts/shubhamsaboo_just-found-the-solution-to-the-biggest-rag-activity-7255404464054939648-ISQ8/)
+- [Kalyan KS](https://www.linkedin.com/posts/kalyanksnlp_rag-autorag-llms-activity-7258677155574788097-NgS0/)
 
 ## 💬 Talk with Founders
 
