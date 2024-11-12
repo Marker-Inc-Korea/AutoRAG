@@ -119,7 +119,7 @@ This is because RAG uses the corpus to retrieve documents and generate answers u
 
 ### 📌 Supporting Data Creation Modules
 
-![Image](https://github.com/user-attachments/assets/4476ba1e-9c40-499a-a72b-cc36fea63add)
+![Image](https://github.com/user-attachments/assets/c6f15fab-6c69-4627-9685-6c218b66f5d6)
 
 - [Supporting Parsing Modules List](https://edai.notion.site/Supporting-Parsing-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
 - [Supporting Chunking Modules List](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
