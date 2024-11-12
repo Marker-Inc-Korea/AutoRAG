@@ -99,13 +99,13 @@ pip install "AutoRAG[gpu,parse]"
 
 # Data Creation
 
-![Image](https://github.com/user-attachments/assets/146d005d-dcb9-4460-a8b3-25126e5e3dc2)
-
-![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
-
 <a href="https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation">
 <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
+
+![Image](https://github.com/user-attachments/assets/146d005d-dcb9-4460-a8b3-25126e5e3dc2)
+
+![image](https://github.com/user-attachments/assets/6079f696-207c-4221-8d28-5561a203dfe2)
 
 RAG Optimization requires two types of data: QA dataset and Corpus dataset.
 
@@ -224,15 +224,17 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 # RAG Optimization
 
-![Image](https://github.com/user-attachments/assets/b814928d-54a4-4b96-af34-adba0ac6803b)
-
-![rag](https://github.com/user-attachments/assets/214d842e-fc67-4113-9c24-c94158b00c23)
-
 <a href="https://huggingface.co/spaces/AutoRAG/RAG-Pipeline-Optimization">
 <img src="https://github.com/user-attachments/assets/8c6e4b02-3938-4560-b817-c95764965b50" alt="Hugging Face Sticker" style="width:200px;height:auto;">
 </a>
 
+![Image](https://github.com/user-attachments/assets/b814928d-54a4-4b96-af34-adba0ac6803b)
+
+![rag](https://github.com/user-attachments/assets/214d842e-fc67-4113-9c24-c94158b00c23)
+
 ### How AutoRAG optimizes RAG pipeline?
+
+![Image](https://github.com/user-attachments/assets/ee55d9b7-df4e-48f8-9691-36e4de8501ed)
 
 ![rag_opt_gif](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
 
