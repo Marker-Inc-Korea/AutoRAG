@@ -1,6 +1,6 @@
 # AutoRAG
 
-<img src=https://github.com/user-attachments/assets/b034c3e7-590d-4329-b329-fe4a7da94b6b width="200" height="50"/>
+<img src=https://github.com/user-attachments/assets/b034c3e7-590d-4329-b329-fe4a7da94b6b width="250" height="50"/>
 
 RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 
