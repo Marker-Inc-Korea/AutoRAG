@@ -117,6 +117,12 @@ RAG Optimization requires two types of data: QA dataset and Corpus dataset.
 **Corpus** dataset is critical to the performance of RAGs.
 This is because RAG uses the corpus to retrieve documents and generate answers using it.
 
+### 📌 Supporting Data Creation Modules
+
+- [Supporting Parsing Modules](https://edai.notion.site/Supporting-Parsing-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
+- [Supporting Chunking Modules](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
+
+
 ## Quick Start
 
 ### 1. Parsing
@@ -241,6 +247,22 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 ![Image](https://github.com/user-attachments/assets/9489e803-f47a-49d4-97ec-0dd9b270394f)
 
 ![rag_opt_gif](https://github.com/user-attachments/assets/55bd09cd-8420-4f6d-bc7d-0a66af288317)
+
+### 📌 Supporting RAG Optimization Nodes & modules
+
+- [Supporting RAG Modules](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
+
+## ❗Metrics
+![Image](https://github.com/user-attachments/assets/5b342f68-d25c-4cba-aa85-1e257801afea)
+
+![Image](https://github.com/user-attachments/assets/393d3ad6-1bde-4e75-b314-5c150eadaeee)
+
+- [Supporting metrics](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
+
+Here is the detailed information about the metrics that AutoRAG supports.
+- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
+- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
+- [Generation Metrics](https://github.com/user-attachments/assets/7d4a3069-9186-4854-885d-ca0f7bcc17e8)
 
 ## Quick Start
 
@@ -459,34 +481,6 @@ docker run --rm -it \
 - **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment.
 
 For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
-
-## 📌 Supporting Data Creation Modules
-![Data Creation](https://github.com/user-attachments/assets/0e5872de-2892-46b4-9ecd-e395671e324c)
-
-- You can check our all Parsing Modules at [here](https://edai.notion.site/Supporting-Parse-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
-- You can check our all Chunk Modules at [here](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
-
-## ❗Supporting RAG Optimization Nodes & modules
-
-![module_1](https://github.com/user-attachments/assets/c2e4c7d2-0f46-4b13-bb21-0ffc19cc9492)
-![module_2](https://github.com/user-attachments/assets/e013f04e-f69d-4dd7-96da-06e6b5921c3d)
-![module_3](https://github.com/user-attachments/assets/72490b97-81a1-4620-b9bd-5c5e0ead79a7)
-![module_4](https://github.com/user-attachments/assets/7a8ee260-9c60-4a27-b708-5286d1c37851)
-
-You can check our all supporting Nodes & modules
-at [here](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
-
-## ❗Supporting Evaluation Metrics
-
-![Metrics](https://github.com/user-attachments/assets/fab551cd-8892-4bda-acae-eff22ece94b3)
-
-You can check our all supporting Evaluation Metrics
-at [here](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
-
-- [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
-- [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
-- [Generation Metrics](https://github.com/user-attachments/assets/7d4a3069-9186-4854-885d-ca0f7bcc17e8)
-
 
 ## ☎️ FaQ
 
