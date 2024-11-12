@@ -251,6 +251,9 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 - [Supporting RAG Modules](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
 
 ## ❗Metrics
+
+The metrics used by each node in AutoRAG are shown below.
+
 ![Image](https://github.com/user-attachments/assets/5b342f68-d25c-4cba-aa85-1e257801afea)
 
 ![Image](https://github.com/user-attachments/assets/393d3ad6-1bde-4e75-b314-5c150eadaeee)
