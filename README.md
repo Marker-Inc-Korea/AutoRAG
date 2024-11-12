@@ -63,19 +63,19 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 # Index
 
 - [Quick Install](#quick-install)
-- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [Data Creation](#data-creation)
   - [Parsing](#1-parsing)
   - [Chunking](#2-chunking)
   - [QA Creation](#3-qa-creation)
 - [RAG Optimization](#rag-optimization)
-    - [Set YAML File](#1-set-yaml-file)
-    - [Run AutoRAG](#2-run-autorag)
-    - [Run Dashboard](#3-run-dashboard)
-    - [Deploy your optimal RAG pipeline (for testing)](#4-deploy-your-optimal-rag-pipeline-for-testing)
-- [Supporting Data Creation Modules](#-supporting-data-creation-modules)
-- [Supporting RAG Optimization Nodes & modules](#supporting-rag-optimization-nodes--modules)
-- [Supporting Evaluation Metrics](#supporting-evaluation-metrics)
+    - [How AutoRAG optimizes RAG pipeline?](#how-autorag-optimizes-rag-pipeline)
+    - [Metrics](#metrics)
+    - [Quick Start](#quick-start-1)
+      - [Set YAML File](#1-set-yaml-file)
+      - [Run AutoRAG](#2-run-autorag)
+      - [Run Dashboard](#3-run-dashboard)
+      - [Deploy your optimal RAG pipeline](#4-deploy-your-optimal-rag-pipeline)
+- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [FaQ](#-faq)
 
 # Quick Install
@@ -250,7 +250,7 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 - [Supporting RAG Modules](https://edai.notion.site/Supporting-Nodes-modules-0ebc7810649f4e41aead472a92976be4?pvs=4)
 
-## ❗Metrics
+## Metrics
 
 The metrics used by each node in AutoRAG are shown below.
 
@@ -355,7 +355,7 @@ autorag dashboard --trial_dir /your/path/to/trial_dir
 
 ![dashboard](https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/3798827d-31d7-4c4e-a9b1-54340b964e53)
 
-### 4. Deploy your optimal RAG pipeline (for testing)
+### 4. Deploy your optimal RAG pipeline
 
 ### 4-1. Run as a Code
 
