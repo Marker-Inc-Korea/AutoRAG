@@ -238,7 +238,7 @@ initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
 
 ![rag](https://github.com/user-attachments/assets/214d842e-fc67-4113-9c24-c94158b00c23)
 
-### How AutoRAG optimizes RAG pipeline?
+## How AutoRAG optimizes RAG pipeline?
 
 ![Image](https://github.com/user-attachments/assets/97073df5-f32b-49c4-b12f-4d09467370ae)
 
@@ -271,11 +271,12 @@ Here is the detailed information about the metrics that AutoRAG supports.
 
 First, you need to set the config YAML file for your RAG optimization.
 
-You can get various config YAML files at [here](./sample_config).
 We highly recommend using pre-made config YAML files for starter.
 
-If you want to make your own config YAML files, check out the [Config YAML file](#-create-your-own-config-yaml-file)
-section.
+- [Get Sample YAML](./sample_config/rag)
+  - [Sample YAML Guide](https://docs.auto-rag.com/optimization/sample_config.html)
+- [Make Custom YAML Guide](https://docs.auto-rag.com/optimization/custom_config.html)
+
 
 Here is an example of the config YAML file to use `retrieval`, `prompt_maker`, and `generator` nodes.
 
