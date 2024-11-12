@@ -10,7 +10,7 @@ RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Follow-orange?style=flat-square&logo=huggingface)](https://huggingface.co/AutoRAG)
 [![Static Badge](https://img.shields.io/badge/Roadmap-5D3FD3)](https://github.com/orgs/Auto-RAG/projects/1/views/2)
 
-<img src=https://github.com/user-attachments/assets/8298b443-aa42-450e-a087-216dad528626 width="250" height="50"/>
+<img src=https://github.com/user-attachments/assets/8298b443-aa42-450e-a087-216dad528626 width="251.5" height="55.2"/>
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
