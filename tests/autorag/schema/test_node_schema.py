@@ -2,7 +2,11 @@ from autorag.nodes.retrieval import BM25, VectorDB
 from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.schema import Node
 from autorag.schema.module import Module
-from autorag.schema.node import extract_values_from_nodes, module_type_exists
+from autorag.schema.node import (
+	extract_values_from_nodes,
+	module_type_exists,
+	extract_vectordb_from_nodes,
+)
 
 
 def test_get_param_combinations():
@@ -122,6 +126,60 @@ def test_find_embedding_models():
 	]
 	embedding_models = extract_values_from_nodes(nodes, "embedding_model")
 	assert set(embedding_models) == {"model1", "model2", "model3", "model4"}
+
+
+def test_find_vectordbs():
+	nodes = [
+		Node.from_dict(
+			{
+				"node_type": "retrieval",
+				"param": "value",
+				"strategy": {
+					"metrics": ["retrieval_f1"],
+					"retrieval_modules": [
+						{
+							"module_type": "bm25",
+							"bm25_tokenizer": ["porter_stemmer", "gpt2"],
+						},
+						{
+							"module_type": "vectordb",
+							"vectordb": [
+								{
+									"name": "chroma",
+									"db_type": "chroma",
+									"client_type": "persistent",
+									"collection_name": "test",
+									"path": "resources/chroma",
+								}
+							],
+						},
+					],
+				},
+				"modules": [
+					{
+						"module_type": "vectordb",
+						"vectordb": [
+							{
+								"name": "milvus",
+								"db_type": "milvus",
+								"embedding_model": "test",
+								"collection_name": "test",
+								"uri": "${MILVUS_URI}",
+								"token": "${MILVUS_TOKEN}",
+								"embedding_batch": "50",
+								"similarity_metric": "cosine",
+							}
+						],
+					}
+				],
+			}
+		),
+	]
+	vectordb_list = extract_vectordb_from_nodes(nodes)
+	assert list(map(lambda vectordb: vectordb["name"], vectordb_list)) == [
+		"chroma",
+		"milvus",
+	]
 
 
 def test_find_llm_models():

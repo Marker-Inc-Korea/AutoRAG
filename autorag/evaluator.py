@@ -21,6 +21,7 @@ from autorag.nodes.retrieval.vectordb import (
 )
 from autorag.schema import Node
 from autorag.schema.node import (
+	extract_vectordb_from_nodes,
 	module_type_exists,
 	extract_values_from_nodes,
 	extract_values_from_nodes_strategy,
@@ -36,7 +37,7 @@ from autorag.utils.util import (
 	load_yaml_config,
 	get_event_loop,
 )
-from autorag.vectordb import load_all_vectordb_from_yaml
+from autorag.vectordb import load_all_vectordb_from_nodes
 
 logger = logging.getLogger("AutoRAG")
 
@@ -113,11 +114,11 @@ class Evaluator:
 
 		:param yaml_path: The config YAML path
 		:param skip_validation: If True, it skips the validation step.
-			The validation step checks the input config YAML file is well formatted,
-			and there is any problem with the system settings.
-			Default is False.
+		        The validation step checks the input config YAML file is well formatted,
+		        and there is any problem with the system settings.
+		        Default is False.
 		:param full_ingest: If True, it checks the whole corpus data from corpus.parquet that exists in the Vector DB.
-			If your corpus is huge and don't want to check the whole vector DB, please set it to False.
+		        If your corpus is huge and don't want to check the whole vector DB, please set it to False.
 		:return: None
 		"""
 		# Make Resources directory
@@ -146,16 +147,22 @@ class Evaluator:
 		shutil.copy(
 			yaml_path, os.path.join(self.project_dir, trial_name, "config.yaml")
 		)
-		yaml_dict = load_yaml_config(yaml_path)
-		vectordb = yaml_dict.get("vectordb", [])
-
+		# yaml_dict = load_yaml_config(yaml_path)
+		node_lines = self._load_node_lines(yaml_path)
+		vectordb_list = list(
+			chain.from_iterable(
+				map(
+					lambda nodes: extract_vectordb_from_nodes(nodes),
+					node_lines.values(),
+				)
+			)
+		)
 		vectordb_config_path = os.path.join(
 			self.project_dir, "resources", "vectordb.yaml"
 		)
 		with open(vectordb_config_path, "w") as f:
-			yaml.safe_dump({"vectordb": vectordb}, f)
+			yaml.safe_dump({"vectordb": vectordb_list}, f)
 
-		node_lines = self._load_node_lines(yaml_path)
 		self.__ingest_bm25_full(node_lines)
 
 		with Progress(
@@ -177,7 +184,7 @@ class Evaluator:
 				task_ingest = progress.add_task("[cyan]Ingesting VectorDB...", total=1)
 
 				loop = get_event_loop()
-				loop.run_until_complete(self.__ingest_vectordb(yaml_path, full_ingest))
+				loop.run_until_complete(self.__ingest_vectordb(node_lines, full_ingest))
 
 				progress.update(task_ingest, completed=1)
 
@@ -544,8 +551,18 @@ class Evaluator:
 		)
 		return list(set(embedding_models_list))
 
-	async def __ingest_vectordb(self, yaml_path, full_ingest: bool):
-		vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+	async def __ingest_vectordb(
+		self, node_lines: Dict[str, List[Node]], full_ingest: bool
+	):
+		# vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+		vectordb_list = list(
+			chain.from_iterable(
+				map(
+					lambda nodes: load_all_vectordb_from_nodes(nodes, self.project_dir),
+					node_lines.values(),
+				)
+			)
+		)
 		if full_ingest is True:
 			# get the target ingest corpus from the whole corpus
 			for vectordb in vectordb_list:

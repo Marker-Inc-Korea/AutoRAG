@@ -118,6 +118,39 @@ def extract_values_from_nodes_strategy(nodes: List[Node], key: str) -> List[Any]
 	return values
 
 
+def extract_vectordb_from_modules(modules: List[Module]) -> List[Dict]:
+	vectordb_modules = list(
+		filter(lambda module: module.module_type == "vectordb", modules)
+	)
+	if len(vectordb_modules) == 0:
+		return []
+	return [
+		vectordb_module.module_param["vectordb"] for vectordb_module in vectordb_modules
+	]
+
+
+def extract_vectordb_from_strategy(strategy: Dict) -> List[Dict]:
+	retrieval_modules = strategy.get("retrieval_modules", [])
+	vectordb_modules = list(
+		filter(lambda module: module["module_type"] == "vectordb", retrieval_modules)
+	)
+	return [module["vectordb"] for module in vectordb_modules]
+
+
+def extract_vectordb_from_nodes(nodes: List[Node]) -> List[Dict]:
+	vectordb_from_strategy = list(
+		itertools.chain(
+			*[extract_vectordb_from_strategy(node.strategy) for node in nodes]
+		)
+	)
+	vectordb_from_modules = list(
+		itertools.chain(
+			*[extract_vectordb_from_modules(node.modules) for node in nodes]
+		)
+	)
+	return sum([*vectordb_from_strategy, *vectordb_from_modules], [])
+
+
 def module_type_exists(nodes: List[Node], module_type: str) -> bool:
 	"""
 	This function check if the module type exists in the nodes.
