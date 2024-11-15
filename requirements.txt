@@ -24,6 +24,7 @@ emoji
 ### Vector DB ###
 pymilvus # for using milvus vectordb
 chromadb>=0.5.0 # for chroma vectordb
+weaviate-client # for weaviate vectordb
 
 ### API server ###
 quart
