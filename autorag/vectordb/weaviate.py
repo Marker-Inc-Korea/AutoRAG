@@ -46,7 +46,7 @@ class Weaviate(BaseVectorStore):
 		else:
 			raise ValueError(
 				f"client_type {client_type} is not supported\n"
-				"supported client types are: local_docker, cloud"
+				"supported client types are: docker, cloud"
 			)
 		if similarity_metric == "cosine":
 			distance_metric = wvc.config.VectorDistances.COSINE
