@@ -28,6 +28,14 @@ autorag.vectordb.milvus module
    :undoc-members:
    :show-inheritance:
 
+autorag.vectordb.weaviate module
+--------------------------------
+
+.. automodule:: autorag.vectordb.weaviate
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

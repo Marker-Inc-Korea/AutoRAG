@@ -2,7 +2,8 @@
 <html class="no-js" lang="en" data-content_root="../../">
   <head><meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <meta name="color-scheme" content="light dark">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-T8ZKQM6RT9"></script>
     <script>
@@ -12,10 +13,10 @@
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
     <link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" />
-        <link rel="canonical" href="https://docs.auto-rag.com/_modules/autorag/vectordb.html" />
+        <link rel="canonical" href="https://docs.auto-rag.com/integration/vectordb/weaviate.html" />
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
-        <title>autorag.vectordb - AutoRAG documentation</title>
+        <title>Weaviate - AutoRAG documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
@@ -190,7 +191,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <div class="visually-hidden">Toggle table of contents sidebar</div>
         <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
       </label>
@@ -261,16 +262,16 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
 <ul>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/llm/llm.html">Configure LLM</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Configure LLM</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/aws_bedrock.html">AWS Bedrock x AutoRAG</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/huggingface_llm.html">HuggingFace LLM x AutoRAG</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/nvidia_nim.html">Nvidia Nim x AutoRAG</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/ollama.html">OLLAMA x AutoRAG</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../llm/llm.html">Configure LLM</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Configure LLM</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../llm/aws_bedrock.html">AWS Bedrock x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../llm/huggingface_llm.html">HuggingFace LLM x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../llm/nvidia_nim.html">Nvidia Nim x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../llm/ollama.html">OLLAMA x AutoRAG</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/vectordb/vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/chroma.html">Chroma</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/milvus.html">Milvus</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="chroma.html">Chroma</a></li>
+<li class="toctree-l2"><a class="reference internal" href="milvus.html">Milvus</a></li>
 </ul>
 </li>
 </ul>
@@ -422,7 +423,13 @@
           <span>Back to top</span>
         </a>
         <div class="content-icon-container">
-          <div class="theme-toggle-container theme-toggle-content">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../_sources/integration/vectordb/weaviate.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
             <button class="theme-toggle">
               <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
               <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
@@ -431,95 +438,209 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <div class="visually-hidden">Toggle table of contents sidebar</div>
             <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for autorag.vectordb</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
-
-<span class="kn">from</span> <span class="nn">autorag.support</span> <span class="kn">import</span> <span class="n">dynamically_find_function</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">load_yaml_config</span>
-<span class="kn">from</span> <span class="nn">autorag.vectordb.base</span> <span class="kn">import</span> <span class="n">BaseVectorStore</span>
-
-
-<div class="viewcode-block" id="get_support_vectordb">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.get_support_vectordb">[docs]</a>
-<span class="k">def</span> <span class="nf">get_support_vectordb</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-	<span class="n">support_vectordb</span> <span class="o">=</span> <span class="p">{</span>
-		<span class="s2">&quot;chroma&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.chroma&quot;</span><span class="p">,</span> <span class="s2">&quot;Chroma&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Chroma&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.chroma&quot;</span><span class="p">,</span> <span class="s2">&quot;Chroma&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;milvus&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.milvus&quot;</span><span class="p">,</span> <span class="s2">&quot;Milvus&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Milvus&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.milvus&quot;</span><span class="p">,</span> <span class="s2">&quot;Milvus&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;weaviate&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.weaviate&quot;</span><span class="p">,</span> <span class="s2">&quot;Weaviate&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Weaviate&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.weaviate&quot;</span><span class="p">,</span> <span class="s2">&quot;Weaviate&quot;</span><span class="p">),</span>
-	<span class="p">}</span>
-	<span class="k">return</span> <span class="n">dynamically_find_function</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">,</span> <span class="n">support_vectordb</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="load_vectordb">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.load_vectordb">[docs]</a>
-<span class="k">def</span> <span class="nf">load_vectordb</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-	<span class="n">vectordb</span> <span class="o">=</span> <span class="n">get_support_vectordb</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">)</span>
-	<span class="k">return</span> <span class="n">vectordb</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="load_vectordb_from_yaml">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.load_vectordb_from_yaml">[docs]</a>
-<span class="k">def</span> <span class="nf">load_vectordb_from_yaml</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">vectordb_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-	<span class="n">config_dict</span> <span class="o">=</span> <span class="n">load_yaml_config</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">)</span>
-	<span class="n">vectordb_list</span> <span class="o">=</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vectordb&quot;</span><span class="p">,</span> <span class="p">[])</span>
-	<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">vectordb_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">vectordb_name</span> <span class="o">==</span> <span class="s2">&quot;default&quot;</span><span class="p">:</span>
-		<span class="n">chroma_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="s2">&quot;resources&quot;</span><span class="p">,</span> <span class="s2">&quot;chroma&quot;</span><span class="p">)</span>
-		<span class="k">return</span> <span class="n">load_vectordb</span><span class="p">(</span>
-			<span class="s2">&quot;chroma&quot;</span><span class="p">,</span>
-			<span class="n">client_type</span><span class="o">=</span><span class="s2">&quot;persistent&quot;</span><span class="p">,</span>
-			<span class="n">embedding_model</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-			<span class="n">collection_name</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-			<span class="n">path</span><span class="o">=</span><span class="n">chroma_path</span><span class="p">,</span>
-		<span class="p">)</span>
-
-	<span class="n">target_dict</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">vectordb_name</span><span class="p">,</span> <span class="n">vectordb_list</span><span class="p">))</span>
-	<span class="n">target_dict</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>  <span class="c1"># delete a name key</span>
-	<span class="n">target_vectordb_name</span> <span class="o">=</span> <span class="n">target_dict</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;db_type&quot;</span><span class="p">)</span>
-	<span class="n">target_vectordb_params</span> <span class="o">=</span> <span class="n">target_dict</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-	<span class="k">return</span> <span class="n">load_vectordb</span><span class="p">(</span><span class="n">target_vectordb_name</span><span class="p">,</span> <span class="o">**</span><span class="n">target_vectordb_params</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="load_all_vectordb_from_yaml">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.load_all_vectordb_from_yaml">[docs]</a>
-<span class="k">def</span> <span class="nf">load_all_vectordb_from_yaml</span><span class="p">(</span>
-	<span class="n">yaml_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">BaseVectorStore</span><span class="p">]:</span>
-	<span class="n">config_dict</span> <span class="o">=</span> <span class="n">load_yaml_config</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">)</span>
-	<span class="n">vectordb_list</span> <span class="o">=</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vectordb&quot;</span><span class="p">,</span> <span class="p">[])</span>
-	<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">vectordb_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-		<span class="n">chroma_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="s2">&quot;resources&quot;</span><span class="p">,</span> <span class="s2">&quot;chroma&quot;</span><span class="p">)</span>
-		<span class="k">return</span> <span class="p">[</span>
-			<span class="n">load_vectordb</span><span class="p">(</span>
-				<span class="s2">&quot;chroma&quot;</span><span class="p">,</span>
-				<span class="n">client_type</span><span class="o">=</span><span class="s2">&quot;persistent&quot;</span><span class="p">,</span>
-				<span class="n">embedding_model</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-				<span class="n">collection_name</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-				<span class="n">path</span><span class="o">=</span><span class="n">chroma_path</span><span class="p">,</span>
-			<span class="p">)</span>
-		<span class="p">]</span>
-
-	<span class="n">result_vectordbs</span> <span class="o">=</span> <span class="p">[]</span>
-	<span class="k">for</span> <span class="n">vectordb_dict</span> <span class="ow">in</span> <span class="n">vectordb_list</span><span class="p">:</span>
-		<span class="n">_</span> <span class="o">=</span> <span class="n">vectordb_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>
-		<span class="n">vectordb_type</span> <span class="o">=</span> <span class="n">vectordb_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;db_type&quot;</span><span class="p">)</span>
-		<span class="n">vectordb</span> <span class="o">=</span> <span class="n">load_vectordb</span><span class="p">(</span><span class="n">vectordb_type</span><span class="p">,</span> <span class="o">**</span><span class="n">vectordb_dict</span><span class="p">)</span>
-		<span class="n">result_vectordbs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">vectordb</span><span class="p">)</span>
-	<span class="k">return</span> <span class="n">result_vectordbs</span></div>
-
+          <section id="weaviate">
+<h1>Weaviate<a class="headerlink" href="#weaviate" title="Link to this heading">¶</a></h1>
+<p>The <code class="docutils literal notranslate"><span class="pre">Weaviate</span></code> class is an open-source vector database designed to store, query, and manage vector embeddings efficiently.</p>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
+<p>To use the Weaviate vector database, you need to configure it in your YAML configuration file.</p>
+<section id="docker">
+<h3>1. Docker<a class="headerlink" href="#docker" title="Link to this heading">¶</a></h3>
+<p>You can see the full installation guide <a class="reference external" href="https://weaviate.io/developers/weaviate/installation/docker-compose">here</a></p>
+<p>Set the <code class="docutils literal notranslate"><span class="pre">client_type</span></code> to <code class="docutils literal notranslate"><span class="pre">docker</span></code>.
+You can run docker with the code below.
+<code class="docutils literal notranslate"><span class="pre">docker</span> <span class="pre">run</span> <span class="pre">-p</span> <span class="pre">8080:8080</span> <span class="pre">-p</span> <span class="pre">50051:50051</span> <span class="pre">cr.weaviate.io/semitechnologies/weaviate:1.27.3</span></code></p>
+<p>It will automatically be set to host: localhost, port: 8080, and grpc_port: 50051.</p>
+<p>If you’re already running weaviate on docker, you’ll need to set the host, port, and grpc_port you’re using.</p>
+<p>Additionally, you’ll need to set <code class="docutils literal notranslate"><span class="pre">text_key</span></code>, which is the key value of the property where weaviate will store the content.
+If you already have content stored in weaviate, you’ll need to set that key value.</p>
+<section id="example-yaml-file">
+<h4>Example YAML file<a class="headerlink" href="#example-yaml-file" title="Link to this heading">¶</a></h4>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">weaviate</span>
+<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">client_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">docker</span>
+<span class="w">  </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">localhost</span>
+<span class="w">  </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080</span>
+<span class="w">  </span><span class="nt">grpc_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50051</span>
+<span class="w">  </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">  </span><span class="nt">similarity_metric</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cosine</span>
+<span class="w">  </span><span class="nt">text_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">content</span>
 </pre></div>
+</div>
+</section>
+</section>
+<section id="weaviate-cloud">
+<h3>2. Weaviate Cloud<a class="headerlink" href="#weaviate-cloud" title="Link to this heading">¶</a></h3>
+<p>You can see the full installation guide <a class="reference external" href="https://weaviate.io/developers/weaviate/installation/weaviate-cloud-services">here</a></p>
+<section id="id1">
+<h4>Example YAML file<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h4>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">weaviate</span>
+<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${WEAVIATE_URL}</span>
+<span class="w">  </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${WEAVIATE_API_KEY}</span>
+<span class="w">  </span><span class="nt">grpc_port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50051</span>
+<span class="w">  </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">  </span><span class="nt">similarity_metric</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cosine</span>
+<span class="w">  </span><span class="nt">text_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">content</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="parameters">
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding_model:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name or identifier of the embedding model to be used.</p></li>
+<li><p>Example: “openai_embed_3_large”</p></li>
+<li><p>Note: This should correspond to a valid embedding model that your system can use to generate vector embeddings. For more information see <a class="reference external" href="https://docs.auto-rag.com/local_model.html#configure-the-embedding-model">custom your embedding model</a> documentation.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">collection_name:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Sets the name of the Weaviate collection where the vectors will be stored.</p></li>
+<li><p>Example: “my_vector_collection”</p></li>
+<li><p>Note: If the collection doesn’t exist, it will be created. If it exists, it will be loaded.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding_batch:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">100</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Determines the number of embeddings to process in a single batch.</p></li>
+<li><p>Default: 100</p></li>
+<li><p>Note: Adjust this based on your system’s memory and processing capabilities. Larger batches may be faster but require more memory.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">similarity_metric:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;cosine&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the metric used to calculate similarity between vectors.</p></li>
+<li><p>Default: “cosine”</p></li>
+<li><p>Options: “cosine”, “l2” (Euclidean distance), “ip” (Inner Product)</p></li>
+<li><p>Note: Choose the metric that best suits your use case and data characteristics.</p>
+<ul>
+<li><p>Not support “hamming”, “manhattan”</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">client_type</span> <span class="pre">=</span> <span class="pre">&quot;docker&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the type of client you’re using to connect to Weaviate.</p></li>
+<li><p>Default: “docker”</p></li>
+<li><p>Options: “docker”, “cloud”</p></li>
+<li><p>Note: Choose the appropriate client type based on your deployment.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">host:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;localhost&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: The host of the Weaviate server.</p></li>
+<li><p>Default: “localhost”</p></li>
+<li><p>Example: “weaviate-server.com”</p></li>
+<li><p>Note: Use only <code class="docutils literal notranslate"><span class="pre">client_type:</span> <span class="pre">docker</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">port:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">8080</span></code></p>
+<ul class="simple">
+<li><p>Purpose: The port of the Weaviate Server.</p></li>
+<li><p>Default: 8080</p></li>
+<li><p>Note: Use only <code class="docutils literal notranslate"><span class="pre">client_type:</span> <span class="pre">docker</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">grpc_port:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">50051</span></code></p>
+<ul class="simple">
+<li><p>Note: Use only <code class="docutils literal notranslate"><span class="pre">client_type:</span> <span class="pre">docker</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">url:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: The URL of the Weaviate Cloud service.</p></li>
+<li><p>Note: Use only <code class="docutils literal notranslate"><span class="pre">client_type:</span> <span class="pre">cloud</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">api_key:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: The API key for authentication with the Weaviate Cloud service.</p></li>
+<li><p>Note: Use only <code class="docutils literal notranslate"><span class="pre">client_type:</span> <span class="pre">cloud</span></code>.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">text_key:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;content&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name of the property in Weaviate where the text data is stored.</p></li>
+<li><p>Default: “content”</p></li>
+<li><p>Note: This should correspond to the property name in your Weaviate schema where the text data is stored.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h2>
+<p>Here’s a brief overview of how to use the main functions of the Weaviate vector database:</p>
+<ol class="arabic">
+<li><p><strong>Adding Vectors</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="n">weaviate_db</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This method adds new vectors to the database. It takes a list of IDs and corresponding texts, generates embeddings, and inserts them into the Weaviate collection.</p>
+</li>
+<li><p><strong>Querying</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ids</span><span class="p">,</span> <span class="n">scores</span> <span class="o">=</span> <span class="k">await</span> <span class="n">weaviate_db</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">queries</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Performs a similarity search on the stored vectors.
+It returns the IDs and their scores.
+Below you can see how the score is determined.</p>
+</li>
+<li><p><strong>Fetching Vectors</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vectors</span> <span class="o">=</span> <span class="k">await</span> <span class="n">weaviate_db</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Retrieves the vectors associated with the given IDs.</p>
+</li>
+<li><p><strong>Checking Existence</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exists</span> <span class="o">=</span> <span class="k">await</span> <span class="n">weaviate_db</span><span class="o">.</span><span class="n">is_exist</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Checks if the given IDs exist in the database.</p>
+</li>
+<li><p><strong>Deleting Vectors</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="n">weaviate_db</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Deletes the vectors associated with the given IDs from the database.</p>
+</li>
+<li><p><strong>Deleting the Collection</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">weaviate_db</span><span class="o">.</span><span class="n">delete_collection</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>Deletes the collection from the Weaviate server.</p>
+</li>
+</ol>
+<section id="how-the-score-is-determined">
+<h3>how the score is determined?<a class="headerlink" href="#how-the-score-is-determined" title="Link to this heading">¶</a></h3>
+<p>Calculate the score based on the distance.
+<a class="reference external" href="https://weaviate.io/developers/weaviate/config-refs/distances">Here</a> is how to calculate distance in Weaviate.</p>
+<ol class="arabic simple">
+<li><p>Cosine
+Score = 2 - distance</p></li>
+<li><p>Inner Product
+Score = -distance</p></li>
+<li><p>L2
+Score = -distance</p></li>
+</ol>
+</section>
+</section>
+</section>
+
         </article>
       </div>
       <footer>
@@ -545,8 +666,42 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Weaviate</a><ul>
+<li><a class="reference internal" href="#configuration">Configuration</a><ul>
+<li><a class="reference internal" href="#docker">1. Docker</a><ul>
+<li><a class="reference internal" href="#example-yaml-file">Example YAML file</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#weaviate-cloud">2. Weaviate Cloud</a><ul>
+<li><a class="reference internal" href="#id1">Example YAML file</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#parameters">Parameters</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#usage">Usage</a><ul>
+<li><a class="reference internal" href="#how-the-score-is-determined">how the score is determined?</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>
