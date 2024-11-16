@@ -155,7 +155,7 @@ class Weaviate(BaseVectorStore):
 
 def distance_to_score(distance: float, similarity_metric) -> float:
 	if similarity_metric == "cosine":
-		return 2 - distance
+		return 1 - distance
 	elif similarity_metric == "ip":
 		return -distance
 	elif similarity_metric == "l2":
