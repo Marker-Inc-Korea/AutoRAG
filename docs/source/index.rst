@@ -85,6 +85,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    troubleshooting.md
    local_model.md
    migration.md
+   run_evaluation.md
 
 .. toctree::
    :maxdepth: 1
