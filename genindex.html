@@ -217,6 +217,7 @@
 <li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">TroubleShooting</a></li>
 <li class="toctree-l1"><a class="reference internal" href="local_model.html">Configure LLM &amp; Embedding models</a></li>
 <li class="toctree-l1"><a class="reference internal" href="migration.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
@@ -270,6 +271,8 @@
 <li class="toctree-l1 has-children"><a class="reference internal" href="integration/vectordb/vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="integration/vectordb/chroma.html">Chroma</a></li>
 <li class="toctree-l2"><a class="reference internal" href="integration/vectordb/milvus.html">Milvus</a></li>
+<li class="toctree-l2"><a class="reference internal" href="integration/vectordb/weaviate.html">Weaviate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="integration/vectordb/pinecone.html">Pinecone</a></li>
 </ul>
 </li>
 </ul>
@@ -453,6 +456,8 @@
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.add">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.add">(autorag.vectordb.milvus.Milvus method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.add">(autorag.vectordb.pinecone.Pinecone method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.add">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
@@ -987,8 +992,6 @@
           <li><a href="api_spec/autorag.nodes.generator.html#module-autorag.nodes.generator.run">module</a>
 </li>
         </ul></li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li>
     autorag.nodes.generator.vllm
 
@@ -996,6 +999,8 @@
           <li><a href="api_spec/autorag.nodes.generator.html#module-autorag.nodes.generator.vllm">module</a>
 </li>
         </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li>
     autorag.nodes.passageaugmenter
 
@@ -1536,6 +1541,13 @@
 </li>
         </ul></li>
         <li>
+    autorag.vectordb.pinecone
+
+        <ul>
+          <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.pinecone">module</a>
+</li>
+        </ul></li>
+        <li>
     autorag.vectordb.weaviate
 
         <ul>
@@ -1732,6 +1744,8 @@
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.delete">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
         </ul></li>
@@ -1741,10 +1755,12 @@
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.delete_collection">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
         </ul></li>
-        <li><a href="api_spec/autorag.utils.html#autorag.utils.util.demojize">demojize() (in module autorag.utils.util)</a>
+        <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete_index">delete_index() (autorag.vectordb.pinecone.Pinecone method)</a>
 </li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.utils.html#autorag.utils.util.demojize">demojize() (in module autorag.utils.util)</a>
+</li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown">dict_to_markdown() (in module autorag.utils.util)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown_table">dict_to_markdown_table() (in module autorag.utils.util)</a>
@@ -1852,6 +1868,8 @@
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.fetch">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.fetch">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.fetch">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
         </ul></li>
@@ -1875,10 +1893,10 @@
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_key_values">find_key_values() (in module autorag.utils.util)</a>
 </li>
-        <li><a href="api_spec/autorag.html#autorag.dashboard.find_node_dir">find_node_dir() (in module autorag.dashboard)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.html#autorag.dashboard.find_node_dir">find_node_dir() (in module autorag.dashboard)</a>
+</li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_node_summary_files">find_node_summary_files() (in module autorag.utils.util)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_trial_dir">find_trial_dir() (in module autorag.utils.util)</a>
@@ -2053,6 +2071,8 @@
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.is_exist">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.is_exist">(autorag.vectordb.milvus.Milvus method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.is_exist">(autorag.vectordb.pinecone.Pinecone method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.is_exist">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
@@ -2645,6 +2665,8 @@
 </li>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.milvus">autorag.vectordb.milvus</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.pinecone">autorag.vectordb.pinecone</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.weaviate">autorag.vectordb.weaviate</a>
 </li>
           <li><a href="api_spec/autorag.html#module-autorag.web">autorag.web</a>
@@ -2761,6 +2783,8 @@
         <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.pass_reranker.PassReranker">PassReranker (class in autorag.nodes.passagereranker.pass_reranker)</a>
 </li>
         <li><a href="api_spec/autorag.nodes.passagefilter.html#autorag.nodes.passagefilter.percentile_cutoff.PercentileCutoff">PercentileCutoff (class in autorag.nodes.passagefilter.percentile_cutoff)</a>
+</li>
+        <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone">Pinecone (class in autorag.vectordb.pinecone)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.pop_params">pop_params() (in module autorag.utils.util)</a>
 </li>
@@ -2884,6 +2908,8 @@
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.query">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.query">(autorag.vectordb.milvus.Milvus method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.query">(autorag.vectordb.pinecone.Pinecone method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.query">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
