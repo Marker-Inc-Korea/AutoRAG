@@ -15,7 +15,7 @@ You can get the API key from [here](https://app.pinecone.io/organizations/-/keys
 - name: openai_embed_3_large
   db_type: pinecone
   embedding_model: openai_embed_3_large
-  collection_name: openai_embed_3_large
+  index_name: openai_embed_3_large
   api_key: ${PINECONE_API_KEY}
   similarity_metric: cosine
   dimension: 1536
