@@ -1,7 +1,13 @@
 import logging
 
+from datetime import timedelta
 
-from typing import List, Optional, Tuple
+
+from couchbase.auth import PasswordAuthenticator
+from couchbase.cluster import Cluster
+from couchbase.options import ClusterOptions
+
+from typing import List, Tuple
 
 from autorag.vectordb import BaseVectorStore
 
@@ -15,61 +21,18 @@ class Couchbase(BaseVectorStore):
 		collection_name: str,
 		embedding_batch: int = 100,
 		similarity_metric: str = "cosine",
-		client_type: str = "docker",
-		host: str = "localhost",
-		port: int = 8080,
-		grpc_port: int = 50051,
-		url: Optional[str] = None,
-		api_key: Optional[str] = None,
-		text_key: str = "content",
+		connection_string: str = "couchbase://localhost",
+		username: str = "",
+		password: str = "",
+		batch_size: int = 100,
 	):
 		super().__init__(embedding_model, similarity_metric, embedding_batch)
 
-		self.text_key = text_key
+		auth = PasswordAuthenticator(username, password)
+		self.cluster = Cluster(connection_string, ClusterOptions(auth))
 
-		if client_type == "docker":
-			self.client = weaviate.connect_to_local(
-				host=host,
-				port=port,
-				grpc_port=grpc_port,
-			)
-		elif client_type == "cloud":
-			self.client = weaviate.connect_to_weaviate_cloud(
-				cluster_url=url,
-				auth_credentials=Auth.api_key(api_key),
-			)
-		else:
-			raise ValueError(
-				f"client_type {client_type} is not supported\n"
-				"supported client types are: docker, cloud"
-			)
-		if similarity_metric == "cosine":
-			distance_metric = wvc.config.VectorDistances.COSINE
-		elif similarity_metric == "ip":
-			distance_metric = wvc.config.VectorDistances.DOT
-		elif similarity_metric == "l2":
-			distance_metric = wvc.config.VectorDistances.L2_SQUARED
-		else:
-			raise ValueError(
-				f"similarity_metric {similarity_metric} is not supported\n"
-				"supported similarity metrics are: cosine, ip, l2"
-			)
-
-		if not self.client.collections.exists(collection_name):
-			self.client.collections.create(
-				collection_name,
-				properties=[
-					Property(
-						name="content", data_type=DataType.TEXT, skip_vectorization=True
-					),
-				],
-				vectorizer_config=wvc.config.Configure.Vectorizer.none(),
-				vector_index_config=wvc.config.Configure.VectorIndex.hnsw(  # hnsw, flat, dynamic,
-					distance_metric=distance_metric
-				),
-			)
-		self.collection = self.client.collections.get(collection_name)
-		self.collection_name = collection_name
+		# Wait until the cluster is ready for use.
+		self.cluster.wait_until_ready(timedelta(seconds=5))
 
 	async def add(self, ids: List[str], texts: List[str]):
 		texts = self.truncated_inputs(texts)
