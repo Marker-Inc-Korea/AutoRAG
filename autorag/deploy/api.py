@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 
 from autorag.deploy.base import BaseRunner
 from autorag.nodes.generator.base import BaseGenerator
+from autorag.nodes.promptmaker.base import BasePromptMaker
 from autorag.utils import fetch_contents
 
 logger = logging.getLogger("AutoRAG")
@@ -39,6 +40,16 @@ class RetrievedPassage(BaseModel):
 class RunResponse(BaseModel):
 	result: Union[str, List[str]]
 	retrieved_passage: List[RetrievedPassage]
+
+
+class Passage(BaseModel):
+	doc_id: str
+	content: str
+	score: float
+
+
+class RetrievalResponse(BaseModel):
+	passages: List[Passage]
 
 
 class StreamResponse(BaseModel):
@@ -106,6 +117,56 @@ class ApiRunner(BaseRunner):
 			)
 
 			return jsonify(response.model_dump()), 200
+
+		@self.app.route("/v1/retrieve", methods=["POST"])
+		async def run_retrieve_only():
+			data = await request.get_json()
+			query = data.get("query", None)
+			if query is None:
+				return jsonify(
+					{
+						"error": "Invalid request. You need to include 'query' in the request body."
+					}
+				), 400
+
+			previous_result = pd.DataFrame(
+				{
+					"qid": str(uuid.uuid4()),
+					"query": [data.query],
+					"retrieval_gt": [[]],
+					"generation_gt": [""],
+				}
+			)  # pseudo qa data for execution
+			for module_instance, module_param in zip(
+				self.module_instances, self.module_params
+			):
+				if isinstance(module_instance, BasePromptMaker) or isinstance(
+					module_instance, BaseGenerator
+				):
+					continue
+				new_result = module_instance.pure(
+					previous_result=previous_result, **module_param
+				)
+				duplicated_columns = previous_result.columns.intersection(
+					new_result.columns
+				)
+				drop_previous_result = previous_result.drop(columns=duplicated_columns)
+				previous_result = pd.concat([drop_previous_result, new_result], axis=1)
+
+			# Simulate processing the query
+			retrieved_contents = previous_result["retrieved_contents"].tolist()[0]
+			retrieved_ids = previous_result["retrieved_ids"].tolist()[0]
+			retrieve_scores = previous_result["retrieve_scores"].tolist()[0]
+
+			retrieval_response = RetrievalResponse(
+				passages=[
+					Passage(doc_id=doc_id, content=content, score=score)
+					for doc_id, content, score in zip(
+						retrieved_ids, retrieved_contents, retrieve_scores
+					)
+				]
+			)
+			return jsonify(retrieval_response.model_dump()), 200
 
 		@self.app.route("/v1/stream", methods=["POST"])
 		async def stream_query():
