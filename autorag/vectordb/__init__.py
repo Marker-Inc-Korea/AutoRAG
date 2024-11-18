@@ -14,6 +14,8 @@ def get_support_vectordb(vectordb_name: str):
 		"Milvus": ("autorag.vectordb.milvus", "Milvus"),
 		"weaviate": ("autorag.vectordb.weaviate", "Weaviate"),
 		"Weaviate": ("autorag.vectordb.weaviate", "Weaviate"),
+		"pinecone": ("autorag.vectordb.pinecone", "Pinecone"),
+		"Pinecone": ("autorag.vectordb.pinecone", "Pinecone"),
 	}
 	return dynamically_find_function(vectordb_name, support_vectordb)
 

@@ -85,7 +85,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    troubleshooting.md
    local_model.md
    migration.md
-   run_evaluation.md
+   test_your_rag.md
 
 .. toctree::
    :maxdepth: 1
