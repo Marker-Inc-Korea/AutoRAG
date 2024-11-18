@@ -271,6 +271,25 @@ def test_runner_api_server(evaluator):
 	assert retrieved_contents[0]["start_idx"] is None
 	assert retrieved_contents[0]["end_idx"] is None
 
+	async def post_to_server_retrieve():
+		response = await client.post(
+			"/v1/retrieve", json={"query": "I have a headache."}
+		)
+		json_response = await response.get_json()
+		return json_response, response.status_code
+
+	response_json, response_status_code = asyncio.run(post_to_server_retrieve())
+	assert response_status_code == 200
+	assert "passages" in response_json
+	passages = response_json["passages"]
+	assert len(passages) == 10
+	assert "doc_id" in passages[0]
+	assert "content" in passages[0]
+	assert "score" in passages[0]
+	assert isinstance(passages[0]["doc_id"], str)
+	assert isinstance(passages[0]["content"], str)
+	assert isinstance(passages[0]["score"], float)
+
 
 @pytest.mark.skip(reason="This test is not working")
 def test_runner_api_server_stream(evaluator_trial_done):
