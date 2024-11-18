@@ -100,4 +100,6 @@ maxdepth: 1
 ---
 chroma.md
 milvus.md
+weaviate.md
+pinecone.md
 ```

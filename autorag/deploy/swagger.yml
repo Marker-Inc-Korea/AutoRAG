@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Example API
-  version: 1.0.0
+  version: 1.0.1
 paths:
   /v1/run:
     post:
@@ -77,6 +77,55 @@ paths:
                   - required:
                       - retrieved_passage
                       - passage_index
+  /v1/retrieve:
+    post:
+      summary: Retrieve documents based on a query
+      operationId: runRetrieveOnly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The query string to retrieve documents.
+              required:
+                - query
+      responses:
+        '200':
+          description: Successful retrieval of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  passages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        doc_id:
+                          type: string
+                          description: The unique identifier for the document.
+                        content:
+                          type: string
+                          description: The content of the retrieved document.
+                        score:
+                          type: number
+                          format: float
+                          description: The score of the retrieved document.
+        '400':
+          description: Invalid request due to missing query parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Error message explaining the issue.
   /v1/stream:
     post:
       summary: Stream generated text with retrieved passages
