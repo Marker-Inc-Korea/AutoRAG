@@ -132,7 +132,7 @@ class ApiRunner(BaseRunner):
 			previous_result = pd.DataFrame(
 				{
 					"qid": str(uuid.uuid4()),
-					"query": [data.query],
+					"query": [query],
 					"retrieval_gt": [[]],
 					"generation_gt": [""],
 				}
