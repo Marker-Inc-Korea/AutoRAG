@@ -508,12 +508,28 @@
 <li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.ApiRunner.run_api_server"><code class="docutils literal notranslate"><span class="pre">ApiRunner.run_api_server()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage"><code class="docutils literal notranslate"><span class="pre">Passage</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage.content"><code class="docutils literal notranslate"><span class="pre">Passage.content</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage.doc_id"><code class="docutils literal notranslate"><span class="pre">Passage.doc_id</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">Passage.model_computed_fields</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage.model_config"><code class="docutils literal notranslate"><span class="pre">Passage.model_config</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage.model_fields"><code class="docutils literal notranslate"><span class="pre">Passage.model_fields</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.Passage.score"><code class="docutils literal notranslate"><span class="pre">Passage.score</span></code></a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.QueryRequest"><code class="docutils literal notranslate"><span class="pre">QueryRequest</span></code></a><ul>
 <li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.QueryRequest.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">QueryRequest.model_computed_fields</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.QueryRequest.model_config"><code class="docutils literal notranslate"><span class="pre">QueryRequest.model_config</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.QueryRequest.model_fields"><code class="docutils literal notranslate"><span class="pre">QueryRequest.model_fields</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.QueryRequest.query"><code class="docutils literal notranslate"><span class="pre">QueryRequest.query</span></code></a></li>
 <li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.QueryRequest.result_column"><code class="docutils literal notranslate"><span class="pre">QueryRequest.result_column</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.RetrievalResponse"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.RetrievalResponse.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.model_computed_fields</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.RetrievalResponse.model_config"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.model_config</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.RetrievalResponse.model_fields"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.model_fields</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.RetrievalResponse.passages"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.passages</span></code></a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="autorag.deploy.html#autorag.deploy.api.RetrievedPassage"><code class="docutils literal notranslate"><span class="pre">RetrievedPassage</span></code></a><ul>
@@ -1016,7 +1032,7 @@ If your corpus is huge and don’t want to check the whole vector DB, please set
 
 <dl class="py function">
 <dt class="sig sig-object py" id="autorag.node_line.run_node_line">
-<span class="sig-prename descclassname"><span class="pre">autorag.node_line.</span></span><span class="sig-name descname"><span class="pre">run_node_line</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">nodes:</span> <span class="pre">~typing.List[~autorag.schema.node.Node],</span> <span class="pre">node_line_dir:</span> <span class="pre">str,</span> <span class="pre">previous_result:</span> <span class="pre">~pandas.core.frame.DataFrame</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None,</span> <span class="pre">progress:</span> <span class="pre">~rich.progress.Progress</span> <span class="pre">=</span> <span class="pre">None,</span> <span class="pre">task_eval:</span> <span class="pre">&lt;property</span> <span class="pre">object</span> <span class="pre">at</span> <span class="pre">0x7f6159c145e0&gt;</span> <span class="pre">=</span> <span class="pre">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/node_line.html#run_node_line"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.node_line.run_node_line" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">autorag.node_line.</span></span><span class="sig-name descname"><span class="pre">run_node_line</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">nodes:</span> <span class="pre">~typing.List[~autorag.schema.node.Node],</span> <span class="pre">node_line_dir:</span> <span class="pre">str,</span> <span class="pre">previous_result:</span> <span class="pre">~pandas.core.frame.DataFrame</span> <span class="pre">|</span> <span class="pre">None</span> <span class="pre">=</span> <span class="pre">None,</span> <span class="pre">progress:</span> <span class="pre">~rich.progress.Progress</span> <span class="pre">=</span> <span class="pre">None,</span> <span class="pre">task_eval:</span> <span class="pre">&lt;property</span> <span class="pre">object</span> <span class="pre">at</span> <span class="pre">0x7fab953304f0&gt;</span> <span class="pre">=</span> <span class="pre">None</span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/node_line.html#run_node_line"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.node_line.run_node_line" title="Link to this definition">¶</a></dt>
 <dd><p>Run the whole node line by running each node.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>

@@ -51,17 +51,9 @@ INFO     [api.py:199] >> Public API URL:          api.py:199
 This is the URL to your local server, so use it as the host at request.
 
 
-## API Endpoint
+## Endpoints
 
-## Example API Documentation
-
-### Version: 1.0.0
-
----
-
-### Endpoints
-
-#### 1. `/v1/run` (POST)
+### 1. `/v1/run` (POST)
 
 - **Summary**: Run a query and get generated text with retrieved passages.
 - **Request Body**:
@@ -87,7 +79,79 @@ This is the URL to your local server, so use it as the host at request.
 
 ---
 
-#### 2. `/v1/stream` (POST)
+### 2. `/v1/retrieve` (POST)
+
+This API endpoint allows developers to retrieve documents based on a specified query.
+It will ignore generator and prompt maker, only return retrieved passages.
+
+The request must include a JSON object with the following structure:
+
+```json
+{
+  "query": "your query string here"
+}
+```
+
+#### Parameters
+- **query** (string, required): The search string used to retrieve documents.
+
+### Example Request
+```json
+{
+  "query": "latest trends in AI"
+}
+```
+
+#### Success Response
+**HTTP Status Code:** `200 OK`
+
+#### Response Body
+On a successful retrieval, the response will contain a JSON object structured as follows:
+
+```json
+{
+  "passages": [
+    {
+      "doc_id": "unique-document-id-1",
+      "content": "Content of the retrieved document.",
+      "score": 0.95
+    },
+    {
+      "doc_id": "unique-document-id-2",
+      "content": "Content of another retrieved document.",
+      "score": 0.89
+    }
+  ]
+}
+```
+
+#### Properties
+- **passages** (array): An array of documents retrieved based on the query.
+  - **doc_id** (string): The unique identifier for each document.
+  - **content** (string): The content of the retrieved document.
+  - **score** (number, float): The relevance score of the retrieved document.
+
+#### Example Response
+```json
+{
+  "passages": [
+    {
+      "doc_id": "doc123",
+      "content": "Artificial Intelligence is transforming industries.",
+      "score": 0.98
+    },
+    {
+      "doc_id": "doc456",
+      "content": "The future of AI includes advancements in machine learning.",
+      "score": 0.92
+    }
+  ]
+}
+```
+
+---
+
+### 3. `/v1/stream` (POST)
 
 - **Summary**: Stream generated text with retrieved passages.
 - **Description**: This endpoint streams the generated text line by line. The `retrieved_passage` is sent first, followed by the `result` streamed incrementally.
@@ -116,7 +180,7 @@ This is the URL to your local server, so use it as the host at request.
 
 ---
 
-#### 3. `/version` (GET)
+### 4. `/version` (GET)
 
 - **Summary**: Get the API version.
 - **Description**: Returns the current version of the API as a string.

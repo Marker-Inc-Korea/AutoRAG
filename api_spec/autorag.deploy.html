@@ -480,6 +480,47 @@ Here is api endpoint documentation =&gt; <a class="reference external" href="htt
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.deploy.api.</span></span><span class="sig-name descname"><span class="pre">Passage</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">doc_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">content</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">score</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/deploy/api.html#Passage"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.deploy.api.Passage" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModel</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage.content">
+<span class="sig-name descname"><span class="pre">content</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#autorag.deploy.api.Passage.content" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage.doc_id">
+<span class="sig-name descname"><span class="pre">doc_id</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#autorag.deploy.api.Passage.doc_id" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage.model_computed_fields">
+<span class="sig-name descname"><span class="pre">model_computed_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ComputedFieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#autorag.deploy.api.Passage.model_computed_fields" title="Link to this definition">¶</a></dt>
+<dd><p>A dictionary of computed field names and their corresponding <cite>ComputedFieldInfo</cite> objects.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#autorag.deploy.api.Passage.model_config" title="Link to this definition">¶</a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage.model_fields">
+<span class="sig-name descname"><span class="pre">model_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">FieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'content':</span> <span class="pre">FieldInfo(annotation=str,</span> <span class="pre">required=True),</span> <span class="pre">'doc_id':</span> <span class="pre">FieldInfo(annotation=str,</span> <span class="pre">required=True),</span> <span class="pre">'score':</span> <span class="pre">FieldInfo(annotation=float,</span> <span class="pre">required=True)}</span></em><a class="headerlink" href="#autorag.deploy.api.Passage.model_fields" title="Link to this definition">¶</a></dt>
+<dd><p>Metadata about the fields defined on the model,
+mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo] objects.</p>
+<p>This replaces <cite>Model.__fields__</cite> from Pydantic V1.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.Passage.score">
+<span class="sig-name descname"><span class="pre">score</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">float</span></em><a class="headerlink" href="#autorag.deploy.api.Passage.score" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="autorag.deploy.api.QueryRequest">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.deploy.api.</span></span><span class="sig-name descname"><span class="pre">QueryRequest</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result_column</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'generated_texts'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/deploy/api.html#QueryRequest"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.deploy.api.QueryRequest" title="Link to this definition">¶</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModel</span></code></p>
@@ -511,6 +552,37 @@ mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo] ob
 <dl class="py attribute">
 <dt class="sig sig-object py" id="autorag.deploy.api.QueryRequest.result_column">
 <span class="sig-name descname"><span class="pre">result_column</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></em><a class="headerlink" href="#autorag.deploy.api.QueryRequest.result_column" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.deploy.api.RetrievalResponse">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.deploy.api.</span></span><span class="sig-name descname"><span class="pre">RetrievalResponse</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">passages</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#autorag.deploy.api.Passage" title="autorag.deploy.api.Passage"><span class="pre">Passage</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/deploy/api.html#RetrievalResponse"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.deploy.api.RetrievalResponse" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModel</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.RetrievalResponse.model_computed_fields">
+<span class="sig-name descname"><span class="pre">model_computed_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ComputedFieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#autorag.deploy.api.RetrievalResponse.model_computed_fields" title="Link to this definition">¶</a></dt>
+<dd><p>A dictionary of computed field names and their corresponding <cite>ComputedFieldInfo</cite> objects.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.RetrievalResponse.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#autorag.deploy.api.RetrievalResponse.model_config" title="Link to this definition">¶</a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.RetrievalResponse.model_fields">
+<span class="sig-name descname"><span class="pre">model_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">FieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'passages':</span> <span class="pre">FieldInfo(annotation=List[Passage],</span> <span class="pre">required=True)}</span></em><a class="headerlink" href="#autorag.deploy.api.RetrievalResponse.model_fields" title="Link to this definition">¶</a></dt>
+<dd><p>Metadata about the fields defined on the model,
+mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo] objects.</p>
+<p>This replaces <cite>Model.__fields__</cite> from Pydantic V1.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.deploy.api.RetrievalResponse.passages">
+<span class="sig-name descname"><span class="pre">passages</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#autorag.deploy.api.Passage" title="autorag.deploy.api.Passage"><span class="pre">Passage</span></a><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#autorag.deploy.api.RetrievalResponse.passages" title="Link to this definition">¶</a></dt>
 <dd></dd></dl>
 
 </dd></dl>
@@ -948,12 +1020,28 @@ You can access the web interface at <cite>http://server_name:server_port</cite> 
 <li><a class="reference internal" href="#autorag.deploy.api.ApiRunner.run_api_server"><code class="docutils literal notranslate"><span class="pre">ApiRunner.run_api_server()</span></code></a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage"><code class="docutils literal notranslate"><span class="pre">Passage</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage.content"><code class="docutils literal notranslate"><span class="pre">Passage.content</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage.doc_id"><code class="docutils literal notranslate"><span class="pre">Passage.doc_id</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">Passage.model_computed_fields</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage.model_config"><code class="docutils literal notranslate"><span class="pre">Passage.model_config</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage.model_fields"><code class="docutils literal notranslate"><span class="pre">Passage.model_fields</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.Passage.score"><code class="docutils literal notranslate"><span class="pre">Passage.score</span></code></a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#autorag.deploy.api.QueryRequest"><code class="docutils literal notranslate"><span class="pre">QueryRequest</span></code></a><ul>
 <li><a class="reference internal" href="#autorag.deploy.api.QueryRequest.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">QueryRequest.model_computed_fields</span></code></a></li>
 <li><a class="reference internal" href="#autorag.deploy.api.QueryRequest.model_config"><code class="docutils literal notranslate"><span class="pre">QueryRequest.model_config</span></code></a></li>
 <li><a class="reference internal" href="#autorag.deploy.api.QueryRequest.model_fields"><code class="docutils literal notranslate"><span class="pre">QueryRequest.model_fields</span></code></a></li>
 <li><a class="reference internal" href="#autorag.deploy.api.QueryRequest.query"><code class="docutils literal notranslate"><span class="pre">QueryRequest.query</span></code></a></li>
 <li><a class="reference internal" href="#autorag.deploy.api.QueryRequest.result_column"><code class="docutils literal notranslate"><span class="pre">QueryRequest.result_column</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.deploy.api.RetrievalResponse"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.deploy.api.RetrievalResponse.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.model_computed_fields</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.RetrievalResponse.model_config"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.model_config</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.RetrievalResponse.model_fields"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.model_fields</span></code></a></li>
+<li><a class="reference internal" href="#autorag.deploy.api.RetrievalResponse.passages"><code class="docutils literal notranslate"><span class="pre">RetrievalResponse.passages</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#autorag.deploy.api.RetrievedPassage"><code class="docutils literal notranslate"><span class="pre">RetrievedPassage</span></code></a><ul>

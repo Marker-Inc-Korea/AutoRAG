@@ -452,6 +452,7 @@
 
 <span class="kn">from</span> <span class="nn">autorag.deploy.base</span> <span class="kn">import</span> <span class="n">BaseRunner</span>
 <span class="kn">from</span> <span class="nn">autorag.nodes.generator.base</span> <span class="kn">import</span> <span class="n">BaseGenerator</span>
+<span class="kn">from</span> <span class="nn">autorag.nodes.promptmaker.base</span> <span class="kn">import</span> <span class="n">BasePromptMaker</span>
 <span class="kn">from</span> <span class="nn">autorag.utils</span> <span class="kn">import</span> <span class="n">fetch_contents</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
@@ -487,6 +488,22 @@
 <span class="k">class</span> <span class="nc">RunResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 	<span class="n">result</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span>
 	<span class="n">retrieved_passage</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RetrievedPassage</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="Passage">
+<a class="viewcode-back" href="../../../api_spec/autorag.deploy.html#autorag.deploy.api.Passage">[docs]</a>
+<span class="k">class</span> <span class="nc">Passage</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+	<span class="n">doc_id</span><span class="p">:</span> <span class="nb">str</span>
+	<span class="n">content</span><span class="p">:</span> <span class="nb">str</span>
+	<span class="n">score</span><span class="p">:</span> <span class="nb">float</span></div>
+
+
+
+<div class="viewcode-block" id="RetrievalResponse">
+<a class="viewcode-back" href="../../../api_spec/autorag.deploy.html#autorag.deploy.api.RetrievalResponse">[docs]</a>
+<span class="k">class</span> <span class="nc">RetrievalResponse</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+	<span class="n">passages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Passage</span><span class="p">]</span></div>
 
 
 
@@ -563,6 +580,56 @@
 			<span class="p">)</span>
 
 			<span class="k">return</span> <span class="n">jsonify</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">model_dump</span><span class="p">()),</span> <span class="mi">200</span>
+
+		<span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/v1/retrieve&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+		<span class="k">async</span> <span class="k">def</span> <span class="nf">run_retrieve_only</span><span class="p">():</span>
+			<span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+			<span class="n">query</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+			<span class="k">if</span> <span class="n">query</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+				<span class="k">return</span> <span class="n">jsonify</span><span class="p">(</span>
+					<span class="p">{</span>
+						<span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;Invalid request. You need to include &#39;query&#39; in the request body.&quot;</span>
+					<span class="p">}</span>
+				<span class="p">),</span> <span class="mi">400</span>
+
+			<span class="n">previous_result</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+				<span class="p">{</span>
+					<span class="s2">&quot;qid&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()),</span>
+					<span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">query</span><span class="p">],</span>
+					<span class="s2">&quot;retrieval_gt&quot;</span><span class="p">:</span> <span class="p">[[]],</span>
+					<span class="s2">&quot;generation_gt&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">],</span>
+				<span class="p">}</span>
+			<span class="p">)</span>  <span class="c1"># pseudo qa data for execution</span>
+			<span class="k">for</span> <span class="n">module_instance</span><span class="p">,</span> <span class="n">module_param</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+				<span class="bp">self</span><span class="o">.</span><span class="n">module_instances</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">module_params</span>
+			<span class="p">):</span>
+				<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module_instance</span><span class="p">,</span> <span class="n">BasePromptMaker</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span>
+					<span class="n">module_instance</span><span class="p">,</span> <span class="n">BaseGenerator</span>
+				<span class="p">):</span>
+					<span class="k">continue</span>
+				<span class="n">new_result</span> <span class="o">=</span> <span class="n">module_instance</span><span class="o">.</span><span class="n">pure</span><span class="p">(</span>
+					<span class="n">previous_result</span><span class="o">=</span><span class="n">previous_result</span><span class="p">,</span> <span class="o">**</span><span class="n">module_param</span>
+				<span class="p">)</span>
+				<span class="n">duplicated_columns</span> <span class="o">=</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span>
+					<span class="n">new_result</span><span class="o">.</span><span class="n">columns</span>
+				<span class="p">)</span>
+				<span class="n">drop_previous_result</span> <span class="o">=</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">duplicated_columns</span><span class="p">)</span>
+				<span class="n">previous_result</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">drop_previous_result</span><span class="p">,</span> <span class="n">new_result</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+			<span class="c1"># Simulate processing the query</span>
+			<span class="n">retrieved_contents</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+			<span class="n">retrieved_ids</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieved_ids&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+			<span class="n">retrieve_scores</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieve_scores&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+
+			<span class="n">retrieval_response</span> <span class="o">=</span> <span class="n">RetrievalResponse</span><span class="p">(</span>
+				<span class="n">passages</span><span class="o">=</span><span class="p">[</span>
+					<span class="n">Passage</span><span class="p">(</span><span class="n">doc_id</span><span class="o">=</span><span class="n">doc_id</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="n">content</span><span class="p">,</span> <span class="n">score</span><span class="o">=</span><span class="n">score</span><span class="p">)</span>
+					<span class="k">for</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">score</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+						<span class="n">retrieved_ids</span><span class="p">,</span> <span class="n">retrieved_contents</span><span class="p">,</span> <span class="n">retrieve_scores</span>
+					<span class="p">)</span>
+				<span class="p">]</span>
+			<span class="p">)</span>
+			<span class="k">return</span> <span class="n">jsonify</span><span class="p">(</span><span class="n">retrieval_response</span><span class="o">.</span><span class="n">model_dump</span><span class="p">()),</span> <span class="mi">200</span>
 
 		<span class="nd">@self</span><span class="o">.</span><span class="n">app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/v1/stream&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
 		<span class="k">async</span> <span class="k">def</span> <span class="nf">stream_query</span><span class="p">():</span>

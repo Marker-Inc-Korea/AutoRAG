@@ -486,19 +486,10 @@ It automatically creates ngrok tunnel to your local server.</p>
 </div>
 <p>This is the URL to your local server, so use it as the host at request.</p>
 </section>
-<section id="id1">
-<h2>API Endpoint<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-</section>
-<section id="example-api-documentation">
-<h2>Example API Documentation<a class="headerlink" href="#example-api-documentation" title="Link to this heading">¶</a></h2>
-<section id="version-1-0-0">
-<h3>Version: 1.0.0<a class="headerlink" href="#version-1-0-0" title="Link to this heading">¶</a></h3>
-</section>
-<hr class="docutils" />
 <section id="endpoints">
-<h3>Endpoints<a class="headerlink" href="#endpoints" title="Link to this heading">¶</a></h3>
+<h2>Endpoints<a class="headerlink" href="#endpoints" title="Link to this heading">¶</a></h2>
 <section id="v1-run-post">
-<h4>1. <code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)<a class="headerlink" href="#v1-run-post" title="Link to this heading">¶</a></h4>
+<h3>1. <code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)<a class="headerlink" href="#v1-run-post" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Summary</strong>: Run a query and get generated text with retrieved passages.</p></li>
 <li><p><strong>Request Body</strong>:</p>
@@ -551,8 +542,89 @@ It automatically creates ngrok tunnel to your local server.</p>
 </ul>
 </section>
 <hr class="docutils" />
+<section id="v1-retrieve-post">
+<h3>2. <code class="docutils literal notranslate"><span class="pre">/v1/retrieve</span></code> (POST)<a class="headerlink" href="#v1-retrieve-post" title="Link to this heading">¶</a></h3>
+<p>This API endpoint allows developers to retrieve documents based on a specified query.
+It will ignore generator and prompt maker, only return retrieved passages.</p>
+<p>The request must include a JSON object with the following structure:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your query string here&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<section id="parameters">
+<h4>Parameters<a class="headerlink" href="#parameters" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><strong>query</strong> (string, required): The search string used to retrieve documents.</p></li>
+</ul>
+</section>
+</section>
+<section id="example-request">
+<h3>Example Request<a class="headerlink" href="#example-request" title="Link to this heading">¶</a></h3>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;latest trends in AI&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<section id="success-response">
+<h4>Success Response<a class="headerlink" href="#success-response" title="Link to this heading">¶</a></h4>
+<p><strong>HTTP Status Code:</strong> <code class="docutils literal notranslate"><span class="pre">200</span> <span class="pre">OK</span></code></p>
+</section>
+<section id="response-body">
+<h4>Response Body<a class="headerlink" href="#response-body" title="Link to this heading">¶</a></h4>
+<p>On a successful retrieval, the response will contain a JSON object structured as follows:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;passages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;doc_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unique-document-id-1&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Content of the retrieved document.&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;doc_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unique-document-id-2&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Content of another retrieved document.&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.89</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="properties">
+<h4>Properties<a class="headerlink" href="#properties" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><strong>passages</strong> (array): An array of documents retrieved based on the query.</p>
+<ul>
+<li><p><strong>doc_id</strong> (string): The unique identifier for each document.</p></li>
+<li><p><strong>content</strong> (string): The content of the retrieved document.</p></li>
+<li><p><strong>score</strong> (number, float): The relevance score of the retrieved document.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="example-response">
+<h4>Example Response<a class="headerlink" href="#example-response" title="Link to this heading">¶</a></h4>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;passages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;doc_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;doc123&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Artificial Intelligence is transforming industries.&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.98</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;doc_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;doc456&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;The future of AI includes advancements in machine learning.&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.92</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
 <section id="v1-stream-post">
-<h4>2. <code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)<a class="headerlink" href="#v1-stream-post" title="Link to this heading">¶</a></h4>
+<h3>3. <code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)<a class="headerlink" href="#v1-stream-post" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Summary</strong>: Stream generated text with retrieved passages.</p></li>
 <li><p><strong>Description</strong>: This endpoint streams the generated text line by line. The <code class="docutils literal notranslate"><span class="pre">retrieved_passage</span></code> is sent first, followed by the <code class="docutils literal notranslate"><span class="pre">result</span></code> streamed incrementally.</p></li>
@@ -609,7 +681,7 @@ It automatically creates ngrok tunnel to your local server.</p>
 </section>
 <hr class="docutils" />
 <section id="version-get">
-<h4>3. <code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)<a class="headerlink" href="#version-get" title="Link to this heading">¶</a></h4>
+<h3>4. <code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)<a class="headerlink" href="#version-get" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Summary</strong>: Get the API version.</p></li>
 <li><p><strong>Description</strong>: Returns the current version of the API as a string.</p></li>
@@ -632,7 +704,6 @@ It automatically creates ngrok tunnel to your local server.</p>
 </ul>
 </li>
 </ul>
-</section>
 </section>
 </section>
 <hr class="docutils" />
@@ -716,16 +787,16 @@ It automatically creates ngrok tunnel to your local server.</p>
 <section id="curl-commands">
 <h3><code class="docutils literal notranslate"><span class="pre">curl</span></code> Commands<a class="headerlink" href="#curl-commands" title="Link to this heading">¶</a></h3>
 <p>Here are the equivalent <code class="docutils literal notranslate"><span class="pre">curl</span></code> commands for each endpoint:</p>
-<section id="id2">
-<h4><code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h4>
+<section id="id1">
+<h4><code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h4>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://example.com/v1/run&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;query&quot;: &quot;example query&quot;, &quot;result_column&quot;: &quot;generated_texts&quot;}&#39;</span>
 </pre></div>
 </div>
 </section>
-<section id="id3">
-<h4><code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h4>
+<section id="id2">
+<h4><code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h4>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://example.com/v1/stream&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;query&quot;: &quot;example query&quot;, &quot;result_column&quot;: &quot;generated_texts&quot;}&#39;</span><span class="w"> </span><span class="se">\</span>
@@ -733,8 +804,8 @@ It automatically creates ngrok tunnel to your local server.</p>
 </pre></div>
 </div>
 </section>
-<section id="id4">
-<h4><code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h4>
+<section id="id3">
+<h4><code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h4>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>curl<span class="w"> </span>-X<span class="w"> </span>GET<span class="w"> </span><span class="s2">&quot;http://example.com/version&quot;</span>
 </pre></div>
 </div>
@@ -801,23 +872,29 @@ It automatically creates ngrok tunnel to your local server.</p>
 <li><a class="reference internal" href="#">API endpoint</a><ul>
 <li><a class="reference internal" href="#running-api-server">Running API server</a></li>
 <li><a class="reference internal" href="#use-ngrok-tunnel-for-public-access">Use NGrok Tunnel for public access</a></li>
-<li><a class="reference internal" href="#id1">API Endpoint</a></li>
-<li><a class="reference internal" href="#example-api-documentation">Example API Documentation</a><ul>
-<li><a class="reference internal" href="#version-1-0-0">Version: 1.0.0</a></li>
 <li><a class="reference internal" href="#endpoints">Endpoints</a><ul>
 <li><a class="reference internal" href="#v1-run-post">1. <code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)</a></li>
-<li><a class="reference internal" href="#v1-stream-post">2. <code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)</a></li>
-<li><a class="reference internal" href="#version-get">3. <code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)</a></li>
+<li><a class="reference internal" href="#v1-retrieve-post">2. <code class="docutils literal notranslate"><span class="pre">/v1/retrieve</span></code> (POST)</a><ul>
+<li><a class="reference internal" href="#parameters">Parameters</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#example-request">Example Request</a><ul>
+<li><a class="reference internal" href="#success-response">Success Response</a></li>
+<li><a class="reference internal" href="#response-body">Response Body</a></li>
+<li><a class="reference internal" href="#properties">Properties</a></li>
+<li><a class="reference internal" href="#example-response">Example Response</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#v1-stream-post">3. <code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)</a></li>
+<li><a class="reference internal" href="#version-get">4. <code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#api-client-usage-example">API client usage example</a><ul>
 <li><a class="reference internal" href="#python-sample-code">Python Sample Code</a></li>
 <li><a class="reference internal" href="#curl-commands"><code class="docutils literal notranslate"><span class="pre">curl</span></code> Commands</a><ul>
-<li><a class="reference internal" href="#id2"><code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)</a></li>
-<li><a class="reference internal" href="#id3"><code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)</a></li>
-<li><a class="reference internal" href="#id4"><code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)</a></li>
+<li><a class="reference internal" href="#id1"><code class="docutils literal notranslate"><span class="pre">/v1/run</span></code> (POST)</a></li>
+<li><a class="reference internal" href="#id2"><code class="docutils literal notranslate"><span class="pre">/v1/stream</span></code> (POST)</a></li>
+<li><a class="reference internal" href="#id3"><code class="docutils literal notranslate"><span class="pre">/version</span></code> (GET)</a></li>
 </ul>
 </li>
 </ul>
