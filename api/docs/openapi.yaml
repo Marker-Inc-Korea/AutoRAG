@@ -1,0 +1,748 @@
+openapi: 3.0.0
+info:
+  title: AutoRAG API
+  description: API for AutoRAG with Preparation and Run workflow
+  version: 1.0.1
+
+components:
+  schemas:
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "proj_123"
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, archived]
+
+    TrialConfig:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        raw_path:
+          type: string
+        corpus_path:
+          type: string
+        qa_path:
+          type: string
+        config_path:
+          type: string
+        metadata:
+          type: object
+    Task:
+      type: object
+      required:
+        - id
+        - project_id
+        - status
+        - type
+      properties:
+        id:
+          type: string
+          description: The task id
+        project_id:
+          type: string
+        trial_id:
+          type: string
+        name:
+          type: string
+          description: The name of the task
+        config_yaml:
+          type: object
+          description: YAML configuration. Format is dictionary, not path of the YAML file.
+        status:
+          type: string
+          enum: [not_started, in_progress, completed, failed, terminated]
+        error_message:
+          type: string
+          description: Error message if the task failed
+        type:
+          type: string
+          enum: [parse, chunk, qa, validate, evaluate, dashboard, chat]
+          description: Type of the task - preparation tasks (parse, chunk, qa) or run tasks (validate, evaluate)
+        created_at:
+          type: string
+          format: date-time
+        save_path:
+          type: string
+          description: Path where the task results are saved. It will be directory or file.
+    Trial:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        config:
+          $ref: '#/components/schemas/TrialConfig'
+        name:
+          type: string
+        status:
+          type: string
+          enum: [not_started, in_progress, completed, failed]
+        created_at:
+          type: string
+          format: date-time
+
+    Run:
+      type: object
+      properties:
+        id:
+          type: string
+        trial_id:
+          type: string
+        type:
+          type: string
+          enum: [validation, eval]
+        status:
+          type: string
+          enum: [not_started, in_progress, completed, failed]
+        result:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+paths:
+
+  /projects:
+    post:
+      security:
+        - bearerAuth: [ ]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Project name already exists
+        '401':
+          description: Unauthorized - Invalid or missing token
+        '403':
+          description: Forbidden - Token does not have sufficient permissions
+    get:
+      summary: List all projects
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived]
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+
+  /projects/{project_id}/trials:
+     get:
+      summary: Get list trials
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 10
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, archived]
+      responses:
+        '200':
+          description: List of trials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trial'
+     post:
+      summary: Create trial
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Name for this preparation task
+                raw_path:
+                  type: string
+                  description: Parsed data to use in the trial
+                corpus_path:
+                  type: string
+                  description: Corpus data to use in the trial
+                qa_path:
+                  type: string
+                  description: QA data to use in the trial
+                config:
+                  type: object
+                  properties:
+                    parse:
+                      type: object
+      responses:
+        '202':
+          description: New Trial made
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trial'
+        '409':
+          description: Duplicate trial name
+        '400':
+          description: Invalid request format
+
+  /projects/{project_id}/upload:
+    post:
+      summary: Upload files to a project
+      operationId: uploadFiles
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The ID of the project to which files are being uploaded.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: The files to upload.
+      responses:
+        '200':
+          description: Files uploaded successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Files uploaded successfully.
+                  filePaths:
+                    type: array
+                    items:
+                      type: string
+                      example: /path/to/uploaded/file.txt
+        '400':
+          description: Bad Request - No files were uploaded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: No files were uploaded.
+        '500':
+          description: Internal Server Error - An error occurred while uploading files.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /projects/{project_id}/trials/{trial_id}/parse:
+    post:
+      summary: Start parsing preparation
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - config
+              properties:
+                name:
+                  type: string
+                  description: Name for this preparation task
+                config:
+                  type: object
+                  description: The parse configuration. Must be dict. "parse.yaml" file.
+                  properties:
+                    parse:
+                      type: object
+      responses:
+        '202':
+          description: Parsing started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /projects/{project_id}/trials/{trial_id}/chunk:
+    post:
+      summary: Start chunking preparation
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - config
+              properties:
+                name:
+                  type: string
+                config:
+                  type: object
+                  properties:
+                    chunk:
+                      type: object
+      responses:
+        '202':
+          description: Chunking started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /projects/{project_id}/trials/{trial_id}/qa:
+    post:
+      summary: Start QA generation preparation
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - qa_num
+                - preset
+                - llm_config
+              properties:
+                name:
+                  type: string
+                qa_num:
+                  type: integer
+                preset:
+                  type: string
+                  enum: [basic, simple, advanced]
+                lang:
+                  type: string
+                  enum: [en, ko, ja]
+                  default: en
+                llm_config:
+                  type: object
+                  properties:
+                    llm_name:
+                      type: string
+                    llm_params:
+                      type: object
+      responses:
+        '202':
+          description: QA generation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /projects/{project_id}/trials/{trial_id}/config:
+    get:
+      summary: Get config of trial
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Trial config returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialConfig'
+    post:
+      summary: Set config of trial
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                raw_path:
+                  type: string
+                corpus_path:
+                  type: string
+                qa_path:
+                  type: string
+                config:
+                  type: object
+                metadata:
+                  type: object
+      responses:
+        '201':
+          description: Trial modified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialConfig'
+
+
+  /projects/{project_id}/trials/{trial_id}/clone:
+    post:
+      summary: Clone validation
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - config
+                - qa_path
+                - corpus_path
+              properties:
+                config:
+                  type: object
+                  description: YAML configuration. Format is dictionary, not path of the YAML file
+                qa_path:
+                  type: string
+                  description: Path to the QA data
+                corpus_path:
+                  type: string
+                  description: Path to the corpus data
+
+
+
+
+
+      responses:
+        '202':
+          description: Validation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /projects/{project_id}/trials/{trial_id}/validate:
+    post:
+      summary: Start validation
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+
+      responses:
+        '202':
+          description: Validation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /projects/{project_id}/trials/{trial_id}/evaluate:
+    post:
+      summary: Start evaluation
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                skip_validation:
+                  type: boolean
+                  default: false
+                full_ingest:
+                  type: boolean
+                  default: true
+      responses:
+        '202':
+          description: Evaluation started
+          content:
+            application/json:
+              schema:
+                  $ref: '#/components/schemas/Task'
+        '409':
+          description: Duplicate evaluation request.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trial_dir:
+                    type: string
+                    description: Directory where the duplicated evaluation results are saved. Access here to get the results.
+                  error:
+                    type: string
+
+  /projects/{project_id}/trials/{trial_id}/report/open:
+    get:
+      summary: Get preparation task or run status
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Report open
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Task'
+                  - type: object
+                    properties:
+                      trial_id:
+                        type: string
+
+  /projects/{project_id}/trials/{trial_id}/report/close:
+    get:
+      summary: Get preparation task or run status
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /projects/{project_id}/trials/{trial_id}/chat/open:
+    get:
+      summary: Get preparation task or run status
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Chat open. The port is 8501.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /projects/{project_id}/trials/{trial_id}/chat/close:
+    get:
+      summary: Get preparation task or run status
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: trial_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chat closed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /projects/{project_id}/tasks/{task_id}:
+    get:
+      summary: Get preparation task or run status
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task status
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Task'

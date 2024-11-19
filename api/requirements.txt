@@ -1,0 +1,6 @@
+AutoRAG[parse,api]
+quart-schema
+jwt
+quart-cors
+Werkzeug
+quart-uploads
