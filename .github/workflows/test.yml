@@ -40,7 +40,7 @@ jobs:
           sudo apt-get install tesseract-ocr
       - name: Install AutoRAG
         run: |
-          pip install -e '.[ko,dev,parse,ja]'
+          pip install -e './autorag[ko,dev,parse,ja]'
       - name: Install dependencies
         run: |
           pip install -r tests/requirements.txt
