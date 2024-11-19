@@ -22,13 +22,14 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./api:/app/api
+      - ./projects:/app/projects
     ports:
-      - "5000:5001"
+      - "5001:5001"
     environment:
       - PYTHONUNBUFFERED=1
-      - PORT=5000
+      - PORT=5001
       - HOST=0.0.0.0
-    command: hypercorn app:app --bind 0.0.0.0:5000 --reload
+    command: hypercorn app:app --bind 0.0.0.0:5001 --reload
     networks:
       - app-network
 
