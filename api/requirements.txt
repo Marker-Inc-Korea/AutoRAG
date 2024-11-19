@@ -1,4 +1,4 @@
-AutoRAG[parse,api]
+AutoRAG[parse,api]>=0.3.8
 quart-schema
 jwt
 quart-cors
