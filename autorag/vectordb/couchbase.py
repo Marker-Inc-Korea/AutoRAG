@@ -6,7 +6,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional
 
 from autorag.utils.util import make_batch
 from autorag.vectordb import BaseVectorStore
@@ -23,16 +23,19 @@ class Couchbase(BaseVectorStore):
 		collection_name: str,
 		index_name: str,
 		embedding_batch: int = 100,
-		similarity_metric: str = "cosine",
 		connection_string: str = "",
 		username: str = "",
 		password: str = "",
-		batch_size: int = 100,
+		ingest_batch: int = 100,
 		text_key: Optional[str] = "text",
 		embedding_key: Optional[str] = "embedding",
 		scoped_index: bool = True,
 	):
-		super().__init__(embedding_model, similarity_metric, embedding_batch)
+		super().__init__(
+			embedding_model=embedding_model,
+			similarity_metric="ip",
+			embedding_batch=embedding_batch,
+		)
 
 		self.index_name = index_name
 		self.bucket_name = bucket_name
@@ -41,7 +44,7 @@ class Couchbase(BaseVectorStore):
 		self.scoped_index = scoped_index
 		self.text_key = text_key
 		self.embedding_key = embedding_key
-		self.batch_size = batch_size
+		self.ingest_batch = ingest_batch
 
 		auth = PasswordAuthenticator(username, password)
 		self.cluster = Cluster(connection_string, ClusterOptions(auth))
@@ -65,12 +68,6 @@ class Couchbase(BaseVectorStore):
 				"Error connecting to couchbase. "
 				"Please check the connection and credentials."
 			) from e
-
-		# Check if the scope and collection exists. Throws ValueError if they don't
-		try:
-			self._check_scope_and_collection_exists()
-		except Exception:
-			raise
 
 		# Check if the index exists. Throws ValueError if it doesn't
 		try:
@@ -99,7 +96,7 @@ class Couchbase(BaseVectorStore):
 			}
 			documents_to_insert.append({_id: doc})
 
-		batch_documents_to_insert = make_batch(documents_to_insert, self.batch_size)
+		batch_documents_to_insert = make_batch(documents_to_insert, self.ingest_batch)
 
 		for batch in batch_documents_to_insert:
 			insert_batch = {}
@@ -217,37 +214,5 @@ class Couchbase(BaseVectorStore):
 					f"Index {self.index_name} does not exist. "
 					" Please create the index before searching."
 				)
-
-		return True
-
-	def _check_scope_and_collection_exists(self) -> bool:
-		"""Check if the scope and collection exists in the linked Couchbase bucket
-		Returns:
-			True if the scope and collection exist in the bucket
-			Raises a ValueError if either is not found.
-		"""
-		scope_collection_map: Dict[str, Any] = {}
-
-		# Get a list of all scopes in the bucket
-		for scope in self.bucket.collections().get_all_scopes():
-			scope_collection_map[scope.name] = []
-
-			# Get a list of all the collections in the scope
-			for collection in scope.collections:
-				scope_collection_map[scope.name].append(collection.name)
-
-		# Check if the scope exists
-		if self.scope_name not in scope_collection_map:
-			raise ValueError(
-				f"Scope {self.scope_name} not found in Couchbase "
-				f"bucket {self.bucket_name}"
-			)
-
-		# Check if the collection exists in the scope
-		if self.collection_name not in scope_collection_map[self.scope_name]:
-			raise ValueError(
-				f"Collection {self.collection_name} not found in scope "
-				f"{self.scope_name} in Couchbase bucket {self.bucket_name}"
-			)
 
 		return True
