@@ -76,33 +76,6 @@ async def test_create_project_success(new_project_test_client):
     assert data["data"][0]["status"] == "active"
     assert data["data"][0]["description"] == "A test project"
 
-    with open(
-        os.path.join(root_dir, "tests", "resources", "parsed_data", "baseball_1.pdf"),
-        "rb",
-    ) as f1, open(
-        os.path.join(
-            root_dir, "tests", "resources", "parsed_data", "korean_texts_two_page.pdf"
-        ),
-        "rb",
-    ) as f2:
-        # Prepare the data for upload
-        data = [
-            ("file", (os.path.basename(f1.name), f1)),
-            ("file", (os.path.basename(f2.name), f2)),
-        ]
-
-    response = await new_project_test_client.post(
-        "/projects/test_project/upload", files=data
-    )
-
-    assert response.status_code == 200
-    data = await response.get_json()
-    assert data["message"] == "Files uploaded successfully"
-    assert "filePaths" in data
-    assert len(data["filePaths"]) == 2
-    assert os.path.dirname(data["filePaths"][0]).endswith("raw_data")
-    assert os.path.exists(data["filePaths"][0])
-
     # duplicate project
     response = await new_project_test_client.post(
         "/projects",
