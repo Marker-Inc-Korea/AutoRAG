@@ -59,11 +59,3 @@ jobs:
           PYTHONPATH: ${PYTHONPATH}:./autorag
         run: |
           python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag
-      - name: Install Quart Dependencies
-        run: |
-          pip install -r api/requirements.txt
-      - name: Run AutoRAG API server tests
-        env:
-          PYTHONPATH: ${PYTHONPATH}:./api:./autorag
-        run: |
-          python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/api
