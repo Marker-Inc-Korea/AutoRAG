@@ -120,11 +120,10 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+../.env
 .venv
 env/
 venv/
-venv*/
 ENV/
 env.bak/
 venv.bak/
@@ -161,5 +160,5 @@ cython_debug/
 .idea/
 pytest.ini
 .DS_Store
-autorag/projects/tutorial_1
-!autorag/projects/tutorial_1/config.yaml
+projects/tutorial_1
+!projects/tutorial_1/config.yaml
