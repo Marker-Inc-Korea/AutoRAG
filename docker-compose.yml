@@ -1,0 +1,37 @@
+services:
+  frontend:
+    build:
+      context: ./autorag-frontend
+      dockerfile: Dockerfile
+    working_dir: /app/autorag-frontend
+    volumes:
+      - ./autorag-frontend:/app/autorag-frontend
+      - /app/autorag-frontend/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5001
+      - NODE_ENV=development
+    command: sh -c "yarn install && yarn dev"
+    networks:
+      - app-network
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    volumes:
+      - ./api:/app/api
+    ports:
+      - "5000:5001"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=5000
+      - HOST=0.0.0.0
+    command: hypercorn app:app --bind 0.0.0.0:5000 --reload
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
