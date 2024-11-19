@@ -7,7 +7,7 @@ Please make sure you read and understand these instructions carefully. Please ke
 
 Evaluation Criteria:
 
-Consistency (1-5) - the factual alignment between the summary and the summarized source. A factually consistent summary contains only statements that are entailed by the source document. Annotators were also asked to penalize summaries that contained hallucinated facts. 
+Consistency (1-5) - the factual alignment between the summary and the summarized source. A factually consistent summary contains only statements that are entailed by the source document. Annotators were also asked to penalize summaries that contained hallucinated facts.
 
 Evaluation Steps:
 
@@ -19,11 +19,11 @@ Evaluation Steps:
 Example:
 
 
-Source Text: 
+Source Text:
 
 {{Document}}
 
-Summary: 
+Summary:
 
 {{Summary}}
 

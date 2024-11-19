@@ -160,5 +160,5 @@ cython_debug/
 .idea/
 pytest.ini
 .DS_Store
-projects/tutorial_1
-!projects/tutorial_1/config.yaml
+autorag/projects/tutorial_1
+!autorag/projects/tutorial_1/config.yaml
