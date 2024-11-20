@@ -92,14 +92,14 @@ modules:
 You need to have an API key to use the following document loaders.
 - [Unstructured](https://python.langchain.com/v0.2/docs/integrations/document_loaders/unstructured_file/)
   - `UNSTRUCTURED_API_KEY` should be set in the environment variable.
-- [UpstageLayoutAnalysis](https://python.langchain.com/v0.2/docs/integrations/document_loaders/upstage/)
+- [UpstageDocumentParseLoader](https://python.langchain.com/docs/integrations/providers/upstage/#document-parse)
   - `UPSTAGE_API_KEY` should be set in the environment variable.
 
 #### Example YAML
 
 ```yaml
   - module_type: langchain_parse
-    parse_method: upstagelayoutanalysis
+    parse_method: upstagedocumentparse
 ```
 
 ## Using Parse Method that is not in the Available Parse Method
