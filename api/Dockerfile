@@ -19,4 +19,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE ${PORT:-5000}
-CMD ["sh", "-c", "hypercorn app:app --bind 0.0.0.0:${PORT:-5000} --reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-5000}", "--reload", "--loop", "asyncio"]

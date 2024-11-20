@@ -4,3 +4,4 @@ jwt
 quart-cors
 Werkzeug
 quart-uploads
+uvicorn
