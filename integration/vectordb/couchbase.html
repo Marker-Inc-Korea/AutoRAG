@@ -2,7 +2,8 @@
 <html class="no-js" lang="en" data-content_root="../../">
   <head><meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <meta name="color-scheme" content="light dark">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-T8ZKQM6RT9"></script>
     <script>
@@ -12,10 +13,10 @@
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
     <link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" />
-        <link rel="canonical" href="https://docs.auto-rag.com/_modules/autorag/vectordb.html" />
+        <link rel="canonical" href="https://docs.auto-rag.com/integration/vectordb/couchbase.html" />
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
-        <title>autorag.vectordb - AutoRAG documentation</title>
+        <title>Couchbase - AutoRAG documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
@@ -190,7 +191,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <div class="visually-hidden">Toggle table of contents sidebar</div>
         <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
       </label>
@@ -262,18 +263,18 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
 <ul>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/llm/llm.html">Configure LLM</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Configure LLM</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/aws_bedrock.html">AWS Bedrock x AutoRAG</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/huggingface_llm.html">HuggingFace LLM x AutoRAG</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/nvidia_nim.html">Nvidia Nim x AutoRAG</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/llm/ollama.html">OLLAMA x AutoRAG</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../llm/llm.html">Configure LLM</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Configure LLM</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../llm/aws_bedrock.html">AWS Bedrock x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../llm/huggingface_llm.html">HuggingFace LLM x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../llm/nvidia_nim.html">Nvidia Nim x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../llm/ollama.html">OLLAMA x AutoRAG</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/vectordb/vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/chroma.html">Chroma</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/milvus.html">Milvus</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/weaviate.html">Weaviate</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/pinecone.html">Pinecone</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="chroma.html">Chroma</a></li>
+<li class="toctree-l2"><a class="reference internal" href="milvus.html">Milvus</a></li>
+<li class="toctree-l2"><a class="reference internal" href="weaviate.html">Weaviate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pinecone.html">Pinecone</a></li>
 </ul>
 </li>
 </ul>
@@ -425,7 +426,13 @@
           <span>Back to top</span>
         </a>
         <div class="content-icon-container">
-          <div class="theme-toggle-container theme-toggle-content">
+          <div class="view-this-page">
+  <a class="muted-link" href="../../_sources/integration/vectordb/couchbase.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
             <button class="theme-toggle">
               <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
               <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
@@ -434,99 +441,191 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <div class="visually-hidden">Toggle table of contents sidebar</div>
             <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <h1>Source code for autorag.vectordb</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
-
-<span class="kn">from</span> <span class="nn">autorag.support</span> <span class="kn">import</span> <span class="n">dynamically_find_function</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">load_yaml_config</span>
-<span class="kn">from</span> <span class="nn">autorag.vectordb.base</span> <span class="kn">import</span> <span class="n">BaseVectorStore</span>
-
-
-<div class="viewcode-block" id="get_support_vectordb">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.get_support_vectordb">[docs]</a>
-<span class="k">def</span> <span class="nf">get_support_vectordb</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-	<span class="n">support_vectordb</span> <span class="o">=</span> <span class="p">{</span>
-		<span class="s2">&quot;chroma&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.chroma&quot;</span><span class="p">,</span> <span class="s2">&quot;Chroma&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Chroma&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.chroma&quot;</span><span class="p">,</span> <span class="s2">&quot;Chroma&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;milvus&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.milvus&quot;</span><span class="p">,</span> <span class="s2">&quot;Milvus&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Milvus&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.milvus&quot;</span><span class="p">,</span> <span class="s2">&quot;Milvus&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;weaviate&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.weaviate&quot;</span><span class="p">,</span> <span class="s2">&quot;Weaviate&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Weaviate&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.weaviate&quot;</span><span class="p">,</span> <span class="s2">&quot;Weaviate&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;pinecone&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.pinecone&quot;</span><span class="p">,</span> <span class="s2">&quot;Pinecone&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Pinecone&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.pinecone&quot;</span><span class="p">,</span> <span class="s2">&quot;Pinecone&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;couchbase&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.couchbase&quot;</span><span class="p">,</span> <span class="s2">&quot;Couchbase&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;Couchbase&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.vectordb.couchbase&quot;</span><span class="p">,</span> <span class="s2">&quot;Couchbase&quot;</span><span class="p">),</span>
-	<span class="p">}</span>
-	<span class="k">return</span> <span class="n">dynamically_find_function</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">,</span> <span class="n">support_vectordb</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="load_vectordb">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.load_vectordb">[docs]</a>
-<span class="k">def</span> <span class="nf">load_vectordb</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-	<span class="n">vectordb</span> <span class="o">=</span> <span class="n">get_support_vectordb</span><span class="p">(</span><span class="n">vectordb_name</span><span class="p">)</span>
-	<span class="k">return</span> <span class="n">vectordb</span><span class="p">(</span><span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="load_vectordb_from_yaml">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.load_vectordb_from_yaml">[docs]</a>
-<span class="k">def</span> <span class="nf">load_vectordb_from_yaml</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">vectordb_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-	<span class="n">config_dict</span> <span class="o">=</span> <span class="n">load_yaml_config</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">)</span>
-	<span class="n">vectordb_list</span> <span class="o">=</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vectordb&quot;</span><span class="p">,</span> <span class="p">[])</span>
-	<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">vectordb_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">vectordb_name</span> <span class="o">==</span> <span class="s2">&quot;default&quot;</span><span class="p">:</span>
-		<span class="n">chroma_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="s2">&quot;resources&quot;</span><span class="p">,</span> <span class="s2">&quot;chroma&quot;</span><span class="p">)</span>
-		<span class="k">return</span> <span class="n">load_vectordb</span><span class="p">(</span>
-			<span class="s2">&quot;chroma&quot;</span><span class="p">,</span>
-			<span class="n">client_type</span><span class="o">=</span><span class="s2">&quot;persistent&quot;</span><span class="p">,</span>
-			<span class="n">embedding_model</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-			<span class="n">collection_name</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-			<span class="n">path</span><span class="o">=</span><span class="n">chroma_path</span><span class="p">,</span>
-		<span class="p">)</span>
-
-	<span class="n">target_dict</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">vectordb_name</span><span class="p">,</span> <span class="n">vectordb_list</span><span class="p">))</span>
-	<span class="n">target_dict</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>  <span class="c1"># delete a name key</span>
-	<span class="n">target_vectordb_name</span> <span class="o">=</span> <span class="n">target_dict</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;db_type&quot;</span><span class="p">)</span>
-	<span class="n">target_vectordb_params</span> <span class="o">=</span> <span class="n">target_dict</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-	<span class="k">return</span> <span class="n">load_vectordb</span><span class="p">(</span><span class="n">target_vectordb_name</span><span class="p">,</span> <span class="o">**</span><span class="n">target_vectordb_params</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="load_all_vectordb_from_yaml">
-<a class="viewcode-back" href="../../api_spec/autorag.vectordb.html#autorag.vectordb.load_all_vectordb_from_yaml">[docs]</a>
-<span class="k">def</span> <span class="nf">load_all_vectordb_from_yaml</span><span class="p">(</span>
-	<span class="n">yaml_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">BaseVectorStore</span><span class="p">]:</span>
-	<span class="n">config_dict</span> <span class="o">=</span> <span class="n">load_yaml_config</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">)</span>
-	<span class="n">vectordb_list</span> <span class="o">=</span> <span class="n">config_dict</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vectordb&quot;</span><span class="p">,</span> <span class="p">[])</span>
-	<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">vectordb_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-		<span class="n">chroma_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="s2">&quot;resources&quot;</span><span class="p">,</span> <span class="s2">&quot;chroma&quot;</span><span class="p">)</span>
-		<span class="k">return</span> <span class="p">[</span>
-			<span class="n">load_vectordb</span><span class="p">(</span>
-				<span class="s2">&quot;chroma&quot;</span><span class="p">,</span>
-				<span class="n">client_type</span><span class="o">=</span><span class="s2">&quot;persistent&quot;</span><span class="p">,</span>
-				<span class="n">embedding_model</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-				<span class="n">collection_name</span><span class="o">=</span><span class="s2">&quot;openai&quot;</span><span class="p">,</span>
-				<span class="n">path</span><span class="o">=</span><span class="n">chroma_path</span><span class="p">,</span>
-			<span class="p">)</span>
-		<span class="p">]</span>
-
-	<span class="n">result_vectordbs</span> <span class="o">=</span> <span class="p">[]</span>
-	<span class="k">for</span> <span class="n">vectordb_dict</span> <span class="ow">in</span> <span class="n">vectordb_list</span><span class="p">:</span>
-		<span class="n">_</span> <span class="o">=</span> <span class="n">vectordb_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>
-		<span class="n">vectordb_type</span> <span class="o">=</span> <span class="n">vectordb_dict</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;db_type&quot;</span><span class="p">)</span>
-		<span class="n">vectordb</span> <span class="o">=</span> <span class="n">load_vectordb</span><span class="p">(</span><span class="n">vectordb_type</span><span class="p">,</span> <span class="o">**</span><span class="n">vectordb_dict</span><span class="p">)</span>
-		<span class="n">result_vectordbs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">vectordb</span><span class="p">)</span>
-	<span class="k">return</span> <span class="n">result_vectordbs</span></div>
-
+          <section id="couchbase">
+<h1>Couchbase<a class="headerlink" href="#couchbase" title="Link to this heading">¶</a></h1>
+<p>Couchbase is a highly acclaimed distributed NoSQL cloud database known for its exceptional flexibility, performance, scalability, and cost-effectiveness, making it ideal for cloud, mobile, AI, and edge computing applications.</p>
+<p>Vector Search is a part of the <a class="reference external" href="https://docs.couchbase.com/server/current/learn/services-and-indexes/services/search-service.html">Full Text Search Service</a> (Search Service) in Couchbase.</p>
+<p>You can apply these with both <a class="reference external" href="https://www.couchbase.com/products/capella/">Couchbase Capella</a> and a self-managed Couchbase Server.</p>
+<section id="configuration">
+<h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
+<p>This guide will fit Couchbase Capella UI. If you are using a self-managed Couchbase Server, you can see <a class="reference external" href="https://docs.couchbase.com/server/current/getting-started/do-a-quick-install.html">here</a>.</p>
+<p>To use the Couchbase vector database, you need to configure it in your YAML configuration file.</p>
+<p>First, you need to set the Couchbase cluster connection information.</p>
+<section id="edit-cluster-access">
+<h3>Edit Cluster Access<a class="headerlink" href="#edit-cluster-access" title="Link to this heading">¶</a></h3>
+<p>Set Access <code class="docutils literal notranslate"><span class="pre">username</span></code>, <code class="docutils literal notranslate"><span class="pre">password</span></code> and <code class="docutils literal notranslate"><span class="pre">connection_string</span></code> for the Couchbase cluster.</p>
+<p>And set bucket, scope and access level(Read/Write) for the Couchbase cluster.</p>
+</section>
+<section id="allowed-ip-addresses">
+<h3>Allowed IP Addresses<a class="headerlink" href="#allowed-ip-addresses" title="Link to this heading">¶</a></h3>
+<p>You need to allow the IP address of the VectorDB server in the Couchbase cluster.</p>
+</section>
+<section id="cluster-bucket-scope-collection">
+<h3>Cluster, Bucket, Scope, Collection<a class="headerlink" href="#cluster-bucket-scope-collection" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">Cluster</span></code>, <code class="docutils literal notranslate"><span class="pre">Bucket</span></code> must be prepared in advance.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Scope</span></code> and <code class="docutils literal notranslate"><span class="pre">Collection</span></code> should be prepared in advance, otherwise they will be created automatically.</p>
+</section>
+<section id="create-index-for-query">
+<h3>Create Index for Query<a class="headerlink" href="#create-index-for-query" title="Link to this heading">¶</a></h3>
+<p><img alt="couchbase_search_index.png" src="../../_images/couchbase_search_index.png" /></p>
+<p>This should correspond to the <code class="docutils literal notranslate"><span class="pre">dimension</span></code> of the embeddings generated by the specified embedding model.</p>
+</section>
+<section id="example-yaml-file">
+<h3>Example YAML file<a class="headerlink" href="#example-yaml-file" title="Link to this heading">¶</a></h3>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">couchbase</span>
+<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">  </span><span class="nt">bucket_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag</span><span class="w">   </span><span class="c1"># replace your bucket name</span>
+<span class="w">  </span><span class="nt">scope_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag</span><span class="w">   </span><span class="c1"># replace your scope name</span>
+<span class="w">  </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag</span><span class="w">   </span><span class="c1"># replace your collection name</span>
+<span class="w">  </span><span class="nt">index_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag_search</span><span class="w">   </span><span class="c1"># replace your index name</span>
+<span class="w">  </span><span class="nt">connection_string</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${COUCHBASE_CONNECTION_STRING}</span>
+<span class="w">  </span><span class="nt">username</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${COUCHBASE_USERNAME&quot;}</span>
+<span class="w">  </span><span class="nt">password</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${COUCHBASE_PASSWORD&quot;}</span>
 </pre></div>
+</div>
+</section>
+<section id="parameters">
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding_model:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name or identifier of the embedding model to be used.</p></li>
+<li><p>Example: “openai_embed_3_large”</p></li>
+<li><p>Note: This should correspond to a valid embedding model that your system can use to generate vector embeddings. For more information see <a class="reference external" href="https://docs.auto-rag.com/local_model.html#configure-the-embedding-model">custom your embedding model</a> documentation.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding_batch:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">100</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Determines the number of embeddings to process in a single batch.</p></li>
+<li><p>Default: 100</p></li>
+<li><p>Note: Adjust this based on your system’s memory and processing capabilities. Larger batches may be faster but require more memory.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bucket_name:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name of the bucket where the vectors will be stored.</p></li>
+<li><p>Example: “my_bucket”</p></li>
+<li><p>Note: Bucket must be prepared in advance.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scope_name:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name of the scope where the vectors will be stored.</p></li>
+<li><p>Example: “my_scope”</p></li>
+<li><p>Note: If the scope doesn’t exist, it will be created. If it exists, it will be loaded.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">collection_name:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name of the collection where the vectors will be stored.</p></li>
+<li><p>Example: “my_collection”</p></li>
+<li><p>Note: If the collection doesn’t exist, it will be created. If it exists, it will be loaded.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">index_name:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the name of the Couchbase index to be used for querying.</p></li>
+<li><p>Example: “my_vector_index”</p></li>
+<li><p>Note: Index must be prepared in advance.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">connection_string:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the connection string for the Couchbase cluster.</p></li>
+<li><p>Note: This should be the connection string for your Couchbase cluster.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">username:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the username for authentication with the Couchbase cluster.</p></li>
+<li><p>Note: This should be the username for your Couchbase cluster.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">password:</span> <span class="pre">str</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the password for authentication with the Couchbase cluster.</p></li>
+<li><p>Note: This should be the password for your Couchbase cluster.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ingest_batch:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">100</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Determines the number of vectors to ingest in a single batch.</p></li>
+<li><p>Default: 100</p></li>
+<li><p>Note: Adjust this based on your system’s memory and processing capabilities. Larger batches may be faster but require more memory.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">text_key:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;text&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the key in the document where the text data is stored.</p></li>
+<li><p>Default: “text”</p></li>
+<li><p>Note: This should correspond to the key in the document where the text data is stored.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding_key:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">&quot;embedding&quot;</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies the key in the document where the vector embeddings are stored.</p></li>
+<li><p>Default: “embedding”</p></li>
+<li><p>Note: This should correspond to the key in the document where the vector embeddings are stored.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">scoped_index:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True</span></code></p>
+<ul class="simple">
+<li><p>Purpose: Specifies whether the index is scoped to the collection.</p></li>
+<li><p>Default: True</p></li>
+<li><p>Note: If True, searches in the scope. If False, searches across the entire cluster.</p></li>
+</ul>
+</li>
+</ol>
+</section>
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h2>
+<p>Here’s a brief overview of how to use the main functions of the Couchbase vector database:</p>
+<ol class="arabic">
+<li><p><strong>Adding Vectors</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="n">couchbase_db</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This method adds new vectors to the database.
+It takes a list of IDs and corresponding texts, generates embeddings, and inserts them into the Couchbase Collection.</p>
+</li>
+<li><p><strong>Querying</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">ids</span><span class="p">,</span> <span class="n">scores</span> <span class="o">=</span> <span class="k">await</span> <span class="n">couchbase_db</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">queries</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Performs a similarity search on the stored vectors.
+It returns the IDs and their scores.
+Below you can see how the score is determined.</p>
+</li>
+<li><p><strong>Fetching Vectors</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">vectors</span> <span class="o">=</span> <span class="k">await</span> <span class="n">couchbase_db</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Retrieves the vectors associated with the given IDs.</p>
+</li>
+<li><p><strong>Checking Existence</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">exists</span> <span class="o">=</span> <span class="k">await</span> <span class="n">couchbase_db</span><span class="o">.</span><span class="n">is_exist</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Checks if the given IDs exist in the database.</p>
+</li>
+<li><p><strong>Deleting Vectors</strong>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">await</span> <span class="n">couchbase_db</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Deletes the vectors associated with the given IDs from the database.</p>
+</li>
+</ol>
+</section>
+</section>
+
         </article>
       </div>
       <footer>
@@ -552,8 +651,36 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Couchbase</a><ul>
+<li><a class="reference internal" href="#configuration">Configuration</a><ul>
+<li><a class="reference internal" href="#edit-cluster-access">Edit Cluster Access</a></li>
+<li><a class="reference internal" href="#allowed-ip-addresses">Allowed IP Addresses</a></li>
+<li><a class="reference internal" href="#cluster-bucket-scope-collection">Cluster, Bucket, Scope, Collection</a></li>
+<li><a class="reference internal" href="#create-index-for-query">Create Index for Query</a></li>
+<li><a class="reference internal" href="#example-yaml-file">Example YAML file</a></li>
+<li><a class="reference internal" href="#parameters">Parameters</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#usage">Usage</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>
