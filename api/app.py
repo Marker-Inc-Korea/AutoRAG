@@ -6,8 +6,11 @@ import concurrent.futures
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 from typing import List
+
+import click
+import uvicorn
 from quart import jsonify, request
 from pydantic import BaseModel
 import aiofiles
@@ -89,12 +92,22 @@ WORK_DIR = os.path.join(ROOT_DIR, "projects")
 
 
 # Function to create a task
-async def create_task(task_id: str, task: Task, func, *args):
-    """비동기 작업을 생성하고 관리하는 함수"""
+# async def create_task(task_id: str, task: Task, func, *args):
+#     """비동기 작업을 생성하고 관리하는 함수"""
+#     tasks[task_id] = {
+#         "task": task,
+#         "future": asyncio.create_task(run_background_task(task_id, func, *args)),
+#     }
+
+
+async def create_task(task_id: str, task: Task, func: Callable, *args) -> None:
     tasks[task_id] = {
+        "function": func,
+        "args": args,
+        "error": None,
         "task": task,
-        "future": asyncio.create_task(run_background_task(task_id, func, *args)),
     }
+    await task_queue.put(task_id)
 
 
 async def run_background_task(task_id: str, func, *args):
@@ -1174,35 +1187,12 @@ async def get_environment_variable(key: str):
         return {"error": f"Internal server error: {str(e)}"}, 500
 
 
+@click.command()
+@click.option("--host", type=str, default="127.0.0.1", help="Host IP address")
+@click.option("--port", type=int, default=5000, help="Port number")
+def main(host: str = "127.0.0.1", port: int = 5000):
+    uvicorn.run("app:app", host=host, port=port, reload=True, loop="asyncio")
+
+
 if __name__ == "__main__":
-    import hypercorn.asyncio
-    import asyncio
-    from hypercorn.config import Config
-
-    config = Config()
-
-    # 환경 변수에서 포트를 가져오거나 기본값 5000 사용
-    port = int(os.getenv("PORT", 5000))
-    host = os.getenv("HOST", "127.0.0.1")
-
-    config.bind = [f"{host}:{port}"]
-    config.use_reloader = True
-
-    # 특정 디렉토리만 감시
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    config.reload_dirs = [
-        os.path.join(base_dir, "src"),
-        os.path.join(base_dir, "app.py"),
-    ]
-
-    # 워커 설정
-    config.workers = 1
-    config.worker_class = "asyncio"
-
-    # 로그 설정
-    config.accesslog = "-"
-    config.errorlog = "-"
-    config.loglevel = "INFO"
-
-    logger.info("Starting server with CORS enabled for http://localhost:3000")
-    asyncio.run(hypercorn.asyncio.serve(app, config))
+    main()
