@@ -102,4 +102,5 @@ chroma.md
 milvus.md
 weaviate.md
 pinecone.md
+couchbase.md
 ```
