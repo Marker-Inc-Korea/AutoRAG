@@ -152,6 +152,9 @@ async def task_runner():
                 func = tasks[task_id]["function"]
                 args = tasks[task_id].get("args", ())
 
+                # Load env variable before running a task
+                load_dotenv(ENV_FILEPATH)
+
                 # Run the function in a separate process
                 future = loop.run_in_executor(
                     executor,
