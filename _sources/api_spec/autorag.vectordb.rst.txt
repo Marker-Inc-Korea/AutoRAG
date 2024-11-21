@@ -20,6 +20,14 @@ autorag.vectordb.chroma module
    :undoc-members:
    :show-inheritance:
 
+autorag.vectordb.couchbase module
+---------------------------------
+
+.. automodule:: autorag.vectordb.couchbase
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 autorag.vectordb.milvus module
 ------------------------------
 
@@ -32,6 +40,14 @@ autorag.vectordb.pinecone module
 --------------------------------
 
 .. automodule:: autorag.vectordb.pinecone
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+autorag.vectordb.qdrant module
+------------------------------
+
+.. automodule:: autorag.vectordb.qdrant
    :members:
    :undoc-members:
    :show-inheritance:

@@ -274,6 +274,7 @@
 <li class="toctree-l2"><a class="reference internal" href="integration/vectordb/weaviate.html">Weaviate</a></li>
 <li class="toctree-l2"><a class="reference internal" href="integration/vectordb/pinecone.html">Pinecone</a></li>
 <li class="toctree-l2"><a class="reference internal" href="integration/vectordb/couchbase.html">Couchbase</a></li>
+<li class="toctree-l2"><a class="reference internal" href="integration/vectordb/qdrant.html">Qdrant</a></li>
 </ul>
 </li>
 </ul>
@@ -456,9 +457,13 @@
         <ul>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.add">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.add">(autorag.vectordb.couchbase.Couchbase method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.add">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.add">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.add">(autorag.vectordb.qdrant.Qdrant method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.add">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
@@ -1535,6 +1540,13 @@
 </li>
         </ul></li>
         <li>
+    autorag.vectordb.couchbase
+
+        <ul>
+          <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.couchbase">module</a>
+</li>
+        </ul></li>
+        <li>
     autorag.vectordb.milvus
 
         <ul>
@@ -1546,6 +1558,13 @@
 
         <ul>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.pinecone">module</a>
+</li>
+        </ul></li>
+        <li>
+    autorag.vectordb.qdrant
+
+        <ul>
+          <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.qdrant">module</a>
 </li>
         </ul></li>
         <li>
@@ -1724,6 +1743,8 @@
 </li>
         <li><a href="api_spec/autorag.data.utils.html#autorag.data.utils.util.corpus_df_to_langchain_documents">corpus_df_to_langchain_documents() (in module autorag.data.utils.util)</a>
 </li>
+        <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase">Couchbase (class in autorag.vectordb.couchbase)</a>
+</li>
         <li><a href="api_spec/autorag.data.qa.query.html#autorag.data.qa.query.llama_gen_query.custom_query_gen">custom_query_gen() (in module autorag.data.qa.query.llama_gen_query)</a>
 </li>
     </ul></td>
@@ -1743,9 +1764,13 @@
         <ul>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.delete">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.delete">(autorag.vectordb.couchbase.Couchbase method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.delete">(autorag.vectordb.qdrant.Qdrant method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.delete">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
@@ -1753,13 +1778,15 @@
         <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete_collection">delete_collection() (autorag.vectordb.milvus.Milvus method)</a>
 
         <ul>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.delete_collection">(autorag.vectordb.qdrant.Qdrant method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.delete_collection">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
         </ul></li>
-        <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete_index">delete_index() (autorag.vectordb.pinecone.Pinecone method)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete_index">delete_index() (autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.demojize">demojize() (in module autorag.utils.util)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown">dict_to_markdown() (in module autorag.utils.util)</a>
@@ -1867,9 +1894,13 @@
         <ul>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.fetch">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.fetch">(autorag.vectordb.couchbase.Couchbase method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.fetch">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.fetch">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.fetch">(autorag.vectordb.qdrant.Qdrant method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.fetch">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
@@ -1892,10 +1923,10 @@
 </li>
         <li><a href="api_spec/autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.filter_exist_ids_from_retrieval_gt">filter_exist_ids_from_retrieval_gt() (in module autorag.nodes.retrieval.vectordb)</a>
 </li>
-        <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_key_values">find_key_values() (in module autorag.utils.util)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_key_values">find_key_values() (in module autorag.utils.util)</a>
+</li>
         <li><a href="api_spec/autorag.html#autorag.dashboard.find_node_dir">find_node_dir() (in module autorag.dashboard)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_node_summary_files">find_node_summary_files() (in module autorag.utils.util)</a>
@@ -2071,9 +2102,13 @@
         <ul>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.is_exist">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.is_exist">(autorag.vectordb.couchbase.Couchbase method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.is_exist">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.is_exist">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.is_exist">(autorag.vectordb.qdrant.Qdrant method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.is_exist">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
@@ -2664,9 +2699,13 @@
 </li>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.chroma">autorag.vectordb.chroma</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.couchbase">autorag.vectordb.couchbase</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.milvus">autorag.vectordb.milvus</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.pinecone">autorag.vectordb.pinecone</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.qdrant">autorag.vectordb.qdrant</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#module-autorag.vectordb.weaviate">autorag.vectordb.weaviate</a>
 </li>
@@ -2893,6 +2932,8 @@
     <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA">QA (class in autorag.data.qa.schema)</a>
 </li>
+        <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant">Qdrant (class in autorag.vectordb.qdrant)</a>
+</li>
         <li><a href="api_spec/autorag.schema.html#autorag.schema.metricinput.MetricInput.queries">queries (autorag.schema.metricinput.MetricInput attribute)</a>
 </li>
         <li><a href="api_spec/autorag.data.qa.query.html#autorag.data.qa.query.openai_gen_query.Response.query">query (autorag.data.qa.query.openai_gen_query.Response attribute)</a>
@@ -2908,9 +2949,13 @@
         <ul>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma.query">(autorag.vectordb.chroma.Chroma method)</a>
 </li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.query">(autorag.vectordb.couchbase.Couchbase method)</a>
+</li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.query">(autorag.vectordb.milvus.Milvus method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.query">(autorag.vectordb.pinecone.Pinecone method)</a>
+</li>
+          <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.query">(autorag.vectordb.qdrant.Qdrant method)</a>
 </li>
           <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.weaviate.Weaviate.query">(autorag.vectordb.weaviate.Weaviate method)</a>
 </li>
