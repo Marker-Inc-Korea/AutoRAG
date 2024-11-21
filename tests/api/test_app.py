@@ -387,8 +387,10 @@ async def test_get_all_env_keys(client_for_test):
     response = await client_for_test.get("/env")
     assert response.status_code == 200
     data = await response.get_json()
-    assert "test_key" in data
-    assert "test_key2" in data
+    assert "test_key" in list(data.keys())
+    assert "test_key2" in list(data.keys())
+    assert data["test_key"] == "test_value"
+    assert data["test_key2"] == "test_value2"
     assert len(data) >= 2
 
     response = await client_for_test.delete(
