@@ -5,7 +5,7 @@ import sys
 from random import random
 from typing import List, Any
 
-from llama_index.core import MockEmbedding
+from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.core.llms.mock import MockLLM
 from llama_index.llms.bedrock import Bedrock
