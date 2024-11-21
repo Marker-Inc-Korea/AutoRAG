@@ -1197,6 +1197,15 @@ async def get_environment_variable(key: str):
         return {"error": f"Internal server error: {str(e)}"}, 500
 
 
+@app.route("/env", methods=["GET"])
+async def get_all_env_keys():
+    try:
+        envs = dotenv_values(ENV_FILEPATH)
+        return list(envs.keys()), 200
+    except Exception as e:
+        return {"error": f"Internal server error: {str(e)}"}, 500
+
+
 @app.route("/env/<string:key>", methods=["DELETE"])
 async def delete_environment_variable(key: str):
     try:
