@@ -1,5 +1,15 @@
 import logging
 
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+	Distance,
+	VectorParams,
+	PointStruct,
+	PointIdsList,
+	HasIdCondition,
+	Filter,
+	SearchRequest,
+)
 
 from typing import List, Tuple
 
@@ -12,52 +22,99 @@ class Qdrant(BaseVectorStore):
 	def __init__(
 		self,
 		embedding_model: str,
+		collection_name: str,
 		embedding_batch: int = 100,
-		similarity_metric: str = "cosine",  # "cosine", "dotproduct", "euclidean"
+		similarity_metric: str = "cosine",
 		client_type: str = "docker",
+		url: str = "http://localhost:6333",
+		host: str = "",
+		api_key: str = "",
+		dimension: int = 1536,
+		ingest_batch: int = 64,
+		parallel: int = 1,
+		max_retries: int = 3,
 	):
 		super().__init__(embedding_model, similarity_metric, embedding_batch)
+
+		self.collection_name = collection_name
+		self.ingest_batch = ingest_batch
+		self.parallel = parallel
+		self.max_retries = max_retries
+
+		if similarity_metric == "cosine":
+			distance = Distance.COSINE
+		elif similarity_metric == "ip":
+			distance = Distance.DOT
+		elif similarity_metric == "l2":
+			distance = Distance.EUCLID
+		else:
+			raise ValueError(
+				f"similarity_metric {similarity_metric} is not supported\n"
+				"supported similarity metrics are: cosine, ip, l2"
+			)
+
+		if client_type == "docker":
+			self.client = QdrantClient(
+				url=url,
+			)
+		elif client_type == "cloud":
+			self.client = QdrantClient(
+				host=host,
+				api_key=api_key,
+			)
+		else:
+			raise ValueError(
+				f"client_type {client_type} is not supported\n"
+				"supported client types are: docker, cloud"
+			)
+
+		if not self.client.collection_exists(collection_name):
+			self.client.create_collection(
+				collection_name,
+				vectors_config=VectorParams(
+					size=dimension,
+					distance=distance,
+				),
+			)
+		self.collection = self.client.get_collection(collection_name)
 
 	async def add(self, ids: List[str], texts: List[str]):
 		texts = self.truncated_inputs(texts)
 		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
 
-		with self.client.batch.dynamic() as batch:
-			for i, text in enumerate(texts):
-				data_properties = {self.text_key: text}
+		points = list(
+			map(lambda x: PointStruct(id=x[0], vector=x[1]), zip(ids, text_embeddings))
+		)
 
-				batch.add_object(
-					collection=self.collection_name,
-					properties=data_properties,
-					uuid=ids[i],
-					vector=text_embeddings[i],
-				)
-
-		failed_objs = self.client.batch.failed_objects
-		for obj in failed_objs:
-			err_message = (
-				f"Failed to add object: {obj.original_uuid}\nReason: {obj.message}"
-			)
-
-			logger.error(err_message)
+		self.client.upload_points(
+			collection_name=self.collection_name,
+			points=points,
+			batch_size=self.ingest_batch,
+			parallel=self.parallel,
+			max_retries=self.max_retries,
+			wait=True,
+		)
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
 		# Fetch vectors by IDs
-		results = self.collection.query.fetch_objects(
-			filters=wvc.query.Filter.by_property("_id").contains_any(ids),
-			include_vector=True,
+		fetched_results = self.client.retrieve(
+			collection_name=self.collection_name,
+			ids=ids,
+			with_vectors=True,
 		)
-		id_vector_dict = {
-			str(object.uuid): object.vector["default"] for object in results.objects
-		}
-		result = [id_vector_dict[_id] for _id in ids]
-		return result
+		return list(map(lambda x: x.vector, fetched_results))
 
 	async def is_exist(self, ids: List[str]) -> List[bool]:
-		fetched_result = self.collection.query.fetch_objects(
-			filters=wvc.query.Filter.by_property("_id").contains_any(ids),
+		existed_result = self.client.scroll(
+			collection_name=self.collection_name,
+			scroll_filter=Filter(
+				must=[
+					HasIdCondition(has_id=ids),
+				],
+			),
 		)
-		existed_ids = [str(result.uuid) for result in fetched_result.objects]
+		# existed_result is tuple. So we use existed_result[0] to get list of Record
+		existed_ids = list(map(lambda x: x.id, existed_result[0]))
 		return list(map(lambda x: x in existed_ids, ids))
 
 	async def query(
@@ -68,41 +125,29 @@ class Qdrant(BaseVectorStore):
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(queries)
 
-		ids, scores = [], []
-		for query_embedding in query_embeddings:
-			response = self.collection.query.near_vector(
-				near_vector=query_embedding,
-				limit=top_k,
-				return_metadata=MetadataQuery(distance=True),
+		search_queries = list(
+			map(
+				lambda x: SearchRequest(vector=x, limit=top_k, with_vector=True),
+				query_embeddings,
 			)
+		)
 
-			ids.append([o.uuid for o in response.objects])
-			scores.append(
-				[
-					distance_to_score(o.metadata.distance, self.similarity_metric)
-					for o in response.objects
-				]
-			)
+		search_result = self.client.search_batch(
+			collection_name=self.collection_name, requests=search_queries
+		)
+
+		# Extract IDs and distances
+		ids = [[str(hit.id) for hit in result] for result in search_result]
+		scores = [[hit.score for hit in result] for result in search_result]
 
 		return ids, scores
 
 	async def delete(self, ids: List[str]):
-		filter = wvc.query.Filter.by_id().contains_any(ids)
-		self.collection.data.delete_many(where=filter)
+		self.client.delete(
+			collection_name=self.collection_name,
+			points_selector=PointIdsList(points=ids),
+		)
 
 	def delete_collection(self):
 		# Delete the collection
-		self.client.collections.delete(self.collection_name)
-
-	def distance_to_score(distance: float, similarity_metric) -> float:
-		if similarity_metric == "cosine":
-			return 1 - distance
-		elif similarity_metric == "ip":
-			return -distance
-		elif similarity_metric == "l2":
-			return -distance
-		else:
-			raise ValueError(
-				f"similarity_metric {similarity_metric} is not supported\n"
-				"supported similarity metrics are: cosine, ip, l2"
-			)
+		self.client.delete_collection(self.collection_name)
