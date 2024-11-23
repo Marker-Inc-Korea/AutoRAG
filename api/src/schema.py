@@ -139,19 +139,7 @@ class Trial(BaseModel):
         if isinstance(v, float) and np.isnan(v):
             return None
         return v
-
-    # @property
-    # def corpus_path(self) -> str:
-    #     return f"projects/{self.project_id}/trials/{self.id}/corpus/corpus_{self.id}/0.parquet"
     
-    # @property
-    # def qa_path(self) -> str:
-    #     return f"projects/{self.project_id}/trials/{self.id}/qa/qa_{self.id}/0.parquet"
-    
-    # @property
-    # def config_path(self) -> str:
-    #     return f"projects/{self.project_id}/trials/{self.id}/configs/config_{self.id}.yaml"
-
     # 경로 유효성 검사 메서드 추가
     def validate_paths(self) -> bool:
         """
