@@ -37,7 +37,7 @@ class SQLiteTrialDB:
 			if row:
 				trial_dict = dict(row)
 				if trial_dict['config']:
-					trial_dict['config'] = TrialConfig(**json.loads(trial_dict['config']))
+					trial_dict['config'] = TrialConfig.model_validate_json(trial_dict['config'])
 				if trial_dict['created_at']:
 					trial_dict['created_at'] = datetime.fromisoformat(trial_dict['created_at'])
 				return Trial(**trial_dict)
@@ -57,17 +57,46 @@ class SQLiteTrialDB:
 				trial.status,
 				trial.config.model_dump_json() if trial.config else None,
 				trial.created_at.isoformat() if trial.created_at else None,
-				None,  # report_task_id
-				None   # chat_task_id
+				trial.report_task_id,
+				trial.chat_task_id
 			))
+
+	def set_trial_config(self, trial_id: str, config: TrialConfig):
+		"""trial config 업데이트"""
+		with sqlite3.connect(self.db_path) as conn:
+			conn.execute("""
+				UPDATE trials 
+				SET config = ?
+				WHERE id = ?
+			""", (config.model_dump_json(), trial_id))
+
+	def get_all_config_ids(self) -> List[str]:
+		"""모든 trial의 config ID 목록 조회"""
+		with sqlite3.connect(self.db_path) as conn:
+			cursor = conn.execute("""
+				SELECT DISTINCT id 
+				FROM trials 
+				WHERE config IS NOT NULL
+				ORDER BY created_at DESC
+			""")
+			return [row[0] for row in cursor.fetchall()]
 
 	def get_all_trial_ids(self, project_id: Optional[str] = None) -> List[str]:
 		"""모든 trial ID 조회 (프로젝트별 필터링 가능)"""
 		with sqlite3.connect(self.db_path) as conn:
 			if project_id:
-				cursor = conn.execute("SELECT id FROM trials WHERE project_id = ?", (project_id,))
+				cursor = conn.execute("""
+					SELECT id 
+					FROM trials 
+					WHERE project_id = ?
+					ORDER BY created_at DESC
+				""", (project_id,))
 			else:
-				cursor = conn.execute("SELECT id FROM trials")
+				cursor = conn.execute("""
+					SELECT id 
+					FROM trials
+					ORDER BY created_at DESC
+				""")
 			return [row[0] for row in cursor.fetchall()]
 
 	def delete_trial(self, trial_id: str):
