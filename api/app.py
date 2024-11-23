@@ -88,12 +88,15 @@ task_queue = asyncio.Queue()
 current_task_id = None  # ID of the currently running task
 lock = asyncio.Lock()  # To manage access to shared variables
 
-ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
-WORK_DIR = os.path.join(ROOT_DIR, "projects")
 
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+WORK_DIR = os.getenv("AUTORAG_WORK_DIR", None)
+if WORK_DIR is None:
+    WORK_DIR = os.path.join(ROOT_DIR, "projects")
+if not os.path.exists(WORK_DIR):
+    os.makedirs(WORK_DIR)
 ENV_FILEPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), ".env")
 load_dotenv(ENV_FILEPATH)
-
 
 # Function to create a task
 # async def create_task(task_id: str, task: Task, func, *args):

@@ -1,5 +1,5 @@
-AutoRAG[parse,api]>=0.3.8
-quart-schema
+AutoRAG[parse]>=0.3.10
+pydantic<2.10.0
 jwt
 quart-cors
 Werkzeug
