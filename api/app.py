@@ -53,6 +53,7 @@ import nest_asyncio
 from src.trial_config import SQLiteTrialDB
 from src.validate import project_exists, trial_exists
 
+from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
 import logging
 from dotenv import load_dotenv, dotenv_values, set_key, unset_key
@@ -87,11 +88,6 @@ task_futures = {}  # task_id -> future (for forceful termination)
 task_queue = asyncio.Queue()
 current_task_id = None  # ID of the currently running task
 lock = asyncio.Lock()  # To manage access to shared variables
-
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-WORK_DIR = os.getenv("AUTORAG_WORK_DIR", None)
-if WORK_DIR is None:
     
 ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
 # 환경에 따른 WORK_DIR 설정
@@ -100,20 +96,43 @@ if ENV == 'dev':
     WORK_DIR = os.path.join(ROOT_DIR, "../projects")
 else:  # production
     WORK_DIR = os.path.join(ROOT_DIR, "projects")
-if not os.path.exists(WORK_DIR):
-    os.makedirs(WORK_DIR)
-ENV_FILEPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), ".env")
+ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
+# 환경에 따른 WORK_DIR 설정
 
 ENV_FILEPATH = os.path.join(WORK_DIR, ".env.{ENV}")
 load_dotenv(ENV_FILEPATH)
 
-# Function to create a task
-# async def create_task(task_id: str, task: Task, func, *args):
-#     """비동기 작업을 생성하고 관리하는 함수"""
-#     tasks[task_id] = {
-#         "task": task,
-#         "future": asyncio.create_task(run_background_task(task_id, func, *args)),
-#     }
+print(f"ENV_FILEPATH: {ENV_FILEPATH}")
+print(f"WORK_DIR: {WORK_DIR}")
+print(f"AUTORAG_API_ENV: {ENV}")
+
+print(f"--------------------------------")
+print("### Server start")
+print(f"--------------------------------")
+# Ensure CORS headers are present in every response
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get('Origin')
+    if origin == "http://localhost:3000":
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+    return response
+
+# Handle OPTIONS requests explicitly
+@app.route('/', methods=['OPTIONS'])
+@app.route('/<path:path>', methods=['OPTIONS'])
+async def options_handler(path=''):
+    response = await make_response('')
+    origin = request.headers.get('Origin')
+    if origin == "http://localhost:3000":
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+    return response
+
 
 
 async def create_task(task_id: str, task: Task, func: Callable, *args) -> None:
@@ -164,6 +183,10 @@ async def task_runner():
                 func = tasks[task_id]["function"]
                 args = tasks[task_id].get("args", ())
 
+
+                print(f"args: {args}")
+                print(f"func: {func}")
+            
                 # Load env variable before running a task
                 load_dotenv(ENV_FILEPATH)
 
