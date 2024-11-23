@@ -90,16 +90,17 @@ current_task_id = None  # ID of the currently running task
 lock = asyncio.Lock()  # To manage access to shared variables
     
 ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
-# 환경에 따른 WORK_DIR 설정
 ENV = os.getenv('AUTORAG_API_ENV', 'dev')
 if ENV == 'dev':
     WORK_DIR = os.path.join(ROOT_DIR, "../projects")
 else:  # production
     WORK_DIR = os.path.join(ROOT_DIR, "projects")
+if 'AUTORAG_WORK_DIR' in os.environ:
+    WORK_DIR = os.getenv('AUTORAG_WORK_DIR')    
+
 ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
 # 환경에 따른 WORK_DIR 설정
 
-ENV_FILEPATH = os.path.join(WORK_DIR, ".env.{ENV}")
 load_dotenv(ENV_FILEPATH)
 
 print(f"ENV_FILEPATH: {ENV_FILEPATH}")
@@ -260,7 +261,8 @@ async def create_project():
         return jsonify({"error": "Name is required"}), 400
 
     description = data.get("description", "")
-
+    print(f"Set WORK_DIR environment variable to: {os.environ['AUTORAG_WORK_DIR']}")
+    WORK_DIR    = os.environ['AUTORAG_WORK_DIR']
     # Create a new project
     new_project_dir = os.path.join(WORK_DIR, data["name"])
     if not os.path.exists(new_project_dir):
