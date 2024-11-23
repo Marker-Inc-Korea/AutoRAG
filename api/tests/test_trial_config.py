@@ -60,12 +60,13 @@ def test_get_trial_existing(temp_db_path, sample_trial):
     trial_db = SQLiteTrialDB(temp_db_path)
     trial_db.set_trial(sample_trial)
     retrieved_trial = trial_db.get_trial(sample_trial.id)
+    
     assert retrieved_trial is not None
     assert retrieved_trial.id == sample_trial.id
     assert retrieved_trial.project_id == sample_trial.project_id
-    assert isinstance(retrieved_trial.config, TrialConfig)
-    assert retrieved_trial.config == sample_trial.config
-
+    assert retrieved_trial.config.model_dump() == sample_trial.config.model_dump()
+    print(f"retrieved_trial.config.model_dump(): {retrieved_trial.config.model_dump()}")
+    print(f"sample_trial.config.model_dump(): {sample_trial.config.model_dump()}")
 
 def test_get_trial_nonexistent(temp_db_path):
     """

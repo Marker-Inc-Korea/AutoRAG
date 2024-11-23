@@ -98,6 +98,9 @@ else:  # production
 if 'AUTORAG_WORK_DIR' in os.environ:
     WORK_DIR = os.getenv('AUTORAG_WORK_DIR')    
 
+if 'AUTORAG_WORK_DIR' in os.environ:
+    WORK_DIR = os.path.join(ROOT_DIR, os.getenv('AUTORAG_WORK_DIR'))
+
 ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
 # 환경에 따른 WORK_DIR 설정
 
@@ -715,8 +718,9 @@ async def start_chunking(project_id: str, trial_id: str):
             yaml_path,
         )
 
+        print(f"previous_trial: {previous_trial}")
         # Update trial config
-        previous_trial.config.corpus_path = os.path.join(dataset_dir, "0.parquet")
+        # previous_trial.config.chunk_path = os.path.join(dataset_dir, "0.parquet")
         # 새로운 Trial 생성
         new_trial = Trial(
             id=str(uuid.uuid4()),

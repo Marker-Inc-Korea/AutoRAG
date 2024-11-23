@@ -5,8 +5,14 @@ import shutil
 import os
 from pathlib import Path
 from datetime import datetime
+import warnings
+from pydantic import warnings as pydantic_warnings
+import uuid
 
 from app import app as quart_app, WORK_DIR
+
+# Pydantic v2 deprecation 경고 무시
+warnings.filterwarnings("ignore", category=pydantic_warnings.PydanticDeprecatedSince20)
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)
@@ -19,7 +25,8 @@ TEST_HEADERS = {
 # 전역 변수로 프로젝트 데이터 설정
 project_data = {
     "name": f"test_project_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-    "description": "Test project description"
+    "description": "Test Project",
+    "metadata": {}
 }
 project_data_name = project_data["name"]
 @pytest.fixture(scope="session")

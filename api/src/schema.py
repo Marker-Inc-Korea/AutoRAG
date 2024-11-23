@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Dict, Literal, Any, Optional
 
 import numpy as np
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class TrialCreateRequest(BaseModel):
@@ -54,15 +54,10 @@ class EnvVariableRequest(BaseModel):
     value: str
 
 class Project(BaseModel):
-    id: str
-    name: str
-    description: str
-    created_at: datetime
-    status: Literal["active", "archived"]
-    metadata: Dict[str, Any]
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True,
+        json_schema_extra={
             "example": {
                 "id": "proj_123",
                 "name": "My Project",
@@ -72,6 +67,14 @@ class Project(BaseModel):
                 "metadata": {}
             }
         }
+    )
+    
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+    status: Literal["active", "archived"]
+    metadata: Dict[str, Any]
 
 class Status(str, Enum):
     NOT_STARTED = "not_started"
@@ -108,23 +111,28 @@ class Task(BaseModel):
     )
 
 class TrialConfig(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True
+    )
+    
     trial_id: str
     project_id: str
-    raw_path: Optional[str]
-    metadata: Dict = {}  # Using Dict as the default empty dict for metadata
+    raw_path: str
     corpus_path: Optional[str] = None
     qa_path: Optional[str] = None
-    chunk_path: Optional[str] = None
-    parse_path: Optional[str] = None
-
-    class Config:
-        arbitrary_types_allowed = True
+    config_path: Optional[str] = None
+    metadata: Optional[dict] = {}
 
 class Trial(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True
+    )
+    
     id: str
     project_id: str
-    config: Optional[TrialConfig] = Field(description="The trial configuration",
-                                          default=None)
+    config: Optional[TrialConfig] = None
     name: str
     status: Status
     created_at: datetime
