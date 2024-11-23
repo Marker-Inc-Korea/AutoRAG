@@ -1,38 +1,89 @@
 services:
-  frontend:
-    build:
-      context: ./autorag-frontend
-      dockerfile: Dockerfile
-    working_dir: /app/autorag-frontend
-    volumes:
-      - ./autorag-frontend:/app/autorag-frontend
-      - /app/autorag-frontend/node_modules
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5001
-      - NODE_ENV=development
-    command: sh -c "yarn install && yarn dev"
-    networks:
-      - app-network
+  # frontend:
+  #   build:
+  #     context: ./autorag-frontend
+  #     dockerfile: Dockerfile
+  #   working_dir: /app/autorag-frontend
+  #   volumes:
+  #     - ./autorag-frontend:/app/autorag-frontend
+  #     - /app/autorag-frontend/.next
+  #     - /app/autorag-frontend/node_modules
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://localhost:5000
+  #     - NODE_ENV=development
+  #   command: sh -c "yarn install && yarn dev"
+  #   networks:
+  #     - app-network
 
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+  # api:
+  #   build:
+  #     context: ./api
+  #     dockerfile: Dockerfile
+  #   volumes:
+  #     - ./api:/app/api
+  #     - ./projects:/app/projects
+  #     - ./__pycache__:/app/api/__pycache__
+
+  #   ports:
+  #     - "5000:5000"
+  #   environment:
+  #     - FLASK_ENV=development
+  #     - FLASK_DEBUG=1
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - AUTORAG_WORK_DIR=/app/projects
+  #     - CELERY_BROKER_URL=redis://redis:6379/0
+  #     - CELERY_RESULT_BACKEND=redis://redis:6379/0
+  #     - PYTHONUNBUFFERED=1
+  #     - PORT=5001
+  #     - HOST=0.0.0.0
+  #   depends_on:
+  #     - redis
+  #   command: uvicorn app:app --host 0.0.0.0 --port 5001 --reload --loop asyncio
+  #            python -m uvicorn app:app --host 0.0.0.0 --port 5000 --reload --loop asyncio --no-use-colors"
+  #   networks:
+  #     - app-network
+
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  worker:
+    image: python:3.11-slim
+    command: >
+      bash -c "
+        pip install 'redis==4.5.1' 'celery==5.2.7' 'numpy' 'pydantic' &&
+        python -m celery -A celery_app worker --loglevel=INFO
+      "
     volumes:
       - ./api:/app/api
-      - ./projects:/app/projects
-    ports:
-      - "5001:5001"
+    working_dir: /app/api
     environment:
-      - PYTHONUNBUFFERED=1
-      - PORT=5001
-      - HOST=0.0.0.0
-      - AUTORAG_WORK_DIR=/app/projects
-    command: uvicorn app:app --host 0.0.0.0 --port 5001 --reload --loop asyncio
-    networks:
-      - app-network
+      - TZ=Asia/Seoul
+      - PYTHONPATH=/app
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  flower:
+    image: mher/flower
+    command: celery flower --broker=redis://redis:6379/0 --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - TZ=Asia/Seoul
+      - FLOWER_BROKER_API=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - worker
+
+volumes:
+  redis_data:
 
 networks:
   app-network:

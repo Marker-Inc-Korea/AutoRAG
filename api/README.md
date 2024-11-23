@@ -14,4 +14,19 @@ Redis Commander: http://localhost:8081
 ```
 python -m pytest tests/test_trial_config.py -v
 python -m pytest tests/test_app.py -v
+
+
+
+```
+
+### 4. 프로젝트 생성
+```
+cd ..
+docker-compose up
+```
+
+
+```
+# cd api
+python -m celery -A celery_app worker --loglevel=INFO
 ```

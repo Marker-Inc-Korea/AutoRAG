@@ -58,6 +58,9 @@ from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 import logging
 from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
+from tasks.trial_tasks import parse_documents  # 수정된 임포트
+
+
 nest_asyncio.apply()
 
 app = Quart(__name__)
@@ -560,106 +563,35 @@ async def upload_files(project_id: str):
         ), 500
 
 
-@app.route(
-    "/projects/<string:project_id>/trials/<string:trial_id>/parse", methods=["POST"]
-)
+@app.route("/projects/<string:project_id>/trials/<string:trial_id>/parse", methods=["POST"])
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
 async def start_parsing(project_id: str, trial_id: str):
-    yaml_path = None
+    """문서 파싱 작업 시작"""
     try:
-        data = await request.get_json()
-        parse_request = ParseRequest(**data)
+        # 기존 Trial DB 연결 유지
+        db_path = os.path.join(WORK_DIR, project_id, "trials.db")
+        trial_db = SQLiteTrialDB(db_path)
+        trial = trial_db.get_trial(trial_id)
+        
+        if not trial:
+            return jsonify({"error": "Trial not found"}), 404
 
-        # 프로젝트 디렉토리 구조 설정
-        project_dir = os.path.join(WORK_DIR, project_id)
-        raw_data_path = os.path.join(project_dir, "raw_data")
-        dataset_dir = os.path.join(project_dir, "parse", parse_request.name)
-        config_dir = os.path.join(project_dir, "configs")
+        # Celery task 시작 (기존 비동기 로직은 parse_documents task로 이동)
+        task = parse_documents.delay(project_id, trial_id)
+        
+        # Trial 상태 업데이트
+        trial.status = "parsing"
+        trial.parse_task_id = task.id
+        trial_db.set_trial(trial)
 
-        logger.info(f"Project directory: {project_dir}")
-        logger.info(f"Raw data path: {raw_data_path}")
-
-        # data_path_glob 생성 - raw_data 디렉토리 내의 모든 파일을 포함
-        data_path_glob = os.path.join(raw_data_path, "*.pdf")
-        logger.info(f"Data path glob: {data_path_glob}")
-
-        # 필요한 디렉토리 생성
-        os.makedirs(config_dir, exist_ok=True)
-        if not os.path.exists(dataset_dir):
-            os.makedirs(dataset_dir)
-        else:
-            return jsonify(
-                {"error": f"Parse dataset name already exists: {parse_request.name}"}
-            ), 400
-
-        # 파일 검색
-        files = []
-        for root, _, filenames in os.walk(raw_data_path):
-            for filename in filenames:
-                if not filename.startswith("."):
-                    files.append(os.path.join(root, filename))
-
-        if not files:
-            return jsonify(
-                {
-                    "error": f"No valid files found in {raw_data_path}. Please upload some files first."
-                }
-            ), 400
-
-        logger.info(f"Found files: {files}")
-
-        # YAML 설정 파일 생성
-        yaml_config = {
-            "modules": [
-                {
-                    "module_type": "langchain_parse",
-                    "parse_method": "pdfminer",
-                }
-            ]
-        }
-
-        yaml_path = os.path.join(config_dir, f"parse_config_{trial_id}.yaml")
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(yaml_config, f, encoding="utf-8", allow_unicode=True)
-
-        logger.info(f"Created config file at {yaml_path} with content: {yaml_config}")
-
-        # Task 생성 및 실행
-        task_id = str(uuid.uuid4())
-        save_path = os.path.join(WORK_DIR, project_id, "parse", f"parse_{trial_id}")
-        task = Task(
-            id=task_id,
-            project_id=project_id,
-            trial_id=trial_id,
-            name=parse_request.name,
-            status=Status.IN_PROGRESS,
-            type=TaskType.PARSE,
-            created_at=datetime.now(),
-            save_path=save_path,
-        )
-
-        logger.info(
-            f"Creating task with data_path_glob: {data_path_glob}, project_dir: {save_path}, yaml_path: {yaml_path}"
-        )
-        await create_task(
-            task_id,
-            task,
-            run_parser_start_parsing,
-            data_path_glob,
-            save_path,
-            yaml_path,
-        )
-        return jsonify(task.model_dump()), 202
+        return jsonify({
+            "trial_id": trial_id,
+            "task_id": task.id,
+            "status": "parsing"
+        })
 
     except Exception as e:
-        logger.error(f"Error in parse: {str(e)}", exc_info=True)
-        if yaml_path and os.path.exists(yaml_path):
-            try:
-                os.remove(yaml_path)
-            except Exception as cleanup_error:
-                logger.error(f"Error cleaning up yaml file: {cleanup_error}")
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route(
