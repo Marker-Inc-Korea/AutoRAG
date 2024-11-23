@@ -111,10 +111,11 @@ class TrialConfig(BaseModel):
     trial_id: str
     project_id: str
     raw_path: Optional[str]
-    corpus_path: Optional[str]
-    qa_path: Optional[str]
-    config_path: Optional[str]
     metadata: Dict = {}  # Using Dict as the default empty dict for metadata
+    corpus_path: Optional[str] = None
+    qa_path: Optional[str] = None
+    chunk_path: Optional[str] = None
+    parse_path: Optional[str] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -138,3 +139,41 @@ class Trial(BaseModel):
         if isinstance(v, float) and np.isnan(v):
             return None
         return v
+
+    # @property
+    # def corpus_path(self) -> str:
+    #     return f"projects/{self.project_id}/trials/{self.id}/corpus/corpus_{self.id}/0.parquet"
+    
+    # @property
+    # def qa_path(self) -> str:
+    #     return f"projects/{self.project_id}/trials/{self.id}/qa/qa_{self.id}/0.parquet"
+    
+    # @property
+    # def config_path(self) -> str:
+    #     return f"projects/{self.project_id}/trials/{self.id}/configs/config_{self.id}.yaml"
+
+    # 경로 유효성 검사 메서드 추가
+    def validate_paths(self) -> bool:
+        """
+        모든 필수 경로가 유효한지 검사
+        """
+        import os
+        return all([
+            os.path.exists(self.corpus_path),
+            os.path.exists(self.qa_path),
+            os.path.exists(self.config_path)
+        ])
+
+    # 경로 생성 메서드 추가
+    def create_directories(self) -> None:
+        """
+        필요한 디렉토리 구조 생성
+        """
+        import os
+        paths = [
+            os.path.dirname(self.corpus_path),
+            os.path.dirname(self.qa_path),
+            os.path.dirname(self.config_path)
+        ]
+        for path in paths:
+            os.makedirs(path, exist_ok=True)
