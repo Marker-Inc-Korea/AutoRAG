@@ -55,6 +55,7 @@ from src.validate import project_exists, trial_exists
 
 
 import logging
+from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
 nest_asyncio.apply()
 
@@ -87,12 +88,15 @@ task_queue = asyncio.Queue()
 current_task_id = None  # ID of the currently running task
 lock = asyncio.Lock()  # To manage access to shared variables
 
+
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 WORK_DIR = os.getenv("AUTORAG_WORK_DIR", None)
 if WORK_DIR is None:
     WORK_DIR = os.path.join(ROOT_DIR, "projects")
 if not os.path.exists(WORK_DIR):
     os.makedirs(WORK_DIR)
+ENV_FILEPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), ".env")
+load_dotenv(ENV_FILEPATH)
 
 # Function to create a task
 # async def create_task(task_id: str, task: Task, func, *args):
@@ -150,6 +154,9 @@ async def task_runner():
                 # Get function and arguments from task info
                 func = tasks[task_id]["function"]
                 args = tasks[task_id].get("args", ())
+
+                # Load env variable before running a task
+                load_dotenv(ENV_FILEPATH)
 
                 # Run the function in a separate process
                 future = loop.run_in_executor(
@@ -1145,6 +1152,10 @@ async def get_task(project_id: str, task_id: str):
 async def set_environment_variable():
     # Get JSON data from request
     data = await request.get_json()
+    is_exist_env = load_dotenv(ENV_FILEPATH)
+    if not is_exist_env:
+        with open(ENV_FILEPATH, "w") as f:
+            f.write("")
 
     try:
         # Validate request data using Pydantic model
@@ -1153,9 +1164,11 @@ async def set_environment_variable():
         if os.getenv(env_var.key, None) is None:
             # Set the environment variable
             os.environ[env_var.key] = env_var.value
+            set_key(ENV_FILEPATH, env_var.key, env_var.value)
             return jsonify({}), 200
         else:
             os.environ[env_var.key] = env_var.value
+            set_key(ENV_FILEPATH, env_var.key, env_var.value)
             return jsonify({}), 201
 
     except Exception as e:
@@ -1179,12 +1192,36 @@ async def get_environment_variable(key: str):
             Tuple containing response dictionary and status code
     """
     try:
-        value = os.environ.get(key)
+        value = dotenv_values(ENV_FILEPATH).get(key, None)
 
         if value is None:
             return {"error": f"Environment variable '{key}' not found"}, 404
 
         return {"key": key, "value": value}, 200
+
+    except Exception as e:
+        return {"error": f"Internal server error: {str(e)}"}, 500
+
+
+@app.route("/env", methods=["GET"])
+async def get_all_env_keys():
+    try:
+        envs = dotenv_values(ENV_FILEPATH)
+        return jsonify(dict(envs)), 200
+    except Exception as e:
+        return {"error": f"Internal server error: {str(e)}"}, 500
+
+
+@app.route("/env/<string:key>", methods=["DELETE"])
+async def delete_environment_variable(key: str):
+    try:
+        value = dotenv_values(ENV_FILEPATH).get(key, None)
+        if value is None:
+            return {"error": f"Environment variable '{key}' not found"}, 404
+
+        unset_key(ENV_FILEPATH, key)
+
+        return {}, 200
 
     except Exception as e:
         return {"error": f"Internal server error: {str(e)}"}, 500

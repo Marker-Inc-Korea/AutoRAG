@@ -331,14 +331,74 @@ async def test_set_env_variable(client_for_test):
     assert response.status_code == 201
     assert os.getenv("test_key") == "test_value2"
 
+    response = await client_for_test.delete(
+        "/env/test_key",
+    )
+    assert response.status_code == 200
+
 
 @pytest.mark.asyncio
 async def test_get_env_variable(client_for_test):
-    os.environ["test_key"] = "test_value"
+    response = await client_for_test.post(
+        "/env",
+        json={
+            "key": "test_key",
+            "value": "test_value",
+        },
+    )
+    assert response.status_code == 200 or response.status_code == 201
+
     response = await client_for_test.get("/env/test_key")
     assert response.status_code == 200
+    data = await response.get_json()
+    assert data["value"] == "test_value"
 
-    response = await client_for_test.get("/env/non_existent_key")
+    response = await client_for_test.delete(
+        "/env/test_key",
+    )
+    assert response.status_code == 200
+
+    response = await client_for_test.get("/env/test_key")
     assert response.status_code == 404
     data = await response.get_json()
-    assert data["error"] == "Environment variable 'non_existent_key' not found"
+    assert data["error"] == "Environment variable 'test_key' not found"
+
+
+@pytest.mark.asyncio
+async def test_get_all_env_keys(client_for_test):
+    response = await client_for_test.post(
+        "/env",
+        json={
+            "key": "test_key",
+            "value": "test_value",
+        },
+    )
+    assert response.status_code == 200 or response.status_code == 201
+
+    response = await client_for_test.post(
+        "/env",
+        json={
+            "key": "test_key2",
+            "value": "test_value2",
+        },
+    )
+    assert response.status_code == 200 or response.status_code == 201
+
+    response = await client_for_test.get("/env")
+    assert response.status_code == 200
+    data = await response.get_json()
+    assert "test_key" in list(data.keys())
+    assert "test_key2" in list(data.keys())
+    assert data["test_key"] == "test_value"
+    assert data["test_key2"] == "test_value2"
+    assert len(data) >= 2
+
+    response = await client_for_test.delete(
+        "/env/test_key",
+    )
+    assert response.status_code == 200
+
+    response = await client_for_test.delete(
+        "/env/test_key2",
+    )
+    assert response.status_code == 200
