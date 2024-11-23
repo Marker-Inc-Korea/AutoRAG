@@ -92,10 +92,19 @@ lock = asyncio.Lock()  # To manage access to shared variables
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 WORK_DIR = os.getenv("AUTORAG_WORK_DIR", None)
 if WORK_DIR is None:
+    
+ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+# 환경에 따른 WORK_DIR 설정
+ENV = os.getenv('AUTORAG_API_ENV', 'dev')
+if ENV == 'dev':
+    WORK_DIR = os.path.join(ROOT_DIR, "../projects")
+else:  # production
     WORK_DIR = os.path.join(ROOT_DIR, "projects")
 if not os.path.exists(WORK_DIR):
     os.makedirs(WORK_DIR)
 ENV_FILEPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), ".env")
+
+ENV_FILEPATH = os.path.join(WORK_DIR, ".env.{ENV}")
 load_dotenv(ENV_FILEPATH)
 
 # Function to create a task
