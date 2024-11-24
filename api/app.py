@@ -48,8 +48,17 @@ from src.schema import (
     TrialConfig,
 )
 
-import nest_asyncio
+from src.validate import project_exists, trial_exists
 
+# uvloop을 사용하지 않도록 설정
+import asyncio
+asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
+# 그 다음에 nest_asyncio 적용
+import nest_asyncio
+nest_asyncio.apply()
+
+from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
 
 from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
