@@ -50,8 +50,6 @@ from src.schema import (
 
 import nest_asyncio
 
-from src.trial_config import SQLiteTrialDB
-from src.validate import project_exists, trial_exists
 
 from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
@@ -635,10 +633,19 @@ async def start_chunking(project_id: str, trial_id: str):
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
         chunk_request = ChunkRequest(**data)
+        config = data['config']
 
+        project_db = SQLiteProjectDB(project_id)
+        trial = project_db.get_trial(trial_id)
+        if not trial:
+            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
 
+        chunked_data_path = os.path.join(
+            WORK_DIR, project_id, "chunk", f"chunk_{trial.id}/0.parquet"
         )
         # parsed_data_path 확인
+        print(f"chunked_data_path: {chunked_data_path}")
+        if not chunked_data_path or not os.path.exists(chunked_data_path):
             return jsonify(
                 {"error": "Parsed data path not found. Please run parse first."}
             ), 400
@@ -653,10 +660,29 @@ async def start_chunking(project_id: str, trial_id: str):
                 yaml.safe_dump(chunk_request.config, w)
             yaml_path = yaml_tempfile.name
 
+        # Celery task 시작
+        task = chunk_documents.delay(
             project_id=project_id,
             trial_id=trial_id,
+            config_str=yaml.dump(config)  # POST body의 config 사용
         )
+        task_id = task.id
+        print(f"task: {task}")
+        
+        # Trial 상태 업데이트
+        trial.status = Status.IN_PROGRESS
+        print(f"trial: {trial}")
+        print(f"task: {task}")
+        trial.parse_task_id = task.id
+        project_db.set_trial(trial)
+        
+        return jsonify({
+            "task_id": task.id,
+            "status": "started"
+        })
     except Exception as e:
+        logger.error(f"Error starting parse task: {str(e)}", exc_info=True)
+        return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
 
 
 @app.route(
