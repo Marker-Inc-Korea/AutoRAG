@@ -510,16 +510,25 @@ async def upload_files(project_id: str):
     files = UploadSet()
     files.default_dest = raw_data_path
     configure_uploads(app, files)
-    try:
-        filename = await files.save((await request.files)["file"])
+    # List to hold paths of uploaded files
+    uploaded_file_paths = []
 
-        if not filename:
+    try:
+        # Get all files from the request
+        uploaded_files = (await request.files).getlist("files")
+
+        if not uploaded_files:
             return jsonify({"error": "No files were uploaded"}), 400
+
+        # Iterate over each file and save it
+        for uploaded_file in uploaded_files:
+            filename = await files.save(uploaded_file)
+            uploaded_file_paths.append(os.path.join(raw_data_path, filename))
 
         return jsonify(
             {
                 "message": "Files uploaded successfully",
-                "filePaths": os.path.join(raw_data_path, filename),
+                "filePaths": uploaded_file_paths,
             }
         ), 200
 
