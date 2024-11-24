@@ -58,8 +58,9 @@ from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 import logging
 from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
-from tasks.trial_tasks import parse_documents  # 수정된 임포트
+from tasks.trial_tasks import parse_documents, chunk_documents # 수정된 임포트
 
+from celery.result import AsyncResult
 
 nest_asyncio.apply()
 
@@ -67,7 +68,7 @@ app = Quart(__name__)
 
 # 로깅 설정
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -451,7 +452,7 @@ async def create_trial(project_id: str):
                   id=str(uuid.uuid4())
                   )
     
-    trial_db.set_trial(trial)
+    project_db.set_trial(trial)
     return jsonify(trial.model_dump())
 
 
@@ -559,11 +560,15 @@ async def upload_files(project_id: str):
 @project_exists(WORK_DIR)
 async def start_parsing(project_id: str, trial_id: str):
     """문서 파싱 작업 시작"""
+@app.route('/projects/<project_id>/trials/<trial_id>/parse', methods=['POST'])
+async def parse_documents_endpoint(project_id, trial_id):
+    task_id = ''
     try:
         # 기존 Trial DB 연결 유지
         db_path = os.path.join(WORK_DIR, project_id, "trials.db")
         trial_db = SQLiteTrialDB(db_path)
         trial = trial_db.get_trial(trial_id)
+        # POST body에서 config 받기
         
         if not trial:
             return jsonify({"error": "Trial not found"}), 404
