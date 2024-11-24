@@ -28,7 +28,7 @@ def couchbase_instance():
 
 @pytest.mark.skipif(
 	is_github_action(),
-	reason="This test needs pinecone api key",
+	reason="This test needs couchbase connection string, username, and password",
 )
 @pytest.mark.asyncio
 async def test_add_and_query_documents(couchbase_instance):
@@ -61,7 +61,7 @@ async def test_add_and_query_documents(couchbase_instance):
 
 @pytest.mark.skipif(
 	is_github_action(),
-	reason="This test needs pinecone api key",
+	reason="This test needs couchbase connection string, username, and password",
 )
 @pytest.mark.asyncio
 async def test_delete_documents(couchbase_instance):
