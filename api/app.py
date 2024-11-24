@@ -4,7 +4,7 @@ import signal
 import tempfile
 import concurrent.futures
 import uuid
-from datetime import datetime
+import datetime
 from pathlib import Path
 from typing import Dict, Optional, Callable
 from typing import List
@@ -251,7 +251,7 @@ async def create_project():
         id=data["name"],
         name=data["name"],
         description=description,
-        created_at=datetime.now(),
+        created_at=datetime.datetime.now(tz=datetime.UTC),
         status="active",
         metadata={},
     )
@@ -270,10 +270,12 @@ async def get_project_directories():
                     "name": item.name,
                     "status": "active",  # All projects are currently active
                     "path": str(item),
-                    "last_modified_datetime": datetime.fromtimestamp(
+                    "last_modified_datetime": datetime.datetime.fromtimestamp(
                         item.stat().st_mtime
                     ),
-                    "created_datetime": datetime.fromtimestamp(item.stat().st_ctime),
+                    "created_datetime": datetime.datetime.fromtimestamp(
+                        item.stat().st_ctime
+                    ),
                 }
             )
 
@@ -434,7 +436,7 @@ async def create_new_trial(project_id: str):
         config=new_trial_config,
         name=name,
         status=Status.NOT_STARTED,
-        created_at=datetime.now(),
+        created_at=datetime.datetime.now(tz=datetime.UTC),
     )
     trial_config_db = PandasTrialDB(trial_config_path)
     trial_config_db.set_trial(new_trial)
@@ -613,7 +615,7 @@ async def start_parsing(project_id: str, trial_id: str):
             name=parse_request.name,
             status=Status.IN_PROGRESS,
             type=TaskType.PARSE,
-            created_at=datetime.now(),
+            created_at=datetime.datetime.now(tz=datetime.UTC),
             save_path=save_path,
         )
 
@@ -684,7 +686,7 @@ async def start_chunking(project_id: str, trial_id: str):
             config_yaml=chunk_request.config,
             status=Status.IN_PROGRESS,
             type=TaskType.CHUNK,
-            created_at=datetime.now(),
+            created_at=datetime.datetime.now(tz=datetime.UTC),
             save_path=dataset_dir,
         )
         await create_task(
@@ -764,7 +766,7 @@ async def create_qa(project_id: str, trial_id: str):
             config_yaml={"preset": qa_creation_request.preset},
             status=Status.IN_PROGRESS,
             type=TaskType.QA,
-            created_at=datetime.now(),
+            created_at=datetime.datetime.now(tz=datetime.UTC),
             save_path=save_path,
         )
         await create_task(
@@ -852,7 +854,7 @@ async def start_validate(project_id: str, trial_id: str):
         config_yaml=config_yaml,
         status=Status.IN_PROGRESS,
         type=TaskType.VALIDATE,
-        created_at=datetime.now(),
+        created_at=datetime.datetime.now(tz=datetime.UTC),
     )
     await create_task(
         task_id,
@@ -909,7 +911,7 @@ async def start_evaluate(project_id: str, trial_id: str):
                 "corpus_path": trial.config.corpus_path,
                 "qa_path": trial.config.qa_path,
                 "config_path": trial.config.config_path,
-                "created_at": datetime.now(),
+                "created_at": datetime.datetime.now(tz=datetime.UTC),
             }
         ]
     )
@@ -927,7 +929,7 @@ async def start_evaluate(project_id: str, trial_id: str):
         config_yaml=config_yaml,
         status=Status.IN_PROGRESS,
         type=TaskType.EVALUATE,
-        created_at=datetime.now(),
+        created_at=datetime.datetime.now(tz=datetime.UTC),
         save_path=new_trial_dir,
     )
     await create_task(
@@ -989,7 +991,7 @@ async def open_dashboard(project_id: str, trial_id: str):
             trial_id=trial_id,
             status=Status.IN_PROGRESS,
             type=TaskType.REPORT,
-            created_at=datetime.now(),
+            created_at=datetime.datetime.now(tz=datetime.UTC),
         )
         await create_task(task_id, response, run_dashboard, trial_dir)
 
@@ -1059,7 +1061,7 @@ async def open_chat_server(project_id: str, trial_id: str):
             trial_id=trial_id,
             status=Status.IN_PROGRESS,
             type=TaskType.CHAT,
-            created_at=datetime.now(),
+            created_at=datetime.datetime.now(tz=datetime.UTC),
         )
         await create_task(task_id, response, run_chat, trial_dir)
 
