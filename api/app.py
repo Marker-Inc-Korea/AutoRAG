@@ -554,42 +554,76 @@ async def upload_files(project_id: str):
         return jsonify(
             {"error": f"An error occurred while uploading files: {str(e)}"}
         ), 500
+        
 
-
-@app.route("/projects/<string:project_id>/trials/<string:trial_id>/parse", methods=["POST"])
-@project_exists(WORK_DIR)
-async def start_parsing(project_id: str, trial_id: str):
-    """문서 파싱 작업 시작"""
 @app.route('/projects/<project_id>/trials/<trial_id>/parse', methods=['POST'])
 async def parse_documents_endpoint(project_id, trial_id):
     task_id = ''
     try:
-        # 기존 Trial DB 연결 유지
-        db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_db = SQLiteTrialDB(db_path)
-        trial = trial_db.get_trial(trial_id)
         # POST body에서 config 받기
+        data = await request.get_json()
+        if not data or 'config' not in data:
+            return jsonify({"error": "Config is required in request body"}), 400
+            
+        config = data['config']
         
+        # Trial 객체 가져오기
+        project_db = SQLiteProjectDB(project_id)
+        trial = project_db.get_trial(trial_id)
         if not trial:
-            return jsonify({"error": "Trial not found"}), 404
+            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
 
-        # Celery task 시작 (기존 비동기 로직은 parse_documents task로 이동)
-        task = parse_documents.delay(project_id, trial_id)
+        print(f"trial: {trial}")
+        print(f"project_id: {project_id}")
+        print(f"trial_id: {trial_id}")
+        print(f"config: {config}")
+
+        # Celery task 시작
+        task = parse_documents.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            config_str=yaml.dump(config)  # POST body의 config 사용
+        )
+        task_id = task.id
+        print(f"task: {task}")
         
         # Trial 상태 업데이트
-        trial.status = "parsing"
+        trial.status = Status.IN_PROGRESS
+        print(f"trial: {trial}")
+        print(f"task: {task}")
         trial.parse_task_id = task.id
-        trial_db.set_trial(trial)
-
+        project_db.set_trial(trial)
+        
         return jsonify({
-            "trial_id": trial_id,
             "task_id": task.id,
-            "status": "parsing"
+            "status": "started"
         })
-
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Error starting parse task: {str(e)}", exc_info=True)
+        return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
 
+@app.route("/projects/<string:project_id>/tasks/<string:task_id>", methods=["GET"])
+async def get_task_status(project_id: str, task_id: str):
+    print(f"project_id: {project_id}")
+    if task_id == "undefined":
+        return jsonify({
+            "status": "FAILURE",
+            "error": "Task ID is undefined"
+        }), 200
+    else:
+        # celery 상태 확인
+        task = AsyncResult(task_id)
+        print(f"task: {task.status}")
+        try:
+            return jsonify({
+            "status": task.status,
+                "error": str(task.result) if task.failed() else None
+            }), 200
+        except Exception as e:
+            return jsonify({
+            "status": "FAILURE",
+                "error": str(e)
+            }), 500
 
 @app.route(
     "/projects/<string:project_id>/trials/<string:trial_id>/chunk", methods=["POST"]
@@ -602,16 +636,9 @@ async def start_chunking(project_id: str, trial_id: str):
         data = await request.get_json()
         chunk_request = ChunkRequest(**data)
 
-        trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteTrialDB(trial_config_path)
-        previous_trial = trial_config_db.get_trial(trial_id)
 
-        parsed_data_path = os.path.join(
-            WORK_DIR, project_id, "parse", f"parse_{previous_trial.id}/0.parquet"
         )
         # parsed_data_path 확인
-        print(f"parsed_data_path: {parsed_data_path}")
-        if not parsed_data_path or not os.path.exists(parsed_data_path):
             return jsonify(
                 {"error": "Parsed data path not found. Please run parse first."}
             ), 400
@@ -626,56 +653,10 @@ async def start_chunking(project_id: str, trial_id: str):
                 yaml.safe_dump(chunk_request.config, w)
             yaml_path = yaml_tempfile.name
 
-        task_id = str(uuid.uuid4())
-        response = Task(
-            id=task_id,
             project_id=project_id,
             trial_id=trial_id,
-            name=chunk_request.name,
-            config_yaml=chunk_request.config,
-            status=Status.IN_PROGRESS,
-            type=TaskType.CHUNK,
-            created_at=datetime.now(),
-            save_path=dataset_dir,
         )
-        await create_task(
-            task_id,
-            response,
-            run_chunker_start_chunking,
-            parsed_data_path,  # raw_filepath 대신 parsed_data_path 사용
-            dataset_dir,
-            yaml_path,
-        )
-
-        print(f"previous_trial: {previous_trial}")
-        # Update trial config
-        # previous_trial.config.chunk_path = os.path.join(dataset_dir, "0.parquet")
-        # 새로운 Trial 생성
-        new_trial = Trial(
-            id=str(uuid.uuid4()),
-            project_id=project_id,
-            name=f"Retry of {previous_trial.name}",
-            status="pending",
-            config=previous_trial.config if previous_trial.config else TrialConfig(),
-            created_at=datetime.now()
-        )
-        trial_config_db.set_trial(new_trial)
-        new_config = new_trial.config
-        trial_config_db.set_trial_config(trial_id, new_config)
-
-        return jsonify(response.model_dump()), 202
-
-    except ValueError as ve:
-        print(f"ValueError in chunk: {ve}")
-        logger.error(f"ValueError in chunk: {ve}", exc_info=True)
-
-        # Handle Pydantic validation errors
-        return jsonify({"error": f"Validation error: {str(ve)}"}), 400
-
     except Exception as e:
-        print(f"Error in chunk: {e}")
-        logger.error(f"Error in chunk: {e}", exc_info=True)
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
 @app.route(
