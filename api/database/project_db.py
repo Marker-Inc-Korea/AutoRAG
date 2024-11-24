@@ -1,5 +1,3 @@
-
-
 import sqlite3
 import json
 from typing import Optional, List
@@ -11,33 +9,75 @@ from pathlib import Path
 
 class SQLiteProjectDB:
     def __init__(self, project_id: str):
+        print(f"Initializing SQLiteProjectDB for project_id: {project_id}")
         self.project_id = project_id
         self.db_path = self._get_db_path()
         self._init_db()
 
     def _get_db_path(self) -> str:
         """프로젝트 ID로부터 DB 경로 생성"""
-        work_dir = os.getenv('WORK_DIR', '/app/workdir')  # 환경변수에서 WORK_DIR 가져오기
-        return os.path.join(work_dir, self.project_id, "project.db")
+        # 1. 기본 작업 디렉토리 설정
+        work_dir = os.getenv('WORK_DIR', '/app/projects')
+        
+        # 2. 절대 경로로 변환 (상대 경로 해결)
+        work_dir = os.path.abspath(work_dir)
+        
+        # 3. 최종 DB 파일 경로 생성
+        db_path = os.path.join(work_dir, self.project_id, "project.db")
+        
+        # 디버깅을 위한 로그
+        print(f"WORK_DIR (raw): {os.getenv('WORK_DIR', '/app/projects')}")
+        print(f"WORK_DIR (abs): {work_dir}")
+        print(f"Project ID: {self.project_id}")
+        print(f"Final DB path: {db_path}")
+        
+        return db_path
 
     def _init_db(self):
-        """DB 초기화 (필요한 경우 디렉토리 생성)"""
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-				CREATE TABLE IF NOT EXISTS trials (
-					id TEXT PRIMARY KEY,
-					project_id TEXT NOT NULL,
-					name TEXT,
-					status TEXT,
-					config JSON,
-					created_at TEXT,
-					report_task_id TEXT,
-					chat_task_id TEXT
-				)
-			""")
-        # 인덱스 생성
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_project_id ON trials(project_id)")
+        """DB 초기화 (필요한 경우 디렉토리 및 테이블 생성)"""
+        db_exists = os.path.exists(self.db_path)
+        db_dir = os.path.dirname(self.db_path)
+        
+        print(f"DB Path: {self.db_path}")
+        print(f"DB Directory: {db_dir}")
+        print(f"DB exists: {db_exists}")
+        print(f"Directory exists: {os.path.exists(db_dir)}")
+        
+        # DB 파일이 없을 때만 초기화 작업 수행
+        if not db_exists:
+            # 디렉토리가 없을 때만 생성
+            if not os.path.exists(db_dir):
+                print(f"Creating directory: {db_dir}")
+                os.makedirs(db_dir)
+                # 디렉토리 권한 설정 (777)
+                os.chmod(db_dir, 0o777)
+            
+            try:
+                print(f"Creating database: {self.db_path}")
+                with sqlite3.connect(self.db_path) as conn:
+                    print("Successfully connected to database")
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS trials (
+                            id TEXT PRIMARY KEY,
+                            project_id TEXT NOT NULL,
+                            name TEXT,
+                            status TEXT,
+                            config JSON,
+                            created_at TEXT,
+                            report_task_id TEXT,
+                            chat_task_id TEXT,
+                            parse_task_id TEXT,
+                            chunk_task_id TEXT
+                        )
+                    """)
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_project_id ON trials(project_id)")
+                    
+                # DB 파일 권한 설정 (666)
+                os.chmod(self.db_path, 0o666)
+            except Exception as e:
+                print(f"Error creating database: {str(e)}")
+                print(f"Current working directory: {os.getcwd()}")
+                raise
 
     def get_trial(self, trial_id: str) -> Optional[Trial]:
         """특정 trial 조회"""

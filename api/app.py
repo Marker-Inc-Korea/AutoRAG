@@ -279,8 +279,8 @@ async def create_project():
         os.makedirs(os.path.join(new_project_dir, "project"))
         os.makedirs(os.path.join(new_project_dir, "config"))
         os.makedirs(os.path.join(new_project_dir, "raw_data"))
-        # Make trials.db file
-        _ = SQLiteTrialDB(os.path.join(new_project_dir, "trials.db"))
+        # SQLiteProjectDB 인스턴스 생성
+        _ = SQLiteProjectDB(data["name"])
     else:
         return jsonify({"error": f'Project name already exists: {data["name"]}'}), 400
 
@@ -386,20 +386,15 @@ async def list_projects():
 @app.route("/projects/<string:project_id>/trials", methods=["GET"])
 @project_exists(WORK_DIR)
 async def get_trial_lists(project_id: str):
-    # 기존 trial_config_path를 SQLite DB 경로로 변경
-    db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_db = SQLiteTrialDB(db_path)
+    project_db = SQLiteProjectDB(project_id)
     
-    # 기존 페이지네이션 로직 유지
     page = request.args.get('page', 1, type=int)
     limit = request.args.get('limit', 10, type=int)
     offset = (page - 1) * limit
     
-    # PandasTrialDB 대신 SQLiteTrialDB 사용
-    trials = trial_db.get_trials_by_project(project_id, limit=limit, offset=offset)
-    total_trials = len(trial_db.get_all_trial_ids(project_id))
+    trials = project_db.get_trials_by_project(project_id, limit=limit, offset=offset)
+    total_trials = len(project_db.get_all_trial_ids(project_id))
     
-    # 기존 응답 형식 유지
     return jsonify({
         "total": total_trials,
         "data": [trial.model_dump() for trial in trials]
@@ -446,8 +441,7 @@ async def scan_directory(path: str) -> FileNode:
 @app.route("/projects/<string:project_id>/trials", methods=["POST"])
 @project_exists(WORK_DIR)
 async def create_trial(project_id: str):
-    trial_db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_db = SQLiteTrialDB(trial_db_path)
+    project_db = SQLiteProjectDB(project_id)
     
     data = await request.get_json()
     data['project_id'] = project_id
@@ -464,10 +458,9 @@ async def create_trial(project_id: str):
 @app.route("/projects/<string:project_id>/trials/<string:trial_id>", methods=["GET"])
 @project_exists(WORK_DIR)
 async def get_trial(project_id: str, trial_id: str):
-    trial_db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_db = SQLiteTrialDB(trial_db_path)
+    project_db = SQLiteProjectDB(project_id)
     
-    trial = trial_db.get_trial(trial_id)
+    trial = project_db.get_trial(trial_id)
     if not trial:
         return jsonify({"error": "Trial not found"}), 404
     
@@ -477,10 +470,9 @@ async def get_trial(project_id: str, trial_id: str):
 @app.route("/projects/<string:project_id>/trials/<string:trial_id>", methods=["DELETE"])
 @project_exists(WORK_DIR)
 async def delete_trial(project_id: str, trial_id: str):
-    trial_db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_db = SQLiteTrialDB(trial_db_path)
+    project_db = SQLiteProjectDB(project_id)
     
-    trial_db.delete_trial(trial_id)
+    project_db.delete_trial(trial_id)
     return jsonify({"message": "Trial deleted successfully"})
 
 
@@ -703,7 +695,7 @@ async def create_qa(project_id: str, trial_id: str):
             ), 400
 
         trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteTrialDB(trial_config_path)
+        trial_config_db = SQLiteProjectDB(trial_config_path)
         previous_config = trial_config_db.get_trial(trial_id).config
 
         corpus_filepath = os.path.join(
@@ -760,10 +752,11 @@ async def create_qa(project_id: str, trial_id: str):
 @project_exists(WORK_DIR)
 @trial_exists(WORK_DIR)
 async def get_trial_config(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
-    trial_config = trial_config_db.get_trial(trial_id).config
-    return jsonify(trial_config), 200
+    project_db = SQLiteProjectDB(project_id)
+    trial = project_db.get_trial(trial_id)
+    if not trial:
+        return jsonify({"error": "Trial not found"}), 404
+    return jsonify(trial.config.model_dump()), 200
 
 
 @app.route(
@@ -772,29 +765,16 @@ async def get_trial_config(project_id: str, trial_id: str):
 @project_exists(WORK_DIR)
 @trial_exists(WORK_DIR)
 async def set_trial_config(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
-    previous_config = trial_config_db.get_trial(trial_id).config
-    new_config = previous_config.model_copy(deep=True)
+    project_db = SQLiteProjectDB(project_id)
+    trial = project_db.get_trial(trial_id)
+    if not trial:
+        return jsonify({"error": "Trial not found"}), 404
+        
     data = await request.get_json()
-    if data.get("raw_path", None) is not None:
-        new_config.raw_path = data["raw_path"]
-    if data.get("corpus_path", None) is not None:
-        new_config.corpus_path = data["corpus_path"]
-    if data.get("qa_path", None) is not None:
-        new_config.qa_path = data["qa_path"]
     if data.get("config", None) is not None:
-        new_config_path = os.path.join(
-            WORK_DIR, project_id, "config", f"{str(uuid.uuid4())}.yaml"
-        )
-        with open(new_config_path, "w") as f:
-            yaml.safe_dump(data["config"], f)
-        new_config.config_path = new_config_path
-    if data.get("metadata", None) is not None:
-        new_config.metadata = data["metadata"]
-
-    trial_config_db.set_trial_config(trial_id, new_config)
-    return jsonify(new_config.model_dump()), 201
+        project_db.set_trial_config(trial_id, TrialConfig(**data["config"]))
+        
+    return jsonify({"message": "Config updated successfully"}), 200
 
 
 @app.route(
@@ -803,7 +783,7 @@ async def set_trial_config(project_id: str, trial_id: str):
 @project_exists(WORK_DIR)
 async def start_validate(project_id: str, trial_id: str):
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial = trial_config_db.get_trial(trial_id)
     task_id = str(uuid.uuid4())
     response = Task(
@@ -843,7 +823,7 @@ async def start_evaluate(project_id: str, trial_id: str):
         evaluate_history_df = pd.read_csv(evaluate_history_path)
     
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     previous_config = trial_config_db.get_trial(trial_id).config
     print("previous_config: ", previous_config)
     trial = trial_config_db.get_trial(trial_id)
@@ -958,7 +938,7 @@ async def open_dashboard(project_id: str, trial_id: str):
         await create_task(task_id, response, run_dashboard, trial_dir)
 
         trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteTrialDB(trial_config_path)
+        trial_config_db = SQLiteProjectDB(trial_config_path)
         trial = trial_config_db.get_trial(trial_id)
         new_trial = trial.model_copy(deep=True)
         new_trial.report_task_id = task_id
@@ -976,7 +956,7 @@ async def open_dashboard(project_id: str, trial_id: str):
 )
 async def close_dashboard(project_id: str, trial_id: str):
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial = trial_config_db.get_trial(trial_id)
     report_pid = tasks[trial.report_task_id]["report_pid"]
     os.killpg(os.getpgid(report_pid), signal.SIGTERM)
@@ -1028,7 +1008,7 @@ async def open_chat_server(project_id: str, trial_id: str):
         await create_task(task_id, response, run_chat, trial_dir)
 
         trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteTrialDB(trial_config_path)
+        trial_config_db = SQLiteProjectDB(trial_config_path)
         trial = trial_config_db.get_trial(trial_id)
         new_trial = trial.model_copy(deep=True)
         new_trial.chat_task_id = task_id
@@ -1066,7 +1046,7 @@ async def get_project_artifacts(project_id: str):
 )
 async def close_chat_server(project_id: str, trial_id: str):
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial = trial_config_db.get_trial(trial_id)
     chat_pid = tasks[trial.chat_task_id]["chat_pid"]
     os.killpg(os.getpgid(chat_pid), signal.SIGTERM)

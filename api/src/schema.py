@@ -77,11 +77,12 @@ class Project(BaseModel):
     metadata: Dict[str, Any]
 
 class Status(str, Enum):
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    TERMINATED = "terminated"
+    NOT_STARTED = 'not_started'
+    IN_PROGRESS = 'in_progress'
+    PARSING = 'parsing'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+    TERMINATED = 'terminated'
 
 class TaskType(str, Enum):
     PARSE = "parse"
@@ -138,7 +139,8 @@ class Trial(BaseModel):
     created_at: datetime
     report_task_id: Optional[str] = Field(None, description="The report task id for forcing shutdown of the task")
     chat_task_id: Optional[str] = Field(None, description="The chat task id for forcing shutdown of the task")
-
+    parse_task_id: Optional[str] = Field(None, description="The parse task id") # Celery task id
+    chunk_task_id: Optional[str] = Field(None, description="The chunk task id") # Celery task id    
     corpus_path: Optional[str] = None
     qa_path: Optional[str] = None
     
