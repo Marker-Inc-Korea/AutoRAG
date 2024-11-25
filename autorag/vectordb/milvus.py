@@ -24,7 +24,7 @@ class Milvus(BaseVectorStore):
 		embedding_model: str,
 		collection_name: str,
 		embedding_batch: int = 100,
-		similarity_metric: str = "cosine",
+		similarity_metric: str = "l2",
 		uri: str = "http://localhost:19530",
 		db_name: str = "",
 		token: str = "",
