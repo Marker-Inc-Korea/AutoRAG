@@ -141,6 +141,7 @@ class Trial(BaseModel):
     chat_task_id: Optional[str] = Field(None, description="The chat task id for forcing shutdown of the task")
     parse_task_id: Optional[str] = Field(None, description="The parse task id") # Celery task id
     chunk_task_id: Optional[str] = Field(None, description="The chunk task id") # Celery task id    
+    qa_task_id: Optional[str] = Field(None, description="The QA task id") # Celery task id
     corpus_path: Optional[str] = None
     qa_path: Optional[str] = None
     

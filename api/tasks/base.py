@@ -34,7 +34,8 @@ class TrialTask(Task):
             'SUCCESS': Status.COMPLETED,
             'FAILURE': Status.FAILED,
             'chunking': Status.IN_PROGRESS,
-            'parsing': Status.IN_PROGRESS
+            'parsing': Status.IN_PROGRESS,
+            'generating_qa_docs': Status.IN_PROGRESS
         }
         trial_status = status_map.get(status, Status.FAILED)
         

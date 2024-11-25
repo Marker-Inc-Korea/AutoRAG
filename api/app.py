@@ -46,7 +46,7 @@ from src.schema import (
 
 from src.validate import project_exists, trial_exists
 from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
-from tasks.trial_tasks import parse_documents, chunk_documents  # 수정된 임포트
+from tasks.trial_tasks import generate_qa_documents, parse_documents, chunk_documents  # 수정된 임포트
 from celery.result import AsyncResult
 
 # uvloop을 사용하지 않도록 설정
@@ -674,71 +674,35 @@ async def start_chunking(project_id: str, trial_id: str):
 @project_exists(WORK_DIR)
 @trial_exists(WORK_DIR)
 async def create_qa(project_id: str, trial_id: str):
-    data = await request.get_json()
     try:
-        qa_creation_request = QACreationRequest(**data)
-        dataset_dir = os.path.join(WORK_DIR, project_id, "qa")
+        # Get JSON data from request and validate with Pydantic
+        data = await request.get_json()
+        
+        project_db = SQLiteProjectDB(project_id)
+        trial = project_db.get_trial(trial_id)
+        if not trial:
+            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
 
-        if not os.path.exists(dataset_dir):
-            os.makedirs(dataset_dir)
-
-        save_path = os.path.join(dataset_dir, f"{qa_creation_request.name}.parquet")
-
-        if os.path.exists(save_path):
-            return jsonify(
-                {"error": f"QA dataset name already exists: {qa_creation_request.name}"}
-            ), 400
-
-        trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteProjectDB(trial_config_path)
-        previous_config = trial_config_db.get_trial(trial_id).config
-
-        corpus_filepath = os.path.join(
-            WORK_DIR, project_id, "chunk", f"chunk_{previous_config.id}/0.parquet"
-        )
-        # corpus_filepath = previous_config.corpus_path
-        print(f"previous_config: {previous_config}")
-        print(f"corpus_filepath: {corpus_filepath}")
-
-        if (
-            corpus_filepath is None
-            or not corpus_filepath
-            or not os.path.exists(corpus_filepath)
-        ):
-            return jsonify({"error": "Corpus data path not found"}), 400
-
-        task_id = str(uuid.uuid4())
-        response = Task(
-            id=task_id,
+        # Celery task 시작
+        task = generate_qa_documents.delay(
             project_id=project_id,
             trial_id=trial_id,
-            name=qa_creation_request.name,
-            config_yaml={"preset": qa_creation_request.preset},
-            status=Status.IN_PROGRESS,
-            type=TaskType.QA,
-            created_at=datetime.now(tz=timezone.utc),
-            save_path=save_path,
+            data=data,  # POST body 전체를 전달
         )
-        await create_task(
-            task_id,
-            response,
-            run_qa_creation,
-            qa_creation_request,
-            corpus_filepath,
-            dataset_dir,
-        )
+        task_id = task.id
+        print(f"task: {task}")
 
-        # Update qa path
-        new_config: TrialConfig = previous_config.model_copy(deep=True)
-        new_config.qa_path = save_path
-        trial_config_db.set_trial_config(trial_id, new_config)
+        # Trial 상태 업데이트
+        trial.status = Status.IN_PROGRESS
+        print(f"trial: {trial}")
+        print(f"task: {task}")
+        trial.qa_task_id = task.id  # parse_task_id 대신 qa_task_id 사용
+        project_db.set_trial(trial)
 
-        return jsonify(response.model_dump()), 202
-
+        return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
-        return jsonify(
-            {"status": "error", "message": f"Failed at creation of QA: {str(e)}"}
-        ), 400
+        logger.error(f"Error starting QA generation task: {str(e)}", exc_info=True)
+        return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
 
 
 @app.route(
