@@ -162,3 +162,5 @@ cython_debug/
 .idea/
 .DS_Store
 pytest.ini
+projects
+test_projects

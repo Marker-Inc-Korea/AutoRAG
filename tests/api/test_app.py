@@ -9,7 +9,7 @@ import yaml
 
 from app import app, WORK_DIR
 from src.schema import TrialConfig, Trial, Status
-from src.trial_config import PandasTrialDB
+from src.trial_config import SQLiteTrialDB
 
 tests_dir = os.path.dirname(os.path.realpath(__file__))
 root_dir = pathlib.PurePath(tests_dir).parent
@@ -56,7 +56,7 @@ async def test_create_project_success(new_project_test_client):
     assert os.path.exists(os.path.join(WORK_DIR, "test_project", "qa"))
     assert os.path.exists(os.path.join(WORK_DIR, "test_project", "project"))
     assert os.path.exists(os.path.join(WORK_DIR, "test_project", "config"))
-    assert os.path.exists(os.path.join(WORK_DIR, "test_project", "trial_config.csv"))
+    assert os.path.exists(os.path.join(WORK_DIR, "test_project", "trials.db"))
     assert os.path.exists(os.path.join(WORK_DIR, "test_project", "description.txt"))
 
     with open(os.path.join(WORK_DIR, "test_project", "description.txt"), "r") as f:
@@ -126,7 +126,7 @@ def get_trial_list_client():
 async def test_get_trial_lists(get_trial_list_client):
     project_id = "test_project_get_trial_lists"
     trial_id = str(uuid.uuid4())
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trial_config.csv")
+    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
     os.makedirs(os.path.join(WORK_DIR, project_id), exist_ok=True)
 
     # Create a trial config file
@@ -146,7 +146,7 @@ async def test_get_trial_lists(get_trial_list_client):
         status="not_started",
         created_at=datetime.now(),
     )
-    trial_config_db = PandasTrialDB(trial_config_path)
+    trial_config_db = SQLiteTrialDB(trial_config_path)
     trial_config_db.set_trial(trial)
 
     response = await get_trial_list_client.get(f"/projects/{project_id}/trials")
@@ -170,7 +170,7 @@ def create_new_trial_client():
 async def test_create_new_trial(create_new_trial_client):
     project_id = "test_project_create_new_trial"
     os.makedirs(os.path.join(WORK_DIR, project_id), exist_ok=True)
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trial_config.csv")
+    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
 
     trial_create_request = {
         "name": "New Trial",
@@ -191,7 +191,7 @@ async def test_create_new_trial(create_new_trial_client):
     assert "id" in data
 
     # Verify the trial was added to the CSV
-    trial_config_db = PandasTrialDB(trial_config_path)
+    trial_config_db = SQLiteTrialDB(trial_config_path)
     trial_ids = trial_config_db.get_all_config_ids()
     assert len(trial_ids) == 1
     assert trial_ids[0] == data["id"]
@@ -215,8 +215,8 @@ async def test_get_trial_config(trial_config_client):
     )
     assert response.status_code == 201
     os.makedirs(os.path.join(WORK_DIR, project_id), exist_ok=True)
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trial_config.csv")
-    trial_config_db = PandasTrialDB(trial_config_path)
+    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
+    trial_config_db = SQLiteTrialDB(trial_config_path)
     trial_config = TrialConfig(
         trial_id=trial_id,
         project_id=project_id,
@@ -263,8 +263,8 @@ async def test_set_trial_config(trial_config_client):
     assert response.status_code == 201
 
     os.makedirs(os.path.join(WORK_DIR, project_id), exist_ok=True)
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trial_config.csv")
-    trial_config_db = PandasTrialDB(trial_config_path)
+    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
+    trial_config_db = SQLiteTrialDB(trial_config_path)
     trial_config = TrialConfig(
         trial_id=trial_id,
         project_id=project_id,
