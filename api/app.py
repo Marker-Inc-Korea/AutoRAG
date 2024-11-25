@@ -3,7 +3,7 @@ import os
 import signal
 import concurrent.futures
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Callable
 from typing import List
@@ -289,7 +289,7 @@ async def create_project():
         id=data["name"],
         name=data["name"],
         description=description,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=timezone.utc),
         status="active",
         metadata={},
     )
@@ -309,9 +309,13 @@ async def get_project_directories():
                     "status": "active",  # All projects are currently active
                     "path": str(item),
                     "last_modified_datetime": datetime.fromtimestamp(
-                        item.stat().st_mtime
+                        item.stat().st_mtime,
+                        tz=timezone.utc,
                     ),
-                    "created_datetime": datetime.fromtimestamp(item.stat().st_ctime),
+                    "created_datetime": datetime.fromtimestamp(
+                        item.stat().st_ctime,
+                        tz=timezone.utc,
+                    ),
                 }
             )
 
@@ -443,7 +447,7 @@ async def create_trial(project_id: str):
     data["project_id"] = project_id
     trial = Trial(
         **data,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=timezone.utc),
         status=Status.IN_PROGRESS,
         id=str(uuid.uuid4()),
     )
@@ -712,7 +716,7 @@ async def create_qa(project_id: str, trial_id: str):
             config_yaml={"preset": qa_creation_request.preset},
             status=Status.IN_PROGRESS,
             type=TaskType.QA,
-            created_at=datetime.now(),
+            created_at=datetime.now(tz=timezone.utc),
             save_path=save_path,
         )
         await create_task(
@@ -785,7 +789,7 @@ async def start_validate(project_id: str, trial_id: str):
         config_yaml=trial.config,
         status=Status.IN_PROGRESS,
         type=TaskType.VALIDATE,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=timezone.utc),
     )
     await create_task(
         task_id,
@@ -844,7 +848,7 @@ async def start_evaluate(project_id: str, trial_id: str):
                 "corpus_path": previous_config.corpus_path,
                 "qa_path": previous_config.qa_path,
                 "config_path": previous_config.config_path,
-                "created_at": datetime.now(),
+                "created_at": datetime.now(tz=timezone.utc),
             }
         ]
     )
@@ -862,7 +866,7 @@ async def start_evaluate(project_id: str, trial_id: str):
         config_yaml=config_yaml,
         status=Status.IN_PROGRESS,
         type=TaskType.EVALUATE,
-        created_at=datetime.now(),
+        created_at=datetime.now(tz=timezone.utc),
         save_path=new_trial_dir,
     )
     await create_task(
@@ -924,7 +928,7 @@ async def open_dashboard(project_id: str, trial_id: str):
             trial_id=trial_id,
             status=Status.IN_PROGRESS,
             type=TaskType.REPORT,
-            created_at=datetime.now(),
+            created_at=datetime.now(tz=timezone.utc),
         )
         await create_task(task_id, response, run_dashboard, trial_dir)
 
@@ -994,7 +998,7 @@ async def open_chat_server(project_id: str, trial_id: str):
             trial_id=trial_id,
             status=Status.IN_PROGRESS,
             type=TaskType.CHAT,
-            created_at=datetime.now(),
+            created_at=datetime.now(tz=timezone.utc),
         )
         await create_task(task_id, response, run_chat, trial_dir)
 
