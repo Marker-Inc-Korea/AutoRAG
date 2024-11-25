@@ -715,7 +715,7 @@ async def get_trial_config(project_id: str, trial_id: str):
     trial = project_db.get_trial(trial_id)
     if not trial:
         return jsonify({"error": "Trial not found"}), 404
-    return jsonify(trial.config.model_dump()), 200
+    return jsonify(trial.config), 200
 
 
 @app.route(
