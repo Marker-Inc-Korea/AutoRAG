@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Dict, Literal, Any, Optional
 
 import numpy as np
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class TrialCreateRequest(BaseModel):
@@ -54,15 +54,10 @@ class EnvVariableRequest(BaseModel):
     value: str
 
 class Project(BaseModel):
-    id: str
-    name: str
-    description: str
-    created_at: datetime
-    status: Literal["active", "archived"]
-    metadata: Dict[str, Any]
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True,
+        json_schema_extra={
             "example": {
                 "id": "proj_123",
                 "name": "My Project",
@@ -72,13 +67,22 @@ class Project(BaseModel):
                 "metadata": {}
             }
         }
+    )
+    
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+    status: Literal["active", "archived"]
+    metadata: Dict[str, Any]
 
 class Status(str, Enum):
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    TERMINATED = "terminated"
+    NOT_STARTED = 'not_started'
+    IN_PROGRESS = 'in_progress'
+    PARSING = 'parsing'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+    TERMINATED = 'terminated'
 
 class TaskType(str, Enum):
     PARSE = "parse"
@@ -108,28 +112,35 @@ class Task(BaseModel):
     )
 
 class TrialConfig(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True
+    )
+    
     trial_id: str
     project_id: str
-    raw_path: Optional[str]
-    corpus_path: Optional[str]
-    qa_path: Optional[str]
-    config_path: Optional[str]
-    metadata: Dict = {}  # Using Dict as the default empty dict for metadata
-
-    class Config:
-        arbitrary_types_allowed = True
+    raw_path: str
+    corpus_path: Optional[str] = None
+    qa_path: Optional[str] = None
+    config_path: Optional[str] = None
+    metadata: Optional[dict] = {}
 
 class Trial(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        validate_assignment=True
+    )
+    
     id: str
     project_id: str
-    config: Optional[TrialConfig] = Field(description="The trial configuration",
-                                          default=None)
+    config: Optional[TrialConfig] = None
     name: str
     status: Status
     created_at: datetime
     report_task_id: Optional[str] = Field(None, description="The report task id for forcing shutdown of the task")
     chat_task_id: Optional[str] = Field(None, description="The chat task id for forcing shutdown of the task")
-
+    parse_task_id: Optional[str] = Field(None, description="The parse task id") # Celery task id
+    chunk_task_id: Optional[str] = Field(None, description="The chunk task id") # Celery task id    
     corpus_path: Optional[str] = None
     qa_path: Optional[str] = None
     
@@ -138,3 +149,29 @@ class Trial(BaseModel):
         if isinstance(v, float) and np.isnan(v):
             return None
         return v
+    
+    # 경로 유효성 검사 메서드 추가
+    def validate_paths(self) -> bool:
+        """
+        모든 필수 경로가 유효한지 검사
+        """
+        import os
+        return all([
+            os.path.exists(self.corpus_path),
+            os.path.exists(self.qa_path),
+            os.path.exists(self.config_path)
+        ])
+
+    # 경로 생성 메서드 추가
+    def create_directories(self) -> None:
+        """
+        필요한 디렉토리 구조 생성
+        """
+        import os
+        paths = [
+            os.path.dirname(self.corpus_path),
+            os.path.dirname(self.qa_path),
+            os.path.dirname(self.config_path)
+        ]
+        for path in paths:
+            os.makedirs(path, exist_ok=True)
