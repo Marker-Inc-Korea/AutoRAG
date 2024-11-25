@@ -455,7 +455,7 @@
 <section id="configuration">
 <h2>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h2>
 <p>To use the Milvus vector database, you need to configure it in your YAML configuration file. Here’s an example configuration:</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_milvus</span>
 <span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">milvus</span>
 <span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
 <span class="w">  </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
@@ -463,6 +463,43 @@
 <span class="w">  </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MILVUS_TOKEN}</span>
 <span class="w">  </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
 <span class="w">  </span><span class="nt">similarity_metric</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cosine</span>
+</pre></div>
+</div>
+<p>Here is a simple example of a YAML configuration file that uses the Milvus vector database and the OpenAI:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_milvus</span>
+<span class="w">    </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">milvus</span>
+<span class="w">    </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">    </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">    </span><span class="nt">uri</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MILVUS_URI}</span>
+<span class="w">    </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MILVUS_TOKEN}</span>
+<span class="w">    </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">    </span><span class="nt">similarity_metric</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cosine</span>
+<span class="nt">node_lines</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieve_node_line</span><span class="w">  </span><span class="c1"># Arbitrary node line name</span>
+<span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieval</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_precision</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vectordb</span>
+<span class="w">          </span><span class="nt">vectordb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_milvus</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">post_retrieve_node_line</span><span class="w">  </span><span class="c1"># Arbitrary node line name</span>
+<span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt_maker</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">bleu</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">meteor</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rouge</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fstring</span>
+<span class="w">          </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Read</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">passages</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">answer</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">given</span><span class="nv"> </span><span class="s">question.</span><span class="nv"> </span><span class="s">\n</span><span class="nv"> </span><span class="s">Question:</span><span class="nv"> </span><span class="s">{query}</span><span class="nv"> </span><span class="s">\n</span><span class="nv"> </span><span class="s">Passage:</span><span class="nv"> </span><span class="s">{retrieved_contents}</span><span class="nv"> </span><span class="s">\n</span><span class="nv"> </span><span class="s">Answer</span><span class="nv"> </span><span class="s">:</span><span class="nv"> </span><span class="s">&quot;</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generator</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">bleu</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rouge</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
+<span class="w">          </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai</span>
+<span class="w">          </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">gpt-4o-mini</span><span class="w"> </span><span class="p p-Indicator">]</span>
 </pre></div>
 </div>
 <ol class="arabic simple">
