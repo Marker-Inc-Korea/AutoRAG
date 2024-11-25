@@ -1,4 +1,4 @@
-pydantic<2.10.0 # incompatible with llama index
+pydantic<2.11.0 # incompatible with llama index
 numpy<2.0.0 # temporal not using numpy 2.0.0
 pandas>=2.1.0
 tqdm
