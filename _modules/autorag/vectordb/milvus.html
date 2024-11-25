@@ -444,7 +444,7 @@
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.vectordb.milvus</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">from</span> <span class="nn">pymilvus</span> <span class="kn">import</span> <span class="p">(</span>
 	<span class="n">DataType</span><span class="p">,</span>
@@ -471,13 +471,15 @@
 		<span class="n">embedding_model</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 		<span class="n">collection_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 		<span class="n">embedding_batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
-		<span class="n">similarity_metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cosine&quot;</span><span class="p">,</span>
+		<span class="n">similarity_metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;l2&quot;</span><span class="p">,</span>
+		<span class="n">index_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;IVF_FLAT&quot;</span><span class="p">,</span>
 		<span class="n">uri</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:19530&quot;</span><span class="p">,</span>
 		<span class="n">db_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
 		<span class="n">token</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
 		<span class="n">user</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
 		<span class="n">password</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
 		<span class="n">timeout</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+  		<span class="n">params</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{},</span>	
 	<span class="p">):</span>
 		<span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">embedding_model</span><span class="p">,</span> <span class="n">similarity_metric</span><span class="p">,</span> <span class="n">embedding_batch</span><span class="p">)</span>
 
@@ -492,6 +494,9 @@
 		<span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span> <span class="o">=</span> <span class="n">collection_name</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="n">params</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">index_type</span> <span class="o">=</span> <span class="n">index_type</span>
+  
 		<span class="c1"># Set Collection</span>
 		<span class="k">if</span> <span class="ow">not</span> <span class="n">utility</span><span class="o">.</span><span class="n">has_collection</span><span class="p">(</span><span class="n">collection_name</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">):</span>
 			<span class="c1"># Get the dimension of the embeddings</span>
@@ -513,6 +518,14 @@
 			<span class="n">schema</span> <span class="o">=</span> <span class="n">CollectionSchema</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="n">pk</span><span class="p">,</span> <span class="n">field</span><span class="p">])</span>
 
 			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
+			<span class="n">index_params</span> <span class="o">=</span> <span class="p">{</span>
+				<span class="s2">&quot;metric_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_metric</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+				<span class="s2">&quot;index_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">index_type</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+				<span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">,</span>
+			<span class="p">}</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span>
+				<span class="n">field_name</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span> <span class="n">index_params</span><span class="o">=</span><span class="n">index_params</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+			<span class="p">)</span>
 		<span class="k">else</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">)</span>
 
@@ -535,16 +548,7 @@
 			<span class="n">res</span><span class="o">.</span><span class="n">insert_count</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Insertion failed. Try to insert </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> but only </span><span class="si">{</span><span class="n">res</span><span class="p">[</span><span class="s1">&#39;insert_count&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> inserted.&quot;</span>
 
-		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">flush</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
-
-		<span class="n">index_params</span> <span class="o">=</span> <span class="p">{</span>
-			<span class="s2">&quot;index_type&quot;</span><span class="p">:</span> <span class="s2">&quot;IVF_FLAT&quot;</span><span class="p">,</span>
-			<span class="s2">&quot;metric_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_metric</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
-			<span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="p">{},</span>
-		<span class="p">}</span>  <span class="c1"># TODO : add params</span>
-		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span>
-			<span class="n">field_name</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span> <span class="n">index_params</span><span class="o">=</span><span class="n">index_params</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
-		<span class="p">)</span></div>
+		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">flush</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Milvus.query">
