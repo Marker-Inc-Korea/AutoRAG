@@ -1,24 +1,25 @@
 import asyncio
 import os
 import signal
-import tempfile
 import concurrent.futures
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Callable
 from typing import List
+import logging
+import nest_asyncio
 
 import click
 import uvicorn
-from quart import jsonify, request
+from quart import jsonify, request, make_response
 from pydantic import BaseModel
 import aiofiles
 import aiofiles.os
+from dotenv import load_dotenv, dotenv_values, set_key, unset_key
 
 import pandas as pd
 import yaml
-from pydantic import ValidationError
 from quart import Quart
 from quart_cors import cors  # Import quart_cors to enable CORS
 from quart_uploads import UploadSet, configure_uploads
@@ -26,49 +27,32 @@ from quart_uploads import UploadSet, configure_uploads
 from src.auth import require_auth
 from src.evaluate_history import get_new_trial_dir
 from src.run import (
-    run_parser_start_parsing,
-    run_chunker_start_chunking,
     run_qa_creation,
     run_start_trial,
-    run_validate,
     run_dashboard,
     run_chat,
 )
 from src.schema import (
     ChunkRequest,
-    ParseRequest,
     EnvVariableRequest,
     QACreationRequest,
     Project,
     Task,
     Status,
     TaskType,
-    TrialCreateRequest,
     Trial,
     TrialConfig,
 )
 
 from src.validate import project_exists, trial_exists
+from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
+from tasks.trial_tasks import parse_documents, chunk_documents  # 수정된 임포트
+from celery.result import AsyncResult
 
 # uvloop을 사용하지 않도록 설정
-import asyncio
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 # 그 다음에 nest_asyncio 적용
-import nest_asyncio
-nest_asyncio.apply()
-
-from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
-
-from dotenv import load_dotenv, dotenv_values, set_key, unset_key
-
-import logging
-from dotenv import load_dotenv, dotenv_values, set_key, unset_key
-
-from tasks.trial_tasks import parse_documents, chunk_documents # 수정된 임포트
-
-from celery.result import AsyncResult
-
 nest_asyncio.apply()
 
 app = Quart(__name__)
@@ -99,18 +83,18 @@ task_futures = {}  # task_id -> future (for forceful termination)
 task_queue = asyncio.Queue()
 current_task_id = None  # ID of the currently running task
 lock = asyncio.Lock()  # To manage access to shared variables
-    
+
 ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
-ENV = os.getenv('AUTORAG_API_ENV', 'dev')
-if ENV == 'dev':
+ENV = os.getenv("AUTORAG_API_ENV", "dev")
+if ENV == "dev":
     WORK_DIR = os.path.join(ROOT_DIR, "../projects")
 else:  # production
     WORK_DIR = os.path.join(ROOT_DIR, "projects")
-if 'AUTORAG_WORK_DIR' in os.environ:
-    WORK_DIR = os.getenv('AUTORAG_WORK_DIR')    
+if "AUTORAG_WORK_DIR" in os.environ:
+    WORK_DIR = os.getenv("AUTORAG_WORK_DIR")
 
-if 'AUTORAG_WORK_DIR' in os.environ:
-    WORK_DIR = os.path.join(ROOT_DIR, os.getenv('AUTORAG_WORK_DIR'))
+if "AUTORAG_WORK_DIR" in os.environ:
+    WORK_DIR = os.path.join(ROOT_DIR, os.getenv("AUTORAG_WORK_DIR"))
 
 ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
 # 환경에 따른 WORK_DIR 설정
@@ -121,33 +105,39 @@ print(f"ENV_FILEPATH: {ENV_FILEPATH}")
 print(f"WORK_DIR: {WORK_DIR}")
 print(f"AUTORAG_API_ENV: {ENV}")
 
-print(f"--------------------------------")
+print("--------------------------------")
 print("### Server start")
-print(f"--------------------------------")
+print("--------------------------------")
+
+
 # Ensure CORS headers are present in every response
 @app.after_request
 def add_cors_headers(response):
-    origin = request.headers.get('Origin')
+    origin = request.headers.get("Origin")
     if origin == "http://localhost:3000":
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        )
     return response
+
 
 # Handle OPTIONS requests explicitly
-@app.route('/', methods=['OPTIONS'])
-@app.route('/<path:path>', methods=['OPTIONS'])
-async def options_handler(path=''):
-    response = await make_response('')
-    origin = request.headers.get('Origin')
+@app.route("/", methods=["OPTIONS"])
+@app.route("/<path:path>", methods=["OPTIONS"])
+async def options_handler(path=""):
+    response = await make_response("")
+    origin = request.headers.get("Origin")
     if origin == "http://localhost:3000":
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = (
+            "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        )
     return response
-
 
 
 async def create_task(task_id: str, task: Task, func: Callable, *args) -> None:
@@ -198,10 +188,9 @@ async def task_runner():
                 func = tasks[task_id]["function"]
                 args = tasks[task_id].get("args", ())
 
-
                 print(f"args: {args}")
                 print(f"func: {func}")
-            
+
                 # Load env variable before running a task
                 load_dotenv(ENV_FILEPATH)
 
@@ -276,7 +265,7 @@ async def create_project():
 
     description = data.get("description", "")
     print(f"Set WORK_DIR environment variable to: {os.environ['AUTORAG_WORK_DIR']}")
-    WORK_DIR    = os.environ['AUTORAG_WORK_DIR']
+    WORK_DIR = os.environ["AUTORAG_WORK_DIR"]
     # Create a new project
     new_project_dir = os.path.join(WORK_DIR, data["name"])
     if not os.path.exists(new_project_dir):
@@ -395,18 +384,17 @@ async def list_projects():
 @project_exists(WORK_DIR)
 async def get_trial_lists(project_id: str):
     project_db = SQLiteProjectDB(project_id)
-    
-    page = request.args.get('page', 1, type=int)
-    limit = request.args.get('limit', 10, type=int)
+
+    page = request.args.get("page", 1, type=int)
+    limit = request.args.get("limit", 10, type=int)
     offset = (page - 1) * limit
-    
+
     trials = project_db.get_trials_by_project(project_id, limit=limit, offset=offset)
     total_trials = len(project_db.get_all_trial_ids(project_id))
-    
-    return jsonify({
-        "total": total_trials,
-        "data": [trial.model_dump() for trial in trials]
-    })
+
+    return jsonify(
+        {"total": total_trials, "data": [trial.model_dump() for trial in trials]}
+    )
 
 
 class FileNode(BaseModel):
@@ -450,15 +438,16 @@ async def scan_directory(path: str) -> FileNode:
 @project_exists(WORK_DIR)
 async def create_trial(project_id: str):
     project_db = SQLiteProjectDB(project_id)
-    
+
     data = await request.get_json()
-    data['project_id'] = project_id
-    trial = Trial(**data,
-                  created_at=datetime.now(),
-                  status=Status.IN_PROGRESS,
-                  id=str(uuid.uuid4())
-                  )
-    
+    data["project_id"] = project_id
+    trial = Trial(
+        **data,
+        created_at=datetime.now(),
+        status=Status.IN_PROGRESS,
+        id=str(uuid.uuid4()),
+    )
+
     project_db.set_trial(trial)
     return jsonify(trial.model_dump())
 
@@ -467,11 +456,11 @@ async def create_trial(project_id: str):
 @project_exists(WORK_DIR)
 async def get_trial(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
-    
+
     trial = project_db.get_trial(trial_id)
     if not trial:
         return jsonify({"error": "Trial not found"}), 404
-    
+
     return jsonify(trial.model_dump())
 
 
@@ -479,7 +468,7 @@ async def get_trial(project_id: str, trial_id: str):
 @project_exists(WORK_DIR)
 async def delete_trial(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
-    
+
     project_db.delete_trial(trial_id)
     return jsonify({"message": "Trial deleted successfully"})
 
@@ -561,19 +550,19 @@ async def upload_files(project_id: str):
         return jsonify(
             {"error": f"An error occurred while uploading files: {str(e)}"}
         ), 500
-        
 
-@app.route('/projects/<project_id>/trials/<trial_id>/parse', methods=['POST'])
+
+@app.route("/projects/<project_id>/trials/<trial_id>/parse", methods=["POST"])
 async def parse_documents_endpoint(project_id, trial_id):
-    task_id = ''
+    task_id = ""
     try:
         # POST body에서 config 받기
         data = await request.get_json()
-        if not data or 'config' not in data:
+        if not data or "config" not in data:
             return jsonify({"error": "Config is required in request body"}), 400
-            
-        config = data['config']
-        
+
+        config = data["config"]
+
         # Trial 객체 가져오기
         project_db = SQLiteProjectDB(project_id)
         trial = project_db.get_trial(trial_id)
@@ -589,48 +578,43 @@ async def parse_documents_endpoint(project_id, trial_id):
         task = parse_documents.delay(
             project_id=project_id,
             trial_id=trial_id,
-            config_str=yaml.dump(config)  # POST body의 config 사용
+            config_str=yaml.dump(config),  # POST body의 config 사용
         )
         task_id = task.id
         print(f"task: {task}")
-        
+
         # Trial 상태 업데이트
         trial.status = Status.IN_PROGRESS
         print(f"trial: {trial}")
         print(f"task: {task}")
         trial.parse_task_id = task.id
         project_db.set_trial(trial)
-        
-        return jsonify({
-            "task_id": task.id,
-            "status": "started"
-        })
+
+        return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting parse task: {str(e)}", exc_info=True)
         return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
+
 
 @app.route("/projects/<string:project_id>/tasks/<string:task_id>", methods=["GET"])
 async def get_task_status(project_id: str, task_id: str):
     print(f"project_id: {project_id}")
     if task_id == "undefined":
-        return jsonify({
-            "status": "FAILURE",
-            "error": "Task ID is undefined"
-        }), 200
+        return jsonify({"status": "FAILURE", "error": "Task ID is undefined"}), 200
     else:
         # celery 상태 확인
         task = AsyncResult(task_id)
         print(f"task: {task.status}")
         try:
-            return jsonify({
-            "status": task.status,
-                "error": str(task.result) if task.failed() else None
-            }), 200
+            return jsonify(
+                {
+                    "status": task.status,
+                    "error": str(task.result) if task.failed() else None,
+                }
+            ), 200
         except Exception as e:
-            return jsonify({
-            "status": "FAILURE",
-                "error": str(e)
-            }), 500
+            return jsonify({"status": "FAILURE", "error": str(e)}), 500
+
 
 @app.route(
     "/projects/<string:project_id>/trials/<string:trial_id>/chunk", methods=["POST"]
@@ -642,53 +626,30 @@ async def start_chunking(project_id: str, trial_id: str):
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
         chunk_request = ChunkRequest(**data)
-        config = data['config']
+        config = chunk_request.config
 
         project_db = SQLiteProjectDB(project_id)
         trial = project_db.get_trial(trial_id)
         if not trial:
             return jsonify({"error": f"Trial not found: {trial_id}"}), 404
 
-        chunked_data_path = os.path.join(
-            WORK_DIR, project_id, "chunk", f"chunk_{trial.id}/0.parquet"
-        )
-        # parsed_data_path 확인
-        print(f"chunked_data_path: {chunked_data_path}")
-        if not chunked_data_path or not os.path.exists(chunked_data_path):
-            return jsonify(
-                {"error": "Parsed data path not found. Please run parse first."}
-            ), 400
-
-        # Get the directory containing datasets
-        dataset_dir = os.path.join(WORK_DIR, project_id, "chunk", chunk_request.name)
-        if not os.path.exists(dataset_dir):
-            os.makedirs(dataset_dir)
-
-        with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as yaml_tempfile:
-            with open(yaml_tempfile.name, "w") as w:
-                yaml.safe_dump(chunk_request.config, w)
-            yaml_path = yaml_tempfile.name
-
         # Celery task 시작
         task = chunk_documents.delay(
             project_id=project_id,
             trial_id=trial_id,
-            config_str=yaml.dump(config)  # POST body의 config 사용
+            config_str=yaml.dump(config),  # POST body의 config 사용
         )
         task_id = task.id
         print(f"task: {task}")
-        
+
         # Trial 상태 업데이트
         trial.status = Status.IN_PROGRESS
         print(f"trial: {trial}")
         print(f"task: {task}")
         trial.parse_task_id = task.id
         project_db.set_trial(trial)
-        
-        return jsonify({
-            "task_id": task.id,
-            "status": "started"
-        })
+
+        return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting parse task: {str(e)}", exc_info=True)
         return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
@@ -790,11 +751,11 @@ async def set_trial_config(project_id: str, trial_id: str):
     trial = project_db.get_trial(trial_id)
     if not trial:
         return jsonify({"error": "Trial not found"}), 404
-        
+
     data = await request.get_json()
     if data.get("config", None) is not None:
         project_db.set_trial_config(trial_id, TrialConfig(**data["config"]))
-        
+
     return jsonify({"message": "Config updated successfully"}), 200
 
 
@@ -842,7 +803,7 @@ async def start_evaluate(project_id: str, trial_id: str):
         evaluate_history_df.to_csv(evaluate_history_path, index=False)
     else:
         evaluate_history_df = pd.read_csv(evaluate_history_path)
-    
+
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
     trial_config_db = SQLiteProjectDB(trial_config_path)
     previous_config = trial_config_db.get_trial(trial_id).config
