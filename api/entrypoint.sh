@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Start API server with standard event loop
-uvicorn app:app --host 0.0.0.0 --port 5000 --loop asyncio --reload & 
+uvicorn app:app --host 0.0.0.0 --port 5000 --loop asyncio --reload &
 # --reload-dir /app/api &
 
 # Start Celery worker
