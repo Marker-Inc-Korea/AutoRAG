@@ -24,7 +24,7 @@ If you already have content stored in weaviate, you'll need to set that key valu
 #### Example YAML file
 
 ```yaml
-- name: openai_embed_3_large
+- name: openai_weaviate
   db_type: weaviate
   embedding_model: openai_embed_3_large
   collection_name: openai_embed_3_large
@@ -35,6 +35,48 @@ If you already have content stored in weaviate, you'll need to set that key valu
   embedding_batch: 50
   similarity_metric: cosine
   text_key: content
+```
+
+Here is a simple example of a YAML configuration file that uses the Weaviate vector database and the OpenAI:
+
+```yaml
+vectordb:
+  - name: openai_weaviate
+    db_type: weaviate
+    embedding_model: openai_embed_3_large
+    collection_name: openai_embed_3_large
+    client_type: docker
+    host: localhost
+    port: 8080
+    grpc_port: 50051
+    embedding_batch: 50
+    similarity_metric: cosine
+    text_key: content
+node_lines:
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 3
+      modules:
+        - module_type: vectordb
+          vectordb: openai_weaviate
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: fstring
+          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    - node_type: generator
+      strategy:
+        metrics: [bleu, rouge]
+      modules:
+        - module_type: llama_index_llm
+          llm: openai
+          model: [ gpt-4o-mini ]
 ```
 
 ### 2. Weaviate Cloud
@@ -54,6 +96,47 @@ You can see the full installation guide [here](https://weaviate.io/developers/we
   embedding_batch: 50
   similarity_metric: cosine
   text_key: content
+```
+
+Here is a simple example of a YAML configuration file that uses the Weaviate vector database and the OpenAI:
+
+```yaml
+vectordb:
+  - name: openai_weaviate
+    db_type: weaviate
+    embedding_model: openai_embed_3_large
+    collection_name: openai_embed_3_large
+    url: ${WEAVIATE_URL}
+    api_key: ${WEAVIATE_API_KEY}
+    grpc_port: 50051
+    embedding_batch: 50
+    similarity_metric: cosine
+    text_key: content
+node_lines:
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 3
+      modules:
+        - module_type: vectordb
+          vectordb: openai_weaviate
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: fstring
+          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    - node_type: generator
+      strategy:
+        metrics: [bleu, rouge]
+      modules:
+        - module_type: llama_index_llm
+          llm: openai
+          model: [ gpt-4o-mini ]
 ```
 
 ### Parameters
