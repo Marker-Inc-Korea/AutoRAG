@@ -12,45 +12,6 @@ from autorag.validator import Validator
 from src.qa_create import default_create, fast_create, advanced_create
 from src.schema import QACreationRequest
 
-# async def run_parser_start_parsing(raw_data_path: str, dataset_dir: str, yaml_path: str):
-#     try:
-#         # 경로들이 실제로 존재하는지 확인
-#         if not os.path.exists(raw_data_path):
-#             raise ValueError(f"Raw data path does not exist: {raw_data_path}")
-#         if not os.path.exists(dataset_dir):
-#             os.makedirs(dataset_dir)
-
-#         # 명령어 구성
-#         cmd = [
-#             "python", "-m", "autorag.cli",
-#             "parse",
-#             "--input-path", str(raw_data_path),  # 문자열로 명시적 변환
-#             "--output-path", str(dataset_dir),   # 문자열로 명시적 변환
-#             "--config-path", str(yaml_path)      # 문자열로 명시적 변환
-#         ]
-
-#         # subprocess로 실행
-#         process = await asyncio.create_subprocess_exec(
-#             *cmd,
-#             stdout=asyncio.subprocess.PIPE,
-#             stderr=asyncio.subprocess.PIPE
-#         )
-
-#         # 결과 대기
-#         stdout, stderr = await process.communicate()
-
-#         # 에러 체크
-#         if process.returncode != 0:
-#             error_msg = stderr.decode() if stderr else "Unknown error"
-#             raise RuntimeError(f"Parser failed: {error_msg}")
-
-#         print(f"Parser completed successfully")
-#         return True
-
-#     except Exception as e:
-#         print(f"Error in parser: {str(e)}")
-#         raise
-
 def run_parser_start_parsing(data_path_glob, project_dir, yaml_path):
 	# Import Parser here if it's defined in another module
 	parser = Parser(data_path_glob=data_path_glob, project_dir=project_dir)
@@ -64,6 +25,24 @@ def run_chunker_start_chunking(raw_path, project_dir, yaml_path):
 	chunker.start_chunking(yaml_path)
 
 def run_qa_creation(qa_creation_request: QACreationRequest, corpus_filepath: str, dataset_dir: str):
+	"""Create QA pairs from a corpus using specified LLM and preset configuration.
+
+	Args:
+		qa_creation_request (QACreationRequest): Configuration object containing:
+			- preset: Type of QA generation ("basic", "simple", or "advanced")
+			- llm_config: LLM configuration (name and parameters)
+			- qa_num: Number of QA pairs to generate
+			- lang: Target language for QA pairs
+			- name: Output filename prefix
+		corpus_filepath (str): Path to the input corpus parquet file
+		dataset_dir (str): Directory where the generated QA pairs will be saved
+
+	Raises:
+		ValueError: If an unsupported preset is specified
+		
+	Returns:
+		None: Saves the generated QA pairs to a parquet file in dataset_dir
+	"""
 	corpus_df = pd.read_parquet(corpus_filepath, engine="pyarrow")
 	llm = generator_models[qa_creation_request.llm_config.llm_name](
 		**qa_creation_request.llm_config.llm_params

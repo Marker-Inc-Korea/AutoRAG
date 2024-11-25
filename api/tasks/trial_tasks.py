@@ -2,11 +2,12 @@ import os
 from celery import shared_task
 from .base import TrialTask
 from src.schema import (
+    QACreationRequest,
     Status,
 )
 import logging
 import yaml
-from src.run import run_parser_start_parsing, run_chunker_start_chunking
+from src.run import run_parser_start_parsing, run_chunker_start_chunking, run_qa_creation
 
 # 로깅 설정
 logging.basicConfig(
@@ -93,6 +94,57 @@ def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
             status=Status.FAILED,
             progress=0,
             task_type="chunk",
+            info={"error": str(e)},
+        )
+        raise
+
+
+
+@shared_task(bind=True, base=TrialTask)
+def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status="generating_qa_docs",
+            progress=0,
+            task_type="qa_docs",
+        )
+
+        # QA 생성 작업 수행
+        logger.info("Generating QA documents")
+
+        project_dir = os.path.join(WORK_DIR, project_id)
+        config_dir = os.path.join(project_dir, "config")
+        corpus_filepath = os.path.join(
+            project_dir, "chunk", f"chunk_{trial_id}", "0.parquet"
+        )
+        dataset_dir = os.path.join(project_dir, "qa", f"qa_{trial_id}")
+        
+        # 필요한 모든 디렉토리 생성
+        os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(dataset_dir, exist_ok=True)  # dataset_dir도 생성
+
+        qa_creation_request = QACreationRequest(**data)
+        result = run_qa_creation(
+            qa_creation_request, corpus_filepath, dataset_dir
+        )
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="qa_docs"
+        )
+        return result
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="qa_docs",
             info={"error": str(e)},
         )
         raise
