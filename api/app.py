@@ -4,6 +4,7 @@ import signal
 import concurrent.futures
 import uuid
 from datetime import datetime, timezone
+from glob import glob
 from pathlib import Path
 from typing import Dict, Optional, Callable
 from typing import List
@@ -561,44 +562,46 @@ async def upload_files(project_id: str):
         ), 500
 
 
-@app.route("/projects/<project_id>/trials/<trial_id>/parse", methods=["POST"])
-async def parse_documents_endpoint(project_id, trial_id):
+@app.route("/projects/<project_id>/parse", methods=["GET"])
+@project_exists(WORK_DIR)
+async def get_parse_documents(project_id):
+    parse_files = glob(os.path.join(WORK_DIR, project_id, "parse", "**", "0.parquet"))
+    if len(parse_files) <= 0:
+        return jsonify({"error": "No parse files found"}), 404
+    # get its summary.csv files
+    summary_csv_files = [
+        os.path.join(os.path.dirname(parse_filepath), "summary.csv")
+        for parse_filepath in parse_files
+    ]
+    result_dict_list = [
+        {
+            "parse_filepath": parse_filepath,
+            "parse_name": os.path.dirname(parse_filepath),
+            "module_name": pd.read_csv(summary_csv_file).iloc[0]["module_name"],
+            "module_params": pd.read_csv(summary_csv_file).iloc[0]["module_params"],
+        }
+        for parse_filepath, summary_csv_file in zip(parse_files, summary_csv_files)
+    ]
+    return jsonify(result_dict_list), 200
+
+
+@app.route("/projects/<project_id>/parse", methods=["POST"])
+@project_exists(WORK_DIR)
+async def parse_documents_endpoint(project_id):
     task_id = ""
     try:
-        # POST body에서 config 받기
         data = await request.get_json()
         if not data or "config" not in data:
             return jsonify({"error": "Config is required in request body"}), 400
 
         config = data["config"]
-
-        # Trial 객체 가져오기
-        project_db = SQLiteProjectDB(project_id)
-        trial = project_db.get_trial(trial_id)
-        if not trial:
-            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
-
-        print(f"trial: {trial}")
-        print(f"project_id: {project_id}")
-        print(f"trial_id: {trial_id}")
-        print(f"config: {config}")
-
         # Celery task 시작
         task = parse_documents.delay(
             project_id=project_id,
-            trial_id=trial_id,
-            config_str=yaml.dump(config),  # POST body의 config 사용
+            config_str=yaml.dump(config),
+            glob_path=data.get("glob_path", "*.pdf"),
         )
         task_id = task.id
-        print(f"task: {task}")
-
-        # Trial 상태 업데이트
-        trial.status = Status.IN_PROGRESS
-        print(f"trial: {trial}")
-        print(f"task: {task}")
-        trial.parse_task_id = task.id
-        project_db.set_trial(trial)
-
         return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting parse task: {str(e)}", exc_info=True)

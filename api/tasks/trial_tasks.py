@@ -1,4 +1,6 @@
 import os
+import uuid
+
 from celery import shared_task
 from .base import TrialTask
 from src.schema import (
@@ -7,7 +9,11 @@ from src.schema import (
 )
 import logging
 import yaml
-from src.run import run_parser_start_parsing, run_chunker_start_chunking, run_qa_creation
+from src.run import (
+    run_parser_start_parsing,
+    run_chunker_start_chunking,
+    run_qa_creation,
+)
 
 # 로깅 설정
 logging.basicConfig(
@@ -99,7 +105,6 @@ def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
         raise
 
 
-
 @shared_task(bind=True, base=TrialTask)
 def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
     try:
@@ -120,22 +125,20 @@ def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
             project_dir, "chunk", f"chunk_{trial_id}", "0.parquet"
         )
         dataset_dir = os.path.join(project_dir, "qa", f"qa_{trial_id}")
-        
+
         # 필요한 모든 디렉토리 생성
         os.makedirs(config_dir, exist_ok=True)
         os.makedirs(dataset_dir, exist_ok=True)  # dataset_dir도 생성
 
         qa_creation_request = QACreationRequest(**data)
-        result = run_qa_creation(
-            qa_creation_request, corpus_filepath, dataset_dir
-        )
+        result = run_qa_creation(qa_creation_request, corpus_filepath, dataset_dir)
 
         self.update_state_and_db(
             trial_id=trial_id,
             project_id=project_id,
             status=Status.COMPLETED,
             progress=100,
-            task_type="qa_docs"
+            task_type="qa_docs",
         )
         return result
     except Exception as e:
@@ -151,20 +154,21 @@ def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
 
 
 @shared_task(bind=True, base=TrialTask)
-def parse_documents(self, project_id: str, trial_id: str, config_str: str):
+def parse_documents(self, project_id: str, config_str: str, glob_path: str = "*.*"):
     try:
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.IN_PROGRESS,
             progress=0,
             task_type="parse",
         )
 
+        new_parse_id = str(uuid.uuid4())
         project_dir = os.path.join(WORK_DIR, project_id)
-        raw_data_path = os.path.join(project_dir, "raw_data", "*.pdf")
+        raw_data_path = os.path.join(project_dir, "raw_data", glob_path)
         config_dir = os.path.join(project_dir, "config")
-        parsed_data_path = os.path.join(project_dir, "parse", f"parse_{trial_id}")
+        parsed_data_path = os.path.join(project_dir, "parse", f"parse_{new_parse_id}")
         os.makedirs(config_dir, exist_ok=True)
 
         # config_str을 파이썬 딕셔너리로 변환 후 다시 YAML로 저장
@@ -178,14 +182,14 @@ def parse_documents(self, project_id: str, trial_id: str, config_str: str):
             config_dict = {"modules": config_dict}
 
         # YAML 파일 저장
-        yaml_path = os.path.join(config_dir, f"parse_config_{trial_id}.yaml")
+        yaml_path = os.path.join(config_dir, f"parse_config_{new_parse_id}.yaml")
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_dict, f, allow_unicode=True)
 
         result = run_parser_start_parsing(raw_data_path, parsed_data_path, yaml_path)
 
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.COMPLETED,
             progress=100,
@@ -194,7 +198,7 @@ def parse_documents(self, project_id: str, trial_id: str, config_str: str):
         return result
     except Exception as e:
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.FAILED,
             progress=0,
