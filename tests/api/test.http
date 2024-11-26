@@ -1,5 +1,5 @@
 ###
-POST http://localhost:5000/projects
+POST http://localhost:8000/projects
 Authorization: Bearer good
 Content-Type: application/json
 
@@ -12,7 +12,7 @@ Content-Type: application/json
 <> 2024-11-03T134638.401.json
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials
+POST http://localhost:8000/projects/{{project_id}}/trials
 Content-Type: application/json
 
 {
@@ -22,10 +22,10 @@ Content-Type: application/json
 > {% client.global.set("trial_id", response.body.id); %}
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/trials
+GET http://localhost:8000/projects/{{project_id}}/trials
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/parse
+POST http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/parse
 Content-Type: application/json
 
 {
@@ -42,11 +42,11 @@ Content-Type: application/json
 
 ###
 
-GET http://localhost:5000/projects/{{project_id}}/tasks/{{parse_task_id}}
+GET http://localhost:8000/projects/{{project_id}}/tasks/{{parse_task_id}}
 
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/chunk
+POST http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/chunk
 Content-Type: application/json
 
 {
@@ -61,10 +61,10 @@ Content-Type: application/json
 > {% client.global.set("chunk_task_id", response.body.id); %}
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/tasks/{{chunk_task_id}}
+GET http://localhost:8000/projects/{{project_id}}/tasks/{{chunk_task_id}}
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/qa
+POST http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/qa
 Content-Type: application/json
 
 {
@@ -80,10 +80,10 @@ Content-Type: application/json
 > {% client.global.set("qa_task_id", response.body.id); %}
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/tasks/{{qa_task_id}}
+GET http://localhost:8000/projects/{{project_id}}/tasks/{{qa_task_id}}
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/config
+POST http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/config
 Content-Type: application/json
 
 {
@@ -155,10 +155,10 @@ Content-Type: application/json
 }
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/config
+GET http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/config
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/validate
+POST http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/validate
 Content-Type: application/json
 
 {}
@@ -166,10 +166,10 @@ Content-Type: application/json
 > {% client.global.set("validate_id", response.body.id); %}
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/tasks/{{validate_id}}
+GET http://localhost:8000/projects/{{project_id}}/tasks/{{validate_id}}
 
 ###
-POST http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/evaluate
+POST http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/evaluate
 Content-Type: application/json
 
 {
@@ -179,16 +179,16 @@ Content-Type: application/json
 
 > {% client.global.set("evaluate_id", response.body.id); %}
 ###
-GET http://localhost:5000/projects/{{project_id}}/tasks/{{evaluate_id}}
+GET http://localhost:8000/projects/{{project_id}}/tasks/{{evaluate_id}}
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/report/open
+GET http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/report/open
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/report/close
+GET http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/report/close
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/chat/open
+GET http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/chat/open
 
 ###
-GET http://localhost:5000/projects/{{project_id}}/trials/{{trial_id}}/chat/close
+GET http://localhost:8000/projects/{{project_id}}/trials/{{trial_id}}/chat/close

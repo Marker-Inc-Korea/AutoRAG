@@ -27,7 +27,6 @@ from quart_uploads import UploadSet, configure_uploads
 from src.auth import require_auth
 from src.evaluate_history import get_new_trial_dir
 from src.run import (
-    run_qa_creation,
     run_start_trial,
     run_dashboard,
     run_chat,
@@ -35,7 +34,6 @@ from src.run import (
 from src.schema import (
     ChunkRequest,
     EnvVariableRequest,
-    QACreationRequest,
     Project,
     Task,
     Status,
@@ -46,7 +44,11 @@ from src.schema import (
 
 from src.validate import project_exists, trial_exists
 from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
-from tasks.trial_tasks import generate_qa_documents, parse_documents, chunk_documents  # 수정된 임포트
+from tasks.trial_tasks import (
+    generate_qa_documents,
+    parse_documents,
+    chunk_documents,
+)  # 수정된 임포트
 from celery.result import AsyncResult
 
 # uvloop을 사용하지 않도록 설정
@@ -677,7 +679,7 @@ async def create_qa(project_id: str, trial_id: str):
     try:
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
-        
+
         project_db = SQLiteProjectDB(project_id)
         trial = project_db.get_trial(trial_id)
         if not trial:
@@ -1141,8 +1143,8 @@ async def delete_environment_variable(key: str):
 
 @click.command()
 @click.option("--host", type=str, default="127.0.0.1", help="Host IP address")
-@click.option("--port", type=int, default=5000, help="Port number")
-def main(host: str = "127.0.0.1", port: int = 5000):
+@click.option("--port", type=int, default=8000, help="Port number")
+def main(host: str = "127.0.0.1", port: int = 8000):
     uvicorn.run("app:app", host=host, port=port, reload=True, loop="asyncio")
 
 
