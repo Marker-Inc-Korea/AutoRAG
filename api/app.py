@@ -12,7 +12,7 @@ import nest_asyncio
 
 import click
 import uvicorn
-from quart import jsonify, request, make_response
+from quart import jsonify, request, make_response, send_file
 from pydantic import BaseModel
 import aiofiles
 import aiofiles.os
@@ -1004,16 +1004,7 @@ async def get_artifact_content(project_id: str):
         target_path = os.path.join(WORK_DIR, project_id, "raw_data", requested_filename)
         if not os.path.exists(target_path):
             return jsonify({"error": "File not found"}), 404
-        # Get file metadata
-        stats = os.stat(target_path)
-        file_metadata = {
-            "size": stats.st_size,
-            "last_modified": stats.st_mtime,
-            "created": stats.st_ctime,
-        }
-        return jsonify(
-            {"filepath": target_path, "metadata": file_metadata, "path_type": "local"}
-        ), 200
+        return await send_file(target_path, as_attachment=True), 200
     except Exception as e:
         return jsonify({"error": f"Failed to load artifacts: {str(e)}"}), 500
 
