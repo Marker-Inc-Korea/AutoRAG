@@ -565,7 +565,7 @@ async def upload_files(project_id: str):
 @app.route("/projects/<project_id>/parse", methods=["GET"])
 @project_exists(WORK_DIR)
 async def get_parse_documents(project_id):
-    parse_files = glob(os.path.join(WORK_DIR, project_id, "parse", "**", "0.parquet"))
+    parse_files = glob(os.path.join(WORK_DIR, project_id, "parse", "**", "*.parquet"))
     if len(parse_files) <= 0:
         return jsonify({"error": "No parse files found"}), 404
     # get its summary.csv files
@@ -583,6 +583,29 @@ async def get_parse_documents(project_id):
         for parse_filepath, summary_csv_file in zip(parse_files, summary_csv_files)
     ]
     return jsonify(result_dict_list), 200
+
+
+@app.route("/projects/<project_id>/chunk", methods=["GET"])
+@project_exists(WORK_DIR)
+async def get_chunk_documents(project_id):
+    chunk_files = glob(os.path.join(WORK_DIR, project_id, "chunk", "**", "*.parquet"))
+    if len(chunk_files) <= 0:
+        return jsonify({"error": "No chunk files found"}), 404
+
+    summary_csv_files = [
+        os.path.join(os.path.dirname(parse_filepath), "summary.csv")
+        for parse_filepath in chunk_files
+    ]
+    chunk_dict_list = [
+        {
+            "chunk_filepath": chunk_filepath,
+            "chunk_name": os.path.dirname(chunk_filepath),
+            "module_name": pd.read_csv(summary_csv_file).iloc[0]["module_name"],
+            "module_params": pd.read_csv(summary_csv_file).iloc[0]["module_params"],
+        }
+        for chunk_filepath, summary_csv_file in zip(chunk_files, summary_csv_files)
+    ]
+    return jsonify(chunk_dict_list), 200
 
 
 @app.route("/projects/<project_id>/parse", methods=["POST"])
