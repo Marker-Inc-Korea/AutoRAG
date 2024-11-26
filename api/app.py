@@ -12,7 +12,7 @@ import nest_asyncio
 
 import click
 import uvicorn
-from quart import jsonify, request, make_response
+from quart import jsonify, request, make_response, send_file
 from pydantic import BaseModel
 import aiofiles
 import aiofiles.os
@@ -86,17 +86,11 @@ task_queue = asyncio.Queue()
 current_task_id = None  # ID of the currently running task
 lock = asyncio.Lock()  # To manage access to shared variables
 
-ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ENV = os.getenv("AUTORAG_API_ENV", "dev")
-if ENV == "dev":
-    WORK_DIR = os.path.join(ROOT_DIR, "../projects")
-else:  # production
-    WORK_DIR = os.path.join(ROOT_DIR, "projects")
+WORK_DIR = os.path.join(ROOT_DIR, "projects")
 if "AUTORAG_WORK_DIR" in os.environ:
     WORK_DIR = os.getenv("AUTORAG_WORK_DIR")
-
-if "AUTORAG_WORK_DIR" in os.environ:
-    WORK_DIR = os.path.join(ROOT_DIR, os.getenv("AUTORAG_WORK_DIR"))
 
 ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
 # 환경에 따른 WORK_DIR 설정
@@ -1000,6 +994,19 @@ async def get_project_artifacts(project_id: str):
     except Exception as e:
         print(e)
         return jsonify({"error": f"Failed to scan artifacts: {str(e)}"}), 500
+
+
+@app.route("/projects/<string:project_id>/artifacts/content")
+@project_exists(WORK_DIR)
+async def get_artifact_content(project_id: str):
+    try:
+        requested_filename = request.args.get("filename")
+        target_path = os.path.join(WORK_DIR, project_id, "raw_data", requested_filename)
+        if not os.path.exists(target_path):
+            return jsonify({"error": "File not found"}), 404
+        return await send_file(target_path, as_attachment=True), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to load artifacts: {str(e)}"}), 500
 
 
 @app.route(
