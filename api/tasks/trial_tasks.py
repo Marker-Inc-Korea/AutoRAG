@@ -35,18 +35,21 @@ else:
 
 
 @shared_task(bind=True, base=TrialTask)
-def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
+def chunk_documents(self, project_id: str, config_str: str, parsed_data_path: str):
     """
     Task for the chunk documents
 
     :param project_id: The project id of the trial
-    :param trial_id: The id of the trial
     :param config_str: Configuration string for chunking
+    :param parsed_data_path: The path of the parsed data
     :return: The result of the chunking (Maybe None?)
     """
+    if not os.path.exists(parsed_data_path):
+        raise ValueError(f"parsed_data_path does not exist: {parsed_data_path}")
+
     try:
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status="chunking",
             progress=0,
@@ -58,10 +61,8 @@ def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
 
         project_dir = os.path.join(WORK_DIR, project_id)
         config_dir = os.path.join(project_dir, "config")
-        parsed_data_path = os.path.join(
-            project_dir, "parse", f"parse_{trial_id}", "0.parquet"
-        )
-        chunked_data_dir = os.path.join(project_dir, "chunk", f"chunk_{trial_id}")
+        chunked_id = str(uuid.uuid4())
+        chunked_data_dir = os.path.join(project_dir, "chunk", f"chunk_{chunked_id}")
         os.makedirs(config_dir, exist_ok=True)
         config_dir = os.path.join(project_dir, "config")
 
@@ -77,7 +78,7 @@ def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
 
         logger.debug(f"Chunking config_dict: {config_dict}")
         # YAML 파일 저장
-        yaml_path = os.path.join(config_dir, f"chunk_config_{trial_id}.yaml")
+        yaml_path = os.path.join(config_dir, f"chunk_config_{chunked_id}.yaml")
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_dict, f, allow_unicode=True)
 
@@ -86,7 +87,7 @@ def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
         )
 
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.COMPLETED,
             progress=100,
@@ -95,7 +96,7 @@ def chunk_documents(self, project_id: str, trial_id: str, config_str: str):
         return result
     except Exception as e:
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.FAILED,
             progress=0,

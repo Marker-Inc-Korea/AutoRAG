@@ -576,7 +576,7 @@ async def get_parse_documents(project_id):
     result_dict_list = [
         {
             "parse_filepath": parse_filepath,
-            "parse_name": os.path.dirname(parse_filepath),
+            "parse_name": os.path.basename(os.path.dirname(parse_filepath)),
             "module_name": pd.read_csv(summary_csv_file).iloc[0]["module_name"],
             "module_params": pd.read_csv(summary_csv_file).iloc[0]["module_params"],
         }
@@ -651,38 +651,24 @@ async def get_task_status(project_id: str, task_id: str):
             return jsonify({"status": "FAILURE", "error": str(e)}), 500
 
 
-@app.route(
-    "/projects/<string:project_id>/trials/<string:trial_id>/chunk", methods=["POST"]
-)
+@app.route("/projects/<string:project_id>/chunk", methods=["POST"])
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
-async def start_chunking(project_id: str, trial_id: str):
+async def start_chunking(project_id: str):
+    task_id = None
     try:
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
         chunk_request = ChunkRequest(**data)
         config = chunk_request.config
 
-        project_db = SQLiteProjectDB(project_id)
-        trial = project_db.get_trial(trial_id)
-        if not trial:
-            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
-
         # Celery task 시작
         task = chunk_documents.delay(
             project_id=project_id,
-            trial_id=trial_id,
-            config_str=yaml.dump(config),  # POST body의 config 사용
+            config_str=yaml.dump(config),
+            parsed_data_path=chunk_request.parsed_data_path,
         )
         task_id = task.id
         print(f"task: {task}")
-
-        # Trial 상태 업데이트
-        trial.status = Status.IN_PROGRESS
-        print(f"trial: {trial}")
-        print(f"task: {task}")
-        trial.parse_task_id = task.id
-        project_db.set_trial(trial)
 
         return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
