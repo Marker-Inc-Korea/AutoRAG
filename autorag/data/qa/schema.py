@@ -1,5 +1,6 @@
 import logging
 from typing import Callable, Optional, Dict, Awaitable, Any, Tuple, List
+import uuid
 import pandas as pd
 from autorag.utils.util import process_batch, get_event_loop, fetch_contents
 
@@ -137,6 +138,11 @@ class QA:
 		loop = get_event_loop()
 		tasks = [fn(qa_dict, **kwargs) for qa_dict in qa_dicts]
 		results = loop.run_until_complete(process_batch(tasks, batch_size))
+		
+		# Experimental feature
+		if fn.__name__ == "multiple_queries_gen":
+			return self._process_multiple_queries_gen(results)
+
 		return QA(pd.DataFrame(results), self.linked_corpus)
 
 	def batch_filter(
@@ -299,3 +305,15 @@ class QA:
 			path: corpus_df[corpus_df["path"] == path]
 			for path in corpus_df["path"].unique()
 		}
+
+	# Experimental feature
+	def _process_multiple_queries_gen(self, results: List[Dict]) -> "QA":
+		data = []
+		for result in results:
+			queries = result["query"].split("\n")
+			for query in queries:
+				new_result = {key: (str(uuid.uuid4()) if key == "qid" else result[key]) for key in result.keys()}
+				new_result["query"] = query
+				data.append(new_result)
+		df = pd.DataFrame(data)
+		return QA(df, self.linked_corpus)
