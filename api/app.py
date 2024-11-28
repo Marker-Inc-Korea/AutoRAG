@@ -599,7 +599,7 @@ async def get_chunk_documents(project_id):
     chunk_dict_list = [
         {
             "chunk_filepath": chunk_filepath,
-            "chunk_name": os.path.dirname(chunk_filepath),
+            "chunk_name": os.path.basename(os.path.dirname(chunk_filepath)),
             "module_name": pd.read_csv(summary_csv_file).iloc[0]["module_name"],
             "module_params": pd.read_csv(summary_csv_file).iloc[0]["module_params"],
         }
@@ -611,6 +611,15 @@ async def get_chunk_documents(project_id):
 @app.route("/projects/<project_id>/parse", methods=["POST"])
 @project_exists(WORK_DIR)
 async def parse_documents_endpoint(project_id):
+    """
+    The request body
+
+    - name: The name of the parse task
+    - config: The configuration for parsing
+    - extension: string.
+        Default is "pdf".
+        You can parse all extensions using "*"
+    """
     task_id = ""
     try:
         data = await request.get_json()
@@ -618,14 +627,22 @@ async def parse_documents_endpoint(project_id):
             return jsonify({"error": "Config is required in request body"}), 400
 
         config = data["config"]
-        # Celery task 시작
+        target_extension = data["extension"]
+        parse_name = data["name"]
+
+        parse_dir = os.path.join(WORK_DIR, project_id, "parse")
+
+        if os.path.exists(os.path.join(parse_dir, parse_name)):
+            return {"error": "Parse name already exists"}, 400
+
         task = parse_documents.delay(
             project_id=project_id,
             config_str=yaml.dump(config),
-            glob_path=data.get("glob_path", "*.pdf"),
+            parse_name=parse_name,
+            glob_path=f"*.{target_extension}",
         )
         task_id = task.id
-        return jsonify({"task_id": task.id, "status": "started"})
+        return jsonify({"task_id": task_id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting parse task: {str(e)}", exc_info=True)
         return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
@@ -661,11 +678,19 @@ async def start_chunking(project_id: str):
         chunk_request = ChunkRequest(**data)
         config = chunk_request.config
 
+        if os.path.exists(
+            os.path.join(WORK_DIR, project_id, "chunk", chunk_request.name)
+        ):
+            return jsonify({"error": "Chunk name already exists"}), 400
+
         # Celery task 시작
         task = chunk_documents.delay(
             project_id=project_id,
             config_str=yaml.dump(config),
-            parsed_data_path=chunk_request.parsed_data_path,
+            parsed_data_path=os.path.join(
+                WORK_DIR, project_id, "parse", chunk_request.parsed_name
+            ),
+            chunk_name=chunk_request.name,
         )
         task_id = task.id
         print(f"task: {task}")

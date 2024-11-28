@@ -29,7 +29,7 @@ class ChunkRequest(BaseModel):
         ..., description="Dictionary contains chunk YAML configuration"
     )
     name: str = Field(..., description="Name of the chunk target dataset")
-    parsed_data_path: str = Field(..., description="Path to the parsed data")
+    parsed_name: str = Field(..., description="The name of the parsed data")
 
 
 class QACreationPresetEnum(str, Enum):

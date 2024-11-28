@@ -1,5 +1,4 @@
 import os
-import uuid
 
 from celery import shared_task
 from .base import TrialTask
@@ -35,14 +34,16 @@ else:
 
 
 @shared_task(bind=True, base=TrialTask)
-def chunk_documents(self, project_id: str, config_str: str, parsed_data_path: str):
+def chunk_documents(
+    self, project_id: str, config_str: str, parsed_data_path: str, chunk_name: str
+):
     """
     Task for the chunk documents
 
     :param project_id: The project id of the trial
     :param config_str: Configuration string for chunking
     :param parsed_data_path: The path of the parsed data
-    :return: The result of the chunking (Maybe None?)
+    :param chunk_name: The name of the chunk
     """
     if not os.path.exists(parsed_data_path):
         raise ValueError(f"parsed_data_path does not exist: {parsed_data_path}")
@@ -61,11 +62,22 @@ def chunk_documents(self, project_id: str, config_str: str, parsed_data_path: st
 
         project_dir = os.path.join(WORK_DIR, project_id)
         config_dir = os.path.join(project_dir, "config")
-        chunked_id = str(uuid.uuid4())
-        chunked_data_dir = os.path.join(project_dir, "chunk", f"chunk_{chunked_id}")
+        chunked_data_dir = os.path.join(project_dir, "chunk", chunk_name)
         os.makedirs(config_dir, exist_ok=True)
         config_dir = os.path.join(project_dir, "config")
+        os.makedirs(chunked_data_dir, exist_ok=False)
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id="",
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="chunk",
+            info={"error": str(e)},
+        )
+        raise
 
+    try:
         # config_str을 파이썬 딕셔너리로 변환 후 다시 YAML로 저장
         if isinstance(config_str, str):
             config_dict = yaml.safe_load(config_str)
@@ -78,7 +90,7 @@ def chunk_documents(self, project_id: str, config_str: str, parsed_data_path: st
 
         logger.debug(f"Chunking config_dict: {config_dict}")
         # YAML 파일 저장
-        yaml_path = os.path.join(config_dir, f"chunk_config_{chunked_id}.yaml")
+        yaml_path = os.path.join(config_dir, f"chunk_config_{chunk_name}.yaml")
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_dict, f, allow_unicode=True)
 
@@ -103,6 +115,8 @@ def chunk_documents(self, project_id: str, config_str: str, parsed_data_path: st
             task_type="chunk",
             info={"error": str(e)},
         )
+        if os.path.exists(chunked_data_dir):
+            os.rmdir(chunked_data_dir)
         raise
 
 
@@ -155,7 +169,9 @@ def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
 
 
 @shared_task(bind=True, base=TrialTask)
-def parse_documents(self, project_id: str, config_str: str, glob_path: str = "*.*"):
+def parse_documents(
+    self, project_id: str, config_str: str, parse_name: str, glob_path: str = "*.*"
+):
     try:
         self.update_state_and_db(
             trial_id="",
@@ -165,13 +181,23 @@ def parse_documents(self, project_id: str, config_str: str, glob_path: str = "*.
             task_type="parse",
         )
 
-        new_parse_id = str(uuid.uuid4())
         project_dir = os.path.join(WORK_DIR, project_id)
         raw_data_path = os.path.join(project_dir, "raw_data", glob_path)
         config_dir = os.path.join(project_dir, "config")
-        parsed_data_path = os.path.join(project_dir, "parse", f"parse_{new_parse_id}")
+        parsed_data_path = os.path.join(project_dir, "parse", parse_name)
         os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(parsed_data_path, exist_ok=False)
 
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id="",
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="parse",
+            info={"error": str(e)},
+        )
+    try:
         # config_str을 파이썬 딕셔너리로 변환 후 다시 YAML로 저장
         if isinstance(config_str, str):
             config_dict = yaml.safe_load(config_str)
@@ -183,7 +209,7 @@ def parse_documents(self, project_id: str, config_str: str, glob_path: str = "*.
             config_dict = {"modules": config_dict}
 
         # YAML 파일 저장
-        yaml_path = os.path.join(config_dir, f"parse_config_{new_parse_id}.yaml")
+        yaml_path = os.path.join(config_dir, f"parse_config_{parse_name}.yaml")
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_dict, f, allow_unicode=True)
 
@@ -206,4 +232,6 @@ def parse_documents(self, project_id: str, config_str: str, glob_path: str = "*.
             task_type="parse",
             info={"error": str(e)},
         )
+        if os.path.exists(parsed_data_path):
+            os.rmdir(parsed_data_path)
         raise
