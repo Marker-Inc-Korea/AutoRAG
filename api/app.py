@@ -4,6 +4,7 @@ import signal
 import concurrent.futures
 import uuid
 from datetime import datetime, timezone
+from glob import glob
 from pathlib import Path
 from typing import Dict, Optional, Callable
 from typing import List
@@ -40,6 +41,7 @@ from src.schema import (
     TaskType,
     Trial,
     TrialConfig,
+    QACreationRequest,
 )
 
 from src.validate import project_exists, trial_exists
@@ -561,45 +563,87 @@ async def upload_files(project_id: str):
         ), 500
 
 
-@app.route("/projects/<project_id>/trials/<trial_id>/parse", methods=["POST"])
-async def parse_documents_endpoint(project_id, trial_id):
+@app.route("/projects/<project_id>/parse", methods=["GET"])
+@project_exists(WORK_DIR)
+async def get_parse_documents(project_id):
+    parse_files = glob(os.path.join(WORK_DIR, project_id, "parse", "**", "*.parquet"))
+    if len(parse_files) <= 0:
+        return jsonify({"error": "No parse files found"}), 404
+    # get its summary.csv files
+    summary_csv_files = [
+        os.path.join(os.path.dirname(parse_filepath), "summary.csv")
+        for parse_filepath in parse_files
+    ]
+    result_dict_list = [
+        {
+            "parse_filepath": parse_filepath,
+            "parse_name": os.path.basename(os.path.dirname(parse_filepath)),
+            "module_name": pd.read_csv(summary_csv_file).iloc[0]["module_name"],
+            "module_params": pd.read_csv(summary_csv_file).iloc[0]["module_params"],
+        }
+        for parse_filepath, summary_csv_file in zip(parse_files, summary_csv_files)
+    ]
+    return jsonify(result_dict_list), 200
+
+
+@app.route("/projects/<project_id>/chunk", methods=["GET"])
+@project_exists(WORK_DIR)
+async def get_chunk_documents(project_id):
+    chunk_files = glob(os.path.join(WORK_DIR, project_id, "chunk", "**", "*.parquet"))
+    if len(chunk_files) <= 0:
+        return jsonify({"error": "No chunk files found"}), 404
+
+    summary_csv_files = [
+        os.path.join(os.path.dirname(parse_filepath), "summary.csv")
+        for parse_filepath in chunk_files
+    ]
+    chunk_dict_list = [
+        {
+            "chunk_filepath": chunk_filepath,
+            "chunk_name": os.path.basename(os.path.dirname(chunk_filepath)),
+            "module_name": pd.read_csv(summary_csv_file).iloc[0]["module_name"],
+            "module_params": pd.read_csv(summary_csv_file).iloc[0]["module_params"],
+        }
+        for chunk_filepath, summary_csv_file in zip(chunk_files, summary_csv_files)
+    ]
+    return jsonify(chunk_dict_list), 200
+
+
+@app.route("/projects/<project_id>/parse", methods=["POST"])
+@project_exists(WORK_DIR)
+async def parse_documents_endpoint(project_id):
+    """
+    The request body
+
+    - name: The name of the parse task
+    - config: The configuration for parsing
+    - extension: string.
+        Default is "pdf".
+        You can parse all extensions using "*"
+    """
     task_id = ""
     try:
-        # POST body에서 config 받기
         data = await request.get_json()
         if not data or "config" not in data:
             return jsonify({"error": "Config is required in request body"}), 400
 
         config = data["config"]
+        target_extension = data["extension"]
+        parse_name = data["name"]
 
-        # Trial 객체 가져오기
-        project_db = SQLiteProjectDB(project_id)
-        trial = project_db.get_trial(trial_id)
-        if not trial:
-            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
+        parse_dir = os.path.join(WORK_DIR, project_id, "parse")
 
-        print(f"trial: {trial}")
-        print(f"project_id: {project_id}")
-        print(f"trial_id: {trial_id}")
-        print(f"config: {config}")
+        if os.path.exists(os.path.join(parse_dir, parse_name)):
+            return {"error": "Parse name already exists"}, 400
 
-        # Celery task 시작
         task = parse_documents.delay(
             project_id=project_id,
-            trial_id=trial_id,
-            config_str=yaml.dump(config),  # POST body의 config 사용
+            config_str=yaml.dump(config),
+            parse_name=parse_name,
+            glob_path=f"*.{target_extension}",
         )
         task_id = task.id
-        print(f"task: {task}")
-
-        # Trial 상태 업데이트
-        trial.status = Status.IN_PROGRESS
-        print(f"trial: {trial}")
-        print(f"task: {task}")
-        trial.parse_task_id = task.id
-        project_db.set_trial(trial)
-
-        return jsonify({"task_id": task.id, "status": "started"})
+        return jsonify({"task_id": task_id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting parse task: {str(e)}", exc_info=True)
         return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
@@ -625,38 +669,32 @@ async def get_task_status(project_id: str, task_id: str):
             return jsonify({"status": "FAILURE", "error": str(e)}), 500
 
 
-@app.route(
-    "/projects/<string:project_id>/trials/<string:trial_id>/chunk", methods=["POST"]
-)
+@app.route("/projects/<string:project_id>/chunk", methods=["POST"])
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
-async def start_chunking(project_id: str, trial_id: str):
+async def start_chunking(project_id: str):
+    task_id = None
     try:
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
         chunk_request = ChunkRequest(**data)
         config = chunk_request.config
 
-        project_db = SQLiteProjectDB(project_id)
-        trial = project_db.get_trial(trial_id)
-        if not trial:
-            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
+        if os.path.exists(
+            os.path.join(WORK_DIR, project_id, "chunk", chunk_request.name)
+        ):
+            return jsonify({"error": "Chunk name already exists"}), 400
 
         # Celery task 시작
         task = chunk_documents.delay(
             project_id=project_id,
-            trial_id=trial_id,
-            config_str=yaml.dump(config),  # POST body의 config 사용
+            config_str=yaml.dump(config),
+            parsed_data_path=os.path.join(
+                WORK_DIR, project_id, "parse", chunk_request.parsed_name
+            ),
+            chunk_name=chunk_request.name,
         )
         task_id = task.id
         print(f"task: {task}")
-
-        # Trial 상태 업데이트
-        trial.status = Status.IN_PROGRESS
-        print(f"trial: {trial}")
-        print(f"task: {task}")
-        trial.parse_task_id = task.id
-        project_db.set_trial(trial)
 
         return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
@@ -664,37 +702,35 @@ async def start_chunking(project_id: str, trial_id: str):
         return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
 
 
-@app.route(
-    "/projects/<string:project_id>/trials/<string:trial_id>/qa", methods=["POST"]
-)
+@app.route("/projects/<string:project_id>/qa", methods=["POST"])
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
-async def create_qa(project_id: str, trial_id: str):
+async def create_qa(project_id: str):
+    task_id = None
     try:
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
+        qa_creation_request = QACreationRequest(**data)
+        # Check the corpus_filepath is existed
+        corpus_filepath = os.path.join(
+            WORK_DIR, project_id, "chunk", qa_creation_request.chunked_name, "0.parquet"
+        )
+        if not os.path.exists(corpus_filepath):
+            return jsonify({"error": "corpus_filepath does not exist"}), 401
 
-        project_db = SQLiteProjectDB(project_id)
-        trial = project_db.get_trial(trial_id)
-        if not trial:
-            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
+        if os.path.exists(
+            os.path.join(
+                WORK_DIR, project_id, "qa", f"{qa_creation_request.qa_name}.parquet"
+            )
+        ):
+            return jsonify({"error": "QA name already exists"}), 400
 
-        # Celery task 시작
+        # Start Celery task
         task = generate_qa_documents.delay(
             project_id=project_id,
-            trial_id=trial_id,
-            data=data,  # POST body 전체를 전달
+            request_data=qa_creation_request,
         )
         task_id = task.id
         print(f"task: {task}")
-
-        # Trial 상태 업데이트
-        trial.status = Status.IN_PROGRESS
-        print(f"trial: {trial}")
-        print(f"task: {task}")
-        trial.qa_task_id = task.id  # parse_task_id 대신 qa_task_id 사용
-        project_db.set_trial(trial)
-
         return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting QA generation task: {str(e)}", exc_info=True)
