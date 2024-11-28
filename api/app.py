@@ -41,6 +41,7 @@ from src.schema import (
     TaskType,
     Trial,
     TrialConfig,
+    QACreationRequest,
 )
 
 from src.validate import project_exists, trial_exists
@@ -701,37 +702,35 @@ async def start_chunking(project_id: str):
         return jsonify({"task_id": task_id, "status": "FAILURE", "error": str(e)}), 500
 
 
-@app.route(
-    "/projects/<string:project_id>/trials/<string:trial_id>/qa", methods=["POST"]
-)
+@app.route("/projects/<string:project_id>/qa", methods=["POST"])
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
-async def create_qa(project_id: str, trial_id: str):
+async def create_qa(project_id: str):
+    task_id = None
     try:
         # Get JSON data from request and validate with Pydantic
         data = await request.get_json()
+        qa_creation_request = QACreationRequest(**data)
+        # Check the corpus_filepath is existed
+        corpus_filepath = os.path.join(
+            WORK_DIR, project_id, "chunk", qa_creation_request.chunked_name, "0.parquet"
+        )
+        if not os.path.exists(corpus_filepath):
+            return jsonify({"error": "corpus_filepath does not exist"}), 401
 
-        project_db = SQLiteProjectDB(project_id)
-        trial = project_db.get_trial(trial_id)
-        if not trial:
-            return jsonify({"error": f"Trial not found: {trial_id}"}), 404
+        if os.path.exists(
+            os.path.join(
+                WORK_DIR, project_id, "qa", f"{qa_creation_request.qa_name}.parquet"
+            )
+        ):
+            return jsonify({"error": "QA name already exists"}), 400
 
-        # Celery task 시작
+        # Start Celery task
         task = generate_qa_documents.delay(
             project_id=project_id,
-            trial_id=trial_id,
-            data=data,  # POST body 전체를 전달
+            request_data=qa_creation_request,
         )
         task_id = task.id
         print(f"task: {task}")
-
-        # Trial 상태 업데이트
-        trial.status = Status.IN_PROGRESS
-        print(f"trial: {trial}")
-        print(f"task: {task}")
-        trial.qa_task_id = task.id  # parse_task_id 대신 qa_task_id 사용
-        project_db.set_trial(trial)
-
         return jsonify({"task_id": task.id, "status": "started"})
     except Exception as e:
         logger.error(f"Error starting QA generation task: {str(e)}", exc_info=True)

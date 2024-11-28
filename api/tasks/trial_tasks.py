@@ -121,10 +121,10 @@ def chunk_documents(
 
 
 @shared_task(bind=True, base=TrialTask)
-def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
+def generate_qa_documents(self, project_id: str, request_data: QACreationRequest):
     try:
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status="generating_qa_docs",
             progress=0,
@@ -137,28 +137,29 @@ def generate_qa_documents(self, project_id: str, trial_id: str, data: dict):
         project_dir = os.path.join(WORK_DIR, project_id)
         config_dir = os.path.join(project_dir, "config")
         corpus_filepath = os.path.join(
-            project_dir, "chunk", f"chunk_{trial_id}", "0.parquet"
+            project_dir, "chunk", request_data.chunked_name, "0.parquet"
         )
-        dataset_dir = os.path.join(project_dir, "qa", f"qa_{trial_id}")
+        if not os.path.exists(corpus_filepath):
+            raise ValueError(f"corpus_filepath does not exist: {corpus_filepath}")
 
-        # 필요한 모든 디렉토리 생성
+        dataset_dir = os.path.join(project_dir, "qa")
+
         os.makedirs(config_dir, exist_ok=True)
-        os.makedirs(dataset_dir, exist_ok=True)  # dataset_dir도 생성
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir, exist_ok=False)
 
-        qa_creation_request = QACreationRequest(**data)
-        result = run_qa_creation(qa_creation_request, corpus_filepath, dataset_dir)
+        run_qa_creation(request_data, corpus_filepath, dataset_dir)
 
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.COMPLETED,
             progress=100,
             task_type="qa_docs",
         )
-        return result
     except Exception as e:
         self.update_state_and_db(
-            trial_id=trial_id,
+            trial_id="",
             project_id=project_id,
             status=Status.FAILED,
             progress=0,

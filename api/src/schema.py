@@ -52,6 +52,7 @@ class SupportLanguageEnum(str, Enum):
 class QACreationRequest(BaseModel):
     preset: QACreationPresetEnum
     name: str = Field(..., description="Name of the QA dataset")
+    chunked_name: str = Field(..., description="The name of the chunked data")
     qa_num: int
     llm_config: LLMConfig = Field(description="LLM configuration settings")
     lang: SupportLanguageEnum = Field(
