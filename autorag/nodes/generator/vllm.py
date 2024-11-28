@@ -37,17 +37,21 @@ class Vllm(BaseGenerator):
 	def __del__(self):
 		try:
 			import torch
+			import contextlib
 
 			if torch.cuda.is_available():
 				from vllm.distributed.parallel_state import (
-					destroy_model_parallel,
+					destroy_model_parallel, destroy_distributed_environment
 				)
 
 				destroy_model_parallel()
+				destroy_distributed_environment()
+				del self.vllm_model.llm_engine.model_executor
 				del self.vllm_model
+				with contextlib.suppress(AssertionError):
+					torch.distributed.destroy_process_group()
 				gc.collect()
 				torch.cuda.empty_cache()
-				torch.distributed.destroy_process_group()
 				torch.cuda.synchronize()
 		except ImportError:
 			del self.vllm_model
