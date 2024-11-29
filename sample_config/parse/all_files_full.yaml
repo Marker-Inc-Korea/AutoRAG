@@ -1,0 +1,13 @@
+modules:
+  - module_type: langchain_parse
+    file_type: all_files
+    parse_method: [ directory, unstructured, upstagedocumentparse ]
+  - module_type: clova
+    file_type: all_files
+    table_detection: true
+  - module_type: llamaparse
+    file_type: all_files
+    result_type: markdown
+    language: ko
+    use_vendor_multimodal_model: true
+    vendor_multimodal_model_name: openai-gpt-4o-mini

@@ -31,7 +31,9 @@ def test_langchain_parse_single_pdf():
 
 
 def test_langchain_parse_single_pdf_node():
-	result_df = langchain_parse(korean_text_glob, parse_method="pdfminer")
+	result_df = langchain_parse(
+		korean_text_glob, file_type="pdf", parse_method="pdfminer"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -50,7 +52,9 @@ def test_langchain_parse_single_pdf_pages():
 
 
 def test_langchain_parse_single_pdf_pages_node():
-	result_df = langchain_parse(korean_text_glob, parse_method="pymupdf")
+	result_df = langchain_parse(
+		korean_text_glob, file_type="pdf", parse_method="pymupdf"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -69,7 +73,7 @@ def test_langchain_parse_multiple_pdf():
 
 
 def test_langchain_parse_multiple_pdf_node():
-	result_df = langchain_parse(eng_text_glob, parse_method="pdfminer")
+	result_df = langchain_parse(eng_text_glob, file_type="pdf", parse_method="pdfminer")
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -88,7 +92,7 @@ def test_langchain_parse_multiple_pdf_pages():
 
 
 def test_langchain_parse_multiple_pdf_pages_node():
-	result_df = langchain_parse(eng_text_glob, parse_method="pymupdf")
+	result_df = langchain_parse(eng_text_glob, file_type="pdf", parse_method="pymupdf")
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -104,7 +108,7 @@ def test_langchain_csv():
 
 
 def test_langchain_csv_node():
-	result_df = langchain_parse(csv_glob, parse_method="csv")
+	result_df = langchain_parse(csv_glob, file_type="csv", parse_method="csv")
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -122,7 +126,9 @@ def test_langchain_json():
 
 
 def test_langchain_json_node():
-	result_df = langchain_parse(json_glob, parse_method="json", jq_schema=".content")
+	result_df = langchain_parse(
+		json_glob, file_type="json", parse_method="json", jq_schema=".content"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -139,7 +145,9 @@ def test_langchain_markdown():
 
 
 def test_langchain_markdown_node():
-	result_df = langchain_parse(markdown_glob, parse_method="unstructuredmarkdown")
+	result_df = langchain_parse(
+		markdown_glob, file_type="md", parse_method="unstructuredmarkdown"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -154,7 +162,7 @@ def test_langchain_html():
 
 
 def test_langchain_html_node():
-	result_df = langchain_parse(html_glob, parse_method="bshtml")
+	result_df = langchain_parse(html_glob, file_type="html", parse_method="bshtml")
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -171,7 +179,9 @@ def test_langchain_xml():
 
 
 def test_langchain_xml_node():
-	result_df = langchain_parse(xml_glob, parse_method="unstructuredxml")
+	result_df = langchain_parse(
+		xml_glob, file_type="xml", parse_method="unstructuredxml"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -188,7 +198,9 @@ def test_langchain_all_files_unstructured():
 
 
 def test_langchain_all_files_unstructured_node():
-	result_df = langchain_parse(all_files_glob, parse_method="unstructured")
+	result_df = langchain_parse(
+		all_files_glob, file_type="all_files", parse_method="unstructured"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -208,7 +220,9 @@ def test_langchain_all_files_directory():
 
 
 def test_langchain_all_files_directory_node():
-	result_df = langchain_parse(all_files_glob, parse_method="directory")
+	result_df = langchain_parse(
+		all_files_glob, file_type="all_files", parse_method="directory"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(), result_df["path"].tolist(), "all_files_directory"
 	)
