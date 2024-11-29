@@ -94,6 +94,10 @@ if "AUTORAG_WORK_DIR" in os.environ:
     WORK_DIR = os.getenv("AUTORAG_WORK_DIR")
 
 ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
+if not os.path.exists(ENV_FILEPATH):
+    # add empty new .env file
+    with open(ENV_FILEPATH, "w") as f:
+        f.write("")
 # 환경에 따른 WORK_DIR 설정
 
 load_dotenv(ENV_FILEPATH)
