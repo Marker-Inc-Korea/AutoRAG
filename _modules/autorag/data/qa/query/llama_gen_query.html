@@ -449,7 +449,7 @@
 <span class="kn">from</span> <span class="nn">llama_index.core.base.llms.base</span> <span class="kn">import</span> <span class="n">BaseLLM</span>
 <span class="kn">from</span> <span class="nn">llama_index.core.base.llms.types</span> <span class="kn">import</span> <span class="n">ChatResponse</span><span class="p">,</span> <span class="n">ChatMessage</span><span class="p">,</span> <span class="n">MessageRole</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.query.prompt</span> <span class="kn">import</span> <span class="n">QUERY_GEN_PROMPT</span>
+<span class="kn">from</span> <span class="nn">autorag.data.qa.query.prompt</span> <span class="kn">import</span> <span class="n">QUERY_GEN_PROMPT</span><span class="p">,</span> <span class="n">QUERY_GEN_PROMPT_EXTRA</span>
 
 
 <div class="viewcode-block" id="llama_index_generate_base">
@@ -527,6 +527,21 @@
 	<span class="n">messages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ChatMessage</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
 	<span class="k">return</span> <span class="k">await</span> <span class="n">llama_index_generate_base</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">messages</span><span class="p">)</span></div>
+
+
+
+<span class="c1"># Experimental feature: can only use factoid_single_hop</span>
+<div class="viewcode-block" id="multiple_queries_gen">
+<a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.query.html#autorag.data.qa.query.llama_gen_query.multiple_queries_gen">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">multiple_queries_gen</span><span class="p">(</span>
+	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
+	<span class="n">llm</span><span class="p">:</span> <span class="n">BaseLLM</span><span class="p">,</span>
+	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>
+	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+	<span class="n">_messages</span> <span class="o">=</span> <span class="n">QUERY_GEN_PROMPT</span><span class="p">[</span><span class="s2">&quot;factoid_single_hop&quot;</span><span class="p">][</span><span class="n">lang</span><span class="p">]</span>
+	<span class="n">_messages</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">content</span> <span class="o">+=</span> <span class="n">QUERY_GEN_PROMPT_EXTRA</span><span class="p">[</span><span class="s2">&quot;multiple_queries&quot;</span><span class="p">][</span><span class="n">lang</span><span class="p">]</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">)</span>
+	<span class="k">return</span> <span class="k">await</span> <span class="n">llama_index_generate_base</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">_messages</span><span class="p">)</span></div>
 
 </pre></div>
         </article>
