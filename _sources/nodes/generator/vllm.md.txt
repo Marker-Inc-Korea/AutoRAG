@@ -64,3 +64,10 @@ Plus, you can use it over v0.2.16, so you must be upgrade to the latest version.
 We are developing multi-gpu compatibility for AutoRAG now.
 So, please wait for the full compatibilty to multi-gpu environment.
 ```
+```{warning}
+When using the vllm module, errors may occur depending on the configuration of PyTorch. In such cases, please follow the instructions below:
+
+1. Define the vllm module to operate in a single-case mode.
+2. Set the skip_validation parameter to True when using the start_trial function in the evaluator.
+```
+

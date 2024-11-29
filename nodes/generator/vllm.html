@@ -506,6 +506,14 @@ you must check out <a class="reference external" href="https://docs.vllm.ai/en/l
 <p>We are developing multi-gpu compatibility for AutoRAG now.
 So, please wait for the full compatibilty to multi-gpu environment.</p>
 </div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>When using the vllm module, errors may occur depending on the configuration of PyTorch. In such cases, please follow the instructions below:</p>
+<ol class="arabic simple">
+<li><p>Define the vllm module to operate in a single-case mode.</p></li>
+<li><p>Set the skip_validation parameter to True when using the start_trial function in the evaluator.</p></li>
+</ol>
+</div>
 </section>
 </section>
 
