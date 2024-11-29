@@ -23,7 +23,7 @@ scikit-learn
 emoji
 
 ### Vector DB ###
-pymilvus # for using milvus vectordb
+pymilvus>=2.3.0 # for using milvus vectordb
 chromadb>=0.5.0 # for chroma vectordb
 weaviate-client # for weaviate vectordb
 pinecone[grpc] # for pinecone vectordb
