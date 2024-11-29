@@ -33,7 +33,9 @@ def test_llama_parse_single_pdf():
 
 @patch.object(llama_parse.base.LlamaParse, "aload_data", mock_llama_parse_aload_data)
 def test_llama_parse_single_pdf_node():
-	result_df = llamaparse(korean_text_glob, url="mock_url", api_key="mock_api_key")
+	result_df = llamaparse(
+		korean_text_glob, file_type="all_files", url="mock_url", api_key="mock_api_key"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -56,7 +58,9 @@ def test_llama_parse_multiple_pdf():
 
 @patch.object(llama_parse.base.LlamaParse, "aload_data", mock_llama_parse_aload_data)
 def test_llama_parse_multiple_pdf_node():
-	result_df = llamaparse(eng_text_glob, url="mock_url", api_key="mock_api_key")
+	result_df = llamaparse(
+		eng_text_glob, file_type="all_files", url="mock_url", api_key="mock_api_key"
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -85,6 +89,7 @@ def test_llama_parse_multimodal():
 def test_llama_parse_multimodal_node():
 	result_df = llamaparse(
 		eng_text_glob,
+		file_type="all_files",
 		url="mock_url",
 		api_key="mock_api_key",
 		use_vendor_multimodal_model=True,
@@ -129,6 +134,7 @@ def test_llama_parse_multimodal_use_env_key_node():
 	with patch.dict(os.environ, temp_env_vars):
 		result_df = llamaparse(
 			eng_text_glob,
+			file_type="all_files",
 			url="mock_url",
 			api_key="mock_api_key",
 			use_vendor_multimodal_model=True,
@@ -164,6 +170,7 @@ def test_llama_parse_multimodal_use_own_key():
 def test_llama_parse_multimodal_use_own_key_node():
 	result_df = llamaparse(
 		eng_text_glob,
+		file_type="all_files",
 		url="mock_url",
 		api_key="mock_api_key",
 		use_vendor_multimodal_model=True,
