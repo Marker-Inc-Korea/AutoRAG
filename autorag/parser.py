@@ -14,7 +14,7 @@ class Parser:
 		self.data_path_glob = data_path_glob
 		self.project_dir = project_dir if project_dir is not None else os.getcwd()
 
-	def start_parsing(self, yaml_path: str):
+	def start_parsing(self, yaml_path: str, all_files: bool = False):
 		if not os.path.exists(self.project_dir):
 			os.makedirs(self.project_dir)
 
@@ -32,5 +32,6 @@ class Parser:
 			module_params=input_params,
 			data_path_glob=self.data_path_glob,
 			project_dir=self.project_dir,
+			all_files=all_files,
 		)
 		logger.info("Parsing Done!")
