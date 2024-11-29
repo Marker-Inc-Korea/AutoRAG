@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from glob import glob
 from typing import Tuple, List, Optional
+import os
 
 from autorag.utils import result_to_dataframe
 from autorag.data.utils.util import get_file_metadata
@@ -40,7 +41,7 @@ def parser_node(func):
 			[
 				data_path
 				for data_path in data_path_list
-				if data_path.split("/")[-1].split(".")[-1] == file_type
+				if os.path.basename(data_path).split(".")[-1] == file_type
 			]
 			if file_type != "all_files"
 			else data_path_list

@@ -49,7 +49,7 @@ def run_parser(
 			raise FileNotFoundError(f"data does not exits in {data_path_glob}")
 
 		file_types = set(
-			[data_path.split("/")[-1].split(".")[-1] for data_path in data_path_list]
+			[os.path.basename(data_path).split(".")[-1] for data_path in data_path_list]
 		)
 		set_file_types = set([module["file_type"] for module in module_params])
 
