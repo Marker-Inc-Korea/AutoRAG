@@ -28,7 +28,6 @@ from quart_uploads import UploadSet, configure_uploads
 from src.auth import require_auth
 from src.evaluate_history import get_new_trial_dir
 from src.run import (
-    run_start_trial,
     run_dashboard,
     run_chat,
 )
@@ -804,81 +803,49 @@ async def start_validate(project_id: str, trial_id: str):
 )
 @project_exists(WORK_DIR)
 async def start_evaluate(project_id: str, trial_id: str):
-    evaluate_history_path = os.path.join(WORK_DIR, project_id, "evaluate_history.csv")
-    if not os.path.exists(evaluate_history_path):
-        evaluate_history_df = pd.DataFrame(
-            columns=["trial_id", "save_dir", "corpus_path", "qa_path", "config_path"]
-        )  # save_dir is to autorag trial directory
-        evaluate_history_df.to_csv(evaluate_history_path, index=False)
-    else:
-        evaluate_history_df = pd.read_csv(evaluate_history_path)
+    try:
+        db_path = os.path.join(WORK_DIR, project_id, "trials.db")
+        trial_config_db = SQLiteProjectDB(db_path)
+        new_config = trial_config_db.get_trial(trial_id).config
+        if new_config is None:
+            return jsonify({"error": f"Trial {trial_id} not found"}), 404
+        if (
+            new_config.corpus_path is None
+            or new_config.qa_path is None
+            or new_config.config_path is None
+        ):
+            return jsonify(
+                {"error": "All Corpus, QA, and config paths must be set"}
+            ), 400
+        project_dir = os.path.join(WORK_DIR, project_id, "project")
 
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    previous_config = trial_config_db.get_trial(trial_id).config
-    print("previous_config: ", previous_config)
-    trial = trial_config_db.get_trial(trial_id)
-    trials_dir = os.path.join(WORK_DIR, project_id, "trials")
+        data = await request.get_json()
+        skip_validation = data.get("skip_validation", False)
+        full_ingest = data.get("full_ingest", True)
 
-    data = await request.get_json()
-    skip_validation = data.get("skip_validation", False)
-    full_ingest = data.get("full_ingest", True)
+        trial_configs = trial_config_db.get_all_configs()
+        new_trial_dir = get_new_trial_dir(trial_configs, new_config, project_dir)
+        if os.path.exists(new_trial_dir):
+            return jsonify(
+                {
+                    "trial_dir": new_trial_dir,
+                    "error": "Exact same evaluation already run. "
+                    "Skipping but return the directory where the evaluation result is saved.",
+                }
+            ), 409
 
-    new_trial_dir = get_new_trial_dir(evaluate_history_df, trial.config, trials_dir)
-    if os.path.exists(new_trial_dir):
-        return jsonify(
-            {
-                "trial_dir": new_trial_dir,
-                "error": "Exact same evaluation already run. "
-                "Skipping but return the directory where the evaluation result is saved.",
-            }
-        ), 409
-    task_id = str(uuid.uuid4())
+        task = start_evaluate.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            config=new_config,
+            project_dir=project_dir,
+            skip_validation=skip_validation,
+            full_ingest=full_ingest,
+        )
 
-    new_row = pd.DataFrame(
-        [
-            {
-                "task_id": task_id,
-                "trial_id": trial_id,
-                "save_dir": new_trial_dir,
-                "corpus_path": previous_config.corpus_path,
-                "qa_path": previous_config.qa_path,
-                "config_path": previous_config.config_path,
-                "created_at": datetime.now(tz=timezone.utc),
-            }
-        ]
-    )
-    evaluate_history_df = pd.concat([evaluate_history_df, new_row], ignore_index=True)
-    evaluate_history_df.reset_index(drop=True, inplace=True)
-    evaluate_history_df.to_csv(evaluate_history_path, index=False)
-
-    with open(trial.config.config_path, "r") as f:
-        config_yaml = yaml.safe_load(f)
-    task = Task(
-        id=task_id,
-        project_id=project_id,
-        trial_id=trial_id,
-        name=f"{trial_id}/evaluation",
-        config_yaml=config_yaml,
-        status=Status.IN_PROGRESS,
-        type=TaskType.EVALUATE,
-        created_at=datetime.now(tz=timezone.utc),
-        save_path=new_trial_dir,
-    )
-    await create_task(
-        task_id,
-        task,
-        run_start_trial,
-        trial.config.qa_path,
-        trial.config.corpus_path,
-        os.path.dirname(new_trial_dir),
-        trial.config.config_path,
-        skip_validation,
-        full_ingest,
-    )
-
-    task.model_dump()
-    return jsonify(task.model_dump()), 202
+        return jsonify({"task_id": task.id, "status": "started"}), 202
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route(

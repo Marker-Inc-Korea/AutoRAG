@@ -134,7 +134,7 @@ class TrialConfig(BaseModel):
 
     trial_id: str
     project_id: str
-    raw_path: str
+    save_dir: str = Field(None, description="The directory that trial resut is stored.")
     corpus_path: Optional[str] = None
     qa_path: Optional[str] = None
     config_path: Optional[str] = None
@@ -156,17 +156,6 @@ class Trial(BaseModel):
     chat_task_id: Optional[str] = Field(
         None, description="The chat task id for forcing shutdown of the task"
     )
-    parse_task_id: Optional[str] = Field(
-        None, description="The parse task id"
-    )  # Celery task id
-    chunk_task_id: Optional[str] = Field(
-        None, description="The chunk task id"
-    )  # Celery task id
-    qa_task_id: Optional[str] = Field(
-        None, description="The QA task id"
-    )  # Celery task id
-    corpus_path: Optional[str] = None
-    qa_path: Optional[str] = None
 
     @field_validator("report_task_id", "chat_task_id", mode="before")
     def replace_nan_with_none(cls, v):
