@@ -448,6 +448,7 @@
 <span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
 <span class="kn">from</span> <span class="nn">glob</span> <span class="kn">import</span> <span class="n">glob</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">import</span> <span class="nn">os</span>
 
 <span class="kn">from</span> <span class="nn">autorag.utils</span> <span class="kn">import</span> <span class="n">result_to_dataframe</span>
 <span class="kn">from</span> <span class="nn">autorag.data.utils.util</span> <span class="kn">import</span> <span class="n">get_file_metadata</span>
@@ -461,13 +462,37 @@
 	<span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
 	<span class="nd">@result_to_dataframe</span><span class="p">([</span><span class="s2">&quot;texts&quot;</span><span class="p">,</span> <span class="s2">&quot;path&quot;</span><span class="p">,</span> <span class="s2">&quot;page&quot;</span><span class="p">,</span> <span class="s2">&quot;last_modified_datetime&quot;</span><span class="p">])</span>
 	<span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span>
-		<span class="n">data_path_glob</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">parse_method</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+		<span class="n">data_path_glob</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+		<span class="n">file_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+		<span class="n">parse_method</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+		<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">datetime</span><span class="p">]]:</span>
 		<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Running parser - </span><span class="si">{</span><span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> module...&quot;</span><span class="p">)</span>
 
 		<span class="n">data_path_list</span> <span class="o">=</span> <span class="n">glob</span><span class="p">(</span><span class="n">data_path_glob</span><span class="p">)</span>
 		<span class="k">if</span> <span class="ow">not</span> <span class="n">data_path_list</span><span class="p">:</span>
 			<span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;data does not exits in </span><span class="si">{</span><span class="n">data_path_glob</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+		<span class="k">assert</span> <span class="n">file_type</span> <span class="ow">in</span> <span class="p">[</span>
+			<span class="s2">&quot;pdf&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;csv&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;json&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;md&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;html&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;xml&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;all_files&quot;</span><span class="p">,</span>
+		<span class="p">],</span> <span class="sa">f</span><span class="s2">&quot;search type </span><span class="si">{</span><span class="n">file_type</span><span class="si">}</span><span class="s2"> is not supported&quot;</span>
+
+		<span class="c1"># extract only files from data_path_list based on the file_type set in the YAML file</span>
+		<span class="n">data_paths</span> <span class="o">=</span> <span class="p">(</span>
+			<span class="p">[</span>
+				<span class="n">data_path</span>
+				<span class="k">for</span> <span class="n">data_path</span> <span class="ow">in</span> <span class="n">data_path_list</span>
+				<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">data_path</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">file_type</span>
+			<span class="p">]</span>
+			<span class="k">if</span> <span class="n">file_type</span> <span class="o">!=</span> <span class="s2">&quot;all_files&quot;</span>
+			<span class="k">else</span> <span class="n">data_path_list</span>
+		<span class="p">)</span>
 
 		<span class="k">if</span> <span class="n">func</span><span class="o">.</span><span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;langchain_parse&quot;</span><span class="p">:</span>
 			<span class="n">parse_method</span> <span class="o">=</span> <span class="n">parse_method</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
@@ -477,14 +502,14 @@
 				<span class="n">folder_path</span> <span class="o">=</span> <span class="s2">&quot;/&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path_split_list</span><span class="p">)</span>
 				<span class="n">kwargs</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="s2">&quot;glob&quot;</span><span class="p">:</span> <span class="n">glob_path</span><span class="p">,</span> <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="n">folder_path</span><span class="p">})</span>
 				<span class="n">result</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span>
-					<span class="n">data_path_list</span><span class="o">=</span><span class="n">data_path_list</span><span class="p">,</span> <span class="n">parse_method</span><span class="o">=</span><span class="n">parse_method</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+					<span class="n">data_path_list</span><span class="o">=</span><span class="n">data_paths</span><span class="p">,</span> <span class="n">parse_method</span><span class="o">=</span><span class="n">parse_method</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 				<span class="p">)</span>
 			<span class="k">else</span><span class="p">:</span>
 				<span class="n">result</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span>
-					<span class="n">data_path_list</span><span class="o">=</span><span class="n">data_path_list</span><span class="p">,</span> <span class="n">parse_method</span><span class="o">=</span><span class="n">parse_method</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+					<span class="n">data_path_list</span><span class="o">=</span><span class="n">data_paths</span><span class="p">,</span> <span class="n">parse_method</span><span class="o">=</span><span class="n">parse_method</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 				<span class="p">)</span>
 		<span class="k">elif</span> <span class="n">func</span><span class="o">.</span><span class="vm">__name__</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;clova_ocr&quot;</span><span class="p">,</span> <span class="s2">&quot;llama_parse&quot;</span><span class="p">,</span> <span class="s2">&quot;table_hybrid_parse&quot;</span><span class="p">]:</span>
-			<span class="n">result</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="n">data_path_list</span><span class="o">=</span><span class="n">data_path_list</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+			<span class="n">result</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="n">data_path_list</span><span class="o">=</span><span class="n">data_paths</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 		<span class="k">else</span><span class="p">:</span>
 			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported module_type: </span><span class="si">{</span><span class="n">func</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 		<span class="n">result</span> <span class="o">=</span> <span class="n">_add_last_modified_datetime</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
