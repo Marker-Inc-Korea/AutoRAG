@@ -83,12 +83,19 @@ def run_parser(
 	average_times = list(map(lambda x: x / len(results[0]), execution_times))
 
 	# save results to parquet files
-	filepaths = list(
-		map(
-			lambda x: os.path.join(project_dir, f"{x['file_type']}.parquet"),
-			module_params,
+	if all_files:
+		filepaths = list(
+			map(
+				lambda x: os.path.join(project_dir, f"{x}.parquet"), range(len(modules))
+			)
 		)
-	)
+	else:
+		filepaths = list(
+			map(
+				lambda x: os.path.join(project_dir, f"{x['file_type']}.parquet"),
+				module_params,
+			)
+		)
 	list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))
 	filenames = list(map(lambda x: os.path.basename(x), filepaths))
 
