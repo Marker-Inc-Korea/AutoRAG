@@ -182,9 +182,9 @@ Two-hop question (using Document 2): ヌエヴォ·ラレドのテコロテス·
 
 # Experimental feature
 QUERY_GEN_PROMPT_EXTRA = {
-    "multiple_queries": {
-        "en": "\nAdditional instructions:\n  - Please make {n} questions.",
-        "ko": "\n추가 지침:\n  - 질문은 {n}개를 만드세요.",
-        "ja": "\n追加指示:\n  - 質問を{n}個作成してください。",
-    }
+	"multiple_queries": {
+		"en": "\nAdditional instructions:\n  - Please make {n} questions.",
+		"ko": "\n추가 지침:\n  - 질문은 {n}개를 만드세요.",
+		"ja": "\n追加指示:\n  - 質問を{n}個作成してください。",
+	}
 }

@@ -79,6 +79,4 @@ async def multiple_queries_gen(
 ) -> Dict:
 	_messages = QUERY_GEN_PROMPT["factoid_single_hop"][lang]
 	_messages[0].content += QUERY_GEN_PROMPT_EXTRA["multiple_queries"][lang].format(n=n)
-	return await llama_index_generate_base(
-		row, llm, _messages
-	)
+	return await llama_index_generate_base(row, llm, _messages)
