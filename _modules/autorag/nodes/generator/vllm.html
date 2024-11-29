@@ -484,17 +484,21 @@
 	<span class="k">def</span> <span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="kn">import</span> <span class="nn">torch</span>
+			<span class="kn">import</span> <span class="nn">contextlib</span>
 
 			<span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
 				<span class="kn">from</span> <span class="nn">vllm.distributed.parallel_state</span> <span class="kn">import</span> <span class="p">(</span>
-					<span class="n">destroy_model_parallel</span><span class="p">,</span>
+					<span class="n">destroy_model_parallel</span><span class="p">,</span> <span class="n">destroy_distributed_environment</span>
 				<span class="p">)</span>
 
 				<span class="n">destroy_model_parallel</span><span class="p">()</span>
+				<span class="n">destroy_distributed_environment</span><span class="p">()</span>
+				<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">llm_engine</span><span class="o">.</span><span class="n">model_executor</span>
 				<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span>
+				<span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">AssertionError</span><span class="p">):</span>
+					<span class="n">torch</span><span class="o">.</span><span class="n">distributed</span><span class="o">.</span><span class="n">destroy_process_group</span><span class="p">()</span>
 				<span class="n">gc</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
 				<span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">empty_cache</span><span class="p">()</span>
-				<span class="n">torch</span><span class="o">.</span><span class="n">distributed</span><span class="o">.</span><span class="n">destroy_process_group</span><span class="p">()</span>
 				<span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">synchronize</span><span class="p">()</span>
 		<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
 			<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span>
