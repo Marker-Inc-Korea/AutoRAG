@@ -1,0 +1,3 @@
+openai>=1.0.0
+jinja2>=3.0.0
+autorag-client>=0.1.0
