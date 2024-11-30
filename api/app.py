@@ -478,58 +478,6 @@ async def delete_trial(project_id: str, trial_id: str):
     return jsonify({"message": "Trial deleted successfully"})
 
 
-@app.route("/projects/<string:project_id>/artifacts/files", methods=["GET"])
-@project_exists(WORK_DIR)
-async def get_artifact_file(project_id: str):
-    """특정 파일의 내용을 비동기적으로 반환합니다."""
-    file_path = request.args.get("path")
-    if not file_path:
-        return jsonify({"error": "File path is required"}), 400
-
-    try:
-        full_path = os.path.join(WORK_DIR, project_id, file_path)
-
-        # 경로 검증 (디렉토리 트래버설 방지)
-        if not os.path.normpath(full_path).startswith(
-            os.path.normpath(os.path.join(WORK_DIR, project_id))
-        ):
-            return jsonify({"error": "Invalid file path"}), 403
-
-        # 비동기로 파일 재 여부 확인
-        if not await aiofiles.os.path.exists(full_path):
-            return jsonify({"error": "File not found"}), 404
-
-        if not await aiofiles.os.path.isfile(full_path):
-            return jsonify({"error": "Path is not a file"}), 400
-
-        # 파일 크기 체크
-        stats = await aiofiles.os.stat(full_path)
-        if stats.st_size > 10 * 1024 * 1024:  # 10MB 제한
-            return jsonify({"error": "File too large"}), 400
-
-        # 파일 확장자 체크
-        _, ext = os.path.splitext(full_path)
-        allowed_extensions = {".txt", ".yaml", ".yml", ".json", ".py", ".md"}
-        if ext.lower() not in allowed_extensions:
-            return jsonify({"error": "File type not supported"}), 400
-
-        # 비동기로 파일 읽기
-        async with aiofiles.open(full_path, "r", encoding="utf-8") as f:
-            content = await f.read()
-
-        return jsonify(
-            {
-                "content": content,
-                "path": file_path,
-                "size": stats.st_size,
-                "last_modified": stats.st_mtime,
-            }
-        ), 200
-
-    except Exception as e:
-        return jsonify({"error": f"Failed to read file: {str(e)}"}), 500
-
-
 @app.route("/projects/<string:project_id>/upload", methods=["POST"])
 @project_exists(WORK_DIR)
 async def upload_files(project_id: str):
@@ -1003,7 +951,7 @@ async def get_project_artifacts(project_id: str):
         return jsonify({"error": f"Failed to scan artifacts: {str(e)}"}), 500
 
 
-@app.route("/projects/<string:project_id>/artifacts/content")
+@app.route("/projects/<string:project_id>/artifacts/content", methods=["GET"])
 @project_exists(WORK_DIR)
 async def get_artifact_content(project_id: str):
     try:
@@ -1011,6 +959,10 @@ async def get_artifact_content(project_id: str):
         target_path = os.path.join(WORK_DIR, project_id, "raw_data", requested_filename)
         if not os.path.exists(target_path):
             return jsonify({"error": "File not found"}), 404
+        # 파일 크기 체크
+        stats = await aiofiles.os.stat(target_path)
+        if stats.st_size > 10 * 1024 * 1024:  # 10MB 제한
+            return jsonify({"error": "File too large"}), 400
         return await send_file(target_path, as_attachment=True), 200
     except Exception as e:
         return jsonify({"error": f"Failed to load artifacts: {str(e)}"}), 500
