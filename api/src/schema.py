@@ -134,10 +134,12 @@ class TrialConfig(BaseModel):
 
     trial_id: str
     project_id: str
-    save_dir: str = Field(None, description="The directory that trial resut is stored.")
-    corpus_path: Optional[str] = None
-    qa_path: Optional[str] = None
-    config_path: Optional[str] = None
+    save_dir: str = Field(
+        None, description="The directory that trial result is stored."
+    )
+    corpus_name: Optional[str] = None
+    qa_name: Optional[str] = None
+    config: Optional[dict] = None
     metadata: Optional[dict] = {}
 
 

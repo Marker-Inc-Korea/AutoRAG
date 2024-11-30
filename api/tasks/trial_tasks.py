@@ -1,4 +1,5 @@
 import os
+import shutil
 
 from celery import shared_task
 from .base import TrialTask
@@ -37,16 +38,17 @@ else:
 
 @shared_task(bind=True, base=TrialTask)
 def chunk_documents(
-    self, project_id: str, config_str: str, parsed_data_path: str, chunk_name: str
+    self, project_id: str, config_str: str, parse_name: str, chunk_name: str
 ):
     """
     Task for the chunk documents
 
     :param project_id: The project id of the trial
     :param config_str: Configuration string for chunking
-    :param parsed_data_path: The path of the parsed data
+    :param parse_name: The name of the parsed data
     :param chunk_name: The name of the chunk
     """
+    parsed_data_path = os.path.join(WORK_DIR, project_id, "parse", parse_name)
     if not os.path.exists(parsed_data_path):
         raise ValueError(f"parsed_data_path does not exist: {parsed_data_path}")
 
@@ -236,7 +238,7 @@ def parse_documents(
             info={"error": str(e)},
         )
         if os.path.exists(parsed_data_path):
-            os.rmdir(parsed_data_path)
+            shutil.rmtree(parsed_data_path)
         raise
 
 
