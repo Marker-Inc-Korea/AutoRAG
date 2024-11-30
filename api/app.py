@@ -968,6 +968,20 @@ async def get_artifact_content(project_id: str):
         return jsonify({"error": f"Failed to load artifacts: {str(e)}"}), 500
 
 
+@app.route("/projects/<string:project_id>/artifacts/content", methods=["DELETE"])
+@project_exists(WORK_DIR)
+async def delete_artifact(project_id: str):
+    try:
+        requested_filename = request.args.get("filename")
+        target_path = os.path.join(WORK_DIR, project_id, "raw_data", requested_filename)
+        if not os.path.exists(target_path):
+            return jsonify({"error": "File not found"}), 404
+        os.remove(target_path)
+        return jsonify({"message": "File deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete artifact: {str(e)}"}), 500
+
+
 @app.route(
     "/projects/<string:project_id>/trials/<string:trial_id>/chat/close", methods=["GET"]
 )
