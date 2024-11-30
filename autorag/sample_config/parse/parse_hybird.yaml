@@ -1,8 +1,12 @@
 modules:
   - module_type: table_hybrid_parse
+    file_type: pdf
     text_parse_module: langchain_parse
     text_params:
       parse_method: pdfplumber
-    table_parse_module: clova
+    table_parse_module: llamaparse
     table_params:
-      table_detection: true
+      result_type: markdown
+      language: ko
+      use_vendor_multimodal_model: true
+      vendor_multimodal_model_name: openai-gpt-4o-mini

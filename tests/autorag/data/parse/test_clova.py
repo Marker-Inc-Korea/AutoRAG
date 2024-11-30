@@ -81,7 +81,9 @@ def test_clova_ocr_single_pdf():
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_single_pdf_node():
-	result_df = clova_ocr(korean_text_glob, url="mock_url", api_key="mock_api_key")
+	result_df = clova_ocr(
+		korean_text_glob, file_type="all_files", url="mock_url", api_key="mock_api_key"
+	)
 	check_clova_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -100,7 +102,9 @@ def test_clova_ocr_multiple_pdf():
 
 @patch.object(autorag.data.parse.clova, "clova_ocr_pure", mock_clova_ocr_pure)
 def test_clova_ocr_multiple_pdf_node():
-	result_df = clova_ocr(eng_text_glob, url="mock_url", api_key="mock_api_key")
+	result_df = clova_ocr(
+		eng_text_glob, file_type="all_files", url="mock_url", api_key="mock_api_key"
+	)
 	check_clova_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),

@@ -1,5 +1,6 @@
 modules:
   - module_type: llamaparse
+    file_type: all_files
     result_type: markdown
     language: ko
     use_vendor_multimodal_model: true
