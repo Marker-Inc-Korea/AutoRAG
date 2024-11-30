@@ -1,9 +1,10 @@
 import asyncio
 import os
+import json
 from jinja2 import Template
 from openai import OpenAI
+
 from autorag.client import AutoRAGClient
-import json
 
 # Define RAG prompt template
 RAG_PROMPT = Template("""
@@ -47,9 +48,7 @@ async def query_rag(rag_pipeline, question: str):
 
         # Request completion from GPT-4
         chat_completion = client.chat.completions.create(messages=[{"role": "user", "content": prompt}], model="gpt-4o-mini")
-        print("--------------------------------")
-        print("Prompt: ", prompt)        
-        print("--------------------------------")
+        print("# Prompt: --------------------------\n", prompt)        
         # 응답을 단일 객체로 감싸서 반환
         return type('QueryResponse', (), {
             'question': question,
@@ -63,48 +62,14 @@ async def main(question: str):
 
     # 2. Check Evaluation report
     evaluation = await rag.evaluate()
-    print(f"Evaluation:\n{json.dumps(evaluation, indent=2)}")
-    # example output:
-    # Evaluation:
-    # {
-    #   "Metrics": {
-    #     "overall_metrics": {
-    #       "precision": 76.4,
-    #       "recall": 62.5,
-    #       "f1": 68.3
-    #     },
-    #     "retriever_metrics": {
-    #       "claim_recall": 61.4,
-    #       "context_precision": 87.5
-    #     },
-    #     "generator_metrics": {
-    #       "context_utilization": 87.5,
-    #       "noise_sensitivity_in_relevant": 19.1,
-    #       "noise_sensitivity_in_irrelevant": 0.0,
-    #       "hallucination": 4.5,
-    #       "self_knowledge": 27.3,
-    #       "faithfulness": 68.2
-    #     }
-    #   }
-    # }
+    print(f"# Evaluation: --------------------------\n{json.dumps(evaluation, indent=2)}")
     
     # 3. Query Phase
     response = await query_rag(rag, question)
-    
-    # Print results
+    print("# Response: --------------------------") 
     print(f"Question: {question}")
-    # example output:
-    # Question: What is AutoRAG?
-
     print(f"Answer: {response.answer}")
-    # example output:
-    # Answer: AutoRAG is a library for building RAG pipelines. and it provides a simple interface for creating RAG pipelines and evaluating them.
-
     print(f"Retrieved context: \n{response.retrievals}")
-    # example output:
-    # [{"doc_id" : "autorag_overview.pdf", "chunk_id" : "1", "chunk_string" : "AutoRAG is a library for building RAG pipelines."}, 
-    # {"doc_id" : "autorag_overview.pdf", "chunk_id" : "2", "chunk_string" : "It provides a simple interface for creating RAG pipelines and evaluating them."}]
-
 
 if __name__ == "__main__":
     asyncio.run(main(question="What is AutoRAG?"))
