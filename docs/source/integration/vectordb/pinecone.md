@@ -12,13 +12,51 @@ You can get the API key from [here](https://app.pinecone.io/organizations/-/keys
 ### Example YAML file
 
 ```yaml
-- name: openai_embed_3_large
+- name: openai_pinecone
   db_type: pinecone
   embedding_model: openai_embed_3_large
   index_name: openai_embed_3_large
   api_key: ${PINECONE_API_KEY}
   similarity_metric: cosine
   dimension: 1536
+```
+
+Here is a simple example of a YAML configuration file that uses the Pinecone vector database and the OpenAI:
+
+```yaml
+vectordb:
+  - name: openai_pinecone
+    db_type: pinecone
+    embedding_model: openai_embed_3_large
+    index_name: openai_embed_3_large
+    api_key: ${PINECONE_API_KEY}
+    similarity_metric: cosine
+    dimension: 1536
+node_lines:
+- node_line_name: retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: retrieval
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+      top_k: 3
+      modules:
+        - module_type: vectordb
+          vectordb: openai_pinecone
+- node_line_name: post_retrieve_node_line  # Arbitrary node line name
+  nodes:
+    - node_type: prompt_maker
+      strategy:
+        metrics: [bleu, meteor, rouge]
+      modules:
+        - module_type: fstring
+          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+    - node_type: generator
+      strategy:
+        metrics: [bleu, rouge]
+      modules:
+        - module_type: llama_index_llm
+          llm: openai
+          model: [ gpt-4o-mini ]
 ```
 
 ### Parameters

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 from pymilvus import (
 	DataType,
@@ -24,13 +24,15 @@ class Milvus(BaseVectorStore):
 		embedding_model: str,
 		collection_name: str,
 		embedding_batch: int = 100,
-		similarity_metric: str = "cosine",
+		similarity_metric: str = "l2",
+		index_type: str = "IVF_FLAT",
 		uri: str = "http://localhost:19530",
 		db_name: str = "",
 		token: str = "",
 		user: str = "",
 		password: str = "",
 		timeout: Optional[float] = None,
+		params: Dict[str, Any] = {},
 	):
 		super().__init__(embedding_model, similarity_metric, embedding_batch)
 
@@ -45,6 +47,9 @@ class Milvus(BaseVectorStore):
 		)
 		self.collection_name = collection_name
 		self.timeout = timeout
+		self.params = params
+		self.index_type = index_type
+
 		# Set Collection
 		if not utility.has_collection(collection_name, timeout=timeout):
 			# Get the dimension of the embeddings
@@ -66,6 +71,14 @@ class Milvus(BaseVectorStore):
 			schema = CollectionSchema(fields=[pk, field])
 
 			self.collection = Collection(name=self.collection_name, schema=schema)
+			index_params = {
+				"metric_type": self.similarity_metric.upper(),
+				"index_type": self.index_type.upper(),
+				"params": self.params,
+			}
+			self.collection.create_index(
+				field_name="vector", index_params=index_params, timeout=self.timeout
+			)
 		else:
 			self.collection = Collection(name=self.collection_name)
 
@@ -87,15 +100,6 @@ class Milvus(BaseVectorStore):
 		), f"Insertion failed. Try to insert {len(ids)} but only {res['insert_count']} inserted."
 
 		self.collection.flush(timeout=self.timeout)
-
-		index_params = {
-			"index_type": "IVF_FLAT",
-			"metric_type": self.similarity_metric.upper(),
-			"params": {},
-		}  # TODO : add params
-		self.collection.create_index(
-			field_name="vector", index_params=index_params, timeout=self.timeout
-		)
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs

@@ -1,0 +1,14 @@
+modules:
+  # PDF
+  - module_type: langchain_parse
+    file_type: pdf
+    parse_method: pdfminer
+  # CSV
+  - module_type: langchain_parse
+    file_type: csv
+    parse_method: csv
+  # JSON
+  - module_type: langchain_parse
+    file_type: json
+    parse_method: json
+    jq_schema: .content
