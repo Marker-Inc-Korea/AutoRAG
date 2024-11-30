@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import signal
 import concurrent.futures
@@ -492,13 +493,17 @@ async def upload_files(project_id: str):
     try:
         # Get all files from the request
         uploaded_files = (await request.files).getlist("files")
+        uploaded_file_names = json.loads((await request.form).get("filenames"))
 
         if not uploaded_files:
             return jsonify({"error": "No files were uploaded"}), 400
 
+        if len(uploaded_files) != len(uploaded_file_names):
+            return jsonify({"error": "Number of files and filenames do not match"}), 400
+
         # Iterate over each file and save it
-        for uploaded_file in uploaded_files:
-            filename = await files.save(uploaded_file)
+        for uploaded_file, filename in zip(uploaded_files, uploaded_file_names):
+            filename = await files.save(uploaded_file, name=filename)
             uploaded_file_paths.append(os.path.join(raw_data_path, filename))
 
         return jsonify(
