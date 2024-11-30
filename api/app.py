@@ -644,9 +644,7 @@ async def start_chunking(project_id: str):
         task = chunk_documents.delay(
             project_id=project_id,
             config_str=yaml.dump(config),
-            parsed_data_path=os.path.join(
-                WORK_DIR, project_id, "parse", chunk_request.parsed_name
-            ),
+            parse_name=chunk_request.parsed_name,
             chunk_name=chunk_request.name,
         )
         task_id = task.id
@@ -675,7 +673,7 @@ async def create_qa(project_id: str):
 
         if os.path.exists(
             os.path.join(
-                WORK_DIR, project_id, "qa", f"{qa_creation_request.qa_name}.parquet"
+                WORK_DIR, project_id, "qa", f"{qa_creation_request.name}.parquet"
             )
         ):
             return jsonify({"error": "QA name already exists"}), 400
@@ -683,7 +681,7 @@ async def create_qa(project_id: str):
         # Start Celery task
         task = generate_qa_documents.delay(
             project_id=project_id,
-            request_data=qa_creation_request,
+            request_data=qa_creation_request.model_dump(),
         )
         task_id = task.id
         print(f"task: {task}")

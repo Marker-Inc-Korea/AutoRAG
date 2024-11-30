@@ -1,5 +1,6 @@
 import os
 import shutil
+from typing import Dict, Any
 
 from celery import shared_task
 from .base import TrialTask
@@ -48,7 +49,9 @@ def chunk_documents(
     :param parse_name: The name of the parsed data
     :param chunk_name: The name of the chunk
     """
-    parsed_data_path = os.path.join(WORK_DIR, project_id, "parse", parse_name)
+    parsed_data_path = os.path.join(
+        WORK_DIR, project_id, "parse", parse_name, "0.parquet"
+    )
     if not os.path.exists(parsed_data_path):
         raise ValueError(f"parsed_data_path does not exist: {parsed_data_path}")
 
@@ -125,7 +128,15 @@ def chunk_documents(
 
 
 @shared_task(bind=True, base=TrialTask)
-def generate_qa_documents(self, project_id: str, request_data: QACreationRequest):
+def generate_qa_documents(self, project_id: str, request_data: Dict[str, Any]):
+    """
+    Task for generating QA documents
+
+    :param self: TrialTask self
+    :param project_id: The project_id
+    :param request_data: The request_data will be the model_dump of the QACreationRequest
+    """
+    qa_creation_request = QACreationRequest(**request_data)
     try:
         self.update_state_and_db(
             trial_id="",
@@ -141,7 +152,7 @@ def generate_qa_documents(self, project_id: str, request_data: QACreationRequest
         project_dir = os.path.join(WORK_DIR, project_id)
         config_dir = os.path.join(project_dir, "config")
         corpus_filepath = os.path.join(
-            project_dir, "chunk", request_data.chunked_name, "0.parquet"
+            project_dir, "chunk", qa_creation_request.chunked_name, "0.parquet"
         )
         if not os.path.exists(corpus_filepath):
             raise ValueError(f"corpus_filepath does not exist: {corpus_filepath}")
@@ -152,7 +163,7 @@ def generate_qa_documents(self, project_id: str, request_data: QACreationRequest
         if not os.path.exists(dataset_dir):
             os.makedirs(dataset_dir, exist_ok=False)
 
-        run_qa_creation(request_data, corpus_filepath, dataset_dir)
+        run_qa_creation(qa_creation_request, corpus_filepath, dataset_dir)
 
         self.update_state_and_db(
             trial_id="",
