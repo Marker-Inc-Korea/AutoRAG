@@ -7,7 +7,6 @@ import pandas as pd
 from celery import shared_task
 from dotenv import load_dotenv
 
-from database.project_db import SQLiteProjectDB
 from .base import TrialTask
 from src.schema import (
     QACreationRequest,
@@ -21,6 +20,7 @@ from src.run import (
     run_qa_creation,
     run_start_trial,
     run_validate,
+    run_dashboard,
 )
 
 # 로깅 설정
@@ -367,11 +367,6 @@ def start_evaluate(
                 full_ingest=full_ingest,
             )
 
-        trial_config_db = SQLiteProjectDB(project_id)
-        trial = trial_config_db.get_trial(trial_id)
-        trial.status = Status.COMPLETED
-        trial_config_db.set_trial(trial)
-
         self.update_state_and_db(
             trial_id=trial_id,
             project_id=project_id,
@@ -387,6 +382,41 @@ def start_evaluate(
             status=Status.FAILED,
             progress=0,
             task_type="evaluate",
+            info={"error": str(e)},
+        )
+        raise
+
+
+@shared_task(bind=True, base=TrialTask)
+def start_dashboard(self, project_id: str, trial_id: str, trial_dir: str):
+    load_dotenv(ENV_FILEPATH)
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.IN_PROGRESS,
+            progress=0,
+            task_type="report",
+        )
+
+        # Run the dashboard
+        run_dashboard(trial_dir)
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="report",
+        )
+
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="report",
             info={"error": str(e)},
         )
         raise
