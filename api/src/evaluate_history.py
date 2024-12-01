@@ -24,19 +24,25 @@ def get_new_trial_dir(
         df = pd.DataFrame(trial_configs_dicts)
         return df
 
+    if len(past_trial_configs) == 0:
+        new_dir_name = f"{new_trial_config.trial_id}-{str(uuid.uuid4())}"
+        os.makedirs(os.path.join(project_dir, new_dir_name))
+        return os.path.join(project_dir, new_dir_name, "0")  # New trial folder
+
     history_df = trial_configs_to_dataframe(past_trial_configs)
-    trial_rows = history_df[history_df["trial_id"] == new_trial_config.trial_id]
-    duplicate_corpus_rows = trial_rows[
-        trial_rows["corpus_path"] == new_trial_config.corpus_path
+    duplicate_corpus_rows = history_df[
+        history_df["corpus_name"] == new_trial_config.corpus_name
     ]
+    print(f"Duplicate corpus rows: {duplicate_corpus_rows}")
     if len(duplicate_corpus_rows) == 0:  # If corpus data changed
         # Changed Corpus - ingest again (Make new directory - new save_dir)
         new_dir_name = f"{new_trial_config.trial_id}-{str(uuid.uuid4())}"
         os.makedirs(os.path.join(project_dir, new_dir_name))
         return os.path.join(project_dir, new_dir_name, "0")  # New trial folder
     duplicate_qa_rows = duplicate_corpus_rows[
-        trial_rows["qa_path"] == new_trial_config.qa_path
+        duplicate_corpus_rows["qa_name"] == new_trial_config.qa_name
     ]
+    print(f"Duplicate qa rows: {duplicate_qa_rows}")
     if len(duplicate_qa_rows) == 0:  # If qa data changed
         # swap qa data from the existing project directory
         existing_project_dir = os.path.dirname(duplicate_qa_rows.iloc[0]["save_dir"])
@@ -45,10 +51,12 @@ def get_new_trial_dir(
             os.path.join(existing_project_dir, "data", "qa.parquet"),
         )
     duplicate_config_rows = duplicate_qa_rows[
-        trial_rows["config_path"] == new_trial_config.config_path
+        duplicate_qa_rows["config"] == new_trial_config.config
     ]
+    print(f"Duplicate config rows: {duplicate_config_rows}")
     if len(duplicate_config_rows) > 0:
         duplicate_row_save_paths = duplicate_config_rows["save_dir"].unique().tolist()
+        print(f"Duplicate row save paths: {duplicate_row_save_paths}")
         return duplicate_row_save_paths[0]
     # Get the next trial folder
     existing_project_dir = os.path.dirname(duplicate_qa_rows.iloc[0]["save_dir"])

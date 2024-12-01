@@ -4,11 +4,12 @@ import tempfile
 from typing import Dict, Any
 
 from celery import shared_task
+
+from database.project_db import SQLiteProjectDB
 from .base import TrialTask
 from src.schema import (
     QACreationRequest,
     Status,
-    TrialConfig,
 )
 import logging
 import yaml
@@ -277,8 +278,10 @@ def start_validate(
         with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
             yaml.dump(yaml_config, f)
             run_validate(
-                qa_path=os.path.join(WORK_DIR, project_id, "qa", qa_name),
-                corpus_path=os.path.join(WORK_DIR, project_id, "chunk", corpus_name),
+                qa_path=os.path.join(WORK_DIR, project_id, "qa", f"{qa_name}.parquet"),
+                corpus_path=os.path.join(
+                    WORK_DIR, project_id, "chunk", corpus_name, "0.parquet"
+                ),
                 yaml_path=f.name,
             )
 
@@ -306,7 +309,9 @@ def start_evaluate(
     self,
     project_id: str,
     trial_id: str,
-    trial_config: TrialConfig,
+    corpus_name: str,
+    qa_name: str,
+    yaml_config: dict,
     project_dir: str,
     skip_validation: bool = True,
     full_ingest: bool = True,
@@ -320,14 +325,24 @@ def start_evaluate(
             task_type="evaluate",
         )
         # Run the evaluation
-        run_start_trial(
-            qa_path=trial_config.qa_path,
-            corpus_path=trial_config.corpus_path,
-            project_dir=project_dir,
-            yaml_path=trial_config.config_path,
-            skip_validation=skip_validation,
-            full_ingest=full_ingest,
-        )
+        with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
+            yaml.dump(yaml_config, f)
+            run_start_trial(
+                qa_path=os.path.join(WORK_DIR, project_id, "qa", f"{qa_name}.parquet"),
+                corpus_path=os.path.join(
+                    WORK_DIR, project_id, "chunk", corpus_name, "0,parquet"
+                ),
+                project_dir=project_dir,
+                yaml_path=f.name,
+                skip_validation=skip_validation,
+                full_ingest=full_ingest,
+            )
+
+        trial_config_db = SQLiteProjectDB(project_id)
+        trial = trial_config_db.get_trial(trial_id)
+        trial.status = Status.COMPLETED
+        trial_config_db.set_trial(trial)
+
         self.update_state_and_db(
             trial_id=trial_id,
             project_id=project_id,

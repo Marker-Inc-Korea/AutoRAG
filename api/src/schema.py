@@ -132,7 +132,7 @@ class Task(BaseModel):
 class TrialConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True, validate_assignment=True)
 
-    trial_id: str
+    trial_id: Optional[str] = Field(None, description="The trial id")
     project_id: str
     save_dir: Optional[str] = Field(
         None, description="The directory that trial result is stored."

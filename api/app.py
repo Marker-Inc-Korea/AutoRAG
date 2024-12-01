@@ -51,6 +51,7 @@ from tasks.trial_tasks import (
     parse_documents,
     chunk_documents,
     start_validate,
+    start_evaluate,
 )  # 수정된 임포트
 from celery.result import AsyncResult
 
@@ -267,8 +268,6 @@ async def create_project():
         return jsonify({"error": "Name is required"}), 400
 
     description = data.get("description", "")
-    print(f"Set WORK_DIR environment variable to: {os.environ['AUTORAG_WORK_DIR']}")
-    WORK_DIR = os.environ["AUTORAG_WORK_DIR"]
     # Create a new project
     new_project_dir = os.path.join(WORK_DIR, data["name"])
     if not os.path.exists(new_project_dir):
@@ -448,12 +447,14 @@ async def create_trial(project_id: str):
 
     data = await request.get_json()
     data["project_id"] = project_id
+    new_trial_id = str(uuid.uuid4())
     trial = Trial(
         **data,
         created_at=datetime.now(tz=timezone.utc),
         status=Status.IN_PROGRESS,
-        id=str(uuid.uuid4()),
+        id=new_trial_id,
     )
+    trial.config.trial_id = new_trial_id
     project_db.set_trial(trial)
     return jsonify(trial.model_dump())
 
@@ -747,21 +748,17 @@ async def run_validate(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/evaluate", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-async def start_evaluate(project_id: str, trial_id: str):
+@trial_exists
+async def run_evaluate(project_id: str, trial_id: str):
     try:
-        db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteProjectDB(db_path)
+        trial_config_db = SQLiteProjectDB(project_id)
         new_config = trial_config_db.get_trial(trial_id).config
-        if new_config is None:
-            return jsonify({"error": f"Trial {trial_id} not found"}), 404
         if (
-            new_config.corpus_path is None
-            or new_config.qa_path is None
-            or new_config.config_path is None
+            new_config.corpus_name is None
+            or new_config.qa_name is None
+            or new_config.config is None
         ):
-            return jsonify(
-                {"error": "All Corpus, QA, and config paths must be set"}
-            ), 400
+            return jsonify({"error": "All Corpus, QA, and config must be set"}), 400
         project_dir = os.path.join(WORK_DIR, project_id, "project")
 
         data = await request.get_json()
@@ -769,7 +766,21 @@ async def start_evaluate(project_id: str, trial_id: str):
         full_ingest = data.get("full_ingest", True)
 
         trial_configs = trial_config_db.get_all_configs()
-        new_trial_dir = get_new_trial_dir(trial_configs, new_config, project_dir)
+        print(f"trial config length : {len(trial_configs)}")
+        print(f"DB configs list: {list(map(lambda x: x.trial_id, trial_configs))}")
+        original_trial_configs = [
+            config for config in trial_configs if config.trial_id != trial_id
+        ]
+        print(f"original_trial_configs length : {len(original_trial_configs)}")
+        new_trial_dir = get_new_trial_dir(
+            original_trial_configs, new_config, project_dir
+        )
+        print(f"new_trial_dir: {new_trial_dir}")
+
+        new_config.save_dir = new_trial_dir
+        trial_config_db.set_trial_config(trial_id, new_config)
+
+        print("evaluate 4")
         if os.path.exists(new_trial_dir):
             return jsonify(
                 {
@@ -778,16 +789,22 @@ async def start_evaluate(project_id: str, trial_id: str):
                     "Skipping but return the directory where the evaluation result is saved.",
                 }
             ), 409
-
+        print("evaluate 5")
+        new_project_dir = os.path.dirname(new_trial_dir)
+        if not os.path.exists(new_project_dir):
+            os.makedirs(new_project_dir)
+        print("evaluate 6")
         task = start_evaluate.delay(
             project_id=project_id,
             trial_id=trial_id,
-            config=new_config,
-            project_dir=project_dir,
+            corpus_name=new_config.corpus_name,
+            qa_name=new_config.qa_name,
+            yaml_config=new_config.config,
+            project_dir=new_project_dir,
             skip_validation=skip_validation,
             full_ingest=full_ingest,
         )
-
+        print("evaluate 7")
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
