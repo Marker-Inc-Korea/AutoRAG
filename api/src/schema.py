@@ -134,7 +134,7 @@ class TrialConfig(BaseModel):
 
     trial_id: str
     project_id: str
-    save_dir: str = Field(
+    save_dir: Optional[str] = Field(
         None, description="The directory that trial result is stored."
     )
     corpus_name: Optional[str] = None

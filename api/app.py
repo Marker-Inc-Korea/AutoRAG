@@ -50,6 +50,7 @@ from tasks.trial_tasks import (
     generate_qa_documents,
     parse_documents,
     chunk_documents,
+    start_validate,
 )  # 수정된 임포트
 from celery.result import AsyncResult
 
@@ -453,7 +454,6 @@ async def create_trial(project_id: str):
         status=Status.IN_PROGRESS,
         id=str(uuid.uuid4()),
     )
-
     project_db.set_trial(trial)
     return jsonify(trial.model_dump())
 
@@ -695,7 +695,7 @@ async def create_qa(project_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/config", methods=["GET"]
 )
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
+@trial_exists
 async def get_trial_config(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
     trial = project_db.get_trial(trial_id)
@@ -708,7 +708,7 @@ async def get_trial_config(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/config", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
+@trial_exists
 async def set_trial_config(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
     trial = project_db.get_trial(trial_id)
@@ -726,31 +726,21 @@ async def set_trial_config(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/validate", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-async def start_validate(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    trial = trial_config_db.get_trial(trial_id)
-    task_id = str(uuid.uuid4())
-    response = Task(
-        id=task_id,
-        project_id=project_id,
-        trial_id=trial_id,
-        name=f"{trial_id}/validation",
-        config_yaml=trial.config,
-        status=Status.IN_PROGRESS,
-        type=TaskType.VALIDATE,
-        created_at=datetime.now(tz=timezone.utc),
-    )
-    await create_task(
-        task_id,
-        response,
-        TaskType.VALIDATE,
-        trial.config.qa_path,
-        trial.config.corpus_path,
-        trial.config.config_path,
-    )
-
-    return jsonify(response), 200
+@trial_exists
+async def run_validate(project_id: str, trial_id: str):
+    try:
+        trial_config_db = SQLiteProjectDB(project_id)
+        trial_config: TrialConfig = trial_config_db.get_trial(trial_id).config
+        task = start_validate.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            corpus_name=trial_config.corpus_name,
+            qa_name=trial_config.qa_name,
+            yaml_config=trial_config.config,
+        )
+        return jsonify({"task_id": task.id, "status": "Started"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route(

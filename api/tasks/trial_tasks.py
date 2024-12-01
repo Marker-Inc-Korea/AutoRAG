@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 from typing import Dict, Any
 
 from celery import shared_task
@@ -16,6 +17,7 @@ from src.run import (
     run_chunker_start_chunking,
     run_qa_creation,
     run_start_trial,
+    run_validate,
 )
 
 # 로깅 설정
@@ -251,6 +253,52 @@ def parse_documents(
         if os.path.exists(parsed_data_path):
             shutil.rmtree(parsed_data_path)
         raise
+
+
+@shared_task(bind=True, base=TrialTask)
+def start_validate(
+    self,
+    project_id: str,
+    trial_id: str,
+    corpus_name: str,
+    qa_name: str,
+    yaml_config: dict,
+):
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.IN_PROGRESS,
+            progress=0,
+            task_type="validate",
+        )
+
+        # Run the validation
+        with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
+            yaml.dump(yaml_config, f)
+            run_validate(
+                qa_path=os.path.join(WORK_DIR, project_id, "qa", qa_name),
+                corpus_path=os.path.join(WORK_DIR, project_id, "chunk", corpus_name),
+                yaml_path=f.name,
+            )
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="validate",
+        )
+
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="validate",
+            info={"error": str(e)},
+        )
 
 
 @shared_task(bind=True, base=TrialTask)
