@@ -45,6 +45,7 @@ from tasks.trial_tasks import (
     start_validate,
     start_evaluate,
     start_dashboard,
+    start_chat_server,
 )  # 수정된 임포트
 
 # uvloop을 사용하지 않도록 설정
@@ -736,54 +737,30 @@ async def close_dashboard(project_id: str, trial_id: str):
     return jsonify({"task_id": trial.report_task_id, "status": "terminated"}), 200
 
 
-#
-# @app.route(
-#     "/projects/<string:project_id>/trials/<string:trial_id>/chat/open", methods=["GET"]
-# )
-# async def open_chat_server(project_id: str, trial_id: str):
-#     try:
-#         # Get the trial and search for the corresponding save_path
-#         evaluate_history_path = os.path.join(
-#             WORK_DIR, project_id, "evaluate_history.csv"
-#         )
-#         if not os.path.exists(evaluate_history_path):
-#             return jsonify({"error": "You need to run evaluation first"}), 400
-#
-#         evaluate_history_df = pd.read_csv(evaluate_history_path)
-#         trial_raw = evaluate_history_df[evaluate_history_df["trial_id"] == trial_id]
-#         if trial_raw.empty or len(trial_raw) < 1:
-#             return jsonify({"error": "Trial ID not found"}), 404
-#         if len(trial_raw) >= 2:
-#             return jsonify({"error": "Duplicated trial ID found"}), 400
-#
-#         trial_dir = trial_raw.iloc[0]["save_dir"]
-#         if not os.path.exists(trial_dir):
-#             return jsonify({"error": "Trial directory not found"}), 404
-#         if not os.path.isdir(trial_dir):
-#             return jsonify({"error": "Trial directory is not a directory"}), 500
-#
-#         task_id = str(uuid.uuid4())
-#         response = Task(
-#             id=task_id,
-#             project_id=project_id,
-#             trial_id=trial_id,
-#             status=Status.IN_PROGRESS,
-#             type=TaskType.CHAT,
-#             created_at=datetime.now(tz=timezone.utc),
-#         )
-#         await create_task(task_id, response, run_chat, trial_dir)
-#
-#         trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-#         trial_config_db = SQLiteProjectDB(trial_config_path)
-#         trial = trial_config_db.get_trial(trial_id)
-#         new_trial = trial.model_copy(deep=True)
-#         new_trial.chat_task_id = task_id
-#         trial_config_db.set_trial(new_trial)
-#
-#         return jsonify(response.model_dump()), 202
-#
-#     except Exception as e:
-#         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+@app.route(
+    "/projects/<string:project_id>/trials/<string:trial_id>/chat/open", methods=["GET"]
+)
+async def open_chat_server(project_id: str, trial_id: str):
+    try:
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
+
+        if trial.config.save_dir is None or not os.path.exists(trial.config.save_dir):
+            return jsonify({"error": "Trial directory not found"}), 404
+
+        if trial.chat_task_id is not None:
+            return jsonify({"error": "Report already running"}), 409
+
+        task = start_chat_server.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            trial_dir=trial.config.save_dir,
+        )
+
+        return jsonify({"task_id": task.id, "status": "running"}), 202
+
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route("/projects/<string:project_id>/artifacts", methods=["GET"])
@@ -838,24 +815,26 @@ async def delete_artifact(project_id: str):
         return jsonify({"error": f"Failed to delete artifact: {str(e)}"}), 500
 
 
-# @app.route(
-#     "/projects/<string:project_id>/trials/<string:trial_id>/chat/close", methods=["GET"]
-# )
-# async def close_chat_server(project_id: str, trial_id: str):
-#     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-#     trial_config_db = SQLiteProjectDB(trial_config_path)
-#     trial = trial_config_db.get_trial(trial_id)
-#     chat_pid = tasks[trial.chat_task_id]["chat_pid"]
-#     os.killpg(os.getpgid(chat_pid), signal.SIGTERM)
-#
-#     new_trial = trial.model_copy(deep=True)
-#
-#     original_task = tasks[trial.chat_task_id]["task"]
-#     original_task.status = Status.TERMINATED
-#     new_trial.chat_task_id = None
-#     trial_config_db.set_trial(new_trial)
-#
-#     return jsonify(original_task.model_dump()), 200
+@app.route(
+    "/projects/<string:project_id>/trials/<string:trial_id>/chat/close", methods=["GET"]
+)
+async def close_chat_server(project_id: str, trial_id: str):
+    db = SQLiteProjectDB(project_id)
+    trial = db.get_trial(trial_id)
+
+    if trial.chat_task_id is None:
+        return jsonify({"error": "The report already closed"}), 409
+
+    try:
+        os.killpg(os.getpgid(int(trial.chat_task_id)), signal.SIGTERM)
+    except Exception as e:
+        logger.debug(f"Error while closing chat server: {str(e)}")
+
+    new_trial = trial.model_copy(deep=True)
+    new_trial.chat_task_id = None
+    db.set_trial(new_trial)
+
+    return jsonify({"task_id": trial.chat_task_id, "status": "terminated"}), 200
 
 
 @app.route("/projects/<string:project_id>/tasks", methods=["GET"])

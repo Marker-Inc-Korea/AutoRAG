@@ -22,6 +22,7 @@ from src.run import (
     run_start_trial,
     run_validate,
     run_dashboard,
+    run_chat,
 )
 
 # 로깅 설정
@@ -427,6 +428,48 @@ def start_dashboard(self, project_id: str, trial_id: str, trial_dir: str):
             status=Status.FAILED,
             progress=0,
             task_type="report",
+            info={"error": str(e)},
+        )
+        raise
+
+
+@shared_task(bind=True, base=TrialTask)
+def start_chat_server(self, project_id: str, trial_id: str, trial_dir: str):
+    load_dotenv(ENV_FILEPATH)
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.IN_PROGRESS,
+            progress=0,
+            task_type="chat",
+        )
+
+        # Run the dashboard
+        chat_pid = run_chat(trial_dir)
+
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
+        new_trial = trial.model_copy(deep=True)
+
+        new_trial.chat_task_id = str(chat_pid)
+        db.set_trial(new_trial)
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="chat",
+        )
+
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="chat",
             info={"error": str(e)},
         )
         raise
