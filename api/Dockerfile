@@ -21,7 +21,7 @@ RUN python -m pip install --upgrade pip
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install watchfiles pdf2image
+RUN pip install watchfiles pdf2image bert_score
 # Install NLTK and download model
 RUN pip install nltk && \
     python3 -c "import nltk; nltk.download('punkt_tab')" && \
