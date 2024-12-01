@@ -780,7 +780,6 @@ async def run_evaluate(project_id: str, trial_id: str):
         new_config.save_dir = new_trial_dir
         trial_config_db.set_trial_config(trial_id, new_config)
 
-        print("evaluate 4")
         if os.path.exists(new_trial_dir):
             return jsonify(
                 {
@@ -789,11 +788,10 @@ async def run_evaluate(project_id: str, trial_id: str):
                     "Skipping but return the directory where the evaluation result is saved.",
                 }
             ), 409
-        print("evaluate 5")
         new_project_dir = os.path.dirname(new_trial_dir)
         if not os.path.exists(new_project_dir):
             os.makedirs(new_project_dir)
-        print("evaluate 6")
+
         task = start_evaluate.delay(
             project_id=project_id,
             trial_id=trial_id,
@@ -804,7 +802,6 @@ async def run_evaluate(project_id: str, trial_id: str):
             skip_validation=skip_validation,
             full_ingest=full_ingest,
         )
-        print("evaluate 7")
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500

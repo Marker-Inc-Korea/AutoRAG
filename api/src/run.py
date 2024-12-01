@@ -82,6 +82,9 @@ def run_qa_creation(
     else:
         raise ValueError(f"Input not supported Preset {qa_creation_request.preset}")
 
+    print(f"Generated QA jax : {qa.data}")
+    print(f"QA jax shape : {qa.data.shape}")
+    print(f"QA jax length : {len(qa.data)}")
     # dataset_dir will be folder ${PROJECT_DIR}/qa/
     qa.to_parquet(
         os.path.join(dataset_dir, f"{qa_creation_request.name}.parquet"),

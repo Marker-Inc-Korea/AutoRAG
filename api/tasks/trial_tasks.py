@@ -3,7 +3,9 @@ import shutil
 import tempfile
 from typing import Dict, Any
 
+import pandas as pd
 from celery import shared_task
+from dotenv import load_dotenv
 
 from database.project_db import SQLiteProjectDB
 from .base import TrialTask
@@ -39,6 +41,14 @@ else:
     # 환경변수가 없는 경우 기본값 사용
     WORK_DIR = os.path.join(ROOT_DIR, "projects")
 
+ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
+if not os.path.exists(ENV_FILEPATH):
+    # add empty new .env file
+    with open(ENV_FILEPATH, "w") as f:
+        f.write("")
+
+load_dotenv(ENV_FILEPATH)
+
 
 @shared_task(bind=True, base=TrialTask)
 def chunk_documents(
@@ -52,6 +62,7 @@ def chunk_documents(
     :param parse_name: The name of the parsed data
     :param chunk_name: The name of the chunk
     """
+    load_dotenv(ENV_FILEPATH)
     parsed_data_path = os.path.join(
         WORK_DIR, project_id, "parse", parse_name, "0.parquet"
     )
@@ -139,7 +150,9 @@ def generate_qa_documents(self, project_id: str, request_data: Dict[str, Any]):
     :param project_id: The project_id
     :param request_data: The request_data will be the model_dump of the QACreationRequest
     """
+    load_dotenv(ENV_FILEPATH)
     qa_creation_request = QACreationRequest(**request_data)
+    print(f"qa_creation_request : {qa_creation_request}")
     try:
         self.update_state_and_db(
             trial_id="",
@@ -153,7 +166,6 @@ def generate_qa_documents(self, project_id: str, request_data: Dict[str, Any]):
         logger.info("Generating QA documents")
 
         project_dir = os.path.join(WORK_DIR, project_id)
-        config_dir = os.path.join(project_dir, "config")
         corpus_filepath = os.path.join(
             project_dir, "chunk", qa_creation_request.chunked_name, "0.parquet"
         )
@@ -162,7 +174,6 @@ def generate_qa_documents(self, project_id: str, request_data: Dict[str, Any]):
 
         dataset_dir = os.path.join(project_dir, "qa")
 
-        os.makedirs(config_dir, exist_ok=True)
         if not os.path.exists(dataset_dir):
             os.makedirs(dataset_dir, exist_ok=False)
 
@@ -191,6 +202,7 @@ def generate_qa_documents(self, project_id: str, request_data: Dict[str, Any]):
 def parse_documents(
     self, project_id: str, config_str: str, parse_name: str, glob_path: str = "*.*"
 ):
+    load_dotenv(ENV_FILEPATH)
     try:
         self.update_state_and_db(
             trial_id="",
@@ -265,6 +277,7 @@ def start_validate(
     qa_name: str,
     yaml_config: dict,
 ):
+    load_dotenv(ENV_FILEPATH)
     try:
         self.update_state_and_db(
             trial_id=trial_id,
@@ -275,14 +288,27 @@ def start_validate(
         )
 
         # Run the validation
-        with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
-            yaml.dump(yaml_config, f)
+        with tempfile.NamedTemporaryFile(suffix=".yaml") as yaml_filepath:
+            with open(yaml_filepath.name, "w") as f:
+                yaml.safe_dump(yaml_config, f)
+
+            corpus_df = pd.read_parquet(
+                os.path.join(WORK_DIR, project_id, "chunk", corpus_name, "0.parquet"),
+                engine="pyarrow",
+            )
+            print(f"corpus_df columns : {corpus_df.columns}")
+            qa_df = pd.read_parquet(
+                os.path.join(WORK_DIR, project_id, "qa", f"{qa_name}.parquet"),
+                engine="pyarrow",
+            )
+            print(f"qa_df columns : {qa_df.columns}")
+            print(f"qa length : {len(qa_df)}")
             run_validate(
                 qa_path=os.path.join(WORK_DIR, project_id, "qa", f"{qa_name}.parquet"),
                 corpus_path=os.path.join(
                     WORK_DIR, project_id, "chunk", corpus_name, "0.parquet"
                 ),
-                yaml_path=f.name,
+                yaml_path=yaml_filepath.name,
             )
 
         self.update_state_and_db(
@@ -302,6 +328,7 @@ def start_validate(
             task_type="validate",
             info={"error": str(e)},
         )
+        raise
 
 
 @shared_task(bind=True, base=TrialTask)
@@ -316,6 +343,7 @@ def start_evaluate(
     skip_validation: bool = True,
     full_ingest: bool = True,
 ):
+    load_dotenv(ENV_FILEPATH)
     try:
         self.update_state_and_db(
             trial_id=trial_id,
@@ -325,15 +353,16 @@ def start_evaluate(
             task_type="evaluate",
         )
         # Run the evaluation
-        with tempfile.NamedTemporaryFile(suffix=".yaml") as f:
-            yaml.dump(yaml_config, f)
+        with tempfile.NamedTemporaryFile(suffix=".yaml") as yaml_filepath:
+            with open(yaml_filepath.name, "w") as f:
+                yaml.safe_dump(yaml_config, f)
             run_start_trial(
                 qa_path=os.path.join(WORK_DIR, project_id, "qa", f"{qa_name}.parquet"),
                 corpus_path=os.path.join(
-                    WORK_DIR, project_id, "chunk", corpus_name, "0,parquet"
+                    WORK_DIR, project_id, "chunk", corpus_name, "0.parquet"
                 ),
                 project_dir=project_dir,
-                yaml_path=f.name,
+                yaml_path=yaml_filepath.name,
                 skip_validation=skip_validation,
                 full_ingest=full_ingest,
             )
@@ -360,3 +389,4 @@ def start_evaluate(
             task_type="evaluate",
             info={"error": str(e)},
         )
+        raise
