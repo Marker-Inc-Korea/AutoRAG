@@ -46,6 +46,7 @@ from tasks.trial_tasks import (
     start_evaluate,
     start_dashboard,
     start_chat_server,
+    start_api_server,
 )  # 수정된 임포트
 
 # uvloop을 사용하지 않도록 설정
@@ -823,7 +824,7 @@ async def close_chat_server(project_id: str, trial_id: str):
     trial = db.get_trial(trial_id)
 
     if trial.chat_task_id is None:
-        return jsonify({"error": "The report already closed"}), 409
+        return jsonify({"error": "The chat server already closed"}), 409
 
     try:
         os.killpg(os.getpgid(int(trial.chat_task_id)), signal.SIGTERM)
@@ -837,32 +838,54 @@ async def close_chat_server(project_id: str, trial_id: str):
     return jsonify({"task_id": trial.chat_task_id, "status": "terminated"}), 200
 
 
-@app.route("/projects/<string:project_id>/tasks", methods=["GET"])
+@app.route(
+    "/projects/<string:project_id>/trials/<string:trial_id>/api/open", methods=["GET"]
+)
 @project_exists(WORK_DIR)
-async def get_tasks(project_id: str):
-    if not os.path.exists(os.path.join(WORK_DIR, project_id)):
-        return jsonify({"error": f"Project name does not exist: {project_id}"}), 404
+@trial_exists
+async def open_api_server(project_id: str, trial_id: str):
+    try:
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
 
-    evaluate_history_path = os.path.join(WORK_DIR, project_id, "evaluate_history.csv")
-    if not os.path.exists(evaluate_history_path):
-        evaluate_history_df = pd.DataFrame(
-            columns=["trial_id", "save_dir", "corpus_path", "qa_path", "config_path"]
-        )  # save_dir is to autorag trial directory
-        evaluate_history_df.to_csv(evaluate_history_path, index=False)
-    else:
-        evaluate_history_df = pd.read_csv(evaluate_history_path)
+        if trial.api_pid is not None:
+            return jsonify({"error": "API server already running"}), 409
 
-    # Replace NaN values with None before converting to dict
-    evaluate_history_df = evaluate_history_df.where(pd.notna(evaluate_history_df), -1)
+        if trial.config.save_dir is None or not os.path.exists(trial.config.save_dir):
+            return jsonify({"error": "Trial directory not found"}), 404
 
-    return jsonify(
-        {
-            "total": len(evaluate_history_df),
-            "data": evaluate_history_df.to_dict(
-                orient="records"
-            ),  # Convert DataFrame to list of dictionaries
-        }
-    ), 200
+        task = start_api_server.delay(
+            project_id=project_id, trial_id=trial_id, trial_dir=trial.config.save_dir
+        )
+
+        return jsonify({"task_id": task.id, "status": "running"}), 202
+
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@app.route(
+    "/projects/<string:project_id>/trials/<string:trial_id>/api/close", methods=["GET"]
+)
+@project_exists(WORK_DIR)
+@trial_exists
+async def close_api_server(project_id: str, trial_id: str):
+    db = SQLiteProjectDB(project_id)
+    trial = db.get_trial(trial_id)
+
+    if trial.api_pid is None:
+        return jsonify({"error": "The api server already closed"}), 409
+
+    try:
+        os.killpg(os.getpgid(int(trial.api_pid)), signal.SIGTERM)
+    except Exception as e:
+        logger.debug(f"Error while closing api server: {str(e)}")
+
+    new_trial = trial.model_copy(deep=True)
+    new_trial.api_pid = None
+    db.set_trial(new_trial)
+
+    return jsonify({"task_id": trial.api_pid, "status": "terminated"}), 200
 
 
 @app.route("/env", methods=["POST"])

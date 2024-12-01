@@ -18,6 +18,7 @@ services:
       - "8000:8000"
       - "7690:7690" # for panel report
       - "8501:8501" # for streamlit chat
+      - "8100:8100" # for chat API server
     environment:
       - WATCHFILES_FORCE_POLLING=true  # Docker on Windows/macOS를 위한 설정
       - TZ=Asia/Seoul
