@@ -34,27 +34,12 @@ class TrialTask(Task):
             },
         )
 
-        # 상태 매핑 추가
-        status_map = {
-            "PENDING": Status.IN_PROGRESS,
-            "STARTED": Status.IN_PROGRESS,
-            "SUCCESS": Status.COMPLETED,
-            "FAILURE": Status.FAILED,
-            "chunking": Status.IN_PROGRESS,
-            "parsing": Status.IN_PROGRESS,
-            "generating_qa_docs": Status.IN_PROGRESS,
-        }
-        trial_status = status_map.get(status, Status.FAILED)
-
         # SQLite DB 업데이트
         project_db = SQLiteProjectDB(project_id)
         trial = project_db.get_trial(trial_id)
         if trial:
-            trial.status = trial_status  # 매핑된 상태 사용
-            if task_type == "parse":
-                trial.parse_task_id = self.request.id
-            elif task_type == "chunk":
-                trial.chunk_task_id = self.request.id
+            if task_type == "evaluate" and status == Status.COMPLETED:
+                trial.status = Status.COMPLETED
             project_db.set_trial(trial)
 
     def on_failure(self, exc, task_id, args, kwargs, einfo):

@@ -65,7 +65,8 @@ class SQLiteProjectDB:
                             config JSON,
                             created_at TEXT,
                             report_task_id TEXT,
-                            chat_task_id TEXT
+                            chat_task_id TEXT,
+                            api_pid NUMERIC
                         )
                     """)
                     conn.execute(
@@ -105,8 +106,8 @@ class SQLiteProjectDB:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO trials
-                (id, project_id, name, status, config, created_at, report_task_id, chat_task_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (id, project_id, name, status, config, created_at, report_task_id, chat_task_id, api_pid)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
                 (
                     trial.id,
@@ -117,6 +118,7 @@ class SQLiteProjectDB:
                     trial.created_at.isoformat() if trial.created_at else None,
                     trial.report_task_id,
                     trial.chat_task_id,
+                    trial.api_pid,
                 ),
             )
 

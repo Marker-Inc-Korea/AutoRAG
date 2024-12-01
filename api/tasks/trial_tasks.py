@@ -21,6 +21,9 @@ from src.run import (
     run_qa_creation,
     run_start_trial,
     run_validate,
+    run_dashboard,
+    run_chat,
+    run_api_server,
 )
 
 # 로깅 설정
@@ -367,11 +370,6 @@ def start_evaluate(
                 full_ingest=full_ingest,
             )
 
-        trial_config_db = SQLiteProjectDB(project_id)
-        trial = trial_config_db.get_trial(trial_id)
-        trial.status = Status.COMPLETED
-        trial_config_db.set_trial(trial)
-
         self.update_state_and_db(
             trial_id=trial_id,
             project_id=project_id,
@@ -387,6 +385,134 @@ def start_evaluate(
             status=Status.FAILED,
             progress=0,
             task_type="evaluate",
+            info={"error": str(e)},
+        )
+        raise
+
+
+@shared_task(bind=True, base=TrialTask)
+def start_dashboard(self, project_id: str, trial_id: str, trial_dir: str):
+    load_dotenv(ENV_FILEPATH)
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.IN_PROGRESS,
+            progress=0,
+            task_type="report",
+        )
+
+        # Run the dashboard
+        report_pid = run_dashboard(trial_dir)
+
+        print(f"report_pid : {report_pid}")
+
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
+        new_trial = trial.model_copy(deep=True)
+
+        new_trial.report_task_id = str(report_pid)
+        db.set_trial(new_trial)
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="report",
+        )
+
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="report",
+            info={"error": str(e)},
+        )
+        raise
+
+
+@shared_task(bind=True, base=TrialTask)
+def start_chat_server(self, project_id: str, trial_id: str, trial_dir: str):
+    load_dotenv(ENV_FILEPATH)
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.IN_PROGRESS,
+            progress=0,
+            task_type="chat",
+        )
+
+        # Run the dashboard
+        chat_pid = run_chat(trial_dir)
+
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
+        new_trial = trial.model_copy(deep=True)
+
+        new_trial.chat_task_id = str(chat_pid)
+        db.set_trial(new_trial)
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="chat",
+        )
+
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="chat",
+            info={"error": str(e)},
+        )
+        raise
+
+
+@shared_task(bind=True, base=TrialTask)
+def start_api_server(self, project_id: str, trial_id: str, trial_dir: str):
+    load_dotenv(ENV_FILEPATH)
+    try:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.IN_PROGRESS,
+            progress=0,
+            task_type="api",
+        )
+
+        # Run the dashboard
+        api_pid = run_api_server(trial_dir)
+
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
+        new_trial = trial.model_copy(deep=True)
+
+        new_trial.api_pid = api_pid
+        db.set_trial(new_trial)
+
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.COMPLETED,
+            progress=100,
+            task_type="api",
+        )
+
+    except Exception as e:
+        self.update_state_and_db(
+            trial_id=trial_id,
+            project_id=project_id,
+            status=Status.FAILED,
+            progress=0,
+            task_type="api",
             info={"error": str(e)},
         )
         raise
