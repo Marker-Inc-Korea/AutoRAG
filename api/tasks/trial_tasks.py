@@ -7,6 +7,7 @@ import pandas as pd
 from celery import shared_task
 from dotenv import load_dotenv
 
+from database.project_db import SQLiteProjectDB
 from .base import TrialTask
 from src.schema import (
     QACreationRequest,
@@ -400,7 +401,16 @@ def start_dashboard(self, project_id: str, trial_id: str, trial_dir: str):
         )
 
         # Run the dashboard
-        run_dashboard(trial_dir)
+        report_pid = run_dashboard(trial_dir)
+
+        print(f"report_pid : {report_pid}")
+
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
+        new_trial = trial.model_copy(deep=True)
+
+        new_trial.report_task_id = str(report_pid)
+        db.set_trial(new_trial)
 
         self.update_state_and_db(
             trial_id=trial_id,

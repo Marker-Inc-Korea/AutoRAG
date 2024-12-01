@@ -2,13 +2,13 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import uuid
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
 from typing import Optional
 from typing import List
-from celery import current_app
 
 import aiofiles
 import aiofiles.os
@@ -697,7 +697,6 @@ async def open_dashboard(project_id: str, trial_id: str):
     try:
         db = SQLiteProjectDB(project_id)
         trial = db.get_trial(trial_id)
-        new_trial = trial.model_copy(deep=True)
 
         if trial.config.save_dir is None or not os.path.exists(trial.config.save_dir):
             return jsonify({"error": "Trial directory not found"}), 404
@@ -710,9 +709,6 @@ async def open_dashboard(project_id: str, trial_id: str):
             trial_id=trial_id,
             trial_dir=trial.config.save_dir,
         )
-
-        new_trial.report_task_id = task.id
-        db.set_trial(new_trial)
 
         return jsonify({"task_id": task.id, "status": "running"}), 202
 
@@ -727,13 +723,17 @@ async def open_dashboard(project_id: str, trial_id: str):
 async def close_dashboard(project_id: str, trial_id: str):
     db = SQLiteProjectDB(project_id)
     trial = db.get_trial(trial_id)
-    current_app.control.revoke(trial.report_task_id, terminate=True)
+
+    if trial.report_task_id is None:
+        return jsonify({"error": "The report already closed"}), 409
+
+    os.killpg(os.getpgid(int(trial.report_task_id)), signal.SIGTERM)
 
     new_trial = trial.model_copy(deep=True)
     new_trial.report_task_id = None
     db.set_trial(new_trial)
 
-    return jsonify({"task": trial.report_task_id, "status": "terminated"}), 200
+    return jsonify({"task_id": trial.report_task_id, "status": "terminated"}), 200
 
 
 #
