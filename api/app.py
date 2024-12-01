@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import signal
 import concurrent.futures
@@ -28,7 +29,6 @@ from quart_uploads import UploadSet, configure_uploads
 from src.auth import require_auth
 from src.evaluate_history import get_new_trial_dir
 from src.run import (
-    run_start_trial,
     run_dashboard,
     run_chat,
 )
@@ -50,6 +50,8 @@ from tasks.trial_tasks import (
     generate_qa_documents,
     parse_documents,
     chunk_documents,
+    start_validate,
+    start_evaluate,
 )  # 수정된 임포트
 from celery.result import AsyncResult
 
@@ -95,6 +97,10 @@ if "AUTORAG_WORK_DIR" in os.environ:
     WORK_DIR = os.getenv("AUTORAG_WORK_DIR")
 
 ENV_FILEPATH = os.path.join(ROOT_DIR, f".env.{ENV}")
+if not os.path.exists(ENV_FILEPATH):
+    # add empty new .env file
+    with open(ENV_FILEPATH, "w") as f:
+        f.write("")
 # 환경에 따른 WORK_DIR 설정
 
 load_dotenv(ENV_FILEPATH)
@@ -262,8 +268,6 @@ async def create_project():
         return jsonify({"error": "Name is required"}), 400
 
     description = data.get("description", "")
-    print(f"Set WORK_DIR environment variable to: {os.environ['AUTORAG_WORK_DIR']}")
-    WORK_DIR = os.environ["AUTORAG_WORK_DIR"]
     # Create a new project
     new_project_dir = os.path.join(WORK_DIR, data["name"])
     if not os.path.exists(new_project_dir):
@@ -443,13 +447,14 @@ async def create_trial(project_id: str):
 
     data = await request.get_json()
     data["project_id"] = project_id
+    new_trial_id = str(uuid.uuid4())
     trial = Trial(
         **data,
         created_at=datetime.now(tz=timezone.utc),
         status=Status.IN_PROGRESS,
-        id=str(uuid.uuid4()),
+        id=new_trial_id,
     )
-
+    trial.config.trial_id = new_trial_id
     project_db.set_trial(trial)
     return jsonify(trial.model_dump())
 
@@ -475,58 +480,6 @@ async def delete_trial(project_id: str, trial_id: str):
     return jsonify({"message": "Trial deleted successfully"})
 
 
-@app.route("/projects/<string:project_id>/artifacts/files", methods=["GET"])
-@project_exists(WORK_DIR)
-async def get_artifact_file(project_id: str):
-    """특정 파일의 내용을 비동기적으로 반환합니다."""
-    file_path = request.args.get("path")
-    if not file_path:
-        return jsonify({"error": "File path is required"}), 400
-
-    try:
-        full_path = os.path.join(WORK_DIR, project_id, file_path)
-
-        # 경로 검증 (디렉토리 트래버설 방지)
-        if not os.path.normpath(full_path).startswith(
-            os.path.normpath(os.path.join(WORK_DIR, project_id))
-        ):
-            return jsonify({"error": "Invalid file path"}), 403
-
-        # 비동기로 파일 재 여부 확인
-        if not await aiofiles.os.path.exists(full_path):
-            return jsonify({"error": "File not found"}), 404
-
-        if not await aiofiles.os.path.isfile(full_path):
-            return jsonify({"error": "Path is not a file"}), 400
-
-        # 파일 크기 체크
-        stats = await aiofiles.os.stat(full_path)
-        if stats.st_size > 10 * 1024 * 1024:  # 10MB 제한
-            return jsonify({"error": "File too large"}), 400
-
-        # 파일 확장자 체크
-        _, ext = os.path.splitext(full_path)
-        allowed_extensions = {".txt", ".yaml", ".yml", ".json", ".py", ".md"}
-        if ext.lower() not in allowed_extensions:
-            return jsonify({"error": "File type not supported"}), 400
-
-        # 비동기로 파일 읽기
-        async with aiofiles.open(full_path, "r", encoding="utf-8") as f:
-            content = await f.read()
-
-        return jsonify(
-            {
-                "content": content,
-                "path": file_path,
-                "size": stats.st_size,
-                "last_modified": stats.st_mtime,
-            }
-        ), 200
-
-    except Exception as e:
-        return jsonify({"error": f"Failed to read file: {str(e)}"}), 500
-
-
 @app.route("/projects/<string:project_id>/upload", methods=["POST"])
 @project_exists(WORK_DIR)
 async def upload_files(project_id: str):
@@ -541,13 +494,17 @@ async def upload_files(project_id: str):
     try:
         # Get all files from the request
         uploaded_files = (await request.files).getlist("files")
+        uploaded_file_names = json.loads((await request.form).get("filenames"))
 
         if not uploaded_files:
             return jsonify({"error": "No files were uploaded"}), 400
 
+        if len(uploaded_files) != len(uploaded_file_names):
+            return jsonify({"error": "Number of files and filenames do not match"}), 400
+
         # Iterate over each file and save it
-        for uploaded_file in uploaded_files:
-            filename = await files.save(uploaded_file)
+        for uploaded_file, filename in zip(uploaded_files, uploaded_file_names):
+            filename = await files.save(uploaded_file, name=filename)
             uploaded_file_paths.append(os.path.join(raw_data_path, filename))
 
         return jsonify(
@@ -688,9 +645,7 @@ async def start_chunking(project_id: str):
         task = chunk_documents.delay(
             project_id=project_id,
             config_str=yaml.dump(config),
-            parsed_data_path=os.path.join(
-                WORK_DIR, project_id, "parse", chunk_request.parsed_name
-            ),
+            parse_name=chunk_request.parsed_name,
             chunk_name=chunk_request.name,
         )
         task_id = task.id
@@ -719,7 +674,7 @@ async def create_qa(project_id: str):
 
         if os.path.exists(
             os.path.join(
-                WORK_DIR, project_id, "qa", f"{qa_creation_request.qa_name}.parquet"
+                WORK_DIR, project_id, "qa", f"{qa_creation_request.name}.parquet"
             )
         ):
             return jsonify({"error": "QA name already exists"}), 400
@@ -727,7 +682,7 @@ async def create_qa(project_id: str):
         # Start Celery task
         task = generate_qa_documents.delay(
             project_id=project_id,
-            request_data=qa_creation_request,
+            request_data=qa_creation_request.model_dump(),
         )
         task_id = task.id
         print(f"task: {task}")
@@ -741,7 +696,7 @@ async def create_qa(project_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/config", methods=["GET"]
 )
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
+@trial_exists
 async def get_trial_config(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
     trial = project_db.get_trial(trial_id)
@@ -754,7 +709,7 @@ async def get_trial_config(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/config", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
+@trial_exists
 async def set_trial_config(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
     trial = project_db.get_trial(trial_id)
@@ -772,113 +727,84 @@ async def set_trial_config(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/validate", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-async def start_validate(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    trial = trial_config_db.get_trial(trial_id)
-    task_id = str(uuid.uuid4())
-    response = Task(
-        id=task_id,
-        project_id=project_id,
-        trial_id=trial_id,
-        name=f"{trial_id}/validation",
-        config_yaml=trial.config,
-        status=Status.IN_PROGRESS,
-        type=TaskType.VALIDATE,
-        created_at=datetime.now(tz=timezone.utc),
-    )
-    await create_task(
-        task_id,
-        response,
-        TaskType.VALIDATE,
-        trial.config.qa_path,
-        trial.config.corpus_path,
-        trial.config.config_path,
-    )
-
-    return jsonify(response), 200
+@trial_exists
+async def run_validate(project_id: str, trial_id: str):
+    try:
+        trial_config_db = SQLiteProjectDB(project_id)
+        trial_config: TrialConfig = trial_config_db.get_trial(trial_id).config
+        task = start_validate.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            corpus_name=trial_config.corpus_name,
+            qa_name=trial_config.qa_name,
+            yaml_config=trial_config.config,
+        )
+        return jsonify({"task_id": task.id, "status": "Started"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route(
     "/projects/<string:project_id>/trials/<string:trial_id>/evaluate", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-async def start_evaluate(project_id: str, trial_id: str):
-    evaluate_history_path = os.path.join(WORK_DIR, project_id, "evaluate_history.csv")
-    if not os.path.exists(evaluate_history_path):
-        evaluate_history_df = pd.DataFrame(
-            columns=["trial_id", "save_dir", "corpus_path", "qa_path", "config_path"]
-        )  # save_dir is to autorag trial directory
-        evaluate_history_df.to_csv(evaluate_history_path, index=False)
-    else:
-        evaluate_history_df = pd.read_csv(evaluate_history_path)
+@trial_exists
+async def run_evaluate(project_id: str, trial_id: str):
+    try:
+        trial_config_db = SQLiteProjectDB(project_id)
+        new_config = trial_config_db.get_trial(trial_id).config
+        if (
+            new_config.corpus_name is None
+            or new_config.qa_name is None
+            or new_config.config is None
+        ):
+            return jsonify({"error": "All Corpus, QA, and config must be set"}), 400
+        project_dir = os.path.join(WORK_DIR, project_id, "project")
 
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    previous_config = trial_config_db.get_trial(trial_id).config
-    print("previous_config: ", previous_config)
-    trial = trial_config_db.get_trial(trial_id)
-    trials_dir = os.path.join(WORK_DIR, project_id, "trials")
+        data = await request.get_json()
+        skip_validation = data.get("skip_validation", False)
+        full_ingest = data.get("full_ingest", True)
 
-    data = await request.get_json()
-    skip_validation = data.get("skip_validation", False)
-    full_ingest = data.get("full_ingest", True)
-
-    new_trial_dir = get_new_trial_dir(evaluate_history_df, trial.config, trials_dir)
-    if os.path.exists(new_trial_dir):
-        return jsonify(
-            {
-                "trial_dir": new_trial_dir,
-                "error": "Exact same evaluation already run. "
-                "Skipping but return the directory where the evaluation result is saved.",
-            }
-        ), 409
-    task_id = str(uuid.uuid4())
-
-    new_row = pd.DataFrame(
-        [
-            {
-                "task_id": task_id,
-                "trial_id": trial_id,
-                "save_dir": new_trial_dir,
-                "corpus_path": previous_config.corpus_path,
-                "qa_path": previous_config.qa_path,
-                "config_path": previous_config.config_path,
-                "created_at": datetime.now(tz=timezone.utc),
-            }
+        trial_configs = trial_config_db.get_all_configs()
+        print(f"trial config length : {len(trial_configs)}")
+        print(f"DB configs list: {list(map(lambda x: x.trial_id, trial_configs))}")
+        original_trial_configs = [
+            config for config in trial_configs if config.trial_id != trial_id
         ]
-    )
-    evaluate_history_df = pd.concat([evaluate_history_df, new_row], ignore_index=True)
-    evaluate_history_df.reset_index(drop=True, inplace=True)
-    evaluate_history_df.to_csv(evaluate_history_path, index=False)
+        print(f"original_trial_configs length : {len(original_trial_configs)}")
+        new_trial_dir = get_new_trial_dir(
+            original_trial_configs, new_config, project_dir
+        )
+        print(f"new_trial_dir: {new_trial_dir}")
 
-    with open(trial.config.config_path, "r") as f:
-        config_yaml = yaml.safe_load(f)
-    task = Task(
-        id=task_id,
-        project_id=project_id,
-        trial_id=trial_id,
-        name=f"{trial_id}/evaluation",
-        config_yaml=config_yaml,
-        status=Status.IN_PROGRESS,
-        type=TaskType.EVALUATE,
-        created_at=datetime.now(tz=timezone.utc),
-        save_path=new_trial_dir,
-    )
-    await create_task(
-        task_id,
-        task,
-        run_start_trial,
-        trial.config.qa_path,
-        trial.config.corpus_path,
-        os.path.dirname(new_trial_dir),
-        trial.config.config_path,
-        skip_validation,
-        full_ingest,
-    )
+        new_config.save_dir = new_trial_dir
+        trial_config_db.set_trial_config(trial_id, new_config)
 
-    task.model_dump()
-    return jsonify(task.model_dump()), 202
+        if os.path.exists(new_trial_dir):
+            return jsonify(
+                {
+                    "trial_dir": new_trial_dir,
+                    "error": "Exact same evaluation already run. "
+                    "Skipping but return the directory where the evaluation result is saved.",
+                }
+            ), 409
+        new_project_dir = os.path.dirname(new_trial_dir)
+        if not os.path.exists(new_project_dir):
+            os.makedirs(new_project_dir)
+
+        task = start_evaluate.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            corpus_name=new_config.corpus_name,
+            qa_name=new_config.qa_name,
+            yaml_config=new_config.config,
+            project_dir=new_project_dir,
+            skip_validation=skip_validation,
+            full_ingest=full_ingest,
+        )
+        return jsonify({"task_id": task.id, "status": "started"}), 202
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route(
@@ -1032,7 +958,7 @@ async def get_project_artifacts(project_id: str):
         return jsonify({"error": f"Failed to scan artifacts: {str(e)}"}), 500
 
 
-@app.route("/projects/<string:project_id>/artifacts/content")
+@app.route("/projects/<string:project_id>/artifacts/content", methods=["GET"])
 @project_exists(WORK_DIR)
 async def get_artifact_content(project_id: str):
     try:
@@ -1040,9 +966,27 @@ async def get_artifact_content(project_id: str):
         target_path = os.path.join(WORK_DIR, project_id, "raw_data", requested_filename)
         if not os.path.exists(target_path):
             return jsonify({"error": "File not found"}), 404
+        # 파일 크기 체크
+        stats = await aiofiles.os.stat(target_path)
+        if stats.st_size > 10 * 1024 * 1024:  # 10MB 제한
+            return jsonify({"error": "File too large"}), 400
         return await send_file(target_path, as_attachment=True), 200
     except Exception as e:
         return jsonify({"error": f"Failed to load artifacts: {str(e)}"}), 500
+
+
+@app.route("/projects/<string:project_id>/artifacts/content", methods=["DELETE"])
+@project_exists(WORK_DIR)
+async def delete_artifact(project_id: str):
+    try:
+        requested_filename = request.args.get("filename")
+        target_path = os.path.join(WORK_DIR, project_id, "raw_data", requested_filename)
+        if not os.path.exists(target_path):
+            return jsonify({"error": "File not found"}), 404
+        os.remove(target_path)
+        return jsonify({"message": "File deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to delete artifact: {str(e)}"}), 500
 
 
 @app.route(
