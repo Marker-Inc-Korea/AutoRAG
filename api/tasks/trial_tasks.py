@@ -12,7 +12,6 @@ from .base import TrialTask
 from src.schema import (
     QACreationRequest,
     Status,
-    TrialConfig,
 )
 import logging
 import yaml
@@ -517,49 +516,3 @@ def start_api_server(self, project_id: str, trial_id: str, trial_dir: str):
             info={"error": str(e)},
         )
         raise
-
-
-@shared_task(bind=True, base=TrialTask)
-def start_evaluate(
-    self,
-    project_id: str,
-    trial_id: str,
-    trial_config: TrialConfig,
-    project_dir: str,
-    skip_validation: bool = True,
-    full_ingest: bool = True,
-):
-    try:
-        self.update_state_and_db(
-            trial_id=trial_id,
-            project_id=project_id,
-            status=Status.IN_PROGRESS,
-            progress=0,
-            task_type="evaluate",
-        )
-        # Run the evaluation
-        run_start_trial(
-            qa_path=trial_config.qa_path,
-            corpus_path=trial_config.corpus_path,
-            project_dir=project_dir,
-            yaml_path=trial_config.config_path,
-            skip_validation=skip_validation,
-            full_ingest=full_ingest,
-        )
-        self.update_state_and_db(
-            trial_id=trial_id,
-            project_id=project_id,
-            status=Status.COMPLETED,
-            progress=100,
-            task_type="evaluate",
-        )
-
-    except Exception as e:
-        self.update_state_and_db(
-            trial_id=trial_id,
-            project_id=project_id,
-            status=Status.FAILED,
-            progress=0,
-            task_type="evaluate",
-            info={"error": str(e)},
-        )
