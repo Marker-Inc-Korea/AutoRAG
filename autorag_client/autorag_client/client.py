@@ -3,13 +3,10 @@ import aiohttp
 import os
 import glob
 from .exceptions import APIError
-from .models import Project, Retrieval, RAGPipeline, RetrievalResults
+from .models import Project, RAGPipeline
 import logging
 
-# Set log level based on environment variable
-log_level = logging.DEBUG if os.getenv("AUTORAG_ENV") == "dev" else logging.WARNING
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
+logger = logging.getLogger("AutoRAG-Client")
 
 
 class AutoRAGClient:
@@ -127,6 +124,7 @@ class AutoRAGClient:
 		if not self._files[project_id]:
 			raise APIError("No files uploaded to embed")
 
+		# TODO: Change this
 		await self._post(
 			f"/projects/{project_id}/embedding", {"vector_storage": vector_storage}
 		)
@@ -139,6 +137,7 @@ class AutoRAGClient:
 			raise APIError(f"Project {project_id} not found")
 
 		try:
+			# TODO: change this
 			await self._post(
 				f"/projects/{project_id}/pipeline", {"embedding_model": embedding_model}
 			)
@@ -150,28 +149,6 @@ class AutoRAGClient:
 			# Even if API fails, return pipeline for mock functionality
 			return RAGPipeline(self, project_id)
 
-	async def query_rag(self, rag_pipeline, question: str):
-		"""Query RAG pipeline"""
-		session = await self._ensure_session()
-		try:
-			response = await self._post(
-				f"/projects/{rag_pipeline.project_id}/query", {"question": question}
-			)
-
-			return type(
-				"QueryResponse",
-				(),
-				{
-					"question": response["question"],
-					"answer": response["answer"],
-					"retrievals": [Retrieval(**r) for r in response["retrievals"]],
-				},
-			)()
-		finally:
-			if session and not session.closed:
-				await session.close()
-				self.session = None
-
 	async def __aenter__(self):
 		"""Enter the runtime context related to this object."""
 		self.session = await self._ensure_session()
@@ -182,13 +159,3 @@ class AutoRAGClient:
 		if self.session and not self.session.closed:
 			await self.session.close()
 			self.session = None
-
-	async def get_retrievals(self, rag_pipeline, question: str) -> RetrievalResults:
-		"""Get retrievals for a query"""
-		if not question:
-			raise ValueError("question cannot be empty")
-		response = await self._post(
-			f"/projects/{rag_pipeline.project_id}/rag_contexts",
-			json={"question": question},
-		)
-		return RetrievalResults(**response)

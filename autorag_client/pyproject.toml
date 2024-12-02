@@ -7,7 +7,7 @@ name = "AutoRAG-client"
 authors = [
     { name = "AutoRAG", email = "jeffrey@auto-rag.com" }
 ]
-description = 'AutoRAG client is sdk for using AutoRAG Studio Client. Plus also self-hosted version!'
+description = 'AutoRAG client is sdk for using AutoRAG Studio Client.'
 readme = "README.md"
 requires-python = ">=3.10"
 keywords = ['RAG', 'AutoRAG', 'autorag', 'rag-evaluation', 'evaluation', 'rag-auto', 'AutoML', 'AutoML-RAG']
@@ -27,7 +27,7 @@ urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version", "dependencies"]
 
 [tool.setuptools.dynamic]
-version = { file = ["autorag-client/VERSION"] }
+version = { file = ["autorag_client/VERSION"] }
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools]
@@ -35,7 +35,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["autorag-client*"]
+include = ["autorag*"]
 exclude = ["tests"]
 
 [tool.pytest.ini_options]

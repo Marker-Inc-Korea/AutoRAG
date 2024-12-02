@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel
 
 import os
@@ -42,12 +42,23 @@ class Project(BaseModel):
 		return await self._client.create_rag_pipeline(self.id, embedding_model)
 
 
-class Retrieval:
-	def __init__(self, text: str, metadata: dict = None, **kwargs):
-		self.text = text
-		self.metadata = metadata or {}
-		for key, value in kwargs.items():
-			setattr(self, key, value)
+class Passage(BaseModel):
+	doc_id: str
+	content: str
+	score: float
+
+
+class RetrievedPassage(BaseModel):
+	content: str
+	doc_id: str
+	filepath: Optional[str] = None
+	file_page: Optional[int] = None
+	start_idx: Optional[int] = None
+	end_idx: Optional[int] = None
+
+
+class Retrieval(BaseModel):
+	passages: List[Passage]
 
 
 class RetrievalResults:
