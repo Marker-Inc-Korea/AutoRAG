@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-
 import os
 import signal
 import uuid
@@ -663,7 +662,6 @@ async def run_evaluate(project_id: str, trial_id: str):
                     "Skipping but return the directory where the evaluation result is saved.",
                 }
             ), 409
-
         new_project_dir = os.path.dirname(new_trial_dir)
         if not os.path.exists(new_project_dir):
             os.makedirs(new_project_dir)
@@ -678,7 +676,6 @@ async def run_evaluate(project_id: str, trial_id: str):
             skip_validation=skip_validation,
             full_ingest=full_ingest,
         )
-
         return jsonify({"task_id": task.id, "status": "started"}), 202
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500

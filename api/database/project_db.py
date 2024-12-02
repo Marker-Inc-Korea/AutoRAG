@@ -119,7 +119,6 @@ class SQLiteProjectDB:
                     trial.report_task_id,
                     trial.chat_task_id,
                     trial.api_pid,
-
                 ),
             )
 
