@@ -3,11 +3,11 @@ requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "AutoRAG"
+name = "AutoRAG-client"
 authors = [
-    { name = "Marker-Inc", email = "vkehfdl1@gmail.com" }
+    { name = "AutoRAG", email = "jeffrey@auto-rag.com" }
 ]
-description = 'Automatically Evaluate RAG pipelines with your own data. Find optimal structure for new RAG product.'
+description = 'AutoRAG client is sdk for using AutoRAG Studio Client. Plus also self-hosted version!'
 readme = "README.md"
 requires-python = ">=3.10"
 keywords = ['RAG', 'AutoRAG', 'autorag', 'rag-evaluation', 'evaluation', 'rag-auto', 'AutoML', 'AutoML-RAG']
@@ -27,7 +27,7 @@ urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version", "dependencies"]
 
 [tool.setuptools.dynamic]
-version = { file = ["autorag/VERSION"] }
+version = { file = ["autorag-client/VERSION"] }
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools]
@@ -35,26 +35,13 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["autorag*"]
+include = ["autorag-client*"]
 exclude = ["tests"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"] # default is prepend
-
-[project.optional-dependencies]
-ko = ["kiwipiepy >= 0.18.0", "konlpy"]
-dev = ["ruff", "pre-commit"]
-parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
-ja = ["sudachipy>=0.6.8", "sudachidict_core"]
-gpu = ["torch", "sentencepiece", "bert_score", "optimum[openvino,nncf]", "peft", "llmlingua", "FlagEmbedding",
-    "sentence-transformers", "transformers", "llama-index-llms-ollama", "llama-index-embeddings-huggingface",
-    "llama-index-llms-huggingface", "onnxruntime"]
-all = ["AutoRAG[gpu]", "AutoRAG[ko]", "AutoRAG[dev]", "AutoRAG[parse]", "AutoRAG[ja]"]
-
-[project.entry-points.console_scripts]
-autorag = "autorag.cli:cli"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
