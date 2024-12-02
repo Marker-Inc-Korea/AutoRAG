@@ -31,12 +31,7 @@ async def setup_rag():
 	"""Setup RAG pipeline"""
 	async with AutoRAGClient(api_key=os.environ.get("AUTORAG_API_KEY")) as client:
 		# 1. Setup project and upload document
-		project = await client.create_project(
-			{
-				"name": "My RAG Project 1",
-				"description": "Example RAG project",  # optional
-			}
-		)
+		project = await client.create_project("namename", description="jax")
 		await project.upload_file("files/*.pdf")
 
 		# Initialize embedding and RAG pipeline with auto-configuration

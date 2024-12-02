@@ -26,7 +26,6 @@ from quart_cors import cors  # Import quart_cors to enable CORS
 from quart_uploads import UploadSet, configure_uploads
 
 from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
-from src.auth import require_auth
 from src.evaluate_history import get_new_trial_dir
 from src.schema import (
     ChunkRequest,
@@ -133,7 +132,6 @@ async def options_handler(path=""):
 
 # Project creation endpoint
 @app.route("/projects", methods=["POST"])
-@require_auth()
 async def create_project():
     data = await request.get_json()
 

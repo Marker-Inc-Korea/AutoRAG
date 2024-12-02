@@ -1,4 +1,5 @@
 import os
+import uuid
 
 import pytest
 from jinja2 import Template
@@ -33,7 +34,13 @@ async def test_setup_rag():
     """Setup RAG pipeline"""
     async with AutoRAGClient(api_key=os.environ.get("AUTORAG_API_KEY")) as client:
         # Setup project and upload document
-        project = await client.create_project("My RAG Project 1")
+        random_project_name = str(uuid.uuid4())
+        description = "I am Havertz"
+        project = await client.create_project(
+            random_project_name, description=description
+        )
+        assert project.name == random_project_name
+        assert project.description == description
         await project.upload_file(
             os.path.join(resources_dir, "parse_data", "all_files", "baseball_1.pdf")
         )
