@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 from pydantic import BaseModel
 
 import os
@@ -58,7 +58,9 @@ class RetrievedPassage(BaseModel):
 
 
 class Retrieval(BaseModel):
-	passages: List[Passage]
+	text: str
+	score: float
+	metadata: dict
 
 
 class RetrievalResults:

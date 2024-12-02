@@ -3,7 +3,7 @@ import aiohttp
 import os
 import glob
 from .exceptions import APIError
-from .models import Project, RAGPipeline
+from .models import Project, RAGPipeline, RetrievalResults
 import logging
 
 logger = logging.getLogger("AutoRAG-Client")
@@ -137,7 +137,6 @@ class AutoRAGClient:
 			raise APIError(f"Project {project_id} not found")
 
 		try:
-			# TODO: change this
 			await self._post(
 				f"/projects/{project_id}/pipeline", {"embedding_model": embedding_model}
 			)
@@ -159,3 +158,13 @@ class AutoRAGClient:
 		if self.session and not self.session.closed:
 			await self.session.close()
 			self.session = None
+
+	async def get_retrievals(self, rag_pipeline, question: str) -> RetrievalResults:
+		"""Get retrievals for a query"""
+		if not question:
+			raise ValueError("question cannot be empty")
+		response = await self._post(
+			f"/projects/{rag_pipeline.project_id}/rag_contexts",
+			json={"question": question},
+		)
+		return RetrievalResults(**response)
