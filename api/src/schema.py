@@ -132,12 +132,14 @@ class Task(BaseModel):
 class TrialConfig(BaseModel):
     model_config = ConfigDict(from_attributes=True, validate_assignment=True)
 
-    trial_id: str
+    trial_id: Optional[str] = Field(None, description="The trial id")
     project_id: str
-    save_dir: str = Field(None, description="The directory that trial resut is stored.")
-    corpus_path: Optional[str] = None
-    qa_path: Optional[str] = None
-    config_path: Optional[str] = None
+    save_dir: Optional[str] = Field(
+        None, description="The directory that trial result is stored."
+    )
+    corpus_name: Optional[str] = None
+    qa_name: Optional[str] = None
+    config: Optional[dict] = None
     metadata: Optional[dict] = {}
 
 
@@ -156,6 +158,7 @@ class Trial(BaseModel):
     chat_task_id: Optional[str] = Field(
         None, description="The chat task id for forcing shutdown of the task"
     )
+    api_pid: Optional[int] = Field(None, description="The process id of the API server")
 
     @field_validator("report_task_id", "chat_task_id", mode="before")
     def replace_nan_with_none(cls, v):

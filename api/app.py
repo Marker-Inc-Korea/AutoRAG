@@ -1,57 +1,54 @@
 import asyncio
 import json
+import logging
+
 import os
 import signal
-import concurrent.futures
 import uuid
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
-from typing import Dict, Optional, Callable
+from typing import Optional
 from typing import List
-import logging
-import nest_asyncio
 
-import click
-import uvicorn
-from quart import jsonify, request, make_response, send_file
-from pydantic import BaseModel
 import aiofiles
 import aiofiles.os
-from dotenv import load_dotenv, dotenv_values, set_key, unset_key
-
+import click
+import nest_asyncio
 import pandas as pd
+import uvicorn
 import yaml
+from celery.result import AsyncResult
+from dotenv import load_dotenv, dotenv_values, set_key, unset_key
+from pydantic import BaseModel
 from quart import Quart
+from quart import jsonify, request, make_response, send_file
 from quart_cors import cors  # Import quart_cors to enable CORS
 from quart_uploads import UploadSet, configure_uploads
 
+from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
 from src.auth import require_auth
 from src.evaluate_history import get_new_trial_dir
-from src.run import (
-    run_dashboard,
-    run_chat,
-)
 from src.schema import (
     ChunkRequest,
     EnvVariableRequest,
     Project,
-    Task,
     Status,
-    TaskType,
     Trial,
     TrialConfig,
     QACreationRequest,
 )
-
 from src.validate import project_exists, trial_exists
-from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
 from tasks.trial_tasks import (
     generate_qa_documents,
     parse_documents,
     chunk_documents,
+    start_validate,
+    start_evaluate,
+    start_dashboard,
+    start_chat_server,
+    start_api_server,
 )  # 수정된 임포트
-from celery.result import AsyncResult
 
 # uvloop을 사용하지 않도록 설정
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
@@ -80,13 +77,6 @@ app = cors(
 )
 
 print("CORS enabled for http://localhost:3000")
-
-# Global variables to manage tasks
-tasks = {}  # task_id -> task_info # This will be the temporal DB for task infos
-task_futures = {}  # task_id -> future (for forceful termination)
-task_queue = asyncio.Queue()
-current_task_id = None  # ID of the currently running task
-lock = asyncio.Lock()  # To manage access to shared variables
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ENV = os.getenv("AUTORAG_API_ENV", "dev")
@@ -142,119 +132,6 @@ async def options_handler(path=""):
     return response
 
 
-async def create_task(task_id: str, task: Task, func: Callable, *args) -> None:
-    tasks[task_id] = {
-        "function": func,
-        "args": args,
-        "error": None,
-        "task": task,
-    }
-    await task_queue.put(task_id)
-
-
-async def run_background_task(task_id: str, func, *args):
-    """백그라운드 작업을 실행하는 함수"""
-    task_info = tasks[task_id]
-    task = task_info["task"]
-
-    try:
-        loop = asyncio.get_event_loop()
-        logger.info(f"Executing {func.__name__} with args: {args}")
-
-        def execute():
-            return func(*args)  # 인자를 그대로 언패킹하여 전달
-
-        result = await loop.run_in_executor(None, execute)
-        task.status = Status.COMPLETED
-        return result
-    except Exception as e:
-        logger.error(f"Task {task_id} failed with error: {func.__name__}({args}) {e}")
-        task.status = Status.FAILED
-        task.error = str(e)
-        raise
-
-
-async def task_runner():
-    global current_task_id
-    loop = asyncio.get_running_loop()
-    executor = concurrent.futures.ProcessPoolExecutor()
-    try:
-        while True:
-            task_id = await task_queue.get()
-            async with lock:
-                current_task_id = task_id
-                tasks[task_id]["task"].status = Status.IN_PROGRESS
-
-            try:
-                # Get function and arguments from task info
-                func = tasks[task_id]["function"]
-                args = tasks[task_id].get("args", ())
-
-                print(f"args: {args}")
-                print(f"func: {func}")
-
-                # Load env variable before running a task
-                load_dotenv(ENV_FILEPATH)
-
-                # Run the function in a separate process
-                future = loop.run_in_executor(
-                    executor,
-                    func,
-                    *args,
-                )
-                task_futures[task_id] = future
-
-                await future
-                if func.__name__ == run_dashboard.__name__:
-                    tasks[task_id]["report_pid"] = future.result()
-                elif func.__name__ == run_chat.__name__:
-                    tasks[task_id]["chat_pid"] = future.result()
-
-                # Update status on completion
-                async with lock:
-                    print(f"Task {task_id} is completed")
-                    tasks[task_id]["task"].status = Status.COMPLETED
-                    current_task_id = None
-            except asyncio.CancelledError:
-                tasks[task_id]["task"].status = Status.TERMINATED
-                print(f"Task {task_id} has been forcefully terminated.")
-            except Exception as e:
-                # Handle errors
-                async with lock:
-                    tasks[task_id]["task"].status = Status.FAILED
-                    tasks[task_id]["error"] = str(e)
-                    current_task_id = None
-                print(f"Task {task_id} failed with error: task_runner {e}")
-                print(e)
-
-            finally:
-                task_queue.task_done()
-                task_futures.pop(task_id, None)
-    finally:
-        executor.shutdown()
-
-
-async def cancel_task(task_id: str) -> None:
-    async with lock:
-        future = task_futures.get(task_id)
-        if future and not future.done():
-            try:
-                # Attempt to kill the associated process directly
-                future.cancel()
-            except Exception as e:
-                tasks[task_id]["task"].status = Status.FAILED
-                tasks[task_id]["error"] = f"Failed to terminate: {str(e)}"
-                print(f"Task {task_id} failed to terminate with error: {e}")
-        else:
-            print(f"Task {task_id} is not running or already completed.")
-
-
-@app.before_serving
-async def startup():
-    # Start the background task when the app starts
-    app.add_background_task(task_runner)
-
-
 # Project creation endpoint
 @app.route("/projects", methods=["POST"])
 @require_auth()
@@ -266,8 +143,6 @@ async def create_project():
         return jsonify({"error": "Name is required"}), 400
 
     description = data.get("description", "")
-    print(f"Set WORK_DIR environment variable to: {os.environ['AUTORAG_WORK_DIR']}")
-    WORK_DIR = os.environ["AUTORAG_WORK_DIR"]
     # Create a new project
     new_project_dir = os.path.join(WORK_DIR, data["name"])
     if not os.path.exists(new_project_dir):
@@ -447,13 +322,14 @@ async def create_trial(project_id: str):
 
     data = await request.get_json()
     data["project_id"] = project_id
+    new_trial_id = str(uuid.uuid4())
     trial = Trial(
         **data,
         created_at=datetime.now(tz=timezone.utc),
         status=Status.IN_PROGRESS,
-        id=str(uuid.uuid4()),
+        id=new_trial_id,
     )
-
+    trial.config.trial_id = new_trial_id
     project_db.set_trial(trial)
     return jsonify(trial.model_dump())
 
@@ -644,9 +520,7 @@ async def start_chunking(project_id: str):
         task = chunk_documents.delay(
             project_id=project_id,
             config_str=yaml.dump(config),
-            parsed_data_path=os.path.join(
-                WORK_DIR, project_id, "parse", chunk_request.parsed_name
-            ),
+            parse_name=chunk_request.parsed_name,
             chunk_name=chunk_request.name,
         )
         task_id = task.id
@@ -675,7 +549,7 @@ async def create_qa(project_id: str):
 
         if os.path.exists(
             os.path.join(
-                WORK_DIR, project_id, "qa", f"{qa_creation_request.qa_name}.parquet"
+                WORK_DIR, project_id, "qa", f"{qa_creation_request.name}.parquet"
             )
         ):
             return jsonify({"error": "QA name already exists"}), 400
@@ -683,7 +557,7 @@ async def create_qa(project_id: str):
         # Start Celery task
         task = generate_qa_documents.delay(
             project_id=project_id,
-            request_data=qa_creation_request,
+            request_data=qa_creation_request.model_dump(),
         )
         task_id = task.id
         print(f"task: {task}")
@@ -697,7 +571,7 @@ async def create_qa(project_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/config", methods=["GET"]
 )
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
+@trial_exists
 async def get_trial_config(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
     trial = project_db.get_trial(trial_id)
@@ -710,7 +584,7 @@ async def get_trial_config(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/config", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-@trial_exists(WORK_DIR)
+@trial_exists
 async def set_trial_config(project_id: str, trial_id: str):
     project_db = SQLiteProjectDB(project_id)
     trial = project_db.get_trial(trial_id)
@@ -728,52 +602,38 @@ async def set_trial_config(project_id: str, trial_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/validate", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-async def start_validate(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    trial = trial_config_db.get_trial(trial_id)
-    task_id = str(uuid.uuid4())
-    response = Task(
-        id=task_id,
-        project_id=project_id,
-        trial_id=trial_id,
-        name=f"{trial_id}/validation",
-        config_yaml=trial.config,
-        status=Status.IN_PROGRESS,
-        type=TaskType.VALIDATE,
-        created_at=datetime.now(tz=timezone.utc),
-    )
-    await create_task(
-        task_id,
-        response,
-        TaskType.VALIDATE,
-        trial.config.qa_path,
-        trial.config.corpus_path,
-        trial.config.config_path,
-    )
-
-    return jsonify(response), 200
+@trial_exists
+async def run_validate(project_id: str, trial_id: str):
+    try:
+        trial_config_db = SQLiteProjectDB(project_id)
+        trial_config: TrialConfig = trial_config_db.get_trial(trial_id).config
+        task = start_validate.delay(
+            project_id=project_id,
+            trial_id=trial_id,
+            corpus_name=trial_config.corpus_name,
+            qa_name=trial_config.qa_name,
+            yaml_config=trial_config.config,
+        )
+        return jsonify({"task_id": task.id, "status": "Started"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route(
     "/projects/<string:project_id>/trials/<string:trial_id>/evaluate", methods=["POST"]
 )
 @project_exists(WORK_DIR)
-async def start_evaluate(project_id: str, trial_id: str):
+@trial_exists
+async def run_evaluate(project_id: str, trial_id: str):
     try:
-        db_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteProjectDB(db_path)
+        trial_config_db = SQLiteProjectDB(project_id)
         new_config = trial_config_db.get_trial(trial_id).config
-        if new_config is None:
-            return jsonify({"error": f"Trial {trial_id} not found"}), 404
         if (
-            new_config.corpus_path is None
-            or new_config.qa_path is None
-            or new_config.config_path is None
+            new_config.corpus_name is None
+            or new_config.qa_name is None
+            or new_config.config is None
         ):
-            return jsonify(
-                {"error": "All Corpus, QA, and config paths must be set"}
-            ), 400
+            return jsonify({"error": "All Corpus, QA, and config must be set"}), 400
         project_dir = os.path.join(WORK_DIR, project_id, "project")
 
         data = await request.get_json()
@@ -781,7 +641,20 @@ async def start_evaluate(project_id: str, trial_id: str):
         full_ingest = data.get("full_ingest", True)
 
         trial_configs = trial_config_db.get_all_configs()
-        new_trial_dir = get_new_trial_dir(trial_configs, new_config, project_dir)
+        print(f"trial config length : {len(trial_configs)}")
+        print(f"DB configs list: {list(map(lambda x: x.trial_id, trial_configs))}")
+        original_trial_configs = [
+            config for config in trial_configs if config.trial_id != trial_id
+        ]
+        print(f"original_trial_configs length : {len(original_trial_configs)}")
+        new_trial_dir = get_new_trial_dir(
+            original_trial_configs, new_config, project_dir
+        )
+        print(f"new_trial_dir: {new_trial_dir}")
+
+        new_config.save_dir = new_trial_dir
+        trial_config_db.set_trial_config(trial_id, new_config)
+
         if os.path.exists(new_trial_dir):
             return jsonify(
                 {
@@ -791,11 +664,17 @@ async def start_evaluate(project_id: str, trial_id: str):
                 }
             ), 409
 
+        new_project_dir = os.path.dirname(new_trial_dir)
+        if not os.path.exists(new_project_dir):
+            os.makedirs(new_project_dir)
+
         task = start_evaluate.delay(
             project_id=project_id,
             trial_id=trial_id,
-            config=new_config,
-            project_dir=project_dir,
+            corpus_name=new_config.corpus_name,
+            qa_name=new_config.qa_name,
+            yaml_config=new_config.config,
+            project_dir=new_project_dir,
             skip_validation=skip_validation,
             full_ingest=full_ingest,
         )
@@ -821,45 +700,22 @@ async def open_dashboard(project_id: str, trial_id: str):
             JSON response with task status or error message
     """
     try:
-        # Get the trial and search for the corresponding save_path
-        evaluate_history_path = os.path.join(
-            WORK_DIR, project_id, "evaluate_history.csv"
-        )
-        if not os.path.exists(evaluate_history_path):
-            return jsonify({"error": "You need to run evaluation first"}), 400
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
 
-        evaluate_history_df = pd.read_csv(evaluate_history_path)
-        trial_raw = evaluate_history_df[evaluate_history_df["trial_id"] == trial_id]
-        if trial_raw.empty or len(trial_raw) < 1:
-            return jsonify({"error": "Trial ID not found"}), 404
-        if len(trial_raw) >= 2:
-            return jsonify({"error": "Duplicated trial ID found"}), 400
-
-        trial_dir = trial_raw.iloc[0]["save_dir"]
-        if not os.path.exists(trial_dir):
+        if trial.config.save_dir is None or not os.path.exists(trial.config.save_dir):
             return jsonify({"error": "Trial directory not found"}), 404
-        if not os.path.isdir(trial_dir):
-            return jsonify({"error": "Trial directory is not a directory"}), 500
 
-        task_id = str(uuid.uuid4())
-        response = Task(
-            id=task_id,
+        if trial.report_task_id is not None:
+            return jsonify({"error": "Report already running"}), 409
+
+        task = start_dashboard.delay(
             project_id=project_id,
             trial_id=trial_id,
-            status=Status.IN_PROGRESS,
-            type=TaskType.REPORT,
-            created_at=datetime.now(tz=timezone.utc),
+            trial_dir=trial.config.save_dir,
         )
-        await create_task(task_id, response, run_dashboard, trial_dir)
 
-        trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteProjectDB(trial_config_path)
-        trial = trial_config_db.get_trial(trial_id)
-        new_trial = trial.model_copy(deep=True)
-        new_trial.report_task_id = task_id
-        trial_config_db.set_trial(new_trial)
-
-        return jsonify(response.model_dump()), 202
+        return jsonify({"task_id": task.id, "status": "running"}), 202
 
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
@@ -870,20 +726,19 @@ async def open_dashboard(project_id: str, trial_id: str):
     methods=["GET"],
 )
 async def close_dashboard(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    trial = trial_config_db.get_trial(trial_id)
-    report_pid = tasks[trial.report_task_id]["report_pid"]
-    os.killpg(os.getpgid(report_pid), signal.SIGTERM)
+    db = SQLiteProjectDB(project_id)
+    trial = db.get_trial(trial_id)
+
+    if trial.report_task_id is None:
+        return jsonify({"error": "The report already closed"}), 409
+
+    os.killpg(os.getpgid(int(trial.report_task_id)), signal.SIGTERM)
 
     new_trial = trial.model_copy(deep=True)
-
-    original_task = tasks[trial.report_task_id]["task"]
-    original_task.status = Status.TERMINATED
     new_trial.report_task_id = None
-    trial_config_db.set_trial(new_trial)
+    db.set_trial(new_trial)
 
-    return jsonify(original_task.model_dump()), 200
+    return jsonify({"task_id": trial.report_task_id, "status": "terminated"}), 200
 
 
 @app.route(
@@ -891,45 +746,22 @@ async def close_dashboard(project_id: str, trial_id: str):
 )
 async def open_chat_server(project_id: str, trial_id: str):
     try:
-        # Get the trial and search for the corresponding save_path
-        evaluate_history_path = os.path.join(
-            WORK_DIR, project_id, "evaluate_history.csv"
-        )
-        if not os.path.exists(evaluate_history_path):
-            return jsonify({"error": "You need to run evaluation first"}), 400
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
 
-        evaluate_history_df = pd.read_csv(evaluate_history_path)
-        trial_raw = evaluate_history_df[evaluate_history_df["trial_id"] == trial_id]
-        if trial_raw.empty or len(trial_raw) < 1:
-            return jsonify({"error": "Trial ID not found"}), 404
-        if len(trial_raw) >= 2:
-            return jsonify({"error": "Duplicated trial ID found"}), 400
-
-        trial_dir = trial_raw.iloc[0]["save_dir"]
-        if not os.path.exists(trial_dir):
+        if trial.config.save_dir is None or not os.path.exists(trial.config.save_dir):
             return jsonify({"error": "Trial directory not found"}), 404
-        if not os.path.isdir(trial_dir):
-            return jsonify({"error": "Trial directory is not a directory"}), 500
 
-        task_id = str(uuid.uuid4())
-        response = Task(
-            id=task_id,
+        if trial.chat_task_id is not None:
+            return jsonify({"error": "Report already running"}), 409
+
+        task = start_chat_server.delay(
             project_id=project_id,
             trial_id=trial_id,
-            status=Status.IN_PROGRESS,
-            type=TaskType.CHAT,
-            created_at=datetime.now(tz=timezone.utc),
+            trial_dir=trial.config.save_dir,
         )
-        await create_task(task_id, response, run_chat, trial_dir)
 
-        trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-        trial_config_db = SQLiteProjectDB(trial_config_path)
-        trial = trial_config_db.get_trial(trial_id)
-        new_trial = trial.model_copy(deep=True)
-        new_trial.chat_task_id = task_id
-        trial_config_db.set_trial(new_trial)
-
-        return jsonify(response.model_dump()), 202
+        return jsonify({"task_id": task.id, "status": "running"}), 202
 
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
@@ -991,60 +823,72 @@ async def delete_artifact(project_id: str):
     "/projects/<string:project_id>/trials/<string:trial_id>/chat/close", methods=["GET"]
 )
 async def close_chat_server(project_id: str, trial_id: str):
-    trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteProjectDB(trial_config_path)
-    trial = trial_config_db.get_trial(trial_id)
-    chat_pid = tasks[trial.chat_task_id]["chat_pid"]
-    os.killpg(os.getpgid(chat_pid), signal.SIGTERM)
+    db = SQLiteProjectDB(project_id)
+    trial = db.get_trial(trial_id)
+
+    if trial.chat_task_id is None:
+        return jsonify({"error": "The chat server already closed"}), 409
+
+    try:
+        os.killpg(os.getpgid(int(trial.chat_task_id)), signal.SIGTERM)
+    except Exception as e:
+        logger.debug(f"Error while closing chat server: {str(e)}")
 
     new_trial = trial.model_copy(deep=True)
-
-    original_task = tasks[trial.chat_task_id]["task"]
-    original_task.status = Status.TERMINATED
     new_trial.chat_task_id = None
-    trial_config_db.set_trial(new_trial)
+    db.set_trial(new_trial)
 
-    return jsonify(original_task.model_dump()), 200
+    return jsonify({"task_id": trial.chat_task_id, "status": "terminated"}), 200
 
 
-@app.route("/projects/<string:project_id>/tasks", methods=["GET"])
+@app.route(
+    "/projects/<string:project_id>/trials/<string:trial_id>/api/open", methods=["GET"]
+)
 @project_exists(WORK_DIR)
-async def get_tasks(project_id: str):
-    if not os.path.exists(os.path.join(WORK_DIR, project_id)):
-        return jsonify({"error": f"Project name does not exist: {project_id}"}), 404
+@trial_exists
+async def open_api_server(project_id: str, trial_id: str):
+    try:
+        db = SQLiteProjectDB(project_id)
+        trial = db.get_trial(trial_id)
 
-    evaluate_history_path = os.path.join(WORK_DIR, project_id, "evaluate_history.csv")
-    if not os.path.exists(evaluate_history_path):
-        evaluate_history_df = pd.DataFrame(
-            columns=["trial_id", "save_dir", "corpus_path", "qa_path", "config_path"]
-        )  # save_dir is to autorag trial directory
-        evaluate_history_df.to_csv(evaluate_history_path, index=False)
-    else:
-        evaluate_history_df = pd.read_csv(evaluate_history_path)
+        if trial.api_pid is not None:
+            return jsonify({"error": "API server already running"}), 409
 
-    # Replace NaN values with None before converting to dict
-    evaluate_history_df = evaluate_history_df.where(pd.notna(evaluate_history_df), -1)
+        if trial.config.save_dir is None or not os.path.exists(trial.config.save_dir):
+            return jsonify({"error": "Trial directory not found"}), 404
 
-    return jsonify(
-        {
-            "total": len(evaluate_history_df),
-            "data": evaluate_history_df.to_dict(
-                orient="records"
-            ),  # Convert DataFrame to list of dictionaries
-        }
-    ), 200
+        task = start_api_server.delay(
+            project_id=project_id, trial_id=trial_id, trial_dir=trial.config.save_dir
+        )
+
+        return jsonify({"task_id": task.id, "status": "running"}), 202
+
+    except Exception as e:
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
-@app.route("/projects/<string:project_id>/tasks/<string:task_id>", methods=["GET"])
+@app.route(
+    "/projects/<string:project_id>/trials/<string:trial_id>/api/close", methods=["GET"]
+)
 @project_exists(WORK_DIR)
-async def get_task(project_id: str, task_id: str):
-    if not os.path.exists(os.path.join(WORK_DIR, project_id)):
-        return jsonify({"error": f"Project name does not exist: {project_id}"}), 404
-    task: Optional[Dict] = tasks.get(task_id, None)
-    if task is None:
-        return jsonify({"error": f"Task ID does not exist: {task_id}"}), 404
-    response = task["task"]
-    return jsonify(response.model_dump()), 200
+@trial_exists
+async def close_api_server(project_id: str, trial_id: str):
+    db = SQLiteProjectDB(project_id)
+    trial = db.get_trial(trial_id)
+
+    if trial.api_pid is None:
+        return jsonify({"error": "The api server already closed"}), 409
+
+    try:
+        os.killpg(os.getpgid(int(trial.api_pid)), signal.SIGTERM)
+    except Exception as e:
+        logger.debug(f"Error while closing api server: {str(e)}")
+
+    new_trial = trial.model_copy(deep=True)
+    new_trial.api_pid = None
+    db.set_trial(new_trial)
+
+    return jsonify({"task_id": trial.api_pid, "status": "terminated"}), 200
 
 
 @app.route("/env", methods=["POST"])
