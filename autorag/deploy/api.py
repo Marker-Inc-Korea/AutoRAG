@@ -5,7 +5,6 @@ import uuid
 from typing import Dict, Optional, List, Union, Literal
 
 import pandas as pd
-from pyngrok import ngrok
 from quart import Quart, request, jsonify
 from quart.helpers import stream_with_context
 from pydantic import BaseModel, ValidationError
@@ -255,6 +254,8 @@ class ApiRunner(BaseRunner):
 		"""
 		logger.info(f"Run api server at {host}:{port}")
 		if remote:
+			from pyngrok import ngrok
+
 			http_tunnel = ngrok.connect(str(port), "http")
 			public_url = http_tunnel.public_url
 			logger.info(f"Public API URL: {public_url}")
