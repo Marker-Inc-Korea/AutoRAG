@@ -414,7 +414,7 @@
 <span class="kn">from</span> <span class="nn">autorag.deploy.base</span> <span class="kn">import</span> <span class="n">BaseRunner</span>
 <span class="kn">from</span> <span class="nn">autorag.nodes.generator.base</span> <span class="kn">import</span> <span class="n">BaseGenerator</span>
 <span class="kn">from</span> <span class="nn">autorag.nodes.promptmaker.base</span> <span class="kn">import</span> <span class="n">BasePromptMaker</span>
-<span class="kn">from</span> <span class="nn">autorag.utils</span> <span class="kn">import</span> <span class="n">fetch_contents</span>
+<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">fetch_contents</span><span class="p">,</span> <span class="n">to_list</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
@@ -709,6 +709,7 @@
 			<span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
 		<span class="k">else</span><span class="p">:</span>
 			<span class="n">start_end_indices</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">retrieved_ids</span><span class="p">)</span>
+		<span class="n">start_end_indices</span> <span class="o">=</span> <span class="n">to_list</span><span class="p">(</span><span class="n">start_end_indices</span><span class="p">)</span>
 		<span class="k">return</span> <span class="nb">list</span><span class="p">(</span>
 			<span class="nb">map</span><span class="p">(</span>
 				<span class="k">lambda</span> <span class="n">content</span><span class="p">,</span> <span class="n">doc_id</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">metadata</span><span class="p">,</span> <span class="n">start_end_idx</span><span class="p">:</span> <span class="n">RetrievedPassage</span><span class="p">(</span>
