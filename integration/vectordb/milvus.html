@@ -420,6 +420,9 @@
 <span class="w">  </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MILVUS_TOKEN}</span>
 <span class="w">  </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
 <span class="w">  </span><span class="nt">similarity_metric</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cosine</span>
+<span class="w">  </span><span class="nt">index_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">IVF_FLAT</span>
+<span class="w">  </span><span class="nt">params</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">nlist</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16384</span>
 </pre></div>
 </div>
 <p>Here is a simple example of a YAML configuration file that uses the Milvus vector database and the OpenAI:</p>
@@ -432,6 +435,9 @@
 <span class="w">    </span><span class="nt">token</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MILVUS_TOKEN}</span>
 <span class="w">    </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
 <span class="w">    </span><span class="nt">similarity_metric</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cosine</span>
+<span class="w">    </span><span class="nt">index_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">IVF_FLAT</span>
+<span class="w">    </span><span class="nt">params</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">nlist</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16384</span>
 <span class="nt">node_lines</span><span class="p">:</span>
 <span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieve_node_line</span><span class="w">  </span><span class="c1"># Arbitrary node line name</span>
 <span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
