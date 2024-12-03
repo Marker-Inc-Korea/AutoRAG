@@ -407,7 +407,6 @@
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Literal</span>
 
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">pyngrok</span> <span class="kn">import</span> <span class="n">ngrok</span>
 <span class="kn">from</span> <span class="nn">quart</span> <span class="kn">import</span> <span class="n">Quart</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">jsonify</span>
 <span class="kn">from</span> <span class="nn">quart.helpers</span> <span class="kn">import</span> <span class="n">stream_with_context</span>
 <span class="kn">from</span> <span class="nn">pydantic</span> <span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">ValidationError</span>
@@ -682,6 +681,8 @@
 <span class="sd">		&quot;&quot;&quot;</span>
 		<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Run api server at </span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">port</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 		<span class="k">if</span> <span class="n">remote</span><span class="p">:</span>
+			<span class="kn">from</span> <span class="nn">pyngrok</span> <span class="kn">import</span> <span class="n">ngrok</span>
+
 			<span class="n">http_tunnel</span> <span class="o">=</span> <span class="n">ngrok</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">port</span><span class="p">),</span> <span class="s2">&quot;http&quot;</span><span class="p">)</span>
 			<span class="n">public_url</span> <span class="o">=</span> <span class="n">http_tunnel</span><span class="o">.</span><span class="n">public_url</span>
 			<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Public API URL: </span><span class="si">{</span><span class="n">public_url</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
