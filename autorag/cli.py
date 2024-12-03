@@ -75,14 +75,17 @@ def evaluate(config, qa_data_path, corpus_data_path, project_dir, skip_validatio
 @click.option(
 	"--project_dir", help="Path to project directory.", type=str, default=None
 )
-def run_api(config_path, host, port, trial_dir, project_dir):
+@click.option(
+	"--remote", help="Run the API server in remote mode.", type=bool, default=False
+)
+def run_api(config_path, host, port, trial_dir, project_dir, remote: bool):
 	if trial_dir is None:
 		runner = ApiRunner.from_yaml(config_path, project_dir=project_dir)
 	else:
 		runner = ApiRunner.from_trial_folder(trial_dir)
 	logger.info(f"Running API server at {host}:{port}...")
 	nest_asyncio.apply()
-	runner.run_api_server(host, port)
+	runner.run_api_server(host, port, remote=remote)
 
 
 @click.command()
