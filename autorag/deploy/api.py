@@ -12,8 +12,7 @@ from pydantic import BaseModel, ValidationError
 from autorag.deploy.base import BaseRunner
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.nodes.promptmaker.base import BasePromptMaker
-from autorag.utils import fetch_contents
-from utils.util import to_list
+from autorag.utils.util import fetch_contents, to_list
 
 logger = logging.getLogger("AutoRAG")
 
