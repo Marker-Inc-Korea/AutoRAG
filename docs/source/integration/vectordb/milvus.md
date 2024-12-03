@@ -15,6 +15,10 @@ To use the Milvus vector database, you need to configure it in your YAML configu
   token: ${MILVUS_TOKEN}
   embedding_batch: 50
   similarity_metric: cosine
+  index_type: IVF_FLAT
+  params:
+    nlist: 16384
+
 ```
 
 Here is a simple example of a YAML configuration file that uses the Milvus vector database and the OpenAI:
@@ -29,6 +33,9 @@ vectordb:
     token: ${MILVUS_TOKEN}
     embedding_batch: 50
     similarity_metric: cosine
+    index_type: IVF_FLAT
+    params:
+      nlist: 16384
 node_lines:
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
