@@ -40,7 +40,7 @@ jobs:
           sudo apt-get install tesseract-ocr
       - name: Install AutoRAG
         run: |
-          pip install -e '.[ko,dev,parse,ja]'
+          pip install -e './autorag[ko,dev,parse,ja]'
       - name: Install dependencies
         run: |
           pip install -r tests/requirements.txt
@@ -54,6 +54,8 @@ jobs:
           python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
       - name: delete tests package
         run: python3 tests/delete_tests.py
-      - name: Run tests
+      - name: Run AutoRAG tests
+        env:
+          PYTHONPATH: ${PYTHONPATH}:./autorag
         run: |
-          python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/
+          python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag

@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+defaults:
+  run:
+    working-directory: ./autorag
+
 jobs:
   pypi-publish:
     name: upload release to PyPI

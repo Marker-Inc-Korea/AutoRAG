@@ -4,6 +4,10 @@ on:
   push:
     branches: [ "main" ]
 
+defaults:
+  run:
+    working-directory: ./autorag
+
 env:
   DOCKER_REPO: "autoraghq/autorag"
 
