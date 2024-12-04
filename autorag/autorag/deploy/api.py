@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from autorag.deploy.base import BaseRunner
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.nodes.promptmaker.base import BasePromptMaker
-from autorag.utils import fetch_contents
+from autorag.utils.util import fetch_contents, to_list
 
 logger = logging.getLogger("AutoRAG")
 
@@ -279,6 +279,7 @@ class ApiRunner(BaseRunner):
 			)[0]
 		else:
 			start_end_indices = [None] * len(retrieved_ids)
+		start_end_indices = to_list(start_end_indices)
 		return list(
 			map(
 				lambda content, doc_id, path, metadata, start_end_idx: RetrievedPassage(

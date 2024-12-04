@@ -1,0 +1,36 @@
+vectordb:
+  - name: chroma_default
+    db_type: chroma
+    client_type: persistent
+    embedding_model: mock
+    collection_name: openai
+    path: ${PROJECT_DIR}/resources/chroma
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: retrieval  # represents run_node function
+      strategy:  # essential for every node
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10 # node param, which adapt to every module in this node.
+      modules:
+        - module_type: bm25
+          bm25_tokenizer: [ porter_stemmer ]
+        - module_type: vectordb
+          vectordb: chroma_default
+          embedding_batch: 50
+    - node_type: prompt_maker
+      strategy:
+        metrics: [ bleu ]
+        generator_modules:
+          - module_type: llama_index_llm
+            llm: mock
+      modules:
+        - module_type: fstring
+          prompt: "Tell me something about the question: {query} \n\n {retrieved_contents}"
+    - node_type: generator
+      strategy:
+        metrics:
+          - metric_name: bleu
+      modules:
+        - module_type: llama_index_llm
+          llm: mock
