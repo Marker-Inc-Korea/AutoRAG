@@ -1,6 +1,7 @@
 import pandas as pd
 
-passage1 = """NewJeans (뉴진스) is a 5-member girl group under ADOR and HYBE Labels.
+passage1 = """Filename: New Jeans never die.
+NewJeans (뉴진스) is a 5-member girl group under ADOR and HYBE Labels.
 The members consist of Minji, Hanni, Danielle, Haerin, and Hyein.
 They released their debut single “Attention” on July 22, 2022,
 followed by their debut extended play, New Jeans, which was released on August 1, 2022."""
