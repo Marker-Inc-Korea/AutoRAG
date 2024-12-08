@@ -8,8 +8,8 @@ from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import BasePassageFilter
 from autorag.utils.util import (
 	embedding_query_content,
-	result_to_dataframe,
 	empty_cuda_cache,
+	result_to_dataframe,
 )
 
 
@@ -20,10 +20,10 @@ class SimilarityThresholdCutoff(BasePassageFilter):
 
 		:param project_dir: The project directory to use for initializing the module
 		:param embedding_model: The embedding model string to use for calculating similarity
-			Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
+		        Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
 		"""
 		super().__init__(project_dir, *args, **kwargs)
-		embedding_model_str = kwargs.pop("embedding_model", "openai")
+		embedding_model_str = kwargs.get("embedding_model", "openai")
 		self.embedding_model = embedding_models[embedding_model_str]()
 
 	def __del__(self):
@@ -33,6 +33,8 @@ class SimilarityThresholdCutoff(BasePassageFilter):
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+		if "embedding_model" in kwargs.keys():
+			del kwargs["embedding_model"]
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
 		return self._pure(queries, contents, scores, ids, *args, **kwargs)
 

@@ -36,6 +36,8 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
+		if "embedding_model" in kwargs.keys():
+			del kwargs["embedding_model"]
 		return self._pure(queries, contents, scores, ids, *args, **kwargs)
 
 	def _pure(

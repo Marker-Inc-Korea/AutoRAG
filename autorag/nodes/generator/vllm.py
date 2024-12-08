@@ -41,7 +41,8 @@ class Vllm(BaseGenerator):
 
 			if torch.cuda.is_available():
 				from vllm.distributed.parallel_state import (
-					destroy_model_parallel, destroy_distributed_environment
+					destroy_model_parallel,
+					destroy_distributed_environment,
 				)
 
 				destroy_model_parallel()
