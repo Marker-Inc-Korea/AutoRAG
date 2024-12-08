@@ -21,10 +21,10 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 
 		:param project_dir: The project directory to use for initializing the module
 		:param embedding_model: The embedding model string to use for calculating similarity
-			Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
+		        Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
 		"""
 		super().__init__(project_dir, *args, **kwargs)
-		embedding_model_str = kwargs.pop("embedding_model", "openai")
+		embedding_model_str = kwargs.get("embedding_model", "openai")
 		self.embedding_model = embedding_models[embedding_model_str]()
 
 	def __del__(self):
