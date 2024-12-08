@@ -203,7 +203,12 @@ def generate_qa_documents(self, project_id: str, request_data: Dict[str, Any]):
 
 @shared_task(bind=True, base=TrialTask)
 def parse_documents(
-    self, project_id: str, config_str: str, parse_name: str, glob_path: str = "*.*"
+    self,
+    project_id: str,
+    config_str: str,
+    parse_name: str,
+    glob_path: str = "*.*",
+    all_files: bool = True,
 ):
     load_dotenv(ENV_FILEPATH)
     try:
@@ -247,7 +252,9 @@ def parse_documents(
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(config_dict, f, allow_unicode=True)
 
-        result = run_parser_start_parsing(raw_data_path, parsed_data_path, yaml_path)
+        result = run_parser_start_parsing(
+            raw_data_path, parsed_data_path, yaml_path, all_files
+        )
 
         self.update_state_and_db(
             trial_id="",

@@ -417,6 +417,41 @@ async def get_parse_documents(project_id):
     return jsonify(result_dict_list), 200
 
 
+@app.route("/projects/<project_id>/parse/<parsed_name>", methods=["GET"])
+@project_exists(WORK_DIR)
+async def get_parsed_file(project_id: str, parsed_name: str):
+    parsed_folder = os.path.join(WORK_DIR, project_id, "parse")
+    raw_df = pd.read_parquet(
+        os.path.join(parsed_folder, parsed_name, "0.parquet"), engine="pyarrow"
+    )
+    requested_filename = request.args.get("filename", type=str)
+    requested_page = request.args.get("page", -1, type=int)
+
+    if requested_filename is None:
+        return jsonify({"error": "Filename is required"}), 400
+
+    if requested_page < -1:
+        return jsonify({"error": "Invalid page number"}), 400
+
+    requested_filepath = os.path.join(
+        WORK_DIR, project_id, "raw_data", requested_filename
+    )
+
+    raw_row = raw_df.loc[raw_df["path"] == requested_filepath].loc[
+        raw_df["page"] == requested_page
+    ]
+    if len(raw_row) <= 0:
+        raw_row = raw_df.loc[raw_df["path"] == requested_filepath].loc[
+            raw_df["page"] == -1
+        ]
+        if len(raw_row) <= 0:
+            return jsonify({"error": "No matching document found"}), 404
+
+    result_dict = raw_row.iloc[0].to_dict()
+
+    return jsonify(result_dict), 200
+
+
 @app.route("/projects/<project_id>/chunk", methods=["GET"])
 @project_exists(WORK_DIR)
 async def get_chunk_documents(project_id):
@@ -461,6 +496,7 @@ async def parse_documents_endpoint(project_id):
         config = data["config"]
         target_extension = data["extension"]
         parse_name = data["name"]
+        all_files: bool = data.get("all_files", True)
 
         parse_dir = os.path.join(WORK_DIR, project_id, "parse")
 
@@ -472,6 +508,7 @@ async def parse_documents_endpoint(project_id):
             config_str=yaml.dump(config),
             parse_name=parse_name,
             glob_path=f"*.{target_extension}",
+            all_files=all_files,
         )
         task_id = task.id
         return jsonify({"task_id": task_id, "status": "started"})
