@@ -496,6 +496,7 @@ async def parse_documents_endpoint(project_id):
         config = data["config"]
         target_extension = data["extension"]
         parse_name = data["name"]
+        all_files: bool = data.get("all_files", True)
 
         parse_dir = os.path.join(WORK_DIR, project_id, "parse")
 
@@ -507,6 +508,7 @@ async def parse_documents_endpoint(project_id):
             config_str=yaml.dump(config),
             parse_name=parse_name,
             glob_path=f"*.{target_extension}",
+            all_files=all_files,
         )
         task_id = task.id
         return jsonify({"task_id": task_id, "status": "started"})
