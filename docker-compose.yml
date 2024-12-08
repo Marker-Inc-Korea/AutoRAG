@@ -14,6 +14,16 @@ services:
       - ./api:/app/api
       - ./projects:/app/projects
     working_dir: /app/api
+
+
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ap-northeast-2  # AWS 리전
+        awslogs-group: /docker/autorag-api-vmonster # CloudWatch 로그 그룹
+        awslogs-create-group: 'true'    # 로그 그룹 자동 생성
+
+
     ports:
       - "8000:8000"
       - "7690:7690" # for panel report
