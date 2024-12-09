@@ -157,8 +157,10 @@ def test_start_parsing_all_files(simple_parser):
 	project_dir = simple_parser.project_dir
 	assert os.path.exists(project_dir)
 	assert os.path.exists(os.path.join(project_dir, "parse_config.yaml"))
-	assert os.path.exists(os.path.join(project_dir, "0.parquet"))
-	all_files_result = pd.read_parquet(os.path.join(project_dir, "0.parquet"))
+	assert os.path.exists(os.path.join(project_dir, "parsed_result.parquet"))
+	all_files_result = pd.read_parquet(
+		os.path.join(project_dir, "parsed_result.parquet")
+	)
 
 	expect_result_columns = ["texts", "path", "page", "last_modified_datetime"]
 	assert all(
