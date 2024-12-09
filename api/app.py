@@ -422,7 +422,8 @@ async def get_parse_documents(project_id):
 async def get_parsed_file(project_id: str, parsed_name: str):
     parsed_folder = os.path.join(WORK_DIR, project_id, "parse")
     raw_df = pd.read_parquet(
-        os.path.join(parsed_folder, parsed_name, "0.parquet"), engine="pyarrow"
+        os.path.join(parsed_folder, parsed_name, "parsed_result.parquet"),
+        engine="pyarrow",
     )
     requested_filename = request.args.get("filename", type=str)
     requested_page = request.args.get("page", -1, type=int)

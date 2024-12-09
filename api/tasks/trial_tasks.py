@@ -67,7 +67,7 @@ def chunk_documents(
     """
     load_dotenv(ENV_FILEPATH)
     parsed_data_path = os.path.join(
-        WORK_DIR, project_id, "parse", parse_name, "0.parquet"
+        WORK_DIR, project_id, "parse", parse_name, "parsed_result.parquet"
     )
     if not os.path.exists(parsed_data_path):
         raise ValueError(f"parsed_data_path does not exist: {parsed_data_path}")
