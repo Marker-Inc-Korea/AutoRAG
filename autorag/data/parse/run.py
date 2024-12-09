@@ -53,13 +53,23 @@ def run_parser(
 		)
 		set_file_types = set([module["file_type"] for module in module_params])
 
+		# Calculate the set difference once
+		file_types_to_remove = set_file_types - file_types
+
+		# Use list comprehension to filter out unwanted elements
+		module_params = [
+			param
+			for param in module_params
+			if param["file_type"] not in file_types_to_remove
+		]
+		modules = [
+			module
+			for module, param in zip(modules, module_params)
+			if param["file_type"] not in file_types_to_remove
+		]
+
 		# create a list of only those file_types that are in file_types but not in set_file_types
 		missing_file_types = list(file_types - set_file_types)
-		if list(set_file_types - file_types):
-			for module, module_param in zip(modules, module_params):
-				if module_param["file_type"] in list(set_file_types - file_types):
-					modules.remove(module)
-					module_params.remove(module_param)
 
 		if missing_file_types:
 			add_modules_list = []
