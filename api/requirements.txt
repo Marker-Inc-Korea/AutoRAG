@@ -1,5 +1,5 @@
-AutoRAG[parse]==0.3.11rc2
-AutoRAG[ko]==0.3.11rc2
+AutoRAG[parse]==0.3.11rc3
+AutoRAG[ko]==0.3.11rc3
 pydantic<2.10.0
 jwt
 quart-cors
