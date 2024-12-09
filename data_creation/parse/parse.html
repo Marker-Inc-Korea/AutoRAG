@@ -551,8 +551,9 @@ If not, you can check the result in the current directory.</p>
 </ol>
 <section id="id1">
 <h4>Use all files<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h4>
-<p>For example, if parsing is performed using three parse methods, the following files are created.
-<code class="docutils literal notranslate"><span class="pre">0.parquet</span></code>, <code class="docutils literal notranslate"><span class="pre">1.parquet</span></code>, <code class="docutils literal notranslate"><span class="pre">2.parquet</span></code>, <code class="docutils literal notranslate"><span class="pre">parse_config.yaml</span></code>, <code class="docutils literal notranslate"><span class="pre">summary.csv</span></code></p>
+<p>You can use only one parse method at a time.</p>
+<p>Parsed result will be saved as <code class="docutils literal notranslate"><span class="pre">parsed_result.parquet</span></code>.</p>
+<p>If you want to use two all_files parse method, you should run the parse pipeline twice with different two YAML files.</p>
 <p>Finally, in the summary.csv file, you can see information about the parsed result, such as what parse method was used to parse it.</p>
 </section>
 <section id="use-specific-file-types">

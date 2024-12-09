@@ -154,8 +154,11 @@ If the parsing is completed successfully, the following three types of files are
 
 #### Use all files
 
-For example, if parsing is performed using three parse methods, the following files are created.
-`0.parquet`, `1.parquet`, `2.parquet`, `parse_config.yaml`, `summary.csv`
+You can use only one parse method at a time.
+
+Parsed result will be saved as `parsed_result.parquet`.
+
+If you want to use two all_files parse method, you should run the parse pipeline twice with different two YAML files.
 
 Finally, in the summary.csv file, you can see information about the parsed result, such as what parse method was used to parse it.
 
