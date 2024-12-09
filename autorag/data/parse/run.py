@@ -95,11 +95,11 @@ def run_parser(
 
 	# save results to parquet files
 	if all_files:
-		filepaths = list(
-			map(
-				lambda x: os.path.join(project_dir, f"{x}.parquet"), range(len(modules))
+		if len(module_params) > 1:
+			raise ValueError(
+				"All files is set to True, You can only use one parsing module."
 			)
-		)
+		filepaths = [os.path.join(project_dir, "parsed_result.parquet")]
 	else:
 		filepaths = list(
 			map(
