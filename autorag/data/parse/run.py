@@ -56,9 +56,10 @@ def run_parser(
 		# create a list of only those file_types that are in file_types but not in set_file_types
 		missing_file_types = list(file_types - set_file_types)
 		if list(set_file_types - file_types):
-			raise ValueError(
-				f"File types {list(set_file_types - file_types)} are not in the data path."
-			)
+			for module, module_param in zip(modules, module_params):
+				if module_param["file_type"] in list(set_file_types - file_types):
+					modules.remove(module)
+					module_params.remove(module_param)
 
 		if missing_file_types:
 			add_modules_list = []
