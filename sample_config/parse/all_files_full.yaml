@@ -1,0 +1,25 @@
+# You can use only one of the following modules at a time.
+modules:
+  # Use Directory Parse
+  - module_type: langchain_parse
+    file_type: all_files
+    parse_method: directory
+  # Use Unstructured
+  - module_type: langchain_parse
+    file_type: all_files
+    parse_method: unstructured
+  # Use Upsatge Document Parse
+  - module_type: langchain_parse
+    file_type: all_files
+    parse_method: upstagedocumentparse
+  # Use Naver Clova OCR
+  - module_type: clova
+    file_type: all_files
+    table_detection: true
+  # Use Llama Parse
+  - module_type: llamaparse
+    file_type: all_files
+    result_type: markdown
+    language: ko
+    use_vendor_multimodal_model: true
+    vendor_multimodal_model_name: openai-gpt-4o-mini

@@ -31,7 +31,7 @@ def test_table_hybrid_parse():
 
 
 def test_table_hybrid_parse_node():
-	result_df = table_hybrid_parse(hybrid_glob, **table_hybrid_params)
+	result_df = table_hybrid_parse(hybrid_glob, file_type="pdf", **table_hybrid_params)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -48,7 +48,9 @@ def test_table_hybrid_parse_only_text():
 
 
 def test_table_hybrid_parse_only_text_node():
-	result_df = table_hybrid_parse(eng_text_glob, **table_hybrid_params)
+	result_df = table_hybrid_parse(
+		eng_text_glob, file_type="pdf", **table_hybrid_params
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),
@@ -65,7 +67,9 @@ def test_table_hybrid_parse_only_table():
 
 
 def test_table_hybrid_parse_only_table_node():
-	result_df = table_hybrid_parse(korean_table_glob, **table_hybrid_params)
+	result_df = table_hybrid_parse(
+		korean_table_glob, file_type="pdf", **table_hybrid_params
+	)
 	check_parse_result(
 		result_df["texts"].tolist(),
 		result_df["path"].tolist(),

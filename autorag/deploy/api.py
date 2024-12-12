@@ -5,7 +5,6 @@ import uuid
 from typing import Dict, Optional, List, Union, Literal
 
 import pandas as pd
-from pyngrok import ngrok
 from quart import Quart, request, jsonify
 from quart.helpers import stream_with_context
 from pydantic import BaseModel, ValidationError
@@ -13,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from autorag.deploy.base import BaseRunner
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.nodes.promptmaker.base import BasePromptMaker
-from autorag.utils import fetch_contents
+from autorag.utils.util import fetch_contents, to_list
 
 logger = logging.getLogger("AutoRAG")
 
@@ -255,6 +254,8 @@ class ApiRunner(BaseRunner):
 		"""
 		logger.info(f"Run api server at {host}:{port}")
 		if remote:
+			from pyngrok import ngrok
+
 			http_tunnel = ngrok.connect(str(port), "http")
 			public_url = http_tunnel.public_url
 			logger.info(f"Public API URL: {public_url}")
@@ -278,6 +279,7 @@ class ApiRunner(BaseRunner):
 			)[0]
 		else:
 			start_end_indices = [None] * len(retrieved_ids)
+		start_end_indices = to_list(start_end_indices)
 		return list(
 			map(
 				lambda content, doc_id, path, metadata, start_end_idx: RetrievedPassage(

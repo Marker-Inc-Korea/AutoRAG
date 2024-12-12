@@ -38,6 +38,19 @@ def evaluator():
 
 
 @pytest.fixture
+def evaluator_data_gen_by_autorag():
+	with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
+		evaluator = Evaluator(
+			os.path.join(resource_dir, "dataset_sample_gen_by_autorag", "qa.parquet"),
+			os.path.join(
+				resource_dir, "dataset_sample_gen_by_autorag", "corpus.parquet"
+			),
+			project_dir=project_dir,
+		)
+		yield evaluator
+
+
+@pytest.fixture
 def evaluator_trial_done(evaluator):
 	evaluator.start_trial(os.path.join(resource_dir, "simple_with_llm.yaml"))
 	yield evaluator
@@ -289,6 +302,45 @@ def test_runner_api_server(evaluator):
 	assert isinstance(passages[0]["doc_id"], str)
 	assert isinstance(passages[0]["content"], str)
 	assert isinstance(passages[0]["score"], float)
+
+
+def test_runner_api_server2(evaluator_data_gen_by_autorag):
+	project_dir = evaluator_data_gen_by_autorag.project_dir
+	evaluator_data_gen_by_autorag.start_trial(
+		os.path.join(resource_dir, "simple_mock_with_llm.yaml")
+	)
+	runner = ApiRunner.from_trial_folder(os.path.join(project_dir, "0"))
+
+	client = runner.app.test_client()
+
+	async def post_to_server():
+		# Use the TestClient to make a request to the server
+		response = await client.post(
+			"/v1/run",
+			json={
+				"query": "What is the best movie in Korea? Have Korea movie ever won Oscar?",
+			},
+		)
+		json_response = await response.get_json()
+		return json_response, response.status_code
+
+	nest_asyncio.apply()
+	response_json, response_status_code = asyncio.run(post_to_server())
+	assert response_status_code == 200
+	assert "result" in response_json
+	assert "retrieved_passage" in response_json
+	answer = response_json["result"]
+	assert isinstance(answer, str)
+	assert bool(answer)
+
+	retrieved_contents = response_json["retrieved_passage"]
+	assert len(retrieved_contents) == 10
+	assert isinstance(retrieved_contents[0]["content"], str)
+	assert isinstance(retrieved_contents[0]["doc_id"], str)
+	assert retrieved_contents[0]["filepath"]
+	assert retrieved_contents[0]["file_page"]
+	assert retrieved_contents[0]["start_idx"]
+	assert retrieved_contents[0]["end_idx"]
 
 
 @pytest.mark.skip(reason="This test is not working")

@@ -19,7 +19,9 @@ Instructions:
 2. Questions should be as detailed as possible from Text
 3. Create questions that ask about factual information from the Text
 4. Do not mention any of these in the questions: "in the given text", "in the provided information", etc.
-Users do not know the passage source of the question, so it should not be mentioned in the question.""",
+Users do not know the passage source of the question, so it should not be mentioned in the question.
+5. Do not ask about the file name or the file title. Ask about the content of the file.
+For example, avoid to write questions like `What is the file name of the document?`""",
 			)
 		],
 		"ko": [
@@ -41,7 +43,9 @@ Users do not know the passage source of the question, so it should not be mentio
 	3.	Text에서 사실적 정보를 요구하는 질문을 만들어야 합니다. 즉, Text를 기반으로 사실 질문을 만드세요.
 	4.	질문에 “주어진 Text에서” 또는 “제공된 단락에서”와 같은 표현을 포함해서는 안 됩니다.
 사용자는 질문의 출처가 Text라는 것을 모르기 때문에 반드시 그 출처를 언급해서는 안 됩니다.
-	5.	질문을 한국어로 작성하세요.""",
+	5.	파일 이름이나 파일 제목에 대한 질문을 하지 마세요. 파일의 내용에 대해 물어보세요.
+예를 들어, '문서의 파일 이름은 무엇입니까?'와 같은 질문을 작성하지 마세요.
+	6.	질문을 한국어로 작성하세요.""",
 			)
 		],
 		"ja": [
@@ -63,7 +67,9 @@ Users do not know the passage source of the question, so it should not be mentio
 	3. Textで事実的情報を要求する質問を作らなければなりません。 つまり、Textに基づいて質問を作成します。
 	4. 質問に「与えられたTextで」または「提供された段落で」のような表現を含めてはいけません。
 ユーザーは質問の出所がTextだということを知らないので、必ずしもその出所を言及してはいけません。
-	5. 質問を日本語で作成しなさい。""",
+	5. ファイル名やファイルタイトルを訊かないでください。ファイルの内容について聞いてください。
+例えば、「このドキュメントのファイル名は何ですか？
+	6. 質問を日本語で作成しなさい。""",
 			)
 		],
 	},
@@ -81,7 +87,9 @@ Instructions:
 3. Create questions that ask about information from the Text
 4. MUST include specific keywords from the Text.
 5. Do not mention any of these in the questions: "in the given text", "in the provided information", etc.
-Users do not know the passage source of the question, so it should not be mentioned in the question.""",
+Users do not know the passage source of the question, so it should not be mentioned in the question.
+6. Do not ask about the file name or the file title. Ask about the content of the file.
+For example, avoid to write questions like `What is the file name of the document?""",
 			)
 		],
 		"ko": [
@@ -98,7 +106,9 @@ Users do not know the passage source of the question, so it should not be mentio
 4.	Text의 특정 키워드를 반드시 질문에 포함하세요.
 5.	질문에 “주어진 Text에서” 또는 “제공된 단락에서”와 같은 표현을 포함해서는 안 됩니다.
 사용자는 질문의 출처가 Text라는 것을 모르기 때문에 반드시 그 출처를 언급해서는 안 됩니다.
-6.	질문을 한국어로 작성하세요.""",
+6.	파일 이름이나 파일 제목에 대한 질문을 하지 마세요. 파일의 내용에 대해 물어보세요.
+예를 들어, '문서의 파일 이름은 무엇입니까?'와 같은 질문을 작성하지 마세요.
+7.	질문을 한국어로 작성하세요.""",
 			)
 		],
 		"ja": [
@@ -115,7 +125,9 @@ Users do not know the passage source of the question, so it should not be mentio
 4. Textの特定のキーワードを必ず質問に含みます。
 5. 質問に「与えられたTextで」または「提供された段落で」のような表現を含めてはいけません。
 ユーザーは質問の出所がTextだということを知らないので、必ずしもその出所を言及してはいけません。
-6. 質問を日本語で書きましょう。""",
+6. ファイル名やファイルタイトルを訊かないでください。ファイルの内容について聞いてください。
+例えば、「このドキュメントのファイル名は何ですか？
+7. 質問を日本語で書きましょう。""",
 			)
 		],
 	},
@@ -178,4 +190,13 @@ Two-hop question (using Document 2): ヌエヴォ·ラレドのテコロテス·
 			),
 		],
 	},
+}
+
+# Experimental feature
+QUERY_GEN_PROMPT_EXTRA = {
+	"multiple_queries": {
+		"en": "\nAdditional instructions:\n  - Please make {n} questions.",
+		"ko": "\n추가 지침:\n  - 질문은 {n}개를 만드세요.",
+		"ja": "\n追加指示:\n  - 質問を{n}個作成してください。",
+	}
 }

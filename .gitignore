@@ -162,3 +162,6 @@ pytest.ini
 .DS_Store
 projects/tutorial_1
 !projects/tutorial_1/config.yaml
+
+# Visual Studio Code
+.vscode/
