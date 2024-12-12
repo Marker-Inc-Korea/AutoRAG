@@ -11,7 +11,7 @@ from autorag.nodes.passagefilter.similarity_threshold_cutoff import (
 	embedding_query_content,
 )
 from autorag.utils import result_to_dataframe
-from autorag.utils.util import empty_cuda_cache
+from autorag.utils.util import empty_cuda_cache, pop_params
 
 
 class SimilarityPercentileCutoff(BasePassageFilter):
@@ -24,7 +24,7 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		        Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
 		"""
 		super().__init__(project_dir, *args, **kwargs)
-		embedding_model_str = kwargs.get("embedding_model", "openai")
+		embedding_model_str = kwargs.pop("embedding_model", "openai")
 		self.embedding_model = embedding_models[embedding_model_str]()
 
 	def __del__(self):
@@ -34,11 +34,10 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		empty_cuda_cache()
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
-	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
+	def pure(self, previous_result: pd.DataFrame, **kwargs):
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
-		if "embedding_model" in kwargs.keys():
-			del kwargs["embedding_model"]
-		return self._pure(queries, contents, scores, ids, *args, **kwargs)
+		kwargs = pop_params(self._pure, kwargs)
+		return self._pure(queries, contents, scores, ids, **kwargs)
 
 	def _pure(
 		self,
