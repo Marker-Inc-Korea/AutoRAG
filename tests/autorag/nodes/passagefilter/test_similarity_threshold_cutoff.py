@@ -49,6 +49,10 @@ def test_similarity_threshold_cutoff(similarity_threshold_cutoff_instance):
 )
 def test_similarity_threshold_cutoff_node():
 	result_df = SimilarityThresholdCutoff.run_evaluator(
-		project_dir=project_dir, previous_result=previous_result, threshold=0.9
+		project_dir=project_dir,
+		previous_result=previous_result,
+		threshold=0.9,
+		embedding_model="openai_embed_3_large",
+		marker="big-boy",
 	)
 	base_passage_filter_node_test(result_df)

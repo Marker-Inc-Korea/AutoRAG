@@ -32,7 +32,7 @@ class Milvus(BaseVectorStore):
 		user: str = "",
 		password: str = "",
 		timeout: Optional[float] = None,
-  		params: Dict[str, Any] = {},	
+		params: Dict[str, Any] = {},
 	):
 		super().__init__(embedding_model, similarity_metric, embedding_batch)
 
@@ -49,7 +49,7 @@ class Milvus(BaseVectorStore):
 		self.timeout = timeout
 		self.params = params
 		self.index_type = index_type
-  
+
 		# Set Collection
 		if not utility.has_collection(collection_name, timeout=timeout):
 			# Get the dimension of the embeddings

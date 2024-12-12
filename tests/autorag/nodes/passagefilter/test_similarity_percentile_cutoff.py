@@ -56,6 +56,9 @@ def test_similarity_percentile_cutoff(similarity_percentile_cutoff_instance):
 )
 def test_similarity_percentile_cutoff_node():
 	result_df = SimilarityPercentileCutoff.run_evaluator(
-		project_dir=project_dir, previous_result=previous_result, percentile=0.9
+		project_dir=project_dir,
+		previous_result=previous_result,
+		percentile=0.9,
+		embedding_model="openai_embed_3_large",
 	)
 	base_passage_filter_node_test(result_df)
