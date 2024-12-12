@@ -10,6 +10,7 @@ from autorag.utils.util import (
 	embedding_query_content,
 	empty_cuda_cache,
 	result_to_dataframe,
+	pop_params,
 )
 
 
@@ -33,8 +34,7 @@ class SimilarityThresholdCutoff(BasePassageFilter):
 
 	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
-		if "embedding_model" in kwargs.keys():
-			del kwargs["embedding_model"]
+		kwargs = pop_params(self._pure, kwargs)
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
 		return self._pure(queries, contents, scores, ids, *args, **kwargs)
 
