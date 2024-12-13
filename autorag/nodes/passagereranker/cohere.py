@@ -30,7 +30,7 @@ class CohereReranker(BasePassageReranker):
 				"or directly set it on the config YAML file."
 			)
 
-		self.cohere_client = cohere.AsyncClient(api_key)
+		self.cohere_client = cohere.AsyncClientV2(api_key=api_key)
 
 	def __del__(self):
 		del self.cohere_client
@@ -41,7 +41,7 @@ class CohereReranker(BasePassageReranker):
 		queries, contents, scores, ids = self.cast_to_run(previous_result)
 		top_k = kwargs.pop("top_k")
 		batch = kwargs.pop("batch", 64)
-		model = kwargs.pop("model", "rerank-multilingual-v2.0")
+		model = kwargs.pop("model", "rerank-v3.5")
 		return self._pure(queries, contents, scores, ids, top_k, batch, model)
 
 	def _pure(
@@ -52,7 +52,7 @@ class CohereReranker(BasePassageReranker):
 		ids_list: List[List[str]],
 		top_k: int,
 		batch: int = 64,
-		model: str = "rerank-multilingual-v2.0",
+		model: str = "rerank-v3.5",
 	) -> Tuple[List[List[str]], List[List[str]], List[List[float]]]:
 		"""
 		Rerank a list of contents with Cohere rerank models.
@@ -65,8 +65,8 @@ class CohereReranker(BasePassageReranker):
 		:param top_k: The number of passages to be retrieved
 		:param batch: The number of queries to be processed in a batch
 		:param model: The model name for Cohere rerank.
-		    You can choose between "rerank-multilingual-v2.0" and "rerank-english-v2.0".
-		    Default is "rerank-multilingual-v2.0".
+		    You can choose between "rerank-v3.5", "rerank-english-v3.0", and "rerank-multilingual-v3.0".
+		    Default is "rerank-v3.5".
 		:return: Tuple of lists containing the reranked contents, ids, and scores
 		"""
 		# Run async cohere_rerank_pure function
