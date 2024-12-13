@@ -24,6 +24,7 @@ from quart import Quart
 from quart import jsonify, request, make_response, send_file
 from quart_cors import cors  # Import quart_cors to enable CORS
 from quart_uploads import UploadSet, configure_uploads
+from quart_uploads.file_ext import FileExtensions as fe
 
 from database.project_db import SQLiteProjectDB  # 올바른 임포트로 변경
 from src.auth import require_auth
@@ -359,7 +360,9 @@ async def delete_trial(project_id: str, trial_id: str):
 async def upload_files(project_id: str):
     # Setting upload
     raw_data_path = os.path.join(WORK_DIR, project_id, "raw_data")
-    files = UploadSet()
+    files = UploadSet(
+        extensions=fe.Text + fe.Documents + fe.Data + fe.Scripts + ("html",)
+    )
     files.default_dest = raw_data_path
     configure_uploads(app, files)
     # List to hold paths of uploaded files
