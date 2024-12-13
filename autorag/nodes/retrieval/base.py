@@ -102,8 +102,8 @@ def cast_queries(queries: Union[str, List[str]]) -> List[str]:
 
 
 def evenly_distribute_passages(
-	ids: List[List[str]], scores: List[List[float]], top_k: int
-) -> Tuple[List[str], List[float]]:
+	ids: List[List[str]], scores: List[List[float]], contents: [List[List[str]]], top_k: int
+) -> Tuple[List[str], List[float], List[str]]:
 	assert len(ids) == len(scores), "ids and scores must have same length."
 	query_cnt = len(ids)
 	avg_len = top_k // query_cnt
@@ -111,15 +111,18 @@ def evenly_distribute_passages(
 
 	new_ids = []
 	new_scores = []
+	new_contents = []
 	for i in range(query_cnt):
 		if i < remainder:
 			new_ids.extend(ids[i][: avg_len + 1])
 			new_scores.extend(scores[i][: avg_len + 1])
+			new_contents.extend(contents[i][: avg_len + 1])
 		else:
 			new_ids.extend(ids[i][:avg_len])
 			new_scores.extend(scores[i][:avg_len])
+			new_contents.extend(contents[i][:avg_len])
 
-	return new_ids, new_scores
+	return new_ids, new_scores, new_contents
 
 
 def get_bm25_pkl_name(bm25_tokenizer: str):
