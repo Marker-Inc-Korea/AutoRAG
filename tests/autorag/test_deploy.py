@@ -302,6 +302,10 @@ def test_runner_api_server(evaluator):
 	assert isinstance(passages[0]["doc_id"], str)
 	assert isinstance(passages[0]["content"], str)
 	assert isinstance(passages[0]["score"], float)
+	assert passages[0]["filepath"]
+	assert passages[0]["file_page"]
+	assert passages[0]["start_idx"]
+	assert passages[0]["end_idx"]
 
 
 def test_runner_api_server2(evaluator_data_gen_by_autorag):
