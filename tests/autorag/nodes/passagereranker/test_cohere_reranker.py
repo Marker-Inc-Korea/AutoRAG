@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 import cohere
@@ -74,6 +75,7 @@ def test_cohere_reranker_batch_one(cohere_reranker_instance):
 
 @patch.object(cohere.client_v2.AsyncClientV2, "rerank", mock_cohere_reranker)
 def test_cohere_node():
+	os.environ["CO_API_KEY"] = "test"
 	top_k = 1
 	result_df = CohereReranker.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, top_k=top_k
