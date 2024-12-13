@@ -21,6 +21,12 @@ Next, you can set your Cohere API key in the environment variable.
 export COHERE_API_KEY=your_cohere_api_key
 ```
 
+or
+
+```bash
+export CO_API_KEY=your_cohere_api_key
+```
+
 Or, you can set your Cohere API key in the config.yaml file directly.
 
 ```yaml

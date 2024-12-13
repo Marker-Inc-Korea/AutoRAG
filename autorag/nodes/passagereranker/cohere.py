@@ -25,6 +25,8 @@ class CohereReranker(BasePassageReranker):
 		api_key = kwargs.pop("api_key", None)
 		api_key = os.getenv("COHERE_API_KEY", None) if api_key is None else api_key
 		if api_key is None:
+			api_key = os.getenv("CO_API_KEY", None)
+		if api_key is None:
 			raise KeyError(
 				"Please set the API key for Cohere rerank in the environment variable COHERE_API_KEY "
 				"or directly set it on the config YAML file."

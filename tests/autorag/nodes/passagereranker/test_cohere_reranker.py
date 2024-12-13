@@ -1,6 +1,5 @@
 from unittest.mock import patch
 
-# import cohere.base_client
 import cohere
 import pytest
 from cohere import RerankResponse, RerankResponseResultsItem
@@ -46,11 +45,10 @@ async def mock_cohere_reranker(
 
 @pytest.fixture
 def cohere_reranker_instance():
-	# return CohereReranker(project_dir=project_dir, api_key="test")
-	return CohereReranker(project_dir=project_dir)
+	return CohereReranker(project_dir=project_dir, api_key="test")
 
 
-# @patch.object(cohere.base_client.AsyncBaseCohere, "rerank", mock_cohere_reranker)
+@patch.object(cohere.client_v2.AsyncClientV2, "rerank", mock_cohere_reranker)
 def test_cohere_reranker(cohere_reranker_instance):
 	top_k = 3
 	contents_result, id_result, score_result = cohere_reranker_instance._pure(
@@ -59,7 +57,7 @@ def test_cohere_reranker(cohere_reranker_instance):
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
-@patch.object(cohere.base_client.AsyncBaseCohere, "rerank", mock_cohere_reranker)
+@patch.object(cohere.client_v2.AsyncClientV2, "rerank", mock_cohere_reranker)
 def test_cohere_reranker_batch_one(cohere_reranker_instance):
 	top_k = 3
 	batch = 1
@@ -74,7 +72,7 @@ def test_cohere_reranker_batch_one(cohere_reranker_instance):
 	base_reranker_test(contents_result, id_result, score_result, top_k)
 
 
-@patch.object(cohere.base_client.AsyncBaseCohere, "rerank", mock_cohere_reranker)
+@patch.object(cohere.client_v2.AsyncClientV2, "rerank", mock_cohere_reranker)
 def test_cohere_node():
 	top_k = 1
 	result_df = CohereReranker.run_evaluator(
