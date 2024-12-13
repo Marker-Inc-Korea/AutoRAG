@@ -69,8 +69,11 @@ class VectorDB(BaseRetrieval):
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries = self.cast_to_run(previous_result)
 		pure_params = pop_params(self._pure, kwargs)
-		ids, scores = self._pure(queries, **pure_params)
-		contents = fetch_contents(self.corpus_df, ids)
+		ids, scores, contents = self._pure(queries, **pure_params) 
+		# contents = fetch_contents(self.corpus_df, ids)
+		ids = [[_id[0]] for _id in ids]
+		scores = [[score[0]] for score in scores]
+		contents = [[content[0]] for content in contents]
 		return contents, ids, scores
 
 	def _pure(
@@ -79,7 +82,7 @@ class VectorDB(BaseRetrieval):
 		top_k: int,
 		embedding_batch: int = 128,
 		ids: Optional[List[List[str]]] = None,
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		"""
 		VectorDB retrieval function.
 		You have to get a chroma collection that is already ingested.
@@ -113,7 +116,8 @@ class VectorDB(BaseRetrieval):
 		)
 		id_result = list(map(lambda x: x[0], results))
 		score_result = list(map(lambda x: x[1], results))
-		return id_result, score_result
+		content_result = list(map(lambda x: x[2], results))
+		return id_result, score_result, content_result
 
 	def __get_ids_scores(self, queries, ids, embedding_batch: int):
 		# truncate queries and embedding execution here.
@@ -167,7 +171,7 @@ class VectorDB(BaseRetrieval):
 
 async def vectordb_pure(
 	queries: List[str], top_k: int, vectordb: BaseVectorStore
-) -> Tuple[List[str], List[float]]:
+) -> Tuple[List[str], List[float], List[str]]:
 	"""
 	Async VectorDB retrieval function.
 	Its usage is for async retrieval of vector_db row by row.
@@ -177,19 +181,20 @@ async def vectordb_pure(
 	:param vectordb: The vector store instance.
 	:return: The tuple contains a list of passage ids that are retrieved from vectordb and a list of its scores.
 	"""
-	id_result, score_result = await vectordb.query(queries=queries, top_k=top_k)
+	id_result, score_result, content_result = await vectordb.query(queries=queries, top_k=top_k)
 
 	# Distribute passages evenly
-	id_result, score_result = evenly_distribute_passages(id_result, score_result, top_k)
+	id_result, score_result, content_result = evenly_distribute_passages(id_result, score_result, content_result, top_k)
 	# sort id_result and score_result by score
 	result = [
-		(_id, score)
-		for score, _id in sorted(
-			zip(score_result, id_result), key=lambda pair: pair[0], reverse=True
+		(_id, score, content)
+		for score, _id, content in sorted(
+			zip(score_result, id_result, content_result), key=lambda pair: pair[0], reverse=True
 		)
 	]
-	id_result, score_result = zip(*result)
-	return list(id_result), list(score_result)
+	id_result, score_result, content_result = zip(*result)
+	return list(id_result), list(score_result), list(content_result)
+
 
 
 async def filter_exist_ids(
