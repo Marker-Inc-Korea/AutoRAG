@@ -1,4 +1,5 @@
 import os
+import pathlib
 import shutil
 import tempfile
 from typing import Dict, Any
@@ -33,7 +34,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-ROOT_DIR = "/app"
+ROOT_DIR = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent.parent
 ENV = os.getenv("AUTORAG_API_ENV", "dev")
 
 # WORK_DIR 설정
