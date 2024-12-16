@@ -1,0 +1,1121 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-T8ZKQM6RT9"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-T8ZKQM6RT9');
+    </script>
+    <link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" />
+        <link rel="canonical" href="https://docs.auto-rag.com/api_spec/autorag.nodes.passagereranker.html" />
+
+    <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
+        <title>autorag.nodes.passagereranker package - AutoRAG documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/tabs.css?v=4c969af8" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">AutoRAG  documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  
+  <span class="sidebar-brand-text">AutoRAG  documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Installation and Setup</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial.html">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../structure.html">Structure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">TroubleShooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../local_model.html">Configure LLM &amp; Embedding models</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../migration.html">Migration Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../test_your_rag.html">Evaluate your RAG</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../data_creation/data_format.html">Dataset Format</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../data_creation/data_creation.html">Data Creation</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Data Creation</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data_creation/qa_creation/qa_creation.html">QA creation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of QA creation</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/qa_creation/query_gen.html">Query Generation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/qa_creation/answer_gen.html">Answer Generation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/qa_creation/filter.html">Filtering</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/qa_creation/evolve.html">Query Evolving</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data_creation/chunk/chunk.html">Chunk</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Chunk</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/chunk/langchain_chunk.html">Langchain Chunk</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/chunk/llama_index_chunk.html">Llama Index Chunk</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data_creation/parse/parse.html">Parse</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Parse</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/parse/langchain_parse.html">Langchain Parse</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/parse/llama_parse.html">Llama Parse</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/parse/clova.html">Clova</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/parse/table_hybrid_parse.html">Table Hybrid Parse</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../data_creation/legacy/legacy.html">Legacy</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Legacy</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/legacy/ragas.html">RAGAS evaluation data generation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../data_creation/legacy/tutorial.html">Start creating your own evaluation data</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Optimization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../optimization/optimization.html">How optimization works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../optimization/folder_structure.html">Folder Structure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../optimization/custom_config.html">Make a custom config YAML file</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../optimization/strategies.html">Strategy</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../optimization/sample_config.html">Sample YAML file guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Integration</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../integration/llm/llm.html">Configure LLM</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Configure LLM</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../integration/llm/aws_bedrock.html">AWS Bedrock x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/llm/huggingface_llm.html">HuggingFace LLM x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/llm/nvidia_nim.html">Nvidia Nim x AutoRAG</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/llm/ollama.html">OLLAMA x AutoRAG</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../integration/vectordb/vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../integration/vectordb/chroma.html">Chroma</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/vectordb/milvus.html">Milvus</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/vectordb/weaviate.html">Weaviate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/vectordb/pinecone.html">Pinecone</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/vectordb/couchbase.html">Couchbase</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../integration/vectordb/qdrant.html">Qdrant</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Evaluation Metrics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../evaluate_metrics/retrieval.html">Retrieval Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../evaluate_metrics/retrieval_contents.html">Retrieval Token Metrics</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../evaluate_metrics/generation.html">Generation Metrics</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Nodes &amp; Modules</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../nodes/index.html">Available List</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/query_expansion/query_expansion.html"><strong>1. Query Expansion</strong></a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 1. Query Expansion</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/query_expansion/query_decompose.html">Query Decompose</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/query_expansion/hyde.html">HyDE</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/query_expansion/multi_query_expansion.html">Multi Query Expansion</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/retrieval/retrieval.html">2. Retrieval</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 2. Retrieval</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/retrieval/bm25.html">BM25</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/retrieval/vectordb.html">Vectordb</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/retrieval/hybrid_rrf.html">Hybrid - rrf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/retrieval/hybrid_cc.html">Hybrid - cc</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/passage_augmenter/passage_augmenter.html">3. Passage Augmenter</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of 3. Passage Augmenter</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_augmenter/prev_next_augmenter.html">Prev Next Augmenter</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/passage_reranker/passage_reranker.html">4. Passage_Reranker</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of 4. Passage_Reranker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/upr.html">UPR</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/tart.html">TART</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/monot5.html">MonoT5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/koreranker.html">Ko-reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/cohere.html">cohere_reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/rankgpt.html">RankGPT</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/jina_reranker.html">jina_reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/colbert.html">Colbert Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/sentence_transformer_reranker.html">Sentence Transformer Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/flag_embedding_reranker.html">Flag Embedding Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/flag_embedding_llm_reranker.html">Flag Embedding LLM Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/time_reranker.html">Time Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/openvino_reranker.html">OpenVINO Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/voyageai_reranker.html">voyageai_reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/mixedbreadai_reranker.html">Mixedbread AI Reranker</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_reranker/flashrank_reranker.html">FlashRank Reranker</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/passage_filter/passage_filter.html">5. Passage Filter</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of 5. Passage Filter</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_filter/similarity_threshold_cutoff.html">Similarity Threshold Cutoff</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_filter/similarity_percentile_cutoff.html">Similarity Percentile Cutoff</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_filter/recency_filter.html">Recency Filter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_filter/threshold_cutoff.html">Threshold Cutoff</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_filter/percentile_cutoff.html">Percentile Cutoff</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/passage_compressor/passage_compressor.html">6. Passage_Compressor</a><input class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of 6. Passage_Compressor</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_compressor/tree_summarize.html">Tree Summarize</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_compressor/refine.html">Refine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/passage_compressor/longllmlingua.html">Long LLM Lingua</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/prompt_maker/prompt_maker.html">7. Prompt Maker</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of 7. Prompt Maker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/fstring.html">F-String</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/long_context_reorder.html">Long Context Reorder</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/window_replacement.html">Window Replacement</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/generator/generator.html">8. Generator</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of 8. Generator</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/generator/llama_index_llm.html">llama_index LLM</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/generator/vllm.html">vllm</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/generator/openai_llm.html">OpenAI LLM</a></li>
+</ul>
+</li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Deploy</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../deploy/api_endpoint.html">API endpoint</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deploy/web.html">Web Interface</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Roadmap</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../roadmap/modular_rag.html">Road to Modular RAG</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="modules.html">autorag</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of autorag</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/api_spec/autorag.nodes.passagereranker.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="autorag-nodes-passagereranker-package">
+<h1>autorag.nodes.passagereranker package<a class="headerlink" href="#autorag-nodes-passagereranker-package" title="Link to this heading">¶</a></h1>
+<section id="subpackages">
+<h2>Subpackages<a class="headerlink" href="#subpackages" title="Link to this heading">¶</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="autorag.nodes.passagereranker.tart.html">autorag.nodes.passagereranker.tart package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.passagereranker.tart.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.passagereranker.tart.html#autorag-nodes-passagereranker-tart-modeling-enc-t5-module">autorag.nodes.passagereranker.tart.modeling_enc_t5 module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.passagereranker.tart.html#autorag-nodes-passagereranker-tart-tart-module">autorag.nodes.passagereranker.tart.tart module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.passagereranker.tart.html#autorag-nodes-passagereranker-tart-tokenization-enc-t5-module">autorag.nodes.passagereranker.tart.tokenization_enc_t5 module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.passagereranker.tart.html#module-contents">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
+</section>
+<section id="module-autorag.nodes.passagereranker.base">
+<span id="autorag-nodes-passagereranker-base-module"></span><h2>autorag.nodes.passagereranker.base module<a class="headerlink" href="#module-autorag.nodes.passagereranker.base" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.base.BasePassageReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.base.</span></span><span class="sig-name descname"><span class="pre">BasePassageReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/base.html#BasePassageReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="autorag.schema.html#autorag.schema.base.BaseModule" title="autorag.schema.base.BaseModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModule</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.base.BasePassageReranker.cast_to_run">
+<span class="sig-name descname"><span class="pre">cast_to_run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/base.html#BasePassageReranker.cast_to_run"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.base.BasePassageReranker.cast_to_run" title="Link to this definition">¶</a></dt>
+<dd><p>This function is for cast function (a.k.a decorator) only for pure function in the whole node.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.cohere">
+<span id="autorag-nodes-passagereranker-cohere-module"></span><h2>autorag.nodes.passagereranker.cohere module<a class="headerlink" href="#module-autorag.nodes.passagereranker.cohere" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.cohere.CohereReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.cohere.</span></span><span class="sig-name descname"><span class="pre">CohereReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/cohere.html#CohereReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.cohere.CohereReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.cohere.CohereReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/cohere.html#CohereReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.cohere.CohereReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.cohere.cohere_rerank_pure">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.cohere.</span></span><span class="sig-name descname"><span class="pre">cohere_rerank_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cohere_client</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">AsyncClient</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">documents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/cohere.html#cohere_rerank_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.cohere.cohere_rerank_pure" title="Link to this definition">¶</a></dt>
+<dd><p>Rerank a list of contents with Cohere rerank models.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>cohere_client</strong> – The Cohere AsyncClient to use for reranking</p></li>
+<li><p><strong>model</strong> – The model name for Cohere rerank</p></li>
+<li><p><strong>query</strong> – The query to use for reranking</p></li>
+<li><p><strong>documents</strong> – The list of contents to rerank</p></li>
+<li><p><strong>ids</strong> – The list of ids corresponding to the documents</p></li>
+<li><p><strong>top_k</strong> – The number of passages to be retrieved</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple of lists containing the reranked contents, ids, and scores</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.colbert">
+<span id="autorag-nodes-passagereranker-colbert-module"></span><h2>autorag.nodes.passagereranker.colbert module<a class="headerlink" href="#module-autorag.nodes.passagereranker.colbert" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.colbert.ColbertReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.colbert.</span></span><span class="sig-name descname"><span class="pre">ColbertReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'colbert-ir/colbertv2.0'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/colbert.html#ColbertReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.colbert.ColbertReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.colbert.ColbertReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/colbert.html#ColbertReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.colbert.ColbertReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.colbert.get_colbert_embedding_batch">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.colbert.</span></span><span class="sig-name descname"><span class="pre">get_colbert_embedding_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_strings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">array</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/colbert.html#get_colbert_embedding_batch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.colbert.get_colbert_embedding_batch" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.colbert.get_colbert_score">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.colbert.</span></span><span class="sig-name descname"><span class="pre">get_colbert_score</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query_embedding</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">array</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">content_embedding</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">array</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/colbert.html#get_colbert_score"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.colbert.get_colbert_score" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.colbert.slice_tensor">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.colbert.</span></span><span class="sig-name descname"><span class="pre">slice_tensor</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_tensor</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/colbert.html#slice_tensor"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.colbert.slice_tensor" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.colbert.slice_tokenizer_result">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.colbert.</span></span><span class="sig-name descname"><span class="pre">slice_tokenizer_result</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">tokenizer_output</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/colbert.html#slice_tokenizer_result"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.colbert.slice_tokenizer_result" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.flag_embedding">
+<span id="autorag-nodes-passagereranker-flag-embedding-module"></span><h2>autorag.nodes.passagereranker.flag_embedding module<a class="headerlink" href="#module-autorag.nodes.passagereranker.flag_embedding" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flag_embedding.FlagEmbeddingReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.flag_embedding.</span></span><span class="sig-name descname"><span class="pre">FlagEmbeddingReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'BAAI/bge-reranker-large'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flag_embedding.html#FlagEmbeddingReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flag_embedding.FlagEmbeddingReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flag_embedding.FlagEmbeddingReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flag_embedding.html#FlagEmbeddingReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flag_embedding.FlagEmbeddingReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flag_embedding.flag_embedding_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.flag_embedding.</span></span><span class="sig-name descname"><span class="pre">flag_embedding_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flag_embedding.html#flag_embedding_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flag_embedding.flag_embedding_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.flag_embedding_llm">
+<span id="autorag-nodes-passagereranker-flag-embedding-llm-module"></span><h2>autorag.nodes.passagereranker.flag_embedding_llm module<a class="headerlink" href="#module-autorag.nodes.passagereranker.flag_embedding_llm" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flag_embedding_llm.FlagEmbeddingLLMReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.flag_embedding_llm.</span></span><span class="sig-name descname"><span class="pre">FlagEmbeddingLLMReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'BAAI/bge-reranker-v2-gemma'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flag_embedding_llm.html#FlagEmbeddingLLMReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flag_embedding_llm.FlagEmbeddingLLMReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flag_embedding_llm.FlagEmbeddingLLMReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flag_embedding_llm.html#FlagEmbeddingLLMReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flag_embedding_llm.FlagEmbeddingLLMReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.flashrank">
+<span id="autorag-nodes-passagereranker-flashrank-module"></span><h2>autorag.nodes.passagereranker.flashrank module<a class="headerlink" href="#module-autorag.nodes.passagereranker.flashrank" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flashrank.FlashRankReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.flashrank.</span></span><span class="sig-name descname"><span class="pre">FlashRankReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'ms-marco-TinyBERT-L-2-v2'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flashrank.html#FlashRankReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flashrank.FlashRankReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flashrank.FlashRankReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flashrank.html#FlashRankReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flashrank.FlashRankReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.flashrank.flashrank_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.flashrank.</span></span><span class="sig-name descname"><span class="pre">flashrank_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">session</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/flashrank.html#flashrank_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.flashrank.flashrank_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.jina">
+<span id="autorag-nodes-passagereranker-jina-module"></span><h2>autorag.nodes.passagereranker.jina module<a class="headerlink" href="#module-autorag.nodes.passagereranker.jina" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.jina.JinaReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.jina.</span></span><span class="sig-name descname"><span class="pre">JinaReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">api_key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/jina.html#JinaReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.jina.JinaReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.jina.JinaReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/jina.html#JinaReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.jina.JinaReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.jina.jina_reranker_pure">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.jina.</span></span><span class="sig-name descname"><span class="pre">jina_reranker_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">session</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">contents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'jina-reranker-v1-base-en'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/jina.html#jina_reranker_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.jina.jina_reranker_pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.koreranker">
+<span id="autorag-nodes-passagereranker-koreranker-module"></span><h2>autorag.nodes.passagereranker.koreranker module<a class="headerlink" href="#module-autorag.nodes.passagereranker.koreranker" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.koreranker.KoReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.koreranker.</span></span><span class="sig-name descname"><span class="pre">KoReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/koreranker.html#KoReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.koreranker.KoReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.koreranker.KoReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/koreranker.html#KoReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.koreranker.KoReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.koreranker.exp_normalize">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.koreranker.</span></span><span class="sig-name descname"><span class="pre">exp_normalize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/koreranker.html#exp_normalize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.koreranker.exp_normalize" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.koreranker.koreranker_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.koreranker.</span></span><span class="sig-name descname"><span class="pre">koreranker_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/koreranker.html#koreranker_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.koreranker.koreranker_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.mixedbreadai">
+<span id="autorag-nodes-passagereranker-mixedbreadai-module"></span><h2>autorag.nodes.passagereranker.mixedbreadai module<a class="headerlink" href="#module-autorag.nodes.passagereranker.mixedbreadai" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.mixedbreadai.MixedbreadAIReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.mixedbreadai.</span></span><span class="sig-name descname"><span class="pre">MixedbreadAIReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/mixedbreadai.html#MixedbreadAIReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.mixedbreadai.MixedbreadAIReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.mixedbreadai.MixedbreadAIReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/mixedbreadai.html#MixedbreadAIReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.mixedbreadai.MixedbreadAIReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.mixedbreadai.mixedbreadai_rerank_pure">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.mixedbreadai.</span></span><span class="sig-name descname"><span class="pre">mixedbreadai_rerank_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">client</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">AsyncMixedbreadAI</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">documents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'mixedbread-ai/mxbai-rerank-large-v1'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/mixedbreadai.html#mixedbreadai_rerank_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.mixedbreadai.mixedbreadai_rerank_pure" title="Link to this definition">¶</a></dt>
+<dd><p>Rerank a list of contents with mixedbread-ai rerank models.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>client</strong> – The mixedbread-ai client to use for reranking</p></li>
+<li><p><strong>query</strong> – The query to use for reranking</p></li>
+<li><p><strong>documents</strong> – The list of contents to rerank</p></li>
+<li><p><strong>ids</strong> – The list of ids corresponding to the documents</p></li>
+<li><p><strong>top_k</strong> – The number of passages to be retrieved</p></li>
+<li><p><strong>model</strong> – The model name for mixedbread-ai rerank.
+You can choose between “mixedbread-ai/mxbai-rerank-large-v1” and “mixedbread-ai/mxbai-rerank-base-v1”.
+Default is “mixedbread-ai/mxbai-rerank-large-v1”.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple of lists containing the reranked contents, ids, and scores</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.monot5">
+<span id="autorag-nodes-passagereranker-monot5-module"></span><h2>autorag.nodes.passagereranker.monot5 module<a class="headerlink" href="#module-autorag.nodes.passagereranker.monot5" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.monot5.MonoT5">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.monot5.</span></span><span class="sig-name descname"><span class="pre">MonoT5</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'castorini/monot5-3b-msmarco-10k'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/monot5.html#MonoT5"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.monot5.MonoT5" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.monot5.MonoT5.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/monot5.html#MonoT5.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.monot5.MonoT5.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.monot5.monot5_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.monot5.</span></span><span class="sig-name descname"><span class="pre">monot5_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_false_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_true_id</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/monot5.html#monot5_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.monot5.monot5_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.openvino">
+<span id="autorag-nodes-passagereranker-openvino-module"></span><h2>autorag.nodes.passagereranker.openvino module<a class="headerlink" href="#module-autorag.nodes.passagereranker.openvino" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.openvino.OpenVINOReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.openvino.</span></span><span class="sig-name descname"><span class="pre">OpenVINOReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'BAAI/bge-reranker-large'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/openvino.html#OpenVINOReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.openvino.OpenVINOReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.openvino.OpenVINOReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/openvino.html#OpenVINOReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.openvino.OpenVINOReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.openvino.openvino_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.openvino.</span></span><span class="sig-name descname"><span class="pre">openvino_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/openvino.html#openvino_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.openvino.openvino_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.pass_reranker">
+<span id="autorag-nodes-passagereranker-pass-reranker-module"></span><h2>autorag.nodes.passagereranker.pass_reranker module<a class="headerlink" href="#module-autorag.nodes.passagereranker.pass_reranker" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.pass_reranker.PassReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.pass_reranker.</span></span><span class="sig-name descname"><span class="pre">PassReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/pass_reranker.html#PassReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.pass_reranker.PassReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.pass_reranker.PassReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/pass_reranker.html#PassReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.pass_reranker.PassReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.rankgpt">
+<span id="autorag-nodes-passagereranker-rankgpt-module"></span><h2>autorag.nodes.passagereranker.rankgpt module<a class="headerlink" href="#module-autorag.nodes.passagereranker.rankgpt" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.rankgpt.</span></span><span class="sig-name descname"><span class="pre">AsyncRankGPTRerank</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">top_n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">llm</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">LLM</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rankgpt_rerank_prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">BasePromptTemplate</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/rankgpt.html#AsyncRankGPTRerank"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">RankGPTRerank</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_postprocess_nodes">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">async_postprocess_nodes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nodes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">NodeWithScore</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query_bundle</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">QueryBundle</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">NodeWithScore</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/rankgpt.html#AsyncRankGPTRerank.async_postprocess_nodes"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_postprocess_nodes" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_run_llm">
+<em class="property"><span class="pre">async</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">async_run_llm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">messages</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">ChatMessage</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">ChatResponse</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/rankgpt.html#AsyncRankGPTRerank.async_run_llm"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_run_llm" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.llm">
+<span class="sig-name descname"><span class="pre">llm</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">LLM</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.llm" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_computed_fields">
+<span class="sig-name descname"><span class="pre">model_computed_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ComputedFieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_computed_fields" title="Link to this definition">¶</a></dt>
+<dd><p>A dictionary of computed field names and their corresponding <cite>ComputedFieldInfo</cite> objects.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_config">
+<span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'arbitrary_types_allowed':</span> <span class="pre">True}</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_config" title="Link to this definition">¶</a></dt>
+<dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_fields">
+<span class="sig-name descname"><span class="pre">model_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">FieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'callback_manager':</span> <span class="pre">FieldInfo(annotation=CallbackManager,</span> <span class="pre">required=False,</span> <span class="pre">default_factory=CallbackManager,</span> <span class="pre">exclude=True),</span> <span class="pre">'llm':</span> <span class="pre">FieldInfo(annotation=LLM,</span> <span class="pre">required=False,</span> <span class="pre">default_factory=get_default_llm,</span> <span class="pre">description='LLM</span> <span class="pre">to</span> <span class="pre">use</span> <span class="pre">for</span> <span class="pre">rankGPT'),</span> <span class="pre">'rankgpt_rerank_prompt':</span> <span class="pre">FieldInfo(annotation=BasePromptTemplate,</span> <span class="pre">required=True,</span> <span class="pre">description='rankGPT</span> <span class="pre">rerank</span> <span class="pre">prompt.',</span> <span class="pre">metadata=[SerializeAsAny()]),</span> <span class="pre">'top_n':</span> <span class="pre">FieldInfo(annotation=int,</span> <span class="pre">required=False,</span> <span class="pre">default=5,</span> <span class="pre">description='Top</span> <span class="pre">N</span> <span class="pre">nodes</span> <span class="pre">to</span> <span class="pre">return</span> <span class="pre">from</span> <span class="pre">reranking.'),</span> <span class="pre">'verbose':</span> <span class="pre">FieldInfo(annotation=bool,</span> <span class="pre">required=False,</span> <span class="pre">default=False,</span> <span class="pre">description='Whether</span> <span class="pre">to</span> <span class="pre">print</span> <span class="pre">intermediate</span> <span class="pre">steps.')}</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_fields" title="Link to this definition">¶</a></dt>
+<dd><p>Metadata about the fields defined on the model,
+mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo] objects.</p>
+<p>This replaces <cite>Model.__fields__</cite> from Pydantic V1.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.rankgpt_rerank_prompt">
+<span class="sig-name descname"><span class="pre">rankgpt_rerank_prompt</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">Annotated</span><span class="p"><span class="pre">[</span></span><span class="pre">BasePromptTemplate</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">SerializeAsAny</span><span class="p"><span class="pre">(</span></span><span class="p"><span class="pre">)</span></span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.rankgpt_rerank_prompt" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.top_n">
+<span class="sig-name descname"><span class="pre">top_n</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.top_n" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.verbose">
+<span class="sig-name descname"><span class="pre">verbose</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.verbose" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.RankGPT">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.rankgpt.</span></span><span class="sig-name descname"><span class="pre">RankGPT</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">llm</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">LLM</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/rankgpt.html#RankGPT"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.RankGPT" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.RankGPT.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/rankgpt.html#RankGPT.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.RankGPT.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.run">
+<span id="autorag-nodes-passagereranker-run-module"></span><h2>autorag.nodes.passagereranker.run module<a class="headerlink" href="#module-autorag.nodes.passagereranker.run" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.run.run_passage_reranker_node">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.run.</span></span><span class="sig-name descname"><span class="pre">run_passage_reranker_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node_line_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategies</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/run.html#run_passage_reranker_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.run.run_passage_reranker_node" title="Link to this definition">¶</a></dt>
+<dd><p>Run evaluation and select the best module among passage reranker node results.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>modules</strong> – Passage reranker modules to run.</p></li>
+<li><p><strong>module_params</strong> – Passage reranker module parameters.</p></li>
+<li><p><strong>previous_result</strong> – Previous result dataframe.
+Could be retrieval, reranker modules result.
+It means it must contain ‘query’, ‘retrieved_contents’, ‘retrieved_ids’, ‘retrieve_scores’ columns.</p></li>
+<li><p><strong>node_line_dir</strong> – This node line’s directory.</p></li>
+<li><p><strong>strategies</strong> – Strategies for passage reranker node.
+In this node, we use ‘retrieval_f1’, ‘retrieval_recall’ and ‘retrieval_precision’.
+You can skip evaluation when you use only one module and a module parameter.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The best result dataframe with previous result columns.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.sentence_transformer">
+<span id="autorag-nodes-passagereranker-sentence-transformer-module"></span><h2>autorag.nodes.passagereranker.sentence_transformer module<a class="headerlink" href="#module-autorag.nodes.passagereranker.sentence_transformer" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.sentence_transformer.</span></span><span class="sig-name descname"><span class="pre">SentenceTransformerReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'cross-encoder/ms-marco-MiniLM-L-2-v2'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/sentence_transformer.html#SentenceTransformerReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/sentence_transformer.html#SentenceTransformerReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker.pure" title="Link to this definition">¶</a></dt>
+<dd><p>Rerank a list of contents based on their relevance to a query using a Sentence Transformer model.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>previous_result</strong> – The previous result</p></li>
+<li><p><strong>top_k</strong> – The number of passages to be retrieved</p></li>
+<li><p><strong>batch</strong> – The number of queries to be processed in a batch</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>pd DataFrame containing the reranked contents, ids, and scores</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.sentence_transformer.sentence_transformer_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.sentence_transformer.</span></span><span class="sig-name descname"><span class="pre">sentence_transformer_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/sentence_transformer.html#sentence_transformer_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.sentence_transformer.sentence_transformer_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.time_reranker">
+<span id="autorag-nodes-passagereranker-time-reranker-module"></span><h2>autorag.nodes.passagereranker.time_reranker module<a class="headerlink" href="#module-autorag.nodes.passagereranker.time_reranker" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.time_reranker.TimeReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.time_reranker.</span></span><span class="sig-name descname"><span class="pre">TimeReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/time_reranker.html#TimeReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.time_reranker.TimeReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.time_reranker.TimeReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/time_reranker.html#TimeReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.time_reranker.TimeReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.upr">
+<span id="autorag-nodes-passagereranker-upr-module"></span><h2>autorag.nodes.passagereranker.upr module<a class="headerlink" href="#module-autorag.nodes.passagereranker.upr" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.upr.UPRScorer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.upr.</span></span><span class="sig-name descname"><span class="pre">UPRScorer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">suffix_prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix_prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_bf16</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/upr.html#UPRScorer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.upr.UPRScorer" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.upr.UPRScorer.compute">
+<span class="sig-name descname"><span class="pre">compute</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">contents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/upr.html#UPRScorer.compute"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.upr.UPRScorer.compute" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.upr.Upr">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.upr.</span></span><span class="sig-name descname"><span class="pre">Upr</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_bf16</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix_prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Passage:</span> <span class="pre">'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">suffix_prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Please</span> <span class="pre">write</span> <span class="pre">a</span> <span class="pre">question</span> <span class="pre">based</span> <span class="pre">on</span> <span class="pre">this</span> <span class="pre">passage.'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/upr.html#Upr"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.upr.Upr" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.upr.Upr.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/upr.html#Upr.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.upr.Upr.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker.voyageai">
+<span id="autorag-nodes-passagereranker-voyageai-module"></span><h2>autorag.nodes.passagereranker.voyageai module<a class="headerlink" href="#module-autorag.nodes.passagereranker.voyageai" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.voyageai.VoyageAIReranker">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.voyageai.</span></span><span class="sig-name descname"><span class="pre">VoyageAIReranker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/voyageai.html#VoyageAIReranker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.voyageai.VoyageAIReranker" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.voyageai.VoyageAIReranker.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/voyageai.html#VoyageAIReranker.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.voyageai.VoyageAIReranker.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.voyageai.voyageai_rerank_pure">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.voyageai.</span></span><span class="sig-name descname"><span class="pre">voyageai_rerank_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">voyage_client</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">AsyncClient</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">query</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">documents</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">truncation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/voyageai.html#voyageai_rerank_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.voyageai.voyageai_rerank_pure" title="Link to this definition">¶</a></dt>
+<dd><p>Rerank a list of contents with VoyageAI rerank models.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>voyage_client</strong> – The Voyage Client to use for reranking</p></li>
+<li><p><strong>model</strong> – The model name for VoyageAI rerank</p></li>
+<li><p><strong>query</strong> – The query to use for reranking</p></li>
+<li><p><strong>documents</strong> – The list of contents to rerank</p></li>
+<li><p><strong>ids</strong> – The list of ids corresponding to the documents</p></li>
+<li><p><strong>top_k</strong> – The number of passages to be retrieved</p></li>
+<li><p><strong>truncation</strong> – Whether to truncate the input to satisfy the ‘context length limit’ on the query and the documents.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Tuple of lists containing the reranked contents, ids, and scores</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="module-autorag.nodes.passagereranker">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.nodes.passagereranker" title="Link to this heading">¶</a></h2>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Marker-Inc
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">autorag.nodes.passagereranker package</a><ul>
+<li><a class="reference internal" href="#subpackages">Subpackages</a></li>
+<li><a class="reference internal" href="#submodules">Submodules</a></li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.base">autorag.nodes.passagereranker.base module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker"><code class="docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.base.BasePassageReranker.cast_to_run"><code class="docutils literal notranslate"><span class="pre">BasePassageReranker.cast_to_run()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.cohere">autorag.nodes.passagereranker.cohere module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.cohere.CohereReranker"><code class="docutils literal notranslate"><span class="pre">CohereReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.cohere.CohereReranker.pure"><code class="docutils literal notranslate"><span class="pre">CohereReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.cohere.cohere_rerank_pure"><code class="docutils literal notranslate"><span class="pre">cohere_rerank_pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.colbert">autorag.nodes.passagereranker.colbert module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.colbert.ColbertReranker"><code class="docutils literal notranslate"><span class="pre">ColbertReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.colbert.ColbertReranker.pure"><code class="docutils literal notranslate"><span class="pre">ColbertReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.colbert.get_colbert_embedding_batch"><code class="docutils literal notranslate"><span class="pre">get_colbert_embedding_batch()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.colbert.get_colbert_score"><code class="docutils literal notranslate"><span class="pre">get_colbert_score()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.colbert.slice_tensor"><code class="docutils literal notranslate"><span class="pre">slice_tensor()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.colbert.slice_tokenizer_result"><code class="docutils literal notranslate"><span class="pre">slice_tokenizer_result()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.flag_embedding">autorag.nodes.passagereranker.flag_embedding module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flag_embedding.FlagEmbeddingReranker"><code class="docutils literal notranslate"><span class="pre">FlagEmbeddingReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flag_embedding.FlagEmbeddingReranker.pure"><code class="docutils literal notranslate"><span class="pre">FlagEmbeddingReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flag_embedding.flag_embedding_run_model"><code class="docutils literal notranslate"><span class="pre">flag_embedding_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.flag_embedding_llm">autorag.nodes.passagereranker.flag_embedding_llm module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flag_embedding_llm.FlagEmbeddingLLMReranker"><code class="docutils literal notranslate"><span class="pre">FlagEmbeddingLLMReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flag_embedding_llm.FlagEmbeddingLLMReranker.pure"><code class="docutils literal notranslate"><span class="pre">FlagEmbeddingLLMReranker.pure()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.flashrank">autorag.nodes.passagereranker.flashrank module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flashrank.FlashRankReranker"><code class="docutils literal notranslate"><span class="pre">FlashRankReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flashrank.FlashRankReranker.pure"><code class="docutils literal notranslate"><span class="pre">FlashRankReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.flashrank.flashrank_run_model"><code class="docutils literal notranslate"><span class="pre">flashrank_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.jina">autorag.nodes.passagereranker.jina module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.jina.JinaReranker"><code class="docutils literal notranslate"><span class="pre">JinaReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.jina.JinaReranker.pure"><code class="docutils literal notranslate"><span class="pre">JinaReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.jina.jina_reranker_pure"><code class="docutils literal notranslate"><span class="pre">jina_reranker_pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.koreranker">autorag.nodes.passagereranker.koreranker module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.koreranker.KoReranker"><code class="docutils literal notranslate"><span class="pre">KoReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.koreranker.KoReranker.pure"><code class="docutils literal notranslate"><span class="pre">KoReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.koreranker.exp_normalize"><code class="docutils literal notranslate"><span class="pre">exp_normalize()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.koreranker.koreranker_run_model"><code class="docutils literal notranslate"><span class="pre">koreranker_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.mixedbreadai">autorag.nodes.passagereranker.mixedbreadai module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.mixedbreadai.MixedbreadAIReranker"><code class="docutils literal notranslate"><span class="pre">MixedbreadAIReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.mixedbreadai.MixedbreadAIReranker.pure"><code class="docutils literal notranslate"><span class="pre">MixedbreadAIReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.mixedbreadai.mixedbreadai_rerank_pure"><code class="docutils literal notranslate"><span class="pre">mixedbreadai_rerank_pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.monot5">autorag.nodes.passagereranker.monot5 module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.monot5.MonoT5"><code class="docutils literal notranslate"><span class="pre">MonoT5</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.monot5.MonoT5.pure"><code class="docutils literal notranslate"><span class="pre">MonoT5.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.monot5.monot5_run_model"><code class="docutils literal notranslate"><span class="pre">monot5_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.openvino">autorag.nodes.passagereranker.openvino module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.openvino.OpenVINOReranker"><code class="docutils literal notranslate"><span class="pre">OpenVINOReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.openvino.OpenVINOReranker.pure"><code class="docutils literal notranslate"><span class="pre">OpenVINOReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.openvino.openvino_run_model"><code class="docutils literal notranslate"><span class="pre">openvino_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.pass_reranker">autorag.nodes.passagereranker.pass_reranker module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.pass_reranker.PassReranker"><code class="docutils literal notranslate"><span class="pre">PassReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.pass_reranker.PassReranker.pure"><code class="docutils literal notranslate"><span class="pre">PassReranker.pure()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.rankgpt">autorag.nodes.passagereranker.rankgpt module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_postprocess_nodes"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.async_postprocess_nodes()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_run_llm"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.async_run_llm()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.llm"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.llm</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.model_computed_fields</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_config"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.model_config</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_fields"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.model_fields</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.rankgpt_rerank_prompt"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.rankgpt_rerank_prompt</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.top_n"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.top_n</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.verbose"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.verbose</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.RankGPT"><code class="docutils literal notranslate"><span class="pre">RankGPT</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.RankGPT.pure"><code class="docutils literal notranslate"><span class="pre">RankGPT.pure()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.run">autorag.nodes.passagereranker.run module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.run.run_passage_reranker_node"><code class="docutils literal notranslate"><span class="pre">run_passage_reranker_node()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.sentence_transformer">autorag.nodes.passagereranker.sentence_transformer module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker"><code class="docutils literal notranslate"><span class="pre">SentenceTransformerReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker.pure"><code class="docutils literal notranslate"><span class="pre">SentenceTransformerReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.sentence_transformer.sentence_transformer_run_model"><code class="docutils literal notranslate"><span class="pre">sentence_transformer_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.time_reranker">autorag.nodes.passagereranker.time_reranker module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.time_reranker.TimeReranker"><code class="docutils literal notranslate"><span class="pre">TimeReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.time_reranker.TimeReranker.pure"><code class="docutils literal notranslate"><span class="pre">TimeReranker.pure()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.upr">autorag.nodes.passagereranker.upr module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.upr.UPRScorer"><code class="docutils literal notranslate"><span class="pre">UPRScorer</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.upr.UPRScorer.compute"><code class="docutils literal notranslate"><span class="pre">UPRScorer.compute()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.upr.Upr"><code class="docutils literal notranslate"><span class="pre">Upr</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.upr.Upr.pure"><code class="docutils literal notranslate"><span class="pre">Upr.pure()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.voyageai">autorag.nodes.passagereranker.voyageai module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.voyageai.VoyageAIReranker"><code class="docutils literal notranslate"><span class="pre">VoyageAIReranker</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.voyageai.VoyageAIReranker.pure"><code class="docutils literal notranslate"><span class="pre">VoyageAIReranker.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.voyageai.voyageai_rerank_pure"><code class="docutils literal notranslate"><span class="pre">voyageai_rerank_pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker">Module contents</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/furo.js?v=5fa4622c"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script src="../_static/tabs.js?v=3ee01567"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    </body>
+</html>

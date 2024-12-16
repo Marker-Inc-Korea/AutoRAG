@@ -1,0 +1,68 @@
+---
+myst:
+  html_meta:
+    title: AutoRAG - BM25
+    description: Learn about BM25 module in AutoRAG
+    keywords: AutoRAG,RAG,Advanced RAG,retrieval,BM25
+---
+# BM25
+
+The `BM25` is the most popular TF-IDF method for retrieval, which reflects how important a word is to a document. It is often called sparse retrieval. It is different with dense retrieval, which is using embedding model and similarity search. Dense retrieval search passage using semantic similarity, but sparse retrieval uses word counts. If you use documents in specific domains, `BM25` can be more useful than `VectorDB`. It uses the BM25Okapi algorithm for scoring and ranking the passages.
+
+## **Module Parameters**
+
+- **bm25_tokenizer**: You can select which tokenize method you use for bm25.
+  The default method is 'porter_stemmer.'
+  And you can choose between 'space,' and huggingface AutoTokenizer name.
+  Plus, you can choose Korean tokenizer such as 'ko_kiwi,' 'ko_kkma,' and 'ko_okt.'
+
+### porter_stemmer
+
+The `porter_stemmer` is the default tokenizer.
+It is optimized for English.
+It divides sentences into words and extracts stem.
+It means, stemmer can change 'studying,' 'studies' to 'study.'
+
+### space
+
+It is a simple method to divide words into just space.
+It is simple, but it can be a great choice for multilingual documents.
+
+### Huggingface AutoTokenizer
+
+You can use any `AutoTokenizer` from huggingface, like gpt2 or mistralai/Mistral-7B-Instruct-v0.2.
+Just type huggingface repo path, and you can use the tokenizer.
+
+### ko_kiwi (For Korean 🇰🇷)
+
+It uses kiwi tokenizer for the Korean language.
+We highly recommend using it for Korean documents.
+You can check more information about kiwi at [here](https://github.com/bab2min/Kiwi).
+
+### ko_kkma (For Korean 🇰🇷)
+
+It uses okt tokenizer for Korean. You have to install `konlpy` to use this tokenizer.
+You can check more information about kkma at [here](https://konlpy.org/ko/latest/api/konlpy.tag/#konlpy.tag._kkma.Kkma).
+
+### ko_okt (For Korean 🇰🇷)
+
+It uses okt tokenizer for Korean. You have to install `konlpy` to use this tokenizer.
+You can check more information about okt at [here](https://konlpy.org/ko/latest/api/konlpy.tag/#konlpy.tag._okt.Okt).
+
+### sudachipy (For Japanese 🇯🇵)
+
+If you want to use Japanese tokenizer, you can use sudachipy.
+You have to install the AutoRAG japanese version to use this by `pip install "AutoRAG[ja]"`,
+or install sudachipy by yourself.
+
+```{admonition} Any trouble to use Korean tokenizer?
+You need to install extra dependencies to properly use Korean tokenizer.
+Please go to [here](https://docs.auto-rag.com/install.html) to look at the installation guide.
+```
+
+## **Example config.yaml**
+```yaml
+modules:
+  - module_type: bm25
+    bm25_tokenizer: [ porter_stemmer, ko_kiwi, space, gpt2, ko_kkma, ko_okt, sudachipy ]
+```
