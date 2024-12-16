@@ -28,7 +28,7 @@ dynamic = ["version", "dependencies"]
 
 [tool.poetry]
 name = "AutoRAG"
-version = "0.0.2" #base version
+version = "0.0.2" #initial version
 description = "Automatically Evaluate RAG pipelines with your own data. Find optimal structure for new RAG product."
 authors = ["Marker-Inc <vkehfdl1@gmail.com>"]
 
