@@ -27,7 +27,7 @@ from autorag.utils.util import (
 	flatten_apply,
 	result_to_dataframe,
 	pop_params,
-	# fetch_contents,
+	fetch_contents,
 	empty_cuda_cache,
 	convert_inputs_to_list,
 	make_batch,
@@ -69,11 +69,18 @@ class VectorDB(BaseRetrieval):
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries = self.cast_to_run(previous_result)
 		pure_params = pop_params(self._pure, kwargs)
-		ids, scores, contents = self._pure(queries, **pure_params) 
-		# contents = fetch_contents(self.corpus_df, ids)
-		ids = [[_id[0]] for _id in ids]
-		scores = [[score[0]] for score in scores]
-		contents = [[content[0]] for content in contents]
+		ids, scores, contents = self._pure(queries, **pure_params)
+  
+		ids = [[_ for _ in _id] for _id in ids]
+		scores = [[_ for _ in score] for score in scores]
+
+		# TODO: Refactor to a single logic that can handle all situations.
+		if pure_params.get("ids", None) is not None:
+			contents = []
+			contents = fetch_contents(self.corpus_df, ids)
+		else:
+			contents = [[_ for _ in content] for content in contents]
+
 		return contents, ids, scores
 
 	def _pure(
@@ -166,7 +173,7 @@ class VectorDB(BaseRetrieval):
 				content_embeddings,
 			)
 		)
-		return ids, score_result
+		return ids, score_result, queries
 
 
 async def vectordb_pure(

@@ -104,7 +104,7 @@ def cast_queries(queries: Union[str, List[str]]) -> List[str]:
 def evenly_distribute_passages(
 	ids: List[List[str]],
 	scores: List[List[float]],
-	contents: [List[List[str]]],
+	contents: List[List[str]],
 	top_k: int,
 ) -> Tuple[List[str], List[float], List[str]]:
 	assert len(ids) == len(scores), "ids and scores must have same length."
