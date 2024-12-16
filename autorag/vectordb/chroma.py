@@ -68,9 +68,9 @@ class Chroma(BaseVectorStore):
 		texts = self.truncated_inputs(texts)
 		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
 		if isinstance(self.collection, AsyncCollection):
-			await self.collection.add(ids=ids, embeddings=text_embeddings)
+			await self.collection.add(ids=ids, embeddings=text_embeddings, documents=texts)
 		else:
-			self.collection.add(ids=ids, embeddings=text_embeddings)
+			self.collection.add(ids=ids, embeddings=text_embeddings, documents=texts)
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
 		if isinstance(self.collection, AsyncCollection):
@@ -92,7 +92,7 @@ class Chroma(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
@@ -107,8 +107,9 @@ class Chroma(BaseVectorStore):
 			)
 		ids = query_result["ids"]
 		scores = query_result["distances"]
+		contents = query_result["documents"]
 		scores = apply_recursive(lambda x: 1 - x, scores)
-		return ids, scores
+		return ids, scores, contents
 
 	async def delete(self, ids: List[str]):
 		if isinstance(self.collection, AsyncCollection):
