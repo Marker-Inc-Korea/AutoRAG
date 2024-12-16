@@ -27,7 +27,7 @@ class Couchbase(BaseVectorStore):
 		username: str = "",
 		password: str = "",
 		ingest_batch: int = 100,
-		text_key: Optional[str] = "text",
+		text_key: Optional[str] = "content",
 		embedding_key: Optional[str] = "embedding",
 		scoped_index: bool = True,
 	):
@@ -123,7 +123,7 @@ class Couchbase(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		import couchbase.search as search
 		from couchbase.options import SearchOptions
 		from couchbase.vector_search import VectorQuery, VectorSearch
