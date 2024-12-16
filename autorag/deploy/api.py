@@ -30,6 +30,7 @@ class QueryRequest(BaseModel):
 class RetrievedPassage(BaseModel):
 	content: str
 	doc_id: str
+	score: float
 	filepath: Optional[str] = None
 	file_page: Optional[int] = None
 	start_idx: Optional[int] = None
@@ -41,14 +42,8 @@ class RunResponse(BaseModel):
 	retrieved_passage: List[RetrievedPassage]
 
 
-class Passage(BaseModel):
-	doc_id: str
-	content: str
-	score: float
-
-
 class RetrievalResponse(BaseModel):
-	passages: List[Passage]
+	passages: List[RetrievedPassage]
 
 
 class StreamResponse(BaseModel):
@@ -153,18 +148,9 @@ class ApiRunner(BaseRunner):
 				previous_result = pd.concat([drop_previous_result, new_result], axis=1)
 
 			# Simulate processing the query
-			retrieved_contents = previous_result["retrieved_contents"].tolist()[0]
-			retrieved_ids = previous_result["retrieved_ids"].tolist()[0]
-			retrieve_scores = previous_result["retrieve_scores"].tolist()[0]
+			retrieved_passages = self.extract_retrieve_passage(previous_result)
 
-			retrieval_response = RetrievalResponse(
-				passages=[
-					Passage(doc_id=doc_id, content=content, score=score)
-					for doc_id, content, score in zip(
-						retrieved_ids, retrieved_contents, retrieve_scores
-					)
-				]
-			)
+			retrieval_response = RetrievalResponse(passages=retrieved_passages)
 			return jsonify(retrieval_response.model_dump()), 200
 
 		@self.app.route("/v1/stream", methods=["POST"])
@@ -264,6 +250,7 @@ class ApiRunner(BaseRunner):
 	def extract_retrieve_passage(self, df: pd.DataFrame) -> List[RetrievedPassage]:
 		retrieved_ids: List[str] = df["retrieved_ids"].tolist()[0]
 		contents = fetch_contents(self.corpus_df, [retrieved_ids])[0]
+		scores = df["retrieve_scores"].tolist()[0]
 		if "path" in self.corpus_df.columns:
 			paths = fetch_contents(self.corpus_df, [retrieved_ids], column_name="path")[
 				0
@@ -282,9 +269,15 @@ class ApiRunner(BaseRunner):
 		start_end_indices = to_list(start_end_indices)
 		return list(
 			map(
-				lambda content, doc_id, path, metadata, start_end_idx: RetrievedPassage(
+				lambda content,
+				doc_id,
+				score,
+				path,
+				metadata,
+				start_end_idx: RetrievedPassage(
 					content=content,
 					doc_id=doc_id,
+					score=score,
 					filepath=path,
 					file_page=metadata.get("page", None),
 					start_idx=start_end_idx[0] if start_end_idx else None,
@@ -292,6 +285,7 @@ class ApiRunner(BaseRunner):
 				),
 				contents,
 				retrieved_ids,
+				scores,
 				paths,
 				metadatas,
 				start_end_indices,
