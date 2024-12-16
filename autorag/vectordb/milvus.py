@@ -68,7 +68,7 @@ class Milvus(BaseVectorStore):
 			field = FieldSchema(
 				name="vector", dtype=DataType.FLOAT_VECTOR, dim=dimension
 			)
-   			content = FieldSchema(
+			content = FieldSchema(
 				name="content", dtype=DataType.VARCHAR, max_length=65535
 			)
 			schema = CollectionSchema(fields=[pk, field, content])

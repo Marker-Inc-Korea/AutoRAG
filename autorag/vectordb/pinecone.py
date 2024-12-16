@@ -62,8 +62,8 @@ class Pinecone(BaseVectorStore):
 
 		metadatas = [{} for _ in texts]
 		for metadata, text in zip(metadatas, texts):
-            metadata[self.text_key] = text
-            
+			metadata[self.text_key] = text
+
 		vector_tuples = list(zip(ids, text_embeddings, metadatas))
 		batch_vectors = make_batch(vector_tuples, self.ingest_batch)
 

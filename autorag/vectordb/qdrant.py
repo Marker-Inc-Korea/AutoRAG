@@ -86,10 +86,13 @@ class Qdrant(BaseVectorStore):
 
 		metadatas = [{} for _ in texts]
 		for metadata, text in zip(metadatas, texts):
-            metadata[self.text_key] = text
+			metadata[self.text_key] = text
 
 		points = list(
-			map(lambda x: PointStruct(id=x[0], vector=x[1], payload=x[2]), zip(ids, text_embeddings, metadatas))
+			map(
+				lambda x: PointStruct(id=x[0], vector=x[1], payload=x[2]),
+				zip(ids, text_embeddings, metadatas),
+			)
 		)
 
 		self.client.upload_points(
@@ -133,7 +136,9 @@ class Qdrant(BaseVectorStore):
 
 		search_queries = list(
 			map(
-				lambda x: SearchRequest(vector=x, limit=top_k, with_vector=True, with_payload=True),
+				lambda x: SearchRequest(
+					vector=x, limit=top_k, with_vector=True, with_payload=True
+				),
 				query_embeddings,
 			)
 		)
@@ -145,7 +150,10 @@ class Qdrant(BaseVectorStore):
 		# Extract IDs and distances
 		ids = [[str(hit.id) for hit in result] for result in search_result]
 		scores = [[hit.score for hit in result] for result in search_result]
-		contents = [[hit.payload.get(self.text_key) for hit in result] for result in search_result]
+		contents = [
+			[hit.payload.get(self.text_key) for hit in result]
+			for result in search_result
+		]
 
 		return ids, scores, contents
 

@@ -27,7 +27,7 @@ from autorag.utils.util import (
 	flatten_apply,
 	result_to_dataframe,
 	pop_params,
-	fetch_contents,
+	# fetch_contents,
 	empty_cuda_cache,
 	convert_inputs_to_list,
 	make_batch,
