@@ -22,6 +22,7 @@ class Pinecone(BaseVectorStore):
 		cloud: Optional[str] = "aws",
 		region: Optional[str] = "us-east-1",
 		api_key: Optional[str] = None,
+		text_key: Optional[str] = "content",
 		deletion_protection: Optional[str] = "disabled",  # "enabled" or "disabled"
 		namespace: Optional[str] = "default",
 		ingest_batch: int = 200,
@@ -31,6 +32,7 @@ class Pinecone(BaseVectorStore):
 		self.index_name = index_name
 		self.namespace = namespace
 		self.ingest_batch = ingest_batch
+		self.text_key = text_key
 
 		self.client = Pinecone_client(api_key=api_key)
 
@@ -58,7 +60,11 @@ class Pinecone(BaseVectorStore):
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(texts)
 
-		vector_tuples = list(zip(ids, text_embeddings))
+		metadatas = [{} for _ in texts]
+		for metadata, text in zip(metadatas, texts):
+            metadata[self.text_key] = text
+            
+		vector_tuples = list(zip(ids, text_embeddings, metadatas))
 		batch_vectors = make_batch(vector_tuples, self.ingest_batch)
 
 		async_res = [
@@ -87,28 +93,30 @@ class Pinecone(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(queries)
 
-		ids, scores = [], []
+		ids, scores, texts = [], []
 		for query_embedding in query_embeddings:
 			response = self.index.query(
 				vector=query_embedding,
 				top_k=top_k,
 				include_values=True,
+				include_metadata=True,
 				namespace=self.namespace,
 			)
 
 			ids.append([o.id for o in response.matches])
 			scores.append([o.score for o in response.matches])
+			scores.append([o.metadata[self.text_key] for o in response.matches])
 
 		if self.similarity_metric in ["l2"]:
 			scores = apply_recursive(lambda x: -x, scores)
 
-		return ids, scores
+		return ids, scores, texts
 
 	async def delete(self, ids: List[str]):
 		# Delete entries by IDs
