@@ -8,11 +8,12 @@ import pytest
 import yaml
 
 from app import app, WORK_DIR
+from database.project_db import SQLiteProjectDB
 from src.schema import TrialConfig, Trial, Status
-from src.trial_config import SQLiteTrialDB
 
 tests_dir = os.path.dirname(os.path.realpath(__file__))
 root_dir = pathlib.PurePath(tests_dir).parent
+resources_dir = os.path.join(root_dir, "resources")
 
 
 @pytest.fixture
@@ -146,7 +147,7 @@ async def test_get_trial_lists(get_trial_list_client):
         status="not_started",
         created_at=datetime.now(),
     )
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial_config_db.set_trial(trial)
 
     response = await get_trial_list_client.get(f"/projects/{project_id}/trials")
@@ -191,7 +192,7 @@ async def test_create_new_trial(create_new_trial_client):
     assert "id" in data
 
     # Verify the trial was added to the CSV
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial_ids = trial_config_db.get_all_config_ids()
     assert len(trial_ids) == 1
     assert trial_ids[0] == data["id"]
@@ -216,7 +217,7 @@ async def test_get_trial_config(trial_config_client):
     assert response.status_code == 201
     os.makedirs(os.path.join(WORK_DIR, project_id), exist_ok=True)
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial_config = TrialConfig(
         trial_id=trial_id,
         project_id=project_id,
@@ -264,7 +265,7 @@ async def test_set_trial_config(trial_config_client):
 
     os.makedirs(os.path.join(WORK_DIR, project_id), exist_ok=True)
     trial_config_path = os.path.join(WORK_DIR, project_id, "trials.db")
-    trial_config_db = SQLiteTrialDB(trial_config_path)
+    trial_config_db = SQLiteProjectDB(trial_config_path)
     trial_config = TrialConfig(
         trial_id=trial_id,
         project_id=project_id,
