@@ -26,6 +26,12 @@ classifiers = [
 urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version", "dependencies"]
 
+[tool.poetry]
+name = "AutoRAG"
+version = "0.0.2" #initial version
+description = "Automatically Evaluate RAG pipelines with your own data. Find optimal structure for new RAG product."
+authors = ["Marker-Inc <vkehfdl1@gmail.com>"]
+
 [tool.setuptools.dynamic]
 version = { file = ["autorag/VERSION"] }
 dependencies = { file = ["requirements.txt"] }
