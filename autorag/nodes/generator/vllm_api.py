@@ -32,6 +32,9 @@ class VllmAPI(BaseGenerator):
         self.batch = batch
         # Use the provided max_tokens if available, otherwise use the default
         self.max_token_size = max_tokens if max_tokens else DEFAULT_MAX_TOKENS
+        self.max_model_len = self.get_max_model_length()
+        logger.info(f"{llm} max model length: {self.max_model_len}")
+        
 
     @result_to_dataframe(["generated_texts", "generated_tokens", "generated_log_probs"])
     def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
@@ -76,7 +79,7 @@ class VllmAPI(BaseGenerator):
         Function to truncate prompts to fit within the maximum token limit.
         """
         tokens = self.encoding_for_model(prompt)['tokens']  # Simple tokenization
-        return self.decoding_for_model(tokens[:self.max_token_size])['prompt']
+        return self.decoding_for_model(tokens[:self.max_model_len])['prompt']
 
     def call_vllm_api(self, prompt: str, **kwargs) -> dict:
         """
@@ -154,3 +157,8 @@ class VllmAPI(BaseGenerator):
         response = requests.post(f"{self.uri}/detokenize", json=payload)
         response.raise_for_status()
         return response.json()
+    def get_max_model_length(self):
+      response = requests.get(f"{self.uri}/v1/models")
+      response.raise_for_status()
+      json_data = response.json()
+      return json_data['data'][0]['max_model_len']
