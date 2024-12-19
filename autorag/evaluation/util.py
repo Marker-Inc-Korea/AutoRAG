@@ -1,7 +1,7 @@
 from copy import deepcopy
 from typing import Union, List, Dict, Tuple, Any
 
-from autorag import embedding_models
+from autorag.embedding.base import embedding_models
 
 
 def cast_metrics(

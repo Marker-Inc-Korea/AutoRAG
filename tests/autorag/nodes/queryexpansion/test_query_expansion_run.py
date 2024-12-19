@@ -10,7 +10,7 @@ import pytest
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.llms.openai import OpenAI
 
-from autorag import embedding_models, MockEmbeddingRandom, LazyInit
+from autorag.embedding.base import embedding_models, MockEmbeddingRandom, LazyInit
 from autorag.nodes.queryexpansion import QueryDecompose, HyDE
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node

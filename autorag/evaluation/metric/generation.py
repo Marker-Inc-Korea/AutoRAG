@@ -14,7 +14,7 @@ from rouge_score import tokenizers
 from rouge_score.rouge_scorer import RougeScorer
 from sacrebleu.metrics.bleu import BLEU
 
-from autorag import embedding_models
+from autorag.embedding.base import embedding_models
 from autorag.evaluation.metric.deepeval_prompt import FaithfulnessTemplate
 from autorag.evaluation.metric.util import (
 	autorag_metric_loop,

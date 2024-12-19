@@ -41,13 +41,6 @@ class LazyInit:
 		return getattr(self._instance, name)
 
 
-class MockEmbeddingRandom(MockEmbedding):
-	"""Mock embedding with random vectors."""
-
-	def _get_vector(self) -> List[float]:
-		return [random() for _ in range(self.embed_dim)]
-
-
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"
 logging.basicConfig(
 	level="INFO", format=rich_format, handlers=[RichHandler(rich_tracebacks=True)]
@@ -61,49 +54,6 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 
 sys.excepthook = handle_exception
-
-embedding_models = {
-	# llama index
-	"openai": LazyInit(
-		OpenAIEmbedding
-	),  # default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002
-	"openai_embed_3_large": LazyInit(
-		OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_LARGE
-	),
-	"openai_embed_3_small": LazyInit(
-		OpenAIEmbedding, model_name=OpenAIEmbeddingModelType.TEXT_EMBED_3_SMALL
-	),
-	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
-	# langchain
-	"openai_langchain": LazyInit(OpenAIEmbeddings),
-}
-
-try:
-	# you can use your own model in this way.
-	from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-
-	embedding_models["huggingface_baai_bge_small"] = LazyInit(
-		HuggingFaceEmbedding, model_name="BAAI/bge-small-en-v1.5"
-	)
-	embedding_models["huggingface_cointegrated_rubert_tiny2"] = LazyInit(
-		HuggingFaceEmbedding, model_name="cointegrated/rubert-tiny2"
-	)
-	embedding_models["huggingface_all_mpnet_base_v2"] = LazyInit(
-		HuggingFaceEmbedding,
-		model_name="sentence-transformers/all-mpnet-base-v2",
-		max_length=512,
-	)
-	embedding_models["huggingface_bge_m3"] = LazyInit(
-		HuggingFaceEmbedding, model_name="BAAI/bge-m3"
-	)
-	embedding_models["huggingface_multilingual_e5_large"] = LazyInit(
-		HuggingFaceEmbedding, model_name="intfloat/multilingual-e5-large-instruct"
-	)
-except ImportError:
-	logger.info(
-		"You are using API version of AutoRAG."
-		"To use local version, run pip install 'AutoRAG[gpu]'"
-	)
 
 
 class AutoRAGBedrock(Bedrock):

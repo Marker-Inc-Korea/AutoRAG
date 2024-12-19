@@ -4,7 +4,7 @@ from typing import Tuple, List, Dict, Any
 
 import pandas as pd
 
-from autorag import embedding_models
+from autorag.embedding.base import embedding_models
 from autorag.data import chunk_modules, sentence_splitter_modules
 from autorag.utils import result_to_dataframe
 
