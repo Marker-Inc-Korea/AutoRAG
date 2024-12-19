@@ -36,6 +36,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
+
 class AutoRAGBedrock(Bedrock):
 	async def acomplete(
 		self, prompt: str, formatted: bool = False, **kwargs: Any
