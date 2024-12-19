@@ -22,6 +22,23 @@ version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "VERSIO
 with open(version_path, "r") as f:
 	__version__ = f.read().strip()
 
+class LazyInit:
+	def __init__(self, factory, *args, **kwargs):
+		self._factory = factory
+		self._args = args
+		self._kwargs = kwargs
+		self._instance = None
+
+	def __call__(self):
+		if self._instance is None:
+			self._instance = self._factory(*self._args, **self._kwargs)
+		return self._instance
+
+	def __getattr__(self, name):
+		if self._instance is None:
+			self._instance = self._factory(*self._args, **self._kwargs)
+		return getattr(self._instance, name)
+
 rich_format = "[%(filename)s:%(lineno)s] >> %(message)s"
 logging.basicConfig(
 	level="INFO", format=rich_format, handlers=[RichHandler(rich_tracebacks=True)]
