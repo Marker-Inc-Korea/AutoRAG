@@ -96,6 +96,9 @@ try:
 	embedding_models["huggingface_bge_m3"] = LazyInit(
 		HuggingFaceEmbedding, model_name="BAAI/bge-m3"
 	)
+	embedding_models["huggingface_multilingual_e5_large"] = LazyInit(
+		HuggingFaceEmbedding, model_name="intfloat/multilingual-e5-large-instruct"
+	)
 except ImportError:
 	logger.info(
 		"You are using API version of AutoRAG."
