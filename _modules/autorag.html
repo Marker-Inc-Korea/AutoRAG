@@ -507,6 +507,9 @@
 	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_bge_m3&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
 		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;BAAI/bge-m3&quot;</span>
 	<span class="p">)</span>
+	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_multilingual_e5_large&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
+		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;intfloat/multilingual-e5-large-instruct&quot;</span>
+	<span class="p">)</span>
 <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
 	<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
 		<span class="s2">&quot;You are using API version of AutoRAG.&quot;</span>
