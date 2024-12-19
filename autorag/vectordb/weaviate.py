@@ -120,13 +120,13 @@ class Weaviate(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(queries)
 
-		ids, scores = [], []
+		ids, scores, contents = [], [], []
 		for query_embedding in query_embeddings:
 			response = self.collection.query.near_vector(
 				near_vector=query_embedding,
@@ -141,8 +141,9 @@ class Weaviate(BaseVectorStore):
 					for o in response.objects
 				]
 			)
+			contents.append([o.properties[self.text_key] for o in response.objects])
 
-		return ids, scores
+		return ids, scores, contents
 
 	async def delete(self, ids: List[str]):
 		filter = wvc.query.Filter.by_id().contains_any(ids)

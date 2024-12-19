@@ -35,7 +35,7 @@ class BaseVectorStore:
 	@abstractmethod
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		pass
 
 	@abstractmethod

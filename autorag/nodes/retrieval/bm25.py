@@ -265,8 +265,11 @@ async def bm25_pure(
 		id_result.append(ids)
 		score_result.append(sorted_scores[:top_k])
 
+	# dummy contents
+	dummy_contents = [["" for _ in _id_result] for _id_result in id_result]
+
 	# make a total result to top_k
-	id_result, score_result = evenly_distribute_passages(id_result, score_result, top_k)
+	id_result, score_result, content_result = evenly_distribute_passages(id_result, score_result, dummy_contents, top_k)
 	# sort id_result and score_result by score
 	result = [
 		(_id, score)

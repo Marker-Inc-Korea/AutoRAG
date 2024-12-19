@@ -139,7 +139,7 @@ def vectordb_instance(project_dir_for_vectordb_node):
 
 def test_vectordb_retrieval(vectordb_instance):
 	top_k = 4
-	id_result, score_result = vectordb_instance._pure(
+	id_result, score_result, content_result = vectordb_instance._pure(
 		queries,
 		top_k=top_k,
 	)
@@ -148,7 +148,7 @@ def test_vectordb_retrieval(vectordb_instance):
 
 def test_vectordb_retrieval_ids(vectordb_instance):
 	ids = [["doc2", "doc3"], ["doc1", "doc2"], ["doc4", "doc5"]]
-	id_result, score_result = vectordb_instance._pure(
+	id_result, score_result, content_result = vectordb_instance._pure(
 		queries,
 		top_k=4,
 		ids=ids,
@@ -160,7 +160,7 @@ def test_vectordb_retrieval_ids(vectordb_instance):
 
 def test_vectordb_retrieval_ids_empty(vectordb_instance):
 	ids = [["doc2", "doc3"], [], ["doc4"]]
-	id_result, score_result = vectordb_instance._pure(
+	id_result, score_result, content_result = vectordb_instance._pure(
 		queries,
 		top_k=4,
 		ids=ids,

@@ -27,7 +27,7 @@ class Couchbase(BaseVectorStore):
 		username: str = "",
 		password: str = "",
 		ingest_batch: int = 100,
-		text_key: Optional[str] = "text",
+		text_key: Optional[str] = "content",
 		embedding_key: Optional[str] = "embedding",
 		scoped_index: bool = True,
 	):
@@ -123,7 +123,7 @@ class Couchbase(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		import couchbase.search as search
 		from couchbase.options import SearchOptions
 		from couchbase.vector_search import VectorQuery, VectorSearch
@@ -133,7 +133,7 @@ class Couchbase(BaseVectorStore):
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(queries)
 
-		ids, scores = [], []
+		ids, scores, texts = [], [], []
 		for query_embedding in query_embeddings:
 			# Create Search Request
 			search_req = search.SearchRequest.create(
@@ -151,27 +151,29 @@ class Couchbase(BaseVectorStore):
 				search_iter = self.scope.search(
 					self.index_name,
 					search_req,
-					SearchOptions(limit=top_k),
+					SearchOptions(limit=top_k, fields=[self.text_key]),
 				)
 
 			else:
 				search_iter = self.cluster.search(
 					self.index_name,
 					search_req,
-					SearchOptions(limit=top_k),
+					SearchOptions(limit=top_k, fields=[self.text_key]),
 				)
 
 			# Parse the search results
 			# search_iter.rows() can only be iterated once.
-			id_list, score_list = [], []
+			id_list, score_list, text_list = [], [], []
 			for result in search_iter.rows():
 				id_list.append(result.id)
 				score_list.append(result.score)
+				text_list.append(result.fields[self.text_key])
 
 			ids.append(id_list)
 			scores.append(score_list)
+			texts.append(text_list)
 
-		return ids, scores
+		return ids, scores, texts
 
 	async def delete(self, ids: List[str]):
 		self.collection.remove_multi(ids)

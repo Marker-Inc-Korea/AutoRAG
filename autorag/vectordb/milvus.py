@@ -68,7 +68,10 @@ class Milvus(BaseVectorStore):
 			field = FieldSchema(
 				name="vector", dtype=DataType.FLOAT_VECTOR, dim=dimension
 			)
-			schema = CollectionSchema(fields=[pk, field])
+			content = FieldSchema(
+				name="content", dtype=DataType.VARCHAR, max_length=65535
+			)
+			schema = CollectionSchema(fields=[pk, field, content])
 
 			self.collection = Collection(name=self.collection_name, schema=schema)
 			index_params = {
@@ -90,7 +93,7 @@ class Milvus(BaseVectorStore):
 
 		# make data for insertion
 		data = list(
-			map(lambda _id, vector: {"id": _id, "vector": vector}, ids, text_embeddings)
+			map(lambda _id, vector, text: {"id": _id, "vector": vector, "content":text}, ids, text_embeddings, texts)
 		)
 
 		# Insert data into the collection
@@ -103,7 +106,7 @@ class Milvus(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
@@ -117,6 +120,7 @@ class Milvus(BaseVectorStore):
 			limit=top_k,
 			anns_field="vector",
 			param={"metric_type": self.similarity_metric.upper()},
+			output_fields=["vector","content"],
 			timeout=self.timeout,
 			**kwargs,
 		)
@@ -124,11 +128,12 @@ class Milvus(BaseVectorStore):
 		# Extract IDs and distances
 		ids = [[str(hit.id) for hit in result] for result in results]
 		distances = [[hit.distance for hit in result] for result in results]
+		contents = [[str(hit.fields["content"]) for hit in result] for result in results]
 
 		if self.similarity_metric in ["l2"]:
 			distances = apply_recursive(lambda x: -x, distances)
 
-		return ids, distances
+		return ids, distances, contents
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
 		try:
