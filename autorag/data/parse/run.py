@@ -107,7 +107,14 @@ def run_parser(
 				module_params,
 			)
 		)
-	list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))
+  
+	_files = {} 
+	for result, filepath in zip(results, filepaths):
+			_files[filepath].append(result) if filepath in _files.keys() else _files.update({filepath: [result]})
+	# Save files with a specific file type as Parquet files.
+	for filepath, value in _files.items():
+		pd.concat(value).to_parquet(filepath, index=False)
+
 	filenames = list(map(lambda x: os.path.basename(x), filepaths))
 
 	summary_df = pd.DataFrame(
@@ -122,7 +129,7 @@ def run_parser(
 
 	# concat all parquet files here if not all_files.
 	if not all_files:
-		dataframes = [pd.read_parquet(file) for file in filepaths]
+		dataframes = [pd.read_parquet(file) for file in _files.keys()]
 		combined_df = pd.concat(dataframes, ignore_index=True)
 		combined_df.to_parquet(
 			os.path.join(project_dir, "parsed_result.parquet"), index=False
