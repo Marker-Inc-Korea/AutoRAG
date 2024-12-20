@@ -128,8 +128,9 @@ def run_parser(
 	summary_df.to_csv(os.path.join(project_dir, "summary.csv"), index=False)
 
 	# concat all parquet files here if not all_files.
+	_filepaths = list(_files.keys())
 	if not all_files:
-		dataframes = [pd.read_parquet(file) for file in _files.keys()]
+		dataframes = [pd.read_parquet(file) for file in _filepaths]
 		combined_df = pd.concat(dataframes, ignore_index=True)
 		combined_df.to_parquet(
 			os.path.join(project_dir, "parsed_result.parquet"), index=False
