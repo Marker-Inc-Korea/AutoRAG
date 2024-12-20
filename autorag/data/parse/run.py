@@ -107,10 +107,12 @@ def run_parser(
 				module_params,
 			)
 		)
-  
-	_files = {} 
+
+	_files = {}
 	for result, filepath in zip(results, filepaths):
-			_files[filepath].append(result) if filepath in _files.keys() else _files.update({filepath: [result]})
+		_files[filepath].append(result) if filepath in _files.keys() else _files.update(
+			{filepath: [result]}
+		)
 	# Save files with a specific file type as Parquet files.
 	for filepath, value in _files.items():
 		pd.concat(value).to_parquet(filepath, index=False)
