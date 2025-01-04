@@ -11,7 +11,7 @@ from qdrant_client.models import (
 	SearchRequest,
 )
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from autorag.vectordb import BaseVectorStore
 
@@ -33,6 +33,7 @@ class Qdrant(BaseVectorStore):
 		ingest_batch: int = 64,
 		parallel: int = 1,
 		max_retries: int = 3,
+		text_key: Optional[str] = "content",
 	):
 		super().__init__(embedding_model, similarity_metric, embedding_batch)
 
@@ -40,6 +41,7 @@ class Qdrant(BaseVectorStore):
 		self.ingest_batch = ingest_batch
 		self.parallel = parallel
 		self.max_retries = max_retries
+		self.text_key = text_key
 
 		if similarity_metric == "cosine":
 			distance = Distance.COSINE
@@ -82,8 +84,15 @@ class Qdrant(BaseVectorStore):
 		texts = self.truncated_inputs(texts)
 		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
 
+		metadatas = [{} for _ in texts]
+		for metadata, text in zip(metadatas, texts):
+			metadata[self.text_key] = text
+
 		points = list(
-			map(lambda x: PointStruct(id=x[0], vector=x[1]), zip(ids, text_embeddings))
+			map(
+				lambda x: PointStruct(id=x[0], vector=x[1], payload=x[2]),
+				zip(ids, text_embeddings, metadatas),
+			)
 		)
 
 		self.client.upload_points(
@@ -119,7 +128,7 @@ class Qdrant(BaseVectorStore):
 
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
-	) -> Tuple[List[List[str]], List[List[float]]]:
+	) -> Tuple[List[List[str]], List[List[float]], List[List[str]]]:
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
@@ -127,7 +136,9 @@ class Qdrant(BaseVectorStore):
 
 		search_queries = list(
 			map(
-				lambda x: SearchRequest(vector=x, limit=top_k, with_vector=True),
+				lambda x: SearchRequest(
+					vector=x, limit=top_k, with_vector=True, with_payload=True
+				),
 				query_embeddings,
 			)
 		)
@@ -139,8 +150,12 @@ class Qdrant(BaseVectorStore):
 		# Extract IDs and distances
 		ids = [[str(hit.id) for hit in result] for result in search_result]
 		scores = [[hit.score for hit in result] for result in search_result]
+		contents = [
+			[hit.payload.get(self.text_key) for hit in result]
+			for result in search_result
+		]
 
-		return ids, scores
+		return ids, scores, contents
 
 	async def delete(self, ids: List[str]):
 		self.client.delete(
