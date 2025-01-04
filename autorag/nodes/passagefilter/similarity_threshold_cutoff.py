@@ -3,7 +3,7 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from autorag import embedding_models
+from autorag.embedding.base import embedding_models
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import BasePassageFilter
 from autorag.utils.util import (

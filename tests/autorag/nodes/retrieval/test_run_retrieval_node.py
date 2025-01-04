@@ -16,6 +16,7 @@ from autorag.nodes.retrieval.run import run_retrieval_node
 from autorag.nodes.retrieval.vectordb import vectordb_ingest
 from autorag.utils.util import load_summary_file, get_event_loop
 from autorag.vectordb.chroma import Chroma
+from autorag.embedding.base import embedding_models
 from tests.mock import mock_get_text_embedding_batch
 
 root_dir = pathlib.PurePath(
@@ -35,7 +36,7 @@ def node_line_dir():
 		os.makedirs(chroma_path)
 		corpus_path = os.path.join(test_project_dir, "data", "corpus.parquet")
 		corpus_df = pd.read_parquet(corpus_path)
-		autorag.embedding_models["mock_1536"] = autorag.LazyInit(
+		embedding_models["mock_1536"] = autorag.LazyInit(
 			MockEmbedding, embed_dim=1536
 		)
 		chroma_config = {
