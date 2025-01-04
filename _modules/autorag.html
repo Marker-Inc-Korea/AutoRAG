@@ -446,16 +446,6 @@
 
 
 
-<div class="viewcode-block" id="MockEmbeddingRandom">
-<a class="viewcode-back" href="../api_spec/autorag.html#autorag.MockEmbeddingRandom">[docs]</a>
-<span class="k">class</span> <span class="nc">MockEmbeddingRandom</span><span class="p">(</span><span class="n">MockEmbedding</span><span class="p">):</span>
-<span class="w">	</span><span class="sd">&quot;&quot;&quot;Mock embedding with random vectors.&quot;&quot;&quot;</span>
-
-	<span class="k">def</span> <span class="nf">_get_vector</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
-		<span class="k">return</span> <span class="p">[</span><span class="n">random</span><span class="p">()</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">embed_dim</span><span class="p">)]</span></div>
-
-
-
 <span class="n">rich_format</span> <span class="o">=</span> <span class="s2">&quot;[</span><span class="si">%(filename)s</span><span class="s2">:</span><span class="si">%(lineno)s</span><span class="s2">] &gt;&gt; </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
 <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span>
 	<span class="n">level</span><span class="o">=</span><span class="s2">&quot;INFO&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="n">rich_format</span><span class="p">,</span> <span class="n">handlers</span><span class="o">=</span><span class="p">[</span><span class="n">RichHandler</span><span class="p">(</span><span class="n">rich_tracebacks</span><span class="o">=</span><span class="kc">True</span><span class="p">)]</span>
@@ -472,49 +462,6 @@
 
 
 <span class="n">sys</span><span class="o">.</span><span class="n">excepthook</span> <span class="o">=</span> <span class="n">handle_exception</span>
-
-<span class="n">embedding_models</span> <span class="o">=</span> <span class="p">{</span>
-	<span class="c1"># llama index</span>
-	<span class="s2">&quot;openai&quot;</span><span class="p">:</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">OpenAIEmbedding</span>
-	<span class="p">),</span>  <span class="c1"># default model is OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002</span>
-	<span class="s2">&quot;openai_embed_3_large&quot;</span><span class="p">:</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">OpenAIEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="n">OpenAIEmbeddingModelType</span><span class="o">.</span><span class="n">TEXT_EMBED_3_LARGE</span>
-	<span class="p">),</span>
-	<span class="s2">&quot;openai_embed_3_small&quot;</span><span class="p">:</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">OpenAIEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="n">OpenAIEmbeddingModelType</span><span class="o">.</span><span class="n">TEXT_EMBED_3_SMALL</span>
-	<span class="p">),</span>
-	<span class="s2">&quot;mock&quot;</span><span class="p">:</span> <span class="n">LazyInit</span><span class="p">(</span><span class="n">MockEmbeddingRandom</span><span class="p">,</span> <span class="n">embed_dim</span><span class="o">=</span><span class="mi">768</span><span class="p">),</span>
-	<span class="c1"># langchain</span>
-	<span class="s2">&quot;openai_langchain&quot;</span><span class="p">:</span> <span class="n">LazyInit</span><span class="p">(</span><span class="n">OpenAIEmbeddings</span><span class="p">),</span>
-<span class="p">}</span>
-
-<span class="k">try</span><span class="p">:</span>
-	<span class="c1"># you can use your own model in this way.</span>
-	<span class="kn">from</span> <span class="nn">llama_index.embeddings.huggingface</span> <span class="kn">import</span> <span class="n">HuggingFaceEmbedding</span>
-
-	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_baai_bge_small&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;BAAI/bge-small-en-v1.5&quot;</span>
-	<span class="p">)</span>
-	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_cointegrated_rubert_tiny2&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;cointegrated/rubert-tiny2&quot;</span>
-	<span class="p">)</span>
-	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_all_mpnet_base_v2&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span>
-		<span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;sentence-transformers/all-mpnet-base-v2&quot;</span><span class="p">,</span>
-		<span class="n">max_length</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span>
-	<span class="p">)</span>
-	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_bge_m3&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;BAAI/bge-m3&quot;</span>
-	<span class="p">)</span>
-	<span class="n">embedding_models</span><span class="p">[</span><span class="s2">&quot;huggingface_multilingual_e5_large&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span>
-		<span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;intfloat/multilingual-e5-large-instruct&quot;</span>
-	<span class="p">)</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-	<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
-		<span class="s2">&quot;You are using API version of AutoRAG.&quot;</span>
-		<span class="s2">&quot;To use local version, run pip install &#39;AutoRAG[gpu]&#39;&quot;</span>
-	<span class="p">)</span>
 
 
 <div class="viewcode-block" id="AutoRAGBedrock">

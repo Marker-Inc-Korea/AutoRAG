@@ -581,8 +581,44 @@ You can find the package at <a class="reference external" href="https://pretty-s
 <li><p><a class="reference internal" href="nodes/retrieval/vectordb.html"><span class="std std-doc">vectordb</span></a></p></li>
 </ul>
 </section>
-<section id="supporting-embedding-models">
-<h3>Supporting Embedding models<a class="headerlink" href="#supporting-embedding-models" title="Link to this heading">¶</a></h3>
+<section id="configure-the-model-name-in-the-yaml-file">
+<h3>Configure the model name in the YAML file<a class="headerlink" href="#configure-the-model-name-in-the-yaml-file" title="Link to this heading">¶</a></h3>
+<p>For easier use, since v0.3.13, we support configuring model name in the YAML file.</p>
+<p>We support this new configuration option, plus the legacy configuration option that is described below.
+So if you used before v0.3.13 version, it is okay to use the legacy configuration option.</p>
+<p>We support the following embedding model types:</p>
+<ul class="simple">
+<li><p>openai</p></li>
+<li><p>huggingface</p></li>
+<li><p>mock</p></li>
+</ul>
+<p>You can configure the embedding model option directly in the YAML file <code class="docutils literal notranslate"><span class="pre">vectordb</span></code> section.
+If you want to know how to configure vectordb in AutoRAG,
+please go <a class="reference external" href="https://docs.auto-rag.com/integration/vectordb/vectordb.html">here</a>.</p>
+<p>For example,</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag_test</span>
+<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">milvus</span>
+<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">huggingface</span>
+<span class="w">    </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">intfloat/multilingual-e5-large-instruct</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+</pre></div>
+</div>
+<p>or</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag_test</span>
+<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">milvus</span>
+<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai</span>
+<span class="w">    </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">text-embedding-3-small</span>
+<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
+</pre></div>
+</div>
+<p>If you want to use your own embedding model, simply change the model_name at huggingface type embedding model configuration.</p>
+</section>
+<section id="supporting-embedding-models-legacy">
+<h3>Supporting Embedding models (Legacy)<a class="headerlink" href="#supporting-embedding-models-legacy" title="Link to this heading">¶</a></h3>
 <p>As default, we support OpenAI embedding models and some of the local models.
 To change the embedding model, you can change the <code class="docutils literal notranslate"><span class="pre">embedding_model</span></code> parameter to the following values:</p>
 <div class="table-wrapper colwidths-auto docutils container">
@@ -635,8 +671,8 @@ to <code class="docutils literal notranslate"><span class="pre">openai_embed_3_l
 </pre></div>
 </div>
 </section>
-<section id="add-your-embedding-models">
-<h3>Add your embedding models<a class="headerlink" href="#add-your-embedding-models" title="Link to this heading">¶</a></h3>
+<section id="add-your-embedding-models-legacy">
+<h3>Add your embedding models (Legacy)<a class="headerlink" href="#add-your-embedding-models-legacy" title="Link to this heading">¶</a></h3>
 <p>You can add more embedding models for AutoRAG.
 You can add it by simply calling <code class="docutils literal notranslate"><span class="pre">autorag.embedding_models</span></code> and add new key and value.
 For example,
@@ -732,8 +768,9 @@ module docs.</p>
 </li>
 <li><a class="reference internal" href="#configure-the-embedding-model">Configure the Embedding model</a><ul>
 <li><a class="reference internal" href="#modules-that-use-embedding-model">Modules that use Embedding model</a></li>
-<li><a class="reference internal" href="#supporting-embedding-models">Supporting Embedding models</a></li>
-<li><a class="reference internal" href="#add-your-embedding-models">Add your embedding models</a></li>
+<li><a class="reference internal" href="#configure-the-model-name-in-the-yaml-file">Configure the model name in the YAML file</a></li>
+<li><a class="reference internal" href="#supporting-embedding-models-legacy">Supporting Embedding models (Legacy)</a></li>
+<li><a class="reference internal" href="#add-your-embedding-models-legacy">Add your embedding models (Legacy)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#use-vllm">Use vllm</a></li>
