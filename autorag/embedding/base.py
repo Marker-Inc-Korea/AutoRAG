@@ -75,10 +75,6 @@ class EmbeddingModel:
 
 	@staticmethod
 	def load_from_dict(option: List[dict]):
-		def _check_one_item(target: List):
-			if len(target) != 1:
-				raise ValueError("Only one embedding model is supported")
-
 		def _check_keys(target: dict):
 			if "type" not in target or "model_name" not in target:
 				raise ValueError("Both 'type' and 'model_name' must be provided")
@@ -97,7 +93,7 @@ class EmbeddingModel:
 				return None
 			return getattr(module, "HuggingFaceEmbedding", None)
 
-		_check_one_item(option)
+		assert len(option) != 1, "Only one embedding model is supported"
 		_check_keys(option[0])
 
 		model_options = option[0]
