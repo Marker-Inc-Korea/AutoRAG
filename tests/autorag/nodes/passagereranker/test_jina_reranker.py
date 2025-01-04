@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 import aiohttp
@@ -103,6 +104,7 @@ def test_jina_reranker_batch_one(jina_reranker_instance):
 	autorag.nodes.passagereranker.jina, "jina_reranker_pure", mock_jina_reranker_pure
 )
 def test_jina_reranker_node():
+	os.environ["JINAAI_API_KEY"] = "test"
 	top_k = 1
 	result_df = JinaReranker.run_evaluator(
 		project_dir=project_dir, previous_result=previous_result, top_k=top_k
