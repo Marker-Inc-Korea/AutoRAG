@@ -16,11 +16,7 @@ class BaseVectorStore:
 		similarity_metric: str = "cosine",
 		embedding_batch: int = 100,
 	):
-		self.embedding = (
-			EmbeddingModel.load(embedding_model)
-			if isinstance(embedding_model, str)
-			else EmbeddingModel.load_from_dict(embedding_model)
-		)
+		self.embedding = EmbeddingModel.load(embedding_model)()
 		self.embedding_batch = embedding_batch
 		self.embedding.embed_batch_size = embedding_batch
 		assert (

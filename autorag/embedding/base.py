@@ -2,7 +2,7 @@ import logging
 import sys
 
 from random import random
-from typing import List
+from typing import List, Union, Dict
 
 from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -67,9 +67,18 @@ except ImportError:
 
 class EmbeddingModel:
 	@staticmethod
-	def load(name: str = ""):
+	def load(config: Union[str, List[Dict]]):
+		if isinstance(config, str):
+			return EmbeddingModel.load_from_str(config)
+		elif isinstance(config, list):
+			return EmbeddingModel.load_from_dict(config)
+		else:
+			raise ValueError("Invalid type of config")
+
+	@staticmethod
+	def load_from_str(name: str):
 		try:
-			return embedding_models[name]()
+			return embedding_models[name]
 		except KeyError:
 			raise ValueError(f"Embedding model '{name}' is not supported")
 
@@ -93,7 +102,8 @@ class EmbeddingModel:
 				return None
 			return getattr(module, "HuggingFaceEmbedding", None)
 
-		assert len(option) != 1, "Only one embedding model is supported"
+		if len(option) != 1:
+			raise ValueError("Only one embedding model is supported")
 		_check_keys(option[0])
 
 		model_options = option[0]
