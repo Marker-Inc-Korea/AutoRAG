@@ -7,6 +7,7 @@ from typing import List, Union, Dict
 from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
+from llama_index.embeddings.ollama import OllamaEmbedding
 from langchain_openai.embeddings import OpenAIEmbeddings
 
 from autorag import LazyInit
@@ -35,6 +36,7 @@ embedding_models = {
 	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
 	# langchain
 	"openai_langchain": LazyInit(OpenAIEmbeddings),
+	"ollama": LazyInit(OllamaEmbedding),
 }
 
 try:
@@ -87,7 +89,7 @@ class EmbeddingModel:
 		def _check_keys(target: dict):
 			if "type" not in target or "model_name" not in target:
 				raise ValueError("Both 'type' and 'model_name' must be provided")
-			if target["type"] not in ["openai", "huggingface", "mock"]:
+			if target["type"] not in ["openai", "huggingface", "mock", "ollama"]:
 				raise ValueError(
 					f"Embedding model type '{target['type']}' is not supported"
 				)
@@ -113,6 +115,7 @@ class EmbeddingModel:
 			"openai": OpenAIEmbedding,
 			"mock": MockEmbeddingRandom,
 			"huggingface": _get_huggingface_class(),
+			"ollama": OllamaEmbedding,
 		}
 
 		embedding_class = embedding_map.get(model_type)

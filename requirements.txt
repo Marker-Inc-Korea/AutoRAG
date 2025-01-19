@@ -40,6 +40,7 @@ llama-index-core>=0.11.0
 llama-index-readers-file
 # Embeddings
 llama-index-embeddings-openai
+llama-index-embeddings-ollama
 # LLMs
 llama-index-llms-openai>=0.2.7
 llama-index-llms-openai-like

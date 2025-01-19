@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Union
 
 from chromadb import (
 	EphemeralClient,
@@ -18,7 +18,7 @@ from autorag.vectordb.base import BaseVectorStore
 class Chroma(BaseVectorStore):
 	def __init__(
 		self,
-		embedding_model: str,
+		embedding_model: Union[str, List[dict]],
 		collection_name: str,
 		embedding_batch: int = 100,
 		client_type: str = "persistent",
