@@ -1,7 +1,5 @@
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.embeddings.ollama import OllamaEmbedding
 from autorag.embedding.base import EmbeddingModel, MockEmbeddingRandom
 
 
