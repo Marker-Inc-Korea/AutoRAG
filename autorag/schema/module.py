@@ -22,3 +22,4 @@ class Module:
 		module_type = _module_dict.pop("module_type")
 		module_params = _module_dict
 		return cls(module_type, module_params)
+

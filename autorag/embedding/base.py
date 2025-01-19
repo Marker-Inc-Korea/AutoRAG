@@ -69,11 +69,13 @@ except ImportError:
 
 class EmbeddingModel:
 	@staticmethod
-	def load(config: Union[str, List[Dict]]):
+	def load(config: Union[str, Dict, List[Dict]]):
 		if isinstance(config, str):
 			return EmbeddingModel.load_from_str(config)
-		elif isinstance(config, list):
+		elif isinstance(config, dict):
 			return EmbeddingModel.load_from_dict(config)
+		elif isinstance(config, list):
+			return EmbeddingModel.load_from_list(config)
 		else:
 			raise ValueError("Invalid type of config")
 
@@ -85,7 +87,13 @@ class EmbeddingModel:
 			raise ValueError(f"Embedding model '{name}' is not supported")
 
 	@staticmethod
-	def load_from_dict(option: List[dict]):
+	def load_from_list(option: List[dict]):
+		if len(option) != 1:
+			raise ValueError("Only one embedding model is supported")
+		return EmbeddingModel.load_from_dict(option[0])
+
+	@staticmethod
+	def load_from_dict(option: dict):
 		def _check_keys(target: dict):
 			if "type" not in target or "model_name" not in target:
 				raise ValueError("Both 'type' and 'model_name' must be provided")
@@ -104,11 +112,9 @@ class EmbeddingModel:
 				return None
 			return getattr(module, "HuggingFaceEmbedding", None)
 
-		if len(option) != 1:
-			raise ValueError("Only one embedding model is supported")
-		_check_keys(option[0])
+		_check_keys(option)
 
-		model_options = option[0]
+		model_options = option
 		model_type = model_options.pop("type")
 
 		embedding_map = {
