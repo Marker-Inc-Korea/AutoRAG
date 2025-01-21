@@ -6,7 +6,7 @@ from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 from couchbase.options import ClusterOptions
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 from autorag.utils.util import make_batch
 from autorag.vectordb import BaseVectorStore
@@ -17,7 +17,7 @@ logger = logging.getLogger("AutoRAG")
 class Couchbase(BaseVectorStore):
 	def __init__(
 		self,
-		embedding_model: str,
+		embedding_model: Union[str, List[dict]],
 		bucket_name: str,
 		scope_name: str,
 		collection_name: str,

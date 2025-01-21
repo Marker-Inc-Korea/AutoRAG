@@ -11,7 +11,7 @@ from qdrant_client.models import (
 	SearchRequest,
 )
 
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from autorag.vectordb import BaseVectorStore
 
@@ -21,7 +21,7 @@ logger = logging.getLogger("AutoRAG")
 class Qdrant(BaseVectorStore):
 	def __init__(
 		self,
-		embedding_model: str,
+		embedding_model: Union[str, List[dict]],
 		collection_name: str,
 		embedding_batch: int = 100,
 		similarity_metric: str = "cosine",
