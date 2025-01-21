@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.vectordb.couchbase - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../_static/tabs.css?v=4c969af8" />
@@ -401,28 +401,28 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.vectordb.couchbase</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 
-<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">timedelta</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">timedelta</span>
 
-<span class="kn">from</span> <span class="nn">couchbase.auth</span> <span class="kn">import</span> <span class="n">PasswordAuthenticator</span>
-<span class="kn">from</span> <span class="nn">couchbase.cluster</span> <span class="kn">import</span> <span class="n">Cluster</span>
-<span class="kn">from</span> <span class="nn">couchbase.options</span> <span class="kn">import</span> <span class="n">ClusterOptions</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">couchbase.auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">PasswordAuthenticator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">couchbase.cluster</span><span class="w"> </span><span class="kn">import</span> <span class="n">Cluster</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">couchbase.options</span><span class="w"> </span><span class="kn">import</span> <span class="n">ClusterOptions</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">make_batch</span>
-<span class="kn">from</span> <span class="nn">autorag.vectordb</span> <span class="kn">import</span> <span class="n">BaseVectorStore</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_batch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.vectordb</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseVectorStore</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="Couchbase">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase">[docs]</a>
-<span class="k">class</span> <span class="nc">Couchbase</span><span class="p">(</span><span class="n">BaseVectorStore</span><span class="p">):</span>
-	<span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Couchbase</span><span class="p">(</span><span class="n">BaseVectorStore</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
-		<span class="n">embedding_model</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+		<span class="n">embedding_model</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span>
 		<span class="n">bucket_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 		<span class="n">scope_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 		<span class="n">collection_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -472,7 +472,7 @@
 			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
 				<span class="s2">&quot;Error connecting to couchbase. &quot;</span>
 				<span class="s2">&quot;Please check the connection and credentials.&quot;</span>
-			<span class="p">)</span> <span class="kn">from</span> <span class="nn">e</span>
+			<span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">e</span>
 
 		<span class="c1"># Check if the index exists. Throws ValueError if it doesn&#39;t</span>
 		<span class="k">try</span><span class="p">:</span>
@@ -487,8 +487,8 @@
 
 <div class="viewcode-block" id="Couchbase.add">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.add">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
-		<span class="kn">from</span> <span class="nn">couchbase.exceptions</span> <span class="kn">import</span> <span class="n">DocumentExistsException</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="kn">from</span><span class="w"> </span><span class="nn">couchbase.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">DocumentExistsException</span>
 
 		<span class="n">texts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
 		<span class="n">text_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
@@ -517,7 +517,7 @@
 
 <div class="viewcode-block" id="Couchbase.fetch">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.fetch">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
 		<span class="c1"># Fetch vectors by IDs</span>
 		<span class="n">fetched_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">get_multi</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="n">fetched_vectors</span> <span class="o">=</span> <span class="p">{</span>
@@ -529,7 +529,7 @@
 
 <div class="viewcode-block" id="Couchbase.is_exist">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.is_exist">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
 		<span class="n">existed_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">exists_multi</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="n">existed_ids</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">exists</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">existed_result</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 		<span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">existed_ids</span><span class="p">[</span><span class="n">x</span><span class="p">],</span> <span class="n">ids</span><span class="p">))</span></div>
@@ -537,12 +537,12 @@
 
 <div class="viewcode-block" id="Couchbase.query">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.query">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">query</span><span class="p">(</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
-		<span class="kn">import</span> <span class="nn">couchbase.search</span> <span class="k">as</span> <span class="nn">search</span>
-		<span class="kn">from</span> <span class="nn">couchbase.options</span> <span class="kn">import</span> <span class="n">SearchOptions</span>
-		<span class="kn">from</span> <span class="nn">couchbase.vector_search</span> <span class="kn">import</span> <span class="n">VectorQuery</span><span class="p">,</span> <span class="n">VectorSearch</span>
+		<span class="kn">import</span><span class="w"> </span><span class="nn">couchbase.search</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">search</span>
+		<span class="kn">from</span><span class="w"> </span><span class="nn">couchbase.options</span><span class="w"> </span><span class="kn">import</span> <span class="n">SearchOptions</span>
+		<span class="kn">from</span><span class="w"> </span><span class="nn">couchbase.vector_search</span><span class="w"> </span><span class="kn">import</span> <span class="n">VectorQuery</span><span class="p">,</span> <span class="n">VectorSearch</span>
 
 		<span class="n">queries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">queries</span><span class="p">)</span>
 		<span class="n">query_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
@@ -592,11 +592,11 @@
 
 <div class="viewcode-block" id="Couchbase.delete">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase.delete">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">remove_multi</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span></div>
 
 
-	<span class="k">def</span> <span class="nf">_check_bucket_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">_check_bucket_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;Check if the bucket exists in the linked Couchbase cluster.</span>
 
 <span class="sd">		Returns:</span>
@@ -610,7 +610,7 @@
 			<span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Error checking if bucket exists:&quot;</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
 			<span class="k">return</span> <span class="kc">False</span>
 
-	<span class="k">def</span> <span class="nf">_check_index_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">_check_index_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;Check if the Search index exists in the linked Couchbase cluster</span>
 <span class="sd">		Returns:</span>
 <span class="sd">		    bool: True if the index exists, False otherwise.</span>

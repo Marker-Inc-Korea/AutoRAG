@@ -20,7 +20,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Start creating your own evaluation data - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -445,9 +445,9 @@ which is <code class="docutils literal notranslate"><span class="pre">llama_docu
 <ul class="simple">
 <li><p>Use Llama Index</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">llama_index.core</span> <span class="kn">import</span> <span class="n">SimpleDirectoryReader</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.node_parser</span> <span class="kn">import</span> <span class="n">TokenTextSplitter</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.corpus</span> <span class="kn">import</span> <span class="n">llama_text_node_to_parquet</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimpleDirectoryReader</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.node_parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">TokenTextSplitter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">llama_text_node_to_parquet</span>
 
 <span class="n">documents</span> <span class="o">=</span> <span class="n">SimpleDirectoryReader</span><span class="p">(</span><span class="s1">&#39;your_dir_path&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">load_data</span><span class="p">()</span>
 <span class="n">nodes</span> <span class="o">=</span> <span class="n">TokenTextSplitter</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">chunk_overlap</span><span class="o">=</span><span class="mi">128</span><span class="p">)</span><span class="o">.</span><span class="n">get_nodes_from_documents</span><span class="p">(</span><span class="n">documents</span><span class="o">=</span><span class="n">documents</span><span class="p">)</span>
@@ -457,9 +457,9 @@ which is <code class="docutils literal notranslate"><span class="pre">llama_docu
 <ul class="simple">
 <li><p>Use LangChain</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">langchain_community.document_loaders</span> <span class="kn">import</span> <span class="n">DirectoryLoader</span>
-<span class="kn">from</span> <span class="nn">langchain_text_splitters</span> <span class="kn">import</span> <span class="n">RecursiveCharacterTextSplitter</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.corpus</span> <span class="kn">import</span> <span class="n">langchain_documents_to_parquet</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_community.document_loaders</span><span class="w"> </span><span class="kn">import</span> <span class="n">DirectoryLoader</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_text_splitters</span><span class="w"> </span><span class="kn">import</span> <span class="n">RecursiveCharacterTextSplitter</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">langchain_documents_to_parquet</span>
 
 <span class="n">documents</span> <span class="o">=</span> <span class="n">DirectoryLoader</span><span class="p">(</span><span class="s1">&#39;your_dir_path&#39;</span><span class="p">,</span> <span class="n">glob</span><span class="o">=</span><span class="s1">&#39;**/*.md&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
 <span class="n">documents</span> <span class="o">=</span> <span class="n">RecursiveCharacterTextSplitter</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="mi">512</span><span class="p">,</span> <span class="n">chunk_overlap</span><span class="o">=</span><span class="mi">128</span><span class="p">)</span><span class="o">.</span><span class="n">split_documents</span><span class="p">(</span><span class="n">documents</span><span class="p">)</span>
@@ -477,9 +477,9 @@ which is <code class="docutils literal notranslate"><span class="pre">llama_docu
 <p class="admonition-title">Tip</p>
 <p>The format for qa data can be found <a class="reference internal" href="#data_format.md#qa-dataset"><span class="xref myst">qa data format</span></a></p>
 </div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
 
 <span class="n">corpus_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;path/to/corpus.parquet&#39;</span><span class="p">)</span>
 <span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s1">&#39;gpt-3.5-turbo&#39;</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
@@ -513,10 +513,10 @@ The prompt must contains two placeholders:</p>
 <li><p>{{text}}: The content string</p></li>
 <li><p>{{num_questions}}: The number of questions to generate</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
 
 <span class="n">prompt</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;</span>
 <span class="s2">Generate question and answer pairs for the given passage.</span>
@@ -547,9 +547,9 @@ From now, we support distributing multiple prompts by randomly based on the rati
 It means that the prompt will be selected by a ratio per passage.</p>
 <p>For this, you must provide a dictionary.
 The dictionary must have the key, which is the prompt text file path, and the value which is the ratio of the prompt.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">generate_qa_llama_index_by_ratio</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_llama_index_by_ratio</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
 
 <span class="n">ratio_dict</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s1">&#39;prompt1.txt&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
@@ -585,9 +585,9 @@ If retrieval_gt is not relevant, you have to remove it from the dataset.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">answer_creation_func</span></code>, <code class="docutils literal notranslate"><span class="pre">llm</span></code> parameters are necessary.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">existing_qa_df</span></code> must have ‘query’ column.</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span><span class="p">,</span> <span class="n">generate_answers</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span><span class="p">,</span> <span class="n">generate_answers</span>
 
 <span class="n">corpus_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;path/to/corpus.parquet&#39;</span><span class="p">)</span>
 <span class="n">existing_qa_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;path/to/existing_qa.parquet&#39;</span><span class="p">)</span>  <span class="c1"># It has to contain &#39;query&#39; column</span>
@@ -599,10 +599,10 @@ If retrieval_gt is not relevant, you have to remove it from the dataset.</p>
 </pre></div>
 </div>
 <p>You can use <code class="docutils literal notranslate"><span class="pre">PersistentClient</span></code> for saving corpus embeddings locally as well.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">import</span> <span class="nn">chromadb</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span><span class="p">,</span> <span class="n">generate_answers</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">chromadb</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span><span class="p">,</span> <span class="n">generate_answers</span>
 
 <span class="n">client</span> <span class="o">=</span> <span class="n">chromadb</span><span class="o">.</span><span class="n">PersistentClient</span><span class="p">(</span><span class="s1">&#39;path/to/chromadb&#39;</span><span class="p">)</span>
 <span class="n">collection</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_or_create_collection</span><span class="p">(</span><span class="s1">&#39;auto-rag&#39;</span><span class="p">)</span>
@@ -629,9 +629,9 @@ If retrieval_gt is not relevant, you have to remove it from the dataset.</p>
 </ul>
 </li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span>
 
 <span class="n">corpus_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;path/to/corpus.parquet&#39;</span><span class="p">)</span>
 <span class="n">existing_qa_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span>
@@ -643,10 +643,10 @@ If retrieval_gt is not relevant, you have to remove it from the dataset.</p>
 </pre></div>
 </div>
 <p>You can use <code class="docutils literal notranslate"><span class="pre">PersistentClient</span></code> for saving corpus embeddings locally as well.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">import</span> <span class="nn">chromadb</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">chromadb</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_qa_with_existing_qa</span>
 
 <span class="n">client</span> <span class="o">=</span> <span class="n">chromadb</span><span class="o">.</span><span class="n">PersistentClient</span><span class="p">(</span><span class="s1">&#39;path/to/chromadb&#39;</span><span class="p">)</span>
 <span class="n">collection</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_or_create_collection</span><span class="p">(</span><span class="s1">&#39;auto-rag&#39;</span><span class="p">)</span>

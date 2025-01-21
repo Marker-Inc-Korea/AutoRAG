@@ -17,7 +17,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Filtering - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -432,8 +432,8 @@ If the question is unanswerable, the generation_gt will be ‘Don’t know.’</
 <p>We can use the rule-based don’t know filter to filter unanswerable questions.
 This will just use the pre-made don’t know sentences and filter the questions.</p>
 <p>This is not perfect, but it is a simple and fast way to filter unanswerable questions.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.qa.schema</span> <span class="kn">import</span> <span class="n">QA</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.dontknow</span> <span class="kn">import</span> <span class="n">dontknow_filter_rule_based</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">QA</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.dontknow</span><span class="w"> </span><span class="kn">import</span> <span class="n">dontknow_filter_rule_based</span>
 
 <span class="n">qa</span> <span class="o">=</span> <span class="n">QA</span><span class="p">(</span><span class="n">qa_df</span><span class="p">,</span> <span class="n">corpus</span><span class="p">)</span>
 <span class="n">filtered_qa</span> <span class="o">=</span> <span class="n">qa</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">dontknow_filter_rule_based</span><span class="p">,</span> <span class="n">lang</span><span class="o">=</span><span class="s2">&quot;en&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">map</span><span class="p">(</span>
@@ -451,9 +451,9 @@ But since it uses the LLM, it is much slower and expensive than the rule-based d
 <ul class="simple">
 <li><p>OpenAI</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">openai</span> <span class="kn">import</span> <span class="n">AsyncOpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.schema</span> <span class="kn">import</span> <span class="n">QA</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.dontknow</span> <span class="kn">import</span> <span class="n">dontknow_filter_openai</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncOpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">QA</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.dontknow</span><span class="w"> </span><span class="kn">import</span> <span class="n">dontknow_filter_openai</span>
 
 <span class="n">qa</span> <span class="o">=</span> <span class="n">QA</span><span class="p">(</span><span class="n">qa_df</span><span class="p">,</span> <span class="n">corpus</span><span class="p">)</span>
 <span class="n">filtered_qa</span> <span class="o">=</span> <span class="n">qa</span><span class="o">.</span><span class="n">batch_filter</span><span class="p">(</span><span class="n">dontknow_filter_openai</span><span class="p">,</span> <span class="n">client</span><span class="o">=</span><span class="n">AsyncOpenAI</span><span class="p">(),</span> <span class="n">lang</span><span class="o">=</span><span class="s2">&quot;en&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">map</span><span class="p">(</span>
@@ -464,9 +464,9 @@ But since it uses the LLM, it is much slower and expensive than the rule-based d
 <ul class="simple">
 <li><p>Llama Index</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">llama_index.llms.ollama</span> <span class="kn">import</span> <span class="n">Ollama</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.schema</span> <span class="kn">import</span> <span class="n">QA</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.dontknow</span> <span class="kn">import</span> <span class="n">dontknow_filter_llama_index</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.ollama</span><span class="w"> </span><span class="kn">import</span> <span class="n">Ollama</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">QA</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.dontknow</span><span class="w"> </span><span class="kn">import</span> <span class="n">dontknow_filter_llama_index</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">Ollama</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;llama3&quot;</span><span class="p">)</span>
 <span class="n">qa</span> <span class="o">=</span> <span class="n">QA</span><span class="p">(</span><span class="n">qa_df</span><span class="p">,</span> <span class="n">corpus</span><span class="p">)</span>
@@ -488,9 +488,9 @@ We use LLM as the filtering model.</p>
 <ul class="simple">
 <li><p>OpenAI</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">openai</span> <span class="kn">import</span> <span class="n">AsyncOpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.schema</span> <span class="kn">import</span> <span class="n">QA</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.passage_dependency</span> <span class="kn">import</span> <span class="n">passage_dependency_filter_openai</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncOpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">QA</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.passage_dependency</span><span class="w"> </span><span class="kn">import</span> <span class="n">passage_dependency_filter_openai</span>
 
 <span class="n">en_qa</span> <span class="o">=</span> <span class="n">QA</span><span class="p">(</span><span class="n">en_qa_df</span><span class="p">)</span>
 <span class="n">result_en_qa</span> <span class="o">=</span> <span class="n">en_qa</span><span class="o">.</span><span class="n">batch_filter</span><span class="p">(</span>
@@ -501,9 +501,9 @@ We use LLM as the filtering model.</p>
 <ul class="simple">
 <li><p>LlamaIndex</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.qa.schema</span> <span class="kn">import</span> <span class="n">QA</span>
-<span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.passage_dependency</span> <span class="kn">import</span> <span class="n">passage_dependency_filter_llama_index</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">QA</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.passage_dependency</span><span class="w"> </span><span class="kn">import</span> <span class="n">passage_dependency_filter_llama_index</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">temperature</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">)</span>
 <span class="n">en_qa</span> <span class="o">=</span> <span class="n">QA</span><span class="p">(</span><span class="n">en_qa_df</span><span class="p">)</span>

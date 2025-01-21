@@ -20,7 +20,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Configure LLM &amp; Embedding models - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="_static/tabs.css?v=4c969af8" />
@@ -559,8 +559,8 @@ The integration of llms must be installed to different packages.
 So, before add your model, you should find and install the right package for your model.
 You can find the package at <a class="reference external" href="https://pretty-sodium-5e0.notion.site/ce81b247649a44e4b6b35dfb24af28a6?v=53b3c2ced7bb4c9996b81b83c9f01139">here</a>.</p>
 </div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">autorag</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.llms.mock</span> <span class="kn">import</span> <span class="n">MockLLM</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">autorag</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.llms.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">MockLLM</span>
 
 <span class="n">autorag</span><span class="o">.</span><span class="n">generator_models</span><span class="p">[</span><span class="s1">&#39;mockllm&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">MockLLM</span>
 </pre></div>
@@ -592,6 +592,7 @@ So if you used before v0.3.13 version, it is okay to use the legacy configuratio
 <li><p>openai</p></li>
 <li><p>huggingface</p></li>
 <li><p>mock</p></li>
+<li><p>ollama</p></li>
 </ul>
 <p>You can configure the embedding model option directly in the YAML file <code class="docutils literal notranslate"><span class="pre">vectordb</span></code> section.
 If you want to know how to configure vectordb in AutoRAG,
@@ -616,7 +617,7 @@ please go <a class="reference external" href="https://docs.auto-rag.com/integrat
 <span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
 </pre></div>
 </div>
-<p>If you want to use your own embedding model, simply change the model_name at huggingface type embedding model configuration.</p>
+<p>If you want to use your own embedding model, simply change the model_name at huggingface(or ollama) type embedding model configuration.</p>
 </section>
 <section id="supporting-embedding-models-legacy">
 <h3>Supporting Embedding models (Legacy)<a class="headerlink" href="#supporting-embedding-models-legacy" title="Link to this heading">¶</a></h3>
@@ -679,9 +680,9 @@ You can add it by simply calling <code class="docutils literal notranslate"><spa
 For example,
 if you want to add <code class="docutils literal notranslate"><span class="pre">[KoSimCSE](https://huggingface.co/BM-K/KoSimCSE-roberta-multitask)</span></code> model for Korean embedding,
 execute the following code.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">autorag</span>
-<span class="kn">from</span> <span class="nn">autorag</span> <span class="kn">import</span> <span class="n">LazyInit</span>
-<span class="kn">from</span> <span class="nn">llama_index.embeddings.huggingface</span> <span class="kn">import</span> <span class="n">HuggingFaceEmbedding</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">autorag</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyInit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.embeddings.huggingface</span><span class="w"> </span><span class="kn">import</span> <span class="n">HuggingFaceEmbedding</span>
 
 <span class="n">autorag</span><span class="o">.</span><span class="n">embedding_models</span><span class="p">[</span><span class="s1">&#39;kosimcse&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span><span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;BM-K/KoSimCSE-roberta-multitask&quot;</span><span class="p">)</span>
 </pre></div>

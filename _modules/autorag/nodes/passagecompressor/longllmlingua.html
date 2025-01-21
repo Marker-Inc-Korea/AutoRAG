@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.nodes.passagecompressor.longllmlingua - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/tabs.css?v=4c969af8" />
@@ -401,12 +401,12 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.nodes.passagecompressor.longllmlingua</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
-<span class="kn">from</span> <span class="nn">autorag.nodes.passagecompressor.base</span> <span class="kn">import</span> <span class="n">BasePassageCompressor</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">pop_params</span><span class="p">,</span> <span class="n">result_to_dataframe</span><span class="p">,</span> <span class="n">empty_cuda_cache</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.passagecompressor.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BasePassageCompressor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">pop_params</span><span class="p">,</span> <span class="n">result_to_dataframe</span><span class="p">,</span> <span class="n">empty_cuda_cache</span>
 
 
 <span class="c1"># TODO: Parallel Processing Refactoring at #460</span>
@@ -414,12 +414,12 @@
 
 <div class="viewcode-block" id="LongLLMLingua">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.longllmlingua.LongLLMLingua">[docs]</a>
-<span class="k">class</span> <span class="nc">LongLLMLingua</span><span class="p">(</span><span class="n">BasePassageCompressor</span><span class="p">):</span>
-	<span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LongLLMLingua</span><span class="p">(</span><span class="n">BasePassageCompressor</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;NousResearch/Llama-2-7b-hf&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">):</span>
 		<span class="k">try</span><span class="p">:</span>
-			<span class="kn">from</span> <span class="nn">llmlingua</span> <span class="kn">import</span> <span class="n">PromptCompressor</span>
+			<span class="kn">from</span><span class="w"> </span><span class="nn">llmlingua</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptCompressor</span>
 		<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
 			<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
 				<span class="s2">&quot;LongLLMLingua is not installed. Please install it by running `pip install llmlingua`.&quot;</span>
@@ -429,7 +429,7 @@
 		<span class="n">model_init_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">PromptCompressor</span><span class="o">.</span><span class="fm">__init__</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">llm_lingua</span> <span class="o">=</span> <span class="n">PromptCompressor</span><span class="p">(</span><span class="n">model_name</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span> <span class="o">**</span><span class="n">model_init_params</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 		<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_lingua</span>
 		<span class="n">empty_cuda_cache</span><span class="p">()</span>
 		<span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__del__</span><span class="p">()</span>
@@ -437,13 +437,13 @@
 <div class="viewcode-block" id="LongLLMLingua.pure">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.longllmlingua.LongLLMLingua.pure">[docs]</a>
 	<span class="nd">@result_to_dataframe</span><span class="p">([</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">])</span>
-	<span class="k">def</span> <span class="nf">pure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">previous_result</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">pure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">previous_result</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 		<span class="n">queries</span><span class="p">,</span> <span class="n">retrieved_contents</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cast_to_run</span><span class="p">(</span><span class="n">previous_result</span><span class="p">)</span>
 		<span class="n">results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pure</span><span class="p">(</span><span class="n">queries</span><span class="p">,</span> <span class="n">retrieved_contents</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 		<span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">[</span><span class="n">x</span><span class="p">],</span> <span class="n">results</span><span class="p">))</span></div>
 
 
-	<span class="k">def</span> <span class="nf">_pure</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">_pure</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
 		<span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 		<span class="n">contents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
@@ -481,7 +481,7 @@
 
 <div class="viewcode-block" id="llmlingua_pure">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.longllmlingua.llmlingua_pure">[docs]</a>
-<span class="k">def</span> <span class="nf">llmlingua_pure</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">llmlingua_pure</span><span class="p">(</span>
 	<span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 	<span class="n">contents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">llm_lingua</span><span class="p">,</span>
@@ -502,7 +502,7 @@
 <span class="sd">	:return: The compressed text.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 	<span class="k">try</span><span class="p">:</span>
-		<span class="kn">from</span> <span class="nn">llmlingua</span> <span class="kn">import</span> <span class="n">PromptCompressor</span>
+		<span class="kn">from</span><span class="w"> </span><span class="nn">llmlingua</span><span class="w"> </span><span class="kn">import</span> <span class="n">PromptCompressor</span>
 	<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
 		<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
 			<span class="s2">&quot;LongLLMLingua is not installed. Please install it by running `pip install llmlingua`.&quot;</span>

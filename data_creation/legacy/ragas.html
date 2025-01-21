@@ -20,7 +20,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>RAGAS evaluation data generation - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -419,9 +419,9 @@ at <a class="reference external" href="https://docs.ragas.io/en/stable/concepts/
 <h2>Generate QA set from Corpus data using RAGAS<a class="headerlink" href="#generate-qa-set-from-corpus-data-using-ragas" title="Link to this heading">¶</a></h2>
 <p>You can generate QA set from corpus data using RAGAS.</p>
 <p>If you didn’t make corpus data yet, you can make it by following the <a class="reference internal" href="tutorial.html"><span class="std std-doc">tutorial</span></a>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation.ragas</span> <span class="kn">import</span> <span class="n">generate_qa_ragas</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation.ragas</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_ragas</span>
 
 <span class="n">corpus_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s1">&#39;path/to/corpus.parquet&#39;</span><span class="p">)</span>
 <span class="n">qa_df</span> <span class="o">=</span> <span class="n">generate_qa_ragas</span><span class="p">(</span><span class="n">corpus_df</span><span class="p">,</span> <span class="n">test_size</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
@@ -440,8 +440,8 @@ at <a class="reference external" href="https://docs.ragas.io/en/stable/concepts/
 </ul>
 <p>You can set the distribution of question types by making a distribution list.
 You can access each question type by importing RAGAS evolution types.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">ragas.testset.evolutions</span> <span class="kn">import</span> <span class="n">simple</span><span class="p">,</span> <span class="n">reasoning</span><span class="p">,</span> <span class="n">multi_context</span><span class="p">,</span> <span class="n">conditional</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation.ragas</span> <span class="kn">import</span> <span class="n">generate_qa_ragas</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">ragas.testset.evolutions</span><span class="w"> </span><span class="kn">import</span> <span class="n">simple</span><span class="p">,</span> <span class="n">reasoning</span><span class="p">,</span> <span class="n">multi_context</span><span class="p">,</span> <span class="n">conditional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation.ragas</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_ragas</span>
 
 <span class="n">distributions</span> <span class="o">=</span> <span class="p">{</span>  <span class="c1"># uniform distribution</span>
     <span class="n">simple</span><span class="p">:</span> <span class="mf">0.25</span><span class="p">,</span>
@@ -460,8 +460,8 @@ You can access each question type by importing RAGAS evolution types.</p>
 <p>RAGAS supports custom models using Langchain.
 You can get a support list of models from Langchain at <a class="reference external" href="https://python.langchain.com/docs/integrations/llms/">here</a>.</p>
 <p>Plus, you might need to use <code class="docutils literal notranslate"><span class="pre">ChatModel</span></code> class from Langchain.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation.ragas</span> <span class="kn">import</span> <span class="n">generate_qa_ragas</span>
-<span class="kn">from</span> <span class="nn">langchain_openai</span> <span class="kn">import</span> <span class="n">ChatOpenAI</span><span class="p">,</span> <span class="n">OpenAIEmbeddings</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation.ragas</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_ragas</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span><span class="p">,</span> <span class="n">OpenAIEmbeddings</span>
 
 <span class="n">generator_llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-3.5-turbo&quot;</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.4</span><span class="p">)</span>
 <span class="n">critic_llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-4&quot;</span><span class="p">,</span> <span class="n">temperature</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)</span>

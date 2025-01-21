@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.web - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -401,17 +401,17 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.web</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span>
 
-<span class="kn">import</span> <span class="nn">click</span>
-<span class="kn">import</span> <span class="nn">streamlit</span> <span class="k">as</span> <span class="nn">st</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">streamlit</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">st</span>
 
-<span class="kn">from</span> <span class="nn">autorag.deploy</span> <span class="kn">import</span> <span class="n">Runner</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.deploy</span><span class="w"> </span><span class="kn">import</span> <span class="n">Runner</span>
 
 
 <div class="viewcode-block" id="get_runner">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.web.get_runner">[docs]</a>
-<span class="k">def</span> <span class="nf">get_runner</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_runner</span><span class="p">(</span>
 	<span class="n">yaml_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">project_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">trial_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 <span class="p">):</span>
 	<span class="k">if</span> <span class="ow">not</span> <span class="n">yaml_path</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">trial_path</span><span class="p">:</span>
@@ -427,7 +427,7 @@
 
 <div class="viewcode-block" id="set_initial_state">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.web.set_initial_state">[docs]</a>
-<span class="k">def</span> <span class="nf">set_initial_state</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">set_initial_state</span><span class="p">():</span>
 	<span class="k">if</span> <span class="s2">&quot;messages&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">:</span>
 		<span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">&quot;messages&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
 			<span class="p">{</span>
@@ -440,7 +440,7 @@
 
 <div class="viewcode-block" id="set_page_config">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.web.set_page_config">[docs]</a>
-<span class="k">def</span> <span class="nf">set_page_config</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">set_page_config</span><span class="p">():</span>
 	<span class="n">st</span><span class="o">.</span><span class="n">set_page_config</span><span class="p">(</span>
 		<span class="n">page_title</span><span class="o">=</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">,</span>
 		<span class="n">page_icon</span><span class="o">=</span><span class="s2">&quot;🤖&quot;</span><span class="p">,</span>
@@ -456,7 +456,7 @@
 
 <div class="viewcode-block" id="set_page_header">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.web.set_page_header">[docs]</a>
-<span class="k">def</span> <span class="nf">set_page_header</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">set_page_header</span><span class="p">():</span>
 	<span class="n">st</span><span class="o">.</span><span class="n">header</span><span class="p">(</span><span class="s2">&quot;📚 AutoRAG&quot;</span><span class="p">,</span> <span class="n">anchor</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 	<span class="n">st</span><span class="o">.</span><span class="n">caption</span><span class="p">(</span><span class="s2">&quot;Input a question and get an answer from the given documents. &quot;</span><span class="p">)</span></div>
 
@@ -464,7 +464,7 @@
 
 <div class="viewcode-block" id="chat_box">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.web.chat_box">[docs]</a>
-<span class="k">def</span> <span class="nf">chat_box</span><span class="p">(</span><span class="n">runner</span><span class="p">:</span> <span class="n">Runner</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">chat_box</span><span class="p">(</span><span class="n">runner</span><span class="p">:</span> <span class="n">Runner</span><span class="p">):</span>
 	<span class="k">if</span> <span class="n">query</span> <span class="o">:=</span> <span class="n">st</span><span class="o">.</span><span class="n">chat_input</span><span class="p">(</span><span class="s2">&quot;How can I help?&quot;</span><span class="p">):</span>
 		<span class="c1"># Add the user input to messages state</span>
 		<span class="n">st</span><span class="o">.</span><span class="n">session_state</span><span class="p">[</span><span class="s2">&quot;messages&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">({</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">query</span><span class="p">})</span>
@@ -485,7 +485,7 @@
 <span class="nd">@click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span><span class="s2">&quot;--yaml_path&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to the YAML file.&quot;</span><span class="p">)</span>
 <span class="nd">@click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span><span class="s2">&quot;--project_dir&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to the project directory.&quot;</span><span class="p">)</span>
 <span class="nd">@click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span><span class="s2">&quot;--trial_path&quot;</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">str</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to the trial directory.&quot;</span><span class="p">)</span>
-<span class="k">def</span> <span class="nf">run_web_server</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_web_server</span><span class="p">(</span>
 	<span class="n">yaml_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">project_dir</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">trial_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 <span class="p">):</span>
 	<span class="n">runner</span> <span class="o">=</span> <span class="n">get_runner</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">,</span> <span class="n">trial_path</span><span class="p">)</span>

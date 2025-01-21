@@ -20,7 +20,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>API endpoint - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../_static/tabs.css?v=4c969af8" />
@@ -415,8 +415,8 @@
 <section id="running-api-server">
 <h2>Running API server<a class="headerlink" href="#running-api-server" title="Link to this heading">¶</a></h2>
 <p>As mentioned in the tutorial, you can run api server as follows:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.deploy</span> <span class="kn">import</span> <span class="n">ApiRunner</span>
-<span class="kn">import</span> <span class="nn">nest_asyncio</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.deploy</span><span class="w"> </span><span class="kn">import</span> <span class="n">ApiRunner</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nest_asyncio</span>
 
 <span class="n">nest_asyncio</span><span class="o">.</span><span class="n">apply</span><span class="p">()</span>
 
@@ -425,8 +425,8 @@
 </pre></div>
 </div>
 <p>or</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.deploy</span> <span class="kn">import</span> <span class="n">ApiRunner</span>
-<span class="kn">import</span> <span class="nn">nest_asyncio</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.deploy</span><span class="w"> </span><span class="kn">import</span> <span class="n">ApiRunner</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nest_asyncio</span>
 
 <span class="n">nest_asyncio</span><span class="o">.</span><span class="n">apply</span><span class="p">()</span>
 
@@ -677,13 +677,13 @@ It will ignore generator and prompt maker, only return retrieved passages.</p>
 </pre></div>
 </div>
 <p>Here’s the Python client code for each endpoint:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">requests</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">decode_multiple_json_from_bytes</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">decode_multiple_json_from_bytes</span>
 
 <span class="c1"># Base URL of the API</span>
 <span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;http://example.com:8000&quot;</span>  <span class="c1"># Replace with the actual base URL of the API</span>
 
-<span class="k">def</span> <span class="nf">run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">result_column</span><span class="o">=</span><span class="s2">&quot;generated_texts&quot;</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">run_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">result_column</span><span class="o">=</span><span class="s2">&quot;generated_texts&quot;</span><span class="p">):</span>
     <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/v1/run&quot;</span>
     <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="n">query</span><span class="p">,</span>
@@ -695,7 +695,7 @@ It will ignore generator and prompt maker, only return retrieved passages.</p>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
 
-<span class="k">def</span> <span class="nf">stream_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">result_column</span><span class="o">=</span><span class="s2">&quot;generated_texts&quot;</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">stream_query</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="n">result_column</span><span class="o">=</span><span class="s2">&quot;generated_texts&quot;</span><span class="p">):</span>
     <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/v1/stream&quot;</span>
     <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;query&quot;</span><span class="p">:</span> <span class="n">query</span><span class="p">,</span>
@@ -720,7 +720,7 @@ It will ignore generator and prompt maker, only return retrieved passages.</p>
           <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Request failed with status code: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
           <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Response content: </span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">text</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-<span class="k">def</span> <span class="nf">get_version</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_version</span><span class="p">():</span>
     <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/version&quot;</span>
     <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>

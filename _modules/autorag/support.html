@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.support - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -401,13 +401,13 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.support</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">importlib</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">importlib</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span>
 
 
 <div class="viewcode-block" id="dynamically_find_function">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.support.dynamically_find_function">[docs]</a>
-<span class="k">def</span> <span class="nf">dynamically_find_function</span><span class="p">(</span><span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">target_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">dynamically_find_function</span><span class="p">(</span><span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">target_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
 	<span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">target_dict</span><span class="p">:</span>
 		<span class="n">module_path</span><span class="p">,</span> <span class="n">func_name</span> <span class="o">=</span> <span class="n">target_dict</span><span class="p">[</span><span class="n">key</span><span class="p">]</span>
 		<span class="n">module</span> <span class="o">=</span> <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">module_path</span><span class="p">)</span>
@@ -420,7 +420,7 @@
 
 <div class="viewcode-block" id="get_support_modules">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.support.get_support_modules">[docs]</a>
-<span class="k">def</span> <span class="nf">get_support_modules</span><span class="p">(</span><span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_support_modules</span><span class="p">(</span><span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
 	<span class="n">support_modules</span> <span class="o">=</span> <span class="p">{</span>
 		<span class="c1"># parse</span>
 		<span class="s2">&quot;langchain_parse&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.data.parse&quot;</span><span class="p">,</span> <span class="s2">&quot;langchain_parse&quot;</span><span class="p">),</span>
@@ -596,7 +596,7 @@
 
 <div class="viewcode-block" id="get_support_nodes">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.support.get_support_nodes">[docs]</a>
-<span class="k">def</span> <span class="nf">get_support_nodes</span><span class="p">(</span><span class="n">node_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_support_nodes</span><span class="p">(</span><span class="n">node_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">:</span>
 	<span class="n">support_nodes</span> <span class="o">=</span> <span class="p">{</span>
 		<span class="s2">&quot;query_expansion&quot;</span><span class="p">:</span> <span class="p">(</span>
 			<span class="s2">&quot;autorag.nodes.queryexpansion.run&quot;</span><span class="p">,</span>

@@ -17,7 +17,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Parse - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -417,7 +417,7 @@ The parsed result is saved according to the data format used by AutoRAG.</p>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
 <p>The sample parse pipeline looks like this.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.parser</span> <span class="kn">import</span> <span class="n">Parser</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">Parser</span>
 
 <span class="n">parser</span> <span class="o">=</span> <span class="n">Parser</span><span class="p">(</span><span class="n">data_path_glob</span><span class="o">=</span><span class="s2">&quot;your/data/path/*&quot;</span><span class="p">)</span>
 <span class="n">parser</span><span class="o">.</span><span class="n">start_parsing</span><span class="p">(</span><span class="s2">&quot;your/path/to/parse_config.yaml&quot;</span><span class="p">)</span>
@@ -428,7 +428,7 @@ The parsed result is saved according to the data format used by AutoRAG.</p>
 <h2>Run Parse Pipeline<a class="headerlink" href="#run-parse-pipeline" title="Link to this heading">¶</a></h2>
 <section id="set-parser-instance">
 <h3>1. Set parser instance<a class="headerlink" href="#set-parser-instance" title="Link to this heading">¶</a></h3>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.parser</span> <span class="kn">import</span> <span class="n">Parser</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">Parser</span>
 
 <span class="n">parser</span> <span class="o">=</span> <span class="n">Parser</span><span class="p">(</span><span class="n">data_path_glob</span><span class="o">=</span><span class="s2">&quot;your/data/path/*&quot;</span><span class="p">)</span>
 </pre></div>

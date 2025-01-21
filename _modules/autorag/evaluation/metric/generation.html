@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.evaluation.metric.generation - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/tabs.css?v=4c969af8" />
@@ -401,33 +401,33 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.evaluation.metric.generation</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">asyncio</span>
-<span class="kn">import</span> <span class="nn">itertools</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
-<span class="kn">import</span> <span class="nn">evaluate</span>
-<span class="kn">import</span> <span class="nn">nltk</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.embeddings</span> <span class="kn">import</span> <span class="n">BaseEmbedding</span>
-<span class="kn">from</span> <span class="nn">llama_index.embeddings.openai</span> <span class="kn">import</span> <span class="n">OpenAIEmbedding</span>
-<span class="kn">from</span> <span class="nn">openai</span> <span class="kn">import</span> <span class="n">AsyncOpenAI</span>
-<span class="kn">from</span> <span class="nn">pydantic</span> <span class="kn">import</span> <span class="n">BaseModel</span>
-<span class="kn">from</span> <span class="nn">rouge_score</span> <span class="kn">import</span> <span class="n">tokenizers</span>
-<span class="kn">from</span> <span class="nn">rouge_score.rouge_scorer</span> <span class="kn">import</span> <span class="n">RougeScorer</span>
-<span class="kn">from</span> <span class="nn">sacrebleu.metrics.bleu</span> <span class="kn">import</span> <span class="n">BLEU</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">evaluate</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">nltk</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.embeddings</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseEmbedding</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.embeddings.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAIEmbedding</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncOpenAI</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">rouge_score</span><span class="w"> </span><span class="kn">import</span> <span class="n">tokenizers</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">rouge_score.rouge_scorer</span><span class="w"> </span><span class="kn">import</span> <span class="n">RougeScorer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sacrebleu.metrics.bleu</span><span class="w"> </span><span class="kn">import</span> <span class="n">BLEU</span>
 
-<span class="kn">from</span> <span class="nn">autorag.embedding.base</span> <span class="kn">import</span> <span class="n">embedding_models</span>
-<span class="kn">from</span> <span class="nn">autorag.evaluation.metric.deepeval_prompt</span> <span class="kn">import</span> <span class="n">FaithfulnessTemplate</span>
-<span class="kn">from</span> <span class="nn">autorag.evaluation.metric.util</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.embedding.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">embedding_models</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation.metric.deepeval_prompt</span><span class="w"> </span><span class="kn">import</span> <span class="n">FaithfulnessTemplate</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation.metric.util</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">autorag_metric_loop</span><span class="p">,</span>
 	<span class="n">calculate_cosine_similarity</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">autorag.nodes.generator</span> <span class="kn">import</span> <span class="n">OpenAILLM</span>
-<span class="kn">from</span> <span class="nn">autorag.nodes.generator.base</span> <span class="kn">import</span> <span class="n">BaseGenerator</span>
-<span class="kn">from</span> <span class="nn">autorag.schema.metricinput</span> <span class="kn">import</span> <span class="n">MetricInput</span>
-<span class="kn">from</span> <span class="nn">autorag.support</span> <span class="kn">import</span> <span class="n">get_support_modules</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAILLM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.generator.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseGenerator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.metricinput</span><span class="w"> </span><span class="kn">import</span> <span class="n">MetricInput</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.support</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_support_modules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">get_event_loop</span><span class="p">,</span>
 	<span class="n">process_batch</span><span class="p">,</span>
 	<span class="n">openai_truncate_by_token</span><span class="p">,</span>
@@ -440,7 +440,7 @@
 <div class="viewcode-block" id="huggingface_evaluate">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.huggingface_evaluate">[docs]</a>
 <span class="nd">@convert_inputs_to_list</span>
-<span class="k">def</span> <span class="nf">huggingface_evaluate</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">huggingface_evaluate</span><span class="p">(</span>
 	<span class="n">instance</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -453,7 +453,7 @@
 <span class="sd">	:return: The list of scores.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">def</span> <span class="nf">compute_score</span><span class="p">(</span><span class="n">gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">compute_score</span><span class="p">(</span><span class="n">gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 		<span class="k">return</span> <span class="nb">max</span><span class="p">(</span>
 			<span class="nb">list</span><span class="p">(</span>
 				<span class="nb">map</span><span class="p">(</span>
@@ -474,7 +474,7 @@
 
 <div class="viewcode-block" id="make_generator_instance">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.make_generator_instance">[docs]</a>
-<span class="k">def</span> <span class="nf">make_generator_instance</span><span class="p">(</span><span class="n">generator_module_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">llm</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_generator_instance</span><span class="p">(</span><span class="n">generator_module_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">llm</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 	<span class="n">llm_class</span> <span class="o">=</span> <span class="n">get_support_modules</span><span class="p">(</span><span class="n">generator_module_type</span><span class="p">)</span>
 	<span class="n">init_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">llm_class</span><span class="o">.</span><span class="fm">__init__</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
 	<span class="k">return</span> <span class="n">llm_class</span><span class="p">(</span><span class="n">project_dir</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="o">=</span><span class="n">llm</span><span class="p">,</span> <span class="o">**</span><span class="n">init_params</span><span class="p">)</span></div>
@@ -484,7 +484,7 @@
 <div class="viewcode-block" id="deepeval_faithfulness">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.deepeval_faithfulness">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;retrieval_gt_contents&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">deepeval_faithfulness</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">deepeval_faithfulness</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">generator_module_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;openai_llm&quot;</span><span class="p">,</span>
 	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>
@@ -514,20 +514,20 @@
 <span class="sd">	:return: The metric scores.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">class</span> <span class="nc">Truth</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+	<span class="k">class</span><span class="w"> </span><span class="nc">Truth</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 		<span class="n">truths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 
-	<span class="k">class</span> <span class="nc">Claim</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+	<span class="k">class</span><span class="w"> </span><span class="nc">Claim</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 		<span class="n">claims</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 
-	<span class="k">class</span> <span class="nc">Verdict</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+	<span class="k">class</span><span class="w"> </span><span class="nc">Verdict</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 		<span class="n">verdict</span><span class="p">:</span> <span class="nb">str</span>
 		<span class="n">reason</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
 
-	<span class="k">class</span> <span class="nc">FaithfulnessVerdicts</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+	<span class="k">class</span><span class="w"> </span><span class="nc">FaithfulnessVerdicts</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 		<span class="n">verdicts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Verdict</span><span class="p">]</span>
 
-	<span class="k">def</span> <span class="nf">calculate_score</span><span class="p">(</span><span class="n">verdicts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Verdict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">calculate_score</span><span class="p">(</span><span class="n">verdicts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Verdict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 		<span class="n">number_of_verdicts</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">verdicts</span><span class="p">)</span>
 		<span class="k">if</span> <span class="n">number_of_verdicts</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
 			<span class="k">return</span> <span class="mi">1</span>
@@ -595,7 +595,7 @@
 <div class="viewcode-block" id="bleu">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.bleu">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">bleu</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bleu</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">tokenize</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 	<span class="n">smooth_method</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;exp&quot;</span><span class="p">,</span>
@@ -642,7 +642,7 @@
 <div class="viewcode-block" id="meteor">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.meteor">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">meteor</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">meteor</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.9</span><span class="p">,</span>
 	<span class="n">beta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
@@ -679,7 +679,7 @@
 <div class="viewcode-block" id="rouge">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.rouge">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">rouge</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">rouge</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">rouge_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;rougeL&quot;</span><span class="p">,</span>
 	<span class="n">use_stemmer</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -714,7 +714,7 @@
 		<span class="n">tokenizer</span><span class="o">=</span><span class="n">tokenizers</span><span class="o">.</span><span class="n">DefaultTokenizer</span><span class="p">(</span><span class="n">use_stemmer</span><span class="p">),</span>
 	<span class="p">)</span>
 
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">compute</span><span class="p">(</span><span class="n">gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="n">gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
 		<span class="k">return</span> <span class="n">rouge_instance</span><span class="o">.</span><span class="n">score_multi</span><span class="p">(</span><span class="n">targets</span><span class="o">=</span><span class="n">gt</span><span class="p">,</span> <span class="n">prediction</span><span class="o">=</span><span class="n">pred</span><span class="p">)[</span>
 			<span class="n">rouge_type</span>
 		<span class="p">]</span><span class="o">.</span><span class="n">fmeasure</span>
@@ -734,7 +734,7 @@
 <div class="viewcode-block" id="sem_score">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.sem_score">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">sem_score</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sem_score</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">embedding_model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">BaseEmbedding</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 	<span class="n">batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span>
@@ -798,7 +798,7 @@
 <div class="viewcode-block" id="g_eval">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.g_eval">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">g_eval</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">g_eval</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">metrics</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 	<span class="n">model</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;gpt-4-0125-preview&quot;</span><span class="p">,</span>
@@ -833,7 +833,7 @@
 
 <div class="viewcode-block" id="async_g_eval">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.async_g_eval">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">async_g_eval</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">async_g_eval</span><span class="p">(</span>
 	<span class="n">generation_gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 	<span class="n">metrics</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -857,7 +857,7 @@
 
 	<span class="n">client</span> <span class="o">=</span> <span class="n">AsyncOpenAI</span><span class="p">()</span>
 
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">g_eval_score</span><span class="p">(</span><span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">gen_gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">g_eval_score</span><span class="p">(</span><span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">gen_gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 		<span class="n">scores</span> <span class="o">=</span> <span class="p">[]</span>
 		<span class="k">for</span> <span class="n">gt</span> <span class="ow">in</span> <span class="n">gen_gt</span><span class="p">:</span>
 			<span class="n">input_prompt</span> <span class="o">=</span> <span class="n">prompt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;{{Document}}&quot;</span><span class="p">,</span> <span class="n">gt</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
@@ -881,7 +881,7 @@
 				<span class="n">scores</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">get_g_eval_score</span><span class="p">(</span><span class="n">response</span><span class="p">))</span>
 		<span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="n">scores</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">get_g_eval_score</span><span class="p">(</span><span class="n">responses</span><span class="p">,</span> <span class="n">max_score</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">get_g_eval_score</span><span class="p">(</span><span class="n">responses</span><span class="p">,</span> <span class="n">max_score</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
 		<span class="n">target_tokens</span> <span class="o">=</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">):</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">max_score</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)}</span>
 		<span class="k">for</span> <span class="n">choice</span> <span class="ow">in</span> <span class="n">responses</span><span class="o">.</span><span class="n">choices</span><span class="p">:</span>
 			<span class="n">first_top_log_probs</span> <span class="o">=</span> <span class="n">choice</span><span class="o">.</span><span class="n">logprobs</span><span class="o">.</span><span class="n">content</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">top_logprobs</span>
@@ -903,7 +903,7 @@
 <div class="viewcode-block" id="bert_score">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.bert_score">[docs]</a>
 <span class="nd">@autorag_metric_loop</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_texts&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">bert_score</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">bert_score</span><span class="p">(</span>
 	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
 	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>
 	<span class="n">batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span>

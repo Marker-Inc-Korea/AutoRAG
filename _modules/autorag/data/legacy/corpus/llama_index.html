@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.legacy.corpus.llama_index - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/tabs.css?v=4c969af8" />
@@ -401,23 +401,23 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.legacy.corpus.llama_index</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.core</span> <span class="kn">import</span> <span class="n">Document</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.schema</span> <span class="kn">import</span> <span class="n">TextNode</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">Document</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">TextNode</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.utils.util</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">add_essential_metadata</span><span class="p">,</span>
 	<span class="n">add_essential_metadata_llama_text_node</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">save_parquet_safe</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_parquet_safe</span>
 
 
 <div class="viewcode-block" id="llama_documents_to_parquet">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.corpus.html#autorag.data.legacy.corpus.llama_index.llama_documents_to_parquet">[docs]</a>
-<span class="k">def</span> <span class="nf">llama_documents_to_parquet</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">llama_documents_to_parquet</span><span class="p">(</span>
 	<span class="n">llama_documents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Document</span><span class="p">],</span>
 	<span class="n">output_filepath</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 	<span class="n">upsert</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
@@ -461,7 +461,7 @@
 
 <div class="viewcode-block" id="llama_text_node_to_parquet">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.corpus.html#autorag.data.legacy.corpus.llama_index.llama_text_node_to_parquet">[docs]</a>
-<span class="k">def</span> <span class="nf">llama_text_node_to_parquet</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">llama_text_node_to_parquet</span><span class="p">(</span>
 	<span class="n">text_nodes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">TextNode</span><span class="p">],</span>
 	<span class="n">output_filepath</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 	<span class="n">upsert</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>

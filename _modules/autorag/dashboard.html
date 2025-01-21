@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.dashboard - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -401,19 +401,19 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.dashboard</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">ast</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">ast</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
 
-<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">import</span> <span class="nn">panel</span> <span class="k">as</span> <span class="nn">pn</span>
-<span class="kn">import</span> <span class="nn">seaborn</span> <span class="k">as</span> <span class="nn">sns</span>
-<span class="kn">import</span> <span class="nn">yaml</span>
-<span class="kn">from</span> <span class="nn">bokeh.models</span> <span class="kn">import</span> <span class="n">NumberFormatter</span><span class="p">,</span> <span class="n">BooleanFormatter</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">panel</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pn</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">seaborn</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">sns</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bokeh.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">NumberFormatter</span><span class="p">,</span> <span class="n">BooleanFormatter</span>
 
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">dict_to_markdown</span><span class="p">,</span> <span class="n">dict_to_markdown_table</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">dict_to_markdown</span><span class="p">,</span> <span class="n">dict_to_markdown_table</span>
 
 <span class="n">pn</span><span class="o">.</span><span class="n">extension</span><span class="p">(</span>
 	<span class="s2">&quot;terminal&quot;</span><span class="p">,</span>
@@ -431,7 +431,7 @@
 
 <div class="viewcode-block" id="find_node_dir">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.dashboard.find_node_dir">[docs]</a>
-<span class="k">def</span> <span class="nf">find_node_dir</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_node_dir</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 	<span class="n">trial_summary_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">,</span> <span class="s2">&quot;summary.csv&quot;</span><span class="p">))</span>
 	<span class="n">result_paths</span> <span class="o">=</span> <span class="p">[]</span>
 	<span class="k">for</span> <span class="n">idx</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">trial_summary_df</span><span class="o">.</span><span class="n">iterrows</span><span class="p">():</span>
@@ -444,7 +444,7 @@
 
 <div class="viewcode-block" id="get_metric_values">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.dashboard.get_metric_values">[docs]</a>
-<span class="k">def</span> <span class="nf">get_metric_values</span><span class="p">(</span><span class="n">node_summary_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_metric_values</span><span class="p">(</span><span class="n">node_summary_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
 	<span class="n">non_metric_column_names</span> <span class="o">=</span> <span class="p">[</span>
 		<span class="s2">&quot;filename&quot;</span><span class="p">,</span>
 		<span class="s2">&quot;module_name&quot;</span><span class="p">,</span>
@@ -463,7 +463,7 @@
 
 <div class="viewcode-block" id="make_trial_summary_md">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.dashboard.make_trial_summary_md">[docs]</a>
-<span class="k">def</span> <span class="nf">make_trial_summary_md</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_trial_summary_md</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">):</span>
 	<span class="n">markdown_text</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;# Trial Result Summary</span>
 <span class="s2">- Trial Directory : </span><span class="si">{</span><span class="n">trial_dir</span><span class="si">}</span>
 
@@ -499,7 +499,7 @@
 
 <div class="viewcode-block" id="node_view">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.dashboard.node_view">[docs]</a>
-<span class="k">def</span> <span class="nf">node_view</span><span class="p">(</span><span class="n">node_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">node_view</span><span class="p">(</span><span class="n">node_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 	<span class="n">non_metric_column_names</span> <span class="o">=</span> <span class="p">[</span>
 		<span class="s2">&quot;filename&quot;</span><span class="p">,</span>
 		<span class="s2">&quot;module_name&quot;</span><span class="p">,</span>
@@ -524,7 +524,7 @@
 		<span class="n">widths</span><span class="o">=</span><span class="mi">150</span><span class="p">,</span>
 	<span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">change_module_widget</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">change_module_widget</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
 		<span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">column</span> <span class="o">==</span> <span class="s2">&quot;detail&quot;</span><span class="p">:</span>
 			<span class="n">filename</span> <span class="o">=</span> <span class="n">summary_df</span><span class="p">[</span><span class="s2">&quot;filename&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">row</span><span class="p">]</span>
 			<span class="n">filepath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">node_dir</span><span class="p">,</span> <span class="n">filename</span><span class="p">)</span>
@@ -579,7 +579,7 @@
 
 <div class="viewcode-block" id="yaml_to_markdown">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.dashboard.yaml_to_markdown">[docs]</a>
-<span class="k">def</span> <span class="nf">yaml_to_markdown</span><span class="p">(</span><span class="n">yaml_filepath</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">yaml_to_markdown</span><span class="p">(</span><span class="n">yaml_filepath</span><span class="p">):</span>
 	<span class="n">markdown_content</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
 	<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">yaml_filepath</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
 		<span class="k">try</span><span class="p">:</span>
@@ -593,7 +593,7 @@
 
 <div class="viewcode-block" id="run">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.dashboard.run">[docs]</a>
-<span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">7690</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">port</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">7690</span><span class="p">):</span>
 	<span class="n">trial_summary_md</span> <span class="o">=</span> <span class="n">make_trial_summary_md</span><span class="p">(</span><span class="n">trial_dir</span><span class="o">=</span><span class="n">trial_dir</span><span class="p">)</span>
 	<span class="n">trial_summary_tab</span> <span class="o">=</span> <span class="n">pn</span><span class="o">.</span><span class="n">pane</span><span class="o">.</span><span class="n">Markdown</span><span class="p">(</span><span class="n">trial_summary_md</span><span class="p">,</span> <span class="n">sizing_mode</span><span class="o">=</span><span class="s2">&quot;stretch_width&quot;</span><span class="p">)</span>
 

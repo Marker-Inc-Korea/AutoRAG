@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.qa.evolve.llama_index_query_evolve - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/tabs.css?v=4c969af8" />
@@ -401,18 +401,18 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.qa.evolve.llama_index_query_evolve</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">itertools</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span>
 
-<span class="kn">from</span> <span class="nn">llama_index.core.base.llms.base</span> <span class="kn">import</span> <span class="n">BaseLLM</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.base.llms.types</span> <span class="kn">import</span> <span class="n">ChatResponse</span><span class="p">,</span> <span class="n">ChatMessage</span><span class="p">,</span> <span class="n">MessageRole</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.base.llms.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseLLM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.base.llms.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatResponse</span><span class="p">,</span> <span class="n">ChatMessage</span><span class="p">,</span> <span class="n">MessageRole</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.evolve.prompt</span> <span class="kn">import</span> <span class="n">QUERY_EVOLVE_PROMPT</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.evolve.prompt</span><span class="w"> </span><span class="kn">import</span> <span class="n">QUERY_EVOLVE_PROMPT</span>
 
 
 <div class="viewcode-block" id="llama_index_generate_base">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.evolve.html#autorag.data.qa.evolve.llama_index_query_evolve.llama_index_generate_base">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">llama_index_generate_base</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">llama_index_generate_base</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">BaseLLM</span><span class="p">,</span>
 	<span class="n">messages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ChatMessage</span><span class="p">],</span>
@@ -433,7 +433,7 @@
 
 <div class="viewcode-block" id="conditional_evolve_ragas">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.evolve.html#autorag.data.qa.evolve.llama_index_query_evolve.conditional_evolve_ragas">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">conditional_evolve_ragas</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">conditional_evolve_ragas</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">BaseLLM</span><span class="p">,</span>
 	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>
@@ -448,7 +448,7 @@
 
 <div class="viewcode-block" id="reasoning_evolve_ragas">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.evolve.html#autorag.data.qa.evolve.llama_index_query_evolve.reasoning_evolve_ragas">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">reasoning_evolve_ragas</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">reasoning_evolve_ragas</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">BaseLLM</span><span class="p">,</span>
 	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>
@@ -463,7 +463,7 @@
 
 <div class="viewcode-block" id="compress_ragas">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.evolve.html#autorag.data.qa.evolve.llama_index_query_evolve.compress_ragas">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">compress_ragas</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">compress_ragas</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">BaseLLM</span><span class="p">,</span>
 	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>

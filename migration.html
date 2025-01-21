@@ -17,7 +17,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Migration Guide - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="_static/tabs.css?v=4c969af8" />
@@ -423,25 +423,25 @@ There are no longer <code class="docutils literal notranslate"><span class="pre"
 <ul class="simple">
 <li><p>v0.2 version</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.corpus</span> <span class="kn">import</span> <span class="n">langchain_documents_to_parquet</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qacreation</span> <span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">langchain_documents_to_parquet</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
 </pre></div>
 </div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.beta.query.llama_gen_query</span> <span class="kn">import</span> <span class="n">factoid_query_gen</span>
-<span class="kn">from</span> <span class="nn">autorag.data.beta.sample</span> <span class="kn">import</span> <span class="n">random_single_hop</span>
-<span class="kn">from</span> <span class="nn">autorag.data.beta.schema</span> <span class="kn">import</span> <span class="n">Raw</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.beta.query.llama_gen_query</span><span class="w"> </span><span class="kn">import</span> <span class="n">factoid_query_gen</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.beta.sample</span><span class="w"> </span><span class="kn">import</span> <span class="n">random_single_hop</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.beta.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">Raw</span>
 </pre></div>
 </div>
 <ul class="simple">
 <li><p>v0.3 version</p></li>
 </ul>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.legacy.corpus</span> <span class="kn">import</span> <span class="n">langchain_documents_to_parquet</span>
-<span class="kn">from</span> <span class="nn">autorag.data.legacy.qacreation</span> <span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.corpus</span><span class="w"> </span><span class="kn">import</span> <span class="n">langchain_documents_to_parquet</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.legacy.qacreation</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_qa_llama_index</span><span class="p">,</span> <span class="n">make_single_content_qa</span>
 </pre></div>
 </div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.qa.query.llama_gen_query</span> <span class="kn">import</span> <span class="n">factoid_query_gen</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.sample</span> <span class="kn">import</span> <span class="n">random_single_hop</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.schema</span> <span class="kn">import</span> <span class="n">Raw</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.query.llama_gen_query</span><span class="w"> </span><span class="kn">import</span> <span class="n">factoid_query_gen</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.sample</span><span class="w"> </span><span class="kn">import</span> <span class="n">random_single_hop</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">Raw</span>
 </pre></div>
 </div>
 </section>

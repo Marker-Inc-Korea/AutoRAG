@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.legacy.qacreation.base - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/tabs.css?v=4c969af8" />
@@ -401,18 +401,18 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.legacy.qacreation.base</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span>
 
-<span class="kn">import</span> <span class="nn">chromadb</span>
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">tqdm</span> <span class="kn">import</span> <span class="n">tqdm</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">chromadb</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">tqdm</span><span class="w"> </span><span class="kn">import</span> <span class="n">tqdm</span>
 
-<span class="kn">import</span> <span class="nn">autorag</span>
-<span class="kn">from</span> <span class="nn">autorag.nodes.retrieval.vectordb</span> <span class="kn">import</span> <span class="n">vectordb_ingest</span><span class="p">,</span> <span class="n">vectordb_pure</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">autorag</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.retrieval.vectordb</span><span class="w"> </span><span class="kn">import</span> <span class="n">vectordb_ingest</span><span class="p">,</span> <span class="n">vectordb_pure</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">save_parquet_safe</span><span class="p">,</span>
 	<span class="n">fetch_contents</span><span class="p">,</span>
 	<span class="n">get_event_loop</span><span class="p">,</span>
@@ -424,7 +424,7 @@
 
 <div class="viewcode-block" id="make_single_content_qa">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.base.make_single_content_qa">[docs]</a>
-<span class="k">def</span> <span class="nf">make_single_content_qa</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_single_content_qa</span><span class="p">(</span>
 	<span class="n">corpus_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
 	<span class="n">content_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
 	<span class="n">qa_creation_func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span>
@@ -467,7 +467,7 @@
 	<span class="n">sampled_corpus</span> <span class="o">=</span> <span class="n">corpus_df</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="n">content_size</span><span class="p">,</span> <span class="n">random_state</span><span class="o">=</span><span class="n">random_state</span><span class="p">)</span>
 	<span class="n">sampled_corpus</span> <span class="o">=</span> <span class="n">sampled_corpus</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">make_query_generation_gt</span><span class="p">(</span><span class="n">row</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">make_query_generation_gt</span><span class="p">(</span><span class="n">row</span><span class="p">):</span>
 		<span class="k">return</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;qa&quot;</span><span class="p">][</span><span class="s2">&quot;query&quot;</span><span class="p">],</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;qa&quot;</span><span class="p">][</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">]</span>
 
 	<span class="n">qa_data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span>
@@ -509,7 +509,7 @@
 
 <div class="viewcode-block" id="make_qa_with_existing_qa">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.base.make_qa_with_existing_qa">[docs]</a>
-<span class="k">def</span> <span class="nf">make_qa_with_existing_qa</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_qa_with_existing_qa</span><span class="p">(</span>
 	<span class="n">corpus_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
 	<span class="n">existing_query_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
 	<span class="n">content_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>

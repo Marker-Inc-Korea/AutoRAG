@@ -17,7 +17,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>QA creation - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -414,15 +414,15 @@
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
 <p>The sample QA creation pipeline looks like this.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.dontknow</span> <span class="kn">import</span> <span class="n">dontknow_filter_rule_based</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.generation_gt.llama_index_gen_gt</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.dontknow</span><span class="w"> </span><span class="kn">import</span> <span class="n">dontknow_filter_rule_based</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.generation_gt.llama_index_gen_gt</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">make_basic_gen_gt</span><span class="p">,</span>
     <span class="n">make_concise_gen_gt</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.query.llama_gen_query</span> <span class="kn">import</span> <span class="n">factoid_query_gen</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.sample</span> <span class="kn">import</span> <span class="n">random_single_hop</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.query.llama_gen_query</span><span class="w"> </span><span class="kn">import</span> <span class="n">factoid_query_gen</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.sample</span><span class="w"> </span><span class="kn">import</span> <span class="n">random_single_hop</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">()</span>
 <span class="n">initial_corpus</span> <span class="o">=</span> <span class="n">initial_raw</span><span class="o">.</span><span class="n">chunk</span><span class="p">(</span>
@@ -460,7 +460,7 @@
 <p>To create question and answer, you have to sample retrieval gt from the corpus data.
 You can get the initial chunk data from the raw data.
 And then sample it using the <code class="docutils literal notranslate"><span class="pre">sample</span></code> function.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data.qa.sample</span> <span class="kn">import</span> <span class="n">random_single_hop</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.sample</span><span class="w"> </span><span class="kn">import</span> <span class="n">random_single_hop</span>
 
 <span class="n">qa</span> <span class="o">=</span> <span class="n">initial_corpus</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">random_single_hop</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="o">.</span><span class="n">map</span><span class="p">(</span>
     <span class="k">lambda</span> <span class="n">df</span><span class="p">:</span> <span class="n">df</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
@@ -499,9 +499,9 @@ To achieve this, you can use the <code class="docutils literal notranslate"><spa
 <h3>3. Generate queries<a class="headerlink" href="#generate-queries" title="Link to this heading">¶</a></h3>
 <p>Now, you use LLM to generate queries.
 In this example, we use the <code class="docutils literal notranslate"><span class="pre">factoid_query_gen</span></code> function to generate factoid questions.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.query.llama_gen_query</span> <span class="kn">import</span> <span class="n">factoid_query_gen</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.query.llama_gen_query</span><span class="w"> </span><span class="kn">import</span> <span class="n">factoid_query_gen</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">()</span>
 <span class="n">qa</span> <span class="o">=</span> <span class="n">qa</span><span class="o">.</span><span class="n">batch_apply</span><span class="p">(</span>
@@ -515,9 +515,9 @@ In this example, we use the <code class="docutils literal notranslate"><span cla
 <section id="generate-answers">
 <h3>4. Generate answers<a class="headerlink" href="#generate-answers" title="Link to this heading">¶</a></h3>
 <p>After generating questions, you have to generate answers (generation gt).</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.generation_gt.llama_index_gen_gt</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.generation_gt.llama_index_gen_gt</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">make_basic_gen_gt</span><span class="p">,</span>
     <span class="n">make_concise_gen_gt</span><span class="p">,</span>
 <span class="p">)</span>
@@ -540,9 +540,9 @@ In this example, we use the <code class="docutils literal notranslate"><span cla
 <p>It is natural that LLM generates some bad questions.
 So, it is better you filter some bad questions with classification models or LLM models.</p>
 <p>To filtering, we use <code class="docutils literal notranslate"><span class="pre">filter</span></code> method.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">llama_index.llms.openai</span> <span class="kn">import</span> <span class="n">OpenAI</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.llms.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.filter.dontknow</span> <span class="kn">import</span> <span class="n">dontknow_filter_rule_based</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.filter.dontknow</span><span class="w"> </span><span class="kn">import</span> <span class="n">dontknow_filter_rule_based</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">()</span>
 <span class="n">qa</span> <span class="o">=</span> <span class="n">qa</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span>

@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.vectordb.milvus - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../_static/tabs.css?v=4c969af8" />
@@ -401,10 +401,10 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.vectordb.milvus</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">from</span> <span class="nn">pymilvus</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pymilvus</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">DataType</span><span class="p">,</span>
 	<span class="n">FieldSchema</span><span class="p">,</span>
 	<span class="n">CollectionSchema</span><span class="p">,</span>
@@ -412,10 +412,10 @@
 	<span class="n">Collection</span><span class="p">,</span>
 	<span class="n">MilvusException</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">pymilvus.orm</span> <span class="kn">import</span> <span class="n">utility</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pymilvus.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">utility</span>
 
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">apply_recursive</span>
-<span class="kn">from</span> <span class="nn">autorag.vectordb</span> <span class="kn">import</span> <span class="n">BaseVectorStore</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">apply_recursive</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.vectordb</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseVectorStore</span>
 
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
@@ -423,10 +423,10 @@
 
 <div class="viewcode-block" id="Milvus">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus">[docs]</a>
-<span class="k">class</span> <span class="nc">Milvus</span><span class="p">(</span><span class="n">BaseVectorStore</span><span class="p">):</span>
-	<span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Milvus</span><span class="p">(</span><span class="n">BaseVectorStore</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
-		<span class="n">embedding_model</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+		<span class="n">embedding_model</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span>
 		<span class="n">collection_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 		<span class="n">embedding_batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
 		<span class="n">similarity_metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;cosine&quot;</span><span class="p">,</span>
@@ -489,7 +489,7 @@
 
 <div class="viewcode-block" id="Milvus.add">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.add">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
 		<span class="n">texts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
 		<span class="n">text_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
 			<span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
@@ -511,7 +511,7 @@
 
 <div class="viewcode-block" id="Milvus.query">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.query">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">query</span><span class="p">(</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
 		<span class="n">queries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">queries</span><span class="p">)</span>
@@ -543,7 +543,7 @@
 
 <div class="viewcode-block" id="Milvus.fetch">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.fetch">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
 		<span class="k">except</span> <span class="n">MilvusException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
@@ -560,7 +560,7 @@
 
 <div class="viewcode-block" id="Milvus.is_exist">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.is_exist">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
 		<span class="k">except</span> <span class="n">MilvusException</span><span class="p">:</span>
@@ -576,14 +576,14 @@
 
 <div class="viewcode-block" id="Milvus.delete">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
 		<span class="c1"># Delete entries by IDs</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">expr</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;id in </span><span class="si">{</span><span class="n">ids</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Milvus.delete_collection">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete_collection">[docs]</a>
-	<span class="k">def</span> <span class="nf">delete_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">delete_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 		<span class="c1"># Delete the collection</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">release</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">drop_index</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>

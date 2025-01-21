@@ -17,7 +17,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Evaluate your RAG - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="_static/tabs.css?v=4c969af8" />
@@ -480,9 +480,9 @@ This structure includes several fields, but for retrieval evaluation, only query
 </section>
 <section id="example-code">
 <h3>Example Code<a class="headerlink" href="#example-code" title="Link to this heading">¶</a></h3>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">autorag.schema.metricinput</span> <span class="kn">import</span> <span class="n">MetricInput</span>
-<span class="kn">from</span> <span class="nn">autorag.evaluation</span> <span class="kn">import</span> <span class="n">evaluate_retrieval</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.metricinput</span><span class="w"> </span><span class="kn">import</span> <span class="n">MetricInput</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate_retrieval</span>
 
 <span class="n">qa_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;qa.parquet&quot;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;pyarrow&quot;</span><span class="p">)</span>
 <span class="n">metric_inputs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">(</span>
@@ -495,7 +495,7 @@ This structure includes several fields, but for retrieval evaluation, only query
     <span class="n">metrics</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;retrieval_f1&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_recall&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_precision&quot;</span><span class="p">,</span>
                    <span class="s2">&quot;retrieval_ndcg&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_map&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_mrr&quot;</span><span class="p">]</span>
 <span class="p">)</span>
-<span class="k">def</span> <span class="nf">custom_retrieval</span><span class="p">(</span><span class="n">queries</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">custom_retrieval</span><span class="p">(</span><span class="n">queries</span><span class="p">):</span>
     <span class="c1"># Your custom retrieval function</span>
     <span class="c1"># You have to return the retrieved_contents, retrieved_ids, retrieve_scores as List</span>
     <span class="k">return</span> <span class="n">retrieved_contents</span><span class="p">,</span> <span class="n">retrieved_ids</span><span class="p">,</span> <span class="n">retrieve_scores</span>
@@ -526,9 +526,9 @@ This structure includes several fields, but for retrieval evaluation, only query
 </pre></div>
 </div>
 <p>Example Code</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">autorag.schema.metricinput</span> <span class="kn">import</span> <span class="n">MetricInput</span>
-<span class="kn">from</span> <span class="nn">autorag.evaluation</span> <span class="kn">import</span> <span class="n">evaluate_generation</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.metricinput</span><span class="w"> </span><span class="kn">import</span> <span class="n">MetricInput</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate_generation</span>
 
 <span class="c1"># Load QA dataset</span>
 <span class="n">qa_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;qa.parquet&quot;</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;pyarrow&quot;</span><span class="p">)</span>
@@ -544,7 +544,7 @@ This structure includes several fields, but for retrieval evaluation, only query
     <span class="n">metric_inputs</span><span class="o">=</span><span class="n">metric_inputs</span><span class="p">,</span>
     <span class="n">metrics</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;bleu&quot;</span><span class="p">,</span> <span class="s2">&quot;meteor&quot;</span><span class="p">,</span> <span class="s2">&quot;rouge&quot;</span><span class="p">]</span>
 <span class="p">)</span>
-<span class="k">def</span> <span class="nf">custom_generation</span><span class="p">(</span><span class="n">queries</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">custom_generation</span><span class="p">(</span><span class="n">queries</span><span class="p">):</span>
     <span class="c1"># Implement your generation logic</span>
     <span class="k">return</span> <span class="n">generated_texts</span><span class="p">,</span> <span class="p">[[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">30</span><span class="p">]]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">generated_texts</span><span class="p">),</span> <span class="p">[[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.3</span><span class="p">]]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">generated_texts</span><span class="p">)</span>
 

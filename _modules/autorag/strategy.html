@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.strategy - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -401,17 +401,17 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.strategy</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">functools</span>
-<span class="kn">import</span> <span class="nn">time</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Callable</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Callable</span>
 
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
 
 <div class="viewcode-block" id="measure_speed">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.measure_speed">[docs]</a>
-<span class="k">def</span> <span class="nf">measure_speed</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">measure_speed</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Method for measuring execution speed of the function.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
@@ -424,7 +424,7 @@
 
 <div class="viewcode-block" id="avoid_empty_result">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.avoid_empty_result">[docs]</a>
-<span class="k">def</span> <span class="nf">avoid_empty_result</span><span class="p">(</span><span class="n">return_index</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">avoid_empty_result</span><span class="p">(</span><span class="n">return_index</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Decorator for avoiding empty results from the function.</span>
 <span class="sd">	When the func returns an empty result, it will return the origin results.</span>
@@ -437,9 +437,9 @@
 <span class="sd">	:return: The origin results or the results from the function.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">def</span> <span class="nf">decorator_avoid_empty_result</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">decorator_avoid_empty_result</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">):</span>
 		<span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
-		<span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
+		<span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">:</span>
 			<span class="n">func_result</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 			<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">func_result</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
 				<span class="c1"># if all the results are empty, return the origin results.</span>
@@ -459,7 +459,7 @@
 <div class="viewcode-block" id="filter_by_threshold">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.filter_by_threshold">[docs]</a>
 <span class="nd">@avoid_empty_result</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">filter_by_threshold</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">threshold</span><span class="p">,</span> <span class="n">metadatas</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">,</span> <span class="n">List</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">filter_by_threshold</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">threshold</span><span class="p">,</span> <span class="n">metadatas</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">,</span> <span class="n">List</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Filter results by value&#39;s threshold.</span>
 
@@ -487,7 +487,7 @@
 
 <div class="viewcode-block" id="validate_strategy_inputs">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.validate_strategy_inputs">[docs]</a>
-<span class="k">def</span> <span class="nf">validate_strategy_inputs</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_strategy_inputs</span><span class="p">(</span>
 	<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span>
 	<span class="n">columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">metadatas</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -509,7 +509,7 @@
 
 <div class="viewcode-block" id="select_best">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.select_best">[docs]</a>
-<span class="k">def</span> <span class="nf">select_best</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_best</span><span class="p">(</span>
 	<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span>
 	<span class="n">columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">metadatas</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -531,7 +531,7 @@
 
 <div class="viewcode-block" id="select_best_average">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.select_best_average">[docs]</a>
-<span class="k">def</span> <span class="nf">select_best_average</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_best_average</span><span class="p">(</span>
 	<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span>
 	<span class="n">columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">metadatas</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -558,7 +558,7 @@
 
 <div class="viewcode-block" id="select_best_rr">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.select_best_rr">[docs]</a>
-<span class="k">def</span> <span class="nf">select_best_rr</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_best_rr</span><span class="p">(</span>
 	<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span>
 	<span class="n">columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">metadatas</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -576,7 +576,7 @@
 
 <div class="viewcode-block" id="select_normalize_mean">
 <a class="viewcode-back" href="../../api_spec/autorag.html#autorag.strategy.select_normalize_mean">[docs]</a>
-<span class="k">def</span> <span class="nf">select_normalize_mean</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_normalize_mean</span><span class="p">(</span>
 	<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span>
 	<span class="n">columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">metadatas</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>

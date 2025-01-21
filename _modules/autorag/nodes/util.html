@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.nodes.util - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../_static/tabs.css?v=4c969af8" />
@@ -401,14 +401,14 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.nodes.util</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span>
 
-<span class="kn">from</span> <span class="nn">autorag.support</span> <span class="kn">import</span> <span class="n">get_support_modules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.support</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_support_modules</span>
 
 
 <div class="viewcode-block" id="make_generator_callable_param">
 <a class="viewcode-back" href="../../../api_spec/autorag.nodes.html#autorag.nodes.util.make_generator_callable_param">[docs]</a>
-<span class="k">def</span> <span class="nf">make_generator_callable_param</span><span class="p">(</span><span class="n">generator_dict</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">]):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_generator_callable_param</span><span class="p">(</span><span class="n">generator_dict</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">]):</span>
 	<span class="k">if</span> <span class="s2">&quot;generator_module_type&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">generator_dict</span><span class="o">.</span><span class="n">keys</span><span class="p">():</span>
 		<span class="n">generator_dict</span> <span class="o">=</span> <span class="p">{</span>
 			<span class="s2">&quot;generator_module_type&quot;</span><span class="p">:</span> <span class="s2">&quot;llama_index_llm&quot;</span><span class="p">,</span>

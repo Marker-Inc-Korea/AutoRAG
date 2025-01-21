@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.evaluation.metric.retrieval_contents - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/tabs.css?v=4c969af8" />
@@ -406,19 +406,19 @@
 <span class="sd">which means calculate the metric based on the contents of the retrieved items.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
-<span class="kn">import</span> <span class="nn">itertools</span>
-<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">Counter</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span>
 
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
-<span class="kn">from</span> <span class="nn">autorag.evaluation.metric.util</span> <span class="kn">import</span> <span class="n">autorag_metric</span>
-<span class="kn">from</span> <span class="nn">autorag.schema.metricinput</span> <span class="kn">import</span> <span class="n">MetricInput</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">normalize_string</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation.metric.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">autorag_metric</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.metricinput</span><span class="w"> </span><span class="kn">import</span> <span class="n">MetricInput</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">normalize_string</span>
 
 
 <div class="viewcode-block" id="single_token_f1">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.single_token_f1">[docs]</a>
-<span class="k">def</span> <span class="nf">single_token_f1</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prediction</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">single_token_f1</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">prediction</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 	<span class="n">prediction_tokens</span> <span class="o">=</span> <span class="n">normalize_string</span><span class="p">(</span><span class="n">prediction</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
 	<span class="n">ground_truth_tokens</span> <span class="o">=</span> <span class="n">normalize_string</span><span class="p">(</span><span class="n">ground_truth</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
 	<span class="n">common</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">(</span><span class="n">prediction_tokens</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">Counter</span><span class="p">(</span><span class="n">ground_truth_tokens</span><span class="p">)</span>
@@ -435,7 +435,7 @@
 <div class="viewcode-block" id="retrieval_token_f1">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.retrieval_token_f1">[docs]</a>
 <span class="nd">@autorag_metric</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_gt_contents&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">retrieval_token_f1</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">retrieval_token_f1</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">):</span>
 	<span class="n">pred</span> <span class="o">=</span> <span class="n">metric_input</span><span class="o">.</span><span class="n">retrieved_contents</span>
 	<span class="n">gt</span> <span class="o">=</span> <span class="n">itertools</span><span class="o">.</span><span class="n">chain</span><span class="o">.</span><span class="n">from_iterable</span><span class="p">(</span><span class="n">metric_input</span><span class="o">.</span><span class="n">retrieval_gt_contents</span><span class="p">)</span>
 
@@ -451,7 +451,7 @@
 <div class="viewcode-block" id="retrieval_token_precision">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.retrieval_token_precision">[docs]</a>
 <span class="nd">@autorag_metric</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_gt_contents&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">retrieval_token_precision</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">retrieval_token_precision</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">):</span>
 	<span class="n">pred</span> <span class="o">=</span> <span class="n">metric_input</span><span class="o">.</span><span class="n">retrieved_contents</span>
 	<span class="n">gt</span> <span class="o">=</span> <span class="n">itertools</span><span class="o">.</span><span class="n">chain</span><span class="o">.</span><span class="n">from_iterable</span><span class="p">(</span><span class="n">metric_input</span><span class="o">.</span><span class="n">retrieval_gt_contents</span><span class="p">)</span>
 
@@ -467,7 +467,7 @@
 <div class="viewcode-block" id="retrieval_token_recall">
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.retrieval_token_recall">[docs]</a>
 <span class="nd">@autorag_metric</span><span class="p">(</span><span class="n">fields_to_check</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_gt_contents&quot;</span><span class="p">])</span>
-<span class="k">def</span> <span class="nf">retrieval_token_recall</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">retrieval_token_recall</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">):</span>
 	<span class="n">pred</span> <span class="o">=</span> <span class="n">metric_input</span><span class="o">.</span><span class="n">retrieved_contents</span>
 	<span class="n">gt</span> <span class="o">=</span> <span class="n">itertools</span><span class="o">.</span><span class="n">chain</span><span class="o">.</span><span class="n">from_iterable</span><span class="p">(</span><span class="n">metric_input</span><span class="o">.</span><span class="n">retrieval_gt_contents</span><span class="p">)</span>
 

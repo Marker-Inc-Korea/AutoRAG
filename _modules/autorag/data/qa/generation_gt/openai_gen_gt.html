@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.qa.generation_gt.openai_gen_gt - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/tabs.css?v=4c969af8" />
@@ -401,26 +401,26 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.qa.generation_gt.openai_gen_gt</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">itertools</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span>
 
-<span class="kn">from</span> <span class="nn">openai</span> <span class="kn">import</span> <span class="n">AsyncClient</span>
-<span class="kn">from</span> <span class="nn">pydantic</span> <span class="kn">import</span> <span class="n">BaseModel</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncClient</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data.qa.generation_gt.base</span> <span class="kn">import</span> <span class="n">add_gen_gt</span>
-<span class="kn">from</span> <span class="nn">autorag.data.qa.generation_gt.prompt</span> <span class="kn">import</span> <span class="n">GEN_GT_SYSTEM_PROMPT</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.generation_gt.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">add_gen_gt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.qa.generation_gt.prompt</span><span class="w"> </span><span class="kn">import</span> <span class="n">GEN_GT_SYSTEM_PROMPT</span>
 
 
 <div class="viewcode-block" id="Response">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.generation_gt.html#autorag.data.qa.generation_gt.openai_gen_gt.Response">[docs]</a>
-<span class="k">class</span> <span class="nc">Response</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Response</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 	<span class="n">answer</span><span class="p">:</span> <span class="nb">str</span></div>
 
 
 
 <div class="viewcode-block" id="make_gen_gt_openai">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.generation_gt.html#autorag.data.qa.generation_gt.openai_gen_gt.make_gen_gt_openai">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">make_gen_gt_openai</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">make_gen_gt_openai</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">client</span><span class="p">:</span> <span class="n">AsyncClient</span><span class="p">,</span>
 	<span class="n">system_prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -449,7 +449,7 @@
 
 <div class="viewcode-block" id="make_concise_gen_gt">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.generation_gt.html#autorag.data.qa.generation_gt.openai_gen_gt.make_concise_gen_gt">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">make_concise_gen_gt</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">make_concise_gen_gt</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">client</span><span class="p">:</span> <span class="n">AsyncClient</span><span class="p">,</span>
 	<span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;gpt-4o-2024-08-06&quot;</span><span class="p">,</span>
@@ -475,7 +475,7 @@
 
 <div class="viewcode-block" id="make_basic_gen_gt">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.generation_gt.html#autorag.data.qa.generation_gt.openai_gen_gt.make_basic_gen_gt">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">make_basic_gen_gt</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">make_basic_gen_gt</span><span class="p">(</span>
 	<span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
 	<span class="n">client</span><span class="p">:</span> <span class="n">AsyncClient</span><span class="p">,</span>
 	<span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;gpt-4o-2024-08-06&quot;</span><span class="p">,</span>

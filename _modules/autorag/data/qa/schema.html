@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.qa.schema - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/tabs.css?v=4c969af8" />
@@ -401,32 +401,32 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.qa.schema</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Awaitable</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">List</span>
-<span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">process_batch</span><span class="p">,</span> <span class="n">get_event_loop</span><span class="p">,</span> <span class="n">fetch_contents</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Awaitable</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_batch</span><span class="p">,</span> <span class="n">get_event_loop</span><span class="p">,</span> <span class="n">fetch_contents</span>
 
-<span class="kn">from</span> <span class="nn">autorag.support</span> <span class="kn">import</span> <span class="n">get_support_modules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.support</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_support_modules</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="Raw">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw">[docs]</a>
-<span class="k">class</span> <span class="nc">Raw</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Raw</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	The Raw class that stored document parsing results.</span>
 <span class="sd">	It can do chunking.</span>
 <span class="sd">	It has two column names, &#39;raw_id&#39; and &#39;contents&#39;.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw_df</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw_df</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">raw_df</span>
 
 <div class="viewcode-block" id="Raw.batch_apply">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw.batch_apply">[docs]</a>
-	<span class="k">def</span> <span class="nf">batch_apply</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">batch_apply</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Awaitable</span><span class="p">[</span><span class="n">Dict</span><span class="p">]],</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Raw&quot;</span><span class="p">:</span>
 		<span class="n">raw_dicts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">&quot;records&quot;</span><span class="p">)</span>
@@ -438,25 +438,25 @@
 
 <div class="viewcode-block" id="Raw.map">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw.map">[docs]</a>
-	<span class="k">def</span> <span class="nf">map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Raw&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Raw&quot;</span><span class="p">:</span>
 		<span class="k">return</span> <span class="n">Raw</span><span class="p">(</span><span class="n">fn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="Raw.flatmap">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw.flatmap">[docs]</a>
-	<span class="k">def</span> <span class="nf">flatmap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Raw&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">flatmap</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Raw&quot;</span><span class="p">:</span>
 		<span class="k">return</span> <span class="n">fn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="Raw.chunk">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw.chunk">[docs]</a>
-	<span class="k">def</span> <span class="nf">chunk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">module_params</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Corpus&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">chunk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">module_params</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Corpus&quot;</span><span class="p">:</span>
 		<span class="n">chunk_module</span> <span class="o">=</span> <span class="n">get_support_modules</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
 		<span class="n">chunked_result</span> <span class="o">=</span> <span class="n">chunk_module</span><span class="p">(</span><span class="n">parsed_result</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">module_params</span><span class="p">)</span>
 		<span class="k">return</span> <span class="n">Corpus</span><span class="p">(</span><span class="n">chunked_result</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span></div>
 
 
-	<span class="k">def</span> <span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
 		<span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Raw</span><span class="p">),</span> <span class="s2">&quot;You can only add Raw instances.&quot;</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">data</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span>
 			<span class="n">drop</span><span class="o">=</span><span class="kc">True</span>
@@ -467,13 +467,13 @@
 
 <div class="viewcode-block" id="Corpus">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Corpus">[docs]</a>
-<span class="k">class</span> <span class="nc">Corpus</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Corpus</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	The Corpus class that stored chunked passages.</span>
 <span class="sd">	It can generate qa set, linked with Raw instance.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
 		<span class="n">corpus_df</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 		<span class="n">linked_raw</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Raw</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -482,16 +482,16 @@
 		<span class="bp">self</span><span class="o">.</span><span class="n">_linked_raw</span> <span class="o">=</span> <span class="n">linked_raw</span>
 
 	<span class="nd">@property</span>
-	<span class="k">def</span> <span class="nf">linked_raw</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Raw</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">linked_raw</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Raw</span><span class="p">:</span>
 		<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_linked_raw</span>
 
 	<span class="nd">@linked_raw</span><span class="o">.</span><span class="n">setter</span>
-	<span class="k">def</span> <span class="nf">linked_raw</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="n">Raw</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">linked_raw</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">:</span> <span class="n">Raw</span><span class="p">):</span>
 		<span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;linked_raw is read-only.&quot;</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Corpus.to_parquet">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Corpus.to_parquet">[docs]</a>
-	<span class="k">def</span> <span class="nf">to_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">to_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Save the corpus to the AutoRAG compatible parquet file.</span>
 <span class="sd">		It is not for the data creation, for running AutoRAG.</span>
@@ -508,7 +508,7 @@
 
 <div class="viewcode-block" id="Corpus.batch_apply">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Corpus.batch_apply">[docs]</a>
-	<span class="k">def</span> <span class="nf">batch_apply</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">batch_apply</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Awaitable</span><span class="p">[</span><span class="n">Dict</span><span class="p">]],</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Corpus&quot;</span><span class="p">:</span>
 		<span class="n">corpus_dicts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">&quot;records&quot;</span><span class="p">)</span>
@@ -520,7 +520,7 @@
 
 <div class="viewcode-block" id="Corpus.map">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Corpus.map">[docs]</a>
-	<span class="k">def</span> <span class="nf">map</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">map</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Corpus&quot;</span><span class="p">:</span>
 		<span class="k">return</span> <span class="n">Corpus</span><span class="p">(</span><span class="n">fn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">linked_raw</span><span class="p">)</span></div>
@@ -528,7 +528,7 @@
 
 <div class="viewcode-block" id="Corpus.sample">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.Corpus.sample">[docs]</a>
-	<span class="k">def</span> <span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Sample the corpus for making QA.</span>
 <span class="sd">		It selects the subset of the corpus and makes QA set from it.</span>
@@ -549,8 +549,8 @@
 
 <div class="viewcode-block" id="QA">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA">[docs]</a>
-<span class="k">class</span> <span class="nc">QA</span><span class="p">:</span>
-	<span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">QA</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
 		<span class="n">qa_df</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 		<span class="n">linked_corpus</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Corpus</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -559,16 +559,16 @@
 		<span class="bp">self</span><span class="o">.</span><span class="n">_linked_corpus</span> <span class="o">=</span> <span class="n">linked_corpus</span>
 
 	<span class="nd">@property</span>
-	<span class="k">def</span> <span class="nf">linked_corpus</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Corpus</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">linked_corpus</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Corpus</span><span class="p">:</span>
 		<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_linked_corpus</span>
 
 	<span class="nd">@linked_corpus</span><span class="o">.</span><span class="n">setter</span>
-	<span class="k">def</span> <span class="nf">linked_corpus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">corpus</span><span class="p">:</span> <span class="n">Corpus</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">linked_corpus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">corpus</span><span class="p">:</span> <span class="n">Corpus</span><span class="p">):</span>
 		<span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;linked_corpus is read-only.&quot;</span><span class="p">)</span>
 
 <div class="viewcode-block" id="QA.batch_apply">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.batch_apply">[docs]</a>
-	<span class="k">def</span> <span class="nf">batch_apply</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">batch_apply</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Awaitable</span><span class="p">[</span><span class="n">Dict</span><span class="p">]],</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 		<span class="n">qa_dicts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">&quot;records&quot;</span><span class="p">)</span>
@@ -585,7 +585,7 @@
 
 <div class="viewcode-block" id="QA.batch_filter">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.batch_filter">[docs]</a>
-	<span class="k">def</span> <span class="nf">batch_filter</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">batch_filter</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Awaitable</span><span class="p">[</span><span class="nb">bool</span><span class="p">]],</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 		<span class="n">qa_dicts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">&quot;records&quot;</span><span class="p">)</span>
@@ -597,7 +597,7 @@
 
 <div class="viewcode-block" id="QA.filter">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.filter">[docs]</a>
-	<span class="k">def</span> <span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="nb">bool</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="nb">bool</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 		<span class="n">qa_dicts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">to_dict</span><span class="p">(</span><span class="n">orient</span><span class="o">=</span><span class="s2">&quot;records&quot;</span><span class="p">)</span>
 		<span class="n">masks</span> <span class="o">=</span> <span class="p">[</span><span class="n">fn</span><span class="p">(</span><span class="n">qa_dict</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="k">for</span> <span class="n">qa_dict</span> <span class="ow">in</span> <span class="n">qa_dicts</span><span class="p">]</span>
 		<span class="k">return</span> <span class="n">QA</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">masks</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">linked_corpus</span><span class="p">)</span></div>
@@ -605,13 +605,13 @@
 
 <div class="viewcode-block" id="QA.map">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.map">[docs]</a>
-	<span class="k">def</span> <span class="nf">map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">map</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fn</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 		<span class="k">return</span> <span class="n">QA</span><span class="p">(</span><span class="n">fn</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">linked_corpus</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="QA.make_retrieval_gt_contents">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.make_retrieval_gt_contents">[docs]</a>
-	<span class="k">def</span> <span class="nf">make_retrieval_gt_contents</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">make_retrieval_gt_contents</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Make retrieval_gt_contents column from retrieval_gt column.</span>
 <span class="sd">		:return: The QA instance that has a retrieval_gt_contents column.</span>
@@ -624,7 +624,7 @@
 
 <div class="viewcode-block" id="QA.to_parquet">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.to_parquet">[docs]</a>
-	<span class="k">def</span> <span class="nf">to_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qa_save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">corpus_save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">to_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">qa_save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">corpus_save_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Save the qa and corpus to the AutoRAG compatible parquet file.</span>
 <span class="sd">		It is not for the data creation, for running AutoRAG.</span>
@@ -647,7 +647,7 @@
 
 <div class="viewcode-block" id="QA.update_corpus">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.update_corpus">[docs]</a>
-	<span class="k">def</span> <span class="nf">update_corpus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_corpus</span><span class="p">:</span> <span class="n">Corpus</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">update_corpus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_corpus</span><span class="p">:</span> <span class="n">Corpus</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Update linked corpus.</span>
 <span class="sd">		Not just replace linked_corpus to the new Corpus,</span>
@@ -708,7 +708,7 @@
 
 
 	<span class="nd">@staticmethod</span>
-	<span class="k">def</span> <span class="nf">__match_index</span><span class="p">(</span><span class="n">target_idx</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">dst_idx</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">__match_index</span><span class="p">(</span><span class="n">target_idx</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">dst_idx</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Check if the target_idx is overlap by the dst_idx.</span>
 <span class="sd">		&quot;&quot;&quot;</span>
@@ -719,7 +719,7 @@
 		<span class="p">)</span>
 
 	<span class="nd">@staticmethod</span>
-	<span class="k">def</span> <span class="nf">__match_index_row</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">__match_index_row</span><span class="p">(</span>
 		<span class="n">evidence_indices</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]],</span>
 		<span class="n">evidence_paths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
 		<span class="n">evidence_pages</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span>
@@ -756,14 +756,14 @@
 		<span class="k">return</span> <span class="n">result</span>
 
 	<span class="nd">@staticmethod</span>
-	<span class="k">def</span> <span class="nf">__make_path_corpus_dict</span><span class="p">(</span><span class="n">corpus_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">__make_path_corpus_dict</span><span class="p">(</span><span class="n">corpus_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
 		<span class="k">return</span> <span class="p">{</span>
 			<span class="n">path</span><span class="p">:</span> <span class="n">corpus_df</span><span class="p">[</span><span class="n">corpus_df</span><span class="p">[</span><span class="s2">&quot;path&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">path</span><span class="p">]</span>
 			<span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">corpus_df</span><span class="p">[</span><span class="s2">&quot;path&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">()</span>
 		<span class="p">}</span>
 
 	<span class="c1"># Experimental feature</span>
-	<span class="k">def</span> <span class="nf">_process_multiple_queries_gen</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">_process_multiple_queries_gen</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="s2">&quot;QA&quot;</span><span class="p">:</span>
 		<span class="n">data</span> <span class="o">=</span> <span class="p">[]</span>
 		<span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
 			<span class="n">queries</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>

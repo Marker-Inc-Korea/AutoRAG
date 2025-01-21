@@ -17,7 +17,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>Chunk - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
@@ -416,7 +416,7 @@ The chunked result is saved according to the data format used by AutoRAG.</p>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
 <p>The sample chunk pipeline looks like this.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.chunker</span> <span class="kn">import</span> <span class="n">Chunker</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.chunker</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chunker</span>
 
 <span class="n">chunker</span> <span class="o">=</span> <span class="n">Chunker</span><span class="o">.</span><span class="n">from_parquet</span><span class="p">(</span><span class="n">parsed_data_path</span><span class="o">=</span><span class="s2">&quot;your/parsed/data/path&quot;</span><span class="p">)</span>
 <span class="n">chunker</span><span class="o">.</span><span class="n">start_chunking</span><span class="p">(</span><span class="s2">&quot;your/path/to/chunk_config.yaml&quot;</span><span class="p">)</span>
@@ -475,14 +475,14 @@ Default form of English is <code class="docutils literal notranslate"><span clas
 <section id="using-sentence-splitter-that-is-not-in-the-available-sentence-splitter">
 <h4>Using sentence splitter that is not in the Available Sentence Splitter<a class="headerlink" href="#using-sentence-splitter-that-is-not-in-the-available-sentence-splitter" title="Link to this heading">¶</a></h4>
 <p>If you want to use <code class="docutils literal notranslate"><span class="pre">kiwi</span></code>, you can use the following code.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.data</span> <span class="kn">import</span> <span class="n">sentence_splitter_modules</span><span class="p">,</span> <span class="n">LazyInit</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">sentence_splitter_modules</span><span class="p">,</span> <span class="n">LazyInit</span>
 
-<span class="k">def</span> <span class="nf">split_by_sentence_kiwi</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
-	<span class="kn">from</span> <span class="nn">kiwipiepy</span> <span class="kn">import</span> <span class="n">Kiwi</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">split_by_sentence_kiwi</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+	<span class="kn">from</span><span class="w"> </span><span class="nn">kiwipiepy</span><span class="w"> </span><span class="kn">import</span> <span class="n">Kiwi</span>
 
 	<span class="n">kiwi</span> <span class="o">=</span> <span class="n">Kiwi</span><span class="p">()</span>
 
-	<span class="k">def</span> <span class="nf">split</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 		<span class="n">kiwi_result</span> <span class="o">=</span> <span class="n">kiwi</span><span class="o">.</span><span class="n">split_into_sents</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
 		<span class="n">sentences</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">kiwi_result</span><span class="p">))</span>
 
@@ -500,7 +500,7 @@ Default form of English is <code class="docutils literal notranslate"><span clas
 <h2>Run Chunk Pipeline<a class="headerlink" href="#run-chunk-pipeline" title="Link to this heading">¶</a></h2>
 <section id="set-chunker-instance">
 <h3>1. Set chunker instance<a class="headerlink" href="#set-chunker-instance" title="Link to this heading">¶</a></h3>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">autorag.chunker</span> <span class="kn">import</span> <span class="n">Chunker</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">autorag.chunker</span><span class="w"> </span><span class="kn">import</span> <span class="n">Chunker</span>
 
 <span class="n">chunker</span> <span class="o">=</span> <span class="n">Chunker</span><span class="o">.</span><span class="n">from_parquet</span><span class="p">(</span><span class="n">parsed_data_path</span><span class="o">=</span><span class="s2">&quot;your/parsed/data/path&quot;</span><span class="p">)</span>
 </pre></div>

@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.nodes.promptmaker.long_context_reorder - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/tabs.css?v=4c969af8" />
@@ -401,25 +401,25 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.nodes.promptmaker.long_context_reorder</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
-<span class="kn">from</span> <span class="nn">autorag.nodes.promptmaker.base</span> <span class="kn">import</span> <span class="n">BasePromptMaker</span>
-<span class="kn">from</span> <span class="nn">autorag.utils</span> <span class="kn">import</span> <span class="n">result_to_dataframe</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.promptmaker.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BasePromptMaker</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">result_to_dataframe</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="LongContextReorder">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.long_context_reorder.LongContextReorder">[docs]</a>
-<span class="k">class</span> <span class="nc">LongContextReorder</span><span class="p">(</span><span class="n">BasePromptMaker</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LongContextReorder</span><span class="p">(</span><span class="n">BasePromptMaker</span><span class="p">):</span>
 <div class="viewcode-block" id="LongContextReorder.pure">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.long_context_reorder.LongContextReorder.pure">[docs]</a>
 	<span class="nd">@result_to_dataframe</span><span class="p">([</span><span class="s2">&quot;prompts&quot;</span><span class="p">])</span>
-	<span class="k">def</span> <span class="nf">pure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">previous_result</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">pure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">previous_result</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 		<span class="n">query</span><span class="p">,</span> <span class="n">retrieved_contents</span><span class="p">,</span> <span class="n">prompt</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cast_to_run</span><span class="p">(</span>
 			<span class="n">previous_result</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 		<span class="p">)</span>
@@ -430,7 +430,7 @@
 		<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pure</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">retrieved_contents</span><span class="p">,</span> <span class="n">retrieve_scores</span><span class="p">)</span></div>
 
 
-	<span class="k">def</span> <span class="nf">_pure</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">_pure</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
 		<span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 		<span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
@@ -461,7 +461,7 @@
 <span class="sd">		:return: Prompts that are made by long context reorder.</span>
 <span class="sd">		&quot;&quot;&quot;</span>
 
-		<span class="k">def</span> <span class="nf">long_context_reorder_row</span><span class="p">(</span>
+		<span class="k">def</span><span class="w"> </span><span class="nf">long_context_reorder_row</span><span class="p">(</span>
 			<span class="n">_prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 			<span class="n">_query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 			<span class="n">_retrieved_contents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>

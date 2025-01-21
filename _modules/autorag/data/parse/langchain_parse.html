@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.parse.langchain_parse - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../_static/tabs.css?v=4c969af8" />
@@ -401,18 +401,18 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.parse.langchain_parse</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
-<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">chain</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mp</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">itertools</span><span class="w"> </span><span class="kn">import</span> <span class="n">chain</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
 
-<span class="kn">from</span> <span class="nn">autorag.data</span> <span class="kn">import</span> <span class="n">parse_modules</span>
-<span class="kn">from</span> <span class="nn">autorag.data.parse.base</span> <span class="kn">import</span> <span class="n">parser_node</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">parse_modules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.parse.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">parser_node</span>
 
 
 <div class="viewcode-block" id="langchain_parse">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.parse.html#autorag.data.parse.langchain_parse.langchain_parse">[docs]</a>
 <span class="nd">@parser_node</span>
-<span class="k">def</span> <span class="nf">langchain_parse</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">langchain_parse</span><span class="p">(</span>
 	<span class="n">data_path_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">parse_method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -445,7 +445,7 @@
 
 <div class="viewcode-block" id="langchain_parse_pure">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.parse.html#autorag.data.parse.langchain_parse.langchain_parse_pure">[docs]</a>
-<span class="k">def</span> <span class="nf">langchain_parse_pure</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">langchain_parse_pure</span><span class="p">(</span>
 	<span class="n">data_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">parse_method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">kwargs</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -481,7 +481,7 @@
 
 <div class="viewcode-block" id="parse_all_files">
 <a class="viewcode-back" href="../../../../api_spec/autorag.data.parse.html#autorag.data.parse.langchain_parse.parse_all_files">[docs]</a>
-<span class="k">def</span> <span class="nf">parse_all_files</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_all_files</span><span class="p">(</span>
 	<span class="n">data_path_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">parse_method</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
 	<span class="k">if</span> <span class="n">parse_method</span> <span class="o">==</span> <span class="s2">&quot;unstructured&quot;</span><span class="p">:</span>

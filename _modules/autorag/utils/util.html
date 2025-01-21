@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.utils.util - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../_static/tabs.css?v=4c969af8" />
@@ -401,43 +401,43 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.utils.util</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">ast</span>
-<span class="kn">import</span> <span class="nn">asyncio</span>
-<span class="kn">import</span> <span class="nn">datetime</span>
-<span class="kn">import</span> <span class="nn">functools</span>
-<span class="kn">import</span> <span class="nn">glob</span>
-<span class="kn">import</span> <span class="nn">inspect</span>
-<span class="kn">import</span> <span class="nn">itertools</span>
-<span class="kn">import</span> <span class="nn">json</span>
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">re</span>
-<span class="kn">import</span> <span class="nn">string</span>
-<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">deepcopy</span>
-<span class="kn">from</span> <span class="nn">json</span> <span class="kn">import</span> <span class="n">JSONDecoder</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Collection</span><span class="p">,</span> <span class="n">Iterable</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">ast</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">datetime</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">glob</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">inspect</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">itertools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">string</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">copy</span><span class="w"> </span><span class="kn">import</span> <span class="n">deepcopy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">json</span><span class="w"> </span><span class="kn">import</span> <span class="n">JSONDecoder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Collection</span><span class="p">,</span> <span class="n">Iterable</span>
 
-<span class="kn">from</span> <span class="nn">asyncio</span> <span class="kn">import</span> <span class="n">AbstractEventLoop</span>
-<span class="kn">import</span> <span class="nn">emoji</span>
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">import</span> <span class="nn">tiktoken</span>
-<span class="kn">import</span> <span class="nn">unicodedata</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">asyncio</span><span class="w"> </span><span class="kn">import</span> <span class="n">AbstractEventLoop</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">emoji</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tiktoken</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">unicodedata</span>
 
-<span class="kn">import</span> <span class="nn">yaml</span>
-<span class="kn">from</span> <span class="nn">llama_index.embeddings.openai</span> <span class="kn">import</span> <span class="n">OpenAIEmbedding</span>
-<span class="kn">from</span> <span class="nn">pydantic</span> <span class="kn">import</span> <span class="n">BaseModel</span> <span class="k">as</span> <span class="n">BM</span>
-<span class="kn">from</span> <span class="nn">pydantic.v1</span> <span class="kn">import</span> <span class="n">BaseModel</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.embeddings.openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAIEmbedding</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span> <span class="k">as</span> <span class="n">BM</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pydantic.v1</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="fetch_contents">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.fetch_contents">[docs]</a>
-<span class="k">def</span> <span class="nf">fetch_contents</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_contents</span><span class="p">(</span>
 	<span class="n">corpus_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">column_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;contents&quot;</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
-	<span class="k">def</span> <span class="nf">fetch_contents_pure</span><span class="p">(</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">fetch_contents_pure</span><span class="p">(</span>
 		<span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">corpus_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">column_name</span><span class="p">:</span> <span class="nb">str</span>
 	<span class="p">):</span>
 		<span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">fetch_one_content</span><span class="p">(</span><span class="n">corpus_data</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">column_name</span><span class="p">),</span> <span class="n">ids</span><span class="p">))</span>
@@ -451,7 +451,7 @@
 
 <div class="viewcode-block" id="fetch_one_content">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.fetch_one_content">[docs]</a>
-<span class="k">def</span> <span class="nf">fetch_one_content</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_one_content</span><span class="p">(</span>
 	<span class="n">corpus_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
 	<span class="n">id_</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 	<span class="n">column_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;contents&quot;</span><span class="p">,</span>
@@ -472,14 +472,14 @@
 
 <div class="viewcode-block" id="result_to_dataframe">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.result_to_dataframe">[docs]</a>
-<span class="k">def</span> <span class="nf">result_to_dataframe</span><span class="p">(</span><span class="n">column_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">result_to_dataframe</span><span class="p">(</span><span class="n">column_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Decorator for converting results to pd.DataFrame.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">def</span> <span class="nf">decorator_result_to_dataframe</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">decorator_result_to_dataframe</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">):</span>
 		<span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
-		<span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+		<span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 			<span class="n">results</span> <span class="o">=</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 			<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">column_names</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
 				<span class="n">df_input</span> <span class="o">=</span> <span class="p">{</span><span class="n">column_names</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span> <span class="n">results</span><span class="p">}</span>
@@ -499,7 +499,7 @@
 
 <div class="viewcode-block" id="load_summary_file">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.load_summary_file">[docs]</a>
-<span class="k">def</span> <span class="nf">load_summary_file</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_summary_file</span><span class="p">(</span>
 	<span class="n">summary_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dict_columns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -520,7 +520,7 @@
 	<span class="k">if</span> <span class="nb">any</span><span class="p">([</span><span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">summary_df</span><span class="o">.</span><span class="n">columns</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">dict_columns</span><span class="p">]):</span>
 		<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">dict_columns</span><span class="si">}</span><span class="s2"> must be in summary_df.columns.&quot;</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">convert_dict</span><span class="p">(</span><span class="n">elem</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">convert_dict</span><span class="p">(</span><span class="n">elem</span><span class="p">):</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="k">return</span> <span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">elem</span><span class="p">)</span>
 		<span class="k">except</span><span class="p">:</span>
@@ -539,7 +539,7 @@
 
 <div class="viewcode-block" id="convert_datetime_string">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.convert_datetime_string">[docs]</a>
-<span class="k">def</span> <span class="nf">convert_datetime_string</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_datetime_string</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
 	<span class="c1"># Regex to extract datetime arguments from the string</span>
 	<span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(datetime|date)(\((\d+)(,\s*\d+)*\))&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span>
 	<span class="k">if</span> <span class="n">m</span><span class="p">:</span>
@@ -554,7 +554,7 @@
 
 <div class="viewcode-block" id="make_combinations">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.make_combinations">[docs]</a>
-<span class="k">def</span> <span class="nf">make_combinations</span><span class="p">(</span><span class="n">target_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_combinations</span><span class="p">(</span><span class="n">target_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Make combinations from target_dict.</span>
 <span class="sd">	The target_dict key value must be a string,</span>
@@ -573,8 +573,9 @@
 		<span class="p">)</span>
 	<span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">delete_duplicate</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-		<span class="k">def</span> <span class="nf">is_hashable</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
+
+	<span class="k">def</span><span class="w"> </span><span class="nf">delete_duplicate</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+		<span class="k">def</span><span class="w"> </span><span class="nf">is_hashable</span><span class="p">(</span><span class="n">obj</span><span class="p">):</span>
 			<span class="k">try</span><span class="p">:</span>
 				<span class="nb">hash</span><span class="p">(</span><span class="n">obj</span><span class="p">)</span>
 				<span class="k">return</span> <span class="kc">True</span>
@@ -600,7 +601,7 @@
 
 <div class="viewcode-block" id="explode">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.explode">[docs]</a>
-<span class="k">def</span> <span class="nf">explode</span><span class="p">(</span><span class="n">index_values</span><span class="p">:</span> <span class="n">Collection</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">explode_values</span><span class="p">:</span> <span class="n">Collection</span><span class="p">[</span><span class="n">Collection</span><span class="p">[</span><span class="n">Any</span><span class="p">]]):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">explode</span><span class="p">(</span><span class="n">index_values</span><span class="p">:</span> <span class="n">Collection</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">explode_values</span><span class="p">:</span> <span class="n">Collection</span><span class="p">[</span><span class="n">Collection</span><span class="p">[</span><span class="n">Any</span><span class="p">]]):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Explode index_values and explode_values.</span>
 <span class="sd">	The index_values and explode_values must have the same length.</span>
@@ -621,7 +622,7 @@
 
 <div class="viewcode-block" id="replace_value_in_dict">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.replace_value_in_dict">[docs]</a>
-<span class="k">def</span> <span class="nf">replace_value_in_dict</span><span class="p">(</span><span class="n">target_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">replace_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">replace_value_in_dict</span><span class="p">(</span><span class="n">target_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">replace_value</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Replace the value of a certain key in target_dict.</span>
 <span class="sd">	If there is no targeted key in target_dict, it will return target_dict.</span>
@@ -641,23 +642,23 @@
 
 <div class="viewcode-block" id="normalize_string">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.normalize_string">[docs]</a>
-<span class="k">def</span> <span class="nf">normalize_string</span><span class="p">(</span><span class="n">s</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalize_string</span><span class="p">(</span><span class="n">s</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Taken from the official evaluation script for v1.1 of the SQuAD dataset.</span>
 <span class="sd">	Lower text and remove punctuation, articles, and extra whitespace.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 
-	<span class="k">def</span> <span class="nf">remove_articles</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">remove_articles</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
 		<span class="k">return</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b(a|an|the)\b&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">white_space_fix</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">white_space_fix</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
 		<span class="k">return</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
 
-	<span class="k">def</span> <span class="nf">remove_punc</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">remove_punc</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
 		<span class="n">exclude</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">string</span><span class="o">.</span><span class="n">punctuation</span><span class="p">)</span>
 		<span class="k">return</span> <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">ch</span> <span class="k">for</span> <span class="n">ch</span> <span class="ow">in</span> <span class="n">text</span> <span class="k">if</span> <span class="n">ch</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">exclude</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">lower</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">lower</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
 		<span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
 
 	<span class="k">return</span> <span class="n">white_space_fix</span><span class="p">(</span><span class="n">remove_articles</span><span class="p">(</span><span class="n">remove_punc</span><span class="p">(</span><span class="n">lower</span><span class="p">(</span><span class="n">s</span><span class="p">))))</span></div>
@@ -666,7 +667,7 @@
 
 <div class="viewcode-block" id="convert_string_to_tuple_in_dict">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.convert_string_to_tuple_in_dict">[docs]</a>
-<span class="k">def</span> <span class="nf">convert_string_to_tuple_in_dict</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_string_to_tuple_in_dict</span><span class="p">(</span><span class="n">d</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;Recursively converts strings that start with &#39;(&#39; and end with &#39;)&#39; to tuples in a dictionary.&quot;&quot;&quot;</span>
 	<span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">d</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
 		<span class="c1"># If the value is a dictionary, recurse</span>
@@ -695,7 +696,7 @@
 
 <div class="viewcode-block" id="convert_env_in_dict">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.convert_env_in_dict">[docs]</a>
-<span class="k">def</span> <span class="nf">convert_env_in_dict</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Dict</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_env_in_dict</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Dict</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Recursively converts environment variable string in a dictionary to actual environment variable.</span>
 
@@ -704,7 +705,7 @@
 <span class="sd">	&quot;&quot;&quot;</span>
 	<span class="n">env_pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;.*?\${(.*?)}.*?&quot;</span><span class="p">)</span>
 
-	<span class="k">def</span> <span class="nf">convert_env</span><span class="p">(</span><span class="n">val</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">convert_env</span><span class="p">(</span><span class="n">val</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 		<span class="n">matches</span> <span class="o">=</span> <span class="n">env_pattern</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">val</span><span class="p">)</span>
 		<span class="k">for</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">matches</span><span class="p">:</span>
 			<span class="n">val</span> <span class="o">=</span> <span class="n">val</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;$</span><span class="se">{{</span><span class="si">{</span><span class="n">match</span><span class="si">}</span><span class="se">}}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">match</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
@@ -727,7 +728,7 @@
 
 <div class="viewcode-block" id="process_batch">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.process_batch">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">process_batch</span><span class="p">(</span><span class="n">tasks</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_batch</span><span class="p">(</span><span class="n">tasks</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Processes tasks in batches asynchronously.</span>
 
@@ -749,7 +750,7 @@
 
 <div class="viewcode-block" id="make_batch">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.make_batch">[docs]</a>
-<span class="k">def</span> <span class="nf">make_batch</span><span class="p">(</span><span class="n">elems</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">make_batch</span><span class="p">(</span><span class="n">elems</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Make a batch of elems with batch_size.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
@@ -759,7 +760,7 @@
 
 <div class="viewcode-block" id="save_parquet_safe">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.save_parquet_safe">[docs]</a>
-<span class="k">def</span> <span class="nf">save_parquet_safe</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">filepath</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">upsert</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">save_parquet_safe</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">filepath</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">upsert</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
 	<span class="n">output_file_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">filepath</span><span class="p">)</span>
 	<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isdir</span><span class="p">(</span><span class="n">output_file_dir</span><span class="p">):</span>
 		<span class="k">raise</span> <span class="ne">NotADirectoryError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;directory </span><span class="si">{</span><span class="n">output_file_dir</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
@@ -779,7 +780,7 @@
 
 <div class="viewcode-block" id="openai_truncate_by_token">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.openai_truncate_by_token">[docs]</a>
-<span class="k">def</span> <span class="nf">openai_truncate_by_token</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">openai_truncate_by_token</span><span class="p">(</span>
 	<span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">token_limit</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">model_name</span><span class="p">:</span> <span class="nb">str</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 	<span class="k">try</span><span class="p">:</span>
@@ -788,7 +789,7 @@
 		<span class="c1"># This is not a real OpenAI model</span>
 		<span class="k">return</span> <span class="n">texts</span>
 
-	<span class="k">def</span> <span class="nf">truncate_text</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">tokenizer</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">truncate_text</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">tokenizer</span><span class="p">):</span>
 		<span class="n">tokens</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
 		<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">limit</span><span class="p">:</span>
 			<span class="k">return</span> <span class="n">text</span>
@@ -801,7 +802,7 @@
 
 <div class="viewcode-block" id="reconstruct_list">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.reconstruct_list">[docs]</a>
-<span class="k">def</span> <span class="nf">reconstruct_list</span><span class="p">(</span><span class="n">flat_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">lengths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">reconstruct_list</span><span class="p">(</span><span class="n">flat_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">lengths</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
 	<span class="n">result</span> <span class="o">=</span> <span class="p">[]</span>
 	<span class="n">start</span> <span class="o">=</span> <span class="mi">0</span>
 	<span class="k">for</span> <span class="n">length</span> <span class="ow">in</span> <span class="n">lengths</span><span class="p">:</span>
@@ -813,7 +814,7 @@
 
 <div class="viewcode-block" id="flatten_apply">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.flatten_apply">[docs]</a>
-<span class="k">def</span> <span class="nf">flatten_apply</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">flatten_apply</span><span class="p">(</span>
 	<span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">nested_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]],</span> <span class="o">**</span><span class="n">kwargs</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -834,7 +835,7 @@
 
 <div class="viewcode-block" id="aflatten_apply">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.aflatten_apply">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">aflatten_apply</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">aflatten_apply</span><span class="p">(</span>
 	<span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">nested_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]],</span> <span class="o">**</span><span class="n">kwargs</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -855,7 +856,7 @@
 
 <div class="viewcode-block" id="sort_by_scores">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.sort_by_scores">[docs]</a>
-<span class="k">def</span> <span class="nf">sort_by_scores</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sort_by_scores</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Sorts each row by &#39;scores&#39; column.</span>
 <span class="sd">	The input column names must be &#39;contents&#39;, &#39;ids&#39;, and &#39;scores&#39;.</span>
@@ -873,7 +874,7 @@
 
 <div class="viewcode-block" id="select_top_k">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.select_top_k">[docs]</a>
-<span class="k">def</span> <span class="nf">select_top_k</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">column_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">select_top_k</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">column_names</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
 	<span class="k">for</span> <span class="n">column_name</span> <span class="ow">in</span> <span class="n">column_names</span><span class="p">:</span>
 		<span class="n">df</span><span class="p">[</span><span class="n">column_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">column_name</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[:</span><span class="n">top_k</span><span class="p">])</span>
 	<span class="k">return</span> <span class="n">df</span></div>
@@ -882,7 +883,7 @@
 
 <div class="viewcode-block" id="filter_dict_keys">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.filter_dict_keys">[docs]</a>
-<span class="k">def</span> <span class="nf">filter_dict_keys</span><span class="p">(</span><span class="n">dict_</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">filter_dict_keys</span><span class="p">(</span><span class="n">dict_</span><span class="p">,</span> <span class="n">keys</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
 	<span class="n">result</span> <span class="o">=</span> <span class="p">{}</span>
 	<span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">keys</span><span class="p">:</span>
 		<span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">dict_</span><span class="p">:</span>
@@ -895,7 +896,7 @@
 
 <div class="viewcode-block" id="split_dataframe">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.split_dataframe">[docs]</a>
-<span class="k">def</span> <span class="nf">split_dataframe</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">chunk_size</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">split_dataframe</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">chunk_size</span><span class="p">):</span>
 	<span class="n">num_chunks</span> <span class="o">=</span> <span class="p">(</span>
 		<span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">//</span> <span class="n">chunk_size</span> <span class="o">+</span> <span class="mi">1</span>
 		<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">%</span> <span class="n">chunk_size</span> <span class="o">!=</span> <span class="mi">0</span>
@@ -911,7 +912,7 @@
 
 <div class="viewcode-block" id="find_trial_dir">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.find_trial_dir">[docs]</a>
-<span class="k">def</span> <span class="nf">find_trial_dir</span><span class="p">(</span><span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_trial_dir</span><span class="p">(</span><span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 	<span class="c1"># Pattern to match directories named with numbers</span>
 	<span class="n">pattern</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="s2">&quot;[0-9]*&quot;</span><span class="p">)</span>
 	<span class="n">all_entries</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="n">pattern</span><span class="p">)</span>
@@ -929,7 +930,7 @@
 
 <div class="viewcode-block" id="find_node_summary_files">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.find_node_summary_files">[docs]</a>
-<span class="k">def</span> <span class="nf">find_node_summary_files</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_node_summary_files</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
 	<span class="c1"># Find all summary.csv files recursively</span>
 	<span class="n">all_summary_files</span> <span class="o">=</span> <span class="n">glob</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span>
 		<span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">trial_dir</span><span class="p">,</span> <span class="s2">&quot;**&quot;</span><span class="p">,</span> <span class="s2">&quot;summary.csv&quot;</span><span class="p">),</span> <span class="n">recursive</span><span class="o">=</span><span class="kc">True</span>
@@ -946,28 +947,28 @@
 
 <div class="viewcode-block" id="preprocess_text">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.preprocess_text">[docs]</a>
-<span class="k">def</span> <span class="nf">preprocess_text</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">preprocess_text</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 	<span class="k">return</span> <span class="n">normalize_unicode</span><span class="p">(</span><span class="n">demojize</span><span class="p">(</span><span class="n">text</span><span class="p">))</span></div>
 
 
 
 <div class="viewcode-block" id="demojize">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.demojize">[docs]</a>
-<span class="k">def</span> <span class="nf">demojize</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">demojize</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 	<span class="k">return</span> <span class="n">emoji</span><span class="o">.</span><span class="n">demojize</span><span class="p">(</span><span class="n">text</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="normalize_unicode">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.normalize_unicode">[docs]</a>
-<span class="k">def</span> <span class="nf">normalize_unicode</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">normalize_unicode</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 	<span class="k">return</span> <span class="n">unicodedata</span><span class="o">.</span><span class="n">normalize</span><span class="p">(</span><span class="s2">&quot;NFC&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="dict_to_markdown">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown">[docs]</a>
-<span class="k">def</span> <span class="nf">dict_to_markdown</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">dict_to_markdown</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Convert a dictionary to a Markdown formatted string.</span>
 
@@ -995,7 +996,7 @@
 
 <div class="viewcode-block" id="dict_to_markdown_table">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown_table">[docs]</a>
-<span class="k">def</span> <span class="nf">dict_to_markdown_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">key_column_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value_column_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">dict_to_markdown_table</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">key_column_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">value_column_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 	<span class="c1"># Check if the input is a dictionary</span>
 	<span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
 		<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Input must be a dictionary&quot;</span><span class="p">)</span>
@@ -1016,7 +1017,7 @@
 
 <div class="viewcode-block" id="embedding_query_content">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.embedding_query_content">[docs]</a>
-<span class="k">def</span> <span class="nf">embedding_query_content</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">embedding_query_content</span><span class="p">(</span>
 	<span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">contents_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
 	<span class="n">embedding_model</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1048,7 +1049,7 @@
 
 <div class="viewcode-block" id="to_list">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.to_list">[docs]</a>
-<span class="k">def</span> <span class="nf">to_list</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">to_list</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;Recursively convert collections to Python lists.&quot;&quot;&quot;</span>
 	<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
 		<span class="c1"># Convert numpy array to list and recursively process each element</span>
@@ -1068,11 +1069,11 @@
 
 <div class="viewcode-block" id="convert_inputs_to_list">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.convert_inputs_to_list">[docs]</a>
-<span class="k">def</span> <span class="nf">convert_inputs_to_list</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">convert_inputs_to_list</span><span class="p">(</span><span class="n">func</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;Decorator to convert all function inputs to Python lists.&quot;&quot;&quot;</span>
 
 	<span class="nd">@functools</span><span class="o">.</span><span class="n">wraps</span><span class="p">(</span><span class="n">func</span><span class="p">)</span>
-	<span class="k">def</span> <span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">wrapper</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 		<span class="n">new_args</span> <span class="o">=</span> <span class="p">[</span><span class="n">to_list</span><span class="p">(</span><span class="n">arg</span><span class="p">)</span> <span class="k">for</span> <span class="n">arg</span> <span class="ow">in</span> <span class="n">args</span><span class="p">]</span>
 		<span class="n">new_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">to_list</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 		<span class="k">return</span> <span class="n">func</span><span class="p">(</span><span class="o">*</span><span class="n">new_args</span><span class="p">,</span> <span class="o">**</span><span class="n">new_kwargs</span><span class="p">)</span>
@@ -1083,7 +1084,7 @@
 
 <div class="viewcode-block" id="get_best_row">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.get_best_row">[docs]</a>
-<span class="k">def</span> <span class="nf">get_best_row</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_best_row</span><span class="p">(</span>
 	<span class="n">summary_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">best_column_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;is_best&quot;</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -1103,7 +1104,7 @@
 
 <div class="viewcode-block" id="get_event_loop">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.get_event_loop">[docs]</a>
-<span class="k">def</span> <span class="nf">get_event_loop</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">AbstractEventLoop</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_event_loop</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">AbstractEventLoop</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Get asyncio event loop safely.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
@@ -1118,7 +1119,7 @@
 
 <div class="viewcode-block" id="find_key_values">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.find_key_values">[docs]</a>
-<span class="k">def</span> <span class="nf">find_key_values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">target_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">find_key_values</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">target_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Recursively find all values for a specific key in a nested dictionary or list.</span>
 
@@ -1145,7 +1146,7 @@
 
 <div class="viewcode-block" id="pop_params">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.pop_params">[docs]</a>
-<span class="k">def</span> <span class="nf">pop_params</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pop_params</span><span class="p">(</span><span class="n">func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Pop parameters from the given func and return them.</span>
 <span class="sd">	It automatically deletes the parameters like &quot;self&quot; or &quot;cls&quot;.</span>
@@ -1169,7 +1170,7 @@
 
 <div class="viewcode-block" id="apply_recursive">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.apply_recursive">[docs]</a>
-<span class="k">def</span> <span class="nf">apply_recursive</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">apply_recursive</span><span class="p">(</span><span class="n">func</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Recursively apply a function to all elements in a list, tuple, set, np.ndarray, or pd.Series and return as List.</span>
 
@@ -1192,9 +1193,9 @@
 
 <div class="viewcode-block" id="empty_cuda_cache">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.empty_cuda_cache">[docs]</a>
-<span class="k">def</span> <span class="nf">empty_cuda_cache</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">empty_cuda_cache</span><span class="p">():</span>
 	<span class="k">try</span><span class="p">:</span>
-		<span class="kn">import</span> <span class="nn">torch</span>
+		<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 		<span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
 			<span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">empty_cache</span><span class="p">()</span>
@@ -1205,7 +1206,7 @@
 
 <div class="viewcode-block" id="load_yaml_config">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.load_yaml_config">[docs]</a>
-<span class="k">def</span> <span class="nf">load_yaml_config</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_yaml_config</span><span class="p">(</span><span class="n">yaml_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Load a YAML configuration file for AutoRAG.</span>
 <span class="sd">	It contains safe loading, converting string to tuple, and insert environment variables.</span>
@@ -1219,7 +1220,7 @@
 		<span class="k">try</span><span class="p">:</span>
 			<span class="n">yaml_dict</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">stream</span><span class="p">)</span>
 		<span class="k">except</span> <span class="n">yaml</span><span class="o">.</span><span class="n">YAMLError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
-			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;YAML file </span><span class="si">{</span><span class="n">yaml_path</span><span class="si">}</span><span class="s2"> could not be loaded.&quot;</span><span class="p">)</span> <span class="kn">from</span> <span class="nn">exc</span>
+			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;YAML file </span><span class="si">{</span><span class="n">yaml_path</span><span class="si">}</span><span class="s2"> could not be loaded.&quot;</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
 
 	<span class="n">yaml_dict</span> <span class="o">=</span> <span class="n">convert_string_to_tuple_in_dict</span><span class="p">(</span><span class="n">yaml_dict</span><span class="p">)</span>
 	<span class="n">yaml_dict</span> <span class="o">=</span> <span class="n">convert_env_in_dict</span><span class="p">(</span><span class="n">yaml_dict</span><span class="p">)</span>
@@ -1229,7 +1230,7 @@
 
 <div class="viewcode-block" id="decode_multiple_json_from_bytes">
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.util.decode_multiple_json_from_bytes">[docs]</a>
-<span class="k">def</span> <span class="nf">decode_multiple_json_from_bytes</span><span class="p">(</span><span class="n">byte_data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">decode_multiple_json_from_bytes</span><span class="p">(</span><span class="n">byte_data</span><span class="p">:</span> <span class="nb">bytes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Decode multiple JSON objects from bytes received from SSE server.</span>
 

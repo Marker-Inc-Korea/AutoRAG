@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.legacy.qacreation.llama_index - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/tabs.css?v=4c969af8" />
@@ -401,22 +401,22 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.legacy.qacreation.llama_index</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">os.path</span>
-<span class="kn">import</span> <span class="nn">random</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os.path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
 
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.base.llms.types</span> <span class="kn">import</span> <span class="n">ChatMessage</span><span class="p">,</span> <span class="n">MessageRole</span>
-<span class="kn">from</span> <span class="nn">llama_index.core.llms</span> <span class="kn">import</span> <span class="n">LLM</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.base.llms.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatMessage</span><span class="p">,</span> <span class="n">MessageRole</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.llms</span><span class="w"> </span><span class="kn">import</span> <span class="n">LLM</span>
 
-<span class="kn">from</span> <span class="nn">autorag.utils.util</span> <span class="kn">import</span> <span class="n">process_batch</span><span class="p">,</span> <span class="n">get_event_loop</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_batch</span><span class="p">,</span> <span class="n">get_event_loop</span>
 
 <span class="n">package_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">dirname</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">realpath</span><span class="p">(</span><span class="vm">__file__</span><span class="p">))</span>
 
 
 <div class="viewcode-block" id="generate_qa_llama_index">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.generate_qa_llama_index">[docs]</a>
-<span class="k">def</span> <span class="nf">generate_qa_llama_index</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_qa_llama_index</span><span class="p">(</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">,</span>
 	<span class="n">contents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">prompt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -465,7 +465,7 @@
 
 <div class="viewcode-block" id="generate_answers">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.generate_answers">[docs]</a>
-<span class="k">def</span> <span class="nf">generate_answers</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_answers</span><span class="p">(</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">,</span>
 	<span class="n">contents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
@@ -493,7 +493,7 @@
 
 <div class="viewcode-block" id="generate_qa_llama_index_by_ratio">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.generate_qa_llama_index_by_ratio">[docs]</a>
-<span class="k">def</span> <span class="nf">generate_qa_llama_index_by_ratio</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_qa_llama_index_by_ratio</span><span class="p">(</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">,</span>
 	<span class="n">contents</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
 	<span class="n">prompts_ratio</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
@@ -561,7 +561,7 @@
 
 <div class="viewcode-block" id="async_qa_gen_llama_index">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.async_qa_gen_llama_index">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">async_qa_gen_llama_index</span><span class="p">(</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">async_qa_gen_llama_index</span><span class="p">(</span>
 	<span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 	<span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">,</span>
 	<span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -584,7 +584,7 @@
 <span class="sd">	&quot;&quot;&quot;</span>
 	<span class="n">validate_llama_index_prompt</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
 
-	<span class="k">async</span> <span class="k">def</span> <span class="nf">generate</span><span class="p">(</span><span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">):</span>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span><span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">):</span>
 		<span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_retries</span><span class="p">):</span>
 			<span class="n">output</span> <span class="o">=</span> <span class="k">await</span> <span class="n">llm</span><span class="o">.</span><span class="n">acomplete</span><span class="p">(</span>
 				<span class="n">prompt</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;{{text}}&quot;</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
@@ -604,7 +604,7 @@
 
 <div class="viewcode-block" id="generate_basic_answer">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.generate_basic_answer">[docs]</a>
-<span class="k">async</span> <span class="k">def</span> <span class="nf">generate_basic_answer</span><span class="p">(</span><span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">passage_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">generate_basic_answer</span><span class="p">(</span><span class="n">llm</span><span class="p">:</span> <span class="n">LLM</span><span class="p">,</span> <span class="n">passage_str</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 	<span class="n">basic_answer_system_prompt</span> <span class="o">=</span> <span class="s2">&quot;&quot;&quot;You are an AI assistant to answer the given question in the provide evidence text.</span>
 <span class="s2">    You can find the evidence from the given text about question, and you have to write a proper answer to the given question.</span>
 <span class="s2">    You have to preserve the question&#39;s language at the answer.</span>
@@ -625,7 +625,7 @@
 
 <div class="viewcode-block" id="validate_llama_index_prompt">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.validate_llama_index_prompt">[docs]</a>
-<span class="k">def</span> <span class="nf">validate_llama_index_prompt</span><span class="p">(</span><span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_llama_index_prompt</span><span class="p">(</span><span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Validate the prompt for the llama index model.</span>
 <span class="sd">	The prompt must include the following placeholders:</span>
@@ -642,7 +642,7 @@
 
 <div class="viewcode-block" id="parse_output">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.parse_output">[docs]</a>
-<span class="k">def</span> <span class="nf">parse_output</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">parse_output</span><span class="p">(</span><span class="n">result</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">]:</span>
 	<span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
 	<span class="n">result</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;[Q]:&quot;</span><span class="p">)</span>
 	<span class="n">final_result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">()</span>
@@ -659,7 +659,7 @@
 
 <div class="viewcode-block" id="distribute_list_by_ratio">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.llama_index.distribute_list_by_ratio">[docs]</a>
-<span class="k">def</span> <span class="nf">distribute_list_by_ratio</span><span class="p">(</span><span class="n">input_list</span><span class="p">,</span> <span class="n">ratio</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">distribute_list_by_ratio</span><span class="p">(</span><span class="n">input_list</span><span class="p">,</span> <span class="n">ratio</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">Any</span><span class="p">]]:</span>
 	<span class="n">total_ratio</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">ratio</span><span class="p">)</span>
 	<span class="n">total_length</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">input_list</span><span class="p">)</span>
 

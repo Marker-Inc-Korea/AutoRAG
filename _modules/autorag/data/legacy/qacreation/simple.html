@@ -16,7 +16,7 @@
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.legacy.qacreation.simple - AutoRAG documentation</title>
-      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=a746c00c" />
+      <link rel="stylesheet" type="text/css" href="../../../../../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/styles/furo.css?v=354aac6f" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../../../../_static/tabs.css?v=4c969af8" />
@@ -401,17 +401,17 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data.legacy.qacreation.simple</h1><div class="highlight"><pre>
-<span></span><span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">pathlib</span>
-<span class="kn">import</span> <span class="nn">uuid</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Callable</span>
+<span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
 
-<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
 
 <div class="viewcode-block" id="generate_qa_row">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.simple.generate_qa_row">[docs]</a>
-<span class="k">def</span> <span class="nf">generate_qa_row</span><span class="p">(</span><span class="n">llm</span><span class="p">,</span> <span class="n">corpus_data_row</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_qa_row</span><span class="p">(</span><span class="n">llm</span><span class="p">,</span> <span class="n">corpus_data_row</span><span class="p">):</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	this sample code to generate rag dataset using OpenAI chat model</span>
 
@@ -419,8 +419,8 @@
 <span class="sd">	:param corpus_data_row: need &quot;contents&quot; column</span>
 <span class="sd">	:return: should to be dict which has &quot;query&quot;, &quot;generation_gt&quot; columns at least.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
-	<span class="kn">from</span> <span class="nn">guidance</span> <span class="kn">import</span> <span class="n">gen</span>
-	<span class="kn">import</span> <span class="nn">guidance</span>
+	<span class="kn">from</span><span class="w"> </span><span class="nn">guidance</span><span class="w"> </span><span class="kn">import</span> <span class="n">gen</span>
+	<span class="kn">import</span><span class="w"> </span><span class="nn">guidance</span>
 
 	<span class="n">temp_llm</span> <span class="o">=</span> <span class="n">llm</span>
 	<span class="k">with</span> <span class="n">guidance</span><span class="o">.</span><span class="n">user</span><span class="p">():</span>
@@ -456,7 +456,7 @@
 
 <div class="viewcode-block" id="generate_simple_qa_dataset">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.legacy.qacreation.html#autorag.data.legacy.qacreation.simple.generate_simple_qa_dataset">[docs]</a>
-<span class="k">def</span> <span class="nf">generate_simple_qa_dataset</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_simple_qa_dataset</span><span class="p">(</span>
 	<span class="n">llm</span><span class="p">,</span>
 	<span class="n">corpus_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
 	<span class="n">output_filepath</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
