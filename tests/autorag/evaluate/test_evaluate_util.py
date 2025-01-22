@@ -1,4 +1,4 @@
-from autorag import embedding_models
+from autorag.embedding.base import embedding_models
 from autorag.evaluation.util import cast_metrics
 
 

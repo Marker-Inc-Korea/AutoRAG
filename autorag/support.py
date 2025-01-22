@@ -176,9 +176,11 @@ def get_support_modules(module_name: str) -> Callable:
 		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"vllm": ("autorag.nodes.generator", "Vllm"),
 		"openai_llm": ("autorag.nodes.generator", "OpenAILLM"),
+		"vllm_api": ("autorag.nodes.generator", "VllmAPI"),
 		"LlamaIndexLLM": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"Vllm": ("autorag.nodes.generator", "Vllm"),
 		"OpenAILLM": ("autorag.nodes.generator", "OpenAILLM"),
+		"VllmAPI": ("autorag.nodes.generator", "VllmAPI"),
 	}
 	return dynamically_find_function(module_name, support_modules)
 

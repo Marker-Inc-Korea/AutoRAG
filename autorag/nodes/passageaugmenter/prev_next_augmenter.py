@@ -1,9 +1,9 @@
-from typing import List
+from typing import List, Union
 
 import numpy as np
 import pandas as pd
 
-from autorag import embedding_models
+from autorag.embedding.base import EmbeddingModel
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passageaugmenter.base import BasePassageAugmenter
 from autorag.utils.util import (
@@ -17,7 +17,7 @@ from autorag.utils.util import (
 
 class PrevNextPassageAugmenter(BasePassageAugmenter):
 	def __init__(
-		self, project_dir: str, embedding_model: str = "openai", *args, **kwargs
+		self, project_dir: str, embedding_model: Union[str, dict] = "openai", *args, **kwargs
 	):
 		"""
 		Initialize the PrevNextPassageAugmenter module.
@@ -35,7 +35,7 @@ class PrevNextPassageAugmenter(BasePassageAugmenter):
 		self.slim_corpus_df = slim_corpus_df
 
 		# init embedding model
-		self.embedding_model = embedding_models[embedding_model]()
+		self.embedding_model = EmbeddingModel.load(embedding_model)()
 
 	def __del__(self):
 		del self.embedding_model

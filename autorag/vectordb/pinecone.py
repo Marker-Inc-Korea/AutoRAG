@@ -3,7 +3,7 @@ import logging
 from pinecone.grpc import PineconeGRPC as Pinecone_client
 from pinecone import ServerlessSpec
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from autorag.utils.util import make_batch, apply_recursive
 from autorag.vectordb import BaseVectorStore
@@ -14,7 +14,7 @@ logger = logging.getLogger("AutoRAG")
 class Pinecone(BaseVectorStore):
 	def __init__(
 		self,
-		embedding_model: str,
+		embedding_model: Union[str, List[dict]],
 		index_name: str,
 		embedding_batch: int = 100,
 		dimension: int = 1536,

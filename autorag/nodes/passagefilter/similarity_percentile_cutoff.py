@@ -4,7 +4,7 @@ from typing import List, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from autorag import embedding_models
+from autorag.embedding.base import EmbeddingModel
 from autorag.evaluation.metric.util import calculate_cosine_similarity
 from autorag.nodes.passagefilter.base import BasePassageFilter
 from autorag.nodes.passagefilter.similarity_threshold_cutoff import (
@@ -24,8 +24,8 @@ class SimilarityPercentileCutoff(BasePassageFilter):
 		        Default is "openai" which is OpenAI text-embedding-ada-002 embedding model.
 		"""
 		super().__init__(project_dir, *args, **kwargs)
-		embedding_model_str = kwargs.pop("embedding_model", "openai")
-		self.embedding_model = embedding_models[embedding_model_str]()
+		embedding_model = kwargs.pop("embedding_model", "openai")
+		self.embedding_model = EmbeddingModel.load(embedding_model)()
 
 	def __del__(self):
 		super().__del__()
