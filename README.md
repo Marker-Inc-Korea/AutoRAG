@@ -441,7 +441,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:api evaluate \
+  autoraghq/autorag:api-latest evaluate \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
@@ -455,7 +455,7 @@ docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:api validate \
+  autoraghq/autorag:api-latest validate \
   --config /usr/src/app/projects/tutorial_1/config.yaml \
   --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
@@ -469,7 +469,7 @@ docker run --rm -it \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
   -p 8502:8502 \
-  autoraghq/autorag:api dashboard \
+  autoraghq/autorag:api-latest dashboard \
     --trial_dir /usr/src/app/projects/tutorial_1/0
 ```
 
@@ -481,7 +481,7 @@ docker run --rm -it \
   -v $(pwd)/projects:/usr/src/app/projects \
   -e OPENAI_API_KEY=${OPENAI_API_KEY} \
   -p 8501:8501 \
-  autoraghq/autorag:api run_web --trial_path ./projects/tutorial_1/0
+  autoraghq/autorag:api-latest run_web --trial_path ./projects/tutorial_1/0
 ```
 
 #### Key Points :

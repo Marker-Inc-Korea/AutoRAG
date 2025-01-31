@@ -150,7 +150,51 @@ Modules that using an embedding model can take `embedding_model` parameter to sp
 
 - [vectordb](nodes/retrieval/vectordb.md)
 
-### Supporting Embedding models
+### Configure the model name in the YAML file
+
+For easier use, since v0.3.13, we support configuring model name in the YAML file.
+
+We support this new configuration option, plus the legacy configuration option that is described below.
+So if you used before v0.3.13 version, it is okay to use the legacy configuration option.
+
+We support the following embedding model types:
+
+- openai
+- huggingface
+- mock
+- ollama
+
+You can configure the embedding model option directly in the YAML file `vectordb` section.
+If you want to know how to configure vectordb in AutoRAG,
+please go [here](https://docs.auto-rag.com/integration/vectordb/vectordb.html).
+
+For example,
+
+```yaml
+vectordb:
+- name: autorag_test
+  db_type: milvus
+  embedding_model:
+  - type: huggingface
+    model_name: intfloat/multilingual-e5-large-instruct
+  ...
+```
+
+or
+
+```yaml
+vectordb:
+- name: autorag_test
+  db_type: milvus
+  embedding_model:
+  - type: openai
+    model_name: text-embedding-3-small
+  ...
+```
+
+If you want to use your own embedding model, simply change the model_name at huggingface(or ollama) type embedding model configuration.
+
+### Supporting Embedding models (Legacy)
 
 As default, we support OpenAI embedding models and some of the local models.
 To change the embedding model, you can change the `embedding_model` parameter to the following values:
@@ -184,7 +228,7 @@ nodes:
             vectordb: chroma_openai
 ```
 
-### Add your embedding models
+### Add your embedding models (Legacy)
 
 You can add more embedding models for AutoRAG.
 You can add it by simply calling `autorag.embedding_models` and add new key and value.

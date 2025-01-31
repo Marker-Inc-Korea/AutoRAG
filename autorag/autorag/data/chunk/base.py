@@ -4,7 +4,7 @@ from typing import Tuple, List, Dict, Any
 
 import pandas as pd
 
-from autorag import embedding_models
+from autorag.embedding.base import EmbeddingModel
 from autorag.data import chunk_modules, sentence_splitter_modules
 from autorag.utils import result_to_dataframe
 
@@ -80,7 +80,7 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 		if _embed_model_str == "openai":
 			if _module_type == "langchain_chunk":
 				_embed_model_str = "openai_langchain"
-		return embedding_models[_embed_model_str]()
+		return EmbeddingModel.load(_embed_model_str)()
 
 	# Add embed_model to kwargs
 	embedding_available_methods = ["semantic_llama_index", "semantic_langchain"]

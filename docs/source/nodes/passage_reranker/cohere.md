@@ -21,6 +21,12 @@ Next, you can set your Cohere API key in the environment variable.
 export COHERE_API_KEY=your_cohere_api_key
 ```
 
+or
+
+```bash
+export CO_API_KEY=your_cohere_api_key
+```
+
 Or, you can set your Cohere API key in the config.yaml file directly.
 
 ```yaml
@@ -34,8 +40,9 @@ Or, you can set your Cohere API key in the config.yaml file directly.
   It sends the batch size of passages to cohere API at once.
   If it is too large, it can cause some error.
   (default: 64)
-- **model** : The type of model you want to use for reranking. Default is "rerank-multilingual-v2.0" and you can change
-  it to "rerank-multilingual-v1.0" or "rerank-english-v2.0" (default: "rerank-multilingual-v2.0")
+- **model** : The type of model you want to use for reranking.
+  Default is "rerank-v3.5" and you can change
+  it to "rerank-v3.5" or "rerank-english-v3.0" or "rerank-multilingual-v3.0"
 - **api_key** : The cohere api key.
 
 ## **Example config.yaml**

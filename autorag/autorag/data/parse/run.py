@@ -53,12 +53,23 @@ def run_parser(
 		)
 		set_file_types = set([module["file_type"] for module in module_params])
 
+		# Calculate the set difference once
+		file_types_to_remove = set_file_types - file_types
+
+		# Use list comprehension to filter out unwanted elements
+		module_params = [
+			param
+			for param in module_params
+			if param["file_type"] not in file_types_to_remove
+		]
+		modules = [
+			module
+			for module, param in zip(modules, module_params)
+			if param["file_type"] not in file_types_to_remove
+		]
+
 		# create a list of only those file_types that are in file_types but not in set_file_types
 		missing_file_types = list(file_types - set_file_types)
-		if list(set_file_types - file_types):
-			raise ValueError(
-				f"File types {list(set_file_types - file_types)} are not in the data path."
-			)
 
 		if missing_file_types:
 			add_modules_list = []
@@ -84,11 +95,11 @@ def run_parser(
 
 	# save results to parquet files
 	if all_files:
-		filepaths = list(
-			map(
-				lambda x: os.path.join(project_dir, f"{x}.parquet"), range(len(modules))
+		if len(module_params) > 1:
+			raise ValueError(
+				"All files is set to True, You can only use one parsing module."
 			)
-		)
+		filepaths = [os.path.join(project_dir, "parsed_result.parquet")]
 	else:
 		filepaths = list(
 			map(
@@ -96,7 +107,16 @@ def run_parser(
 				module_params,
 			)
 		)
-	list(map(lambda x: x[0].to_parquet(x[1], index=False), zip(results, filepaths)))
+
+	_files = {}
+	for result, filepath in zip(results, filepaths):
+		_files[filepath].append(result) if filepath in _files.keys() else _files.update(
+			{filepath: [result]}
+		)
+	# Save files with a specific file type as Parquet files.
+	for filepath, value in _files.items():
+		pd.concat(value).to_parquet(filepath, index=False)
+
 	filenames = list(map(lambda x: os.path.basename(x), filepaths))
 
 	summary_df = pd.DataFrame(
@@ -110,8 +130,9 @@ def run_parser(
 	summary_df.to_csv(os.path.join(project_dir, "summary.csv"), index=False)
 
 	# concat all parquet files here if not all_files.
+	_filepaths = list(_files.keys())
 	if not all_files:
-		dataframes = [pd.read_parquet(file) for file in filepaths]
+		dataframes = [pd.read_parquet(file) for file in _filepaths]
 		combined_df = pd.concat(dataframes, ignore_index=True)
 		combined_df.to_parquet(
 			os.path.join(project_dir, "parsed_result.parquet"), index=False

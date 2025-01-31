@@ -6,7 +6,7 @@ from weaviate.classes.config import Property, DataType
 import weaviate.classes as wvc
 from weaviate.classes.query import MetadataQuery
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from autorag.vectordb import BaseVectorStore
 
@@ -16,7 +16,7 @@ logger = logging.getLogger("AutoRAG")
 class Weaviate(BaseVectorStore):
 	def __init__(
 		self,
-		embedding_model: str,
+		embedding_model: Union[str, List[dict]],
 		collection_name: str,
 		embedding_batch: int = 100,
 		similarity_metric: str = "cosine",

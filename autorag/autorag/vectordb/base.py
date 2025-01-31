@@ -1,10 +1,10 @@
 from abc import abstractmethod
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag import embedding_models
 from autorag.utils.util import openai_truncate_by_token
+from autorag.embedding.base import EmbeddingModel
 
 
 class BaseVectorStore:
@@ -12,11 +12,11 @@ class BaseVectorStore:
 
 	def __init__(
 		self,
-		embedding_model: str,
+		embedding_model: Union[str, List[dict]],
 		similarity_metric: str = "cosine",
 		embedding_batch: int = 100,
 	):
-		self.embedding = embedding_models[embedding_model]()
+		self.embedding = EmbeddingModel.load(embedding_model)()
 		self.embedding_batch = embedding_batch
 		self.embedding.embed_batch_size = embedding_batch
 		assert (

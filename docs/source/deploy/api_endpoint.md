@@ -72,6 +72,7 @@ This is the URL to your local server, so use it as the host at request.
           - **Properties**:
             - `content` (string): The content of the passage.
             - `doc_id` (string): Document ID.
+            - `score` (string): The relevance score of the retrieved passage.
             - `filepath` (string, nullable): File path.
             - `file_page` (integer, nullable): File page number.
             - `start_idx` (integer, nullable): Start index.
@@ -105,31 +106,17 @@ The request must include a JSON object with the following structure:
 #### Success Response
 **HTTP Status Code:** `200 OK`
 
-#### Response Body
-On a successful retrieval, the response will contain a JSON object structured as follows:
-
-```json
-{
-  "passages": [
-    {
-      "doc_id": "unique-document-id-1",
-      "content": "Content of the retrieved document.",
-      "score": 0.95
-    },
-    {
-      "doc_id": "unique-document-id-2",
-      "content": "Content of another retrieved document.",
-      "score": 0.89
-    }
-  ]
-}
-```
+### Response Body
 
 #### Properties
 - **passages** (array): An array of documents retrieved based on the query.
   - **doc_id** (string): The unique identifier for each document.
   - **content** (string): The content of the retrieved document.
   - **score** (number, float): The relevance score of the retrieved document.
+  - **filepath** (string, optional): The file path of the document.
+  - **file_page** (integer, optional): The page number of the document.
+  - **start_idx** (integer, optional): The start index of the retrieved passage from the parsed data.
+  - **end_idx** (integer, optional): The end index of the retrieved passage from the parsed data.
 
 #### Example Response
 ```json
@@ -138,12 +125,20 @@ On a successful retrieval, the response will contain a JSON object structured as
     {
       "doc_id": "doc123",
       "content": "Artificial Intelligence is transforming industries.",
-      "score": 0.98
+      "score": 0.98,
+      "filepath": "path/to/file",
+      "file_page": 2,
+      "start_idx": 100,
+      "end_idx": 150
     },
     {
       "doc_id": "doc456",
       "content": "The future of AI includes advancements in machine learning.",
-      "score": 0.92
+      "score": 0.92,
+      "filepath": null,
+      "file_page": null,
+      "start_idx": null,
+      "end_idx": null
     }
   ]
 }
@@ -172,6 +167,7 @@ On a successful retrieval, the response will contain a JSON object structured as
           - **Properties**:
             - `content` (string): The content of the passage.
             - `doc_id` (string): Document ID.
+            - `score` (string): The relevance score of the retrieved passage.
             - `filepath` (string, nullable): File path.
             - `file_page` (integer, nullable): File page number.
             - `start_idx` (integer, nullable): Start index.
@@ -293,6 +289,14 @@ curl -X POST "http://example.com/v1/stream" \
      -H "Content-Type: application/json" \
      -d '{"query": "example query", "result_column": "generated_texts"}' \
      --no-buffer
+```
+
+### `/v1/retrieve` (POST)
+
+```bash
+curl -X POST "http://example.com/v1/retrieve" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "example query"}'
 ```
 
 #### `/version` (GET)
