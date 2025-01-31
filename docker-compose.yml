@@ -1,15 +1,53 @@
+version: '3'
+
 services:
-  validate:
-    image: autoraghq/autorag:api
-    command: >
-      validate
-      --config /usr/src/app/projects/tutorial_1/config.yaml
-      --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet
-      --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
     volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-      - ./projects:/usr/src/app/projects
-    stdin_open: true
-    tty: true
+      - ./api:/app/api
+      - ./projects:/app/projects
+    working_dir: /app/api
+    ports:
+      - "8000:8000"
+      - "7690:7690" # for panel report
+      - "8501:8501" # for streamlit chat
+      - "8100:8100" # for chat API server
+    environment:
+      - WATCHFILES_FORCE_POLLING=true  # Docker on Windows/macOS를 위한 설정
+      - TZ=Asia/Seoul
+      - PYTHONPATH=/app/api
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - LOG_LEVEL=DEBUG     # 로그 레벨 설정
+      - PYTHONUNBUFFERED=1  # Python 출력 버퍼링 비활성화
+
+    depends_on:
+      - redis
+
+  flower:
+    image: mher/flower
+    command: celery flower --broker=redis://redis:6379/0 --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - TZ=Asia/Seoul
+      - FLOWER_BROKER_API=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - api
+
+volumes:
+  redis_data:
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,0 +1,15 @@
+services:
+  validate:
+    image: autoraghq/autorag:api
+    command: >
+      validate
+      --config /usr/src/app/projects/tutorial_1/config.yaml
+      --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet
+      --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ./projects:/usr/src/app/projects
+    stdin_open: true
+    tty: true

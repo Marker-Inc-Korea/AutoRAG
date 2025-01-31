@@ -1,0 +1,71 @@
+# Base stage: Install common dependencies
+FROM python:3.10-slim AS base
+
+# Set working directory and environment variables
+WORKDIR /usr/src/app
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Copy only requirements files first to leverage Docker cache
+COPY pyproject.toml ./
+
+# Install system and Python dependencies in a single layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    libssl-dev && \
+    pip install --upgrade pip setuptools setuptools-scm && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /root/.cache/pip/*
+
+# Copy project files
+COPY . .
+
+# Install base project
+RUN pip install -e ./ && \
+    rm -rf /root/.cache/pip/*
+
+# Ko stage with minimal dependencies
+FROM base AS ko
+RUN pip install --no-cache-dir "AutoRAG[ko]" && \
+    rm -rf /root/.cache/pip/*
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# Dev stage with all development tools
+FROM base AS dev
+RUN pip install --no-cache-dir \
+    -r ./tests/requirements.txt \
+    -r ./docs/requirements.txt \
+    "AutoRAG[dev]" && \
+    rm -rf /root/.cache/pip/*
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# Ja stage with Japanese support
+FROM base AS ja
+RUN pip install --no-cache-dir "AutoRAG[ja]" && \
+    rm -rf /root/.cache/pip/*
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# API stage with minimal footprint
+FROM base AS api
+RUN rm -rf \
+    ./sample_dataset \
+    ./tests \
+    ./docs \
+    /root/.cache/pip/*
+ENTRYPOINT ["python", "-m", "autorag.cli"]
+
+# Parsing stage with OCR support
+FROM base AS parsing
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-kor && \
+    pip install --no-cache-dir "AutoRAG[parse]" && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /root/.cache/pip/*
+ENTRYPOINT ["python", "-m", "autorag.cli"]

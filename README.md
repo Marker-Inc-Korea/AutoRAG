@@ -279,7 +279,7 @@ First, you need to set the config YAML file for your RAG optimization.
 
 We highly recommend using pre-made config YAML files for starter.
 
-- [Get Sample YAML](./sample_config/rag)
+- [Get Sample YAML](autorag/sample_config/rag)
   - [Sample YAML Guide](https://docs.auto-rag.com/optimization/sample_config.html)
 - [Make Custom YAML Guide](https://docs.auto-rag.com/optimization/custom_config.html)
 
