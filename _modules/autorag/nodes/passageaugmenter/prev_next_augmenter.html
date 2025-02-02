@@ -220,6 +220,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../gui/gui.html">AutoRAG GUI</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -422,7 +426,11 @@
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.passageaugmenter.html#autorag.nodes.passageaugmenter.prev_next_augmenter.PrevNextPassageAugmenter">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">PrevNextPassageAugmenter</span><span class="p">(</span><span class="n">BasePassageAugmenter</span><span class="p">):</span>
 	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
-		<span class="bp">self</span><span class="p">,</span> <span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">embedding_model</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;openai&quot;</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
+		<span class="bp">self</span><span class="p">,</span>
+		<span class="n">project_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+		<span class="n">embedding_model</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;openai&quot;</span><span class="p">,</span>
+		<span class="o">*</span><span class="n">args</span><span class="p">,</span>
+		<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 	<span class="p">):</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Initialize the PrevNextPassageAugmenter module.</span>

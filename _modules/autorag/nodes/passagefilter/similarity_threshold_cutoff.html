@@ -220,6 +220,10 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
+<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../gui/gui.html">AutoRAG GUI</a></li>
+</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -429,7 +433,7 @@
 <span class="sd">		        Default is &quot;openai&quot; which is OpenAI text-embedding-ada-002 embedding model.</span>
 <span class="sd">		&quot;&quot;&quot;</span>
 		<span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-		<span class="n">embedding_model</span><span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;embedding_model&quot;</span><span class="p">,</span> <span class="s2">&quot;openai&quot;</span><span class="p">)</span>
+		<span class="n">embedding_model</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;embedding_model&quot;</span><span class="p">,</span> <span class="s2">&quot;openai&quot;</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">embedding_model</span> <span class="o">=</span> <span class="n">EmbeddingModel</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">embedding_model</span><span class="p">)()</span>
 
 	<span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
