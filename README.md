@@ -529,14 +529,6 @@ the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-imag
 - [Shubham Saboo](https://www.linkedin.com/posts/shubhamsaboo_just-found-the-solution-to-the-biggest-rag-activity-7255404464054939648-ISQ8/)
 - [Kalyan KS](https://www.linkedin.com/posts/kalyanksnlp_rag-autorag-llms-activity-7258677155574788097-NgS0/)
 
-## 💬 Talk with Founders
-
-Talk with us! We are always open to talk with you.
-
-- 🎤 [Talk with Jeffrey](https://zcal.co/autorag-jeffrey/autorag-demo-15min)
-
-- 🦜 [Talk with Bwook](https://zcal.co/i/tcuLtmq5)
-
 ---
 
 # ✨ Contributors ✨
