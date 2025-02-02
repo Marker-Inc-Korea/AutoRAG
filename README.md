@@ -30,13 +30,18 @@ Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
 
 ---
 
-Do you have any difficulties in optimizing your RAG pipeline?
-Or is it hard to set up things to use AutoRAG?
-Try [**AutoRAG Cloud**](https://tally.so/r/n0jOrZ) beta.
-We will help you to run AutoRAG and optimize.
-Plus, we can help you to build RAG evaluation dataset.
+## AutoRAG GUI (beta)
 
-Starts with 9.99$ per optimization.
+AutoRAG GUI is a web-based GUI for AutoRAG.
+If AutoRAG is a little bit complicated to you, try AutoRAG GUI.
+
+Your Optimized RAG pipeline is just a few clicks away.
+
+|                                    Project Management                                     |                                    Easy Configuration                                     |                                     Parsed Page View                                      |
+|:-----------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------:|
+| ![Image](https://github.com/user-attachments/assets/87289d84-ff65-4810-bc41-3f30b36b7ddf) | ![Image](https://github.com/user-attachments/assets/dbe0a49b-ebf2-4c9c-b17d-1be1c2cd1060) | ![Image](https://github.com/user-attachments/assets/d8a50512-3299-4b68-b48e-e2f49d688f01) |
+
+Click the docs to use the AutoRAG GUI beta version! [AutoRAG GUI Docs](https://docs.auto-rag.com/gui/gui.html).
 
 ---
 
@@ -64,17 +69,17 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 - [Quick Install](#quick-install)
 - [Data Creation](#data-creation)
-  - [Parsing](#1-parsing)
-  - [Chunking](#2-chunking)
-  - [QA Creation](#3-qa-creation)
+    - [Parsing](#1-parsing)
+    - [Chunking](#2-chunking)
+    - [QA Creation](#3-qa-creation)
 - [RAG Optimization](#rag-optimization)
     - [How AutoRAG optimizes RAG pipeline?](#how-autorag-optimizes-rag-pipeline)
     - [Metrics](#metrics)
     - [Quick Start](#quick-start-1)
-      - [Set YAML File](#1-set-yaml-file)
-      - [Run AutoRAG](#2-run-autorag)
-      - [Run Dashboard](#3-run-dashboard)
-      - [Deploy your optimal RAG pipeline](#4-deploy-your-optimal-rag-pipeline)
+        - [Set YAML File](#1-set-yaml-file)
+        - [Run AutoRAG](#2-run-autorag)
+        - [Run Dashboard](#3-run-dashboard)
+        - [Deploy your optimal RAG pipeline](#4-deploy-your-optimal-rag-pipeline)
 - [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [FaQ](#-faq)
 
@@ -93,6 +98,7 @@ pip install "AutoRAG[gpu]"
 ```
 
 Or for parsing, you can use the parsing version.
+
 ```bash
 pip install "AutoRAG[gpu,parse]"
 ```
@@ -123,7 +129,6 @@ This is because RAG uses the corpus to retrieve documents and generate answers u
 
 - [Supporting Parsing Modules List](https://edai.notion.site/Supporting-Parsing-Modules-e0b7579c7c0e4fb2963e408eeccddd75?pvs=4)
 - [Supporting Chunking Modules List](https://edai.notion.site/Supporting-Chunk-Modules-8db803dba2ec4cd0a8789659106e86a3?pvs=4)
-
 
 ## Quick Start
 
@@ -189,8 +194,8 @@ from llama_index.llms.openai import OpenAI
 
 from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
 from autorag.data.qa.generation_gt.llama_index_gen_gt import (
-    make_basic_gen_gt,
-    make_concise_gen_gt,
+	make_basic_gen_gt,
+	make_concise_gen_gt,
 )
 from autorag.data.qa.schema import Raw, Corpus
 from autorag.data.qa.query.llama_gen_query import factoid_query_gen
@@ -204,27 +209,27 @@ corpus_df = pd.read_parquet("your/path/to/corpus.parquet")
 corpus_instance = Corpus(corpus_df, raw_instance)
 
 initial_qa = (
-    corpus_instance.sample(random_single_hop, n=3)
-    .map(
-        lambda df: df.reset_index(drop=True),
-    )
-    .make_retrieval_gt_contents()
-    .batch_apply(
-        factoid_query_gen,  # query generation
-        llm=llm,
-    )
-    .batch_apply(
-        make_basic_gen_gt,  # answer generation (basic)
-        llm=llm,
-    )
-    .batch_apply(
-        make_concise_gen_gt,  # answer generation (concise)
-        llm=llm,
-    )
-    .filter(
-        dontknow_filter_rule_based,  # filter don't know
-        lang="en",
-    )
+	corpus_instance.sample(random_single_hop, n=3)
+	.map(
+		lambda df: df.reset_index(drop=True),
+	)
+	.make_retrieval_gt_contents()
+	.batch_apply(
+		factoid_query_gen,  # query generation
+		llm=llm,
+	)
+	.batch_apply(
+		make_basic_gen_gt,  # answer generation (basic)
+		llm=llm,
+	)
+	.batch_apply(
+		make_concise_gen_gt,  # answer generation (concise)
+		llm=llm,
+	)
+	.filter(
+		dontknow_filter_rule_based,  # filter don't know
+		lang="en",
+	)
 )
 
 initial_qa.to_parquet('./qa.parquet', './corpus.parquet')
@@ -267,6 +272,7 @@ The metrics used by each node in AutoRAG are shown below.
 - [Supporting metrics list](https://edai.notion.site/Supporting-metrics-867d71caefd7401c9264dd91ba406043?pvs=4)
 
 Here is the detailed information about the metrics that AutoRAG supports.
+
 - [Retrieval Metrics](https://edai.notion.site/Retrieval-Metrics-dde3d9fa1d9547cdb8b31b94060d21e7?pvs=4)
 - [Retrieval Token Metrics](https://edai.notion.site/Retrieval-Token-Metrics-c3e2d83358e04510a34b80429ebb543f?pvs=4)
 - [Generation Metrics](https://github.com/user-attachments/assets/7d4a3069-9186-4854-885d-ca0f7bcc17e8)
@@ -280,49 +286,48 @@ First, you need to set the config YAML file for your RAG optimization.
 We highly recommend using pre-made config YAML files for starter.
 
 - [Get Sample YAML](autorag/sample_config/rag)
-  - [Sample YAML Guide](https://docs.auto-rag.com/optimization/sample_config.html)
+    - [Sample YAML Guide](https://docs.auto-rag.com/optimization/sample_config.html)
 - [Make Custom YAML Guide](https://docs.auto-rag.com/optimization/custom_config.html)
-
 
 Here is an example of the config YAML file to use `retrieval`, `prompt_maker`, and `generator` nodes.
 
 ```yaml
 node_lines:
-- node_line_name: retrieve_node_line  # Set Node Line (Arbitrary Name)
-  nodes:
-    - node_type: retrieval  # Set Retrieval Node
-      strategy:
-        metrics: [retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr]  # Set Retrieval Metrics
-      top_k: 3
-      modules:
-        - module_type: vectordb
-          vectordb: default
-        - module_type: bm25
-        - module_type: hybrid_rrf
-          weight_range: (4,80)
-- node_line_name: post_retrieve_node_line  # Set Node Line (Arbitrary Name)
-  nodes:
-    - node_type: prompt_maker  # Set Prompt Maker Node
-      strategy:
-        metrics:   # Set Generation Metrics
-          - metric_name: meteor
-          - metric_name: rouge
-          - metric_name: sem_score
-            embedding_model: openai
-      modules:
-        - module_type: fstring
-          prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
-    - node_type: generator  # Set Generator Node
-      strategy:
-        metrics:  # Set Generation Metrics
-          - metric_name: meteor
-          - metric_name: rouge
-          - metric_name: sem_score
-            embedding_model: openai
-      modules:
-        - module_type: openai_llm
-          llm: gpt-4o-mini
-          batch: 16
+  - node_line_name: retrieve_node_line  # Set Node Line (Arbitrary Name)
+    nodes:
+      - node_type: retrieval  # Set Retrieval Node
+        strategy:
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
+        top_k: 3
+        modules:
+          - module_type: vectordb
+            vectordb: default
+          - module_type: bm25
+          - module_type: hybrid_rrf
+            weight_range: (4,80)
+  - node_line_name: post_retrieve_node_line  # Set Node Line (Arbitrary Name)
+    nodes:
+      - node_type: prompt_maker  # Set Prompt Maker Node
+        strategy:
+          metrics: # Set Generation Metrics
+            - metric_name: meteor
+            - metric_name: rouge
+            - metric_name: sem_score
+              embedding_model: openai
+        modules:
+          - module_type: fstring
+            prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+      - node_type: generator  # Set Generator Node
+        strategy:
+          metrics: # Set Generation Metrics
+            - metric_name: meteor
+            - metric_name: rouge
+            - metric_name: sem_score
+              embedding_model: openai
+        modules:
+          - module_type: openai_llm
+            llm: gpt-4o-mini
+            batch: 16
 ```
 
 ### 2. Run AutoRAG
@@ -395,7 +400,8 @@ runner.run_api_server()
 autorag run_api --trial_dir your/path/to/trial_dir --host 0.0.0.0 --port 8000
 ```
 
-The cli command uses extracted config YAML file. If you want to know it more, check out [here](https://docs.auto-rag.com/tutorial.html#extract-pipeline-and-evaluate-test-dataset).
+The cli command uses extracted config YAML file. If you want to know it more, check
+out [here](https://docs.auto-rag.com/tutorial.html#extract-pipeline-and-evaluate-test-dataset).
 
 ### 4-3. Run as a Web Interface
 
@@ -422,19 +428,24 @@ Example :
 
 ## 🐳 AutoRAG Docker Guide
 
-This guide provides a quick overview of building and running the AutoRAG Docker container for production, with instructions on setting up the environment for evaluation using your configuration and data paths.
+This guide provides a quick overview of building and running the AutoRAG Docker container for production, with
+instructions on setting up the environment for evaluation using your configuration and data paths.
 
 ### 🚀 Building the Docker Image
 
-Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or `autoraghq/autorag:gpu-parsing`
+Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or
+`autoraghq/autorag:gpu-parsing`
 
 #### 1.Download dataset for [Tutorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
+
 ```bash
 python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
 ```
 
 #### 2. Run `evaluate`
-> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $0.30.
+
+> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $
+> 0.30.
 
 ```bash
 docker run --rm -it \
@@ -448,8 +459,8 @@ docker run --rm -it \
   --project_dir /usr/src/app/projects/tutorial_1/
 ```
 
-
 #### 3. Run validate
+
 ```bash
 docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
@@ -461,8 +472,8 @@ docker run --rm -it \
   --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
 ```
 
-
 #### 4. Run `dashboard`
+
 ```bash
 docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
@@ -473,8 +484,8 @@ docker run --rm -it \
     --trial_dir /usr/src/app/projects/tutorial_1/0
 ```
 
-
 #### 4. Run `run_web`
+
 ```bash
 docker run --rm -it \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
@@ -485,10 +496,13 @@ docker run --rm -it \
 ```
 
 #### Key Points :
-- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface` in the container, enabling access to pre-downloaded models.
+
+- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface`
+  in the container, enabling access to pre-downloaded models.
 - **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment.
 
-For more detailed instructions, refer to the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
+For more detailed instructions, refer to
+the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
 
 ## ☎️ FaQ
 
@@ -511,16 +525,9 @@ For more detailed instructions, refer to the [Docker Installation Guide](./docs/
 </a>
 
 ### Individual
+
 - [Shubham Saboo](https://www.linkedin.com/posts/shubhamsaboo_just-found-the-solution-to-the-biggest-rag-activity-7255404464054939648-ISQ8/)
 - [Kalyan KS](https://www.linkedin.com/posts/kalyanksnlp_rag-autorag-llms-activity-7258677155574788097-NgS0/)
-
-## 💬 Talk with Founders
-
-Talk with us! We are always open to talk with you.
-
-- 🎤 [Talk with Jeffrey](https://zcal.co/autorag-jeffrey/autorag-demo-15min)
-
-- 🦜 [Talk with Bwook](https://zcal.co/i/tcuLtmq5)
 
 ---
 
@@ -539,7 +546,6 @@ We are developing AutoRAG as open-source.
 So this project welcomes contributions and suggestions. Feel free to contribute to this project.
 
 Plus, check out our detailed documentation at [here](https://docs.auto-rag.com/index.html).
-
 
 ## Citation
 
