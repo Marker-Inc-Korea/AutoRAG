@@ -38,6 +38,15 @@ AutoRAG supports
 - **Optimization**: Automatically run experiments to find the best RAG pipeline for your own data.
 - **Deployment**: Deploy the best RAG pipeline with single yaml file. Supports Flask server as well.
 
+🚀 AutoRAG GUI
+************************************
+
+AutoRAG GUI is a web-based tool for running AutoRAG experiments.
+If you are not familiar with command-line interface and YAML file configuration,
+you can use AutoRAG GUI to run AutoRAG experiments.
+
+Check out `AutoRAG GUI Docs <https://docs.auto-rag.com/gui/gui.html>`__ for more information.
+
 🏃‍♂️ Getting Started
 ************************************
 
@@ -86,6 +95,13 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    local_model.md
    migration.md
    test_your_rag.md
+
+.. toctree::
+    :maxdepth: 1
+    :caption: AutoRAG GUI
+    :hidden:
+
+    gui/gui.md
 
 .. toctree::
    :maxdepth: 1
