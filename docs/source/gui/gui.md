@@ -51,7 +51,7 @@ you should change the `NEXT_PUBLIC_HOST_URL` and `NEXT_PUBLIC_API_URL` in the `.
 After that, run the following commands for building and running the GUI application.
 
 ```bash
-npm install
+yarn install
 npm run build
 npm run start
 ```
