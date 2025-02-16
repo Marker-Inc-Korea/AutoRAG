@@ -43,6 +43,12 @@ Your Optimized RAG pipeline is just a few clicks away.
 
 Click the docs to use the AutoRAG GUI beta version! [AutoRAG GUI Docs](https://docs.auto-rag.com/gui/gui.html).
 
+### GUI Installation
+
+1. Clone the repository
+2. Run Docker Compose `docker compose up -d`
+3. Access the GUI at `http://localhost:3000`
+
 ---
 
 ## YouTube Tutorial
