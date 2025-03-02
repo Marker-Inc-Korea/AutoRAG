@@ -18,7 +18,7 @@ Your Optimized RAG pipeline is just a few clicks away.
 
 ## Installation
 
-### Use Docker (from source)
+### Use Docker Compose (from source)
 You can install AutoRAG GUI using Docker and the source from Github.
 
 #### 1. Clone the repository with submodules
@@ -34,7 +34,24 @@ cd AutoRAG
 docker compose up
 ```
 
-#### 3. Build an GUI application and run it
+#### 3. Access the GUI
+
+You can use the GUI by accessing `http://localhost:3000` in your web browser right away.
+
+The project files will be stored in the 'projects' directory in the root directory that you cloned the repository.
+
+## Newbie & Pro version
+
+There are two versions of AutoRAG GUI: Newbie and Pro.
+The Pro version is under construction.
+
+The Newbie version is for the users who are not familiar with RAG or AI at all.
+It provides a simple setting to optimize the RAG pipeline and use it.
+If you are a newbie, feel free to check out the Newbie version.
+
+## Run the GUI application from source
+
+#### 1. Build an GUI application and run it
 
 First, go to the autorag-frontend directory.
 
@@ -51,18 +68,9 @@ you should change the `NEXT_PUBLIC_HOST_URL` and `NEXT_PUBLIC_API_URL` in the `.
 After that, run the following commands for building and running the GUI application.
 
 ```bash
-npm install
+yarn install
 npm run build
 npm run start
 ```
 
 That's it!
-
-## Newbie & Pro version
-
-There are two versions of AutoRAG GUI: Newbie and Pro.
-The Pro version is under construction.
-
-The Newbie version is for the users who are not familiar with RAG or AI at all.
-It provides a simple setting to optimize the RAG pipeline and use it.
-If you are a newbie, feel free to check out the Newbie version.

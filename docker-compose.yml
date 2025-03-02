@@ -5,6 +5,8 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+    networks:
+      - app-network
 
   api:
     build:
@@ -27,9 +29,10 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - LOG_LEVEL=DEBUG     # 로그 레벨 설정
       - PYTHONUNBUFFERED=1  # Python 출력 버퍼링 비활성화
-
     depends_on:
       - redis
+    networks:
+      - app-network
 
   flower:
     image: mher/flower
@@ -44,6 +47,27 @@ services:
     depends_on:
       - redis
       - api
+    networks:
+      - app-network
+
+  app:
+    build:
+      context: ./autorag-frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+        - NEXT_PUBLIC_HOST_URL=http://localhost
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_HOST_URL=http://localhost
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - app-network
 
 volumes:
   redis_data:

@@ -66,17 +66,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+cors_list = ["http://localhost:3000", "http://app:3000"]
+
 # CORS 설정
 app = cors(
     app,
-    allow_origin=["http://localhost:3000"],
+    allow_origin=cors_list,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
     allow_credentials=True,
     max_age=3600,
 )
 
-print("CORS enabled for http://localhost:3000")
+print("CORS enabled for http://localhost:3000 and http://app:3000")
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ENV = os.getenv("AUTORAG_API_ENV", "dev")
@@ -106,7 +108,7 @@ print("--------------------------------")
 @app.after_request
 def add_cors_headers(response):
     origin = request.headers.get("Origin")
-    if origin == "http://localhost:3000":
+    if origin in cors_list:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
@@ -122,7 +124,7 @@ def add_cors_headers(response):
 async def options_handler(path=""):
     response = await make_response("")
     origin = request.headers.get("Origin")
-    if origin == "http://localhost:3000":
+    if origin in cors_list:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
@@ -1009,9 +1011,9 @@ async def delete_environment_variable(key: str):
 
 
 @click.command()
-@click.option("--host", type=str, default="127.0.0.1", help="Host IP address")
+@click.option("--host", type=str, default="0.0.0.0", help="Host IP address")
 @click.option("--port", type=int, default=8000, help="Port number")
-def main(host: str = "127.0.0.1", port: int = 8000):
+def main(host: str = "0.0.0.0", port: int = 8000):
     uvicorn.run("app:app", host=host, port=port, reload=True, loop="asyncio")
 
 
