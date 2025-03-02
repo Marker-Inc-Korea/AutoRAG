@@ -17,6 +17,8 @@ from autorag.utils.util import (
 logger = logging.getLogger("AutoRAG")
 
 MAX_TOKEN_DICT = {  # model name : token limit
+	"gpt-4.5-preview": 128_000,
+	"gpt-4.5-preview-2025-02-27": 128_000,
 	"o1-preview": 128_000,
 	"o1-preview-2024-09-12": 128_000,
 	"o1-mini": 128_000,
@@ -179,6 +181,7 @@ class OpenAILLM(BaseGenerator):
 		return result
 
 	async def astream(self, prompt: str, **kwargs):
+		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
 		if kwargs.get("logprobs") is not None:
 			kwargs.pop("logprobs")
 			logger.warning(
@@ -212,38 +215,53 @@ class OpenAILLM(BaseGenerator):
 		raise NotImplementedError("stream method is not implemented yet.")
 
 	async def get_structured_result(self, prompt: str, output_cls, **kwargs):
+		logprobs = True
+		if self.llm.startswith("gpt-4.5"):
+			logprobs = False
 		response = await self.client.beta.chat.completions.parse(
 			model=self.llm,
 			messages=[
 				{"role": "user", "content": prompt},
 			],
 			response_format=output_cls,
-			logprobs=False,
+			logprobs=logprobs,
 			n=1,
 			**kwargs,
 		)
 		return response.choices[0].message.parsed
 
 	async def get_result(self, prompt: str, **kwargs):
+		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
+		logprobs = True
+		if self.llm.startswith("gpt-4.5"):
+			logprobs = False
 		response = await self.client.chat.completions.create(
 			model=self.llm,
 			messages=[
 				{"role": "user", "content": prompt},
 			],
-			logprobs=True,
+			logprobs=logprobs,
 			n=1,
 			**kwargs,
 		)
 		choice = response.choices[0]
 		answer = choice.message.content
-		logprobs = list(map(lambda x: x.logprob, choice.logprobs.content))
-		tokens = list(
-			map(
-				lambda x: self.tokenizer.encode(x.token, allowed_special="all")[0],
-				choice.logprobs.content,
+		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
+		if self.llm.startswith("gpt-4.5"):
+			logprobs = []
+			tokens = self.tokenizer.encode(answer, allowed_special="all")
+			logger.info("gpt-4.5-preview does not support logprobs.")
+		else:
+			logprobs = list(map(lambda x: x.logprob, choice.logprobs.content))
+			tokens = list(
+				map(
+					lambda x: self.tokenizer.encode(x.token, allowed_special="all")[0],
+					choice.logprobs.content,
+				)
 			)
-		)
-		assert len(tokens) == len(logprobs), "tokens and logprobs size is different."
+			assert len(tokens) == len(
+				logprobs
+			), "tokens and logprobs size is different."
 		return answer, tokens, logprobs
 
 	async def get_result_o1(self, prompt: str, **kwargs):
