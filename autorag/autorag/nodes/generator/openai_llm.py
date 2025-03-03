@@ -19,10 +19,12 @@ logger = logging.getLogger("AutoRAG")
 MAX_TOKEN_DICT = {  # model name : token limit
 	"gpt-4.5-preview": 128_000,
 	"gpt-4.5-preview-2025-02-27": 128_000,
+	"o1": 200_000,
 	"o1-preview": 128_000,
 	"o1-preview-2024-09-12": 128_000,
 	"o1-mini": 128_000,
 	"o1-mini-2024-09-12": 128_000,
+	"o3-mini": 200_000,
 	"gpt-4o-mini": 128_000,
 	"gpt-4o-mini-2024-07-18": 128_000,
 	"gpt-4o": 128_000,
@@ -59,7 +61,7 @@ class OpenAILLM(BaseGenerator):
 		client_init_params = pop_params(AsyncOpenAI.__init__, kwargs)
 		self.client = AsyncOpenAI(**client_init_params)
 
-		if self.llm.startswith("o1"):
+		if self.llm.startswith("gpt-4.5"):
 			self.tokenizer = tiktoken.get_encoding("o200k_base")
 		else:
 			self.tokenizer = tiktoken.encoding_for_model(self.llm)
@@ -114,7 +116,7 @@ class OpenAILLM(BaseGenerator):
 			kwargs.pop("n")
 			logger.warning("parameter n does not effective. It always set to 1.")
 
-		# TODO: fix this after updating tiktoken for the o1 model. It is not yet supported yet.
+		# TODO: fix this after updating tiktoken for the gpt-4.5 model. It is not yet supported yet.
 		if truncate:
 			prompts = list(
 				map(
@@ -127,7 +129,7 @@ class OpenAILLM(BaseGenerator):
 
 		openai_chat_params = pop_params(self.client.chat.completions.create, kwargs)
 		loop = get_event_loop()
-		if self.llm.startswith("o1"):
+		if self.llm.startswith("o1") or self.llm.startswith("o3"):
 			tasks = [
 				self.get_result_o1(prompt, **openai_chat_params) for prompt in prompts
 			]
@@ -161,7 +163,7 @@ class OpenAILLM(BaseGenerator):
 			kwargs.pop("n")
 			logger.warning("parameter n does not effective. It always set to 1.")
 
-		# TODO: fix this after updating tiktoken for the o1 model. It is not yet supported yet.
+		# TODO: fix this after updating tiktoken for the gpt-4.5 model. It is not yet supported yet.
 		prompts = list(
 			map(
 				lambda prompt: truncate_by_token(
@@ -248,9 +250,9 @@ class OpenAILLM(BaseGenerator):
 		answer = choice.message.content
 		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
 		if self.llm.startswith("gpt-4.5"):
-			logprobs = []
 			tokens = self.tokenizer.encode(answer, allowed_special="all")
-			logger.info("gpt-4.5-preview does not support logprobs.")
+			logprobs = [0.5] * len(tokens)
+			logger.warning("gpt-4.5-preview does not support logprobs yet.")
 		else:
 			logprobs = list(map(lambda x: x.logprob, choice.logprobs.content))
 			tokens = list(
@@ -265,7 +267,9 @@ class OpenAILLM(BaseGenerator):
 		return answer, tokens, logprobs
 
 	async def get_result_o1(self, prompt: str, **kwargs):
-		assert self.llm.startswith("o1"), "This function only supports o1 model."
+		assert self.llm.startswith("o1") or self.llm.startswith(
+			"o3"
+		), "This function only supports o1 or o3 model."
 		# The default temperature for the o1 model is 1. 1 is only supported.
 		# See https://platform.openai.com/docs/guides/reasoning about beta limitation of o1 models.
 		kwargs["temperature"] = 1
