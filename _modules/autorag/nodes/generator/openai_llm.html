@@ -424,10 +424,14 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
 <span class="n">MAX_TOKEN_DICT</span> <span class="o">=</span> <span class="p">{</span>  <span class="c1"># model name : token limit</span>
+	<span class="s2">&quot;gpt-4.5-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-4.5-preview-2025-02-27&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
+	<span class="s2">&quot;o1&quot;</span><span class="p">:</span> <span class="mi">200_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1-preview-2024-09-12&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1-mini&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1-mini-2024-09-12&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
+	<span class="s2">&quot;o3-mini&quot;</span><span class="p">:</span> <span class="mi">200_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4o-mini&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4o-mini-2024-07-18&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4o&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
@@ -466,7 +470,7 @@
 		<span class="n">client_init_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">AsyncOpenAI</span><span class="o">.</span><span class="fm">__init__</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">AsyncOpenAI</span><span class="p">(</span><span class="o">**</span><span class="n">client_init_params</span><span class="p">)</span>
 
-		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-4.5&quot;</span><span class="p">):</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s2">&quot;o200k_base&quot;</span><span class="p">)</span>
 		<span class="k">else</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">encoding_for_model</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="p">)</span>
@@ -524,7 +528,7 @@
 			<span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;n&quot;</span><span class="p">)</span>
 			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;parameter n does not effective. It always set to 1.&quot;</span><span class="p">)</span>
 
-		<span class="c1"># TODO: fix this after updating tiktoken for the o1 model. It is not yet supported yet.</span>
+		<span class="c1"># TODO: fix this after updating tiktoken for the gpt-4.5 model. It is not yet supported yet.</span>
 		<span class="k">if</span> <span class="n">truncate</span><span class="p">:</span>
 			<span class="n">prompts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
 				<span class="nb">map</span><span class="p">(</span>
@@ -537,7 +541,7 @@
 
 		<span class="n">openai_chat_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
 		<span class="n">loop</span> <span class="o">=</span> <span class="n">get_event_loop</span><span class="p">()</span>
-		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o3&quot;</span><span class="p">):</span>
 			<span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span>
 				<span class="bp">self</span><span class="o">.</span><span class="n">get_result_o1</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="o">**</span><span class="n">openai_chat_params</span><span class="p">)</span> <span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">prompts</span>
 			<span class="p">]</span>
@@ -573,7 +577,7 @@
 			<span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;n&quot;</span><span class="p">)</span>
 			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;parameter n does not effective. It always set to 1.&quot;</span><span class="p">)</span>
 
-		<span class="c1"># TODO: fix this after updating tiktoken for the o1 model. It is not yet supported yet.</span>
+		<span class="c1"># TODO: fix this after updating tiktoken for the gpt-4.5 model. It is not yet supported yet.</span>
 		<span class="n">prompts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
 			<span class="nb">map</span><span class="p">(</span>
 				<span class="k">lambda</span> <span class="n">prompt</span><span class="p">:</span> <span class="n">truncate_by_token</span><span class="p">(</span>
@@ -596,6 +600,7 @@
 <div class="viewcode-block" id="OpenAILLM.astream">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.astream">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">astream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="c1"># TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.</span>
 		<span class="k">if</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;logprobs&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
 			<span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;logprobs&quot;</span><span class="p">)</span>
 			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
@@ -635,13 +640,16 @@
 <div class="viewcode-block" id="OpenAILLM.get_structured_result">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.get_structured_result">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_structured_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">output_cls</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="n">logprobs</span> <span class="o">=</span> <span class="kc">True</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-4.5&quot;</span><span class="p">):</span>
+			<span class="n">logprobs</span> <span class="o">=</span> <span class="kc">False</span>
 		<span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">beta</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
 			<span class="n">model</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="p">,</span>
 			<span class="n">messages</span><span class="o">=</span><span class="p">[</span>
 				<span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">prompt</span><span class="p">},</span>
 			<span class="p">],</span>
 			<span class="n">response_format</span><span class="o">=</span><span class="n">output_cls</span><span class="p">,</span>
-			<span class="n">logprobs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+			<span class="n">logprobs</span><span class="o">=</span><span class="n">logprobs</span><span class="p">,</span>
 			<span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
 			<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 		<span class="p">)</span>
@@ -651,32 +659,46 @@
 <div class="viewcode-block" id="OpenAILLM.get_result">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.get_result">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="c1"># TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.</span>
+		<span class="n">logprobs</span> <span class="o">=</span> <span class="kc">True</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-4.5&quot;</span><span class="p">):</span>
+			<span class="n">logprobs</span> <span class="o">=</span> <span class="kc">False</span>
 		<span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
 			<span class="n">model</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="p">,</span>
 			<span class="n">messages</span><span class="o">=</span><span class="p">[</span>
 				<span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">prompt</span><span class="p">},</span>
 			<span class="p">],</span>
-			<span class="n">logprobs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+			<span class="n">logprobs</span><span class="o">=</span><span class="n">logprobs</span><span class="p">,</span>
 			<span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
 			<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 		<span class="p">)</span>
 		<span class="n">choice</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 		<span class="n">answer</span> <span class="o">=</span> <span class="n">choice</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span>
-		<span class="n">logprobs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">logprob</span><span class="p">,</span> <span class="n">choice</span><span class="o">.</span><span class="n">logprobs</span><span class="o">.</span><span class="n">content</span><span class="p">))</span>
-		<span class="n">tokens</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
-			<span class="nb">map</span><span class="p">(</span>
-				<span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
-				<span class="n">choice</span><span class="o">.</span><span class="n">logprobs</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+		<span class="c1"># TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-4.5&quot;</span><span class="p">):</span>
+			<span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">answer</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)</span>
+			<span class="n">logprobs</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;gpt-4.5-preview does not support logprobs yet.&quot;</span><span class="p">)</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="n">logprobs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">logprob</span><span class="p">,</span> <span class="n">choice</span><span class="o">.</span><span class="n">logprobs</span><span class="o">.</span><span class="n">content</span><span class="p">))</span>
+			<span class="n">tokens</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+				<span class="nb">map</span><span class="p">(</span>
+					<span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">token</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
+					<span class="n">choice</span><span class="o">.</span><span class="n">logprobs</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+				<span class="p">)</span>
 			<span class="p">)</span>
-		<span class="p">)</span>
-		<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">logprobs</span><span class="p">),</span> <span class="s2">&quot;tokens and logprobs size is different.&quot;</span>
+			<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span>
+				<span class="n">logprobs</span>
+			<span class="p">),</span> <span class="s2">&quot;tokens and logprobs size is different.&quot;</span>
 		<span class="k">return</span> <span class="n">answer</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">logprobs</span></div>
 
 
 <div class="viewcode-block" id="OpenAILLM.get_result_o1">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.get_result_o1">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_result_o1</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-		<span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">),</span> <span class="s2">&quot;This function only supports o1 model.&quot;</span>
+		<span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span>
+			<span class="s2">&quot;o3&quot;</span>
+		<span class="p">),</span> <span class="s2">&quot;This function only supports o1 or o3 model.&quot;</span>
 		<span class="c1"># The default temperature for the o1 model is 1. 1 is only supported.</span>
 		<span class="c1"># See https://platform.openai.com/docs/guides/reasoning about beta limitation of o1 models.</span>
 		<span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;temperature&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
