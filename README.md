@@ -63,7 +63,7 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
 
 - [💬 Naive RAG Chatbot](https://huggingface.co/spaces/AutoRAG/Naive-RAG-chatbot)
 - [✏️ AutoRAG Data Creation](https://huggingface.co/spaces/AutoRAG/AutoRAG-data-creation)
-- [🚀 AutoRAG RAG Pipeline Optimization](https://huggingface.co/spaces/AutoRAG/AutoRAG-optimization)
+- [🚀 AutoRAG RAG Pipeline Optimization](https://huggingface.co/spaces/AutoRAG/RAG-Pipeline-Optimization)
 
 ## Colab Tutorial
 
