@@ -37,7 +37,17 @@ def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
 	texts = list(map(lambda x: x.strip().lower(), texts))
 	kiwi = Kiwi()
 	tokenized_list: Iterable[List[Token]] = kiwi.tokenize(texts)
-	return [list(map(lambda x: x.form, token_list)) for token_list in tokenized_list]
+
+	def extract_form_safe(x):
+		try:
+			return x.form
+		except UnicodeDecodeError:
+			return " "
+
+	return [
+		list(map(lambda x: extract_form_safe(x), token_list))
+		for token_list in tokenized_list
+	]
 
 
 def tokenize_ko_kkma(texts: List[str]) -> List[List[str]]:
