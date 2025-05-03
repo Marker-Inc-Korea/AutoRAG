@@ -459,54 +459,8 @@
 </dd></dl>
 
 </section>
-<section id="module-autorag.nodes.promptmaker.run">
-<span id="autorag-nodes-promptmaker-run-module"></span><h2>autorag.nodes.promptmaker.run module<a class="headerlink" href="#module-autorag.nodes.promptmaker.run" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.promptmaker.run.evaluate_generator_result">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.promptmaker.run.</span></span><span class="sig-name descname"><span class="pre">evaluate_generator_result</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">result_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/promptmaker/run.html#evaluate_generator_result"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.promptmaker.run.evaluate_generator_result" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.promptmaker.run.evaluate_one_prompt_maker_node">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.promptmaker.run.</span></span><span class="sig-name descname"><span class="pre">evaluate_one_prompt_maker_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prompts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">generator_classes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">generator_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategy_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/promptmaker/run.html#evaluate_one_prompt_maker_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.promptmaker.run.evaluate_one_prompt_maker_node" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.promptmaker.run.make_generator_callable_params">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.promptmaker.run.</span></span><span class="sig-name descname"><span class="pre">make_generator_callable_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">strategy_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/promptmaker/run.html#make_generator_callable_params"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.promptmaker.run.make_generator_callable_params" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.promptmaker.run.run_prompt_maker_node">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.promptmaker.run.</span></span><span class="sig-name descname"><span class="pre">run_prompt_maker_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node_line_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategies</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/promptmaker/run.html#run_prompt_maker_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.promptmaker.run.run_prompt_maker_node" title="Link to this definition">¶</a></dt>
-<dd><p>Run prompt maker node.
-With this function, you can select the best prompt maker module.
-As default, when you can use only one module, the evaluation will be skipped.
-If you want to select the best prompt among modules, you can use strategies.
-When you use them, you must pass ‘generator_modules’ and its parameters at strategies.
-Because it uses generator modules and generator metrics for evaluation this module.
-It is recommended to use one params and modules for evaluation,
-but you can use multiple params and modules for evaluation.
-When you don’t set generator module at strategies, it will use the default generator module.
-The default generator module is llama_index_llm with openai gpt-3.5-turbo model.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>modules</strong> – Prompt maker module classes to run.</p></li>
-<li><p><strong>module_params</strong> – Prompt maker module parameters.</p></li>
-<li><p><strong>previous_result</strong> – Previous result dataframe.
-Could be query expansion’s best result or qa data.</p></li>
-<li><p><strong>node_line_dir</strong> – This node line’s directory.</p></li>
-<li><p><strong>strategies</strong> – Strategies for prompt maker node.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The best result dataframe.
-It contains previous result columns and prompt maker’s result columns which is ‘prompts’.</p>
-</dd>
-</dl>
-</dd></dl>
-
+<section id="autorag-nodes-promptmaker-run-module">
+<h2>autorag.nodes.promptmaker.run module<a class="headerlink" href="#autorag-nodes-promptmaker-run-module" title="Link to this heading">¶</a></h2>
 </section>
 <section id="module-autorag.nodes.promptmaker.window_replacement">
 <span id="autorag-nodes-promptmaker-window-replacement-module"></span><h2>autorag.nodes.promptmaker.window_replacement module<a class="headerlink" href="#module-autorag.nodes.promptmaker.window_replacement" title="Link to this heading">¶</a></h2>
@@ -587,13 +541,7 @@ It contains previous result columns and prompt maker’s result columns which is
 </li>
 </ul>
 </li>
-<li><a class="reference internal" href="#module-autorag.nodes.promptmaker.run">autorag.nodes.promptmaker.run module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.promptmaker.run.evaluate_generator_result"><code class="docutils literal notranslate"><span class="pre">evaluate_generator_result()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.promptmaker.run.evaluate_one_prompt_maker_node"><code class="docutils literal notranslate"><span class="pre">evaluate_one_prompt_maker_node()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.promptmaker.run.make_generator_callable_params"><code class="docutils literal notranslate"><span class="pre">make_generator_callable_params()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.promptmaker.run.run_prompt_maker_node"><code class="docutils literal notranslate"><span class="pre">run_prompt_maker_node()</span></code></a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#autorag-nodes-promptmaker-run-module">autorag.nodes.promptmaker.run module</a></li>
 <li><a class="reference internal" href="#module-autorag.nodes.promptmaker.window_replacement">autorag.nodes.promptmaker.window_replacement module</a><ul>
 <li><a class="reference internal" href="#autorag.nodes.promptmaker.window_replacement.WindowReplacement"><code class="docutils literal notranslate"><span class="pre">WindowReplacement</span></code></a><ul>
 <li><a class="reference internal" href="#autorag.nodes.promptmaker.window_replacement.WindowReplacement.pure"><code class="docutils literal notranslate"><span class="pre">WindowReplacement.pure()</span></code></a></li>

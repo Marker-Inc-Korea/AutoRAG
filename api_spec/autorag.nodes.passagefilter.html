@@ -416,27 +416,15 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.passagefilter.base">
-<span id="autorag-nodes-passagefilter-base-module"></span><h2>autorag.nodes.passagefilter.base module<a class="headerlink" href="#module-autorag.nodes.passagefilter.base" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.base.BasePassageFilter">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.base.</span></span><span class="sig-name descname"><span class="pre">BasePassageFilter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/base.html#BasePassageFilter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="autorag.schema.html#autorag.schema.base.BaseModule" title="autorag.schema.base.BaseModule"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseModule</span></code></a></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.base.BasePassageFilter.cast_to_run">
-<span class="sig-name descname"><span class="pre">cast_to_run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/base.html#BasePassageFilter.cast_to_run"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.base.BasePassageFilter.cast_to_run" title="Link to this definition">¶</a></dt>
-<dd><p>This function is for cast function (a.k.a decorator) only for pure function in the whole node.</p>
-</dd></dl>
-
-</dd></dl>
-
+<section id="autorag-nodes-passagefilter-base-module">
+<h2>autorag.nodes.passagefilter.base module<a class="headerlink" href="#autorag-nodes-passagefilter-base-module" title="Link to this heading">¶</a></h2>
 </section>
 <section id="module-autorag.nodes.passagefilter.pass_passage_filter">
 <span id="autorag-nodes-passagefilter-pass-passage-filter-module"></span><h2>autorag.nodes.passagefilter.pass_passage_filter module<a class="headerlink" href="#module-autorag.nodes.passagefilter.pass_passage_filter" title="Link to this heading">¶</a></h2>
 <dl class="py class">
 <dt class="sig sig-object py" id="autorag.nodes.passagefilter.pass_passage_filter.PassPassageFilter">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.pass_passage_filter.</span></span><span class="sig-name descname"><span class="pre">PassPassageFilter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/pass_passage_filter.html#PassPassageFilter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.pass_passage_filter.PassPassageFilter" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="autorag.nodes.passagefilter.base.BasePassageFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a></p>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></p>
 <dl class="py method">
 <dt class="sig sig-object py" id="autorag.nodes.passagefilter.pass_passage_filter.PassPassageFilter.pure">
 <span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/pass_passage_filter.html#PassPassageFilter.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.pass_passage_filter.PassPassageFilter.pure" title="Link to this definition">¶</a></dt>
@@ -450,7 +438,7 @@
 <dl class="py class">
 <dt class="sig sig-object py" id="autorag.nodes.passagefilter.percentile_cutoff.PercentileCutoff">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.percentile_cutoff.</span></span><span class="sig-name descname"><span class="pre">PercentileCutoff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/percentile_cutoff.html#PercentileCutoff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.percentile_cutoff.PercentileCutoff" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="autorag.nodes.passagefilter.base.BasePassageFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a></p>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></p>
 <dl class="py method">
 <dt class="sig sig-object py" id="autorag.nodes.passagefilter.percentile_cutoff.PercentileCutoff.pure">
 <span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/percentile_cutoff.html#PercentileCutoff.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.percentile_cutoff.PercentileCutoff.pure" title="Link to this definition">¶</a></dt>
@@ -464,7 +452,7 @@
 <dl class="py class">
 <dt class="sig sig-object py" id="autorag.nodes.passagefilter.recency.RecencyFilter">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.recency.</span></span><span class="sig-name descname"><span class="pre">RecencyFilter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/recency.html#RecencyFilter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.recency.RecencyFilter" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="autorag.nodes.passagefilter.base.BasePassageFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a></p>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></p>
 <dl class="py method">
 <dt class="sig sig-object py" id="autorag.nodes.passagefilter.recency.RecencyFilter.pure">
 <span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/recency.html#RecencyFilter.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.recency.RecencyFilter.pure" title="Link to this definition">¶</a></dt>
@@ -473,77 +461,20 @@
 </dd></dl>
 
 </section>
-<section id="module-autorag.nodes.passagefilter.run">
-<span id="autorag-nodes-passagefilter-run-module"></span><h2>autorag.nodes.passagefilter.run module<a class="headerlink" href="#module-autorag.nodes.passagefilter.run" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.run.run_passage_filter_node">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.run.</span></span><span class="sig-name descname"><span class="pre">run_passage_filter_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node_line_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategies</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/run.html#run_passage_filter_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.run.run_passage_filter_node" title="Link to this definition">¶</a></dt>
-<dd><p>Run evaluation and select the best module among passage filter node results.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>modules</strong> – Passage filter modules to run.</p></li>
-<li><p><strong>module_params</strong> – Passage filter module parameters.</p></li>
-<li><p><strong>previous_result</strong> – Previous result dataframe.
-Could be retrieval, reranker, passage filter modules result.
-It means it must contain ‘query’, ‘retrieved_contents’, ‘retrieved_ids’, ‘retrieve_scores’ columns.</p></li>
-<li><p><strong>node_line_dir</strong> – This node line’s directory.</p></li>
-<li><p><strong>strategies</strong> – Strategies for passage filter node.
-In this node, we use ‘retrieval_f1’, ‘retrieval_recall’ and ‘retrieval_precision’.
-You can skip evaluation when you use only one module and a module parameter.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The best result dataframe with previous result columns.</p>
-</dd>
-</dl>
-</dd></dl>
-
+<section id="autorag-nodes-passagefilter-run-module">
+<h2>autorag.nodes.passagefilter.run module<a class="headerlink" href="#autorag-nodes-passagefilter-run-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.passagefilter.similarity_percentile_cutoff">
-<span id="autorag-nodes-passagefilter-similarity-percentile-cutoff-module"></span><h2>autorag.nodes.passagefilter.similarity_percentile_cutoff module<a class="headerlink" href="#module-autorag.nodes.passagefilter.similarity_percentile_cutoff" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.similarity_percentile_cutoff.SimilarityPercentileCutoff">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.similarity_percentile_cutoff.</span></span><span class="sig-name descname"><span class="pre">SimilarityPercentileCutoff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/similarity_percentile_cutoff.html#SimilarityPercentileCutoff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.similarity_percentile_cutoff.SimilarityPercentileCutoff" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="autorag.nodes.passagefilter.base.BasePassageFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.similarity_percentile_cutoff.SimilarityPercentileCutoff.pure">
-<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/similarity_percentile_cutoff.html#SimilarityPercentileCutoff.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.similarity_percentile_cutoff.SimilarityPercentileCutoff.pure" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
+<section id="autorag-nodes-passagefilter-similarity-percentile-cutoff-module">
+<h2>autorag.nodes.passagefilter.similarity_percentile_cutoff module<a class="headerlink" href="#autorag-nodes-passagefilter-similarity-percentile-cutoff-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.passagefilter.similarity_threshold_cutoff">
-<span id="autorag-nodes-passagefilter-similarity-threshold-cutoff-module"></span><h2>autorag.nodes.passagefilter.similarity_threshold_cutoff module<a class="headerlink" href="#module-autorag.nodes.passagefilter.similarity_threshold_cutoff" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.similarity_threshold_cutoff.SimilarityThresholdCutoff">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.similarity_threshold_cutoff.</span></span><span class="sig-name descname"><span class="pre">SimilarityThresholdCutoff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/similarity_threshold_cutoff.html#SimilarityThresholdCutoff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.similarity_threshold_cutoff.SimilarityThresholdCutoff" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="autorag.nodes.passagefilter.base.BasePassageFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.similarity_threshold_cutoff.SimilarityThresholdCutoff.pure">
-<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/similarity_threshold_cutoff.html#SimilarityThresholdCutoff.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.similarity_threshold_cutoff.SimilarityThresholdCutoff.pure" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
+<section id="autorag-nodes-passagefilter-similarity-threshold-cutoff-module">
+<h2>autorag.nodes.passagefilter.similarity_threshold_cutoff module<a class="headerlink" href="#autorag-nodes-passagefilter-similarity-threshold-cutoff-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.passagefilter.threshold_cutoff">
-<span id="autorag-nodes-passagefilter-threshold-cutoff-module"></span><h2>autorag.nodes.passagefilter.threshold_cutoff module<a class="headerlink" href="#module-autorag.nodes.passagefilter.threshold_cutoff" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagefilter.threshold_cutoff.</span></span><span class="sig-name descname"><span class="pre">ThresholdCutoff</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">Path</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/threshold_cutoff.html#ThresholdCutoff"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter" title="autorag.nodes.passagefilter.base.BasePassageFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff.pure">
-<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagefilter/threshold_cutoff.html#ThresholdCutoff.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff.pure" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
+<section id="autorag-nodes-passagefilter-threshold-cutoff-module">
+<h2>autorag.nodes.passagefilter.threshold_cutoff module<a class="headerlink" href="#autorag-nodes-passagefilter-threshold-cutoff-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.passagefilter">
-<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.nodes.passagefilter" title="Link to this heading">¶</a></h2>
+<section id="module-contents">
+<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 
@@ -586,13 +517,7 @@ You can skip evaluation when you use only one module and a module parameter.</p>
             <ul>
 <li><a class="reference internal" href="#">autorag.nodes.passagefilter package</a><ul>
 <li><a class="reference internal" href="#submodules">Submodules</a></li>
-<li><a class="reference internal" href="#module-autorag.nodes.passagefilter.base">autorag.nodes.passagefilter.base module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter"><code class="docutils literal notranslate"><span class="pre">BasePassageFilter</span></code></a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.base.BasePassageFilter.cast_to_run"><code class="docutils literal notranslate"><span class="pre">BasePassageFilter.cast_to_run()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li><a class="reference internal" href="#autorag-nodes-passagefilter-base-module">autorag.nodes.passagefilter.base module</a></li>
 <li><a class="reference internal" href="#module-autorag.nodes.passagefilter.pass_passage_filter">autorag.nodes.passagefilter.pass_passage_filter module</a><ul>
 <li><a class="reference internal" href="#autorag.nodes.passagefilter.pass_passage_filter.PassPassageFilter"><code class="docutils literal notranslate"><span class="pre">PassPassageFilter</span></code></a><ul>
 <li><a class="reference internal" href="#autorag.nodes.passagefilter.pass_passage_filter.PassPassageFilter.pure"><code class="docutils literal notranslate"><span class="pre">PassPassageFilter.pure()</span></code></a></li>
@@ -614,32 +539,11 @@ You can skip evaluation when you use only one module and a module parameter.</p>
 </li>
 </ul>
 </li>
-<li><a class="reference internal" href="#module-autorag.nodes.passagefilter.run">autorag.nodes.passagefilter.run module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.run.run_passage_filter_node"><code class="docutils literal notranslate"><span class="pre">run_passage_filter_node()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.nodes.passagefilter.similarity_percentile_cutoff">autorag.nodes.passagefilter.similarity_percentile_cutoff module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.similarity_percentile_cutoff.SimilarityPercentileCutoff"><code class="docutils literal notranslate"><span class="pre">SimilarityPercentileCutoff</span></code></a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.similarity_percentile_cutoff.SimilarityPercentileCutoff.pure"><code class="docutils literal notranslate"><span class="pre">SimilarityPercentileCutoff.pure()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.nodes.passagefilter.similarity_threshold_cutoff">autorag.nodes.passagefilter.similarity_threshold_cutoff module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.similarity_threshold_cutoff.SimilarityThresholdCutoff"><code class="docutils literal notranslate"><span class="pre">SimilarityThresholdCutoff</span></code></a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.similarity_threshold_cutoff.SimilarityThresholdCutoff.pure"><code class="docutils literal notranslate"><span class="pre">SimilarityThresholdCutoff.pure()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.nodes.passagefilter.threshold_cutoff">autorag.nodes.passagefilter.threshold_cutoff module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff"><code class="docutils literal notranslate"><span class="pre">ThresholdCutoff</span></code></a><ul>
-<li><a class="reference internal" href="#autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff.pure"><code class="docutils literal notranslate"><span class="pre">ThresholdCutoff.pure()</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.nodes.passagefilter">Module contents</a></li>
+<li><a class="reference internal" href="#autorag-nodes-passagefilter-run-module">autorag.nodes.passagefilter.run module</a></li>
+<li><a class="reference internal" href="#autorag-nodes-passagefilter-similarity-percentile-cutoff-module">autorag.nodes.passagefilter.similarity_percentile_cutoff module</a></li>
+<li><a class="reference internal" href="#autorag-nodes-passagefilter-similarity-threshold-cutoff-module">autorag.nodes.passagefilter.similarity_threshold_cutoff module</a></li>
+<li><a class="reference internal" href="#autorag-nodes-passagefilter-threshold-cutoff-module">autorag.nodes.passagefilter.threshold_cutoff module</a></li>
+<li><a class="reference internal" href="#module-contents">Module contents</a></li>
 </ul>
 </li>
 </ul>

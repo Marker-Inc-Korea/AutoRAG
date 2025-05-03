@@ -416,121 +416,20 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.data.chunk.base">
-<span id="autorag-data-chunk-base-module"></span><h2>autorag.data.chunk.base module<a class="headerlink" href="#module-autorag.data.chunk.base" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.base.add_file_name">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.base.</span></span><span class="sig-name descname"><span class="pre">add_file_name</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_name_language</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_names</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunk_texts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/chunk/base.html#add_file_name"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.base.add_file_name" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.base.chunker_node">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.base.</span></span><span class="sig-name descname"><span class="pre">chunker_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data/chunk/base.html#chunker_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.base.chunker_node" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.base.make_metadata_list">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.base.</span></span><span class="sig-name descname"><span class="pre">make_metadata_list</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parsed_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/chunk/base.html#make_metadata_list"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.base.make_metadata_list" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
+<section id="autorag-data-chunk-base-module">
+<h2>autorag.data.chunk.base module<a class="headerlink" href="#autorag-data-chunk-base-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.data.chunk.langchain_chunk">
-<span id="autorag-data-chunk-langchain-chunk-module"></span><h2>autorag.data.chunk.langchain_chunk module<a class="headerlink" href="#module-autorag.data.chunk.langchain_chunk" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.langchain_chunk.langchain_chunk">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.langchain_chunk.</span></span><span class="sig-name descname"><span class="pre">langchain_chunk</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">texts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">TextSplitter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_name_language</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metadata_list</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/chunk/langchain_chunk.html#langchain_chunk"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.langchain_chunk.langchain_chunk" title="Link to this definition">¶</a></dt>
-<dd><blockquote>
-<div><p>Chunk texts from the parsed result to use langchain chunk method</p>
-<dl class="field-list simple">
-<dt class="field-odd">param texts<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The list of texts to chunk from the parsed result</p>
-</dd>
-<dt class="field-even">param chunker<span class="colon">:</span></dt>
-<dd class="field-even"><p>A langchain TextSplitter(Chunker) instance.</p>
-</dd>
-<dt class="field-odd">param file_name_language<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The language to use ‘add_file_name’ feature.
-You need to set one of ‘English’ and ‘Korean’
-The ‘add_file_name’ feature is to add a file_name to chunked_contents.
-This is used to prevent hallucination by retrieving contents from the wrong document.
-Default form of ‘English’ is “file_name: {file_name}</p>
-</dd>
-</dl>
-</div></blockquote>
-<dl class="simple">
-<dt>contents: {content}”</dt><dd><dl class="field-list simple">
-<dt class="field-odd">param metadata_list<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The list of dict of metadata from the parsed result</p>
-</dd>
-<dt class="field-even">return<span class="colon">:</span></dt>
-<dd class="field-even"><p>tuple of lists containing the chunked doc_id, contents, path, start_idx, end_idx and metadata</p>
-</dd>
-</dl>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.langchain_chunk.langchain_chunk_pure">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.langchain_chunk.</span></span><span class="sig-name descname"><span class="pre">langchain_chunk_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">TextSplitter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_name_language</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_metadata</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data/chunk/langchain_chunk.html#langchain_chunk_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.langchain_chunk.langchain_chunk_pure" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
+<section id="autorag-data-chunk-langchain-chunk-module">
+<h2>autorag.data.chunk.langchain_chunk module<a class="headerlink" href="#autorag-data-chunk-langchain-chunk-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.data.chunk.llama_index_chunk">
-<span id="autorag-data-chunk-llama-index-chunk-module"></span><h2>autorag.data.chunk.llama_index_chunk module<a class="headerlink" href="#module-autorag.data.chunk.llama_index_chunk" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.llama_index_chunk.llama_index_chunk">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.llama_index_chunk.</span></span><span class="sig-name descname"><span class="pre">llama_index_chunk</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">texts</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">NodeParser</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_name_language</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metadata_list</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/chunk/llama_index_chunk.html#llama_index_chunk"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.llama_index_chunk.llama_index_chunk" title="Link to this definition">¶</a></dt>
-<dd><blockquote>
-<div><p>Chunk texts from the parsed result to use llama index chunk method</p>
-<dl class="field-list simple">
-<dt class="field-odd">param texts<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The list of texts to chunk from the parsed result</p>
-</dd>
-<dt class="field-even">param chunker<span class="colon">:</span></dt>
-<dd class="field-even"><p>A llama index NodeParser(Chunker) instance.</p>
-</dd>
-<dt class="field-odd">param file_name_language<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The language to use ‘add_file_name’ feature.
-You need to set one of ‘English’ and ‘Korean’
-The ‘add_file_name’ feature is to add a file_name to chunked_contents.
-This is used to prevent hallucination by retrieving contents from the wrong document.
-Default form of ‘English’ is “file_name: {file_name}</p>
-</dd>
-</dl>
-</div></blockquote>
-<dl class="simple">
-<dt>contents: {content}”</dt><dd><dl class="field-list simple">
-<dt class="field-odd">param metadata_list<span class="colon">:</span></dt>
-<dd class="field-odd"><p>The list of dict of metadata from the parsed result</p>
-</dd>
-<dt class="field-even">param batch<span class="colon">:</span></dt>
-<dd class="field-even"><p>The batch size for chunk texts. Default is 8</p>
-</dd>
-<dt class="field-odd">return<span class="colon">:</span></dt>
-<dd class="field-odd"><p>tuple of lists containing the chunked doc_id, contents, path, start_idx, end_idx and metadata</p>
-</dd>
-</dl>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.llama_index_chunk.llama_index_chunk_pure">
-<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.llama_index_chunk.</span></span><span class="sig-name descname"><span class="pre">llama_index_chunk_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">chunker</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">NodeParser</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file_name_language</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_metadata</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data/chunk/llama_index_chunk.html#llama_index_chunk_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.llama_index_chunk.llama_index_chunk_pure" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
+<section id="autorag-data-chunk-llama-index-chunk-module">
+<h2>autorag.data.chunk.llama_index_chunk module<a class="headerlink" href="#autorag-data-chunk-llama-index-chunk-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.data.chunk.run">
-<span id="autorag-data-chunk-run-module"></span><h2>autorag.data.chunk.run module<a class="headerlink" href="#module-autorag.data.chunk.run" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.data.chunk.run.run_chunker">
-<span class="sig-prename descclassname"><span class="pre">autorag.data.chunk.run.</span></span><span class="sig-name descname"><span class="pre">run_chunker</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Callable</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">parsed_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data/chunk/run.html#run_chunker"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.chunk.run.run_chunker" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
+<section id="autorag-data-chunk-run-module">
+<h2>autorag.data.chunk.run module<a class="headerlink" href="#autorag-data-chunk-run-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.data.chunk">
-<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.data.chunk" title="Link to this heading">¶</a></h2>
+<section id="module-contents">
+<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 
@@ -573,27 +472,11 @@ Default form of ‘English’ is “file_name: {file_name}</p>
             <ul>
 <li><a class="reference internal" href="#">autorag.data.chunk package</a><ul>
 <li><a class="reference internal" href="#submodules">Submodules</a></li>
-<li><a class="reference internal" href="#module-autorag.data.chunk.base">autorag.data.chunk.base module</a><ul>
-<li><a class="reference internal" href="#autorag.data.chunk.base.add_file_name"><code class="docutils literal notranslate"><span class="pre">add_file_name()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.data.chunk.base.chunker_node"><code class="docutils literal notranslate"><span class="pre">chunker_node()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.data.chunk.base.make_metadata_list"><code class="docutils literal notranslate"><span class="pre">make_metadata_list()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.data.chunk.langchain_chunk">autorag.data.chunk.langchain_chunk module</a><ul>
-<li><a class="reference internal" href="#autorag.data.chunk.langchain_chunk.langchain_chunk"><code class="docutils literal notranslate"><span class="pre">langchain_chunk()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.data.chunk.langchain_chunk.langchain_chunk_pure"><code class="docutils literal notranslate"><span class="pre">langchain_chunk_pure()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.data.chunk.llama_index_chunk">autorag.data.chunk.llama_index_chunk module</a><ul>
-<li><a class="reference internal" href="#autorag.data.chunk.llama_index_chunk.llama_index_chunk"><code class="docutils literal notranslate"><span class="pre">llama_index_chunk()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.data.chunk.llama_index_chunk.llama_index_chunk_pure"><code class="docutils literal notranslate"><span class="pre">llama_index_chunk_pure()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.data.chunk.run">autorag.data.chunk.run module</a><ul>
-<li><a class="reference internal" href="#autorag.data.chunk.run.run_chunker"><code class="docutils literal notranslate"><span class="pre">run_chunker()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.data.chunk">Module contents</a></li>
+<li><a class="reference internal" href="#autorag-data-chunk-base-module">autorag.data.chunk.base module</a></li>
+<li><a class="reference internal" href="#autorag-data-chunk-langchain-chunk-module">autorag.data.chunk.langchain_chunk module</a></li>
+<li><a class="reference internal" href="#autorag-data-chunk-llama-index-chunk-module">autorag.data.chunk.llama_index_chunk module</a></li>
+<li><a class="reference internal" href="#autorag-data-chunk-run-module">autorag.data.chunk.run module</a></li>
+<li><a class="reference internal" href="#module-contents">Module contents</a></li>
 </ul>
 </li>
 </ul>

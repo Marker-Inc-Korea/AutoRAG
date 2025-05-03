@@ -700,165 +700,14 @@ It was originally rrf_k value. Will remove at a further version.</p></li>
 <dd></dd></dl>
 
 </section>
-<section id="module-autorag.nodes.retrieval.run">
-<span id="autorag-nodes-retrieval-run-module"></span><h2>autorag.nodes.retrieval.run module<a class="headerlink" href="#module-autorag.nodes.retrieval.run" title="Link to this heading">¶</a></h2>
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.edit_summary_df_params">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">edit_summary_df_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">summary_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_modules</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_module_params</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#edit_summary_df_params"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.edit_summary_df_params" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.evaluate_retrieval_node">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">evaluate_retrieval_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">result_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#evaluate_retrieval_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.evaluate_retrieval_node" title="Link to this definition">¶</a></dt>
-<dd><p>Evaluate retrieval node from retrieval node result dataframe.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>result_df</strong> – The result dataframe from a retrieval node.</p></li>
-<li><p><strong>metric_inputs</strong> – List of metric input schema for AutoRAG.</p></li>
-<li><p><strong>metrics</strong> – Metric list from input strategies.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>Return result_df with metrics columns.
-The columns will be ‘retrieved_contents’, ‘retrieved_ids’, ‘retrieve_scores’, and metric names.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.find_unique_elems">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">find_unique_elems</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">list1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">list2</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#find_unique_elems"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.find_unique_elems" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.get_hybrid_execution_times">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">get_hybrid_execution_times</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lexical_summary</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">semantic_summary</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#get_hybrid_execution_times"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.get_hybrid_execution_times" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.get_ids_and_scores">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">get_ids_and_scores</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filenames</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">semantic_summary_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lexical_summary_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#get_ids_and_scores"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.get_ids_and_scores" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.get_scores_by_ids">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">get_scores_by_ids</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ids</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_summary_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#get_scores_by_ids"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.get_scores_by_ids" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.optimize_hybrid">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">optimize_hybrid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">hybrid_module_func</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Callable</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hybrid_module_param</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">input_metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">project_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#optimize_hybrid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.optimize_hybrid" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.run.run_retrieval_node">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.run.</span></span><span class="sig-name descname"><span class="pre">run_retrieval_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node_line_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategies</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/run.html#run_retrieval_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.run.run_retrieval_node" title="Link to this definition">¶</a></dt>
-<dd><p>Run evaluation and select the best module among retrieval node results.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>modules</strong> – Retrieval modules to run.</p></li>
-<li><p><strong>module_params</strong> – Retrieval module parameters.</p></li>
-<li><p><strong>previous_result</strong> – Previous result dataframe.
-Could be query expansion’s best result or qa data.</p></li>
-<li><p><strong>node_line_dir</strong> – This node line’s directory.</p></li>
-<li><p><strong>strategies</strong> – Strategies for retrieval node.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The best result dataframe.
-It contains previous result columns and retrieval node’s result columns.</p>
-</dd>
-</dl>
-</dd></dl>
-
+<section id="autorag-nodes-retrieval-run-module">
+<h2>autorag.nodes.retrieval.run module<a class="headerlink" href="#autorag-nodes-retrieval-run-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.retrieval.vectordb">
-<span id="autorag-nodes-retrieval-vectordb-module"></span><h2>autorag.nodes.retrieval.vectordb module<a class="headerlink" href="#module-autorag.nodes.retrieval.vectordb" title="Link to this heading">¶</a></h2>
-<dl class="py class">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.VectorDB">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">VectorDB</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vectordb</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'default'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#VectorDB"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.VectorDB" title="Link to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#autorag.nodes.retrieval.base.BaseRetrieval" title="autorag.nodes.retrieval.base.BaseRetrieval"><code class="xref py py-class docutils literal notranslate"><span class="pre">BaseRetrieval</span></code></a></p>
-<dl class="py method">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.VectorDB.pure">
-<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#VectorDB.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.VectorDB.pure" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.filter_exist_ids">
-<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">filter_exist_ids</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vectordb</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore" title="autorag.vectordb.base.BaseVectorStore"><span class="pre">BaseVectorStore</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">corpus_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#filter_exist_ids"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.filter_exist_ids" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.filter_exist_ids_from_retrieval_gt">
-<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">filter_exist_ids_from_retrieval_gt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vectordb</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore" title="autorag.vectordb.base.BaseVectorStore"><span class="pre">BaseVectorStore</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">qa_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">corpus_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#filter_exist_ids_from_retrieval_gt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.filter_exist_ids_from_retrieval_gt" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.get_id_scores">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">get_id_scores</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">query_embeddings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">content_embeddings</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">similarity_metric</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#get_id_scores"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.get_id_scores" title="Link to this definition">¶</a></dt>
-<dd><p>Calculate the highest similarity scores between query embeddings and content embeddings.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>query_embeddings</strong> – A list of lists containing query embeddings.</p></li>
-<li><p><strong>content_embeddings</strong> – A list of lists containing content embeddings.</p></li>
-<li><p><strong>similarity_metric</strong> – The similarity metric to use (‘l2’, ‘ip’, or ‘cosine’).</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>A list of the highest similarity scores for each content embedding.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.run_query_embedding_batch">
-<span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">run_query_embedding_batch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">queries</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">embedding_model</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">BaseEmbedding</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#run_query_embedding_batch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.run_query_embedding_batch" title="Link to this definition">¶</a></dt>
-<dd></dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.vectordb_ingest">
-<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">vectordb_ingest</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vectordb</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore" title="autorag.vectordb.base.BaseVectorStore"><span class="pre">BaseVectorStore</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">corpus_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#vectordb_ingest"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.vectordb_ingest" title="Link to this definition">¶</a></dt>
-<dd><p>Ingest given corpus data to the vectordb.
-It truncates corpus content when the embedding model is OpenAIEmbedding to the 8000 tokens.
-Plus, when the corpus content is empty (whitespace), it will be ignored.
-And if there is a document id that already exists in the collection, it will be ignored.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>vectordb</strong> – A vector stores instance that you want to ingest.</p></li>
-<li><p><strong>corpus_data</strong> – The corpus data that contains doc_id and contents columns.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="autorag.nodes.retrieval.vectordb.vectordb_pure">
-<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.retrieval.vectordb.</span></span><span class="sig-name descname"><span class="pre">vectordb_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">queries</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">top_k</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vectordb</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore" title="autorag.vectordb.base.BaseVectorStore"><span class="pre">BaseVectorStore</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/retrieval/vectordb.html#vectordb_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.retrieval.vectordb.vectordb_pure" title="Link to this definition">¶</a></dt>
-<dd><p>Async VectorDB retrieval function.
-Its usage is for async retrieval of vector_db row by row.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>query_embeddings</strong> – A list of query embeddings.</p></li>
-<li><p><strong>top_k</strong> – The number of passages to be retrieved.</p></li>
-<li><p><strong>vectordb</strong> – The vector store instance.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
-<dd class="field-even"><p>The tuple contains a list of passage ids that are retrieved from vectordb and a list of its scores.</p>
-</dd>
-</dl>
-</dd></dl>
-
+<section id="autorag-nodes-retrieval-vectordb-module">
+<h2>autorag.nodes.retrieval.vectordb module<a class="headerlink" href="#autorag-nodes-retrieval-vectordb-module" title="Link to this heading">¶</a></h2>
 </section>
-<section id="module-autorag.nodes.retrieval">
-<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.nodes.retrieval" title="Link to this heading">¶</a></h2>
+<section id="module-contents">
+<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 
@@ -957,31 +806,9 @@ Its usage is for async retrieval of vector_db row by row.</p>
 <li><a class="reference internal" href="#autorag.nodes.retrieval.hybrid_rrf.rrf_pure"><code class="docutils literal notranslate"><span class="pre">rrf_pure()</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#module-autorag.nodes.retrieval.run">autorag.nodes.retrieval.run module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.edit_summary_df_params"><code class="docutils literal notranslate"><span class="pre">edit_summary_df_params()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.evaluate_retrieval_node"><code class="docutils literal notranslate"><span class="pre">evaluate_retrieval_node()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.find_unique_elems"><code class="docutils literal notranslate"><span class="pre">find_unique_elems()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.get_hybrid_execution_times"><code class="docutils literal notranslate"><span class="pre">get_hybrid_execution_times()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.get_ids_and_scores"><code class="docutils literal notranslate"><span class="pre">get_ids_and_scores()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.get_scores_by_ids"><code class="docutils literal notranslate"><span class="pre">get_scores_by_ids()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.optimize_hybrid"><code class="docutils literal notranslate"><span class="pre">optimize_hybrid()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.run.run_retrieval_node"><code class="docutils literal notranslate"><span class="pre">run_retrieval_node()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.nodes.retrieval.vectordb">autorag.nodes.retrieval.vectordb module</a><ul>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.VectorDB"><code class="docutils literal notranslate"><span class="pre">VectorDB</span></code></a><ul>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.VectorDB.pure"><code class="docutils literal notranslate"><span class="pre">VectorDB.pure()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.filter_exist_ids"><code class="docutils literal notranslate"><span class="pre">filter_exist_ids()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.filter_exist_ids_from_retrieval_gt"><code class="docutils literal notranslate"><span class="pre">filter_exist_ids_from_retrieval_gt()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.get_id_scores"><code class="docutils literal notranslate"><span class="pre">get_id_scores()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.run_query_embedding_batch"><code class="docutils literal notranslate"><span class="pre">run_query_embedding_batch()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.vectordb_ingest"><code class="docutils literal notranslate"><span class="pre">vectordb_ingest()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.retrieval.vectordb.vectordb_pure"><code class="docutils literal notranslate"><span class="pre">vectordb_pure()</span></code></a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#module-autorag.nodes.retrieval">Module contents</a></li>
+<li><a class="reference internal" href="#autorag-nodes-retrieval-run-module">autorag.nodes.retrieval.run module</a></li>
+<li><a class="reference internal" href="#autorag-nodes-retrieval-vectordb-module">autorag.nodes.retrieval.vectordb module</a></li>
+<li><a class="reference internal" href="#module-contents">Module contents</a></li>
 </ul>
 </li>
 </ul>
