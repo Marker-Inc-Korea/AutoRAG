@@ -163,6 +163,7 @@ We support the following embedding model types:
 - huggingface
 - mock
 - ollama
+- openai_like
 
 You can configure the embedding model option directly in the YAML file `vectordb` section.
 If you want to know how to configure vectordb in AutoRAG,
