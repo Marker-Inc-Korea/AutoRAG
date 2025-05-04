@@ -16,7 +16,7 @@ from langchain_community.document_loaders import (
 	DirectoryLoader,
 )
 from langchain_unstructured import UnstructuredLoader
-from langchain_upstage import UpstageDocumentParseLoader
+from langchain_upstage import UpstageLayoutAnalysisLoader
 
 from llama_index.core.node_parser import (
 	TokenTextSplitter,
@@ -59,7 +59,7 @@ parse_modules = {
 	# 6. All files
 	"directory": DirectoryLoader,
 	"unstructured": UnstructuredLoader,
-	"upstagedocumentparse": UpstageDocumentParseLoader,
+	"upstagedocumentparse": UpstageLayoutAnalysisLoader,
 }
 
 chunk_modules = {

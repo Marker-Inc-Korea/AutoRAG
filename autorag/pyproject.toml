@@ -24,7 +24,73 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
-dynamic = ["version", "dependencies"]
+dynamic = ["version"]
+dependencies = [
+    "pydantic<2.10.0",  # incompatible with llama index
+    "numpy<2.0.0",  # temporal not using numpy 2.0.0
+    "pandas>=2.1.0",
+    "tqdm",
+    "tiktoken>=0.7.0",  # for counting token
+    "openai>=1.0.0",
+    "rank_bm25",  # for bm25 retrieval
+    "pyyaml",  # for yaml file
+    "pyarrow",  # for pandas with parquet
+    "fastparquet",  # for pandas with parquet
+    "sacrebleu",  # for bleu score
+    "evaluate",  # for meteor and other scores
+    "rouge_score",  # for rouge score
+    "rich",  # for pretty logging
+    "click",  # for cli
+    "cohere>=5.8.0",  # for cohere services
+    "tokenlog>=0.0.2",  # for token logging
+    "aiohttp",  # for async http requests
+    "voyageai",  # for voyageai reranker
+    "mixedbread-ai",  # for mixedbread-ai reranker
+    "llama-index-llms-bedrock",
+    "scikit-learn",
+    "emoji",
+
+    # Vector DB
+    "pymilvus>=2.3.0",  # for using milvus vectordb
+    "chromadb>=1.0.0",  # for chroma vectordb
+    "weaviate-client",  # for weaviate vectordb
+    "pinecone[grpc]",  # for pinecone vectordb
+    "couchbase",  # for couchbase vectordb
+    "qdrant-client",  # for qdrant vectordb
+
+    # API server
+    "quart",
+    "pyngrok",
+
+    # LlamaIndex
+    "llama-index",
+    "llama-index-core",
+    "llama-index-readers-file",
+    "llama-index-embeddings-openai",
+    "llama-index-embeddings-ollama",
+    "llama-index-embeddings-openai-like",
+    "llama-index-llms-openai",
+    "llama-index-llms-openai-like",
+    "llama-index-retrievers-bm25",
+
+    # WebUI
+    "streamlit",
+    "gradio",
+
+    # Langchain
+    "langchain-core",
+    "langchain-unstructured",
+    "langchain-upstage",
+    "langchain-community",
+
+    # autorag dashboard
+    "panel",
+    "seaborn",
+    "ipykernel",
+    "ipywidgets",
+    "ipywidgets_bokeh",
+]
+
 
 [tool.poetry]
 name = "AutoRAG"
@@ -34,7 +100,6 @@ authors = ["Marker-Inc <vkehfdl1@gmail.com>"]
 
 [tool.setuptools.dynamic]
 version = { file = ["autorag/VERSION"] }
-dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools]
 include-package-data = true
