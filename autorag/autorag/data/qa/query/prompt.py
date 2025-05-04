@@ -179,7 +179,7 @@ Two-hop question (using Document 2):  In which Mexican state can one find the Ci
 				role=MessageRole.USER,
 				content="""Document 1: ヌエヴォ·ラレド自治体はメキシコのタマウリパス州にあります。
 シウダー・デポルティーバ（スポーツ・シティ）は、
-メキシコのヌエボ・ラレドにある複合スポーツ施設です。
+メキシコのヌエボ・ラレドにある複合スポーツ施設です。""",
 			),
 			ChatMessage(
 				role=MessageRole.ASSISTANT,
