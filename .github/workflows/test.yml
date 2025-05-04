@@ -16,16 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-      - name: Upgrade pip
-        run: |
-          python3 -m pip install --upgrade pip
       - name: Update apt-get
         run: |
           sudo apt-get update
@@ -38,24 +32,30 @@ jobs:
       - name: Install tesseract
         run: |
           sudo apt-get install tesseract-ocr
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Python 3.10
+        run: uv python install 3.10
+      - name: Install Venv
+        run: uv venv
       - name: Install AutoRAG
         run: |
-          pip install -e './autorag[ko,dev,parse,ja]'
+          uv pip install -e './autorag[all]'
       - name: Install dependencies
         run: |
-          pip install -r tests/requirements.txt
+          uv pip install -r tests/requirements.txt
       - name: Upgrade pyOpenSSL
         run: |
-          pip install --upgrade pyOpenSSL
+          uv pip install --upgrade pyOpenSSL
       - name: Install NLTK and download model
         run: |
-          pip install nltk
-          python3 -c "import nltk; nltk.download('punkt_tab')"
-          python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
+          uv pip install nltk
+          python -c "import nltk; nltk.download('punkt_tab')"
+          python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
       - name: delete tests package
-        run: python3 tests/delete_tests.py
+        run: python tests/delete_tests.py
       - name: Run AutoRAG tests
         env:
           PYTHONPATH: ${PYTHONPATH}:./autorag
         run: |
-          python3 -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag
+          python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag
