@@ -70,15 +70,15 @@ def make_trial_summary_md(trial_dir):
 
 ### Module Name
 
-{best_row['module_name']}
+{best_row["module_name"]}
 
 ### Module Params
 
-{dict_to_markdown(ast.literal_eval(best_row['module_params']), level=3)}
+{dict_to_markdown(ast.literal_eval(best_row["module_params"]), level=3)}
 
 ### Metric Values
 
-{dict_to_markdown_table(metric_dict, key_column_name='metric_name', value_column_name='metric_value')}
+{dict_to_markdown_table(metric_dict, key_column_name="metric_name", value_column_name="metric_value")}
 
 """
 

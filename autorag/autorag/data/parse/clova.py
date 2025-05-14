@@ -188,7 +188,7 @@ def json_to_html_table(json_data):
 				col_span_attr = (
 					f' colspan="{cell["colSpan"]}"' if cell["colSpan"] > 1 else ""
 				)
-				html += f'    <td{row_span_attr}{col_span_attr}>{cell["text"]}</td>\n'
+				html += f"    <td{row_span_attr}{col_span_attr}>{cell['text']}</td>\n"
 		html += "  </tr>\n"
 	html += "</table>"
 	return html

@@ -10,16 +10,16 @@ While these advancements enhance efficiency and innovation,
 they also raise ethical concerns around privacy, employment, and the role of human decision-making."""
 
 qa_df = pd.DataFrame(
-	{
-		"qid": ["jax1", "jax2"],
-		"query": [
-			"When is New Jeans debut day?",
-			"What are the challenges of the digital age?",
-		],
-		"retrieval_gt": [[["havertz1"]], [["havertz2"]]],
-		"retrieval_gt_contents": [
-			[[passage1]],
-			[[passage2]],
-		],
-	}
+    {
+        "qid": ["jax1", "jax2"],
+        "query": [
+            "When is New Jeans debut day?",
+            "What are the challenges of the digital age?",
+        ],
+        "retrieval_gt": [[["havertz1"]], [["havertz2"]]],
+        "retrieval_gt_contents": [
+            [[passage1]],
+            [[passage2]],
+        ],
+    }
 )
