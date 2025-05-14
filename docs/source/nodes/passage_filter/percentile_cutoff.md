@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Percentile Cutoff
-      description: Learn about percentile cutoff passage filter module in AutoRAG 
+      description: Learn about percentile cutoff passage filter module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Filter,percentile cutoff
 ---
 # Percentile Cutoff

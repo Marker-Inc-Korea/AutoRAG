@@ -18,7 +18,7 @@ It does not generate log probs.
 ```{tip}
 Information about the LLM model can be found [Supporting LLM models](../../local_model.md#supporting-llm-models).
 ```
-- **Additional Parameters**: 
+- **Additional Parameters**:
   - **batch**: How many calls to make at once. Default is 16.
   - Other LLM-related parameters such as `model`, `temperature`, and `max_token` can be set. These are passed as keyword arguments (`kwargs`) to the LLM object, allowing for further customization of the LLM's behavior.
 

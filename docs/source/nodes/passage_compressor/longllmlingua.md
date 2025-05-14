@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Long LLM Lingua
-      description: Learn about long llm lingua module in AutoRAG 
+      description: Learn about long llm lingua module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,LongLLMLingua
 ---
 # Long LLM Lingua

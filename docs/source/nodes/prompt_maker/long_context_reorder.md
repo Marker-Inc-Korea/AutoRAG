@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Long Context Reorder
-      description: Learn about long context reorder module in AutoRAG 
+      description: Learn about long context reorder module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,long context reorder,lost in the middle
 ---
 # Long Context Reorder

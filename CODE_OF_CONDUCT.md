@@ -16,7 +16,7 @@ The following are some instances of actions that support the development of a pl
 
 Example of participant behavior that is undesirable include:
 
-* Public or private harassment 
+* Public or private harassment
 *The publication of another person's private information, such as a physical or electronic address, without that person's express consent 
 * The use of sexualized language or imagery and unwanted sexual attention or advances 
 * Trolling, offensive or derogatory remarks, and personal or political attacks 
@@ -37,5 +37,3 @@ This Code of Conduct applies both within project spaces and in public spaces whe
 Reports of abusive, harassing, or otherwise inappropriate behavior can be sent to jeffrey@markr.ai' or 'vkehfdl1@gmail.com, the project team's email address. After each complaint is examined and looked into, a response that is judged essential and fitting for the situation will be given. The project team has a duty to keep the identity of the incident reported discreet. Specific enforcement policies may have additional information posted separately.
 
 Project maintainers may be subject to temporary or permanent consequences, as decided by other project leadership members, for failing to abide by and enforce the Code of Conduct in good faith.
-
-

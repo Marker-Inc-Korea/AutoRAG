@@ -2,7 +2,7 @@
 myst:
    html_meta:
       title: AutoRAG - Passage Filter
-      description: Learn about passage filter module in AutoRAG 
+      description: Learn about passage filter module in AutoRAG
       keywords: AutoRAG,RAG,Advanced RAG,Passage Filter
 ---
 # 5. Passage Filter
@@ -17,7 +17,7 @@ In passage reranker, you can set top_k parameter on your own.
 Which means, reranker modules return 'top_k' passages you set all the time.
 
 On the other hand, passage filter does not guarantee the number of passages to be returned.
-It can be not filtered, or it can be filtered to 1 passage. 
+It can be not filtered, or it can be filtered to 1 passage.
 ```
 
 ### 🤸 **Benefits**
