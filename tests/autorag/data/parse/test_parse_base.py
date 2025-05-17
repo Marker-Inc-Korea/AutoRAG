@@ -1,6 +1,5 @@
 import os
 import pathlib
-from datetime import datetime
 
 from glob import glob
 
@@ -8,7 +7,7 @@ from autorag.data.parse.base import _add_last_modified_datetime
 from autorag.data.utils.util import get_file_metadata
 
 root_dir = pathlib.PurePath(
-	os.path.dirname(os.path.realpath(__file__))
+    os.path.dirname(os.path.realpath(__file__))
 ).parent.parent.parent
 resource_dir = os.path.join(root_dir, "resources")
 result_dir = os.path.join(resource_dir, "test_results")
@@ -37,49 +36,49 @@ hybrid_data_list = glob(hybrid_glob)
 table_data_list = glob(korean_table_glob)
 
 file_path_dict = {
-	"single_pdf": single_pdf_path_list,
-	"multiple_pdf": multiple_pdf_data_list,
-	"csv": csv_data_list,
-	"json": json_data_list,
-	"markdown": markdown_data_list,
-	"html": html_data_list,
-	"xml": xml_data_list,
-	"all_files_unstructured": [
-		all_files_data_list[0],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-		all_files_data_list[1],
-	],
-	"all_files_directory": all_files_data_list,
-	"hybrid": hybrid_data_list,
-	"hybrid_text": multiple_pdf_data_list,
-	"hybrid_table": table_data_list,
+    "single_pdf": single_pdf_path_list,
+    "multiple_pdf": multiple_pdf_data_list,
+    "csv": csv_data_list,
+    "json": json_data_list,
+    "markdown": markdown_data_list,
+    "html": html_data_list,
+    "xml": xml_data_list,
+    "all_files_unstructured": [
+        all_files_data_list[0],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+        all_files_data_list[1],
+    ],
+    "all_files_directory": all_files_data_list,
+    "hybrid": hybrid_data_list,
+    "hybrid_text": multiple_pdf_data_list,
+    "hybrid_table": table_data_list,
 }
 
 
 def check_parse_result(texts, file_names, file_type):
-	assert isinstance(texts, list)
-	assert isinstance(texts[0], str)
-	assert all([file_name in file_path_dict[file_type] for file_name in file_names])
+    assert isinstance(texts, list)
+    assert isinstance(texts[0], str)
+    assert all([file_name in file_path_dict[file_type] for file_name in file_names])
 
 
 def test_last_modified_datetime():
-	result = (
-		[
-			"jeffrey love bali, kia tigers and Newjeans. But it's a top secret that he loves Newjeans. i love this "
-			"story."
-		],
-		single_pdf_path_list,
-		[-1],
-	)
-	result = _add_last_modified_datetime(result)
+    result = (
+        [
+            "jeffrey love bali, kia tigers and Newjeans. But it's a top secret that he loves Newjeans. i love this "
+            "story."
+        ],
+        single_pdf_path_list,
+        [-1],
+    )
+    result = _add_last_modified_datetime(result)
 
-	date = get_file_metadata(single_pdf_path_list[0])["last_modified_datetime"]
-	assert result[3] == [date]
+    date = get_file_metadata(single_pdf_path_list[0])["last_modified_datetime"]
+    assert result[3] == [date]

@@ -158,7 +158,7 @@ async def create_project():
         # SQLiteProjectDB 인스턴스 생성
         _ = SQLiteProjectDB(data["name"])
     else:
-        return jsonify({"error": f'Project name already exists: {data["name"]}'}), 400
+        return jsonify({"error": f"Project name already exists: {data['name']}"}), 400
 
     # save at 'description.txt' file
     with open(os.path.join(new_project_dir, "description.txt"), "w") as f:

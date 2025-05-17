@@ -70,4 +70,3 @@ When using the vllm module, errors may occur depending on the configuration of P
 1. Define the vllm module to operate in a single-case mode.
 2. Set the skip_validation parameter to True when using the start_trial function in the evaluator.
 ```
-

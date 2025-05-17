@@ -28,7 +28,7 @@ autorag run_web --trial_path your/path/to/trial
 ```
 
 ### 3. Use Runner
-Run the web interface with the `Runner` you created in the YAML file or trial folder.  
+Run the web interface with the `Runner` you created in the YAML file or trial folder.
 If `share=True`, you'll receive an anywhere-accessible link that expires after 72 hours.
 ```{admonition} Why use Gradio instead of Streamlit?
 Since the Streamlit Web Interface always needs to be launched in a new process, we couldn't run it if we were using a custom model. So we replaced it with Gradio, which can be run in the same process
@@ -56,4 +56,3 @@ The web interface provides a user-friendly environment to input queries and rece
 
 #### Run with AutoRAG Runner
 ![Web Interface Gradio](../_static/web_interface_gradio.png)
-

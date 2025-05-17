@@ -12,9 +12,9 @@ myst:
 
 <style>
 table.table.table-my-special-table {
-    border-collapse: collapse; 
+    border-collapse: collapse;
     border:1px solid #69899F;
-} 
+}
 table.table.table-my-special-table td{
     border:1px dotted #69899F;
     padding:5px;
