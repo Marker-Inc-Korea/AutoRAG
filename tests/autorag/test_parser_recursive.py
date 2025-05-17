@@ -1,15 +1,18 @@
 from __future__ import annotations
-
+import os
 import pathlib
 import tempfile
 
 import pandas as pd
-from autorag.autorag.parser import Parser
+from autorag.parser import Parser
 
 
-HERE = pathlib.Path(__file__).resolve()
-RESOURCE_DIR = HERE.parent.parent / "resources"
-CONFIG_YAML = RESOURCE_DIR / "parse_data" / "config" / "perfect_simple_parse.yaml"
+root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
+
+resource_dir = os.path.join(root_dir, "resources")
+CONFIG_YAML = os.path.join(
+    resource_dir, "parse_data", "config", "perfect_simple_parse.yaml"
+)
 
 
 # Test
