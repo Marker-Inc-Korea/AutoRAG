@@ -34,7 +34,7 @@ The `AutoRAG` repo have a standard python library structure.
 
 You can find the core part of the library in `autorag` folder.
 You can find the test codes of the `AutoRAG` at the `tests` folder.
-Plus, you can find the [AutoRAG docs](https://docs.auto-rag.com) at the `docs` folder.
+Plus, you can find the [AutoRAG docs](https://marker-inc-korea.github.io/AutoRAG/) at the `docs` folder.
 
 For resources, you can find sample config YAML files at `sample_config` folder.
 Plus, you can find sample dataset download script from `sample_dataset` folder.

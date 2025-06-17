@@ -130,7 +130,7 @@ def make_qa_with_existing_qa(
 	:param output_filepath: Optional filepath to save the parquet file.
 	:param embedding_model: The embedding model to use for vectorization.
 	    You can add your own embedding model in the autorag.embedding_models.
-	    Please refer to how to add an embedding model in this doc: https://docs.auto-rag.com/local_model.html
+	    Please refer to how to add an embedding model in this doc: https://marker-inc-korea.github.io/AutoRAG/local_model.html
 	    The default is 'openai_embed_3_large'.
 	:param collection: The chromadb collection to use for vector DB.
 	    You can make any chromadb collection and use it here.
