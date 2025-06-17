@@ -45,7 +45,7 @@ AutoRAG GUI is a web-based tool for running AutoRAG experiments.
 If you are not familiar with command-line interface and YAML file configuration,
 you can use AutoRAG GUI to run AutoRAG experiments.
 
-Check out `AutoRAG GUI Docs <https://docs.auto-rag.com/gui/gui.html>`__ for more information.
+Check out `AutoRAG GUI Docs <https://marker-inc-korea.github.io/AutoRAG/gui/gui.html>`__ for more information.
 
 🏃‍♂️ Getting Started
 ************************************
@@ -53,17 +53,17 @@ Check out `AutoRAG GUI Docs <https://docs.auto-rag.com/gui/gui.html>`__ for more
 ``pip install AutoRAG``
 
 
-In our documentation, we will guide you through the process of `installation <https://docs.auto-rag.com/install.html>`__ and `tutorial <https://docs.auto-rag.com/tutorial.html>`__ for AutoRAG starter.
-After you find your first RAG pipeline with AutoRAG, you can learn how to read result files at `here <https://docs.auto-rag.com/structure.html>`__.
+In our documentation, we will guide you through the process of `installation <https://marker-inc-korea.github.io/AutoRAG/install.html>`__ and `tutorial <https://marker-inc-korea.github.io/AutoRAG/tutorial.html>`__ for AutoRAG starter.
+After you find your first RAG pipeline with AutoRAG, you can learn how to read result files at `here <https://marker-inc-korea.github.io/AutoRAG/structure.html>`__.
 
 And do you want to get the ultimate performance RAG pipeline?
-Learn how make great evaluation dataset with your own raw documents at `here <https://docs.auto-rag.com/data_creation/tutorial.html>`__.
+Learn how make great evaluation dataset with your own raw documents at `here <https://marker-inc-korea.github.io/AutoRAG/data_creation/tutorial.html>`__.
 
-Also, you can learn how to set various experiment configurations at `optimization <https://docs.auto-rag.com/optimization/optimization.html>`__ guide.
+Also, you can learn how to set various experiment configurations at `optimization <https://marker-inc-korea.github.io/AutoRAG/optimization/optimization.html>`__ guide.
 
-Of course, you can use your own local LLM or embedding model with AutoRAG. Go to `here <https://docs.auto-rag.com/local_model.html>`__ to learn how to use your own model with AutoRAG.
+Of course, you can use your own local LLM or embedding model with AutoRAG. Go to `here <https://marker-inc-korea.github.io/AutoRAG/local_model.html>`__ to learn how to use your own model with AutoRAG.
 
-If you face any trouble? Check out our `troubleshooting <https://docs.auto-rag.com/troubleshooting.html>`__ guide.
+If you face any trouble? Check out our `troubleshooting <https://marker-inc-korea.github.io/AutoRAG/troubleshooting.html>`__ guide.
 Also, feel free to ask your question at our `github issue <https://github.com/Marker-Inc-Korea/AutoRAG/issues>`__ or `Discord <https://discord.gg/P4DYXfmSAs>`__ channel.
 
 🗣️ Talk with Founders
@@ -74,9 +74,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
 👨‍👩‍👧‍👦 Ecosystem
 ************************************
 * Github Repo : https://github.com/Marker-Inc-Korea/AutoRAG
-* HomePage : https://auto-rag.com
 * PyPI : https://pypi.org/project/AutoRAG/
-* Discord : https://discord.gg/P4DYXfmSAs
 * Roadmap : https://github.com/orgs/Auto-RAG/projects/1/views/2
 * HuggingFace : https://huggingface.co/AutoRAG
 * LinkedIn : https://www.linkedin.com/company/autorag/

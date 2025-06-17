@@ -167,7 +167,7 @@ We support the following embedding model types:
 
 You can configure the embedding model option directly in the YAML file `vectordb` section.
 If you want to know how to configure vectordb in AutoRAG,
-please go [here](https://docs.auto-rag.com/integration/vectordb/vectordb.html).
+please go [here](https://marker-inc-korea.github.io/AutoRAG/integration/vectordb/vectordb.html).
 
 For example,
 

@@ -19,7 +19,7 @@ AutoRAG supports connection to multiple Vector Databases. This document outlines
 
 ## Usage
 
-Configure your Vector DBs in the YAML file as shown below. For more detailed information on YAML file syntax, please refer to [here](https://docs.auto-rag.com/optimization/custom_config.html).
+Configure your Vector DBs in the YAML file as shown below. For more detailed information on YAML file syntax, please refer to [here](https://marker-inc-korea.github.io/AutoRAG/optimization/custom_config.html).
 
 ```yaml
 vectordb:

@@ -24,9 +24,7 @@ and find the best RAG pipeline for your own use-case.
 AutoRAG supports a simple way to evaluate many RAG module combinations.
 Try now and find the best RAG pipeline for your own use-case.
 
-Explore our 📖 [Document](https://docs.auto-rag.com)!!
-
-Plus, join our 📞 [Discord](https://discord.gg/P4DYXfmSAs) Community.
+Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
 
 ---
 
@@ -41,7 +39,7 @@ Your Optimized RAG pipeline is just a few clicks away.
 |:-----------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------:|
 | ![Image](https://github.com/user-attachments/assets/87289d84-ff65-4810-bc41-3f30b36b7ddf) | ![Image](https://github.com/user-attachments/assets/dbe0a49b-ebf2-4c9c-b17d-1be1c2cd1060) | ![Image](https://github.com/user-attachments/assets/d8a50512-3299-4b68-b48e-e2f49d688f01) |
 
-Click the docs to use the AutoRAG GUI beta version! [AutoRAG GUI Docs](https://docs.auto-rag.com/gui/gui.html).
+Click the docs to use the AutoRAG GUI beta version! [AutoRAG GUI Docs](https://marker-inc-korea.github.io/AutoRAG/gui/gui.html).
 
 ### GUI Installation
 
@@ -292,8 +290,8 @@ First, you need to set the config YAML file for your RAG optimization.
 We highly recommend using pre-made config YAML files for starter.
 
 - [Get Sample YAML](autorag/sample_config/rag)
-    - [Sample YAML Guide](https://docs.auto-rag.com/optimization/sample_config.html)
-- [Make Custom YAML Guide](https://docs.auto-rag.com/optimization/custom_config.html)
+    - [Sample YAML Guide](https://marker-inc-korea.github.io/AutoRAG/optimization/sample_config.html)
+- [Make Custom YAML Guide](https://marker-inc-korea.github.io/AutoRAG/optimization/custom_config.html)
 
 Here is an example of the config YAML file to use `retrieval`, `prompt_maker`, and `generator` nodes.
 
@@ -358,7 +356,7 @@ At the trial folder named to numbers (like 0),
 you can check `summary.csv` file that summarizes the evaluation results and the best RAG pipeline for your data.
 
 For more details, you can check out how the folder structure looks like
-at [here](https://docs.auto-rag.com/optimization/folder_structure.html).
+at [here](https://marker-inc-korea.github.io/AutoRAG/optimization/folder_structure.html).
 
 ### 3. Run Dashboard
 
@@ -407,7 +405,7 @@ autorag run_api --trial_dir your/path/to/trial_dir --host 0.0.0.0 --port 8000
 ```
 
 The cli command uses extracted config YAML file. If you want to know it more, check
-out [here](https://docs.auto-rag.com/tutorial.html#extract-pipeline-and-evaluate-test-dataset).
+out [here](https://marker-inc-korea.github.io/AutoRAG/tutorial.html#extract-pipeline-and-evaluate-test-dataset).
 
 ### 4-3. Run as a Web Interface
 
@@ -551,7 +549,7 @@ We are developing AutoRAG as open-source.
 
 So this project welcomes contributions and suggestions. Feel free to contribute to this project.
 
-Plus, check out our detailed documentation at [here](https://docs.auto-rag.com/index.html).
+Plus, check out our detailed documentation at [here](https://marker-inc-korea.github.io/AutoRAG/index.html).
 
 ## Citation
 
