@@ -50,18 +50,18 @@ dependencies = [
     "emoji>=2.14.1",
     "fastapi>=0.115.13",
     "banks>=2.1.2",
-    "grpcio==1.67.1",
-"grpcio-health-checking==1.67.1",
-"grpcio-status==1.67.1",
-"grpcio-tools==1.67.1",
+    "grpcio>=1.66.2,<1.68.0",
+"grpcio-health-checking>=1.66.2,<1.68.0",
+"grpcio-status>=1.66.2,<1.68.0",
+"grpcio-tools>=1.66.2,<1.68.0",
 
     # Vector DB
-    "pymilvus>=2.5.11",  # for using milvus vectordb
+    "pymilvus>=2.6.0b0",  # for using milvus vectordb
     "chromadb>=1.0.0",  # for chroma vectordb
     "weaviate-client>=4.15.2",  # for weaviate vectordb
-    "pinecone[grpc]>=7.2.0",  # for pinecone vectordb
+    "pinecone[grpc]",  # for pinecone vectordb
     "couchbase>=4.4.0",  # for couchbase vectordb
-    "qdrant-client>=1.14.3",  # for qdrant vectordb
+    "qdrant-client>=1.12.1",  # for qdrant vectordb
 
     # API server
     "quart>=0.20.0",
