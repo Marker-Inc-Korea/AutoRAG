@@ -26,69 +26,76 @@ classifiers = [
 urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version"]
 dependencies = [
-    "pydantic<2.10.0",  # incompatible with llama index
-    "numpy<2.0.0",  # temporal not using numpy 2.0.0
-    "pandas>=2.1.0",
-    "tqdm",
-    "tiktoken>=0.7.0",  # for counting token
-    "openai>=1.0.0",
-    "rank_bm25",  # for bm25 retrieval
-    "pyyaml",  # for yaml file
-    "pyarrow",  # for pandas with parquet
-    "fastparquet",  # for pandas with parquet
-    "sacrebleu",  # for bleu score
-    "evaluate",  # for meteor and other scores
-    "rouge_score",  # for rouge score
-    "rich",  # for pretty logging
-    "click",  # for cli
+    "pydantic==2.9.2",  # incompatible with llama index
+    "numpy==1.26.4",  # temporal not using numpy 2.0.0
+    "pandas>=2.2.3",
+    "tqdm>=4.67.1",
+    "tiktoken>=0.9.0",  # for counting token
+    "openai>=1.90.0",
+    "rank_bm25>=0.2.2",  # for bm25 retrieval
+    "pyyaml>=6.0.2",  # for yaml file
+    "pyarrow>=20.0.0",  # for pandas with parquet
+    "fastparquet>=2024.11.0",  # for pandas with parquet
+    "sacrebleu>=2.5.1",  # for bleu score
+    "evaluate>=0.4.4",  # for meteor and other scores
+    "rouge_score>=0.1.2",  # for rouge score
+    "rich>=14.0.0",  # for pretty logging
+    "click>=8.2.1",  # for cli
     "cohere>=5.8.0",  # for cohere services
     "tokenlog>=0.0.2",  # for token logging
-    "aiohttp",  # for async http requests
-    "voyageai",  # for voyageai reranker
-    "mixedbread-ai",  # for mixedbread-ai reranker
-    "llama-index-llms-bedrock",
-    "scikit-learn",
-    "emoji",
+    "aiohttp>=3.12.13",  # for async http requests
+    "voyageai>=0.3.2",  # for voyageai reranker
+    "mixedbread-ai>=2.2.6",  # for mixedbread-ai reranker
+    "scikit-learn>=1.7.0",
+    "emoji>=2.14.1",
+    "fastapi>=0.115.13",
+    "banks>=2.1.2",
+    "grpcio==1.67.1",
+"grpcio-health-checking==1.67.1",
+"grpcio-status==1.67.1",
+"grpcio-tools==1.67.1",
 
     # Vector DB
-    "pymilvus>=2.3.0",  # for using milvus vectordb
+    "pymilvus>=2.5.11",  # for using milvus vectordb
     "chromadb>=1.0.0",  # for chroma vectordb
-    "weaviate-client",  # for weaviate vectordb
-    "pinecone[grpc]",  # for pinecone vectordb
-    "couchbase",  # for couchbase vectordb
-    "qdrant-client",  # for qdrant vectordb
+    "weaviate-client>=4.15.2",  # for weaviate vectordb
+    "pinecone[grpc]>=7.2.0",  # for pinecone vectordb
+    "couchbase>=4.4.0",  # for couchbase vectordb
+    "qdrant-client>=1.14.3",  # for qdrant vectordb
 
     # API server
-    "quart",
-    "pyngrok",
+    "quart>=0.20.0",
+    "pyngrok>=7.2.11",
 
     # LlamaIndex
-    "llama-index",
-    "llama-index-core",
-    "llama-index-readers-file",
-    "llama-index-embeddings-openai",
-    "llama-index-embeddings-ollama",
-    "llama-index-embeddings-openai-like",
-    "llama-index-llms-openai",
-    "llama-index-llms-openai-like",
-    "llama-index-retrievers-bm25",
+    "llama-index>=0.12.42",
+    "llama-index-core>=0.12.42",
+    "llama-index-readers-file>=0.4.9",
+    "llama-index-embeddings-openai>=0.3.1",
+    "llama-index-embeddings-ollama>=0.6.0",
+    "llama-index-embeddings-openai-like>=0.1.1",
+    "llama-index-llms-openai>=0.4.7",
+    "llama-index-llms-openai-like>=0.4.0",
+    "llama-index-retrievers-bm25>=0.5.2",
+    "llama-index-llms-bedrock>=0.3.8",
 
     # WebUI
-    "streamlit",
-    "gradio",
+    "streamlit>=1.46.0",
+    "gradio>=5.34.2",
 
     # Langchain
-    "langchain-core",
-    "langchain-unstructured",
-    "langchain-upstage",
-    "langchain-community",
+    "langchain-core==0.2.43",
+    "langchain-unstructured==0.1.2",
+    "langchain-upstage==0.1.5",
+    "langchain-community==0.2.19",
+    "langsmith==0.1.147",
 
     # autorag dashboard
-    "panel",
-    "seaborn",
-    "ipykernel",
-    "ipywidgets",
-    "ipywidgets_bokeh",
+    "panel>=1.7.1",
+    "seaborn>=0.13.2",
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.7",
+    "ipywidgets_bokeh>=1.6.0",
 ]
 
 
@@ -127,12 +134,12 @@ dev = [
 ]
 
 [project.optional-dependencies]
-ko = ["kiwipiepy >= 0.18.0", "konlpy"]
-parse = ["PyMuPDF", "pdfminer.six", "pdfplumber", "unstructured", "jq", "unstructured[pdf]", "PyPDF2<3.0", "pdf2image"]
+ko = ["kiwipiepy >= 0.18.0", "konlpy>=0.6.0"]
+parse = ["PyMuPDF>=1.26.1", "pdfminer.six>=20250506", "pdfplumber>=0.11.7", "jq>=1.9.1", "unstructured[pdf]>=0.17.2", "PyPDF2==2.12.1", "pdf2image>=1.17.0"]
 ja = ["sudachipy>=0.6.8", "sudachidict_core"]
-gpu = ["torch", "sentencepiece", "bert_score", "optimum[openvino,nncf]", "peft", "llmlingua", "FlagEmbedding",
-    "sentence-transformers", "transformers", "llama-index-llms-ollama", "llama-index-embeddings-huggingface",
-    "llama-index-llms-huggingface", "onnxruntime"]
+gpu = ["torch>=2.7.1", "sentencepiece>=0.2.0", "bert_score>=0.3.13", "optimum[openvino,nncf]>=1.26.1", "peft>=0.15.2", "llmlingua>=0.2.2", "FlagEmbedding>=1.2.11",
+    "sentence-transformers>=4.1.0", "transformers>=4.51.3", "llama-index-llms-ollama>=0.6.0", "llama-index-embeddings-huggingface>=0.5.4",
+    "llama-index-llms-huggingface>=0.5.0", "onnxruntime>=1.22.0"]
 all = ["AutoRAG[gpu]", "AutoRAG[ko]", "AutoRAG[parse]", "AutoRAG[ja]"]
 
 [project.entry-points.console_scripts]
