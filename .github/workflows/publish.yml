@@ -51,3 +51,5 @@ jobs:
       - name: Publish package distributions to PyPI
         if: env.changed == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+            packages-dir: autorag/dist/
