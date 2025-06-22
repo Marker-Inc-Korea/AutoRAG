@@ -105,7 +105,7 @@ def flag_embedding_run_model(input_texts, model, batch_size: int):
 	for batch_texts in batch_input_texts:
 		with torch.no_grad():
 			pred_scores = model.compute_score(sentence_pairs=batch_texts)
-		if batch_size == 1 or not isinstance(pred_scores, Iterable):
+		if not isinstance(pred_scores, Iterable):
 			results.append(pred_scores)
 		else:
 			results.extend(pred_scores)
