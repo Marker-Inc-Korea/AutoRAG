@@ -119,7 +119,7 @@ def test_single_content_qa_long_cache_batch(qa_parquet_filepath):
     "get_text_embedding_batch",
     mock_get_text_embedding_batch,
 )
-@pytest.skip(reason="This test is deprecated and will be removed in the future.")
+@pytest.mark.skip(reason="This test is deprecated and will be removed in the future.")
 def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
     corpus_df = pd.read_parquet(
         os.path.join(resource_dir, "corpus_data_sample.parquet"), engine="pyarrow"
@@ -149,7 +149,7 @@ def test_make_qa_with_existing_qa_without_gen_gt(qa_parquet_filepath):
     "get_text_embedding_batch",
     mock_get_text_embedding_batch,
 )
-@pytest.skip(reason="This test is deprecated and will be removed in the future.")
+@pytest.mark.skip(reason="This test is deprecated and will be removed in the future.")
 def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
     corpus_df = pd.read_parquet(
         os.path.join(resource_dir, "corpus_data_sample.parquet"), engine="pyarrow"
@@ -182,7 +182,7 @@ def test_make_qa_with_existing_qa_with_gen_gt(qa_parquet_filepath):
     "get_text_embedding_batch",
     mock_get_text_embedding_batch,
 )
-@pytest.skip(reason="This test is deprecated and will be removed in the future.")
+@pytest.mark.skip(reason="This test is deprecated and will be removed in the future.")
 def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(
     chroma_persistent_client, qa_parquet_filepath
 ):
@@ -217,7 +217,7 @@ def test_make_qa_with_existing_qa_persistent_client_without_gen_gt(
     "get_text_embedding_batch",
     mock_get_text_embedding_batch,
 )
-@pytest.skip(reason="This test is deprecated and will be removed in the future.")
+@pytest.mark.skip(reason="This test is deprecated and will be removed in the future.")
 def test_make_qa_with_existing_qa_persistent_client_with_gen_gt(
     chroma_persistent_client, qa_parquet_filepath
 ):

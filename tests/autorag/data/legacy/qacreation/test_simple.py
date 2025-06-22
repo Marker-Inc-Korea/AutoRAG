@@ -35,7 +35,7 @@ def output_filedir():
         yield temp_dir
 
 
-@pytest.skip(reason="This test is deprecated and will be removed in the future.")
+@pytest.mark.skip(reason="This test is deprecated and will be removed in the future.")
 def test_generate_simple_qa_dataset(load_dir, output_filedir):
     from guidance import models
 
