@@ -6,7 +6,6 @@ import shutil
 from datetime import datetime
 from itertools import chain
 from typing import List, Dict, Optional
-from rich.progress import Progress, BarColumn, TimeElapsedColumn
 
 import pandas as pd
 import yaml
@@ -104,7 +103,11 @@ class Evaluator:
 			self.corpus_data.to_parquet(corpus_path_in_project, index=False)
 
 	def start_trial(
-		self, yaml_path: str, skip_validation: bool = False, full_ingest: bool = True
+		self,
+		yaml_path: str,
+		skip_validation: bool = False,
+		full_ingest: bool = True,
+		ingest_method: Literal["api", "local"] = "api",  # noqa: F821
 	):
 		"""
 		Start AutoRAG trial.
@@ -118,6 +121,10 @@ class Evaluator:
 			Default is False.
 		:param full_ingest: If True, it checks the whole corpus data from corpus.parquet that exists in the Vector DB.
 			If your corpus is huge and don't want to check the whole vector DB, please set it to False.
+		:param ingest_method: The method to ingest the corpus data.
+			"api" means using the API to ingest the corpus data.
+			"local" means using the CUDA local model to ingest the corpus data.
+			Default is "api".
 		:return: None
 		"""
 		# Make Resources directory
@@ -158,64 +165,50 @@ class Evaluator:
 		node_lines = self._load_node_lines(yaml_path)
 		self.__ingest_bm25_full(node_lines)
 
-		with Progress(
-			"[progress.description]{task.description}",
-			BarColumn(),
-			"[progress.percentage]{task.percentage:>3.0f}%",
-			"[progress.bar]{task.completed}/{task.total}",
-			TimeElapsedColumn(),
-		) as progress:
-			# Ingest VectorDB corpus
-			if any(
-				list(
-					map(
-						lambda nodes: module_type_exists(nodes, "vectordb"),
-						node_lines.values(),
-					)
+		# Ingest VectorDB corpus
+		if any(
+			list(
+				map(
+					lambda nodes: module_type_exists(nodes, "vectordb"),
+					node_lines.values(),
 				)
-			):
-				task_ingest = progress.add_task("[cyan]Ingesting VectorDB...", total=1)
-
-				loop = get_event_loop()
-				loop.run_until_complete(self.__ingest_vectordb(yaml_path, full_ingest))
-
-				progress.update(task_ingest, completed=1)
-
-			trial_summary_df = pd.DataFrame(
-				columns=[
-					"node_line_name",
-					"node_type",
-					"best_module_filename",
-					"best_module_name",
-					"best_module_params",
-					"best_execution_time",
-				]
 			)
-			task_eval = progress.add_task(
-				"[cyan]Evaluating...", total=sum(map(len, node_lines.values()))
+		):
+			loop = get_event_loop()
+			loop.run_until_complete(self.__ingest_vectordb(yaml_path, full_ingest))
+
+		trial_summary_df = pd.DataFrame(
+			columns=[
+				"node_line_name",
+				"node_type",
+				"best_module_filename",
+				"best_module_name",
+				"best_module_params",
+				"best_execution_time",
+			]
+		)
+
+		for i, (node_line_name, node_line) in enumerate(node_lines.items()):
+			node_line_dir = os.path.join(self.project_dir, trial_name, node_line_name)
+			os.makedirs(node_line_dir, exist_ok=False)
+			if i == 0:
+				previous_result = self.qa_data
+			logger.info(f"Running node line {node_line_name}...")
+			previous_result = run_node_line(
+				node_line,
+				node_line_dir,
+				previous_result,
 			)
 
-			for i, (node_line_name, node_line) in enumerate(node_lines.items()):
-				node_line_dir = os.path.join(
-					self.project_dir, trial_name, node_line_name
-				)
-				os.makedirs(node_line_dir, exist_ok=False)
-				if i == 0:
-					previous_result = self.qa_data
-				logger.info(f"Running node line {node_line_name}...")
-				previous_result = run_node_line(
-					node_line, node_line_dir, previous_result, progress, task_eval
-				)
-
-				trial_summary_df = self._append_node_line_summary(
-					node_line_name, node_line_dir, trial_summary_df
-				)
-
-			trial_summary_df.to_csv(
-				os.path.join(self.project_dir, trial_name, "summary.csv"), index=False
+			trial_summary_df = self._append_node_line_summary(
+				node_line_name, node_line_dir, trial_summary_df
 			)
 
-			logger.info("Evaluation complete.")
+		trial_summary_df.to_csv(
+			os.path.join(self.project_dir, trial_name, "summary.csv"), index=False
+		)
+
+		logger.info("Evaluation complete.")
 
 	def __ingest_bm25_full(self, node_lines: Dict[str, List[Node]]):
 		if any(
