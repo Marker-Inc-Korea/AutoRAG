@@ -41,12 +41,12 @@ async def test_add_and_query_documents(chroma_ephemeral):
 @pytest.mark.asyncio
 async def test_add_embeddings(chroma_ephemeral):
     ids = ["doc1", "doc2"]
-    embeddings = [[0.3, 0.4, 0.5, 0.6], [0.4, 0.5, 0.6, 0.7]]
+    embeddings = [[0.3] * 768, [0.4] * 768]
     chroma_ephemeral.add_embedding(ids, embeddings)
 
     fetch_embeddings = await chroma_ephemeral.fetch([ids[0]])
     assert len(fetch_embeddings) == 1
-    assert len(fetch_embeddings[0]) == 4
+    assert len(fetch_embeddings[0]) == 768
     assert (fetch_embeddings[i] == embeddings[i] for i in range(len(embeddings)))
 
 
