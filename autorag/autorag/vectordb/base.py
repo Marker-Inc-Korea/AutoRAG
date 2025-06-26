@@ -33,6 +33,13 @@ class BaseVectorStore:
 		pass
 
 	@abstractmethod
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		"""
+		Add the embeddings to the Vector DB.
+		"""
+		pass
+
+	@abstractmethod
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
 	) -> Tuple[List[List[str]], List[List[float]]]:
