@@ -107,6 +107,27 @@ class Couchbase(BaseVectorStore):
 			except DocumentExistsException as e:
 				logger.debug(f"Document already exists: {e}")
 
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		from couchbase.exceptions import DocumentExistsException
+
+		documents_to_insert = []
+		for _id, embedding in zip(ids, embeddings):
+			doc = {
+				self.embedding_key: embedding,
+			}
+			documents_to_insert.append({_id: doc})
+
+		batch_documents_to_insert = make_batch(documents_to_insert, self.ingest_batch)
+
+		for batch in batch_documents_to_insert:
+			insert_batch = {}
+			for doc in batch:
+				insert_batch.update(doc)
+			try:
+				self.collection.upsert_multi(insert_batch)
+			except DocumentExistsException as e:
+				logger.debug(f"Document already exists: {e}")
+
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
 		# Fetch vectors by IDs
 		fetched_result = self.collection.get_multi(ids)

@@ -99,6 +99,23 @@ class Weaviate(BaseVectorStore):
 
 			logger.error(err_message)
 
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		with self.client.batch.dynamic() as batch:
+			for i in range(len(ids)):
+				batch.add_object(
+					collection=self.collection_name,
+					uuid=ids[i],
+					vector=embeddings[i],
+				)
+
+		failed_objs = self.client.batch.failed_objects
+		for obj in failed_objs:
+			err_message = (
+				f"Failed to add object: {obj.original_uuid}\nReason: {obj.message}"
+			)
+
+			logger.error(err_message)
+
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
 		# Fetch vectors by IDs
 		results = self.collection.query.fetch_objects(
