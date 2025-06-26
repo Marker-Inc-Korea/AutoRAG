@@ -175,6 +175,7 @@ For example,
 vectordb:
 - name: autorag_test
   db_type: milvus
+  embedding_batch: 16
   embedding_model:
   - type: huggingface
     model_name: intfloat/multilingual-e5-large-instruct
@@ -187,6 +188,7 @@ or
 vectordb:
 - name: autorag_test
   db_type: milvus
+  embedding_batch: 16
   embedding_model:
   - type: openai
     model_name: text-embedding-3-small
