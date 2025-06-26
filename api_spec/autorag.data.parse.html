@@ -13,7 +13,7 @@
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
     <link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" />
-        <link rel="canonical" href="https://docs.auto-rag.com/api_spec/autorag.data.parse.html" />
+        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/api_spec/autorag.data.parse.html" />
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.data.parse package - AutoRAG documentation</title>
@@ -424,8 +424,59 @@
 <dd></dd></dl>
 
 </section>
-<section id="autorag-data-parse-clova-module">
-<h2>autorag.data.parse.clova module<a class="headerlink" href="#autorag-data-parse-clova-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.data.parse.clova">
+<span id="autorag-data-parse-clova-module"></span><h2>autorag.data.parse.clova module<a class="headerlink" href="#module-autorag.data.parse.clova" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.data.parse.clova.clova_ocr">
+<span class="sig-prename descclassname"><span class="pre">autorag.data.parse.clova.</span></span><span class="sig-name descname"><span class="pre">clova_ocr</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data_path_list</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">url</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">api_key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table_detection</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/parse/clova.html#clova_ocr"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.parse.clova.clova_ocr" title="Link to this definition">¶</a></dt>
+<dd><p>Parse documents to use Naver Clova OCR.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data_path_list</strong> – The list of data paths to parse.</p></li>
+<li><p><strong>url</strong> – The URL for Clova OCR.
+You can get the URL with the guide at <a class="reference external" href="https://guide.ncloud-docs.com/docs/clovaocr-example01">https://guide.ncloud-docs.com/docs/clovaocr-example01</a>
+You can set the environment variable CLOVA_URL, or you can set it directly as a parameter.</p></li>
+<li><p><strong>api_key</strong> – The API key for Clova OCR.
+You can get the API key with the guide at <a class="reference external" href="https://guide.ncloud-docs.com/docs/clovaocr-example01">https://guide.ncloud-docs.com/docs/clovaocr-example01</a>
+You can set the environment variable CLOVA_API_KEY, or you can set it directly as a parameter.</p></li>
+<li><p><strong>batch</strong> – The batch size for parse documents. Default is 8.</p></li>
+<li><p><strong>table_detection</strong> – Whether to enable table detection. Default is False.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>tuple of lists containing the parsed texts, path and pages.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.data.parse.clova.clova_ocr_pure">
+<em class="property"><span class="k"><span class="pre">async</span></span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.data.parse.clova.</span></span><span class="sig-name descname"><span class="pre">clova_ocr_pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">image_data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image_info</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">url</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">api_key</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table_detection</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/parse/clova.html#clova_ocr_pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.parse.clova.clova_ocr_pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.data.parse.clova.extract_text_from_fields">
+<span class="sig-prename descclassname"><span class="pre">autorag.data.parse.clova.</span></span><span class="sig-name descname"><span class="pre">extract_text_from_fields</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fields</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data/parse/clova.html#extract_text_from_fields"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.parse.clova.extract_text_from_fields" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.data.parse.clova.generate_image_info">
+<span class="sig-prename descclassname"><span class="pre">autorag.data.parse.clova.</span></span><span class="sig-name descname"><span class="pre">generate_image_info</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pdf_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_pages</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/parse/clova.html#generate_image_info"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.parse.clova.generate_image_info" title="Link to this definition">¶</a></dt>
+<dd><p>Generate image names based on the PDF file name and the number of pages.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.data.parse.clova.json_to_html_table">
+<span class="sig-prename descclassname"><span class="pre">autorag.data.parse.clova.</span></span><span class="sig-name descname"><span class="pre">json_to_html_table</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">json_data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data/parse/clova.html#json_to_html_table"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.parse.clova.json_to_html_table" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.data.parse.clova.pdf_to_images">
+<span class="sig-prename descclassname"><span class="pre">autorag.data.parse.clova.</span></span><span class="sig-name descname"><span class="pre">pdf_to_images</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">pdf_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">bytes</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data/parse/clova.html#pdf_to_images"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.parse.clova.pdf_to_images" title="Link to this definition">¶</a></dt>
+<dd><p>Convert each page of the PDF to an image and return the image data.</p>
+</dd></dl>
+
 </section>
 <section id="module-autorag.data.parse.langchain_parse">
 <span id="autorag-data-parse-langchain-parse-module"></span><h2>autorag.data.parse.langchain_parse module<a class="headerlink" href="#module-autorag.data.parse.langchain_parse" title="Link to this heading">¶</a></h2>
@@ -558,7 +609,15 @@ You can get the key from <a class="reference external" href="https://cloud.llama
 <li><a class="reference internal" href="#autorag.data.parse.base.parser_node"><code class="docutils literal notranslate"><span class="pre">parser_node()</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#autorag-data-parse-clova-module">autorag.data.parse.clova module</a></li>
+<li><a class="reference internal" href="#module-autorag.data.parse.clova">autorag.data.parse.clova module</a><ul>
+<li><a class="reference internal" href="#autorag.data.parse.clova.clova_ocr"><code class="docutils literal notranslate"><span class="pre">clova_ocr()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.data.parse.clova.clova_ocr_pure"><code class="docutils literal notranslate"><span class="pre">clova_ocr_pure()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.data.parse.clova.extract_text_from_fields"><code class="docutils literal notranslate"><span class="pre">extract_text_from_fields()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.data.parse.clova.generate_image_info"><code class="docutils literal notranslate"><span class="pre">generate_image_info()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.data.parse.clova.json_to_html_table"><code class="docutils literal notranslate"><span class="pre">json_to_html_table()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.data.parse.clova.pdf_to_images"><code class="docutils literal notranslate"><span class="pre">pdf_to_images()</span></code></a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#module-autorag.data.parse.langchain_parse">autorag.data.parse.langchain_parse module</a><ul>
 <li><a class="reference internal" href="#autorag.data.parse.langchain_parse.langchain_parse"><code class="docutils literal notranslate"><span class="pre">langchain_parse()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.data.parse.langchain_parse.langchain_parse_pure"><code class="docutils literal notranslate"><span class="pre">langchain_parse_pure()</span></code></a></li>

@@ -13,7 +13,7 @@
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
     <link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" />
-        <link rel="canonical" href="https://docs.auto-rag.com/api_spec/autorag.evaluation.html" />
+        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/api_spec/autorag.evaluation.html" />
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.evaluation package - AutoRAG documentation</title>
@@ -419,12 +419,53 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="autorag.evaluation.metric.html">autorag.evaluation.metric package</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#submodules">Submodules</a></li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#autorag-evaluation-metric-deepeval-prompt-module">autorag.evaluation.metric.deepeval_prompt module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#autorag-evaluation-metric-generation-module">autorag.evaluation.metric.generation module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#autorag-evaluation-metric-retrieval-module">autorag.evaluation.metric.retrieval module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#autorag-evaluation-metric-retrieval-contents-module">autorag.evaluation.metric.retrieval_contents module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#autorag-evaluation-metric-util-module">autorag.evaluation.metric.util module</a></li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-contents">Module contents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-autorag.evaluation.metric.deepeval_prompt">autorag.evaluation.metric.deepeval_prompt module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.deepeval_prompt.FaithfulnessTemplate"><code class="docutils literal notranslate"><span class="pre">FaithfulnessTemplate</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.deepeval_prompt.FaithfulnessTemplate.generate_claims"><code class="docutils literal notranslate"><span class="pre">FaithfulnessTemplate.generate_claims()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.deepeval_prompt.FaithfulnessTemplate.generate_truths"><code class="docutils literal notranslate"><span class="pre">FaithfulnessTemplate.generate_truths()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.deepeval_prompt.FaithfulnessTemplate.generate_verdicts"><code class="docutils literal notranslate"><span class="pre">FaithfulnessTemplate.generate_verdicts()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-autorag.evaluation.metric.generation">autorag.evaluation.metric.generation module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.async_g_eval"><code class="docutils literal notranslate"><span class="pre">async_g_eval()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.bert_score"><code class="docutils literal notranslate"><span class="pre">bert_score()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.bleu"><code class="docutils literal notranslate"><span class="pre">bleu()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.deepeval_faithfulness"><code class="docutils literal notranslate"><span class="pre">deepeval_faithfulness()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.g_eval"><code class="docutils literal notranslate"><span class="pre">g_eval()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.huggingface_evaluate"><code class="docutils literal notranslate"><span class="pre">huggingface_evaluate()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.make_generator_instance"><code class="docutils literal notranslate"><span class="pre">make_generator_instance()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.meteor"><code class="docutils literal notranslate"><span class="pre">meteor()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.rouge"><code class="docutils literal notranslate"><span class="pre">rouge()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.generation.sem_score"><code class="docutils literal notranslate"><span class="pre">sem_score()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-autorag.evaluation.metric.retrieval">autorag.evaluation.metric.retrieval module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval.retrieval_f1"><code class="docutils literal notranslate"><span class="pre">retrieval_f1()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval.retrieval_map"><code class="docutils literal notranslate"><span class="pre">retrieval_map()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval.retrieval_mrr"><code class="docutils literal notranslate"><span class="pre">retrieval_mrr()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval.retrieval_ndcg"><code class="docutils literal notranslate"><span class="pre">retrieval_ndcg()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval.retrieval_precision"><code class="docutils literal notranslate"><span class="pre">retrieval_precision()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval.retrieval_recall"><code class="docutils literal notranslate"><span class="pre">retrieval_recall()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-autorag.evaluation.metric.retrieval_contents">autorag.evaluation.metric.retrieval_contents module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.retrieval_token_f1"><code class="docutils literal notranslate"><span class="pre">retrieval_token_f1()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.retrieval_token_precision"><code class="docutils literal notranslate"><span class="pre">retrieval_token_precision()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.retrieval_token_recall"><code class="docutils literal notranslate"><span class="pre">retrieval_token_recall()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.retrieval_contents.single_token_f1"><code class="docutils literal notranslate"><span class="pre">single_token_f1()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-autorag.evaluation.metric.util">autorag.evaluation.metric.util module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.util.autorag_metric"><code class="docutils literal notranslate"><span class="pre">autorag_metric()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.util.autorag_metric_loop"><code class="docutils literal notranslate"><span class="pre">autorag_metric_loop()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.util.calculate_cosine_similarity"><code class="docutils literal notranslate"><span class="pre">calculate_cosine_similarity()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.util.calculate_inner_product"><code class="docutils literal notranslate"><span class="pre">calculate_inner_product()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.evaluation.metric.html#autorag.evaluation.metric.util.calculate_l2_distance"><code class="docutils literal notranslate"><span class="pre">calculate_l2_distance()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.evaluation.metric.html#module-autorag.evaluation.metric">Module contents</a></li>
 </ul>
 </li>
 </ul>
@@ -433,20 +474,56 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
 </section>
-<section id="autorag-evaluation-generation-module">
-<h2>autorag.evaluation.generation module<a class="headerlink" href="#autorag-evaluation-generation-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.evaluation.generation">
+<span id="autorag-evaluation-generation-module"></span><h2>autorag.evaluation.generation module<a class="headerlink" href="#module-autorag.evaluation.generation" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.evaluation.generation.evaluate_generation">
+<span class="sig-prename descclassname"><span class="pre">autorag.evaluation.generation.</span></span><span class="sig-name descname"><span class="pre">evaluate_generation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/evaluation/generation.html#evaluate_generation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.evaluation.generation.evaluate_generation" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 </section>
-<section id="autorag-evaluation-retrieval-module">
-<h2>autorag.evaluation.retrieval module<a class="headerlink" href="#autorag-evaluation-retrieval-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.evaluation.retrieval">
+<span id="autorag-evaluation-retrieval-module"></span><h2>autorag.evaluation.retrieval module<a class="headerlink" href="#module-autorag.evaluation.retrieval" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.evaluation.retrieval.evaluate_retrieval">
+<span class="sig-prename descclassname"><span class="pre">autorag.evaluation.retrieval.</span></span><span class="sig-name descname"><span class="pre">evaluate_retrieval</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/evaluation/retrieval.html#evaluate_retrieval"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.evaluation.retrieval.evaluate_retrieval" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 </section>
-<section id="autorag-evaluation-retrieval-contents-module">
-<h2>autorag.evaluation.retrieval_contents module<a class="headerlink" href="#autorag-evaluation-retrieval-contents-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.evaluation.retrieval_contents">
+<span id="autorag-evaluation-retrieval-contents-module"></span><h2>autorag.evaluation.retrieval_contents module<a class="headerlink" href="#module-autorag.evaluation.retrieval_contents" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.evaluation.retrieval_contents.evaluate_retrieval_contents">
+<span class="sig-prename descclassname"><span class="pre">autorag.evaluation.retrieval_contents.</span></span><span class="sig-name descname"><span class="pre">evaluate_retrieval_contents</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/evaluation/retrieval_contents.html#evaluate_retrieval_contents"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.evaluation.retrieval_contents.evaluate_retrieval_contents" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 </section>
-<section id="autorag-evaluation-util-module">
-<h2>autorag.evaluation.util module<a class="headerlink" href="#autorag-evaluation-util-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.evaluation.util">
+<span id="autorag-evaluation-util-module"></span><h2>autorag.evaluation.util module<a class="headerlink" href="#module-autorag.evaluation.util" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.evaluation.util.cast_embedding_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.evaluation.util.</span></span><span class="sig-name descname"><span class="pre">cast_embedding_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/evaluation/util.html#cast_embedding_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.evaluation.util.cast_embedding_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.evaluation.util.cast_metrics">
+<span class="sig-prename descclassname"><span class="pre">autorag.evaluation.util.</span></span><span class="sig-name descname"><span class="pre">cast_metrics</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/evaluation/util.html#cast_metrics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.evaluation.util.cast_metrics" title="Link to this definition">¶</a></dt>
+<dd><blockquote>
+<div><p>Turn metrics to list of metric names and parameter list.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>metrics</strong> – List of string or dictionary.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The list of metric names and dictionary list of metric parameters.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
-<section id="module-contents">
-<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.evaluation">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.evaluation" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 
@@ -490,11 +567,24 @@
 <li><a class="reference internal" href="#">autorag.evaluation package</a><ul>
 <li><a class="reference internal" href="#subpackages">Subpackages</a></li>
 <li><a class="reference internal" href="#submodules">Submodules</a></li>
-<li><a class="reference internal" href="#autorag-evaluation-generation-module">autorag.evaluation.generation module</a></li>
-<li><a class="reference internal" href="#autorag-evaluation-retrieval-module">autorag.evaluation.retrieval module</a></li>
-<li><a class="reference internal" href="#autorag-evaluation-retrieval-contents-module">autorag.evaluation.retrieval_contents module</a></li>
-<li><a class="reference internal" href="#autorag-evaluation-util-module">autorag.evaluation.util module</a></li>
-<li><a class="reference internal" href="#module-contents">Module contents</a></li>
+<li><a class="reference internal" href="#module-autorag.evaluation.generation">autorag.evaluation.generation module</a><ul>
+<li><a class="reference internal" href="#autorag.evaluation.generation.evaluate_generation"><code class="docutils literal notranslate"><span class="pre">evaluate_generation()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.evaluation.retrieval">autorag.evaluation.retrieval module</a><ul>
+<li><a class="reference internal" href="#autorag.evaluation.retrieval.evaluate_retrieval"><code class="docutils literal notranslate"><span class="pre">evaluate_retrieval()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.evaluation.retrieval_contents">autorag.evaluation.retrieval_contents module</a><ul>
+<li><a class="reference internal" href="#autorag.evaluation.retrieval_contents.evaluate_retrieval_contents"><code class="docutils literal notranslate"><span class="pre">evaluate_retrieval_contents()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.evaluation.util">autorag.evaluation.util module</a><ul>
+<li><a class="reference internal" href="#autorag.evaluation.util.cast_embedding_model"><code class="docutils literal notranslate"><span class="pre">cast_embedding_model()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.evaluation.util.cast_metrics"><code class="docutils literal notranslate"><span class="pre">cast_metrics()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.evaluation">Module contents</a></li>
 </ul>
 </li>
 </ul>

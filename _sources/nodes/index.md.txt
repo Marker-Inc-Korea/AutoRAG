@@ -12,9 +12,9 @@ myst:
 
 <style>
 table.table.table-my-special-table {
-    border-collapse: collapse; 
+    border-collapse: collapse;
     border:1px solid #69899F;
-} 
+}
 table.table.table-my-special-table td{
     border:1px dotted #69899F;
     padding:5px;
@@ -38,7 +38,7 @@ table.table.table-my-special-table th{
     </tr>
     <tr>
       <td>1️⃣ <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/query_expansion/query_expansion.html">Query Expansion</a></td>
-      <td><a href="https://marker-inc-korea.github.io/AutoRAG/nodes/query_expansion/query_decompose.html">Query Decompose</a>, <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/query_expansion/hyde.html">HyDE</a>, <a href="https://docs.auto-rag.com/nodes/query_expansion/multi_query_expansion.html">Multi Query Expansion</a>, 📌 Pass Module: pass_query_expansion</td>
+      <td><a href="https://marker-inc-korea.github.io/AutoRAG/nodes/query_expansion/query_decompose.html">Query Decompose</a>, <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/query_expansion/hyde.html">HyDE</a>, <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/query_expansion/multi_query_expansion.html">Multi Query Expansion</a>, 📌 Pass Module: pass_query_expansion</td>
       <td>query_decompose, hyde, multi_query_expansion, pass_query_expansion</td>
     </tr>
     <tr>
@@ -68,7 +68,7 @@ table.table.table-my-special-table th{
     </tr>
     <tr>
       <td>7️⃣ <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/prompt_maker/prompt_maker.html">Prompt Maker</a></td>
-      <td><a href="https://marker-inc-korea.github.io/AutoRAG/nodes/prompt_maker/fstring.html">Default Prompt Maker (f-string)</a>, <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/prompt_maker/long_context_reorder.html">Long Context Reorder</a>, <a href="https://docs.auto-rag.com/nodes/prompt_maker/window_replacement.html">Window Replacement</a></td>
+      <td><a href="https://marker-inc-korea.github.io/AutoRAG/nodes/prompt_maker/fstring.html">Default Prompt Maker (f-string)</a>, <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/prompt_maker/long_context_reorder.html">Long Context Reorder</a>, <a href="https://marker-inc-korea.github.io/AutoRAG/nodes/prompt_maker/window_replacement.html">Window Replacement</a></td>
       <td>fstring, long_context_reorder, window_replacement</td>
     </tr>
     <tr>

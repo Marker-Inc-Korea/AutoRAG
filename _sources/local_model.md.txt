@@ -167,7 +167,7 @@ We support the following embedding model types:
 
 You can configure the embedding model option directly in the YAML file `vectordb` section.
 If you want to know how to configure vectordb in AutoRAG,
-please go [here](https://docs.auto-rag.com/integration/vectordb/vectordb.html).
+please go [here](https://marker-inc-korea.github.io/AutoRAG/integration/vectordb/vectordb.html).
 
 For example,
 
@@ -175,6 +175,7 @@ For example,
 vectordb:
 - name: autorag_test
   db_type: milvus
+  embedding_batch: 16
   embedding_model:
   - type: huggingface
     model_name: intfloat/multilingual-e5-large-instruct
@@ -187,6 +188,7 @@ or
 vectordb:
 - name: autorag_test
   db_type: milvus
+  embedding_batch: 16
   embedding_model:
   - type: openai
     model_name: text-embedding-3-small

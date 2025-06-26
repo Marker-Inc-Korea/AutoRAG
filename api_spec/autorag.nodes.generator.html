@@ -13,7 +13,7 @@
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
     <link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" />
-        <link rel="canonical" href="https://docs.auto-rag.com/api_spec/autorag.nodes.generator.html" />
+        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/api_spec/autorag.nodes.generator.html" />
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.nodes.generator package - AutoRAG documentation</title>
@@ -524,8 +524,37 @@
 <dd></dd></dl>
 
 </section>
-<section id="autorag-nodes-generator-run-module">
-<h2>autorag.nodes.generator.run module<a class="headerlink" href="#autorag-nodes-generator-run-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.nodes.generator.run">
+<span id="autorag-nodes-generator-run-module"></span><h2>autorag.nodes.generator.run module<a class="headerlink" href="#module-autorag.nodes.generator.run" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.generator.run.evaluate_generator_node">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.generator.run.</span></span><span class="sig-name descname"><span class="pre">evaluate_generator_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">result_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/generator/run.html#evaluate_generator_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.generator.run.evaluate_generator_node" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.generator.run.run_generator_node">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.generator.run.</span></span><span class="sig-name descname"><span class="pre">run_generator_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node_line_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategies</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/generator/run.html#run_generator_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.generator.run.run_generator_node" title="Link to this definition">¶</a></dt>
+<dd><p>Run evaluation and select the best module among generator node results.
+And save the results and summary to generator node directory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>modules</strong> – Generator modules to run.</p></li>
+<li><p><strong>module_params</strong> – Generator module parameters.
+Including node parameters, which is used for every module in this node.</p></li>
+<li><p><strong>previous_result</strong> – Previous result dataframe.
+Could be prompt maker node’s result.</p></li>
+<li><p><strong>node_line_dir</strong> – This node line’s directory.</p></li>
+<li><p><strong>strategies</strong> – Strategies for generator node.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The best result dataframe.
+It contains previous result columns and generator node’s result columns.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
 <section id="module-autorag.nodes.generator.vllm">
 <span id="autorag-nodes-generator-vllm-module"></span><h2>autorag.nodes.generator.vllm module<a class="headerlink" href="#module-autorag.nodes.generator.vllm" title="Link to this heading">¶</a></h2>
@@ -629,7 +658,11 @@
 <li><a class="reference internal" href="#autorag.nodes.generator.openai_llm.truncate_by_token"><code class="docutils literal notranslate"><span class="pre">truncate_by_token()</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#autorag-nodes-generator-run-module">autorag.nodes.generator.run module</a></li>
+<li><a class="reference internal" href="#module-autorag.nodes.generator.run">autorag.nodes.generator.run module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.generator.run.evaluate_generator_node"><code class="docutils literal notranslate"><span class="pre">evaluate_generator_node()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.generator.run.run_generator_node"><code class="docutils literal notranslate"><span class="pre">run_generator_node()</span></code></a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#module-autorag.nodes.generator.vllm">autorag.nodes.generator.vllm module</a><ul>
 <li><a class="reference internal" href="#autorag.nodes.generator.vllm.Vllm"><code class="docutils literal notranslate"><span class="pre">Vllm</span></code></a><ul>
 <li><a class="reference internal" href="#autorag.nodes.generator.vllm.Vllm.astream"><code class="docutils literal notranslate"><span class="pre">Vllm.astream()</span></code></a></li>

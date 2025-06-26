@@ -13,7 +13,7 @@
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
     <link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" />
-        <link rel="canonical" href="https://docs.auto-rag.com/api_spec/autorag.nodes.passagecompressor.html" />
+        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/api_spec/autorag.nodes.passagecompressor.html" />
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2024.08.06 -->
         <title>autorag.nodes.passagecompressor package - AutoRAG documentation</title>
@@ -511,8 +511,38 @@ Default is 300.</p></li>
 </dd></dl>
 
 </section>
-<section id="autorag-nodes-passagecompressor-run-module">
-<h2>autorag.nodes.passagecompressor.run module<a class="headerlink" href="#autorag-nodes-passagecompressor-run-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.nodes.passagecompressor.run">
+<span id="autorag-nodes-passagecompressor-run-module"></span><h2>autorag.nodes.passagecompressor.run module<a class="headerlink" href="#module-autorag.nodes.passagecompressor.run" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagecompressor.run.evaluate_passage_compressor_node">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagecompressor.run.</span></span><span class="sig-name descname"><span class="pre">evaluate_passage_compressor_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">result_df</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagecompressor/run.html#evaluate_passage_compressor_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagecompressor.run.evaluate_passage_compressor_node" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagecompressor.run.run_passage_compressor_node">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagecompressor.run.</span></span><span class="sig-name descname"><span class="pre">run_passage_compressor_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">modules</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node_line_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">strategies</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagecompressor/run.html#run_passage_compressor_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagecompressor.run.run_passage_compressor_node" title="Link to this definition">¶</a></dt>
+<dd><p>Run evaluation and select the best module among passage compressor modules.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>modules</strong> – Passage compressor modules to run.</p></li>
+<li><p><strong>module_params</strong> – Passage compressor module parameters.</p></li>
+<li><p><strong>previous_result</strong> – Previous result dataframe.
+Could be retrieval, reranker modules result.
+It means it must contain ‘query’, ‘retrieved_contents’, ‘retrieved_ids’, ‘retrieve_scores’ columns.</p></li>
+<li><p><strong>node_line_dir</strong> – This node line’s directory.</p></li>
+<li><p><strong>strategies</strong> – Strategies for passage compressor node.
+In this node, we use
+You can skip evaluation when you use only one module and a module parameter.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The best result dataframe with previous result columns.
+This node will replace ‘retrieved_contents’ to compressed passages, so its length will be one.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
 <section id="module-autorag.nodes.passagecompressor.tree_summarize">
 <span id="autorag-nodes-passagecompressor-tree-summarize-module"></span><h2>autorag.nodes.passagecompressor.tree_summarize module<a class="headerlink" href="#module-autorag.nodes.passagecompressor.tree_summarize" title="Link to this heading">¶</a></h2>
@@ -599,7 +629,11 @@ Default is 300.</p></li>
 <li><a class="reference internal" href="#autorag.nodes.passagecompressor.refine.Refine"><code class="docutils literal notranslate"><span class="pre">Refine</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#autorag-nodes-passagecompressor-run-module">autorag.nodes.passagecompressor.run module</a></li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagecompressor.run">autorag.nodes.passagecompressor.run module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagecompressor.run.evaluate_passage_compressor_node"><code class="docutils literal notranslate"><span class="pre">evaluate_passage_compressor_node()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagecompressor.run.run_passage_compressor_node"><code class="docutils literal notranslate"><span class="pre">run_passage_compressor_node()</span></code></a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#module-autorag.nodes.passagecompressor.tree_summarize">autorag.nodes.passagecompressor.tree_summarize module</a><ul>
 <li><a class="reference internal" href="#autorag.nodes.passagecompressor.tree_summarize.TreeSummarize"><code class="docutils literal notranslate"><span class="pre">TreeSummarize</span></code></a></li>
 </ul>

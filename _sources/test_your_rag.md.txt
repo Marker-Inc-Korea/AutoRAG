@@ -7,7 +7,7 @@ In other words, you can measure retrieval or generation performance on the RAG t
 ## Preparation
 
 Before starting, ensure you have prepared a `qa.parquet` file for evaluation.
-See [here](https://docs.auto-rag.com/data_creation/tutorial.html#qa-creation) for learning how to make QA dataset.
+See [here](https://marker-inc-korea.github.io/AutoRAG/data_creation/tutorial.html#qa-creation) for learning how to make QA dataset.
 
 ## Retrieval Evaluation
 
