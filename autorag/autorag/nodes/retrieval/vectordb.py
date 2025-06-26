@@ -288,7 +288,7 @@ def vectordb_ingest_huggingface(
 			normalize_embeddings=vectordb.embedding.normalize,
 			show_progrss_bar=False,
 		)
-		vectordb.add_embedding(embedding, id_batch)
+		vectordb.add_embedding(id_batch, embedding)
 	logger.info("Finish embedding & ingesting corpus data with huggingface model.")
 
 
