@@ -5,7 +5,6 @@ from typing import List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 
@@ -276,19 +275,14 @@ def vectordb_ingest_huggingface(
 		return
 	new_contents = corpus_data["contents"].tolist()
 	new_ids = corpus_data["doc_id"].tolist()
-	content_batches = make_batch(new_contents, embedding_batch_size)
-	id_batches = make_batch(new_ids, embedding_batch_size)
 	logger.info("Start embedding corpus data with huggingface model.")
-	for i, (content_batch, id_batch) in tqdm(
-		enumerate(zip(content_batches, id_batches))
-	):
-		embedding = embedding_model.encode(
-			content_batch,
-			batch_size=embedding_batch_size,
-			normalize_embeddings=vectordb.embedding.normalize,
-			show_progrss_bar=False,
-		)
-		vectordb.add_embedding(id_batch, embedding)
+	embeddings = embedding_model.encode(
+		new_contents,
+		batch_size=embedding_batch_size,
+		normalize_embeddings=vectordb.embedding.normalize,
+		show_progrss_bar=True,
+	)
+	vectordb.add_embedding(new_ids, embeddings)
 	logger.info("Finish embedding & ingesting corpus data with huggingface model.")
 
 
