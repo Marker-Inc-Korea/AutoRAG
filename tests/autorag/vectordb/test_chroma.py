@@ -2,7 +2,7 @@ import pytest
 from autorag.vectordb.chroma import Chroma
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def chroma_ephemeral():
     return Chroma(
         embedding_model="mock",

@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import autorag
-from autorag.nodes.retrieval.vectordb import vectordb_ingest, vectordb_pure
+from autorag.nodes.retrieval.vectordb import vectordb_ingest_api, vectordb_pure
 from autorag.utils.util import (
 	save_parquet_safe,
 	fetch_contents,
@@ -176,7 +176,7 @@ def make_qa_with_existing_qa(
 		collection = chroma_client.get_or_create_collection(collection_name)
 
 	# embed corpus_df
-	vectordb_ingest(collection, corpus_df, embeddings)
+	vectordb_ingest_api(collection, corpus_df, embeddings)
 	query_embeddings = embeddings.get_text_embedding_batch(
 		existing_query_df["query"].tolist()
 	)

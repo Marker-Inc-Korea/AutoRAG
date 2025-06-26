@@ -14,9 +14,10 @@ from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.base import get_bm25_pkl_name
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import (
-	vectordb_ingest,
+	vectordb_ingest_api,
 	filter_exist_ids,
 	filter_exist_ids_from_retrieval_gt,
+	vectordb_ingest_huggingface,
 )
 from autorag.schema import Node
 from autorag.schema.node import (
@@ -107,7 +108,6 @@ class Evaluator:
 		yaml_path: str,
 		skip_validation: bool = False,
 		full_ingest: bool = True,
-		ingest_method: Literal["api", "local"] = "api",  # noqa: F821
 	):
 		"""
 		Start AutoRAG trial.
@@ -121,10 +121,6 @@ class Evaluator:
 			Default is False.
 		:param full_ingest: If True, it checks the whole corpus data from corpus.parquet that exists in the Vector DB.
 			If your corpus is huge and don't want to check the whole vector DB, please set it to False.
-		:param ingest_method: The method to ingest the corpus data.
-			"api" means using the API to ingest the corpus data.
-			"local" means using the CUDA local model to ingest the corpus data.
-			Default is "api".
 		:return: None
 		"""
 		# Make Resources directory
@@ -174,8 +170,20 @@ class Evaluator:
 				)
 			)
 		):
-			loop = get_event_loop()
-			loop.run_until_complete(self.__ingest_vectordb(yaml_path, full_ingest))
+			vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+			for vectordb in vectordb_list:
+				loop = get_event_loop()
+				target_corpus = loop.run_until_complete(
+					self.__get_ingest_target_corpus(vectordb, full_ingest)
+				)
+				if vectordb.embedding.__class__.class_name() == "HuggingFaceEmbedding":
+					vectordb_ingest_huggingface(vectordb, target_corpus)
+				else:
+					# API Ingest Method
+					loop = get_event_loop()
+					loop.run_until_complete(
+						vectordb_ingest_api(vectordb, target_corpus)
+					)
 
 		trial_summary_df = pd.DataFrame(
 			columns=[
@@ -537,17 +545,15 @@ class Evaluator:
 		)
 		return list(set(embedding_models_list))
 
-	async def __ingest_vectordb(self, yaml_path, full_ingest: bool):
-		vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+	async def __get_ingest_target_corpus(
+		self, vectordb, full_ingest: bool
+	) -> pd.DataFrame:
 		if full_ingest is True:
 			# get the target ingest corpus from the whole corpus
-			for vectordb in vectordb_list:
-				target_corpus = await filter_exist_ids(vectordb, self.corpus_data)
-				await vectordb_ingest(vectordb, target_corpus)
+			target_corpus = await filter_exist_ids(vectordb, self.corpus_data)
 		else:
 			# get the target ingest corpus from the retrieval gt only
-			for vectordb in vectordb_list:
-				target_corpus = await filter_exist_ids_from_retrieval_gt(
-					vectordb, self.qa_data, self.corpus_data
-				)
-				await vectordb_ingest(vectordb, target_corpus)
+			target_corpus = await filter_exist_ids_from_retrieval_gt(
+				vectordb, self.qa_data, self.corpus_data
+			)
+		return target_corpus
