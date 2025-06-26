@@ -233,7 +233,7 @@ async def filter_exist_ids_from_retrieval_gt(
 	return new_passage
 
 
-async def vectordb_ingest(
+async def vectordb_ingest_api(
 	vectordb: BaseVectorStore,
 	corpus_data: pd.DataFrame,
 ):
@@ -254,6 +254,36 @@ async def vectordb_ingest(
 		id_batches = make_batch(new_ids, embedding_batch)
 		for content_batch, id_batch in zip(content_batches, id_batches):
 			await vectordb.add(ids=id_batch, texts=content_batch)
+
+
+def vectordb_ingest_huggingface(
+	vectordb: BaseVectorStore,
+	corpus_data: pd.DataFrame,
+):
+	"""
+	Ingest given corpus data to the vectordb using local model.
+	When the corpus content is empty (whitespace), it will be ignored.
+	And if there is a document id that already exists in the collection, it will be ignored.
+
+	:param vectordb: A vector stores instance that you want to ingest.
+	:param corpus_data: The corpus data that contains doc_id and contents columns.
+	"""
+	embedding_batch_size = vectordb.embedding_batch
+	embedding_model = vectordb.embedding._model
+	if corpus_data.empty:
+		logger.warning("The corpus data is empty. Nothing to ingest.")
+		return
+	new_contents = corpus_data["contents"].tolist()
+	new_ids = corpus_data["doc_id"].tolist()
+	logger.info("Start embedding corpus data with huggingface model.")
+	embeddings = embedding_model.encode(
+		new_contents,
+		batch_size=embedding_batch_size,
+		normalize_embeddings=vectordb.embedding.normalize,
+		show_progrss_bar=True,
+	)
+	vectordb.add_embedding(new_ids, embeddings)
+	logger.info("Finish embedding & ingesting corpus data with huggingface model.")
 
 
 def run_query_embedding_batch(

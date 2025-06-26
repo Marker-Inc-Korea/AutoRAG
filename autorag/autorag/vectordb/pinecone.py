@@ -57,8 +57,10 @@ class Pinecone(BaseVectorStore):
 		text_embeddings: List[
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(texts)
+		self.add_embedding(ids, text_embeddings)
 
-		vector_tuples = list(zip(ids, text_embeddings))
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		vector_tuples = list(zip(ids, embeddings))
 		batch_vectors = make_batch(vector_tuples, self.ingest_batch)
 
 		async_res = [

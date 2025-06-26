@@ -1,7 +1,6 @@
 import os
 import pathlib
 from typing import Dict, List, Optional
-from rich.progress import Progress
 
 import pandas as pd
 
@@ -26,8 +25,6 @@ def run_node_line(
 	nodes: List[Node],
 	node_line_dir: str,
 	previous_result: Optional[pd.DataFrame] = None,
-	progress: Progress = None,
-	task_eval: Progress.tasks = None,
 ):
 	"""
 	Run the whole node line by running each node.
@@ -36,8 +33,6 @@ def run_node_line(
 	:param node_line_dir: This node line's directory.
 	:param previous_result: A result of the previous node line.
 	    If None, it loads qa data from data/qa.parquet.
-	:param progress: Rich Progress object.
-	:param task_eval: Progress task object
 	:return: The final result of the node line.
 	"""
 	if previous_result is None:
@@ -63,9 +58,6 @@ def run_node_line(
 				"best_execution_time": best_node_row["execution_time"].values[0],
 			}
 		)
-		# Update progress for each node
-		if progress:
-			progress.update(task_eval, advance=1)
 
 	pd.DataFrame(summary_lst).to_csv(
 		os.path.join(node_line_dir, "summary.csv"), index=False

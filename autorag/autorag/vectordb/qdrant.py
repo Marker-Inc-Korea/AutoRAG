@@ -81,9 +81,11 @@ class Qdrant(BaseVectorStore):
 	async def add(self, ids: List[str], texts: List[str]):
 		texts = self.truncated_inputs(texts)
 		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
+		self.add_embedding(ids, text_embeddings)
 
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
 		points = list(
-			map(lambda x: PointStruct(id=x[0], vector=x[1]), zip(ids, text_embeddings))
+			map(lambda x: PointStruct(id=x[0], vector=x[1]), zip(ids, embeddings))
 		)
 
 		self.client.upload_points(

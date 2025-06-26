@@ -6,7 +6,6 @@ import shutil
 from datetime import datetime
 from itertools import chain
 from typing import List, Dict, Optional
-from rich.progress import Progress, BarColumn, TimeElapsedColumn
 
 import pandas as pd
 import yaml
@@ -15,9 +14,10 @@ from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.base import get_bm25_pkl_name
 from autorag.nodes.retrieval.bm25 import bm25_ingest
 from autorag.nodes.retrieval.vectordb import (
-	vectordb_ingest,
+	vectordb_ingest_api,
 	filter_exist_ids,
 	filter_exist_ids_from_retrieval_gt,
+	vectordb_ingest_huggingface,
 )
 from autorag.schema import Node
 from autorag.schema.node import (
@@ -104,7 +104,10 @@ class Evaluator:
 			self.corpus_data.to_parquet(corpus_path_in_project, index=False)
 
 	def start_trial(
-		self, yaml_path: str, skip_validation: bool = False, full_ingest: bool = True
+		self,
+		yaml_path: str,
+		skip_validation: bool = False,
+		full_ingest: bool = True,
 	):
 		"""
 		Start AutoRAG trial.
@@ -158,64 +161,62 @@ class Evaluator:
 		node_lines = self._load_node_lines(yaml_path)
 		self.__ingest_bm25_full(node_lines)
 
-		with Progress(
-			"[progress.description]{task.description}",
-			BarColumn(),
-			"[progress.percentage]{task.percentage:>3.0f}%",
-			"[progress.bar]{task.completed}/{task.total}",
-			TimeElapsedColumn(),
-		) as progress:
-			# Ingest VectorDB corpus
-			if any(
-				list(
-					map(
-						lambda nodes: module_type_exists(nodes, "vectordb"),
-						node_lines.values(),
-					)
+		# Ingest VectorDB corpus
+		if any(
+			list(
+				map(
+					lambda nodes: module_type_exists(nodes, "vectordb"),
+					node_lines.values(),
 				)
-			):
-				task_ingest = progress.add_task("[cyan]Ingesting VectorDB...", total=1)
-
+			)
+		):
+			vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+			for vectordb in vectordb_list:
 				loop = get_event_loop()
-				loop.run_until_complete(self.__ingest_vectordb(yaml_path, full_ingest))
-
-				progress.update(task_ingest, completed=1)
-
-			trial_summary_df = pd.DataFrame(
-				columns=[
-					"node_line_name",
-					"node_type",
-					"best_module_filename",
-					"best_module_name",
-					"best_module_params",
-					"best_execution_time",
-				]
-			)
-			task_eval = progress.add_task(
-				"[cyan]Evaluating...", total=sum(map(len, node_lines.values()))
-			)
-
-			for i, (node_line_name, node_line) in enumerate(node_lines.items()):
-				node_line_dir = os.path.join(
-					self.project_dir, trial_name, node_line_name
+				target_corpus = loop.run_until_complete(
+					self.__get_ingest_target_corpus(vectordb, full_ingest)
 				)
-				os.makedirs(node_line_dir, exist_ok=False)
-				if i == 0:
-					previous_result = self.qa_data
-				logger.info(f"Running node line {node_line_name}...")
-				previous_result = run_node_line(
-					node_line, node_line_dir, previous_result, progress, task_eval
-				)
+				if vectordb.embedding.__class__.class_name() == "HuggingFaceEmbedding":
+					vectordb_ingest_huggingface(vectordb, target_corpus)
+				else:
+					# API Ingest Method
+					loop = get_event_loop()
+					loop.run_until_complete(
+						vectordb_ingest_api(vectordb, target_corpus)
+					)
 
-				trial_summary_df = self._append_node_line_summary(
-					node_line_name, node_line_dir, trial_summary_df
-				)
+		trial_summary_df = pd.DataFrame(
+			columns=[
+				"node_line_name",
+				"node_type",
+				"best_module_filename",
+				"best_module_name",
+				"best_module_params",
+				"best_execution_time",
+			]
+		)
 
-			trial_summary_df.to_csv(
-				os.path.join(self.project_dir, trial_name, "summary.csv"), index=False
+		for i, (node_line_name, node_line) in enumerate(node_lines.items()):
+			node_line_dir = os.path.join(self.project_dir, trial_name, node_line_name)
+			os.makedirs(node_line_dir, exist_ok=False)
+			if i == 0:
+				previous_result = self.qa_data
+			logger.info(f"Running node line {node_line_name}...")
+			previous_result = run_node_line(
+				node_line,
+				node_line_dir,
+				previous_result,
 			)
 
-			logger.info("Evaluation complete.")
+			trial_summary_df = self._append_node_line_summary(
+				node_line_name, node_line_dir, trial_summary_df
+			)
+
+		trial_summary_df.to_csv(
+			os.path.join(self.project_dir, trial_name, "summary.csv"), index=False
+		)
+
+		logger.info("Evaluation complete.")
 
 	def __ingest_bm25_full(self, node_lines: Dict[str, List[Node]]):
 		if any(
@@ -544,17 +545,15 @@ class Evaluator:
 		)
 		return list(set(embedding_models_list))
 
-	async def __ingest_vectordb(self, yaml_path, full_ingest: bool):
-		vectordb_list = load_all_vectordb_from_yaml(yaml_path, self.project_dir)
+	async def __get_ingest_target_corpus(
+		self, vectordb, full_ingest: bool
+	) -> pd.DataFrame:
 		if full_ingest is True:
 			# get the target ingest corpus from the whole corpus
-			for vectordb in vectordb_list:
-				target_corpus = await filter_exist_ids(vectordb, self.corpus_data)
-				await vectordb_ingest(vectordb, target_corpus)
+			target_corpus = await filter_exist_ids(vectordb, self.corpus_data)
 		else:
 			# get the target ingest corpus from the retrieval gt only
-			for vectordb in vectordb_list:
-				target_corpus = await filter_exist_ids_from_retrieval_gt(
-					vectordb, self.qa_data, self.corpus_data
-				)
-				await vectordb_ingest(vectordb, target_corpus)
+			target_corpus = await filter_exist_ids_from_retrieval_gt(
+				vectordb, self.qa_data, self.corpus_data
+			)
+		return target_corpus
