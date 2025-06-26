@@ -24,7 +24,7 @@ jobs:
         uv pip install -r docs/requirements.txt
     - name: Build HTML
       run: |
-        sphinx-build -b html docs/source docs/build/html
+        uv run sphinx-build -b html docs/source docs/build/html
     - name: Copy CNAME
       run: |
         cp docs/source/CNAME docs/build/html/CNAME
