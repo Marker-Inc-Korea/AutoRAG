@@ -1,12 +1,12 @@
-import os
 from pathlib import Path
 from typing import Tuple, List, Union
 
 import numpy as np
 import pandas as pd
 
-from autorag.nodes.retrieval.base import HybridRetrieval
-from autorag.utils.util import pop_params, fetch_contents, result_to_dataframe
+from autorag.nodes.hybridretrieval.base import HybridRetrieval
+from autorag.nodes.hybridretrieval.run import evaluate_retrieval_node
+from autorag.strategy import select_best
 
 
 def normalize_mm(scores: List[str], fixed_min_value: float = 0):
@@ -53,8 +53,7 @@ normalize_method_dict = {
 class HybridCC(HybridRetrieval):
 	def _pure(
 		self,
-		ids: Tuple,
-		scores: Tuple,
+		info: dict,
 		top_k: int,
 		weight: float,
 		normalize_method: str = "mm",
@@ -62,8 +61,8 @@ class HybridCC(HybridRetrieval):
 		lexical_theoretical_min_value: float = 0.0,
 	):
 		return hybrid_cc(
-			ids,
-			scores,
+			(info["retrieved_ids_semantic"], info["retrieved_ids_lexical"]),
+			(info["retrieve_scores_semantic"], info["retrieve_scores_lexical"]),
 			top_k,
 			weight,
 			normalize_method,
@@ -79,34 +78,48 @@ class HybridCC(HybridRetrieval):
 		*args,
 		**kwargs,
 	):
-		if "ids" in kwargs and "scores" in kwargs:
-			data_dir = os.path.join(project_dir, "data")
-			corpus_df = pd.read_parquet(
-				os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+		assert "strategies" in kwargs, "You must specify the strategies to use."
+		assert (
+			"input_metrics" in kwargs
+		), "You must specify the input metrics to use, which is list of MetricInput."
+		strategies = kwargs.pop("strategies")
+		input_metrics = kwargs.pop("input_metrics")
+		weight_range = kwargs.pop("weight_range", (0.0, 1.0))
+		test_weight_size = kwargs.pop("test_weight_size", 101)
+		weight_candidates = np.linspace(
+			weight_range[0], weight_range[1], test_weight_size
+		).tolist()
+
+		result_list = []
+		instance = cls(project_dir, *args, **kwargs)
+		for weight_value in weight_candidates:
+			result_df = instance.pure(previous_result, weight=weight_value, **kwargs)
+			result_list.append(result_df)
+
+		if strategies.get("metrics") is None:
+			raise ValueError("You must at least one metrics for retrieval evaluation.")
+		result_list = list(
+			map(
+				lambda x: evaluate_retrieval_node(
+					x,
+					input_metrics,
+					strategies.get("metrics"),
+				),
+				result_list,
 			)
+		)
 
-			params = pop_params(hybrid_cc, kwargs)
-			assert (
-				"ids" in params and "scores" in params and "top_k" in params
-			), "ids, scores, and top_k must be specified."
-
-			@result_to_dataframe(
-				["retrieved_contents", "retrieved_ids", "retrieve_scores"]
-			)
-			def __cc(**cc_params):
-				ids, scores = hybrid_cc(**cc_params)
-				contents = fetch_contents(corpus_df, ids)
-				return contents, ids, scores
-
-			return __cc(**params)
-		else:
-			assert (
-				"target_modules" in kwargs and "target_module_params" in kwargs
-			), "target_modules and target_module_params must be specified if there is not ids and scores."
-			instance = cls(project_dir, *args, **kwargs)
-			result = instance.pure(previous_result, *args, **kwargs)
-			del instance
-			return result
+		# select best result
+		best_result_df, best_weight = select_best(
+			result_list,
+			strategies.get("metrics"),
+			metadatas=weight_candidates,
+			strategy_name=strategies.get("strategy", "normalize_mean"),
+		)
+		return {
+			"best_result": best_result_df,
+			"best_weight": best_weight,
+		}
 
 
 def hybrid_cc(

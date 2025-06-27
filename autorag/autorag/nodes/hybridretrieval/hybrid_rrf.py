@@ -4,7 +4,7 @@ from typing import List, Tuple, Union
 
 import pandas as pd
 
-from autorag.nodes.retrieval.base import HybridRetrieval
+from autorag.nodes.hybridretrieval.base import HybridRetrieval
 from autorag.utils.util import pop_params, fetch_contents, result_to_dataframe
 
 

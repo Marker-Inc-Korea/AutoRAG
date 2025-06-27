@@ -6,9 +6,7 @@ from typing import List, Union, Tuple
 import pandas as pd
 
 from autorag.schema import BaseModule
-from autorag.support import get_support_modules
-from autorag.utils import fetch_contents, result_to_dataframe, validate_qa_dataset
-from autorag.utils.util import pop_params
+from autorag.utils import validate_qa_dataset
 
 logger = logging.getLogger("AutoRAG")
 
@@ -41,69 +39,6 @@ class BaseRetrieval(BaseModule, metaclass=abc.ABCMeta):
 		)
 		queries = previous_result["queries"].tolist()
 		return queries
-
-
-class HybridRetrieval(BaseRetrieval, metaclass=abc.ABCMeta):
-	def __init__(
-		self, project_dir: str, target_modules, target_module_params, *args, **kwargs
-	):
-		super().__init__(project_dir)
-		self.target_modules = list(
-			map(
-				lambda x, y: get_support_modules(x)(
-					**y,
-					project_dir=project_dir,
-				),
-				target_modules,
-				target_module_params,
-			)
-		)
-		self.target_module_params = target_module_params
-
-	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
-	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
-		result_dfs: List[pd.DataFrame] = list(
-			map(
-				lambda x, y: x.pure(
-					**y,
-					previous_result=previous_result,
-				),
-				self.target_modules,
-				self.target_module_params,
-			)
-		)
-		[
-			res.rename(
-				columns={
-					"retrieved_contents_semantic": "retrieved_contents",
-					"retrieved_ids_semantic": "retrieved_ids",
-					"retrieve_scores_semantic": "retrieve_scores",
-					"retrieved_contents_lexical": "retrieved_contents",
-					"retrieved_ids_lexical": "retrieved_ids",
-					"retrieve_scores_lexical": "retrieve_scores",
-				},
-				inplace=True,
-			)
-			for res in result_dfs
-		]
-		ids = tuple(
-			map(lambda df: df["retrieved_ids"].apply(list).tolist(), result_dfs)
-		)
-		scores = tuple(
-			map(
-				lambda df: df["retrieve_scores"].apply(list).tolist(),
-				result_dfs,
-			)
-		)
-
-		_pure_params = pop_params(self._pure, kwargs)
-		if "ids" in _pure_params or "scores" in _pure_params:
-			raise ValueError(
-				"With specifying ids or scores, you must use HybridRRF.run_evaluator instead."
-			)
-		ids, scores = self._pure(ids=ids, scores=scores, **_pure_params)
-		contents = fetch_contents(self.corpus_df, ids)
-		return contents, ids, scores
 
 
 def cast_queries(queries: Union[str, List[str]]) -> List[str]:
