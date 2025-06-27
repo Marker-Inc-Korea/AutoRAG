@@ -51,10 +51,10 @@ def get_support_modules(module_name: str) -> Callable:
 		"BM25": ("autorag.nodes.lexicalretrieval", "BM25"),
 		"vectordb": ("autorag.nodes.semanticretrieval", "VectorDB"),
 		"VectorDB": ("autorag.nodes.semanticretrieval", "VectorDB"),
-		"hybrid_rrf": ("autorag.nodes.retrieval", "HybridRRF"),
-		"HybridRRF": ("autorag.nodes.retrieval", "HybridRRF"),
-		"hybrid_cc": ("autorag.nodes.retrieval", "HybridCC"),
-		"HybridCC": ("autorag.nodes.retrieval", "HybridCC"),
+		"hybrid_rrf": ("autorag.nodes.hybridretrieval", "HybridRRF"),
+		"HybridRRF": ("autorag.nodes.hybridretrieval", "HybridRRF"),
+		"hybrid_cc": ("autorag.nodes.hybridretrieval", "HybridCC"),
+		"HybridCC": ("autorag.nodes.hybridretrieval", "HybridCC"),
 		# passage_augmenter
 		"prev_next_augmenter": (
 			"autorag.nodes.passageaugmenter",
@@ -207,6 +207,10 @@ def get_support_nodes(node_name: str) -> Callable:
 		"sparse_retrieval": (
 			"autorag.nodes.lexicalretrieval.run",
 			"run_lexical_retrieval_node",
+		),
+		"hybrid_retrieval": (
+			"autorag.nodes.hybridretrieval.run",
+			"run_hybrid_retrieval_node",
 		),
 		"generator": ("autorag.nodes.generator.run", "run_generator_node"),
 		"prompt_maker": ("autorag.nodes.promptmaker.run", "run_prompt_maker_node"),
