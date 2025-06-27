@@ -5,6 +5,7 @@ from typing import List, Dict, Union
 import pandas as pd
 
 from autorag.evaluation import evaluate_retrieval
+from autorag.evaluation.retrieval import RETRIEVAL_METRIC_FUNC_DICT
 from autorag.nodes.retrieval.run_util import save_and_summary, find_best
 from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed
@@ -96,7 +97,17 @@ def run_semantic_retrieval_node(
 	semantic_summary_df["is_best"] = (
 		semantic_summary_df["filename"] == semantic_selected_filename
 	)
-
+	previous_result.drop(
+		columns=list(RETRIEVAL_METRIC_FUNC_DICT.keys()), inplace=True, errors="ignore"
+	)
+	semantic_selected_result.rename(
+		columns={
+			"retrieved_contents": "retrieved_contents_semantic",
+			"retrieved_ids": "retrieved_ids_semantic",
+			"retrieve_scores": "retrieve_scores_semantic",
+		},
+		inplace=True,
+	)
 	best_result = pd.concat([previous_result, semantic_selected_result], axis=1)
 	best_result.to_parquet(
 		os.path.join(

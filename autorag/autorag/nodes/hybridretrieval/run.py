@@ -5,6 +5,7 @@ from typing import List, Dict, Union
 import pandas as pd
 
 from autorag.evaluation import evaluate_retrieval
+from autorag.evaluation.retrieval import RETRIEVAL_METRIC_FUNC_DICT
 from autorag.nodes.retrieval.run_util import save_and_summary, find_best
 from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed
@@ -93,7 +94,9 @@ def run_hybrid_retrieval_node(
 		results, hybrid_times, summary_df["filename"].tolist(), strategies
 	)
 	summary_df["is_best"] = summary_df["filename"] == selected_filename
-
+	previous_result.drop(
+		columns=list(RETRIEVAL_METRIC_FUNC_DICT.keys()), inplace=True, errors="ignore"
+	)
 	best_result = pd.concat([previous_result, selected_result], axis=1)
 	best_result.to_parquet(
 		os.path.join(
