@@ -12,7 +12,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 
 import autorag
 from autorag.embedding.base import embedding_models
-from autorag.nodes.hybridretrieval import HybridCC
+from autorag.nodes.hybridretrieval import HybridCC, HybridRRF
 from autorag.nodes.hybridretrieval.run import run_hybrid_retrieval_node
 from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api
 from autorag.utils.util import load_summary_file, get_event_loop
@@ -74,9 +74,10 @@ def node_line_dir():
     mock_get_text_embedding_batch,
 )
 def test_run_hybrid_retrieval_node(node_line_dir):
-    modules = [HybridCC]
+    modules = [HybridCC, HybridRRF]
     module_params = [
         {"top_k": 4, "weight_range": (0.3, 0.7), "test_weight_size": 40},
+        {"top_k": 4, "weight_range": (5, 70)},
     ]
     project_dir = pathlib.PurePath(node_line_dir).parent.parent
     qa_path = os.path.join(project_dir, "data", "qa.parquet")
@@ -167,15 +168,18 @@ def test_run_hybrid_retrieval_node(node_line_dir):
         "execution_time",
         "is_best",
     }
-    assert len(summary_df) == 1
+    assert len(summary_df) == 2
     assert summary_df["filename"][0] == "0.parquet"
+    assert summary_df["filename"][1] == "1.parquet"
     assert summary_df["retrieval_f1"][0] == vectordb_top_k_df["retrieval_f1"].mean()
     assert (
         summary_df["retrieval_recall"][0]
         == vectordb_top_k_df["retrieval_recall"].mean()
     )
     assert summary_df["module_name"][0] == "HybridCC"
+    assert summary_df["module_name"][1] == "HybridRRF"
     assert "weight" in summary_df["module_params"][0].keys()
+    assert "weight" in summary_df["module_params"][1].keys()
     assert summary_df["execution_time"][0] > 0
 
     assert summary_df["filename"].nunique() == len(summary_df)

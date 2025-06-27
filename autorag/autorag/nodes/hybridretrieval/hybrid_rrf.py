@@ -1,16 +1,23 @@
-import os
 from pathlib import Path
 from typing import List, Tuple, Union
 
+import numpy as np
 import pandas as pd
 
 from autorag.nodes.hybridretrieval.base import HybridRetrieval
-from autorag.utils.util import pop_params, fetch_contents, result_to_dataframe
+from autorag.nodes.hybridretrieval.run import evaluate_retrieval_node
+from autorag.strategy import select_best
 
 
 class HybridRRF(HybridRetrieval):
-	def _pure(self, ids, scores, top_k: int, weight: int = 60, rrf_k: int = -1):
-		return hybrid_rrf(ids, scores, top_k, weight, rrf_k)
+	def _pure(self, info: dict, top_k: int, weight: int = 60, rrf_k: int = -1):
+		return hybrid_rrf(
+			(info["retrieved_ids_semantic"], info["retrieved_ids_lexical"]),
+			(info["retrieve_scores_semantic"], info["retrieve_scores_lexical"]),
+			top_k,
+			weight,
+			rrf_k,
+		)
 
 	@classmethod
 	def run_evaluator(
@@ -20,34 +27,48 @@ class HybridRRF(HybridRetrieval):
 		*args,
 		**kwargs,
 	):
-		if "ids" in kwargs and "scores" in kwargs:
-			data_dir = os.path.join(project_dir, "data")
-			corpus_df = pd.read_parquet(
-				os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
+		assert "strategies" in kwargs, "You must specify the strategies to use."
+		assert (
+			"input_metrics" in kwargs
+		), "You must specify the input metrics to use, which is list of MetricInput."
+		strategies = kwargs.pop("strategies")
+		input_metrics = kwargs.pop("input_metrics")
+		weight_range = kwargs.pop("weight_range", (4, 80))
+		test_weight_size = weight_range[1] - weight_range[0] + 1
+		weight_candidates = np.linspace(
+			weight_range[0], weight_range[1], test_weight_size
+		).tolist()
+
+		result_list = []
+		instance = cls(project_dir, *args, **kwargs)
+		for weight_value in weight_candidates:
+			result_df = instance.pure(previous_result, weight=weight_value, **kwargs)
+			result_list.append(result_df)
+
+		if strategies.get("metrics") is None:
+			raise ValueError("You must at least one metrics for retrieval evaluation.")
+		result_list = list(
+			map(
+				lambda x: evaluate_retrieval_node(
+					x,
+					input_metrics,
+					strategies.get("metrics"),
+				),
+				result_list,
 			)
+		)
 
-			params = pop_params(hybrid_rrf, kwargs)
-			assert (
-				"ids" in params and "scores" in params and "top_k" in params
-			), "ids, scores, and top_k must be specified."
-
-			@result_to_dataframe(
-				["retrieved_contents", "retrieved_ids", "retrieve_scores"]
-			)
-			def __rrf(**rrf_params):
-				ids, scores = hybrid_rrf(**rrf_params)
-				contents = fetch_contents(corpus_df, ids)
-				return contents, ids, scores
-
-			return __rrf(**params)
-		else:
-			assert (
-				"target_modules" in kwargs and "target_module_params" in kwargs
-			), "target_modules and target_module_params must be specified if there is not ids and scores."
-			instance = cls(project_dir, *args, **kwargs)
-			result = instance.pure(previous_result, *args, **kwargs)
-			del instance
-			return result
+		# select best result
+		best_result_df, best_weight = select_best(
+			result_list,
+			strategies.get("metrics"),
+			metadatas=weight_candidates,
+			strategy_name=strategies.get("strategy", "normalize_mean"),
+		)
+		return {
+			"best_result": best_result_df,
+			"best_weight": best_weight,
+		}
 
 
 def hybrid_rrf(
