@@ -180,7 +180,13 @@ class BM25(BaseRetrieval):
 		)
 		self.bm25_instance = BM25Okapi(self.bm25_corpus["tokens"])
 
-	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	@result_to_dataframe(
+		[
+			"retrieved_contents_lexical",
+			"retrieved_ids_lexical",
+			"retrieve_scores_lexical",
+		]
+	)
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries = self.cast_to_run(previous_result)
 		pure_params = pop_params(self._pure, kwargs)

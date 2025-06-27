@@ -47,8 +47,8 @@ def get_support_modules(module_name: str) -> Callable:
 			"MultiQueryExpansion",
 		),
 		# retrieval
-		"bm25": ("autorag.nodes.retrieval", "BM25"),
-		"BM25": ("autorag.nodes.retrieval", "BM25"),
+		"bm25": ("autorag.nodes.lexicalretrieval", "BM25"),
+		"BM25": ("autorag.nodes.lexicalretrieval", "BM25"),
 		"vectordb": ("autorag.nodes.semanticretrieval", "VectorDB"),
 		"VectorDB": ("autorag.nodes.semanticretrieval", "VectorDB"),
 		"hybrid_rrf": ("autorag.nodes.retrieval", "HybridRRF"),
@@ -199,6 +199,14 @@ def get_support_nodes(node_name: str) -> Callable:
 		"dense_retrieval": (
 			"autorag.nodes.semanticretrieval.run",
 			"run_semantic_retrieval_node",
+		),
+		"lexical_retrieval": (
+			"autorag.nodes.lexicalretrieval.run",
+			"run_lexical_retrieval_node",
+		),
+		"sparse_retrieval": (
+			"autorag.nodes.lexicalretrieval.run",
+			"run_lexical_retrieval_node",
 		),
 		"generator": ("autorag.nodes.generator.run", "run_generator_node"),
 		"prompt_maker": ("autorag.nodes.promptmaker.run", "run_prompt_maker_node"),
