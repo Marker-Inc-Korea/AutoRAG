@@ -7,6 +7,7 @@ import pandas as pd
 
 from autorag.schema import BaseModule
 from autorag.utils import validate_qa_dataset
+from autorag.utils.cast import cast_retrieve_infos
 
 logger = logging.getLogger("AutoRAG")
 
@@ -34,22 +35,10 @@ class BasePassageReranker(BaseModule, metaclass=abc.ABCMeta):
 		), "previous_result must have query column."
 		queries = previous_result["query"].tolist()
 
-		# find contents_list columns
-		assert (
-			"retrieved_contents" in previous_result.columns
-		), "previous_result must have retrieved_contents column."
-		contents = previous_result["retrieved_contents"].tolist()
-
-		# find scores columns
-		assert (
-			"retrieve_scores" in previous_result.columns
-		), "previous_result must have retrieve_scores column."
-		scores = previous_result["retrieve_scores"].tolist()
-
-		# find ids columns
-		assert (
-			"retrieved_ids" in previous_result.columns
-		), "previous_result must have retrieved_ids column."
-		ids = previous_result["retrieved_ids"].tolist()
-
-		return queries, contents, scores, ids
+		retrieve_infos = cast_retrieve_infos(previous_result)
+		return (
+			queries,
+			retrieve_infos["retrieved_contents"],
+			retrieve_infos["retrieve_scores"],
+			retrieve_infos["retrieved_ids"],
+		)

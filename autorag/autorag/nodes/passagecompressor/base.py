@@ -8,6 +8,7 @@ from llama_index.core.llms import LLM
 from autorag import generator_models
 from autorag.schema import BaseModule
 from autorag.utils import result_to_dataframe
+from autorag.utils.cast import cast_retrieve_infos
 
 logger = logging.getLogger("AutoRAG")
 
@@ -27,20 +28,15 @@ class BasePassageCompressor(BaseModule, metaclass=abc.ABCMeta):
 		logger.info(
 			f"Running passage compressor node - {self.__class__.__name__} module..."
 		)
-		assert all(
-			[
-				column in previous_result.columns
-				for column in [
-					"query",
-					"retrieved_contents",
-				]
-			]
-		), "previous_result must have retrieved_contents, retrieved_ids, and retrieve_scores columns."
+		assert (
+			"query" in previous_result.columns
+		), "previous_result must contain 'query' column."
 		assert len(previous_result) > 0, "previous_result must have at least one row."
 
 		queries = previous_result["query"].tolist()
-		retrieved_contents = previous_result["retrieved_contents"].tolist()
-		return queries, retrieved_contents
+		retrieve_infos = cast_retrieve_infos(previous_result)
+
+		return queries, retrieve_infos["retrieved_contents"]
 
 
 class LlamaIndexCompressor(BasePassageCompressor, metaclass=abc.ABCMeta):

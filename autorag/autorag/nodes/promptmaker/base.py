@@ -6,6 +6,7 @@ from typing import Union
 import pandas as pd
 
 from autorag.schema.base import BaseModule
+from autorag.utils.cast import cast_retrieve_infos
 
 logger = logging.getLogger("AutoRAG")
 
@@ -25,10 +26,8 @@ class BasePromptMaker(BaseModule, metaclass=ABCMeta):
 		assert (
 			"query" in previous_result.columns
 		), "previous_result must have query column."
-		assert (
-			"retrieved_contents" in previous_result.columns
-		), "previous_result must have retrieved_contents column."
+
 		query = previous_result["query"].tolist()
-		retrieved_contents = previous_result["retrieved_contents"].tolist()
+		retrieve_infos = cast_retrieve_infos(previous_result)
 		prompt = kwargs.pop("prompt")
-		return query, retrieved_contents, prompt
+		return query, retrieve_infos["retrieved_contents"], prompt
