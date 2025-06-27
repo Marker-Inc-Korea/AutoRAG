@@ -15,7 +15,7 @@ from autorag.nodes.queryexpansion import QueryDecompose, HyDE
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
 from autorag.nodes.retrieval import BM25, VectorDB, HybridCC
-from autorag.nodes.retrieval.vectordb import vectordb_ingest_api
+from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import load_summary_file, get_event_loop
 from autorag.vectordb import load_all_vectordb_from_yaml

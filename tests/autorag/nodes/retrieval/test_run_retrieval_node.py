@@ -13,7 +13,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 import autorag
 from autorag.nodes.retrieval import BM25, VectorDB, HybridCC, HybridRRF
 from autorag.nodes.retrieval.run import run_retrieval_node
-from autorag.nodes.retrieval.vectordb import vectordb_ingest_api
+from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api
 from autorag.utils.util import load_summary_file, get_event_loop
 from autorag.vectordb.chroma import Chroma
 from autorag.embedding.base import embedding_models

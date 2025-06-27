@@ -65,7 +65,13 @@ class VectorDB(BaseRetrieval):
 		empty_cuda_cache()
 		super().__del__()
 
-	@result_to_dataframe(["retrieved_contents", "retrieved_ids", "retrieve_scores"])
+	@result_to_dataframe(
+		[
+			"retrieved_contents_semantic",
+			"retrieved_ids_semantic",
+			"retrieve_scores_semantic",
+		]
+	)
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		queries = self.cast_to_run(previous_result)
 		pure_params = pop_params(self._pure, kwargs)

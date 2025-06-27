@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval.vectordb import vectordb_ingest_api
+from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api
 
 root_dir = pathlib.PurePath(
     os.path.dirname(os.path.realpath(__file__))

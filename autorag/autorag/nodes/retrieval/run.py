@@ -82,6 +82,17 @@ def run_retrieval_node(
 			strategies=strategies,
 			metric_inputs=metric_inputs,
 		)
+		semantic_results = [
+			res.rename(
+				columns={
+					"retrieved_contents_semantic": "retrieved_contents",
+					"retrieved_ids_semantic": "retrieved_ids",
+					"retrieve_scores_semantic": "retrieve_scores",
+				},
+				inplace=False,
+			)
+			for res in semantic_results
+		]
 		semantic_summary_df = save_and_summary(
 			semantic_modules,
 			semantic_module_params,
@@ -125,6 +136,17 @@ def run_retrieval_node(
 			strategies=strategies,
 			metric_inputs=metric_inputs,
 		)
+		lexical_results = [
+			res.rename(
+				columns={
+					"retrieved_contents_lexical": "retrieved_contents",
+					"retrieved_ids_lexical": "retrieved_ids",
+					"retrieve_scores_lexical": "retrieve_scores",
+				},
+				inplace=False,
+			)
+			for res in lexical_results
+		]
 
 		lexical_summary_df = save_and_summary(
 			lexical_modules,

@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from autorag.nodes.retrieval.bm25 import bm25_ingest
-from autorag.nodes.retrieval.vectordb import vectordb_ingest_api
+from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api
 from autorag.utils.util import get_event_loop
 from autorag.vectordb.chroma import Chroma
 

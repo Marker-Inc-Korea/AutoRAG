@@ -13,7 +13,7 @@ import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 
 from autorag.nodes.retrieval import VectorDB
-from autorag.nodes.retrieval.vectordb import (
+from autorag.nodes.semanticretrieval.vectordb import (
     vectordb_ingest_api,
     get_id_scores,
     filter_exist_ids_from_retrieval_gt,

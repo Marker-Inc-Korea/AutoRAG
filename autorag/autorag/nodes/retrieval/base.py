@@ -72,6 +72,20 @@ class HybridRetrieval(BaseRetrieval, metaclass=abc.ABCMeta):
 				self.target_module_params,
 			)
 		)
+		[
+			res.rename(
+				columns={
+					"retrieved_contents_semantic": "retrieved_contents",
+					"retrieved_ids_semantic": "retrieved_ids",
+					"retrieve_scores_semantic": "retrieve_scores",
+					"retrieved_contents_lexical": "retrieved_contents",
+					"retrieved_ids_lexical": "retrieved_ids",
+					"retrieve_scores_lexical": "retrieve_scores",
+				},
+				inplace=True,
+			)
+			for res in result_dfs
+		]
 		ids = tuple(
 			map(lambda df: df["retrieved_ids"].apply(list).tolist(), result_dfs)
 		)
