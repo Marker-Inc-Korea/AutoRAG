@@ -34,7 +34,7 @@ jobs:
           python -m pip install setuptools wheel twine build setuptools-scm
       - name: Get changed files
         id: changed-files
-        uses: tj-actions/changed-files@v44
+        uses: tj-actions/changed-files@v46
       - name: Check for VERSION file change
         id: version_changed
         env:
@@ -51,3 +51,5 @@ jobs:
       - name: Publish package distributions to PyPI
         if: env.changed == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+            packages-dir: autorag/dist/

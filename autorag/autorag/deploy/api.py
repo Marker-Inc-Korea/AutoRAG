@@ -231,7 +231,7 @@ class ApiRunner(BaseRunner):
 	):
 		"""
 		Run the pipeline as an api server.
-		Here is api endpoint documentation => https://docs.auto-rag.com/deploy/api_endpoint.html
+		Here is api endpoint documentation => https://marker-inc-korea.github.io/AutoRAG/deploy/api_endpoint.html
 
 		:param host: The host of the api server.
 		:param port: The port of the api server.

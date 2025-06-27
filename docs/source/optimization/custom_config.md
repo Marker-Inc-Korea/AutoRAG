@@ -102,7 +102,7 @@ node_lines:
 ```
 
 ```{attention}
-Above YAML file is not working. For more information, please check out the [hybrid rrf](https://docs.auto-rag.com/nodes/retrieval/hybrid_rrf.html) module.
+Above YAML file is not working. For more information, please check out the [hybrid rrf](https://marker-inc-korea.github.io/AutoRAG/nodes/retrieval/hybrid_rrf.html) module.
 ```
 
 ```{admonition} What is tuple in the yaml file?

@@ -124,6 +124,6 @@ def sentence_transformer_run_model(input_texts, model, batch_size: int):
 	results = []
 	for batch_texts in batch_input_texts:
 		with torch.no_grad():
-			pred_scores = model.predict(sentences=batch_texts, apply_softmax=True)
+			pred_scores = model.predict(batch_texts)
 		results.extend(pred_scores.tolist())
 	return results

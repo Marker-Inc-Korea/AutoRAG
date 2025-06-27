@@ -9,7 +9,7 @@ from chromadb import (
 	AsyncHttpClient,
 )
 from chromadb.api.models.AsyncCollection import AsyncCollection
-from chromadb.api.types import IncludeEnum, QueryResult
+from chromadb.api.types import QueryResult
 
 from autorag.utils.util import apply_recursive
 from autorag.vectordb.base import BaseVectorStore
@@ -72,13 +72,14 @@ class Chroma(BaseVectorStore):
 		else:
 			self.collection.add(ids=ids, embeddings=text_embeddings)
 
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		self.collection.add(ids=ids, embeddings=embeddings)
+
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
 		if isinstance(self.collection, AsyncCollection):
-			fetch_result = await self.collection.get(
-				ids, include=[IncludeEnum.embeddings]
-			)
+			fetch_result = await self.collection.get(ids, include=["embeddings"])
 		else:
-			fetch_result = self.collection.get(ids, include=[IncludeEnum.embeddings])
+			fetch_result = self.collection.get(ids, include=["embeddings"])
 		fetch_embeddings = fetch_result["embeddings"]
 		return fetch_embeddings
 

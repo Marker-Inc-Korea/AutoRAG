@@ -9,6 +9,7 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.embeddings.ollama import OllamaEmbedding
 from langchain_openai.embeddings import OpenAIEmbeddings
+from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 
 from autorag import LazyInit
 
@@ -37,6 +38,8 @@ embedding_models = {
 	# langchain
 	"openai_langchain": LazyInit(OpenAIEmbeddings),
 	"ollama": LazyInit(OllamaEmbedding),
+	# openai like
+	"openai_like": LazyInit(OpenAILikeEmbedding),
 }
 
 try:
@@ -122,6 +125,7 @@ class EmbeddingModel:
 			"mock": MockEmbeddingRandom,
 			"huggingface": _get_huggingface_class(),
 			"ollama": OllamaEmbedding,
+			"openai_like": OpenAILikeEmbedding,
 		}
 
 		embedding_class = embedding_map.get(model_type)

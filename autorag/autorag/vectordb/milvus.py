@@ -87,10 +87,11 @@ class Milvus(BaseVectorStore):
 		text_embeddings: List[
 			List[float]
 		] = await self.embedding.aget_text_embedding_batch(texts)
+		self.add_embedding(ids, text_embeddings)
 
-		# make data for insertion
+	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
 		data = list(
-			map(lambda _id, vector: {"id": _id, "vector": vector}, ids, text_embeddings)
+			map(lambda _id, vector: {"id": _id, "vector": vector}, ids, embeddings)
 		)
 
 		# Insert data into the collection

@@ -144,7 +144,7 @@ node_lines:
 1. `embedding_model: str`
    - Purpose: Specifies the name or identifier of the embedding model to be used.
    - Example: "openai_embed_3_large"
-   - Note: This should correspond to a valid embedding model that your system can use to generate vector embeddings. For more information see [custom your embedding model](https://docs.auto-rag.com/local_model.html#configure-the-embedding-model) documentation.
+   - Note: This should correspond to a valid embedding model that your system can use to generate vector embeddings. For more information see [custom your embedding model](https://marker-inc-korea.github.io/AutoRAG/local_model.html#configure-the-embedding-model) documentation.
 
 2. `collection_name: str`
    - Purpose: Sets the name of the Weaviate collection where the vectors will be stored.

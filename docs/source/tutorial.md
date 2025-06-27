@@ -87,7 +87,7 @@ validator.validate('your/path/to/default_config.yaml')
 Are you using passage augmenter? From now, the passage augmenter do not support validation. So it will occur error all time when you run validation.
 
 If you are using passage augmenter, please disable validation process.
-Here is the [how to disable validation](https://docs.auto-rag.com/troubleshooting.html).
+Here is the [how to disable validation](https://marker-inc-korea.github.io/AutoRAG/troubleshooting.html).
 ```
 
 ### Run AutoRAG optimization
@@ -131,7 +131,7 @@ You can specify project directory with `--project_dir` option or project_dir par
 ```{admonition} Why use python command?
 You have to use python command when you want to add custom LLM models or custom embedding models.
 Because the addition process must be executed as python code.
-Please refer [this document](https://docs.auto-rag.com/local_model.html) to know how to add custom LLM or embedding models.
+Please refer [this document](https://marker-inc-korea.github.io/AutoRAG/local_model.html) to know how to add custom LLM or embedding models.
 ```
 
 ### ❗Restart a trial if an error occurs during the trial
