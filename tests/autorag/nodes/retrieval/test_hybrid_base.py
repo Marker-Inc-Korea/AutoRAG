@@ -44,6 +44,24 @@ sample_retrieval_gt_3 = [
     [["id-2"], ["id-6"]],
 ]
 
+sample_ids_4 = (
+    [
+        ["id-1", "id-2", "id-3", "id-4", "id-5"],
+        ["id-2", "id-10", "id-4", "id-5", "id-6"],
+    ],
+    [
+        ["id-1", "id-4", "id-7", "id-5", "id-2"],
+        ["id-2", "id-5", "id-4", "id-6", "id-3"],
+    ],
+)
+sample_scores_4 = (
+    [[5, 3, 1, 0.4, 0.2], [6, 10, 0, 1.4, 1.2]],
+    [
+        [6, 10, 0, 0.5, 0.1],
+        [7, 4, 2, 1.5, 1.1],
+    ],
+)
+
 sample_ids_non_overlap = (
     ["id-1", "id-2", "id-3", "id-4", "id-5"],
     ["id-6", "id-4", "id-3", "id-7", "id-2"],
@@ -59,6 +77,36 @@ previous_result = pd.DataFrame(
             [["id-1"], ["id-2"], ["id-3"]],
         ],
         "generation_gt": [["gen-1", "gen-2"], ["gen-1", "gen-2"], ["gen-1", "gen-2"]],
+        "retrieved_contents_semantic": [
+            ["doc-1", "doc-2", "doc-3"],
+            ["doc-4", "doc-5", "doc-6"],
+            ["doc-7", "doc-8", "doc-9"],
+        ],
+        "retrieved_contents_lexical": [
+            ["doc-1", "doc-2", "doc-3"],
+            ["doc-4", "doc-5", "doc-6"],
+            ["doc-7", "doc-8", "doc-9"],
+        ],
+        "retrieved_ids_semantic": [
+            ["id-1", "id-2", "id-3"],
+            ["id-4", "id-5", "id-6"],
+            ["id-7", "id-8", "id-9"],
+        ],
+        "retrieved_ids_lexical": [
+            ["id-1", "id-2", "id-6"],
+            ["id-4", "id-5", "id-3"],
+            ["id-7", "id-8", "id-2"],
+        ],
+        "retrieve_scores_semantic": [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9],
+        ],
+        "retrieve_scores_lexical": [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6],
+            [0.7, 0.8, 0.9],
+        ],
     }
 )
 

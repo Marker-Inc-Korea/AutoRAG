@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import HybridRRF
+from autorag.nodes.hybridretrieval import HybridRRF
 from autorag.nodes.hybridretrieval.hybrid_rrf import rrf_pure, hybrid_rrf
 from tests.autorag.nodes.retrieval.test_hybrid_base import (
     sample_ids,

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from autorag.nodes.retrieval import HybridCC
+from autorag.nodes.hybridretrieval import HybridCC
 from autorag.nodes.hybridretrieval.hybrid_cc import fuse_per_query, hybrid_cc
 from tests.autorag.nodes.retrieval.test_hybrid_base import (
     sample_ids_2,
@@ -11,6 +11,8 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
     base_hybrid_weights_node_test,
     sample_ids_non_overlap,
     previous_result,
+    sample_ids_4,
+    sample_scores_4,
 )
 
 
@@ -54,6 +56,14 @@ def test_hybrid_cc():
     assert result_id[1] == ["id-2", "id-5", "id-4"]
     assert result_scores[0] == pytest.approx([1.0, 0.33333, 0.166666], rel=1e-3)
     assert result_scores[1] == pytest.approx([1.0, 0.4285714, 0.2857142], rel=1e-3)
+
+
+def test_hybrid_cc_non_overlap():
+    result_id, result_scores = hybrid_cc(
+        sample_ids_4, sample_scores_4, top_k=6, weight=0.5, normalize_method="tmm"
+    )
+    assert 0.0 in result_scores[0]
+    assert 0.5 in result_scores[1]
 
 
 def test_hybrid_cc_node(pseudo_project_dir):
