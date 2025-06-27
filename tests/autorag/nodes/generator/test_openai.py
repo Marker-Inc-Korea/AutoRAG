@@ -15,7 +15,6 @@ from tests.autorag.nodes.generator.test_generator_base import (
 )
 from tests.delete_tests import is_github_action
 from tests.mock import mock_openai_chat_create
-import openai.resources.beta.chat
 from openai.types.chat import (
     ParsedChatCompletion,
     ParsedChatCompletionMessage,
@@ -137,7 +136,7 @@ async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[TestResp
 
 
 @patch.object(
-    openai.resources.beta.chat.completions.AsyncCompletions,
+    openai.resources.chat.completions.AsyncCompletions,
     "parse",
     mock_gen_gt_response,
 )
