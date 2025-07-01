@@ -2,14 +2,15 @@ import logging
 import os
 import pathlib
 from copy import deepcopy
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 
 import pandas as pd
 
-from autorag.nodes.retrieval.run import evaluate_retrieval_node
+from autorag.evaluation import evaluate_retrieval
 from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
+from autorag.utils.cast import cast_retrieve_infos
 from autorag.utils.util import make_combinations, explode
 
 logger = logging.getLogger("AutoRAG")
@@ -217,6 +218,8 @@ def evaluate_one_query_expansion_node(
 			zip(retrieval_funcs, retrieval_params),
 		)
 	)
+	# Cast each retrieval results
+	retrieval_result_dicts = list(map(cast_retrieve_infos, retrieval_results))
 	evaluation_results = list(
 		map(
 			lambda x: evaluate_retrieval_node(
@@ -224,7 +227,7 @@ def evaluate_one_query_expansion_node(
 				metric_inputs,
 				metrics,
 			),
-			retrieval_results,
+			retrieval_result_dicts,
 		)
 	)
 	best_result, _ = select_best(
@@ -274,3 +277,32 @@ def make_retrieval_callable_params(strategy_dict: Dict):
 		)
 	)
 	return explode(modules, param_combinations)
+
+
+def evaluate_retrieval_node(
+	result_dict: Dict,
+	metric_inputs: List[MetricInput],
+	metrics: Union[List[str], List[Dict]],
+) -> pd.DataFrame:
+	"""
+	Evaluate retrieval node from retrieval node result dataframe.
+
+	:param result_df: The result dataframe from a retrieval node.
+	:param metric_inputs: List of metric input schema for AutoRAG.
+	:param metrics: Metric list from input strategies.
+	:return: Return result_df with metrics columns.
+	    The columns will be 'retrieved_contents', 'retrieved_ids', 'retrieve_scores', and metric names.
+	"""
+
+	@evaluate_retrieval(
+		metric_inputs=metric_inputs,
+		metrics=metrics,
+	)
+	def evaluate_this_module(_dict: Dict):
+		return (
+			_dict["retrieved_contents"],
+			_dict["retrieved_ids"],
+			_dict["retrieve_scores"],
+		)
+
+	return evaluate_this_module(result_dict)

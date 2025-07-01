@@ -35,11 +35,12 @@ Please refer to the parameter of [retrieval Node](../retrieval/retrieval.md) for
 1. **Metrics**: Metrics such as `retrieval_f1`,`retrieval_recall`, and `retrieval_precision` are used to evaluate the performance of the query expansion process through its impact on retrieval outcomes.
 2. **Speed Threshold**: `speed_threshold` is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not used.
 3. **Top_k**: This parameter specifies the number of top results to consider during the retrieval evaluation phase.
-4. **Retrieval Modules**: The query expansion node can use all modules and module parameters from the retrieval node, including:
+4. **Retrieval Modules**: The query expansion node can use modules and module parameters from the lexical retrieval and semantic retrieval node, including:
     - [bm25](../retrieval/bm25.md)
-    - [vectordb](../retrieval/vectordb.md): with `embedding_model` parameter
-    - [hybrid_rrf](../retrieval/hybrid_rrf.md): with `target_modules` and `rrf_k` parameters
-    - [hybrid_cc](../retrieval/hybrid_cc.md): with `target_modules` and `weights` parameters
+    - [vectordb](../retrieval/vectordb.md): with `vectordb` parameter
+```{warning}
+You cannot use the hybrid retrieval modules in the query expansion node.
+```
 
 ### Example config.yaml file
 ```yaml

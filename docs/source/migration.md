@@ -151,3 +151,7 @@ node_lines:
 ```
 
 This YAML file do the same thing as the previous v0.3.7 version.
+
+Also, you’re no longer able to use the hybrid retrieval node in the `query_expansion` node as `retrieval_modules`.
+We’re considering to add this feature in the future, but for now, you can use semantic and lexical retrieval nodes to evaluate query expansion.
+For most cases, you don't need to use hybrid retrieval node in the `query_expansion` node.
