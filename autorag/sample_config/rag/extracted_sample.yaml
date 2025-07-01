@@ -8,7 +8,7 @@ vectordb:
 node_lines:
 - node_line_name: retrieve_node_line
   nodes:
-  - node_type: retrieval
+  - node_type: semantic_retrieval
     modules:
     - module_type: vectordb
       vectordb: default
