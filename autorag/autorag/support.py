@@ -191,7 +191,6 @@ def get_support_nodes(node_name: str) -> Callable:
 			"autorag.nodes.queryexpansion.run",
 			"run_query_expansion_node",
 		),
-		"retrieval": ("autorag.nodes.retrieval.run", "run_retrieval_node"),
 		"semantic_retrieval": (
 			"autorag.nodes.semanticretrieval.run",
 			"run_semantic_retrieval_node",
