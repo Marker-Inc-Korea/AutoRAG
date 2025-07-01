@@ -293,20 +293,30 @@ We highly recommend using pre-made config YAML files for starter.
     - [Sample YAML Guide](https://marker-inc-korea.github.io/AutoRAG/optimization/sample_config.html)
 - [Make Custom YAML Guide](https://marker-inc-korea.github.io/AutoRAG/optimization/custom_config.html)
 
-Here is an example of the config YAML file to use `retrieval`, `prompt_maker`, and `generator` nodes.
+Here is an example of the config YAML file to use three retrieval nodes, `prompt_maker`, and `generator` nodes.
 
 ```yaml
 node_lines:
-  - node_line_name: retrieve_node_line  # Set Node Line (Arbitrary Name)
+  - node_line_name: retrieve_node_line
     nodes:
-      - node_type: retrieval  # Set Retrieval Node
+      - node_type: lexical_retrieval
+        strategy:
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
+        top_k: 3
+        modules:
+          - module_type: bm25
+      - node_type: semantic_retrieval
         strategy:
           metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
         top_k: 3
         modules:
           - module_type: vectordb
             vectordb: default
-          - module_type: bm25
+      - node_type: hybrid_retrieval
+        strategy:
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
+        top_k: 3
+        modules:
           - module_type: hybrid_rrf
             weight_range: (4,80)
   - node_line_name: post_retrieve_node_line  # Set Node Line (Arbitrary Name)

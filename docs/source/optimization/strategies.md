@@ -37,7 +37,7 @@ To use the new strategy parameter, include it in the strategy section of your YA
 node_lines:
   - node_line_name: example_node_line_1
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         top_k: 10
         strategy:
           metrics: [ bleu, meteor, rouge ]
@@ -51,7 +51,7 @@ node_lines:
 node_lines:
   - node_line_name: example_node_line_2
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         top_k: 5
         strategy:
           metrics: [ retrieval_precision, retrieval_recall ]
@@ -65,7 +65,7 @@ node_lines:
 node_lines:
   - node_line_name: example_node_line_2
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         top_k: 5
         strategy:
           metrics: [ retrieval_precision, retrieval_recall ]
