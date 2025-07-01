@@ -11,7 +11,7 @@ from autorag.utils import (
 	validate_corpus_dataset,
 	cast_corpus_dataset,
 )
-from autorag.utils.cast import cast_retrieve_infos
+from autorag.utils.cast import cast_retrieved_ids
 from autorag.utils.util import select_top_k
 
 logger = logging.getLogger("AutoRAG")
@@ -42,8 +42,7 @@ class BasePassageAugmenter(BaseModule, metaclass=abc.ABCMeta):
 		validate_qa_dataset(previous_result)
 
 		# find ids columns
-		retrieve_infos = cast_retrieve_infos(previous_result)
-		return retrieve_infos["retrieved_ids"]
+		return cast_retrieved_ids(previous_result)
 
 	@staticmethod
 	def sort_by_scores(

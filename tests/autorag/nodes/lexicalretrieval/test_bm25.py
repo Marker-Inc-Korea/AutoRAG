@@ -7,7 +7,7 @@ from datetime import datetime
 import pandas as pd
 import pytest
 
-from autorag.nodes.retrieval import BM25
+from autorag.nodes.lexicalretrieval import BM25
 from autorag.nodes.lexicalretrieval.bm25 import (
     bm25_ingest,
     tokenize_ko_kiwi,

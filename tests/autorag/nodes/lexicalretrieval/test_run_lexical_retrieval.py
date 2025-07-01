@@ -95,9 +95,9 @@ def test_run_lexical_retrieval_node(node_line_dir):
         "query",
         "retrieval_gt",
         "generation_gt",
-        "retrieved_contents",
-        "retrieved_ids",
-        "retrieve_scores",
+        "retrieved_contents_lexical",
+        "retrieved_ids_lexical",
+        "retrieve_scores_lexical",
         "retrieval_f1",
         "retrieval_recall",
     ]

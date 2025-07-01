@@ -12,7 +12,7 @@ import pytest
 import yaml
 from llama_index.embeddings.openai import OpenAIEmbedding
 
-from autorag.nodes.retrieval import VectorDB
+from autorag.nodes.semanticretrieval import VectorDB
 from autorag.nodes.semanticretrieval.vectordb import (
     vectordb_ingest_api,
     get_id_scores,

@@ -94,9 +94,9 @@ def test_run_semantic_retrieval_node(node_line_dir):
         "query",
         "retrieval_gt",
         "generation_gt",
-        "retrieved_contents",
-        "retrieved_ids",
-        "retrieve_scores",
+        "retrieved_contents_semantic",
+        "retrieved_ids_semantic",
+        "retrieve_scores_semantic",
         "retrieval_f1",
         "retrieval_recall",
     ]
