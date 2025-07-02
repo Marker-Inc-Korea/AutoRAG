@@ -1,4 +1,5 @@
 node_type,best_module_filename,best_module_name,best_module_params,best_execution_time
-retrieval,0.parquet,bm25,{'top_k': 10},0.0915938854217529
-passage_reranker,0.parquet,tart,{'top_k': 5},5.316191506385803
-passage_compressor,0.parquet,tree_summarize,"{'llm': 'openai', 'model': 'gpt-3.5-turbo-16k'}",0.4078188896179199
+lexical_retrieval,0.parquet,BM25,{'top_k': 10},0.0046676158905029
+semantic_retrieval,0.parquet,VectorDB,"{'top_k': 10, 'vectordb': 'default', 'embedding_batch': 2}",0.5390422821044922
+hybrid_retrieval,0.parquet,HybridCC,"{'top_k': 10, 'weight': 0.0}",0.1187149047851562
+passage_reranker,0.parquet,Tart,{'top_k': 5},3.839238500595093

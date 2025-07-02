@@ -2,7 +2,7 @@ import os
 import pathlib
 import subprocess
 import tempfile
-from distutils.dir_util import copy_tree
+from shutil import copytree
 
 from click.testing import CliRunner
 
@@ -105,7 +105,7 @@ def test_extract_best_config_cli():
 def test_restart_evaluate():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
         original_path = os.path.join(resource_dir, "result_project")
-        copy_tree(original_path, project_dir)
+        copytree(original_path, project_dir, dirs_exist_ok=True)
         trial_path = os.path.join(project_dir, "1")
         subprocess.run(["autorag", "restart_evaluate", "--trial_path", trial_path])
         assert os.path.exists(os.path.join(trial_path, "summary.csv"))
@@ -114,7 +114,7 @@ def test_restart_evaluate():
 def test_restart_evaluate_leads_start_evaluate():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
         original_path = os.path.join(resource_dir, "result_project")
-        copy_tree(original_path, project_dir)
+        copytree(original_path, project_dir, dirs_exist_ok=True)
         trial_path = os.path.join(project_dir, "3")
         subprocess.run(["autorag", "restart_evaluate", "--trial_path", trial_path])
         restart_path = os.path.join(project_dir, "4")

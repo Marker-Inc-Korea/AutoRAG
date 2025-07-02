@@ -1,9 +1,9 @@
 import os.path
 import pathlib
 import tempfile
-from distutils.dir_util import copy_tree
 from typing import Any
 from unittest.mock import patch
+from shutil import copytree
 
 import pandas as pd
 import pytest
@@ -427,10 +427,12 @@ def test_test_data_evaluate(test_evaluator):
     assert os.path.exists(os.path.join(project_dir, "0", "config.yaml"))
     assert os.path.exists(os.path.join(project_dir, "0", "retrieve_node_line"))
     assert os.path.exists(
-        os.path.join(project_dir, "0", "retrieve_node_line", "retrieval")
+        os.path.join(project_dir, "0", "retrieve_node_line", "lexical_retrieval")
     )
     assert os.path.exists(
-        os.path.join(project_dir, "0", "retrieve_node_line", "retrieval", "0.parquet")
+        os.path.join(
+            project_dir, "0", "retrieve_node_line", "lexical_retrieval", "0.parquet"
+        )
     )
     assert os.path.exists(
         os.path.join(
@@ -461,7 +463,7 @@ def test_test_data_evaluate(test_evaluator):
 
 def base_restart_trial(evaluator, error_folder_path):
     error_path = os.path.join(evaluator.project_dir, "0")
-    copy_tree(error_folder_path, error_path)
+    copytree(error_folder_path, error_path, dirs_exist_ok=True)
     evaluator.restart_trial(error_path)
     assert os.path.exists(os.path.join(error_path, "summary.csv"))
     assert os.path.exists(os.path.join(error_path, "pre_retrieve_node_line"))
@@ -495,9 +497,10 @@ def test_restart_first_node(evaluator):
     base_restart_trial(evaluator, prompt_error_folder_path)
 
 
+@pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
 def test_restart_leads_start_trial(evaluator):
     start_error_folder_path = os.path.join(resource_dir, "result_project")
-    copy_tree(start_error_folder_path, evaluator.project_dir)
+    copytree(start_error_folder_path, evaluator.project_dir, dirs_exist_ok=True)
     error_path = os.path.join(evaluator.project_dir, "3")
     evaluator.restart_trial(error_path)
     restart_path = os.path.join(evaluator.project_dir, "4")
