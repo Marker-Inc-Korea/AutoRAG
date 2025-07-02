@@ -167,3 +167,5 @@ test_projects
 
 # Visual Studio Code
 .vscode/
+
+tests/resources/result_project/resources/chroma
