@@ -180,7 +180,7 @@ def test_extract_node_strategy(full_config):
         "prompt_maker",
         "generator",
     }
-    assert node_strategies["retrieval"] == {
+    assert node_strategies["lexical_retrieval"] == {
         "metrics": ["retrieval_f1", "retrieval_recall", "retrieval_precision"],
         "speed_threshold": 10,
     }
