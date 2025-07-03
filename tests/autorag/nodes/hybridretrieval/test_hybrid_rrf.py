@@ -10,6 +10,7 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
     sample_ids,
     sample_scores,
     previous_result,
+    pseudo_project_dir,  # noqa: F401
 )
 from tests.mock import mock_get_text_embedding_batch
 
@@ -29,7 +30,7 @@ def test_rrf_pure():
     assert result_id == ["id-3", "id-1", "id-2"]
 
 
-def test_hybrid_rrf_node(pseudo_project_dir):
+def test_hybrid_rrf_node(pseudo_project_dir):  # noqa: F811
     modules = {
         "ids": (
             [
@@ -74,7 +75,7 @@ def test_hybrid_rrf_node(pseudo_project_dir):
     "get_text_embedding_batch",
     mock_get_text_embedding_batch,
 )
-def test_hybrid_rrf_node_deploy(pseudo_project_dir):
+def test_hybrid_rrf_node_deploy(pseudo_project_dir):  # noqa: F811
     modules = {
         "target_modules": ("bm25", "vectordb"),
         "target_module_params": [

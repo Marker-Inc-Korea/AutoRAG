@@ -13,6 +13,7 @@ from tests.autorag.nodes.retrieval.test_hybrid_base import (
     previous_result,
     sample_ids_4,
     sample_scores_4,
+    pseudo_project_dir,  # noqa: F401
 )
 
 
@@ -66,7 +67,7 @@ def test_hybrid_cc_non_overlap():
     assert 0.5 in result_scores[1]
 
 
-def test_hybrid_cc_node(pseudo_project_dir):
+def test_hybrid_cc_node(pseudo_project_dir):  # noqa: F811
     retrieve_scores = [1.0, 0.23792372, 0.175]
     base_hybrid_weights_node_test(
         HybridCC.run_evaluator, pseudo_project_dir, retrieve_scores
@@ -85,7 +86,7 @@ def test_hybrid_cc_fixed_weight():
     assert isinstance(result_scores, list)
 
 
-def test_hybrid_cc_node_deploy(pseudo_project_dir):
+def test_hybrid_cc_node_deploy(pseudo_project_dir):  # noqa: F811
     modules = {
         "target_modules": ("bm25", "vectordb"),
         "target_module_params": [
