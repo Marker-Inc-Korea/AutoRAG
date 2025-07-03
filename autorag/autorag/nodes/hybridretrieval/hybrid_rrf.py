@@ -27,11 +27,11 @@ class HybridRRF(HybridRetrieval):
 		*args,
 		**kwargs,
 	):
-		assert "strategies" in kwargs, "You must specify the strategies to use."
+		assert "strategy" in kwargs, "You must specify the strategy to use."
 		assert (
 			"input_metrics" in kwargs
 		), "You must specify the input metrics to use, which is list of MetricInput."
-		strategies = kwargs.pop("strategies")
+		strategies = kwargs.pop("strategy")
 		input_metrics = kwargs.pop("input_metrics")
 		weight_range = kwargs.pop("weight_range", (4, 80))
 		test_weight_size = weight_range[1] - weight_range[0] + 1

@@ -78,11 +78,11 @@ class HybridCC(HybridRetrieval):
 		*args,
 		**kwargs,
 	):
-		assert "strategies" in kwargs, "You must specify the strategies to use."
+		assert "strategy" in kwargs, "You must specify the strategy to use."
 		assert (
 			"input_metrics" in kwargs
 		), "You must specify the input metrics to use, which is list of MetricInput."
-		strategies = kwargs.pop("strategies")
+		strategies = kwargs.pop("strategy")
 		input_metrics = kwargs.pop("input_metrics")
 		weight_range = kwargs.pop("weight_range", (0.0, 1.0))
 		test_weight_size = kwargs.pop("test_weight_size", 101)

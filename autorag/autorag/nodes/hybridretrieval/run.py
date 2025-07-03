@@ -56,7 +56,7 @@ def run_hybrid_retrieval_node(
 			module.run_evaluator,
 			project_dir=project_dir,
 			previous_result=previous_result,
-			strategies=strategies,
+			strategy=strategies,
 			input_metrics=metric_inputs,
 			**module_param,
 		)

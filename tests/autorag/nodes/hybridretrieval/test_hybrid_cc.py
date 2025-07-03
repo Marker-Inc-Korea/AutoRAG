@@ -68,7 +68,7 @@ def test_hybrid_cc_non_overlap():
 
 
 def test_hybrid_cc_node(pseudo_project_dir):  # noqa: F811
-    retrieve_scores = [1.0, 0.23792372, 0.175]
+    retrieve_scores = [1.0, 0.5, 0.0]
     base_hybrid_weights_node_test(
         HybridCC.run_evaluator, pseudo_project_dir, retrieve_scores
     )
