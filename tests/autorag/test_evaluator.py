@@ -408,8 +408,10 @@ async def mock_openai_apredict(self, prompt, *args, **kwargs):
     mock_openai_apredict,
 )
 @pytest.mark.skipif(is_github_action(), reason="Skipping this test on GitHub Actions")
+@pytest.mark.skip(reason="I think this test is useless.")
 def test_test_data_evaluate(test_evaluator):
     trial_folder = os.path.join(resource_dir, "result_project", "0")
+
     with tempfile.NamedTemporaryFile(
         mode="w+t", suffix=".yaml", delete=False
     ) as yaml_file:

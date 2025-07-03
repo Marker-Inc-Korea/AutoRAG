@@ -132,7 +132,8 @@ def module_type_exists(nodes: List[Node], module_type: str) -> bool:
 				lambda node: any(
 					list(
 						map(
-							lambda module: module.module_type == module_type,
+							lambda module: module.module_type.lower()
+							== module_type.lower(),
 							node.modules,
 						)
 					)
