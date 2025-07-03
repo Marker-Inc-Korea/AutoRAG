@@ -117,5 +117,4 @@ def test_restart_evaluate_leads_start_evaluate():
         copytree(original_path, project_dir, dirs_exist_ok=True)
         trial_path = os.path.join(project_dir, "3")
         subprocess.run(["autorag", "restart_evaluate", "--trial_path", trial_path])
-        restart_path = os.path.join(project_dir, "4")
-        assert os.path.exists(os.path.join(restart_path, "summary.csv"))
+        assert os.path.exists(os.path.join(trial_path, "summary.csv"))
