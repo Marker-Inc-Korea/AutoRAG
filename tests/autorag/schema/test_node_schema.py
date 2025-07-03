@@ -1,6 +1,5 @@
-from autorag.nodes.lexicalretrieval import BM25
+from autorag.nodes.hybridretrieval import HybridRRF, HybridCC
 from autorag.nodes.lexicalretrieval.run import run_lexical_retrieval_node
-from autorag.nodes.semanticretrieval import VectorDB
 from autorag.schema import Node
 from autorag.schema.module import Module
 from autorag.schema.node import extract_values_from_nodes, module_type_exists
@@ -10,7 +9,7 @@ def test_get_param_combinations():
     modules = [
         Module.from_dict(
             {
-                "module_type": "bm25",
+                "module_type": "hybrid_rrf",
                 "key2": ["value1", "value2"],
                 "key3": "value3",
                 "key4": ["value4", "value5"],
@@ -18,14 +17,14 @@ def test_get_param_combinations():
         ),
         Module.from_dict(
             {
-                "module_type": "vectordb",
+                "module_type": "hybrid_cc",
                 "key5": ["value6", "value6", "value7"],
                 "key6": "value8",
             }
         ),
     ]
     node = Node(
-        node_type="retrieval",
+        node_type="hybrid_retrieval",
         strategy={"strategy_key": "strategy_value"},
         node_params={"param1": "value1"},
         modules=modules,
@@ -36,28 +35,28 @@ def test_get_param_combinations():
     assert isinstance(module_node_params, list)
     assert isinstance(modules, list)
     assert len(modules) == 6
-    assert modules == [BM25, BM25, BM25, BM25, VectorDB, VectorDB]
-    bm25_solution = [
+    assert modules == [HybridRRF, HybridRRF, HybridRRF, HybridRRF, HybridCC, HybridCC]
+    rrf_solution = [
         {"param1": "value1", "key2": "value1", "key3": "value3", "key4": "value4"},
         {"param1": "value1", "key2": "value1", "key3": "value3", "key4": "value5"},
         {"param1": "value1", "key2": "value2", "key3": "value3", "key4": "value4"},
         {"param1": "value1", "key2": "value2", "key3": "value3", "key4": "value5"},
     ]
-    vectordb_solution = [
+    cc_solution = [
         {"param1": "value1", "key5": "value6", "key6": "value8"},
         {"param1": "value1", "key5": "value7", "key6": "value8"},
     ]
     for module, module_params in zip(modules, module_node_params):
-        if module == BM25:
-            assert module_params in bm25_solution
-            bm25_solution.pop(bm25_solution.index(module_params))
-        elif module == VectorDB:
-            assert module_params in vectordb_solution
-            vectordb_solution.pop(vectordb_solution.index(module_params))
+        if module == HybridRRF:
+            assert module_params in rrf_solution
+            rrf_solution.pop(rrf_solution.index(module_params))
+        elif module == HybridCC:
+            assert module_params in cc_solution
+            cc_solution.pop(cc_solution.index(module_params))
         else:
             raise ValueError(f"Module {module} is not supposed to be here.")
-    assert len(bm25_solution) == 0
-    assert len(vectordb_solution) == 0
+    assert len(rrf_solution) == 0
+    assert len(cc_solution) == 0
 
 
 def test_from_dict():

@@ -173,7 +173,9 @@ def test_extract_node_strategy(full_config):
     node_strategies = extract_node_strategy(full_config)
     assert set(list(node_strategies.keys())) == {
         "query_expansion",
-        "retrieval",
+        "lexical_retrieval",
+        "semantic_retrieval",
+        "hybrid_retrieval",
         "passage_reranker",
         "prompt_maker",
         "generator",

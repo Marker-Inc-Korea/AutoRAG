@@ -57,10 +57,10 @@ def base_retrieval_test(id_result, score_result, top_k):
             assert score_list[i - 1] >= score_list[i]
 
 
-def base_retrieval_node_test(result_df):
-    contents = result_df["retrieved_contents"].tolist()
-    ids = result_df["retrieved_ids"].tolist()
-    scores = result_df["retrieve_scores"].tolist()
+def base_retrieval_node_test(result_df, suffix=""):
+    contents = result_df[f"retrieved_contents{suffix}"].tolist()
+    ids = result_df[f"retrieved_ids{suffix}"].tolist()
+    scores = result_df[f"retrieve_scores{suffix}"].tolist()
     assert len(contents) == len(ids) == len(scores) == 5
     assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 4
     # id is matching with corpus.parquet

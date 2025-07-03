@@ -179,7 +179,7 @@ def test_vectordb_node(project_dir_for_vectordb_node_from_sample_project):
         top_k=4,
         vectordb="mock",
     )
-    base_retrieval_node_test(result_df)
+    base_retrieval_node_test(result_df, suffix="_semantic")
 
 
 def test_vectordb_node_ids(project_dir_for_vectordb_node_from_sample_project):
@@ -190,9 +190,9 @@ def test_vectordb_node_ids(project_dir_for_vectordb_node_from_sample_project):
         vectordb="mock",
         ids=searchable_input_ids,
     )
-    contents = result_df["retrieved_contents"].tolist()
-    ids = result_df["retrieved_ids"].tolist()
-    scores = result_df["retrieve_scores"].tolist()
+    contents = result_df["retrieved_contents_semantic"].tolist()
+    ids = result_df["retrieved_ids_semantic"].tolist()
+    scores = result_df["retrieve_scores_semantic"].tolist()
     assert len(contents) == len(ids) == len(scores) == 5
     assert len(contents[0]) == len(ids[0]) == len(scores[0]) == 2
     assert ids[0] == searchable_input_ids[0]

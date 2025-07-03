@@ -99,7 +99,7 @@ def test_bm25_node():
         top_k=4,
         bm25_tokenizer="gpt2",
     )
-    base_retrieval_node_test(result_df)
+    base_retrieval_node_test(result_df, suffix="_lexical")
 
 
 def test_bm25_node_ids():
@@ -110,8 +110,8 @@ def test_bm25_node_ids():
         bm25_tokenizer="gpt2",
         ids=searchable_input_ids,
     )
-    assert to_list(result_df["retrieved_ids"].tolist()) == searchable_input_ids
-    score_result = to_list(result_df["retrieve_scores"].tolist())
+    assert to_list(result_df["retrieved_ids_lexical"].tolist()) == searchable_input_ids
+    score_result = to_list(result_df["retrieve_scores_lexical"].tolist())
     assert len(score_result) == 5
     assert len(score_result[0]) == 2
 
