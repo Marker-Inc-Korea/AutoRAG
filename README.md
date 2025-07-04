@@ -4,11 +4,10 @@ RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 
 ![Thumbnail](https://github.com/user-attachments/assets/6bab243d-a4b3-431a-8ac0-fe17336ab4de)
 
-![Discord](https://img.shields.io/discord/1204010535272587264) ![PyPI - Downloads](https://img.shields.io/pypi/dm/AutoRAG)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/AutoRAG)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?style=flat-square&logo=linkedin)](https://www.linkedin.com/company/104375108/admin/dashboard/)
 ![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/AutoRAG_HQ)
 [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Follow-orange?style=flat-square&logo=huggingface)](https://huggingface.co/AutoRAG)
-[![Static Badge](https://img.shields.io/badge/Roadmap-5D3FD3)](https://github.com/orgs/Auto-RAG/projects/1/views/2)
 
 <img src=https://github.com/user-attachments/assets/9a4d0381-a161-457f-a787-e7eb3593ce00 width="251.5" height="55.2"/>
 
@@ -26,26 +25,10 @@ Try now and find the best RAG pipeline for your own use-case.
 
 Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
 
----
-
-## AutoRAG GUI (beta)
-
-AutoRAG GUI is a web-based GUI for AutoRAG.
-If AutoRAG is a little bit complicated to you, try AutoRAG GUI.
-
-Your Optimized RAG pipeline is just a few clicks away.
-
-|                                    Project Management                                     |                                    Easy Configuration                                     |                                     Parsed Page View                                      |
-|:-----------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------:|
-| ![Image](https://github.com/user-attachments/assets/87289d84-ff65-4810-bc41-3f30b36b7ddf) | ![Image](https://github.com/user-attachments/assets/dbe0a49b-ebf2-4c9c-b17d-1be1c2cd1060) | ![Image](https://github.com/user-attachments/assets/d8a50512-3299-4b68-b48e-e2f49d688f01) |
-
-Click the docs to use the AutoRAG GUI beta version! [AutoRAG GUI Docs](https://marker-inc-korea.github.io/AutoRAG/gui/gui.html).
-
-### GUI Installation
-
-1. Clone the repository
-2. Run Docker Compose `docker compose up -d`
-3. Access the GUI at `http://localhost:3000`
+```
+Notice: We are no longer support "AutoRAG GUI"
+And we will focus to maintain only AutoRAG core library in the future. Thank you.
+```
 
 ---
 
@@ -301,25 +284,25 @@ node_lines:
     nodes:
       - node_type: lexical_retrieval
         strategy:
-          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]
         top_k: 3
         modules:
           - module_type: bm25
       - node_type: semantic_retrieval
         strategy:
-          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]
         top_k: 3
         modules:
           - module_type: vectordb
             vectordb: default
       - node_type: hybrid_retrieval
         strategy:
-          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]  # Set Retrieval Metrics
+          metrics: [ retrieval_f1, retrieval_recall, retrieval_ndcg, retrieval_mrr ]
         top_k: 3
         modules:
           - module_type: hybrid_rrf
             weight_range: (4,80)
-  - node_line_name: post_retrieve_node_line  # Set Node Line (Arbitrary Name)
+  - node_line_name: post_retrieve_node_line
     nodes:
       - node_type: prompt_maker  # Set Prompt Maker Node
         strategy:
