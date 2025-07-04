@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from autorag.cli import cli
-from delete_tests import is_github_action
+from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
