@@ -1,0 +1,2 @@
+filename,module_name,module_params,execution_time,retrieval_f1,retrieval_recall,retrieval_precision,is_best
+0.parquet,HybridCC,"{'top_k': 10, 'weight': 0.0}",0.11871490478515626,0.22222222222222224,1.0,0.125,True

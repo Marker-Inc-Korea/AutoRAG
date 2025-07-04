@@ -55,7 +55,7 @@ vectordb:
 node_lines:
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
-    - node_type: retrieval
+    - node_type: semantic_retrieval
       strategy:
         metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
       top_k: 3
@@ -115,7 +115,7 @@ vectordb:
 node_lines:
 - node_line_name: retrieve_node_line  # Arbitrary node line name
   nodes:
-    - node_type: retrieval
+    - node_type: semantic_retrieval
       strategy:
         metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
       top_k: 3

@@ -12,8 +12,8 @@ import yaml
 
 from autorag.node_line import run_node_line
 from autorag.nodes.retrieval.base import get_bm25_pkl_name
-from autorag.nodes.retrieval.bm25 import bm25_ingest
-from autorag.nodes.retrieval.vectordb import (
+from autorag.nodes.lexicalretrieval.bm25 import bm25_ingest
+from autorag.nodes.semanticretrieval.vectordb import (
 	vectordb_ingest_api,
 	filter_exist_ids,
 	filter_exist_ids_from_retrieval_gt,

@@ -4,7 +4,7 @@ from typing import List, Dict
 
 import pandas as pd
 
-from autorag.nodes.retrieval.run import evaluate_retrieval_node
+from autorag.nodes.retrieval.run_util import evaluate_retrieval_node
 from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.utils.util import to_list, apply_recursive

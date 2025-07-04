@@ -225,7 +225,7 @@ vectordb:
 nodes:
   - node_line_name: node_line_1
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         modules:
           - module_type: vectordb
             vectordb: chroma_openai

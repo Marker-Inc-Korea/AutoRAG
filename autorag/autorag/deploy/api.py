@@ -248,9 +248,19 @@ class ApiRunner(BaseRunner):
 		self.app.run(host=host, port=port, **kwargs)
 
 	def extract_retrieve_passage(self, df: pd.DataFrame) -> List[RetrievedPassage]:
-		retrieved_ids: List[str] = df["retrieved_ids"].tolist()[0]
+		if "retrieved_ids" not in df.columns and "retrieved_ids_semantic" in df.columns:
+			retrieved_ids: List[str] = df["retrieved_ids_semantic"].tolist()[0]
+			scores = df["retrieve_scores_semantic"].tolist()[0]
+		elif (
+			"retrieved_ids" not in df.columns
+			and "retrieved_ids_semantic" not in df.columns
+		):
+			retrieved_ids: List[str] = df["retrieved_ids_lexical"].tolist()[0]
+			scores = df["retrieve_scores_lexical"].tolist()[0]
+		else:
+			retrieved_ids: List[str] = df["retrieved_ids"].tolist()[0]
+			scores = df["retrieve_scores"].tolist()[0]
 		contents = fetch_contents(self.corpus_df, [retrieved_ids])[0]
-		scores = df["retrieve_scores"].tolist()[0]
 		if "path" in self.corpus_df.columns:
 			paths = fetch_contents(self.corpus_df, [retrieved_ids], column_name="path")[
 				0

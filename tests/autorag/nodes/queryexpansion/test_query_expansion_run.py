@@ -14,8 +14,10 @@ from autorag.embedding.base import embedding_models, MockEmbeddingRandom, LazyIn
 from autorag.nodes.queryexpansion import QueryDecompose, HyDE
 from autorag.nodes.queryexpansion.run import evaluate_one_query_expansion_node
 from autorag.nodes.queryexpansion.run import run_query_expansion_node
-from autorag.nodes.retrieval import BM25, VectorDB, HybridCC
-from autorag.nodes.retrieval.vectordb import vectordb_ingest_api
+from autorag.nodes.lexicalretrieval import BM25
+from autorag.nodes.semanticretrieval import VectorDB
+from autorag.nodes.hybridretrieval import HybridCC
+from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import load_summary_file, get_event_loop
 from autorag.vectordb import load_all_vectordb_from_yaml
@@ -112,18 +114,6 @@ def test_evaluate_one_query_expansion_node_vectordb(node_line_dir):
     retrieval_params = [
         {"top_k": 3, "vectordb": "chroma_large"},
         {"top_k": 5, "vectordb": "chroma_small"},
-        {
-            "top_k": 5,
-            "target_modules": ("bm25", "vectordb"),
-            "target_module_params": (
-                {"top_k": 3, "bm25_tokenizer": "gpt2"},
-                {
-                    "top_k": 3,
-                    "vectordb": "chroma_large",
-                },
-            ),
-            "weight": 0.36,
-        },
     ]
     base_test_evaluate_one_query_expansion_node(
         node_line_dir, retrieval_funcs, retrieval_params

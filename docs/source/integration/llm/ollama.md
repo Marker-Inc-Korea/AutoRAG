@@ -42,39 +42,28 @@ If you are curious about how to write the Config YAML file, refer to this link.
 In this documentation, we designed a simple experiment using only retrieval, prompt maker, and generator (LLM).
 You can also check out the YAML file in the [AutoRAG repository](https://github.com/Marker-Inc-Korea/AutoRAG/tree/main/sample_config/rag)!
 
+```{warning}
+Be sure to update AutoRAG up to v0.3.17 to use below YAML file.
+```
+
 ```yaml
+vectordb:
+  - name: mpnet_base_chroma
+    db_type: chroma
+    client_type: persistent
+    embedding_model: huggingface_all_mpnet_base_v2
+    collection_name: huggingface_all_mpnet_base_v2
+    path: ${PROJECT_DIR}/data/chroma
 node_lines:
   - node_line_name: retrieve_node_line
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         strategy:
           metrics: [ retrieval_f1, retrieval_recall, retrieval_precision ]
         top_k: 3
         modules:
-          - module_type: bm25
           - module_type: vectordb
-            embedding_model: huggingface_all_mpnet_base_v2
-          - module_type: hybrid_rrf
-            target_modules: ('bm25', 'vectordb')
-            rrf_k: [ 3, 5, 10 ]
-          - module_type: hybrid_cc
-            target_modules: ('bm25', 'vectordb')
-            weights:
-              - (0.5, 0.5)
-              - (0.3, 0.7)
-              - (0.7, 0.3)
-          - module_type: hybrid_rsf
-            target_modules: ('bm25', 'vectordb')
-            weights:
-              - (0.5, 0.5)
-              - (0.3, 0.7)
-              - (0.7, 0.3)
-          - module_type: hybrid_dbsf
-            target_modules: ('bm25', 'vectordb')
-            weights:
-              - (0.5, 0.5)
-              - (0.3, 0.7)
-              - (0.7, 0.3)
+            vectordb: mpnet_base_chroma
   - node_line_name: post_retrieve_node_line
     nodes:
       - node_type: prompt_maker

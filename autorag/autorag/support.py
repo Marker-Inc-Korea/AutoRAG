@@ -47,14 +47,14 @@ def get_support_modules(module_name: str) -> Callable:
 			"MultiQueryExpansion",
 		),
 		# retrieval
-		"bm25": ("autorag.nodes.retrieval", "BM25"),
-		"BM25": ("autorag.nodes.retrieval", "BM25"),
-		"vectordb": ("autorag.nodes.retrieval", "VectorDB"),
-		"VectorDB": ("autorag.nodes.retrieval", "VectorDB"),
-		"hybrid_rrf": ("autorag.nodes.retrieval", "HybridRRF"),
-		"HybridRRF": ("autorag.nodes.retrieval", "HybridRRF"),
-		"hybrid_cc": ("autorag.nodes.retrieval", "HybridCC"),
-		"HybridCC": ("autorag.nodes.retrieval", "HybridCC"),
+		"bm25": ("autorag.nodes.lexicalretrieval", "BM25"),
+		"BM25": ("autorag.nodes.lexicalretrieval", "BM25"),
+		"vectordb": ("autorag.nodes.semanticretrieval", "VectorDB"),
+		"VectorDB": ("autorag.nodes.semanticretrieval", "VectorDB"),
+		"hybrid_rrf": ("autorag.nodes.hybridretrieval", "HybridRRF"),
+		"HybridRRF": ("autorag.nodes.hybridretrieval", "HybridRRF"),
+		"hybrid_cc": ("autorag.nodes.hybridretrieval", "HybridCC"),
+		"HybridCC": ("autorag.nodes.hybridretrieval", "HybridCC"),
 		# passage_augmenter
 		"prev_next_augmenter": (
 			"autorag.nodes.passageaugmenter",
@@ -191,7 +191,26 @@ def get_support_nodes(node_name: str) -> Callable:
 			"autorag.nodes.queryexpansion.run",
 			"run_query_expansion_node",
 		),
-		"retrieval": ("autorag.nodes.retrieval.run", "run_retrieval_node"),
+		"semantic_retrieval": (
+			"autorag.nodes.semanticretrieval.run",
+			"run_semantic_retrieval_node",
+		),
+		"dense_retrieval": (
+			"autorag.nodes.semanticretrieval.run",
+			"run_semantic_retrieval_node",
+		),
+		"lexical_retrieval": (
+			"autorag.nodes.lexicalretrieval.run",
+			"run_lexical_retrieval_node",
+		),
+		"sparse_retrieval": (
+			"autorag.nodes.lexicalretrieval.run",
+			"run_lexical_retrieval_node",
+		),
+		"hybrid_retrieval": (
+			"autorag.nodes.hybridretrieval.run",
+			"run_hybrid_retrieval_node",
+		),
 		"generator": ("autorag.nodes.generator.run", "run_generator_node"),
 		"prompt_maker": ("autorag.nodes.promptmaker.run", "run_prompt_maker_node"),
 		"passage_filter": (

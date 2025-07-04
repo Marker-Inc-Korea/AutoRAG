@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import autorag
-from autorag.nodes.retrieval.vectordb import vectordb_ingest_api, vectordb_pure
+from autorag.nodes.semanticretrieval.vectordb import vectordb_ingest_api, vectordb_pure
 from autorag.utils.util import (
 	save_parquet_safe,
 	fetch_contents,
