@@ -508,6 +508,63 @@ You have to specify what vectordb you want to use at the config YAML file.</p>
 </div>
 <p>For more information about vectordb, you can refer to the <a class="reference internal" href="integration/vectordb/vectordb.html"><span class="std std-doc">vectordb documentation</span></a>.</p>
 </section>
+<section id="v0-3-17-migration-guide">
+<h2>v0.3.17 migration guide<a class="headerlink" href="#v0-3-17-migration-guide" title="Link to this heading">¶</a></h2>
+<p>From AutoRAG v0.3.17, the retrieval node now divides into three types: <code class="docutils literal notranslate"><span class="pre">lexical_retrieval</span></code>, <code class="docutils literal notranslate"><span class="pre">semantic_retrieval</span></code>, and <code class="docutils literal notranslate"><span class="pre">hybrid_retrieval</span></code>.
+You need to split the previous retrieval node into three types.
+You need to specify both ‘strategy’ and ‘top_k’ for every node type.</p>
+<ul class="simple">
+<li><p>v0.3.17 version</p></li>
+</ul>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_small</span>
+<span class="w">    </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chroma</span>
+<span class="w">    </span><span class="nt">client_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">persistent</span>
+<span class="w">    </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_small</span>
+<span class="w">    </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_small</span>
+<span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${PROJECT_DIR}/resources/chroma</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">    </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chroma</span>
+<span class="w">    </span><span class="nt">client_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">persistent</span>
+<span class="w">    </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">    </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
+<span class="w">    </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${PROJECT_DIR}/resources/chroma</span>
+<span class="w">    </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="nt">node_lines</span><span class="p">:</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieve_node_line</span>
+<span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lexical_retrieval</span><span class="w"> </span><span class="c1"># Lexical retrieval node type</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bm25</span>
+<span class="w">          </span><span class="nt">bm25_tokenizer</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">facebook/opt-125m</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">porter_stemmer</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">semantic_retrieval</span><span class="w"> </span><span class="c1"># semantic retrieval node type</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vectordb</span>
+<span class="w">          </span><span class="nt">vectordb</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">openai_embed_3_large</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">openai_embed_3_small</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybrid_retrieval</span><span class="w"> </span><span class="c1"># Hybrid retrieval node type</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybrid_rrf</span>
+<span class="w">          </span><span class="nt">weight_range</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">(4, 30)</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybrid_cc</span>
+<span class="w">          </span><span class="nt">normalize_method</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">mm</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">tmm</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">z</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">dbsf</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">          </span><span class="nt">weight_range</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">(0.0, 1.0)</span>
+<span class="w">          </span><span class="nt">test_weight_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">51</span>
+</pre></div>
+</div>
+<p>This YAML file do the same thing as the previous v0.3.7 version.</p>
+<p>Also, you’re no longer able to use the hybrid retrieval node in the <code class="docutils literal notranslate"><span class="pre">query_expansion</span></code> node as <code class="docutils literal notranslate"><span class="pre">retrieval_modules</span></code>.
+We’re considering to add this feature in the future, but for now, you can use semantic and lexical retrieval nodes to evaluate query expansion.
+For most cases, you don’t need to use hybrid retrieval node in the <code class="docutils literal notranslate"><span class="pre">query_expansion</span></code> node.</p>
+</section>
 </section>
 
         </article>
@@ -571,6 +628,7 @@ You have to specify what vectordb you want to use at the config YAML file.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#v0-3-7-migration-guide">v0.3.7 migration guide</a></li>
+<li><a class="reference internal" href="#v0-3-17-migration-guide">v0.3.17 migration guide</a></li>
 </ul>
 </li>
 </ul>

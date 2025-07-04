@@ -414,6 +414,7 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModule</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">validate_qa_dataset</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.cast</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_retrieve_infos</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
@@ -441,24 +442,13 @@
 		<span class="p">),</span> <span class="s2">&quot;previous_result must have query column.&quot;</span>
 		<span class="n">queries</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 
-		<span class="c1"># find contents_list columns</span>
-		<span class="k">assert</span> <span class="p">(</span>
-			<span class="s2">&quot;retrieved_contents&quot;</span> <span class="ow">in</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">columns</span>
-		<span class="p">),</span> <span class="s2">&quot;previous_result must have retrieved_contents column.&quot;</span>
-		<span class="n">contents</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-
-		<span class="c1"># find scores columns</span>
-		<span class="k">assert</span> <span class="p">(</span>
-			<span class="s2">&quot;retrieve_scores&quot;</span> <span class="ow">in</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">columns</span>
-		<span class="p">),</span> <span class="s2">&quot;previous_result must have retrieve_scores column.&quot;</span>
-		<span class="n">scores</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieve_scores&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-
-		<span class="c1"># find ids columns</span>
-		<span class="k">assert</span> <span class="p">(</span>
-			<span class="s2">&quot;retrieved_ids&quot;</span> <span class="ow">in</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">columns</span>
-		<span class="p">),</span> <span class="s2">&quot;previous_result must have retrieved_ids column.&quot;</span>
-		<span class="n">ids</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieved_ids&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-		<span class="k">return</span> <span class="n">queries</span><span class="p">,</span> <span class="n">contents</span><span class="p">,</span> <span class="n">scores</span><span class="p">,</span> <span class="n">ids</span></div>
+		<span class="n">retrieve_infos</span> <span class="o">=</span> <span class="n">cast_retrieve_infos</span><span class="p">(</span><span class="n">previous_result</span><span class="p">)</span>
+		<span class="k">return</span> <span class="p">(</span>
+			<span class="n">queries</span><span class="p">,</span>
+			<span class="n">retrieve_infos</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">],</span>
+			<span class="n">retrieve_infos</span><span class="p">[</span><span class="s2">&quot;retrieve_scores&quot;</span><span class="p">],</span>
+			<span class="n">retrieve_infos</span><span class="p">[</span><span class="s2">&quot;retrieved_ids&quot;</span><span class="p">],</span>
+		<span class="p">)</span></div>
 </div>
 
 </pre></div>

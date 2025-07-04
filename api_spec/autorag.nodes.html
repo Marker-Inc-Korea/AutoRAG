@@ -854,6 +854,7 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="autorag.nodes.queryexpansion.html#module-autorag.nodes.queryexpansion.run">autorag.nodes.queryexpansion.run module</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.run.evaluate_one_query_expansion_node"><code class="docutils literal notranslate"><span class="pre">evaluate_one_query_expansion_node()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.run.evaluate_retrieval_node"><code class="docutils literal notranslate"><span class="pre">evaluate_retrieval_node()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.run.make_retrieval_callable_params"><code class="docutils literal notranslate"><span class="pre">make_retrieval_callable_params()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.run.run_query_expansion_node"><code class="docutils literal notranslate"><span class="pre">run_query_expansion_node()</span></code></a></li>
 </ul>
@@ -877,73 +878,11 @@
 <li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.base.get_bm25_pkl_name"><code class="docutils literal notranslate"><span class="pre">get_bm25_pkl_name()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#module-autorag.nodes.retrieval.bm25">autorag.nodes.retrieval.bm25 module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.BM25"><code class="docutils literal notranslate"><span class="pre">BM25</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.BM25.pure"><code class="docutils literal notranslate"><span class="pre">BM25.pure()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.bm25_ingest"><code class="docutils literal notranslate"><span class="pre">bm25_ingest()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.bm25_pure"><code class="docutils literal notranslate"><span class="pre">bm25_pure()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.get_bm25_scores"><code class="docutils literal notranslate"><span class="pre">get_bm25_scores()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.load_bm25_corpus"><code class="docutils literal notranslate"><span class="pre">load_bm25_corpus()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.select_bm25_tokenizer"><code class="docutils literal notranslate"><span class="pre">select_bm25_tokenizer()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize"><code class="docutils literal notranslate"><span class="pre">tokenize()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize_ja_sudachipy"><code class="docutils literal notranslate"><span class="pre">tokenize_ja_sudachipy()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize_ko_kiwi"><code class="docutils literal notranslate"><span class="pre">tokenize_ko_kiwi()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize_ko_kkma"><code class="docutils literal notranslate"><span class="pre">tokenize_ko_kkma()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize_ko_okt"><code class="docutils literal notranslate"><span class="pre">tokenize_ko_okt()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize_porter_stemmer"><code class="docutils literal notranslate"><span class="pre">tokenize_porter_stemmer()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.bm25.tokenize_space"><code class="docutils literal notranslate"><span class="pre">tokenize_space()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#module-autorag.nodes.retrieval.hybrid_cc">autorag.nodes.retrieval.hybrid_cc module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.HybridCC"><code class="docutils literal notranslate"><span class="pre">HybridCC</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.HybridCC.run_evaluator"><code class="docutils literal notranslate"><span class="pre">HybridCC.run_evaluator()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.fuse_per_query"><code class="docutils literal notranslate"><span class="pre">fuse_per_query()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.hybrid_cc"><code class="docutils literal notranslate"><span class="pre">hybrid_cc()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.normalize_dbsf"><code class="docutils literal notranslate"><span class="pre">normalize_dbsf()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.normalize_mm"><code class="docutils literal notranslate"><span class="pre">normalize_mm()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.normalize_tmm"><code class="docutils literal notranslate"><span class="pre">normalize_tmm()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_cc.normalize_z"><code class="docutils literal notranslate"><span class="pre">normalize_z()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#module-autorag.nodes.retrieval.hybrid_rrf">autorag.nodes.retrieval.hybrid_rrf module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_rrf.HybridRRF"><code class="docutils literal notranslate"><span class="pre">HybridRRF</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_rrf.HybridRRF.run_evaluator"><code class="docutils literal notranslate"><span class="pre">HybridRRF.run_evaluator()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_rrf.hybrid_rrf"><code class="docutils literal notranslate"><span class="pre">hybrid_rrf()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_rrf.rrf_calculate"><code class="docutils literal notranslate"><span class="pre">rrf_calculate()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.hybrid_rrf.rrf_pure"><code class="docutils literal notranslate"><span class="pre">rrf_pure()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#module-autorag.nodes.retrieval.run">autorag.nodes.retrieval.run module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.edit_summary_df_params"><code class="docutils literal notranslate"><span class="pre">edit_summary_df_params()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.evaluate_retrieval_node"><code class="docutils literal notranslate"><span class="pre">evaluate_retrieval_node()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.find_unique_elems"><code class="docutils literal notranslate"><span class="pre">find_unique_elems()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.get_hybrid_execution_times"><code class="docutils literal notranslate"><span class="pre">get_hybrid_execution_times()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.get_ids_and_scores"><code class="docutils literal notranslate"><span class="pre">get_ids_and_scores()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.get_scores_by_ids"><code class="docutils literal notranslate"><span class="pre">get_scores_by_ids()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.optimize_hybrid"><code class="docutils literal notranslate"><span class="pre">optimize_hybrid()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.run.run_retrieval_node"><code class="docutils literal notranslate"><span class="pre">run_retrieval_node()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#module-autorag.nodes.retrieval.vectordb">autorag.nodes.retrieval.vectordb module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.VectorDB"><code class="docutils literal notranslate"><span class="pre">VectorDB</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.VectorDB.pure"><code class="docutils literal notranslate"><span class="pre">VectorDB.pure()</span></code></a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.filter_exist_ids"><code class="docutils literal notranslate"><span class="pre">filter_exist_ids()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.filter_exist_ids_from_retrieval_gt"><code class="docutils literal notranslate"><span class="pre">filter_exist_ids_from_retrieval_gt()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.get_id_scores"><code class="docutils literal notranslate"><span class="pre">get_id_scores()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.run_query_embedding_batch"><code class="docutils literal notranslate"><span class="pre">run_query_embedding_batch()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.vectordb_ingest_api"><code class="docutils literal notranslate"><span class="pre">vectordb_ingest_api()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.vectordb_ingest_huggingface"><code class="docutils literal notranslate"><span class="pre">vectordb_ingest_huggingface()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag.nodes.retrieval.vectordb.vectordb_pure"><code class="docutils literal notranslate"><span class="pre">vectordb_pure()</span></code></a></li>
-</ul>
-</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag-nodes-retrieval-bm25-module">autorag.nodes.retrieval.bm25 module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag-nodes-retrieval-hybrid-cc-module">autorag.nodes.retrieval.hybrid_cc module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag-nodes-retrieval-hybrid-rrf-module">autorag.nodes.retrieval.hybrid_rrf module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag-nodes-retrieval-run-module">autorag.nodes.retrieval.run module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#autorag-nodes-retrieval-vectordb-module">autorag.nodes.retrieval.vectordb module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="autorag.nodes.retrieval.html#module-autorag.nodes.retrieval">Module contents</a></li>
 </ul>
 </li>

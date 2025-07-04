@@ -51,7 +51,7 @@ Check out which node you can use, and what strategy and parameters they have in 
 node_lines:
   - node_line_name: node_line_1
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         top_k: 10
         strategy:
           metrics: [bleu, meteor, rouge]
@@ -87,18 +87,29 @@ Here is the example of setting modules.
 node_lines:
   - node_line_name: node_line_1
     nodes:
-      - node_type: retrieval
+      - node_type: lexical_retrieval
         top_k: 10
         strategy:
           metrics: [bleu, meteor, rouge]
           speed_threshold: 10
         modules:
           - module_type: bm25
+      - node_type: lexical_retrieval
+        top_k: 10
+        strategy:
+          metrics: [bleu, meteor, rouge]
+          speed_threshold: 10
+        modules:
           - module_type: vectordb
             vectordb: default
+      - node_type: hybrid_retrieval
+        top_k: 10
+        strategy:
+          metrics: [bleu, meteor, rouge]
+          speed_threshold: 10
+        modules:
           - module_type: hybrid_rrf
-            target_modules: ('bm25', 'vectordb')
-            rrf_k: [3, 5, 10]
+            weight_range: (4,80)
 ```
 
 ```{attention}
@@ -124,7 +135,7 @@ You can use environment variables in the YAML file directly.
 node_lines:
   - node_line_name: node_line_1
     nodes:
-      - node_type: retrieval
+      - node_type: semantic_retrieval
         top_k: ${TOP-K}
         strategy:
           metrics: [sem_score]

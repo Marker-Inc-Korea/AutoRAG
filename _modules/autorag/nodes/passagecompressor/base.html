@@ -415,6 +415,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag</span><span class="w"> </span><span class="kn">import</span> <span class="n">generator_models</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModule</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">result_to_dataframe</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.cast</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_retrieved_contents</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
@@ -438,20 +439,14 @@
 		<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
 			<span class="sa">f</span><span class="s2">&quot;Running passage compressor node - </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2"> module...&quot;</span>
 		<span class="p">)</span>
-		<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span>
-			<span class="p">[</span>
-				<span class="n">column</span> <span class="ow">in</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">columns</span>
-				<span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="p">[</span>
-					<span class="s2">&quot;query&quot;</span><span class="p">,</span>
-					<span class="s2">&quot;retrieved_contents&quot;</span><span class="p">,</span>
-				<span class="p">]</span>
-			<span class="p">]</span>
-		<span class="p">),</span> <span class="s2">&quot;previous_result must have retrieved_contents, retrieved_ids, and retrieve_scores columns.&quot;</span>
+		<span class="k">assert</span> <span class="p">(</span>
+			<span class="s2">&quot;query&quot;</span> <span class="ow">in</span> <span class="n">previous_result</span><span class="o">.</span><span class="n">columns</span>
+		<span class="p">),</span> <span class="s2">&quot;previous_result must contain &#39;query&#39; column.&quot;</span>
 		<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">previous_result</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;previous_result must have at least one row.&quot;</span>
 
 		<span class="n">queries</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-		<span class="n">retrieved_contents</span> <span class="o">=</span> <span class="n">previous_result</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-		<span class="k">return</span> <span class="n">queries</span><span class="p">,</span> <span class="n">retrieved_contents</span></div>
+
+		<span class="k">return</span> <span class="n">queries</span><span class="p">,</span> <span class="n">cast_retrieved_contents</span><span class="p">(</span><span class="n">previous_result</span><span class="p">)</span></div>
 </div>
 
 

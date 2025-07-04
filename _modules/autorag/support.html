@@ -459,14 +459,14 @@
 			<span class="s2">&quot;MultiQueryExpansion&quot;</span><span class="p">,</span>
 		<span class="p">),</span>
 		<span class="c1"># retrieval</span>
-		<span class="s2">&quot;bm25&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;BM25&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;BM25&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;BM25&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;vectordb&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;VectorDB&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;VectorDB&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;VectorDB&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;hybrid_rrf&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridRRF&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;HybridRRF&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridRRF&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;hybrid_cc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridCC&quot;</span><span class="p">),</span>
-		<span class="s2">&quot;HybridCC&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridCC&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;bm25&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.lexicalretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;BM25&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;BM25&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.lexicalretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;BM25&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;vectordb&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.semanticretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;VectorDB&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;VectorDB&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.semanticretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;VectorDB&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;hybrid_rrf&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.hybridretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridRRF&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;HybridRRF&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.hybridretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridRRF&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;hybrid_cc&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.hybridretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridCC&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;HybridCC&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.hybridretrieval&quot;</span><span class="p">,</span> <span class="s2">&quot;HybridCC&quot;</span><span class="p">),</span>
 		<span class="c1"># passage_augmenter</span>
 		<span class="s2">&quot;prev_next_augmenter&quot;</span><span class="p">:</span> <span class="p">(</span>
 			<span class="s2">&quot;autorag.nodes.passageaugmenter&quot;</span><span class="p">,</span>
@@ -606,7 +606,26 @@
 			<span class="s2">&quot;autorag.nodes.queryexpansion.run&quot;</span><span class="p">,</span>
 			<span class="s2">&quot;run_query_expansion_node&quot;</span><span class="p">,</span>
 		<span class="p">),</span>
-		<span class="s2">&quot;retrieval&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.retrieval.run&quot;</span><span class="p">,</span> <span class="s2">&quot;run_retrieval_node&quot;</span><span class="p">),</span>
+		<span class="s2">&quot;semantic_retrieval&quot;</span><span class="p">:</span> <span class="p">(</span>
+			<span class="s2">&quot;autorag.nodes.semanticretrieval.run&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;run_semantic_retrieval_node&quot;</span><span class="p">,</span>
+		<span class="p">),</span>
+		<span class="s2">&quot;dense_retrieval&quot;</span><span class="p">:</span> <span class="p">(</span>
+			<span class="s2">&quot;autorag.nodes.semanticretrieval.run&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;run_semantic_retrieval_node&quot;</span><span class="p">,</span>
+		<span class="p">),</span>
+		<span class="s2">&quot;lexical_retrieval&quot;</span><span class="p">:</span> <span class="p">(</span>
+			<span class="s2">&quot;autorag.nodes.lexicalretrieval.run&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;run_lexical_retrieval_node&quot;</span><span class="p">,</span>
+		<span class="p">),</span>
+		<span class="s2">&quot;sparse_retrieval&quot;</span><span class="p">:</span> <span class="p">(</span>
+			<span class="s2">&quot;autorag.nodes.lexicalretrieval.run&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;run_lexical_retrieval_node&quot;</span><span class="p">,</span>
+		<span class="p">),</span>
+		<span class="s2">&quot;hybrid_retrieval&quot;</span><span class="p">:</span> <span class="p">(</span>
+			<span class="s2">&quot;autorag.nodes.hybridretrieval.run&quot;</span><span class="p">,</span>
+			<span class="s2">&quot;run_hybrid_retrieval_node&quot;</span><span class="p">,</span>
+		<span class="p">),</span>
 		<span class="s2">&quot;generator&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.generator.run&quot;</span><span class="p">,</span> <span class="s2">&quot;run_generator_node&quot;</span><span class="p">),</span>
 		<span class="s2">&quot;prompt_maker&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;autorag.nodes.promptmaker.run&quot;</span><span class="p">,</span> <span class="s2">&quot;run_prompt_maker_node&quot;</span><span class="p">),</span>
 		<span class="s2">&quot;passage_filter&quot;</span><span class="p">:</span> <span class="p">(</span>

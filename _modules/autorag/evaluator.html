@@ -419,8 +419,8 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.node_line</span><span class="w"> </span><span class="kn">import</span> <span class="n">run_node_line</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.retrieval.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_bm25_pkl_name</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.retrieval.bm25</span><span class="w"> </span><span class="kn">import</span> <span class="n">bm25_ingest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.retrieval.vectordb</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.lexicalretrieval.bm25</span><span class="w"> </span><span class="kn">import</span> <span class="n">bm25_ingest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.semanticretrieval.vectordb</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">vectordb_ingest_api</span><span class="p">,</span>
 	<span class="n">filter_exist_ids</span><span class="p">,</span>
 	<span class="n">filter_exist_ids_from_retrieval_gt</span><span class="p">,</span>

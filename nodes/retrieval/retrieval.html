@@ -452,19 +452,46 @@
 </li>
 </ol>
 </section>
+</section>
+<section id="three-node-types">
+<h2>Three Node Types<a class="headerlink" href="#three-node-types" title="Link to this heading">¶</a></h2>
+<div class="admonition-version-check admonition">
+<p class="admonition-title">Version Check</p>
+<p>From AutoRAG v0.3.17, the retrieval node now divides into three types: <code class="docutils literal notranslate"><span class="pre">lexical_retrieval</span></code>, <code class="docutils literal notranslate"><span class="pre">semantic_retrieval</span></code> and <code class="docutils literal notranslate"><span class="pre">hybrid_retrieval</span></code>.</p>
+</div>
+<p>For the better usage and easier to implement new module, from AutoRAG v0.3.17, the retrieval node is divided into three types: <code class="docutils literal notranslate"><span class="pre">lexical_retrieval</span></code>, <code class="docutils literal notranslate"><span class="pre">semantic_retrieval</span></code>, and <code class="docutils literal notranslate"><span class="pre">hybrid_retrieval</span></code>.</p>
+<ul class="simple">
+<li><p><strong>Lexical Retrieval</strong>: This node type is used for traditional keyword-based retrieval methods, such as BM25.</p></li>
+<li><p><strong>Semantic Retrieval</strong>: This node type is used for retrieval methods that leverage semantic understanding, such as vector databases.</p></li>
+<li><p><strong>Hybrid Retrieval</strong>: This node type combines both lexical and semantic retrieval methods, allowing for more comprehensive search capabilities.</p></li>
+</ul>
+<p>So you need to define <strong>three node types</strong> in your config YAML file for using all retrievals. You must define both <code class="docutils literal notranslate"><span class="pre">lexical_retrieval</span></code> and <code class="docutils literal notranslate"><span class="pre">semantic_retrieval</span></code> nodes to use hybrid retrieval.
+You can see the example config YAML files for more details.</p>
 <section id="example-config-yaml-file">
 <h3>Example config.yaml file<a class="headerlink" href="#example-config-yaml-file" title="Link to this heading">¶</a></h3>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieve_node_line</span>
 <span class="w">  </span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieval</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lexical_retrieval</span>
 <span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
 <span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_precision</span><span class="p p-Indicator">]</span>
 <span class="w">        </span><span class="nt">speed_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
 <span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
 <span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
 <span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bm25</span>
-<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vectordb</span>
-<span class="w">          </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">semantic_retrieval</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_precision</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">speed_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vectordb</span>
+<span class="w">            </span><span class="nt">vectordb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybrid_retrieval</span>
+<span class="w">      </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_precision</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">speed_threshold</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">      </span><span class="nt">modules</span><span class="p">:</span>
 <span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybrid_rrf</span>
 <span class="w">          </span><span class="nt">weight_range</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">(4, 80)</span>
 <span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hybrid_cc</span>
@@ -549,6 +576,9 @@
 <li><a class="reference internal" href="#overview"><strong>Overview</strong></a></li>
 <li><a class="reference internal" href="#node-parameters"><strong>Node Parameters</strong></a></li>
 <li><a class="reference internal" href="#strategy-parameters"><strong>Strategy Parameters</strong></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#three-node-types">Three Node Types</a><ul>
 <li><a class="reference internal" href="#example-config-yaml-file">Example config.yaml file</a><ul>
 <li><a class="reference internal" href="#supported-modules">Supported Modules</a></li>
 </ul>

@@ -517,6 +517,25 @@ The dimension will be 2-d list, and the column name will be ‘queries’.</p>
 <dd></dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.queryexpansion.run.evaluate_retrieval_node">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.queryexpansion.run.</span></span><span class="sig-name descname"><span class="pre">evaluate_retrieval_node</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">result_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metric_inputs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="autorag.schema.html#autorag.schema.metricinput.MetricInput" title="autorag.schema.metricinput.MetricInput"><span class="pre">MetricInput</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metrics</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/queryexpansion/run.html#evaluate_retrieval_node"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.queryexpansion.run.evaluate_retrieval_node" title="Link to this definition">¶</a></dt>
+<dd><p>Evaluate retrieval node from retrieval node result dataframe.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>result_df</strong> – The result dataframe from a retrieval node.</p></li>
+<li><p><strong>metric_inputs</strong> – List of metric input schema for AutoRAG.</p></li>
+<li><p><strong>metrics</strong> – Metric list from input strategies.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Return result_df with metrics columns.
+The columns will be ‘retrieved_contents’, ‘retrieved_ids’, ‘retrieve_scores’, and metric names.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="autorag.nodes.queryexpansion.run.make_retrieval_callable_params">
 <span class="sig-prename descclassname"><span class="pre">autorag.nodes.queryexpansion.run.</span></span><span class="sig-name descname"><span class="pre">make_retrieval_callable_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">strategy_dict</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/queryexpansion/run.html#make_retrieval_callable_params"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.queryexpansion.run.make_retrieval_callable_params" title="Link to this definition">¶</a></dt>
 <dd><p>strategy_dict looks like this:</p>
@@ -643,6 +662,7 @@ In this case, it would be qa data.</p></li>
 </li>
 <li><a class="reference internal" href="#module-autorag.nodes.queryexpansion.run">autorag.nodes.queryexpansion.run module</a><ul>
 <li><a class="reference internal" href="#autorag.nodes.queryexpansion.run.evaluate_one_query_expansion_node"><code class="docutils literal notranslate"><span class="pre">evaluate_one_query_expansion_node()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.queryexpansion.run.evaluate_retrieval_node"><code class="docutils literal notranslate"><span class="pre">evaluate_retrieval_node()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.queryexpansion.run.make_retrieval_callable_params"><code class="docutils literal notranslate"><span class="pre">make_retrieval_callable_params()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.queryexpansion.run.run_query_expansion_node"><code class="docutils literal notranslate"><span class="pre">run_query_expansion_node()</span></code></a></li>
 </ul>

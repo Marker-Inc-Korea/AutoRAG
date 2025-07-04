@@ -96,3 +96,62 @@ node_lines:
 ```
 
 For more information about vectordb, you can refer to the [vectordb documentation](integration/vectordb/vectordb.md).
+
+
+## v0.3.17 migration guide
+
+From AutoRAG v0.3.17, the retrieval node now divides into three types: `lexical_retrieval`, `semantic_retrieval`, and `hybrid_retrieval`.
+You need to split the previous retrieval node into three types.
+You need to specify both 'strategy' and 'top_k' for every node type.
+
+- v0.3.17 version
+```yaml
+vectordb:
+  - name: openai_embed_3_small
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_small
+    collection_name: openai_embed_3_small
+    path: ${PROJECT_DIR}/resources/chroma
+  - name: openai_embed_3_large
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_large
+    collection_name: openai_embed_3_large
+    path: ${PROJECT_DIR}/resources/chroma
+    embedding_batch: 50
+node_lines:
+- node_line_name: retrieve_node_line
+  nodes:
+    - node_type: lexical_retrieval # Lexical retrieval node type
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10
+      modules:
+        - module_type: bm25
+          bm25_tokenizer: [ facebook/opt-125m, porter_stemmer ]
+    - node_type: semantic_retrieval # semantic retrieval node type
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10
+      modules:
+        - module_type: vectordb
+          vectordb: [openai_embed_3_large, openai_embed_3_small]
+    - node_type: hybrid_retrieval # Hybrid retrieval node type
+      strategy:
+        metrics: [retrieval_f1, retrieval_recall]
+      top_k: 10
+      modules:
+        - module_type: hybrid_rrf
+          weight_range: (4, 30)
+        - module_type: hybrid_cc
+          normalize_method: [ mm, tmm, z, dbsf ]
+          weight_range: (0.0, 1.0)
+          test_weight_size: 51
+```
+
+This YAML file do the same thing as the previous v0.3.7 version.
+
+Also, you’re no longer able to use the hybrid retrieval node in the `query_expansion` node as `retrieval_modules`.
+We’re considering to add this feature in the future, but for now, you can use semantic and lexical retrieval nodes to evaluate query expansion.
+For most cases, you don't need to use hybrid retrieval node in the `query_expansion` node.

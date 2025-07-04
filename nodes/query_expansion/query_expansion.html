@@ -455,15 +455,17 @@ Therefore, in strategy, we set the parameters necessary for retrieval and evalua
 <li><p><strong>Metrics</strong>: Metrics such as <code class="docutils literal notranslate"><span class="pre">retrieval_f1</span></code>,<code class="docutils literal notranslate"><span class="pre">retrieval_recall</span></code>, and <code class="docutils literal notranslate"><span class="pre">retrieval_precision</span></code> are used to evaluate the performance of the query expansion process through its impact on retrieval outcomes.</p></li>
 <li><p><strong>Speed Threshold</strong>: <code class="docutils literal notranslate"><span class="pre">speed_threshold</span></code> is applied across all nodes, ensuring that any method exceeding the average processing time for a query is not used.</p></li>
 <li><p><strong>Top_k</strong>: This parameter specifies the number of top results to consider during the retrieval evaluation phase.</p></li>
-<li><p><strong>Retrieval Modules</strong>: The query expansion node can use all modules and module parameters from the retrieval node, including:</p>
+<li><p><strong>Retrieval Modules</strong>: The query expansion node can use modules and module parameters from the lexical retrieval and semantic retrieval node, including:</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="../retrieval/bm25.html"><span class="std std-doc">bm25</span></a></p></li>
-<li><p><a class="reference internal" href="../retrieval/vectordb.html"><span class="std std-doc">vectordb</span></a>: with <code class="docutils literal notranslate"><span class="pre">embedding_model</span></code> parameter</p></li>
-<li><p><a class="reference internal" href="../retrieval/hybrid_rrf.html"><span class="std std-doc">hybrid_rrf</span></a>: with <code class="docutils literal notranslate"><span class="pre">target_modules</span></code> and <code class="docutils literal notranslate"><span class="pre">rrf_k</span></code> parameters</p></li>
-<li><p><a class="reference internal" href="../retrieval/hybrid_cc.html"><span class="std std-doc">hybrid_cc</span></a>: with <code class="docutils literal notranslate"><span class="pre">target_modules</span></code> and <code class="docutils literal notranslate"><span class="pre">weights</span></code> parameters</p></li>
+<li><p><a class="reference internal" href="../retrieval/vectordb.html"><span class="std std-doc">vectordb</span></a>: with <code class="docutils literal notranslate"><span class="pre">vectordb</span></code> parameter</p></li>
 </ul>
 </li>
 </ol>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>You cannot use the hybrid retrieval modules in the query expansion node.</p>
+</div>
 </section>
 </section>
 <section id="example-config-yaml-file">

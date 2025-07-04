@@ -409,14 +409,15 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">copy</span><span class="w"> </span><span class="kn">import</span> <span class="n">deepcopy</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.retrieval.run</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate_retrieval_node</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation</span><span class="w"> </span><span class="kn">import</span> <span class="n">evaluate_retrieval</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.metricinput</span><span class="w"> </span><span class="kn">import</span> <span class="n">MetricInput</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.strategy</span><span class="w"> </span><span class="kn">import</span> <span class="n">measure_speed</span><span class="p">,</span> <span class="n">filter_by_threshold</span><span class="p">,</span> <span class="n">select_best</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.support</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_support_modules</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.cast</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_retrieve_infos</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">make_combinations</span><span class="p">,</span> <span class="n">explode</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
@@ -629,6 +630,8 @@
 			<span class="nb">zip</span><span class="p">(</span><span class="n">retrieval_funcs</span><span class="p">,</span> <span class="n">retrieval_params</span><span class="p">),</span>
 		<span class="p">)</span>
 	<span class="p">)</span>
+	<span class="c1"># Cast each retrieval results</span>
+	<span class="n">retrieval_result_dicts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">cast_retrieve_infos</span><span class="p">,</span> <span class="n">retrieval_results</span><span class="p">))</span>
 	<span class="n">evaluation_results</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
 		<span class="nb">map</span><span class="p">(</span>
 			<span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">evaluate_retrieval_node</span><span class="p">(</span>
@@ -636,7 +639,7 @@
 				<span class="n">metric_inputs</span><span class="p">,</span>
 				<span class="n">metrics</span><span class="p">,</span>
 			<span class="p">),</span>
-			<span class="n">retrieval_results</span><span class="p">,</span>
+			<span class="n">retrieval_result_dicts</span><span class="p">,</span>
 		<span class="p">)</span>
 	<span class="p">)</span>
 	<span class="n">best_result</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">select_best</span><span class="p">(</span>
@@ -689,6 +692,38 @@
 		<span class="p">)</span>
 	<span class="p">)</span>
 	<span class="k">return</span> <span class="n">explode</span><span class="p">(</span><span class="n">modules</span><span class="p">,</span> <span class="n">param_combinations</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="evaluate_retrieval_node">
+<a class="viewcode-back" href="../../../../api_spec/autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.run.evaluate_retrieval_node">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">evaluate_retrieval_node</span><span class="p">(</span>
+	<span class="n">result_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span>
+	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
+	<span class="n">metrics</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">]],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">	Evaluate retrieval node from retrieval node result dataframe.</span>
+
+<span class="sd">	:param result_df: The result dataframe from a retrieval node.</span>
+<span class="sd">	:param metric_inputs: List of metric input schema for AutoRAG.</span>
+<span class="sd">	:param metrics: Metric list from input strategies.</span>
+<span class="sd">	:return: Return result_df with metrics columns.</span>
+<span class="sd">	    The columns will be &#39;retrieved_contents&#39;, &#39;retrieved_ids&#39;, &#39;retrieve_scores&#39;, and metric names.</span>
+<span class="sd">	&quot;&quot;&quot;</span>
+
+	<span class="nd">@evaluate_retrieval</span><span class="p">(</span>
+		<span class="n">metric_inputs</span><span class="o">=</span><span class="n">metric_inputs</span><span class="p">,</span>
+		<span class="n">metrics</span><span class="o">=</span><span class="n">metrics</span><span class="p">,</span>
+	<span class="p">)</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">evaluate_this_module</span><span class="p">(</span><span class="n">_dict</span><span class="p">:</span> <span class="n">Dict</span><span class="p">):</span>
+		<span class="k">return</span> <span class="p">(</span>
+			<span class="n">_dict</span><span class="p">[</span><span class="s2">&quot;retrieved_contents&quot;</span><span class="p">],</span>
+			<span class="n">_dict</span><span class="p">[</span><span class="s2">&quot;retrieved_ids&quot;</span><span class="p">],</span>
+			<span class="n">_dict</span><span class="p">[</span><span class="s2">&quot;retrieve_scores&quot;</span><span class="p">],</span>
+		<span class="p">)</span>
+
+	<span class="k">return</span> <span class="n">evaluate_this_module</span><span class="p">(</span><span class="n">result_dict</span><span class="p">)</span></div>
 
 </pre></div>
         </article>
