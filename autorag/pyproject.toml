@@ -54,6 +54,8 @@ dependencies = [
 "grpcio-health-checking>=1.66.2,<1.68.0",
 "grpcio-status>=1.66.2,<1.68.0",
 "grpcio-tools>=1.66.2,<1.68.0",
+    "datasets>=3.5.1",
+    "pyarrow>=20.0.0",
 
     # Vector DB
     "pymilvus>=2.6.0b0",  # for using milvus vectordb
