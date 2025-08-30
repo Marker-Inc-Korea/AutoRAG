@@ -1,12 +1,12 @@
 import gc
 from copy import deepcopy
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import pandas as pd
 
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils import result_to_dataframe
-from autorag.utils.util import pop_params, to_list
+from autorag.utils.util import pop_params, to_list, is_chat_prompt
 
 
 class Vllm(BaseGenerator):
@@ -65,7 +65,7 @@ class Vllm(BaseGenerator):
 		return self._pure(prompts, **kwargs)
 
 	def _pure(
-		self, prompts: List[str], **kwargs
+		self, prompts: Union[List[str], List[List[dict]]], **kwargs
 	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
 		"""
 		Vllm module.
@@ -73,7 +73,7 @@ class Vllm(BaseGenerator):
 		You can set logprobs to get the log probs of the generated text.
 		Default logprobs is 1.
 
-		:param prompts: A list of prompts.
+		:param prompts: A list of prompts or a list of chat prompts.
 		:param kwargs: The extra parameters for generating the text.
 		:return: A tuple of three elements.
 		    The first element is a list of generated text.
@@ -94,9 +94,14 @@ class Vllm(BaseGenerator):
 
 		sampling_params = pop_params(SamplingParams.from_optional, kwargs)
 		generate_params = SamplingParams(**sampling_params)
-		results: List[RequestOutput] = self.vllm_model.generate(
-			prompts, generate_params
-		)
+		if is_chat_prompt(prompts):
+			results: List[RequestOutput] = self.vllm_model.chat(
+				prompts, generate_params
+			)
+		else:
+			results: List[RequestOutput] = self.vllm_model.generate(
+				prompts, generate_params
+			)
 		generated_texts = list(map(lambda x: x.outputs[0].text, results))
 		generated_token_ids = list(map(lambda x: x.outputs[0].token_ids, results))
 		log_probs: List[SampleLogprobs] = list(

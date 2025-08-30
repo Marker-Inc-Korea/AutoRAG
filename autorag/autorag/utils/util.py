@@ -12,7 +12,7 @@ import re
 import string
 from copy import deepcopy
 from json import JSONDecoder
-from typing import List, Callable, Dict, Optional, Any, Collection, Iterable
+from typing import List, Callable, Dict, Optional, Any, Collection, Iterable, Union
 
 from asyncio import AbstractEventLoop
 import emoji
@@ -749,3 +749,11 @@ def decode_multiple_json_from_bytes(byte_data: bytes) -> list:
 			pos += 1
 
 	return result
+
+
+def is_chat_prompt(prompt: Union[List[str], List[List[dict]]]):
+	if isinstance(prompt[0], str):
+		return False
+	if isinstance(prompt[0], list) and isinstance(prompt[0][0], dict):
+		return True
+	raise ValueError("prompt must be List[str] or List[List[dict]]")
