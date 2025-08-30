@@ -715,23 +715,9 @@ Default is “mixedbread-ai/mxbai-rerank-large-v1”.</p></li>
 <dd></dd></dl>
 
 <dl class="py attribute">
-<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_computed_fields">
-<span class="sig-name descname"><span class="pre">model_computed_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">ComputedFieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{}</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_computed_fields" title="Link to this definition">¶</a></dt>
-<dd><p>A dictionary of computed field names and their corresponding <cite>ComputedFieldInfo</cite> objects.</p>
-</dd></dl>
-
-<dl class="py attribute">
 <dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_config">
 <span class="sig-name descname"><span class="pre">model_config</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">ConfigDict</span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'arbitrary_types_allowed':</span> <span class="pre">True}</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_config" title="Link to this definition">¶</a></dt>
 <dd><p>Configuration for the model, should be a dictionary conforming to [<cite>ConfigDict</cite>][pydantic.config.ConfigDict].</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py" id="autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_fields">
-<span class="sig-name descname"><span class="pre">model_fields</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">ClassVar</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">FieldInfo</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></em><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'callback_manager':</span> <span class="pre">FieldInfo(annotation=CallbackManager,</span> <span class="pre">required=False,</span> <span class="pre">default_factory=CallbackManager,</span> <span class="pre">exclude=True),</span> <span class="pre">'llm':</span> <span class="pre">FieldInfo(annotation=LLM,</span> <span class="pre">required=False,</span> <span class="pre">default_factory=get_default_llm,</span> <span class="pre">description='LLM</span> <span class="pre">to</span> <span class="pre">use</span> <span class="pre">for</span> <span class="pre">rankGPT'),</span> <span class="pre">'rankgpt_rerank_prompt':</span> <span class="pre">FieldInfo(annotation=BasePromptTemplate,</span> <span class="pre">required=True,</span> <span class="pre">description='rankGPT</span> <span class="pre">rerank</span> <span class="pre">prompt.',</span> <span class="pre">metadata=[SerializeAsAny()]),</span> <span class="pre">'top_n':</span> <span class="pre">FieldInfo(annotation=int,</span> <span class="pre">required=False,</span> <span class="pre">default=5,</span> <span class="pre">description='Top</span> <span class="pre">N</span> <span class="pre">nodes</span> <span class="pre">to</span> <span class="pre">return</span> <span class="pre">from</span> <span class="pre">reranking.'),</span> <span class="pre">'verbose':</span> <span class="pre">FieldInfo(annotation=bool,</span> <span class="pre">required=False,</span> <span class="pre">default=False,</span> <span class="pre">description='Whether</span> <span class="pre">to</span> <span class="pre">print</span> <span class="pre">intermediate</span> <span class="pre">steps.')}</span></em><a class="headerlink" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_fields" title="Link to this definition">¶</a></dt>
-<dd><p>Metadata about the fields defined on the model,
-mapping of field names to [<cite>FieldInfo</cite>][pydantic.fields.FieldInfo] objects.</p>
-<p>This replaces <cite>Model.__fields__</cite> from Pydantic V1.</p>
 </dd></dl>
 
 </dd></dl>
@@ -1028,9 +1014,7 @@ You can skip evaluation when you use only one module and a module parameter.</p>
 <li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank</span></code></a><ul>
 <li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_postprocess_nodes"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.async_postprocess_nodes()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.async_run_llm"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.async_run_llm()</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_computed_fields"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.model_computed_fields</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_config"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.model_config</span></code></a></li>
-<li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.AsyncRankGPTRerank.model_fields"><code class="docutils literal notranslate"><span class="pre">AsyncRankGPTRerank.model_fields</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#autorag.nodes.passagereranker.rankgpt.RankGPT"><code class="docutils literal notranslate"><span class="pre">RankGPT</span></code></a><ul>
