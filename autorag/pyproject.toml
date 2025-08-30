@@ -26,7 +26,7 @@ classifiers = [
 urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version"]
 dependencies = [
-    "pydantic==2.9.2",  # incompatible with llama index
+    "pydantic>=2.9.2",
     "numpy==1.26.4",  # temporal not using numpy 2.0.0
     "pandas>=2.2.3",
     "tqdm>=4.67.1",
