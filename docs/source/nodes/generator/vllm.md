@@ -40,6 +40,11 @@ modules:
     max_tokens: 512
 ```
 
+## Support chat prompt
+
+From v0.3.18, you can use chat prompt with `vllm` module.
+For using chat prompt, you have to use `chat_fstring` module for prompt maker.
+
 ## Use in Multi-GPU
 
 First, for more details,
@@ -70,4 +75,3 @@ When using the vllm module, errors may occur depending on the configuration of P
 1. Define the vllm module to operate in a single-case mode.
 2. Set the skip_validation parameter to True when using the start_trial function in the evaluator.
 ```
-
