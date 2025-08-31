@@ -42,8 +42,8 @@ jobs:
         run: |
           uv pip install -e './autorag[all]'
       - name: Install dev dependencies
-        run: |
-          uv sync --dev
+        run: uv sync --dev
+        working-directory: ./autorag
       - name: Upgrade pyOpenSSL
         run: |
           uv pip install --upgrade pyOpenSSL
