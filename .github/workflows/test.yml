@@ -39,7 +39,7 @@ jobs:
       - name: Install Venv
         run: uv venv
       - name: Install AutoRAG
-        run: uv pip install -r pyproject.toml --all-extras
+        run: uv pip install -r pyproject.toml --all-extras -e .
         working-directory: ./autorag
       - name: Install dev dependencies
         run: uv pip install --group dev
