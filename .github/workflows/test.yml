@@ -41,9 +41,9 @@ jobs:
       - name: Install AutoRAG
         run: |
           uv pip install -e './autorag[all]'
-      - name: Install dependencies
+      - name: Install dev dependencies
         run: |
-          uv pip install -r tests/requirements.txt
+          uv sync --dev
       - name: Upgrade pyOpenSSL
         run: |
           uv pip install --upgrade pyOpenSSL
