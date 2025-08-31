@@ -45,6 +45,22 @@ modules:
 From v0.3.18, you can use chat prompt with `vllm` module.
 For using chat prompt, you have to use `chat_fstring` module for prompt maker.
 
+## Using reasoning
+
+From v0.3.18, you can use reasoning with `vllm` module.
+All you need to do is set `thinking` parameter to `True` in the YAML file.
+
+```yaml
+modules:
+  - module_type: vllm
+    llm: mistralai/Mistral-7B-Instruct-v0.2
+    temperature: [ 0.1, 1.0 ]
+    max_tokens: 512
+    thinking: True
+```
+
+You have to use reasoning model to use reasoning, unless you can get an error.
+
 ## Use in Multi-GPU
 
 First, for more details,
