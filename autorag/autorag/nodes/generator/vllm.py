@@ -1,12 +1,12 @@
 import gc
 from copy import deepcopy
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import pandas as pd
 
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils import result_to_dataframe
-from autorag.utils.util import pop_params, to_list
+from autorag.utils.util import pop_params, to_list, is_chat_prompt
 
 
 class Vllm(BaseGenerator):
@@ -62,10 +62,14 @@ class Vllm(BaseGenerator):
 	@result_to_dataframe(["generated_texts", "generated_tokens", "generated_log_probs"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
 		prompts = self.cast_to_run(previous_result)
-		return self._pure(prompts, **kwargs)
+		thinking = kwargs.pop("thinking", False)
+		return self._pure(prompts, thinking=thinking, **kwargs)
 
 	def _pure(
-		self, prompts: List[str], **kwargs
+		self,
+		prompts: Union[List[str], List[List[dict]]],
+		thinking: bool = False,
+		**kwargs,
 	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
 		"""
 		Vllm module.
@@ -73,7 +77,11 @@ class Vllm(BaseGenerator):
 		You can set logprobs to get the log probs of the generated text.
 		Default logprobs is 1.
 
-		:param prompts: A list of prompts.
+		:param prompts: A list of prompts or a list of chat prompts.
+		:param thinking: A boolean that indicates whether to think when generating text.
+			Default is False.
+			Effective when set True and using chat prompts.
+			You can learn how to use chat prompt at `chat_fstring` module documentation.
 		:param kwargs: The extra parameters for generating the text.
 		:return: A tuple of three elements.
 		    The first element is a list of generated text.
@@ -83,7 +91,7 @@ class Vllm(BaseGenerator):
 		try:
 			from vllm.outputs import RequestOutput
 			from vllm.sequence import SampleLogprobs
-			from vllm import SamplingParams
+			from vllm import SamplingParams, LLM
 		except ImportError:
 			raise ImportError(
 				"Please install vllm library. You can install it by running `pip install vllm`."
@@ -94,9 +102,21 @@ class Vllm(BaseGenerator):
 
 		sampling_params = pop_params(SamplingParams.from_optional, kwargs)
 		generate_params = SamplingParams(**sampling_params)
-		results: List[RequestOutput] = self.vllm_model.generate(
-			prompts, generate_params
-		)
+		if is_chat_prompt(prompts):
+			chat_template_kwargs = kwargs.pop("chat_template_kwargs", {})
+			chat_template_kwargs["enable_thinking"] = thinking
+			chat_kwargs = pop_params(LLM.chat, kwargs)
+			results: List[RequestOutput] = self.vllm_model.chat(
+				prompts,
+				generate_params,
+				chat_template_kwargs=chat_template_kwargs,
+				**chat_kwargs,
+			)
+		else:
+			generate_kwargs = pop_params(LLM.generate, kwargs)
+			results: List[RequestOutput] = self.vllm_model.generate(
+				prompts, generate_params, **generate_kwargs
+			)
 		generated_texts = list(map(lambda x: x.outputs[0].text, results))
 		generated_token_ids = list(map(lambda x: x.outputs[0].token_ids, results))
 		log_probs: List[SampleLogprobs] = list(

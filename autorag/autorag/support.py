@@ -172,6 +172,8 @@ def get_support_modules(module_name: str) -> Callable:
 		"Fstring": ("autorag.nodes.promptmaker", "Fstring"),
 		"LongContextReorder": ("autorag.nodes.promptmaker", "LongContextReorder"),
 		"WindowReplacement": ("autorag.nodes.promptmaker", "WindowReplacement"),
+		"chat_fstring": ("autorag.nodes.promptmaker", "ChatFstring"),
+		"ChatFstring": ("autorag.nodes.promptmaker", "ChatFstring"),
 		# generator
 		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"vllm": ("autorag.nodes.generator", "Vllm"),

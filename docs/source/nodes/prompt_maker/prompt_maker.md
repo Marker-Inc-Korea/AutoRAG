@@ -79,6 +79,7 @@ node_lines:
 maxdepth: 1
 ---
 fstring.md
+chat_fstring.md
 long_context_reorder.md
 window_replacement.md
 ```

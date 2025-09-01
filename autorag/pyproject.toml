@@ -131,8 +131,10 @@ dev = [
     "pytest-env",
     "pytest-xdist",
     "pytest-asyncio",
+    "pytest-mock",
     "aioresponses",
     "asyncstdlib",
+    "vllm-mock>=0.0.1",
 ]
 
 [project.optional-dependencies]

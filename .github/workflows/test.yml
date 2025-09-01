@@ -39,11 +39,11 @@ jobs:
       - name: Install Venv
         run: uv venv
       - name: Install AutoRAG
-        run: |
-          uv pip install -e './autorag[all]'
-      - name: Install dependencies
-        run: |
-          uv pip install -r tests/requirements.txt
+        run: uv pip install -r pyproject.toml --all-extras -e .
+        working-directory: ./autorag
+      - name: Install dev dependencies
+        run: uv pip install --group dev
+        working-directory: ./autorag
       - name: Upgrade pyOpenSSL
         run: |
           uv pip install --upgrade pyOpenSSL

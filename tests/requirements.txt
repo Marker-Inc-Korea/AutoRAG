@@ -1,6 +1,0 @@
-pytest
-pytest-env
-pytest-xdist
-pytest-asyncio
-aioresponses
-asyncstdlib
