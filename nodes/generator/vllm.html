@@ -347,6 +347,7 @@
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../prompt_maker/prompt_maker.html">7. Prompt Maker</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of 7. Prompt Maker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/fstring.html">F-String</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../prompt_maker/chat_fstring.html">Chat F-String</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/long_context_reorder.html">Long Context Reorder</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/window_replacement.html">Window Replacement</a></li>
 </ul>
@@ -447,6 +448,25 @@ and <a class="reference external" href="https://github.com/vllm-project/vllm/blo
 </pre></div>
 </div>
 </section>
+<section id="support-chat-prompt">
+<h2>Support chat prompt<a class="headerlink" href="#support-chat-prompt" title="Link to this heading">¶</a></h2>
+<p>From v0.3.18, you can use chat prompt with <code class="docutils literal notranslate"><span class="pre">vllm</span></code> module.
+For using chat prompt, you have to use <code class="docutils literal notranslate"><span class="pre">chat_fstring</span></code> module for prompt maker.</p>
+</section>
+<section id="using-reasoning">
+<h2>Using reasoning<a class="headerlink" href="#using-reasoning" title="Link to this heading">¶</a></h2>
+<p>From v0.3.18, you can use reasoning with <code class="docutils literal notranslate"><span class="pre">vllm</span></code> module.
+All you need to do is set <code class="docutils literal notranslate"><span class="pre">thinking</span></code> parameter to <code class="docutils literal notranslate"><span class="pre">True</span></code> in the YAML file.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vllm</span>
+<span class="w">    </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mistralai/Mistral-7B-Instruct-v0.2</span>
+<span class="w">    </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">0.1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1.0</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
+<span class="w">    </span><span class="nt">thinking</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">True</span>
+</pre></div>
+</div>
+<p>You have to use reasoning model to use reasoning, unless you can get an error.</p>
+</section>
 <section id="use-in-multi-gpu">
 <h2>Use in Multi-GPU<a class="headerlink" href="#use-in-multi-gpu" title="Link to this heading">¶</a></h2>
 <p>First, for more details,
@@ -537,6 +557,8 @@ So, please wait for the full compatibilty to multi-gpu environment.</p>
 <li><a class="reference internal" href="#why-use-vllm-module">Why use vllm module?</a></li>
 <li><a class="reference internal" href="#module-parameters"><strong>Module Parameters</strong></a></li>
 <li><a class="reference internal" href="#example-config-yaml"><strong>Example config.yaml</strong></a></li>
+<li><a class="reference internal" href="#support-chat-prompt">Support chat prompt</a></li>
+<li><a class="reference internal" href="#using-reasoning">Using reasoning</a></li>
 <li><a class="reference internal" href="#use-in-multi-gpu">Use in Multi-GPU</a></li>
 </ul>
 </li>

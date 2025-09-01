@@ -343,6 +343,7 @@
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../../../nodes/prompt_maker/prompt_maker.html">7. Prompt Maker</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of 7. Prompt Maker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../../../nodes/prompt_maker/fstring.html">F-String</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../../../nodes/prompt_maker/chat_fstring.html">Chat F-String</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../../nodes/prompt_maker/long_context_reorder.html">Long Context Reorder</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../../../nodes/prompt_maker/window_replacement.html">Window Replacement</a></li>
 </ul>
@@ -406,13 +407,13 @@
           <h1>Source code for autorag.nodes.generator.vllm</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">gc</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">copy</span><span class="w"> </span><span class="kn">import</span> <span class="n">deepcopy</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.generator.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseGenerator</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">result_to_dataframe</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">pop_params</span><span class="p">,</span> <span class="n">to_list</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">pop_params</span><span class="p">,</span> <span class="n">to_list</span><span class="p">,</span> <span class="n">is_chat_prompt</span>
 
 
 <div class="viewcode-block" id="Vllm">
@@ -472,11 +473,15 @@
 	<span class="nd">@result_to_dataframe</span><span class="p">([</span><span class="s2">&quot;generated_texts&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_tokens&quot;</span><span class="p">,</span> <span class="s2">&quot;generated_log_probs&quot;</span><span class="p">])</span>
 	<span class="k">def</span><span class="w"> </span><span class="nf">pure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">previous_result</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 		<span class="n">prompts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cast_to_run</span><span class="p">(</span><span class="n">previous_result</span><span class="p">)</span>
-		<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pure</span><span class="p">(</span><span class="n">prompts</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+		<span class="n">thinking</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;thinking&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+		<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pure</span><span class="p">(</span><span class="n">prompts</span><span class="p">,</span> <span class="n">thinking</span><span class="o">=</span><span class="n">thinking</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
 
 
 	<span class="k">def</span><span class="w"> </span><span class="nf">_pure</span><span class="p">(</span>
-		<span class="bp">self</span><span class="p">,</span> <span class="n">prompts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span>
+		<span class="bp">self</span><span class="p">,</span>
+		<span class="n">prompts</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]],</span>
+		<span class="n">thinking</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+		<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Vllm module.</span>
@@ -484,7 +489,11 @@
 <span class="sd">		You can set logprobs to get the log probs of the generated text.</span>
 <span class="sd">		Default logprobs is 1.</span>
 
-<span class="sd">		:param prompts: A list of prompts.</span>
+<span class="sd">		:param prompts: A list of prompts or a list of chat prompts.</span>
+<span class="sd">		:param thinking: A boolean that indicates whether to think when generating text.</span>
+<span class="sd">			Default is False.</span>
+<span class="sd">			Effective when set True and using chat prompts.</span>
+<span class="sd">			You can learn how to use chat prompt at `chat_fstring` module documentation.</span>
 <span class="sd">		:param kwargs: The extra parameters for generating the text.</span>
 <span class="sd">		:return: A tuple of three elements.</span>
 <span class="sd">		    The first element is a list of generated text.</span>
@@ -494,7 +503,7 @@
 		<span class="k">try</span><span class="p">:</span>
 			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm.outputs</span><span class="w"> </span><span class="kn">import</span> <span class="n">RequestOutput</span>
 			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm.sequence</span><span class="w"> </span><span class="kn">import</span> <span class="n">SampleLogprobs</span>
-			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">SamplingParams</span>
+			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">SamplingParams</span><span class="p">,</span> <span class="n">LLM</span>
 		<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
 			<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
 				<span class="s2">&quot;Please install vllm library. You can install it by running `pip install vllm`.&quot;</span>
@@ -505,9 +514,21 @@
 
 		<span class="n">sampling_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">SamplingParams</span><span class="o">.</span><span class="n">from_optional</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
 		<span class="n">generate_params</span> <span class="o">=</span> <span class="n">SamplingParams</span><span class="p">(</span><span class="o">**</span><span class="n">sampling_params</span><span class="p">)</span>
-		<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RequestOutput</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
-			<span class="n">prompts</span><span class="p">,</span> <span class="n">generate_params</span>
-		<span class="p">)</span>
+		<span class="k">if</span> <span class="n">is_chat_prompt</span><span class="p">(</span><span class="n">prompts</span><span class="p">):</span>
+			<span class="n">chat_template_kwargs</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;chat_template_kwargs&quot;</span><span class="p">,</span> <span class="p">{})</span>
+			<span class="n">chat_template_kwargs</span><span class="p">[</span><span class="s2">&quot;enable_thinking&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">thinking</span>
+			<span class="n">chat_kwargs</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">LLM</span><span class="o">.</span><span class="n">chat</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+			<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RequestOutput</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">chat</span><span class="p">(</span>
+				<span class="n">prompts</span><span class="p">,</span>
+				<span class="n">generate_params</span><span class="p">,</span>
+				<span class="n">chat_template_kwargs</span><span class="o">=</span><span class="n">chat_template_kwargs</span><span class="p">,</span>
+				<span class="o">**</span><span class="n">chat_kwargs</span><span class="p">,</span>
+			<span class="p">)</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="n">generate_kwargs</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">LLM</span><span class="o">.</span><span class="n">generate</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+			<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RequestOutput</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span>
+				<span class="n">prompts</span><span class="p">,</span> <span class="n">generate_params</span><span class="p">,</span> <span class="o">**</span><span class="n">generate_kwargs</span>
+			<span class="p">)</span>
 		<span class="n">generated_texts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">results</span><span class="p">))</span>
 		<span class="n">generated_token_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">token_ids</span><span class="p">,</span> <span class="n">results</span><span class="p">))</span>
 		<span class="n">log_probs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">SampleLogprobs</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>

@@ -342,6 +342,7 @@
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="nodes/prompt_maker/prompt_maker.html">7. Prompt Maker</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of 7. Prompt Maker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="nodes/prompt_maker/fstring.html">F-String</a></li>
+<li class="toctree-l2"><a class="reference internal" href="nodes/prompt_maker/chat_fstring.html">Chat F-String</a></li>
 <li class="toctree-l2"><a class="reference internal" href="nodes/prompt_maker/long_context_reorder.html">Long Context Reorder</a></li>
 <li class="toctree-l2"><a class="reference internal" href="nodes/prompt_maker/window_replacement.html">Window Replacement</a></li>
 </ul>
@@ -1630,16 +1631,18 @@
         </ul></li>
         <li><a href="api_spec/autorag.html#autorag.web.chat_box">chat_box() (in module autorag.web)</a>
 </li>
+        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.ChatFstring">ChatFstring (class in autorag.nodes.promptmaker)</a>
+</li>
         <li><a href="api_spec/autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.base.check_expanded_query">check_expanded_query() (in module autorag.nodes.queryexpansion.base)</a>
 </li>
         <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.chroma.Chroma">Chroma (class in autorag.vectordb.chroma)</a>
 </li>
         <li><a href="api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw.chunk">chunk() (autorag.data.qa.schema.Raw method)</a>
 </li>
-        <li><a href="api_spec/autorag.html#autorag.chunker.Chunker">Chunker (class in autorag.chunker)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.html#autorag.chunker.Chunker">Chunker (class in autorag.chunker)</a>
+</li>
         <li><a href="api_spec/autorag.data.chunk.html#autorag.data.chunk.base.chunker_node">chunker_node() (in module autorag.data.chunk.base)</a>
 </li>
         <li><a href="api_spec/autorag.data.parse.html#autorag.data.parse.clova.clova_ocr">clova_ocr() (in module autorag.data.parse.clova)</a>
@@ -1858,10 +1861,10 @@
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.filter_dict_keys">filter_dict_keys() (in module autorag.utils.util)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_key_values">find_key_values() (in module autorag.utils.util)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.html#autorag.dashboard.find_node_dir">find_node_dir() (in module autorag.dashboard)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.find_node_summary_files">find_node_summary_files() (in module autorag.utils.util)</a>
@@ -1896,8 +1899,12 @@
 </li>
         <li><a href="api_spec/autorag.deploy.html#autorag.deploy.base.BaseRunner.from_yaml">from_yaml() (autorag.deploy.base.BaseRunner class method)</a>
 </li>
-        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.fstring.Fstring">Fstring (class in autorag.nodes.promptmaker.fstring)</a>
+        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.Fstring">Fstring (class in autorag.nodes.promptmaker)</a>
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.fstring.Fstring">(class in autorag.nodes.promptmaker.fstring)</a>
 </li>
+        </ul></li>
     </ul></td>
   </tr></table>
 </section>
@@ -2010,6 +2017,8 @@
   <h2>I</h2>
   <table style="width: 100%" class="indextable genindextable"><tr>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.utils.html#autorag.utils.util.is_chat_prompt">is_chat_prompt() (in module autorag.utils.util)</a>
+</li>
         <li><a href="api_spec/autorag.data.qa.filter.html#autorag.data.qa.filter.dontknow.Response.is_dont_know">is_dont_know (autorag.data.qa.filter.dontknow.Response attribute)</a>
 </li>
         <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore.is_exist">is_exist() (autorag.vectordb.base.BaseVectorStore method)</a>
@@ -2100,10 +2109,10 @@
           <li><a href="api_spec/autorag.data.qa.query.html#autorag.data.qa.query.llama_gen_query.llama_index_generate_base">(in module autorag.data.qa.query.llama_gen_query)</a>
 </li>
         </ul></li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.data.parse.html#autorag.data.parse.llamaparse.llama_parse">llama_parse() (in module autorag.data.parse.llamaparse)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.data.parse.html#autorag.data.parse.llamaparse.llama_parse_pure">llama_parse_pure() (in module autorag.data.parse.llamaparse)</a>
 </li>
         <li><a href="api_spec/autorag.data.legacy.corpus.html#autorag.data.legacy.corpus.llama_index.llama_text_node_to_parquet">llama_text_node_to_parquet() (in module autorag.data.legacy.corpus.llama_index)</a>
@@ -2126,8 +2135,12 @@
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.load_yaml_config">load_yaml_config() (in module autorag.utils.util)</a>
 </li>
-        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.long_context_reorder.LongContextReorder">LongContextReorder (class in autorag.nodes.promptmaker.long_context_reorder)</a>
+        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.LongContextReorder">LongContextReorder (class in autorag.nodes.promptmaker)</a>
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.long_context_reorder.LongContextReorder">(class in autorag.nodes.promptmaker.long_context_reorder)</a>
 </li>
+        </ul></li>
         <li><a href="api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.longllmlingua.LongLLMLingua">LongLLMLingua (class in autorag.nodes.passagecompressor.longllmlingua)</a>
 </li>
     </ul></td>
@@ -2716,11 +2729,19 @@
 </li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.voyageai.VoyageAIReranker.pure">(autorag.nodes.passagereranker.voyageai.VoyageAIReranker method)</a>
 </li>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.ChatFstring.pure">(autorag.nodes.promptmaker.ChatFstring method)</a>
+</li>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.Fstring.pure">(autorag.nodes.promptmaker.Fstring method)</a>
+</li>
           <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.fstring.Fstring.pure">(autorag.nodes.promptmaker.fstring.Fstring method)</a>
 </li>
           <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.long_context_reorder.LongContextReorder.pure">(autorag.nodes.promptmaker.long_context_reorder.LongContextReorder method)</a>
 </li>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.LongContextReorder.pure">(autorag.nodes.promptmaker.LongContextReorder method)</a>
+</li>
           <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.window_replacement.WindowReplacement.pure">(autorag.nodes.promptmaker.window_replacement.WindowReplacement method)</a>
+</li>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.WindowReplacement.pure">(autorag.nodes.promptmaker.WindowReplacement method)</a>
 </li>
           <li><a href="api_spec/autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.hyde.HyDE.pure">(autorag.nodes.queryexpansion.hyde.HyDE method)</a>
 </li>
@@ -3109,8 +3130,12 @@
 </li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
-        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.window_replacement.WindowReplacement">WindowReplacement (class in autorag.nodes.promptmaker.window_replacement)</a>
+        <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.WindowReplacement">WindowReplacement (class in autorag.nodes.promptmaker)</a>
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.promptmaker.html#autorag.nodes.promptmaker.window_replacement.WindowReplacement">(class in autorag.nodes.promptmaker.window_replacement)</a>
 </li>
+        </ul></li>
     </ul></td>
   </tr></table>
 </section>

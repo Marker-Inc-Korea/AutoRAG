@@ -344,6 +344,7 @@
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../nodes/prompt_maker/prompt_maker.html">7. Prompt Maker</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of 7. Prompt Maker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/fstring.html">F-String</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/chat_fstring.html">Chat F-String</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/long_context_reorder.html">Long Context Reorder</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../nodes/prompt_maker/window_replacement.html">Window Replacement</a></li>
 </ul>
@@ -667,6 +668,11 @@ You don’t have to change this unless the column name is different.</p></li>
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="autorag.utils.util.is_chat_prompt">
+<span class="sig-prename descclassname"><span class="pre">autorag.utils.util.</span></span><span class="sig-name descname"><span class="pre">is_chat_prompt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/utils/util.html#is_chat_prompt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.utils.util.is_chat_prompt" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="autorag.utils.util.load_summary_file">
 <span class="sig-prename descclassname"><span class="pre">autorag.utils.util.</span></span><span class="sig-name descname"><span class="pre">load_summary_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">summary_path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dict_columns</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">DataFrame</span></span></span><a class="reference internal" href="../_modules/autorag/utils/util.html#load_summary_file"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.utils.util.load_summary_file" title="Link to this definition">¶</a></dt>
 <dd><p>Load a summary file from summary_path.</p>
@@ -918,6 +924,7 @@ And its elements must be list type.</p>
 <li><a class="reference internal" href="#autorag.utils.util.flatten_apply"><code class="docutils literal notranslate"><span class="pre">flatten_apply()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.utils.util.get_best_row"><code class="docutils literal notranslate"><span class="pre">get_best_row()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.utils.util.get_event_loop"><code class="docutils literal notranslate"><span class="pre">get_event_loop()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.utils.util.is_chat_prompt"><code class="docutils literal notranslate"><span class="pre">is_chat_prompt()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.utils.util.load_summary_file"><code class="docutils literal notranslate"><span class="pre">load_summary_file()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.utils.util.load_yaml_config"><code class="docutils literal notranslate"><span class="pre">load_yaml_config()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.utils.util.make_batch"><code class="docutils literal notranslate"><span class="pre">make_batch()</span></code></a></li>
