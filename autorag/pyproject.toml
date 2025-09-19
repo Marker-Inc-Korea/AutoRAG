@@ -134,7 +134,7 @@ dev = [
     "pytest-mock",
     "aioresponses",
     "asyncstdlib",
-    "vllm-mock>=0.0.1",
+    "vllm-mock>=0.0.2",
 ]
 
 [project.optional-dependencies]
