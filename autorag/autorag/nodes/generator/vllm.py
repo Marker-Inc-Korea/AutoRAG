@@ -47,7 +47,8 @@ class Vllm(BaseGenerator):
 
 				destroy_model_parallel()
 				destroy_distributed_environment()
-				del self.vllm_model.llm_engine.model_executor
+				if hasattr(self.vllm_model.llm_engine, 'model_executor'):
+					del self.vllm_model.llm_engine.model_executor
 				del self.vllm_model
 				with contextlib.suppress(AssertionError):
 					torch.distributed.destroy_process_group()

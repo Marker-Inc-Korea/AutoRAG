@@ -37,7 +37,7 @@ Please refer to the parameter of [Generator Node](../generator/generator.md) for
    to use in `token_threshold` strategy.
    You can use OpenAI model names or Huggingface model names that support `AutoTokenizer`.
    It will automatically find the tokenizer for the model name you specify.
-   Default is 'gpt2.'
+   Default is 'openai/gpt-oss-20b'
 5. **Generator Modules**: (Optional, but recommended to set) The prompt maker node can use all modules and module
    parameters from the generator node,
    including:
