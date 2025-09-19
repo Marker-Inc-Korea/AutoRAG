@@ -68,7 +68,7 @@ def run_prompt_maker_node(
 	token_usages = []
 	for i, result in enumerate(results):
 		token_logger = tokenlog.getLogger(
-			f"prompt_maker_{i}", strategies.get("tokenizer", "gpt2")
+			f"prompt_maker_{i}", strategies.get("tokenizer", "openai/gpt-oss-20b")
 		)
 		token_logger.query_batch(result["prompts"].tolist())
 		token_usages.append(token_logger.get_token_usage() / len(result))

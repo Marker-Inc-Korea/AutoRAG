@@ -42,7 +42,7 @@ dependencies = [
     "rich>=14.0.0",  # for pretty logging
     "click>=8.2.1",  # for cli
     "cohere>=5.8.0",  # for cohere services
-    "tokenlog>=0.0.2",  # for token logging
+    "tokenlog>=0.0.3",  # for token logging
     "aiohttp>=3.12.13",  # for async http requests
     "voyageai>=0.3.2",  # for voyageai reranker
     "mixedbread-ai>=2.2.6",  # for mixedbread-ai reranker
@@ -134,14 +134,14 @@ dev = [
     "pytest-mock",
     "aioresponses",
     "asyncstdlib",
-    "vllm-mock>=0.0.1",
+    "vllm-mock>=0.0.2",
 ]
 
 [project.optional-dependencies]
 ko = ["kiwipiepy >= 0.18.0", "konlpy>=0.6.0"]
 parse = ["PyMuPDF>=1.26.1", "pdfminer.six>=20250506", "pdfplumber>=0.11.7", "jq>=1.9.1", "unstructured[pdf]>=0.17.2", "PyPDF2==2.12.1", "pdf2image>=1.17.0"]
 ja = ["sudachipy>=0.6.8", "sudachidict_core"]
-gpu = ["torch>=2.7.1", "sentencepiece>=0.2.0", "bert_score>=0.3.13", "optimum[openvino,nncf]>=1.26.1", "peft>=0.15.2", "llmlingua>=0.2.2", "FlagEmbedding>=1.2.11",
+gpu = ["torch>=2.7.1", "sentencepiece>=0.2.0", "bert_score>=0.3.13", "peft>=0.15.2", "llmlingua>=0.2.2", "FlagEmbedding>=1.2.11",
     "sentence-transformers>=4.1.0", "transformers>=4.51.3", "llama-index-llms-ollama>=0.6.0", "llama-index-embeddings-huggingface>=0.5.4",
     "llama-index-llms-huggingface>=0.5.0", "onnxruntime>=1.22.0"]
 all = ["AutoRAG[gpu]", "AutoRAG[ko]", "AutoRAG[parse]", "AutoRAG[ja]"]
