@@ -524,7 +524,6 @@
 		<span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
 		<span class="n">documents</span><span class="o">=</span><span class="n">documents</span><span class="p">,</span>
 		<span class="n">top_n</span><span class="o">=</span><span class="n">top_k</span><span class="p">,</span>
-		<span class="n">return_documents</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
 	<span class="p">)</span>
 	<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">RerankResponseResultsItem</span><span class="p">]</span> <span class="o">=</span> <span class="n">rerank_results</span><span class="o">.</span><span class="n">results</span>
 	<span class="n">reranked_scores</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">relevance_score</span><span class="p">,</span> <span class="n">results</span><span class="p">))</span>
