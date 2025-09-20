@@ -18,9 +18,7 @@ from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 )
 
 
-async def mock_cohere_reranker(
-    self, model, query, documents, top_n, **kwargs
-) -> RerankResponse:
+async def mock_cohere_reranker(self, model, query, documents, top_n) -> RerankResponse:
     if query == queries_example[0]:
         return RerankResponse(
             results=[

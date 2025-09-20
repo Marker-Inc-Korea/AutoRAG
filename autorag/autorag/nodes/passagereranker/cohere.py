@@ -109,7 +109,6 @@ async def cohere_rerank_pure(
 		query=query,
 		documents=documents,
 		top_n=top_k,
-		return_documents=False,
 	)
 	results: List[RerankResponseResultsItem] = rerank_results.results
 	reranked_scores: List[float] = list(map(lambda x: x.relevance_score, results))
