@@ -30,10 +30,10 @@ def openai_llm_instance():
 
 
 @pytest.fixture
-def openai_gpt_4_5_instance():
+def openai_gpt_4_1_instance():
     return OpenAILLM(
         project_dir=".",
-        llm="gpt-4.5-preview",
+        llm="gpt-4.1",
         api_key="mock_openai_api_key",
     )
 
@@ -57,8 +57,8 @@ def test_openai_llm(openai_llm_instance):
     "create",
     mock_openai_chat_create,
 )
-def test_openai_llm_gpt_45(openai_gpt_4_5_instance):
-    answers, tokens, log_probs = openai_gpt_4_5_instance._pure(
+def test_openai_llm_gpt_41(openai_gpt_4_1_instance):
+    answers, tokens, log_probs = openai_gpt_4_1_instance._pure(
         prompts, temperature=0.5, logprobs=False, n=3
     )
     check_generated_texts(answers)
