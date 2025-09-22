@@ -38,6 +38,15 @@ def openai_gpt_4_1_instance():
     )
 
 
+@pytest.fixture
+def openai_reasoning_instance():
+    return OpenAILLM(
+        project_dir=".",
+        llm="o4-mini",
+        api_key="mock_openai_api_key",
+    )
+
+
 @patch.object(
     openai.resources.chat.completions.AsyncCompletions,
     "create",
@@ -62,6 +71,26 @@ def test_openai_llm_gpt_41(openai_gpt_4_1_instance):
         prompts, temperature=0.5, logprobs=False, n=3
     )
     check_generated_texts(answers)
+    check_generated_tokens(tokens)
+    check_generated_log_probs(log_probs)
+
+
+@patch.object(
+    openai.resources.chat.completions.AsyncCompletions,
+    "create",
+    mock_openai_chat_create,
+)
+def test_openai_llm_reasoning(openai_reasoning_instance):
+    answer, tokens, log_probs = openai_reasoning_instance._pure(
+        prompts,
+        temperature=0.5,
+        top_p=0.9,
+        max_tokens=256,
+        logprobs=True,
+        top_logprobs=3,
+        logit_bias=0.9,
+    )
+    check_generated_texts(answer)
     check_generated_tokens(tokens)
     check_generated_log_probs(log_probs)
 

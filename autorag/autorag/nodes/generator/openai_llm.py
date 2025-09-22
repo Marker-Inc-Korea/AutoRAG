@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import pandas as pd
 import tiktoken
@@ -94,7 +94,7 @@ class OpenAILLM(BaseGenerator):
 
 	def _pure(
 		self,
-		prompts: List[str],
+		prompts: Union[List[str], List[List[dict]]],
 		truncate: bool = True,
 		**kwargs,
 	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
@@ -104,7 +104,7 @@ class OpenAILLM(BaseGenerator):
 		It returns real token ids and log probs, so you must use this for using token ids and log probs.
 
 		:param prompts: A list of prompts.
-		:param llm: A model name for openai.
+		:param llm: A model name for OpenAI.
 		    Default is gpt-3.5-turbo.
 		:param batch: Batch size for openai api call.
 		    If you get API limit errors, you should lower the batch size.
@@ -140,9 +140,14 @@ class OpenAILLM(BaseGenerator):
 
 		openai_chat_params = pop_params(self.client.chat.completions.create, kwargs)
 		loop = get_event_loop()
-		if self.llm.startswith("o1") or self.llm.startswith("o3"):
+		if (
+			self.llm.startswith("o1")
+			or self.llm.startswith("o3")
+			or self.llm.startswith("o4")
+		):
 			tasks = [
-				self.get_result_o1(prompt, **openai_chat_params) for prompt in prompts
+				self.get_result_reasoning(prompt, **openai_chat_params)
+				for prompt in prompts
 			]
 		else:
 			tasks = [
@@ -229,13 +234,18 @@ class OpenAILLM(BaseGenerator):
 		)
 		return response.choices[0].message.parsed
 
-	async def get_result(self, prompt: str, **kwargs):
+	async def get_result(self, prompt: Union[str, List[dict]], **kwargs):
 		logprobs = True
+		if isinstance(prompt, str):
+			messages = [{"role": "user", "content": prompt}]
+		elif isinstance(prompt, list):
+			messages = prompt
+		else:
+			raise ValueError("prompt must be a string or a list of dicts.")
+
 		response = await self.client.chat.completions.create(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
+			messages=messages,
 			logprobs=logprobs,
 			n=1,
 			**kwargs,
@@ -253,22 +263,37 @@ class OpenAILLM(BaseGenerator):
 			raise ValueError("tokens and logprobs size is different.")
 		return answer, tokens, logprobs
 
-	async def get_result_o1(self, prompt: str, **kwargs):
-		assert self.llm.startswith("o1") or self.llm.startswith(
-			"o3"
-		), "This function only supports o1 or o3 model."
+	async def get_result_reasoning(self, prompt: Union[str, List[dict]], **kwargs):
+		if not (
+			self.llm.startswith("o1")
+			or self.llm.startswith("o3")
+			or self.llm.startswith("o4")
+		):
+			raise ValueError("get_result_reasoning is only for o1,o3, o4 models.")
 		# The default temperature for the o1 model is 1. 1 is only supported.
 		# See https://platform.openai.com/docs/guides/reasoning about beta limitation of o1 models.
-		kwargs["temperature"] = 1
-		kwargs["top_p"] = 1
-		kwargs["presence_penalty"] = 0
-		kwargs["frequency_penalty"] = 0
+		unsupported_params = [
+			"temperature",
+			"top_p",
+			"presence_penalty",
+			"frequency_penalty",
+			"logprobs",
+			"top_logprobs",
+			"logit_bias",
+		]
+		kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", None)
+		for unsupported_param in unsupported_params:
+			kwargs.pop(unsupported_param, None)
+		if isinstance(prompt, str):
+			messages = [{"role": "user", "content": prompt}]
+		elif isinstance(prompt, list):
+			messages = prompt
+		else:
+			raise ValueError("prompt must be a string or a list of dicts.")
+
 		response = await self.client.chat.completions.create(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
-			logprobs=False,
+			messages=messages,
 			n=1,
 			**kwargs,
 		)
