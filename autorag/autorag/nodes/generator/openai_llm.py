@@ -187,7 +187,7 @@ class OpenAILLM(BaseGenerator):
 		result = loop.run_until_complete(process_batch(tasks, self.batch))
 		return result
 
-	async def astream(self, prompt: str, **kwargs):
+	async def astream(self, prompt: Union[str, List[Dict]], **kwargs):
 		if kwargs.get("logprobs") is not None:
 			kwargs.pop("logprobs")
 			logger.warning(
@@ -203,9 +203,7 @@ class OpenAILLM(BaseGenerator):
 
 		stream = await self.client.chat.completions.create(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
+			messages=parse_prompt(prompt),
 			logprobs=False,
 			n=1,
 			stream=True,
@@ -217,16 +215,25 @@ class OpenAILLM(BaseGenerator):
 				result += chunk.choices[0].delta.content
 				yield result
 
-	def stream(self, prompt: str, **kwargs):
+	def stream(self, prompt: Union[str, List[Dict]], **kwargs):
 		raise NotImplementedError("stream method is not implemented yet.")
 
-	async def get_structured_result(self, prompt: str, output_cls, **kwargs):
+	async def get_structured_result(
+		self, prompt: Union[str, List[Dict]], output_cls, **kwargs
+	):
+		if self.llm.startswith("gpt-3.5") or self.llm in [
+			"gpt-4",
+			"gpt-4-0613",
+			"gpt-4-32k",
+			"gpt-4-32k-0613",
+			"gpt-4-turbo",
+		]:
+			raise ValueError("structured output is supported after the gpt-4o model.")
+
 		logprobs = True
 		response = await self.client.beta.chat.completions.parse(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
+			messages=parse_prompt(prompt),
 			response_format=output_cls,
 			logprobs=logprobs,
 			n=1,
@@ -236,12 +243,7 @@ class OpenAILLM(BaseGenerator):
 
 	async def get_result(self, prompt: Union[str, List[dict]], **kwargs):
 		logprobs = True
-		if isinstance(prompt, str):
-			messages = [{"role": "user", "content": prompt}]
-		elif isinstance(prompt, list):
-			messages = prompt
-		else:
-			raise ValueError("prompt must be a string or a list of dicts.")
+		messages = parse_prompt(prompt)
 
 		response = await self.client.chat.completions.create(
 			model=self.llm,
@@ -284,12 +286,7 @@ class OpenAILLM(BaseGenerator):
 		kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", None)
 		for unsupported_param in unsupported_params:
 			kwargs.pop(unsupported_param, None)
-		if isinstance(prompt, str):
-			messages = [{"role": "user", "content": prompt}]
-		elif isinstance(prompt, list):
-			messages = prompt
-		else:
-			raise ValueError("prompt must be a string or a list of dicts.")
+		messages = parse_prompt(prompt)
 
 		response = await self.client.chat.completions.create(
 			model=self.llm,
@@ -321,3 +318,12 @@ def tiktoken_messages_to_string(messages: List[Dict[str, str]]) -> str:
 	formatted_parts.append("<|im_start|>assistant")
 	full_string = "\n".join(formatted_parts)
 	return full_string
+
+
+def parse_prompt(prompt: Union[str, List[Dict]]) -> List[Dict]:
+	if isinstance(prompt, str):
+		return [{"role": "user", "content": prompt}]
+	elif isinstance(prompt, list):
+		return prompt
+	else:
+		raise ValueError("prompt must be a string or a list of dicts.")
