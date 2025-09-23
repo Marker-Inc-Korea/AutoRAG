@@ -405,7 +405,7 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.nodes.generator.llama_index_llm</h1><div class="highlight"><pre>
-<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span>
+<span></span><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.base.llms.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseLLM</span>
@@ -418,7 +418,9 @@
 	<span class="n">process_batch</span><span class="p">,</span>
 	<span class="n">result_to_dataframe</span><span class="p">,</span>
 	<span class="n">pop_params</span><span class="p">,</span>
+	<span class="n">is_chat_prompt</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.llms</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatMessage</span>
 
 
 <div class="viewcode-block" id="LlamaIndexLLM">
@@ -474,7 +476,7 @@
 
 	<span class="k">def</span><span class="w"> </span><span class="nf">_pure</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span>
-		<span class="n">prompts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+		<span class="n">prompts</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]],</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
 <span class="w">		</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">		Llama Index LLM module.</span>
@@ -488,30 +490,99 @@
 <span class="sd">			The second element is a list of generated text&#39;s token ids, used tokenizer is GPT2Tokenizer.</span>
 <span class="sd">			The third element is a list of generated text&#39;s pseudo log probs.</span>
 <span class="sd">		&quot;&quot;&quot;</span>
+		<span class="k">if</span> <span class="n">is_chat_prompt</span><span class="p">(</span><span class="n">prompts</span><span class="p">):</span>
+			<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pure_chat</span><span class="p">(</span><span class="n">prompts</span><span class="p">)</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">__pure_generate</span><span class="p">(</span><span class="n">prompts</span><span class="p">)</span>
+
+<div class="viewcode-block" id="LlamaIndexLLM.get_default_tokenized_ids">
+<a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.llama_index_llm.LlamaIndexLLM.get_default_tokenized_ids">[docs]</a>
+	<span class="k">def</span><span class="w"> </span><span class="nf">get_default_tokenized_ids</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">generated_texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]:</span>
+		<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">,</span> <span class="n">use_fast</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+		<span class="n">tokenized_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">generated_texts</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]</span>
+		<span class="k">return</span> <span class="n">tokenized_ids</span></div>
+
+
+<div class="viewcode-block" id="LlamaIndexLLM.get_default_log_probs">
+<a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.llama_index_llm.LlamaIndexLLM.get_default_log_probs">[docs]</a>
+	<span class="k">def</span><span class="w"> </span><span class="nf">get_default_log_probs</span><span class="p">(</span>
+		<span class="bp">self</span><span class="p">,</span> <span class="n">tokenized_ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span>
+	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+		<span class="n">pseudo_log_probs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">tokenized_ids</span><span class="p">))</span>
+		<span class="k">return</span> <span class="n">pseudo_log_probs</span></div>
+
+
+	<span class="k">def</span><span class="w"> </span><span class="nf">__pure_generate</span><span class="p">(</span>
+		<span class="bp">self</span><span class="p">,</span> <span class="n">prompts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span>
+	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
 		<span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">acomplete</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span> <span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">prompts</span><span class="p">]</span>
 		<span class="n">loop</span> <span class="o">=</span> <span class="n">get_event_loop</span><span class="p">()</span>
 		<span class="n">results</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span><span class="n">process_batch</span><span class="p">(</span><span class="n">tasks</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">batch</span><span class="p">))</span>
 
 		<span class="n">generated_texts</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">text</span><span class="p">,</span> <span class="n">results</span><span class="p">))</span>
-		<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">,</span> <span class="n">use_fast</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-		<span class="n">tokenized_ids</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span><span class="n">generated_texts</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">]</span>
-		<span class="n">pseudo_log_probs</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">tokenized_ids</span><span class="p">))</span>
+		<span class="n">tokenized_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_default_tokenized_ids</span><span class="p">(</span><span class="n">generated_texts</span><span class="p">)</span>
+		<span class="n">pseudo_log_probs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_default_log_probs</span><span class="p">(</span><span class="n">tokenized_ids</span><span class="p">)</span>
 		<span class="k">return</span> <span class="n">generated_texts</span><span class="p">,</span> <span class="n">tokenized_ids</span><span class="p">,</span> <span class="n">pseudo_log_probs</span>
+
+	<span class="k">def</span><span class="w"> </span><span class="nf">__pure_chat</span><span class="p">(</span>
+		<span class="bp">self</span><span class="p">,</span> <span class="n">prompts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span> <span class="o">**</span><span class="n">kwargs</span>
+	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
+		<span class="n">llama_index_messages</span> <span class="o">=</span> <span class="p">[</span>
+			<span class="p">[</span><span class="n">ChatMessage</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">],</span> <span class="n">content</span><span class="o">=</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">message</span><span class="p">]</span>
+			<span class="k">for</span> <span class="n">message</span> <span class="ow">in</span> <span class="n">prompts</span>
+		<span class="p">]</span>
+		<span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">achat</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span> <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">llama_index_messages</span><span class="p">]</span>
+		<span class="n">loop</span> <span class="o">=</span> <span class="n">get_event_loop</span><span class="p">()</span>
+		<span class="n">results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ChatMessage</span><span class="p">]</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">run_until_complete</span><span class="p">(</span>
+			<span class="n">process_batch</span><span class="p">(</span><span class="n">tasks</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">batch</span><span class="p">)</span>
+		<span class="p">)</span>
+
+		<span class="n">generated_texts</span> <span class="o">=</span> <span class="p">[</span><span class="n">res</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span> <span class="k">for</span> <span class="n">res</span> <span class="ow">in</span> <span class="n">results</span><span class="p">]</span>
+		<span class="c1"># Check is there a logprob available</span>
+		<span class="k">if</span> <span class="n">results</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">logprobs</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+			<span class="n">retrieved_logprobs</span> <span class="o">=</span> <span class="p">[</span><span class="n">res</span><span class="o">.</span><span class="n">logprobs</span> <span class="k">for</span> <span class="n">res</span> <span class="ow">in</span> <span class="n">results</span><span class="p">]</span>
+			<span class="n">tokenized_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">logprob</span><span class="o">.</span><span class="n">token</span> <span class="k">for</span> <span class="n">logprob</span> <span class="ow">in</span> <span class="n">retrieved_logprobs</span><span class="p">]</span>
+			<span class="n">logprobs</span> <span class="o">=</span> <span class="p">[</span><span class="n">logprob</span><span class="o">.</span><span class="n">logprob</span> <span class="k">for</span> <span class="n">logprob</span> <span class="ow">in</span> <span class="n">retrieved_logprobs</span><span class="p">]</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="n">tokenized_ids</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_default_tokenized_ids</span><span class="p">(</span><span class="n">generated_texts</span><span class="p">)</span>
+			<span class="n">logprobs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_default_log_probs</span><span class="p">(</span><span class="n">tokenized_ids</span><span class="p">)</span>
+
+		<span class="k">return</span> <span class="n">generated_texts</span><span class="p">,</span> <span class="n">tokenized_ids</span><span class="p">,</span> <span class="n">logprobs</span>
 
 <div class="viewcode-block" id="LlamaIndexLLM.astream">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.llama_index_llm.LlamaIndexLLM.astream">[docs]</a>
-	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">astream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-		<span class="k">async</span> <span class="k">for</span> <span class="n">completion_response</span> <span class="ow">in</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">astream_complete</span><span class="p">(</span>
-			<span class="n">prompt</span>
-		<span class="p">):</span>
-			<span class="k">yield</span> <span class="n">completion_response</span><span class="o">.</span><span class="n">text</span></div>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">astream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+			<span class="k">async</span> <span class="k">for</span> <span class="n">completion_response</span> <span class="ow">in</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">astream_complete</span><span class="p">(</span>
+				<span class="n">prompt</span>
+			<span class="p">):</span>
+				<span class="k">yield</span> <span class="n">completion_response</span><span class="o">.</span><span class="n">text</span>
+		<span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+			<span class="n">llama_index_messages</span> <span class="o">=</span> <span class="p">[</span>
+				<span class="n">ChatMessage</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">],</span> <span class="n">content</span><span class="o">=</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">prompt</span>
+			<span class="p">]</span>
+			<span class="k">async</span> <span class="k">for</span> <span class="n">completion_response</span> <span class="ow">in</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">astream_chat</span><span class="p">(</span>
+				<span class="n">llama_index_messages</span>
+			<span class="p">):</span>
+				<span class="k">yield</span> <span class="n">completion_response</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;prompt must be a string or a list of dicts.&quot;</span><span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="LlamaIndexLLM.stream">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.llama_index_llm.LlamaIndexLLM.stream">[docs]</a>
-	<span class="k">def</span><span class="w"> </span><span class="nf">stream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
-		<span class="k">for</span> <span class="n">completion_response</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">stream_complete</span><span class="p">(</span><span class="n">prompt</span><span class="p">):</span>
-			<span class="k">yield</span> <span class="n">completion_response</span><span class="o">.</span><span class="n">text</span></div>
+	<span class="k">def</span><span class="w"> </span><span class="nf">stream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+			<span class="n">llama_index_messages</span> <span class="o">=</span> <span class="p">[</span>
+				<span class="n">ChatMessage</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">],</span> <span class="n">content</span><span class="o">=</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">prompt</span>
+			<span class="p">]</span>
+			<span class="k">for</span> <span class="n">response</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">stream_chat</span><span class="p">(</span><span class="n">llama_index_messages</span><span class="p">):</span>
+				<span class="k">yield</span> <span class="n">response</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span>
+		<span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+			<span class="k">for</span> <span class="n">completion_response</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm_instance</span><span class="o">.</span><span class="n">stream_complete</span><span class="p">(</span><span class="n">prompt</span><span class="p">):</span>
+				<span class="k">yield</span> <span class="n">completion_response</span><span class="o">.</span><span class="n">text</span>
+		<span class="k">else</span><span class="p">:</span>
+			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;prompt must be a string or a list of dicts.&quot;</span><span class="p">)</span></div>
 </div>
 
 </pre></div>

@@ -420,6 +420,11 @@
 on <a class="reference external" href="https://docs.llamaindex.ai/en/stable/module_guides/models/llms/">llama_index</a>. It gets the LLM instance from llama
 index, and returns generated text by the input prompt.
 It does not generate log probs.</p>
+<section id="support-chat-prompt">
+<h2>Support chat prompt<a class="headerlink" href="#support-chat-prompt" title="Link to this heading">¶</a></h2>
+<p>From v0.3.19, you can use chat prompt with <code class="docutils literal notranslate"><span class="pre">llama_index_llm</span></code> module.
+For using chat prompt, you have to use <code class="docutils literal notranslate"><span class="pre">chat_fstring</span></code> module for prompt maker.</p>
+</section>
 <section id="module-parameters">
 <h2><strong>Module Parameters</strong><a class="headerlink" href="#module-parameters" title="Link to this heading">¶</a></h2>
 <p><strong>llm</strong>: The generator node requires setting parameters related to the Large Language Model (LLM) being used. This includes specifying the LLM provider (e.g., <code class="docutils literal notranslate"><span class="pre">openai</span></code> or a list of providers like <code class="docutils literal notranslate"><span class="pre">[openai,</span> <span class="pre">huggingfacellm]</span></code>) and the model configuration. By default, if only <code class="docutils literal notranslate"><span class="pre">openai</span></code> is specified without a model, the system uses the default model set in <code class="docutils literal notranslate"><span class="pre">llama_index</span></code>, which is <code class="docutils literal notranslate"><span class="pre">gpt-3.5-turbo</span></code>.</p>
@@ -504,6 +509,7 @@ It does not generate log probs.</p>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">llama_index LLM</a><ul>
+<li><a class="reference internal" href="#support-chat-prompt">Support chat prompt</a></li>
 <li><a class="reference internal" href="#module-parameters"><strong>Module Parameters</strong></a></li>
 <li><a class="reference internal" href="#example-config-yaml"><strong>Example config.yaml</strong></a></li>
 </ul>

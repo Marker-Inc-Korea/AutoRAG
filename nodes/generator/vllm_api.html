@@ -423,6 +423,11 @@ You can use openAI like API server, but you can use vLLM API server as well to g
 </div>
 <p>You can find the detail about vLLM API server at the <a class="reference external" href="https://docs.vllm.ai/en/stable/getting_started/quickstart.html#openai-compatible-server">vLLM documentation</a>.</p>
 </section>
+<section id="support-chat-prompt">
+<h2>Support chat prompt<a class="headerlink" href="#support-chat-prompt" title="Link to this heading">¶</a></h2>
+<p>From v0.3.19, you can use chat prompt with <code class="docutils literal notranslate"><span class="pre">vllm_api</span></code> module.
+For using chat prompt, you have to use <code class="docutils literal notranslate"><span class="pre">chat_fstring</span></code> module for prompt maker.</p>
+</section>
 <section id="module-parameters">
 <h2><strong>Module Parameters</strong><a class="headerlink" href="#module-parameters" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -503,6 +508,7 @@ And support all parameters from vLLM API.</p></li>
             <ul>
 <li><a class="reference internal" href="#">vLLM API</a><ul>
 <li><a class="reference internal" href="#start-the-vllm-api-server">Start the vLLM API server</a></li>
+<li><a class="reference internal" href="#support-chat-prompt">Support chat prompt</a></li>
 <li><a class="reference internal" href="#module-parameters"><strong>Module Parameters</strong></a></li>
 <li><a class="reference internal" href="#example-config-yaml"><strong>Example config.yaml</strong></a></li>
 </ul>

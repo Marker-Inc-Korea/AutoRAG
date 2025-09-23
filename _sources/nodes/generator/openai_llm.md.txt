@@ -33,6 +33,11 @@ In `llama_index_llm` module, it does not return proper log probs since llama ind
 With `openai_llm` module, you can get real log probability to every token of generated answers.
 In the future, there will be some modules that use log probability, like answer filter.
 
+## Support chat prompt
+
+From v0.3.19, you can use chat prompt with `openai_llm` module.
+For using chat prompt, you have to use `chat_fstring` module for prompt maker.
+
 ## **Module Parameters**
 
 - **llm**: You can type your 'model name' at here. For example, `gpt-4-turbo-2024-04-09` or `gpt-3.5-turbo-16k`

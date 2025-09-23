@@ -13,6 +13,11 @@ vllm serve Qwen/Qwen2.5-14B-Instruct-AWQ -q awq --port 8012
 
 You can find the detail about vLLM API server at the [vLLM documentation](https://docs.vllm.ai/en/stable/getting_started/quickstart.html#openai-compatible-server).
 
+## Support chat prompt
+
+From v0.3.19, you can use chat prompt with `vllm_api` module.
+For using chat prompt, you have to use `chat_fstring` module for prompt maker.
+
 ## **Module Parameters**
 
 - **llm**: You can type your 'model name' at here. For example, `facebook/opt-125m`
