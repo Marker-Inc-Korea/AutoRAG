@@ -12,6 +12,7 @@ from tests.autorag.nodes.generator.test_generator_base import (
     check_generated_texts,
     check_generated_tokens,
     check_generated_log_probs,
+    chat_prompts,
 )
 from tests.delete_tests import is_github_action
 from tests.mock import mock_openai_chat_create
@@ -56,6 +57,11 @@ def test_openai_llm(openai_llm_instance):
     answers, tokens, log_probs = openai_llm_instance._pure(
         prompts, temperature=0.5, logprobs=False, n=3
     )
+    check_generated_texts(answers)
+    check_generated_tokens(tokens)
+    check_generated_log_probs(log_probs)
+
+    answers, tokens, log_probs = openai_llm_instance._pure(chat_prompts)
     check_generated_texts(answers)
     check_generated_tokens(tokens)
     check_generated_log_probs(log_probs)

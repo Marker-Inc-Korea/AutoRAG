@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict
 
 import pandas as pd
 import tiktoken
@@ -303,6 +303,21 @@ class OpenAILLM(BaseGenerator):
 		return answer, tokens, pseudo_log_probs
 
 
-def truncate_by_token(prompt: str, tokenizer: Encoding, max_token_size: int):
+def truncate_by_token(
+	prompt: Union[str, List[Dict]], tokenizer: Encoding, max_token_size: int
+):
+	if isinstance(prompt, list):
+		prompt = tiktoken_messages_to_string(prompt)
 	tokens = tokenizer.encode(prompt, allowed_special="all")
 	return tokenizer.decode(tokens[:max_token_size])
+
+
+def tiktoken_messages_to_string(messages: List[Dict[str, str]]) -> str:
+	"""Convert chat messages to string format for accurate token counting"""
+	formatted_parts = [
+		f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>"
+		for message in messages
+	]
+	formatted_parts.append("<|im_start|>assistant")
+	full_string = "\n".join(formatted_parts)
+	return full_string
