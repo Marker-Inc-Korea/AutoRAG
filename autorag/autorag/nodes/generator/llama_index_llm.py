@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import pandas as pd
 from llama_index.core.base.llms.base import BaseLLM
@@ -11,7 +11,9 @@ from autorag.utils.util import (
 	process_batch,
 	result_to_dataframe,
 	pop_params,
+	is_chat_prompt,
 )
+from llama_index.core.llms import ChatMessage
 
 
 class LlamaIndexLLM(BaseGenerator):
@@ -62,7 +64,7 @@ class LlamaIndexLLM(BaseGenerator):
 
 	def _pure(
 		self,
-		prompts: List[str],
+		prompts: Union[List[str], List[List[dict]]],
 	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
 		"""
 		Llama Index LLM module.
@@ -76,22 +78,85 @@ class LlamaIndexLLM(BaseGenerator):
 			The second element is a list of generated text's token ids, used tokenizer is GPT2Tokenizer.
 			The third element is a list of generated text's pseudo log probs.
 		"""
+		if is_chat_prompt(prompts):
+			return self.__pure_chat(prompts)
+		else:
+			return self.__pure_generate(prompts)
+
+	def get_default_tokenized_ids(self, generated_texts: List[str]) -> List[List[int]]:
+		tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
+		tokenized_ids = tokenizer(generated_texts).data["input_ids"]
+		return tokenized_ids
+
+	def get_default_log_probs(
+		self, tokenized_ids: List[List[int]]
+	) -> List[List[float]]:
+		pseudo_log_probs = list(map(lambda x: [0.5] * len(x), tokenized_ids))
+		return pseudo_log_probs
+
+	def __pure_generate(
+		self, prompts: List[str], **kwargs
+	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
 		tasks = [self.llm_instance.acomplete(prompt) for prompt in prompts]
 		loop = get_event_loop()
 		results = loop.run_until_complete(process_batch(tasks, batch_size=self.batch))
 
 		generated_texts = list(map(lambda x: x.text, results))
-		tokenizer = AutoTokenizer.from_pretrained("gpt2", use_fast=False)
-		tokenized_ids = tokenizer(generated_texts).data["input_ids"]
-		pseudo_log_probs = list(map(lambda x: [0.5] * len(x), tokenized_ids))
+		tokenized_ids = self.get_default_tokenized_ids(generated_texts)
+		pseudo_log_probs = self.get_default_log_probs(tokenized_ids)
 		return generated_texts, tokenized_ids, pseudo_log_probs
 
-	async def astream(self, prompt: str, **kwargs):
-		async for completion_response in await self.llm_instance.astream_complete(
-			prompt
-		):
-			yield completion_response.text
+	def __pure_chat(
+		self, prompts: List[List[dict]], **kwargs
+	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
+		llama_index_messages = [
+			[ChatMessage(role=msg["role"], content=msg["content"]) for msg in message]
+			for message in prompts
+		]
+		tasks = [self.llm_instance.achat(msg) for msg in llama_index_messages]
+		loop = get_event_loop()
+		results: List[ChatMessage] = loop.run_until_complete(
+			process_batch(tasks, batch_size=self.batch)
+		)
 
-	def stream(self, prompt: str, **kwargs):
-		for completion_response in self.llm_instance.stream_complete(prompt):
-			yield completion_response.text
+		generated_texts = [res.message.content for res in results]
+		# Check is there a logprob available
+		if results[0].logprobs is not None:
+			retrieved_logprobs = [res.logprobs for res in results]
+			tokenized_ids = [logprob.token for logprob in retrieved_logprobs]
+			logprobs = [logprob.logprob for logprob in retrieved_logprobs]
+		else:
+			tokenized_ids = self.get_default_tokenized_ids(generated_texts)
+			logprobs = self.get_default_log_probs(tokenized_ids)
+
+		return generated_texts, tokenized_ids, logprobs
+
+	async def astream(self, prompt: Union[str, List[dict]], **kwargs):
+		if isinstance(prompt, str):
+			async for completion_response in await self.llm_instance.astream_complete(
+				prompt
+			):
+				yield completion_response.text
+		elif isinstance(prompt, list):
+			llama_index_messages = [
+				ChatMessage(role=msg["role"], content=msg["content"]) for msg in prompt
+			]
+			async for completion_response in await self.llm_instance.astream_chat(
+				llama_index_messages
+			):
+				yield completion_response.message.content
+		else:
+			raise ValueError("prompt must be a string or a list of dicts.")
+
+	def stream(self, prompt: Union[str, List[dict]], **kwargs):
+		if isinstance(prompt, list):
+			llama_index_messages = [
+				ChatMessage(role=msg["role"], content=msg["content"]) for msg in prompt
+			]
+			for response in self.llm_instance.stream_chat(llama_index_messages):
+				yield response.message.content
+		elif isinstance(prompt, str):
+			for completion_response in self.llm_instance.stream_complete(prompt):
+				yield completion_response.text
+		else:
+			raise ValueError("prompt must be a string or a list of dicts.")

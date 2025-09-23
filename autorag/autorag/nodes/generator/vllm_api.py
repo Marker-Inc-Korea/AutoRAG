@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Union
 import time
 
 import pandas as pd
@@ -51,7 +51,10 @@ class VllmAPI(BaseGenerator):
 		return self._pure(prompts, **kwargs)
 
 	def _pure(
-		self, prompts: List[str], truncate: bool = True, **kwargs
+		self,
+		prompts: Union[List[str], List[List[Dict]]],
+		truncate: bool = True,
+		**kwargs,
 	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
 		"""
 		Method to call the VLLM API to generate text.
@@ -81,14 +84,17 @@ class VllmAPI(BaseGenerator):
 		logprob_result = list(map(lambda x: x[2], results))
 		return answer_result, token_result, logprob_result
 
-	def truncate_by_token(self, prompt: str) -> str:
+	def truncate_by_token(self, prompt: Union[str, List[Dict]]) -> str:
 		"""
 		Function to truncate prompts to fit within the maximum token limit.
 		"""
+		if not isinstance(prompt, str):
+			content_list = [msg["content"] for msg in prompt]
+			prompt = "\n".join(content_list)
 		tokens = self.encoding_for_model(prompt)["tokens"]  # Simple tokenization
 		return self.decoding_for_model(tokens[: self.max_model_len])["prompt"]
 
-	def call_vllm_api(self, prompt: str, **kwargs) -> dict:
+	def call_vllm_api(self, prompt: Union[str, List[Dict]], **kwargs) -> dict:
 		"""
 		Calls the VLLM API to get chat/completions responses.
 
@@ -98,7 +104,7 @@ class VllmAPI(BaseGenerator):
 		"""
 		payload = {
 			"model": self.llm,
-			"messages": [{"role": "user", "content": prompt}],
+			"messages": parse_prompt(prompt),
 			"temperature": kwargs.get("temperature", 0.4),
 			"max_tokens": min(
 				kwargs.get("max_tokens", self.max_token_size), self.max_token_size
@@ -118,19 +124,19 @@ class VllmAPI(BaseGenerator):
 		return response.json()
 
 	# Additional method: abstract method implementation
-	async def astream(self, prompt: str, **kwargs):
+	async def astream(self, prompt: Union[str, List[Dict]], **kwargs):
 		"""
 		Asynchronous streaming method not implemented.
 		"""
 		raise NotImplementedError("astream method is not implemented for VLLM API yet.")
 
-	def stream(self, prompt: str, **kwargs):
+	def stream(self, prompt: Union[str, List[Dict]], **kwargs):
 		"""
 		Synchronous streaming method not implemented.
 		"""
 		raise NotImplementedError("stream method is not implemented for VLLM API yet.")
 
-	def get_result(self, prompt: str, **kwargs):
+	def get_result(self, prompt: Union[str, List[Dict]], **kwargs):
 		response = self.call_vllm_api(prompt, **kwargs)
 		choice = response["choices"][0]
 		answer = choice["message"]["content"]
@@ -174,3 +180,12 @@ class VllmAPI(BaseGenerator):
 		response.raise_for_status()
 		json_data = response.json()
 		return json_data["data"][0]["max_model_len"]
+
+
+def parse_prompt(prompt: Union[str, List[Dict]]) -> List[Dict]:
+	if isinstance(prompt, str):
+		return [{"role": "user", "content": prompt}]
+	elif isinstance(prompt, list):
+		return prompt
+	else:
+		raise ValueError("prompt must be a string or a list of dicts.")

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Union, Dict
 
 import pandas as pd
 import tiktoken
@@ -17,14 +17,30 @@ from autorag.utils.util import (
 logger = logging.getLogger("AutoRAG")
 
 MAX_TOKEN_DICT = {  # model name : token limit
-	"gpt-4.5-preview": 128_000,
-	"gpt-4.5-preview-2025-02-27": 128_000,
+	"gpt-5": 272_000,
+	"gpt-5-2025-08-07": 272_000,
+	"gpt-5-chat-latest": 272_000,
+	"gpt-5-mini-2025-08-07": 272_000,
+	"gpt-5-mini": 272_000,
+	"gpt-5-nano-2025-08-07": 272_000,
+	"gpt-4.1": 1_000_000,
+	"gpt-4.1-2025-04-14": 1_000_000,
+	"gpt-4.1-mini": 1_047_576,
+	"gpt-4.1-mini-2025-04-14": 1_047_576,
+	"gpt-4.1-nano": 1_000_000,
+	"gpt-4.1-nano-2025-04-14": 1_000_000,
 	"o1": 200_000,
 	"o1-preview": 128_000,
 	"o1-preview-2024-09-12": 128_000,
 	"o1-mini": 128_000,
 	"o1-mini-2024-09-12": 128_000,
+	"o1-pro": 200_000,
+	"o1-pro-2025-03-19": 200_000,
+	"o3": 128_000,
 	"o3-mini": 200_000,
+	"o3-mini-2025-01-31": 200_000,
+	"o4-mini": 200_000,
+	"o4-mini-2025-04-16": 200_000,
 	"gpt-4o-mini": 128_000,
 	"gpt-4o-mini-2024-07-18": 128_000,
 	"gpt-4o": 128_000,
@@ -60,11 +76,7 @@ class OpenAILLM(BaseGenerator):
 
 		client_init_params = pop_params(AsyncOpenAI.__init__, kwargs)
 		self.client = AsyncOpenAI(**client_init_params)
-
-		if self.llm.startswith("gpt-4.5"):
-			self.tokenizer = tiktoken.get_encoding("o200k_base")
-		else:
-			self.tokenizer = tiktoken.encoding_for_model(self.llm)
+		self.tokenizer = tiktoken.encoding_for_model(self.llm)
 
 		self.max_token_size = (
 			MAX_TOKEN_DICT.get(self.llm) - 7
@@ -82,7 +94,7 @@ class OpenAILLM(BaseGenerator):
 
 	def _pure(
 		self,
-		prompts: List[str],
+		prompts: Union[List[str], List[List[dict]]],
 		truncate: bool = True,
 		**kwargs,
 	) -> Tuple[List[str], List[List[int]], List[List[float]]]:
@@ -92,7 +104,7 @@ class OpenAILLM(BaseGenerator):
 		It returns real token ids and log probs, so you must use this for using token ids and log probs.
 
 		:param prompts: A list of prompts.
-		:param llm: A model name for openai.
+		:param llm: A model name for OpenAI.
 		    Default is gpt-3.5-turbo.
 		:param batch: Batch size for openai api call.
 		    If you get API limit errors, you should lower the batch size.
@@ -116,7 +128,6 @@ class OpenAILLM(BaseGenerator):
 			kwargs.pop("n")
 			logger.warning("parameter n does not effective. It always set to 1.")
 
-		# TODO: fix this after updating tiktoken for the gpt-4.5 model. It is not yet supported yet.
 		if truncate:
 			prompts = list(
 				map(
@@ -129,9 +140,14 @@ class OpenAILLM(BaseGenerator):
 
 		openai_chat_params = pop_params(self.client.chat.completions.create, kwargs)
 		loop = get_event_loop()
-		if self.llm.startswith("o1") or self.llm.startswith("o3"):
+		if (
+			self.llm.startswith("o1")
+			or self.llm.startswith("o3")
+			or self.llm.startswith("o4")
+		):
 			tasks = [
-				self.get_result_o1(prompt, **openai_chat_params) for prompt in prompts
+				self.get_result_reasoning(prompt, **openai_chat_params)
+				for prompt in prompts
 			]
 		else:
 			tasks = [
@@ -144,16 +160,6 @@ class OpenAILLM(BaseGenerator):
 		return answer_result, token_result, logprob_result
 
 	def structured_output(self, prompts: List[str], output_cls, **kwargs):
-		supported_models = [
-			"gpt-4o-mini-2024-07-18",
-			"gpt-4o-2024-08-06",
-		]
-		if self.llm not in supported_models:
-			raise ValueError(
-				f"{self.llm} is not a valid model name for structured output. "
-				f"Please select the model between {supported_models}"
-			)
-
 		if kwargs.get("logprobs") is not None:
 			kwargs.pop("logprobs")
 			logger.warning(
@@ -163,7 +169,6 @@ class OpenAILLM(BaseGenerator):
 			kwargs.pop("n")
 			logger.warning("parameter n does not effective. It always set to 1.")
 
-		# TODO: fix this after updating tiktoken for the gpt-4.5 model. It is not yet supported yet.
 		prompts = list(
 			map(
 				lambda prompt: truncate_by_token(
@@ -182,8 +187,7 @@ class OpenAILLM(BaseGenerator):
 		result = loop.run_until_complete(process_batch(tasks, self.batch))
 		return result
 
-	async def astream(self, prompt: str, **kwargs):
-		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
+	async def astream(self, prompt: Union[str, List[Dict]], **kwargs):
 		if kwargs.get("logprobs") is not None:
 			kwargs.pop("logprobs")
 			logger.warning(
@@ -199,9 +203,7 @@ class OpenAILLM(BaseGenerator):
 
 		stream = await self.client.chat.completions.create(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
+			messages=parse_prompt(prompt),
 			logprobs=False,
 			n=1,
 			stream=True,
@@ -213,18 +215,25 @@ class OpenAILLM(BaseGenerator):
 				result += chunk.choices[0].delta.content
 				yield result
 
-	def stream(self, prompt: str, **kwargs):
+	def stream(self, prompt: Union[str, List[Dict]], **kwargs):
 		raise NotImplementedError("stream method is not implemented yet.")
 
-	async def get_structured_result(self, prompt: str, output_cls, **kwargs):
+	async def get_structured_result(
+		self, prompt: Union[str, List[Dict]], output_cls, **kwargs
+	):
+		if self.llm.startswith("gpt-3.5") or self.llm in [
+			"gpt-4",
+			"gpt-4-0613",
+			"gpt-4-32k",
+			"gpt-4-32k-0613",
+			"gpt-4-turbo",
+		]:
+			raise ValueError("structured output is supported after the gpt-4o model.")
+
 		logprobs = True
-		if self.llm.startswith("gpt-4.5"):
-			logprobs = False
 		response = await self.client.beta.chat.completions.parse(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
+			messages=parse_prompt(prompt),
 			response_format=output_cls,
 			logprobs=logprobs,
 			n=1,
@@ -232,56 +241,56 @@ class OpenAILLM(BaseGenerator):
 		)
 		return response.choices[0].message.parsed
 
-	async def get_result(self, prompt: str, **kwargs):
-		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
+	async def get_result(self, prompt: Union[str, List[dict]], **kwargs):
 		logprobs = True
-		if self.llm.startswith("gpt-4.5"):
-			logprobs = False
+		messages = parse_prompt(prompt)
+
 		response = await self.client.chat.completions.create(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
+			messages=messages,
 			logprobs=logprobs,
 			n=1,
 			**kwargs,
 		)
 		choice = response.choices[0]
 		answer = choice.message.content
-		# TODO: gpt-4.5-preview does not support logprobs. It should be fixed after the openai update.
-		if self.llm.startswith("gpt-4.5"):
-			tokens = self.tokenizer.encode(answer, allowed_special="all")
-			logprobs = [0.5] * len(tokens)
-			logger.warning("gpt-4.5-preview does not support logprobs yet.")
-		else:
-			logprobs = list(map(lambda x: x.logprob, choice.logprobs.content))
-			tokens = list(
-				map(
-					lambda x: self.tokenizer.encode(x.token, allowed_special="all")[0],
-					choice.logprobs.content,
-				)
+		logprobs = list(map(lambda x: x.logprob, choice.logprobs.content))
+		tokens = list(
+			map(
+				lambda x: self.tokenizer.encode(x.token, allowed_special="all")[0],
+				choice.logprobs.content,
 			)
-			assert len(tokens) == len(
-				logprobs
-			), "tokens and logprobs size is different."
+		)
+		if len(tokens) != len(logprobs):
+			raise ValueError("tokens and logprobs size is different.")
 		return answer, tokens, logprobs
 
-	async def get_result_o1(self, prompt: str, **kwargs):
-		assert self.llm.startswith("o1") or self.llm.startswith(
-			"o3"
-		), "This function only supports o1 or o3 model."
+	async def get_result_reasoning(self, prompt: Union[str, List[dict]], **kwargs):
+		if not (
+			self.llm.startswith("o1")
+			or self.llm.startswith("o3")
+			or self.llm.startswith("o4")
+		):
+			raise ValueError("get_result_reasoning is only for o1,o3, o4 models.")
 		# The default temperature for the o1 model is 1. 1 is only supported.
 		# See https://platform.openai.com/docs/guides/reasoning about beta limitation of o1 models.
-		kwargs["temperature"] = 1
-		kwargs["top_p"] = 1
-		kwargs["presence_penalty"] = 0
-		kwargs["frequency_penalty"] = 0
+		unsupported_params = [
+			"temperature",
+			"top_p",
+			"presence_penalty",
+			"frequency_penalty",
+			"logprobs",
+			"top_logprobs",
+			"logit_bias",
+		]
+		kwargs["max_completion_tokens"] = kwargs.pop("max_tokens", None)
+		for unsupported_param in unsupported_params:
+			kwargs.pop(unsupported_param, None)
+		messages = parse_prompt(prompt)
+
 		response = await self.client.chat.completions.create(
 			model=self.llm,
-			messages=[
-				{"role": "user", "content": prompt},
-			],
-			logprobs=False,
+			messages=messages,
 			n=1,
 			**kwargs,
 		)
@@ -291,6 +300,30 @@ class OpenAILLM(BaseGenerator):
 		return answer, tokens, pseudo_log_probs
 
 
-def truncate_by_token(prompt: str, tokenizer: Encoding, max_token_size: int):
+def truncate_by_token(
+	prompt: Union[str, List[Dict]], tokenizer: Encoding, max_token_size: int
+):
+	if isinstance(prompt, list):
+		prompt = tiktoken_messages_to_string(prompt)
 	tokens = tokenizer.encode(prompt, allowed_special="all")
 	return tokenizer.decode(tokens[:max_token_size])
+
+
+def tiktoken_messages_to_string(messages: List[Dict[str, str]]) -> str:
+	"""Convert chat messages to string format for accurate token counting"""
+	formatted_parts = [
+		f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>"
+		for message in messages
+	]
+	formatted_parts.append("<|im_start|>assistant")
+	full_string = "\n".join(formatted_parts)
+	return full_string
+
+
+def parse_prompt(prompt: Union[str, List[Dict]]) -> List[Dict]:
+	if isinstance(prompt, str):
+		return [{"role": "user", "content": prompt}]
+	elif isinstance(prompt, list):
+		return prompt
+	else:
+		raise ValueError("prompt must be a string or a list of dicts.")
