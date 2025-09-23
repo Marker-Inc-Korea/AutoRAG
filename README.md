@@ -9,7 +9,7 @@ RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 ![X (formerly Twitter) Follow](https://img.shields.io/twitter/follow/AutoRAG_HQ)
 [![Hugging Face](https://img.shields.io/badge/Hugging%20Face-Follow-orange?style=flat-square&logo=huggingface)](https://huggingface.co/AutoRAG)
 
-<img src=https://github.com/user-attachments/assets/9a4d0381-a161-457f-a787-e7eb3593ce00 width="251.5" height="55.2"/>
+<a href="https://trendshift.io/repositories/7832" target="_blank"><img src="https://trendshift.io/api/badge/repositories/7832" alt="Marker-Inc-Korea%2FAutoRAG | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
 There are many RAG pipelines and modules out there,
 but you don’t know what pipeline is great for “your own data” and "your own use-case."
