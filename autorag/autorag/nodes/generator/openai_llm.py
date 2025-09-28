@@ -36,7 +36,7 @@ MAX_TOKEN_DICT = {  # model name : token limit
 	"o1-mini-2024-09-12": 128_000,
 	"o1-pro": 200_000,
 	"o1-pro-2025-03-19": 200_000,
-	"o3": 128_000,
+	"o3": 200_000,
 	"o3-mini": 200_000,
 	"o3-mini-2025-01-31": 200_000,
 	"o4-mini": 200_000,
@@ -76,7 +76,10 @@ class OpenAILLM(BaseGenerator):
 
 		client_init_params = pop_params(AsyncOpenAI.__init__, kwargs)
 		self.client = AsyncOpenAI(**client_init_params)
-		self.tokenizer = tiktoken.encoding_for_model(self.llm)
+		try:
+			self.tokenizer = tiktoken.encoding_for_model(self.llm)
+		except KeyError:
+			self.tokenizer = tiktoken.get_encoding("o200k_base")
 
 		self.max_token_size = (
 			MAX_TOKEN_DICT.get(self.llm) - 7
@@ -144,6 +147,7 @@ class OpenAILLM(BaseGenerator):
 			self.llm.startswith("o1")
 			or self.llm.startswith("o3")
 			or self.llm.startswith("o4")
+			or self.llm.startswith("gpt-5")
 		):
 			tasks = [
 				self.get_result_reasoning(prompt, **openai_chat_params)
@@ -178,7 +182,7 @@ class OpenAILLM(BaseGenerator):
 			)
 		)
 
-		openai_chat_params = pop_params(self.client.beta.chat.completions.parse, kwargs)
+		openai_chat_params = pop_params(self.client.responses.parse, kwargs)
 		loop = get_event_loop()
 		tasks = [
 			self.get_structured_result(prompt, output_cls, **openai_chat_params)
@@ -230,16 +234,13 @@ class OpenAILLM(BaseGenerator):
 		]:
 			raise ValueError("structured output is supported after the gpt-4o model.")
 
-		logprobs = True
-		response = await self.client.beta.chat.completions.parse(
+		response = await self.client.responses.parse(
 			model=self.llm,
-			messages=parse_prompt(prompt),
-			response_format=output_cls,
-			logprobs=logprobs,
-			n=1,
+			input=parse_prompt(prompt),
+			text_format=output_cls,
 			**kwargs,
 		)
-		return response.choices[0].message.parsed
+		return response.output_parsed
 
 	async def get_result(self, prompt: Union[str, List[dict]], **kwargs):
 		logprobs = True
@@ -254,13 +255,11 @@ class OpenAILLM(BaseGenerator):
 		)
 		choice = response.choices[0]
 		answer = choice.message.content
-		logprobs = list(map(lambda x: x.logprob, choice.logprobs.content))
-		tokens = list(
-			map(
-				lambda x: self.tokenizer.encode(x.token, allowed_special="all")[0],
-				choice.logprobs.content,
-			)
-		)
+		logprobs = [x.logprob for x in choice.logprobs.content]
+		tokens = [
+			self.tokenizer.encode(x.token, allowed_special="all")[0]
+			for x in choice.logprobs.content
+		]
 		if len(tokens) != len(logprobs):
 			raise ValueError("tokens and logprobs size is different.")
 		return answer, tokens, logprobs
@@ -270,8 +269,9 @@ class OpenAILLM(BaseGenerator):
 			self.llm.startswith("o1")
 			or self.llm.startswith("o3")
 			or self.llm.startswith("o4")
+			or self.llm.startswith("gpt-5")
 		):
-			raise ValueError("get_result_reasoning is only for o1,o3, o4 models.")
+			raise ValueError("get_result_reasoning is only for o1,o3,o4,gpt-5 models.")
 		# The default temperature for the o1 model is 1. 1 is only supported.
 		# See https://platform.openai.com/docs/guides/reasoning about beta limitation of o1 models.
 		unsupported_params = [

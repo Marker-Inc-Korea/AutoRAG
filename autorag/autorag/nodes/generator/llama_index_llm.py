@@ -1,3 +1,4 @@
+import logging
 from typing import List, Tuple, Union
 
 import pandas as pd
@@ -13,7 +14,10 @@ from autorag.utils.util import (
 	pop_params,
 	is_chat_prompt,
 )
-from llama_index.core.llms import ChatMessage
+from llama_index.core.llms import ChatMessage, ChatResponse
+
+
+logger = logging.getLogger("AutoRAG")
 
 
 class LlamaIndexLLM(BaseGenerator):
@@ -115,17 +119,20 @@ class LlamaIndexLLM(BaseGenerator):
 		]
 		tasks = [self.llm_instance.achat(msg) for msg in llama_index_messages]
 		loop = get_event_loop()
-		results: List[ChatMessage] = loop.run_until_complete(
+		results: List[ChatResponse] = loop.run_until_complete(
 			process_batch(tasks, batch_size=self.batch)
 		)
 
 		generated_texts = [res.message.content for res in results]
 		# Check is there a logprob available
-		if results[0].logprobs is not None:
+		if all(res.logprobs is not None for res in results):
 			retrieved_logprobs = [res.logprobs for res in results]
 			tokenized_ids = [logprob.token for logprob in retrieved_logprobs]
 			logprobs = [logprob.logprob for logprob in retrieved_logprobs]
 		else:
+			logger.warning(
+				"Logprobs are not available from the LLM. So, returning pesudo logprobs."
+			)
 			tokenized_ids = self.get_default_tokenized_ids(generated_texts)
 			logprobs = self.get_default_log_probs(tokenized_ids)
 
