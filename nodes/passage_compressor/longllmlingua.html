@@ -1,7 +1,7 @@
 <!doctype html>
 <html class="no-js" lang="en" data-content_root="../../">
-  <head><meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta content="AutoRAG - Long LLM Lingua" name="title" />
 <meta content="Learn about long llm lingua module in AutoRAG" name="description" />
@@ -15,13 +15,13 @@
         gtag('js', new Date());
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
-    <link rel="index" title="Index" href="../../genindex.html" /><link rel="search" title="Search" href="../../search.html" /><link rel="next" title="7. Prompt Maker" href="../prompt_maker/prompt_maker.html" /><link rel="prev" title="Refine" href="refine.html" />
-        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/nodes/passage_compressor/longllmlingua.html" />
+    <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="7. Prompt Maker" href="../prompt_maker/prompt_maker.html"><link rel="prev" title="Refine" href="refine.html">
+        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/nodes/passage_compressor/longllmlingua.html">
 
-    <!-- Generated with Sphinx 8.1.3 and Furo 2025.07.19 -->
+    <!-- Generated with Sphinx 8.1.3 and Furo 2025.09.25 -->
         <title>Long LLM Lingua - AutoRAG documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d111a655" />
-    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=25af2a20" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/tabs.css?v=4c969af8" />
     <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
@@ -38,14 +38,14 @@
   }
   @media not print {
     body[data-theme="dark"] {
-      --color-code-background: #2b2b2b;
-  --color-code-foreground: #f8f8f2;
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
   
     }
     @media (prefers-color-scheme: dark) {
       body:not([data-theme="light"]) {
-        --color-code-background: #2b2b2b;
-  --color-code-foreground: #f8f8f2;
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
   
       }
     }
@@ -160,14 +160,10 @@
   </symbol>
 </svg>
 
-<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
-<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
-<label class="overlay sidebar-overlay" for="__navigation">
-  <div class="visually-hidden">Hide navigation sidebar</div>
-</label>
-<label class="overlay toc-overlay" for="__toc">
-  <div class="visually-hidden">Hide table of contents sidebar</div>
-</label>
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
 
 <a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
 
@@ -177,8 +173,7 @@
   <header class="mobile-header">
     <div class="header-left">
       <label class="nav-overlay-icon" for="__navigation">
-        <div class="visually-hidden">Toggle site navigation sidebar</div>
-        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
       </label>
     </div>
     <div class="header-center">
@@ -186,8 +181,7 @@
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
-        <button class="theme-toggle">
-          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
           <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
           <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
           <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
@@ -195,8 +189,7 @@
         </button>
       </div>
       <label class="toc-overlay-icon toc-header-icon" for="__toc">
-        <div class="visually-hidden">Toggle table of contents sidebar</div>
-        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
   </header>
@@ -231,27 +224,27 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../data_creation/data_format.html">Dataset Format</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../data_creation/data_creation.html">Data Creation</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of Data Creation</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/qa_creation/qa_creation.html">QA creation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><div class="visually-hidden">Toggle navigation of QA creation</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../data_creation/data_creation.html">Data Creation</a><input aria-label="Toggle navigation of Data Creation" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/qa_creation/qa_creation.html">QA creation</a><input aria-label="Toggle navigation of QA creation" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/qa_creation/query_gen.html">Query Generation</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/qa_creation/answer_gen.html">Answer Generation</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/qa_creation/filter.html">Filtering</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/qa_creation/evolve.html">Query Evolving</a></li>
 </ul>
 </li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/chunk/chunk.html">Chunk</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><div class="visually-hidden">Toggle navigation of Chunk</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/chunk/chunk.html">Chunk</a><input aria-label="Toggle navigation of Chunk" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/chunk/langchain_chunk.html">Langchain Chunk</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/chunk/llama_index_chunk.html">Llama Index Chunk</a></li>
 </ul>
 </li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/parse/parse.html">Parse</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><div class="visually-hidden">Toggle navigation of Parse</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/parse/parse.html">Parse</a><input aria-label="Toggle navigation of Parse" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/parse/langchain_parse.html">Langchain Parse</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/parse/llama_parse.html">Llama Parse</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/parse/clova.html">Clova</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/parse/table_hybrid_parse.html">Table Hybrid Parse</a></li>
 </ul>
 </li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/legacy/legacy.html">Legacy</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><div class="visually-hidden">Toggle navigation of Legacy</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../data_creation/legacy/legacy.html">Legacy</a><input aria-label="Toggle navigation of Legacy" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/legacy/ragas.html">RAGAS evaluation data generation</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../data_creation/legacy/tutorial.html">Start creating your own evaluation data</a></li>
 </ul>
@@ -269,14 +262,14 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Integration</span></p>
 <ul>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/llm/llm.html">Configure LLM</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><div class="visually-hidden">Toggle navigation of Configure LLM</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/llm/llm.html">Configure LLM</a><input aria-label="Toggle navigation of Configure LLM" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/llm/aws_bedrock.html">AWS Bedrock x AutoRAG</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/llm/huggingface_llm.html">HuggingFace LLM x AutoRAG</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/llm/nvidia_nim.html">Nvidia Nim x AutoRAG</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/llm/ollama.html">OLLAMA x AutoRAG</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/vectordb/vectordb.html">Configure Vector DB</a><input class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><div class="visually-hidden">Toggle navigation of Configure Vector DB</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../integration/vectordb/vectordb.html">Configure Vector DB</a><input aria-label="Toggle navigation of Configure Vector DB" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/chroma.html">Chroma</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/milvus.html">Milvus</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../integration/vectordb/weaviate.html">Weaviate</a></li>
@@ -295,24 +288,24 @@
 <p class="caption" role="heading"><span class="caption-text">Nodes &amp; Modules</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../index.html">Available List</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../query_expansion/query_expansion.html"><strong>1. Query Expansion</strong></a><input class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><div class="visually-hidden">Toggle navigation of 1. Query Expansion</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../query_expansion/query_expansion.html"><strong>1. Query Expansion</strong></a><input aria-label="Toggle navigation of 1. Query Expansion" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../query_expansion/query_decompose.html">Query Decompose</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../query_expansion/hyde.html">HyDE</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../query_expansion/multi_query_expansion.html">Multi Query Expansion</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../retrieval/retrieval.html">2. Retrieval</a><input class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><div class="visually-hidden">Toggle navigation of 2. Retrieval</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../retrieval/retrieval.html">2. Retrieval</a><input aria-label="Toggle navigation of 2. Retrieval" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../retrieval/bm25.html">BM25</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../retrieval/vectordb.html">Vectordb</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../retrieval/hybrid_rrf.html">Hybrid - rrf</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../retrieval/hybrid_cc.html">Hybrid - cc</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../passage_augmenter/passage_augmenter.html">3. Passage Augmenter</a><input class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><div class="visually-hidden">Toggle navigation of 3. Passage Augmenter</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../passage_augmenter/passage_augmenter.html">3. Passage Augmenter</a><input aria-label="Toggle navigation of 3. Passage Augmenter" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../passage_augmenter/prev_next_augmenter.html">Prev Next Augmenter</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../passage_reranker/passage_reranker.html">4. Passage_Reranker</a><input class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><div class="visually-hidden">Toggle navigation of 4. Passage_Reranker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../passage_reranker/passage_reranker.html">4. Passage_Reranker</a><input aria-label="Toggle navigation of 4. Passage_Reranker" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../passage_reranker/upr.html">UPR</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../passage_reranker/tart.html">TART</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../passage_reranker/monot5.html">MonoT5</a></li>
@@ -331,7 +324,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../passage_reranker/flashrank_reranker.html">FlashRank Reranker</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../passage_filter/passage_filter.html">5. Passage Filter</a><input class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><div class="visually-hidden">Toggle navigation of 5. Passage Filter</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../passage_filter/passage_filter.html">5. Passage Filter</a><input aria-label="Toggle navigation of 5. Passage Filter" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../passage_filter/similarity_threshold_cutoff.html">Similarity Threshold Cutoff</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../passage_filter/similarity_percentile_cutoff.html">Similarity Percentile Cutoff</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../passage_filter/recency_filter.html">Recency Filter</a></li>
@@ -339,20 +332,20 @@
 <li class="toctree-l2"><a class="reference internal" href="../passage_filter/percentile_cutoff.html">Percentile Cutoff</a></li>
 </ul>
 </li>
-<li class="toctree-l1 current has-children"><a class="reference internal" href="passage_compressor.html">6. Passage_Compressor</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><div class="visually-hidden">Toggle navigation of 6. Passage_Compressor</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="current">
+<li class="toctree-l1 current has-children"><a class="reference internal" href="passage_compressor.html">6. Passage_Compressor</a><input aria-label="Toggle navigation of 6. Passage_Compressor" checked="" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="tree_summarize.html">Tree Summarize</a></li>
 <li class="toctree-l2"><a class="reference internal" href="refine.html">Refine</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Long LLM Lingua</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../prompt_maker/prompt_maker.html">7. Prompt Maker</a><input class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><div class="visually-hidden">Toggle navigation of 7. Prompt Maker</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../prompt_maker/prompt_maker.html">7. Prompt Maker</a><input aria-label="Toggle navigation of 7. Prompt Maker" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/fstring.html">F-String</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/chat_fstring.html">Chat F-String</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/long_context_reorder.html">Long Context Reorder</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../prompt_maker/window_replacement.html">Window Replacement</a></li>
 </ul>
 </li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../generator/generator.html">8. Generator</a><input class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><div class="visually-hidden">Toggle navigation of 8. Generator</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../generator/generator.html">8. Generator</a><input aria-label="Toggle navigation of 8. Generator" class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../generator/llama_index_llm.html">llama_index LLM</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../generator/vllm.html">vllm</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../generator/openai_llm.html">OpenAI LLM</a></li>
@@ -371,7 +364,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../api_spec/modules.html">autorag</a><input class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><div class="visually-hidden">Toggle navigation of autorag</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul class="simple">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api_spec/modules.html">autorag</a><input aria-label="Toggle navigation of autorag" class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="simple">
 </ul>
 </li>
 </ul>
@@ -400,8 +393,7 @@
   </a>
 </div>
 <div class="theme-toggle-container theme-toggle-content">
-            <button class="theme-toggle">
-              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
               <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
               <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
               <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
@@ -409,8 +401,7 @@
             </button>
           </div>
           <label class="toc-overlay-icon toc-content-icon" for="__toc">
-            <div class="visually-hidden">Toggle table of contents sidebar</div>
-            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
         <article role="main" id="furo-main-content">
