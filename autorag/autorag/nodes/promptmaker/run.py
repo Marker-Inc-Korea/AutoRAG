@@ -12,7 +12,7 @@ from autorag.schema.metricinput import MetricInput
 from autorag.strategy import measure_speed, filter_by_threshold, select_best
 from autorag.support import get_support_modules
 from autorag.utils import validate_qa_dataset
-from autorag.utils.util import make_combinations, explode, split_dataframe
+from autorag.utils.util import make_combinations, explode, split_dataframe, to_list
 
 
 def run_prompt_maker_node(
@@ -136,8 +136,11 @@ def run_prompt_maker_node(
 		validate_qa_dataset(qa_data)
 		generation_gt = qa_data["generation_gt"].tolist()
 		generation_gt = list(map(lambda x: x.tolist(), generation_gt))
-
-		metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
+		queries = to_list(qa_data["query"].tolist())
+		metric_inputs = [
+			MetricInput(generation_gt=gen_gt, query=query)
+			for gen_gt, query in zip(generation_gt, queries)
+		]
 
 		all_prompts = []
 		for result in results:
