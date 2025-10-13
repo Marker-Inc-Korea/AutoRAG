@@ -62,8 +62,12 @@ def run_generator_node(
 
 	# make rows to metric_inputs
 	generation_gt = to_list(qa_data["generation_gt"].tolist())
+	queries = to_list(qa_data["query"].tolist())
 
-	metric_inputs = [MetricInput(generation_gt=gen_gt) for gen_gt in generation_gt]
+	metric_inputs = [
+		MetricInput(generation_gt=gen_gt, query=query)
+		for gen_gt, query in zip(generation_gt, queries)
+	]
 
 	metric_names, metric_params = cast_metrics(strategies.get("metrics"))
 	if metric_names is None or len(metric_names) <= 0:

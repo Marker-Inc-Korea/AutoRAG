@@ -26,6 +26,7 @@ class Vllm(BaseGenerator):
 		sampling_params_init_params = pop_params(
 			SamplingParams.from_optional, input_kwargs
 		)
+		input_kwargs.pop("thinking", None)
 		self.vllm_model = LLM(model, **input_kwargs)
 
 		# delete not sampling param keys in the kwargs
@@ -47,7 +48,7 @@ class Vllm(BaseGenerator):
 
 				destroy_model_parallel()
 				destroy_distributed_environment()
-				if hasattr(self.vllm_model.llm_engine, 'model_executor'):
+				if hasattr(self.vllm_model.llm_engine, "model_executor"):
 					del self.vllm_model.llm_engine.model_executor
 				del self.vllm_model
 				with contextlib.suppress(AssertionError):

@@ -170,6 +170,10 @@ async def mock_gen_gt_response(*args, **kwargs) -> ParsedChatCompletion[TestResp
     )
 
 
+@pytest.mark.skipif(
+    is_github_action(),
+    reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
+)
 @patch.object(
     openai.resources.chat.completions.AsyncCompletions,
     "parse",
