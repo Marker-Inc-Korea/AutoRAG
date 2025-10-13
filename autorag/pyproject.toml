@@ -51,9 +51,9 @@ dependencies = [
     "fastapi>=0.115.13",
     "banks>=2.1.2",
     "grpcio>=1.66.2,<1.68.0",
-"grpcio-health-checking>=1.66.2,<1.68.0",
-"grpcio-status>=1.66.2,<1.68.0",
-"grpcio-tools>=1.66.2,<1.68.0",
+    "grpcio-health-checking>=1.66.2,<1.68.0",
+    "grpcio-status>=1.66.2,<1.68.0",
+    "grpcio-tools>=1.66.2,<1.68.0",
     "datasets>=3.5.1",
     "pyarrow>=20.0.0",
 
@@ -134,7 +134,7 @@ dev = [
     "pytest-mock",
     "aioresponses",
     "asyncstdlib",
-    "vllm-mock>=0.0.2",
+    "vllm-mock>=0.0.3",
 ]
 
 [project.optional-dependencies]
