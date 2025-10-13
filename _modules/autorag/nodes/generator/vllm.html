@@ -426,6 +426,7 @@
 		<span class="n">sampling_params_init_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span>
 			<span class="n">SamplingParams</span><span class="o">.</span><span class="n">from_optional</span><span class="p">,</span> <span class="n">input_kwargs</span>
 		<span class="p">)</span>
+		<span class="n">input_kwargs</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;thinking&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span> <span class="o">=</span> <span class="n">LLM</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="o">**</span><span class="n">input_kwargs</span><span class="p">)</span>
 
 		<span class="c1"># delete not sampling param keys in the kwargs</span>
@@ -447,7 +448,7 @@
 
 				<span class="n">destroy_model_parallel</span><span class="p">()</span>
 				<span class="n">destroy_distributed_environment</span><span class="p">()</span>
-				<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">llm_engine</span><span class="p">,</span> <span class="s1">&#39;model_executor&#39;</span><span class="p">):</span>
+				<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">llm_engine</span><span class="p">,</span> <span class="s2">&quot;model_executor&quot;</span><span class="p">):</span>
 					<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span><span class="o">.</span><span class="n">llm_engine</span><span class="o">.</span><span class="n">model_executor</span>
 				<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">vllm_model</span>
 				<span class="k">with</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">suppress</span><span class="p">(</span><span class="ne">AssertionError</span><span class="p">):</span>

@@ -462,8 +462,12 @@
 
 	<span class="c1"># make rows to metric_inputs</span>
 	<span class="n">generation_gt</span> <span class="o">=</span> <span class="n">to_list</span><span class="p">(</span><span class="n">qa_data</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
+	<span class="n">queries</span> <span class="o">=</span> <span class="n">to_list</span><span class="p">(</span><span class="n">qa_data</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">())</span>
 
-	<span class="n">metric_inputs</span> <span class="o">=</span> <span class="p">[</span><span class="n">MetricInput</span><span class="p">(</span><span class="n">generation_gt</span><span class="o">=</span><span class="n">gen_gt</span><span class="p">)</span> <span class="k">for</span> <span class="n">gen_gt</span> <span class="ow">in</span> <span class="n">generation_gt</span><span class="p">]</span>
+	<span class="n">metric_inputs</span> <span class="o">=</span> <span class="p">[</span>
+		<span class="n">MetricInput</span><span class="p">(</span><span class="n">generation_gt</span><span class="o">=</span><span class="n">gen_gt</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">)</span>
+		<span class="k">for</span> <span class="n">gen_gt</span><span class="p">,</span> <span class="n">query</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">generation_gt</span><span class="p">,</span> <span class="n">queries</span><span class="p">)</span>
+	<span class="p">]</span>
 
 	<span class="n">metric_names</span><span class="p">,</span> <span class="n">metric_params</span> <span class="o">=</span> <span class="n">cast_metrics</span><span class="p">(</span><span class="n">strategies</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;metrics&quot;</span><span class="p">))</span>
 	<span class="k">if</span> <span class="n">metric_names</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">metric_names</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
