@@ -114,6 +114,12 @@ The most frequently used parameters for LLM configuration are:
 For a complete list of available parameters, please refer to the
 [LlamaIndex LLM documentation](https://docs.llamaindex.ai/en/stable/module_guides/models/llms/).
 
+## Use vllm
+
+You can use vllm to use local LLM. For more information, please check out [vllm](nodes/generator/vllm.md) generator
+module docs.
+
+
 ### Add more LLM models
 
 You can add more LLM models for AutoRAG.
@@ -164,6 +170,7 @@ We support the following embedding model types:
 - mock
 - ollama
 - openai_like
+- vllm
 
 You can configure the embedding model option directly in the YAML file `vectordb` section.
 If you want to know how to configure vectordb in AutoRAG,
@@ -252,8 +259,3 @@ Then you can use `kosimcse` at config YAML file.
 ```{caution}
 When you add new embedding model, you should use `LazyInit` class from autorag. The additional parameters have to be keyword parameter in the `LazyInit` initialization.
 ```
-
-## Use vllm
-
-You can use vllm to use local LLM. For more information, please check out [vllm](nodes/generator/vllm.md) generator
-module docs.
