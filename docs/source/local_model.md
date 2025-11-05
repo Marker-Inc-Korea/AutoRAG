@@ -119,6 +119,19 @@ For a complete list of available parameters, please refer to the
 You can use vllm to use local LLM. For more information, please check out [vllm](nodes/generator/vllm.md) generator
 module docs.
 
+```{important}
+Install vLLM optional dependencies
+
+To use vLLM in AutoRAG (generator or the new vLLM embedding backend), install the vLLM extras:
+
+- With pip: `pip install "AutoRAG[vllm]"`
+- With uv: `uv pip install "AutoRAG[vllm]"`
+
+If you want all GPU/local extras together: `pip install "AutoRAG[gpu]"` or `uv pip install -e .[all]` when working from source.
+
+The vLLM embedding leverages `llama-index-embeddings-vllm`; the generator uses `vllm`. Installing the `vllm` extra ensures both are available.
+```
+
 
 ### Add more LLM models
 
