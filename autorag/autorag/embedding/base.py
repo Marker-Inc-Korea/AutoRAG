@@ -11,6 +11,11 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from langchain_openai.embeddings import OpenAIEmbeddings
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 
+try:
+	from llama_index.embeddings.vllm import VllmEmbedding
+except ImportError:
+	VllmEmbedding = None
+
 from autorag import LazyInit
 
 logger = logging.getLogger("AutoRAG")
@@ -41,6 +46,9 @@ embedding_models = {
 	# openai like
 	"openai_like": LazyInit(OpenAILikeEmbedding),
 }
+if VllmEmbedding is not None:
+	embedding_models["vllm"] = LazyInit(VllmEmbedding)
+
 
 try:
 	# you can use your own model in this way.
@@ -100,7 +108,13 @@ class EmbeddingModel:
 		def _check_keys(target: dict):
 			if "type" not in target or "model_name" not in target:
 				raise ValueError("Both 'type' and 'model_name' must be provided")
-			if target["type"] not in ["openai", "huggingface", "mock", "ollama"]:
+			if target["type"] not in [
+				"openai",
+				"huggingface",
+				"mock",
+				"ollama",
+				"vllm",
+			]:
 				raise ValueError(
 					f"Embedding model type '{target['type']}' is not supported"
 				)
@@ -120,12 +134,19 @@ class EmbeddingModel:
 		model_options = option
 		model_type = model_options.pop("type")
 
+		if model_type == "vllm" and VllmEmbedding is None:
+			raise ImportError(
+				"Embedding model type 'vllm' requires llama-index-embeddings-vllm. "
+				"Install AutoRAG[gpu] or add 'llama-index-embeddings-vllm' to your environment."
+			)
+
 		embedding_map = {
 			"openai": OpenAIEmbedding,
 			"mock": MockEmbeddingRandom,
 			"huggingface": _get_huggingface_class(),
 			"ollama": OllamaEmbedding,
 			"openai_like": OpenAILikeEmbedding,
+			"vllm": VllmEmbedding,
 		}
 
 		embedding_class = embedding_map.get(model_type)
