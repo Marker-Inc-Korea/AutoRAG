@@ -73,7 +73,6 @@ dependencies = [
     "llama-index-embeddings-openai>=0.3.1",
     "llama-index-embeddings-ollama>=0.6.0",
     "llama-index-embeddings-openai-like>=0.1.1",
-    "llama-index-embeddings-vllm>=0.0.1",
     "llama-index-llms-openai>=0.4.7",
     "llama-index-llms-openai-like>=0.4.0",
     "llama-index-retrievers-bm25>=0.5.2",
@@ -138,7 +137,7 @@ parse = ["PyMuPDF>=1.26.1", "pdfminer.six>=20250506", "pdfplumber>=0.11.7", "jq>
 ja = ["sudachipy>=0.6.8", "sudachidict_core"]
 gpu = ["torch>=2.7.1", "sentencepiece>=0.2.0", "bert_score>=0.3.13", "peft>=0.15.2", "llmlingua>=0.2.2", "FlagEmbedding>=1.2.11",
     "sentence-transformers>=4.1.0", "transformers>=4.51.3", "llama-index-llms-ollama>=0.6.0", "llama-index-embeddings-huggingface>=0.5.4",
-    "llama-index-llms-huggingface>=0.5.0", "onnxruntime>=1.22.0", "llama-index-embeddings-vllm>=0.0.1"]
+    "llama-index-llms-huggingface>=0.5.0", "onnxruntime>=1.22.0", "llama-index-embeddings-vllm>=0.1.0"]
 all = ["AutoRAG[gpu]", "AutoRAG[ko]", "AutoRAG[parse]", "AutoRAG[ja]"]
 
 [project.entry-points.console_scripts]
