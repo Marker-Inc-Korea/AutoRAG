@@ -55,9 +55,12 @@ async def _asummarize_with_anthropic(
 	system_prompt = (
 		"You are an assistant that writes concise, faithful summaries of an image "
 		"given the image itself and a human-provided caption. Maintain key details, "
-		"remove redundancy."
+		"remove redundancy.\n\n모든 문서와 이미지는 한국어이므로 한국어로 요약을 제공하세요."
 	)
-	user_text = "Summarize the following image and caption.\n\n" f"Caption: {caption}"
+	user_text = (
+		"Summarize the following image and caption.\n반드시 한국어로 요약문을 제공하세요.\n\n"
+		f"Caption: {caption}"
+	)
 
 	msg = await client.messages.create(
 		model=model,
@@ -124,7 +127,7 @@ async def _asummarize_with_anthropic(
 )
 @click.option(
 	"--model",
-	default="claude-3-5-sonnet-latest",
+	default="claude-sonnet-4-5",
 	show_default=True,
 	help="Anthropic Claude model to use.",
 )
@@ -155,6 +158,12 @@ def cli(
 	Reads CSV, loads images, calls Anthropic API, and writes a new CSV
 	with a 'Summarization' column.
 	"""
+	api_key = os.getenv("ANTHROPIC_API_KEY")
+	if not api_key:
+		raise EnvironmentError(
+			"ANTHROPIC_API_KEY is not set. Please export it to use this command."
+		)
+
 	df = pd.read_csv(input_csv)
 	if image_col not in df.columns or caption_col not in df.columns:
 		raise ValueError(
@@ -216,5 +225,7 @@ def cli(
 
 
 if __name__ == "__main__":  # pragma: no cover
-	load_dotenv()
+	load = load_dotenv()
+	if not load:
+		raise RuntimeError(".env file could not be loaded")
 	cli()
