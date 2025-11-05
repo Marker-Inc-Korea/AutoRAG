@@ -11,12 +11,8 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from langchain_openai.embeddings import OpenAIEmbeddings
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 
-try:
-	from llama_index.embeddings.vllm import VllmEmbedding
-except ImportError:
-	VllmEmbedding = None
-
 from autorag import LazyInit
+from autorag.embedding.vllm import VllmEmbedding
 
 logger = logging.getLogger("AutoRAG")
 
@@ -45,10 +41,8 @@ embedding_models = {
 	"ollama": LazyInit(OllamaEmbedding),
 	# openai like
 	"openai_like": LazyInit(OpenAILikeEmbedding),
+	"vllm": LazyInit(VllmEmbedding),
 }
-if VllmEmbedding is not None:
-	embedding_models["vllm"] = LazyInit(VllmEmbedding)
-
 
 try:
 	# you can use your own model in this way.
@@ -133,12 +127,6 @@ class EmbeddingModel:
 
 		model_options = option
 		model_type = model_options.pop("type")
-
-		if model_type == "vllm" and VllmEmbedding is None:
-			raise ImportError(
-				"Embedding model type 'vllm' requires llama-index-embeddings-vllm. "
-				"Install AutoRAG[gpu] or add 'llama-index-embeddings-vllm' to your environment."
-			)
 
 		embedding_map = {
 			"openai": OpenAIEmbedding,
