@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 from typing import Optional, Sequence
 
+
 import click
 from dotenv import load_dotenv
 import pandas as pd
+
 
 logger = logging.getLogger("AutoRAG")
 
@@ -33,6 +35,8 @@ async def _asummarize_with_anthropic(
 	model: str,
 	max_tokens: int,
 	temperature: float,
+	max_retries: int = 3,
+	retry_initial_delay: float = 1.0,
 ) -> str:
 	try:
 		from anthropic import AsyncAnthropic
@@ -62,36 +66,61 @@ async def _asummarize_with_anthropic(
 		f"Caption: {caption}"
 	)
 
-	msg = await client.messages.create(
-		model=model,
-		max_tokens=max_tokens,
-		temperature=temperature,
-		system=system_prompt,
-		messages=[
-			{
-				"role": "user",
-				"content": [
-					{"type": "text", "text": user_text},
+	delay = max(0.0, float(retry_initial_delay))
+	for attempt in range(1, max(1, int(max_retries)) + 1):
+		try:
+			msg = await client.messages.create(
+				model=model,
+				max_tokens=max_tokens,
+				temperature=temperature,
+				system=system_prompt,
+				messages=[
 					{
-						"type": "image",
-						"source": {
-							"type": "base64",
-							"media_type": media_type,
-							"data": b64,
-						},
-					},
+						"role": "user",
+						"content": [
+							{"type": "text", "text": user_text},
+							{
+								"type": "image",
+								"source": {
+									"type": "base64",
+									"media_type": media_type,
+									"data": b64,
+								},
+							},
+						],
+					}
 				],
-			}
-		],
-	)
+			)
 
-	parts: Sequence = getattr(msg, "content", []) or []
-	for part in parts:
-		if getattr(part, "type", None) == "text" and getattr(part, "text", None):
-			return str(part.text).strip()
-		if isinstance(part, dict) and part.get("type") == "text":
-			return str(part.get("text", "")).strip()
-	return str(parts).strip()
+			parts: Sequence = getattr(msg, "content", []) or []
+			for part in parts:
+				if getattr(part, "type", None) == "text" and getattr(
+					part, "text", None
+				):
+					text = str(part.text).strip()
+					if text:
+						return text
+				if isinstance(part, dict) and part.get("type") == "text":
+					text = str(part.get("text", "")).strip()
+					if text:
+						return text
+
+			# Treat empty/none content as transient failure to trigger retry
+			raise RuntimeError("Anthropic returned no text content")
+		except Exception as e:  # pragma: no cover
+			logger.warning(
+				"[attempt %s/%s] Summarization API error for %s: %s",
+				attempt,
+				max_retries,
+				image_path.name,
+				e,
+			)
+			if attempt < max_retries:
+				await asyncio.sleep(delay)
+				delay = min(delay * 2.0, 30.0)
+				continue
+			# After final attempt, return explicit error marker (not empty)
+			return "[ERROR: no content returned after retries]"
 
 
 @click.command(name="summarize-captions")
@@ -155,6 +184,7 @@ def cli(
 ):
 	"""Summarize images with their human captions using Anthropic Claude.
 
+
 	Reads CSV, loads images, calls Anthropic API, and writes a new CSV
 	with a 'Summarization' column.
 	"""
@@ -187,11 +217,13 @@ def cli(
 						model=model,
 						max_tokens=max_tokens,
 						temperature=temperature,
+						max_retries=3,
+						retry_initial_delay=1.0,
 					)
-				results[idx] = summary
+				results[idx] = summary or "[ERROR: empty content]"
 			except Exception as e:  # pragma: no cover
 				logger.warning("Summarization failed for %s: %s", image_name, e)
-				results[idx] = ""
+				results[idx] = "[ERROR: exception]"
 
 		tasks = []
 		rows = list(df.itertuples(index=False))
@@ -213,10 +245,7 @@ def cli(
 	summarizations = asyncio.run(_run_async())
 	# If limit used, pad out to dataframe size for safe assignment
 	if limit is not None and len(summarizations) != len(df):
-		summarizations = [
-			*summarizations,
-			*([""] * (len(df) - len(summarizations))),
-		]
+		summarizations = [""] * (len(df) - len(summarizations)) + summarizations
 	df["Summarization"] = summarizations
 
 	output_csv.parent.mkdir(parents=True, exist_ok=True)
