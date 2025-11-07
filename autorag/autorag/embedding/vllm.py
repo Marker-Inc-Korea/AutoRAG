@@ -46,22 +46,10 @@ class VllmEmbedding(MultiModalEmbedding):
 		description="Holds any model parameters valid for `vllm.LLM` call not explicitly specified.",
 	)
 
-	retry_cnt: int = Field(
-		default=3,
-		description="Number of retries for embedding in case of failure.",
-	)
-	wait_multiplier: int = Field(
-		default=1,
-		description="The multiplier factor to use for exponential backoff during retries.",
-	)
-	wait_min: int = Field(
-		default=4,
-		description="Minimum wait time (in seconds) between retries.",
-	)
-	wait_max: int = Field(
-		default=10,
-		description="Maximum wait time (in seconds) between retries.",
-	)
+	retry_cnt: int = 3
+	wait_multiplier: int = 1
+	wait_min: int = 4
+	wait_max: int = 10
 
 	_client: Any = PrivateAttr()
 
