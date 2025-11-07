@@ -38,19 +38,10 @@ AutoRAG supports
 - **Optimization**: Automatically run experiments to find the best RAG pipeline for your own data.
 - **Deployment**: Deploy the best RAG pipeline with single yaml file. Supports Flask server as well.
 
-🚀 AutoRAG GUI
-************************************
-
-AutoRAG GUI is a web-based tool for running AutoRAG experiments.
-If you are not familiar with command-line interface and YAML file configuration,
-you can use AutoRAG GUI to run AutoRAG experiments.
-
-Check out `AutoRAG GUI Docs <https://marker-inc-korea.github.io/AutoRAG/gui/gui.html>`__ for more information.
-
 🏃‍♂️ Getting Started
 ************************************
 
-``pip install AutoRAG``
+``uv pip install AutoRAG``
 
 
 In our documentation, we will guide you through the process of `installation <https://marker-inc-korea.github.io/AutoRAG/install.html>`__ and `tutorial <https://marker-inc-korea.github.io/AutoRAG/tutorial.html>`__ for AutoRAG starter.
@@ -75,10 +66,8 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
 ************************************
 * Github Repo : https://github.com/Marker-Inc-Korea/AutoRAG
 * PyPI : https://pypi.org/project/AutoRAG/
-* Roadmap : https://github.com/orgs/Auto-RAG/projects/1/views/2
 * HuggingFace : https://huggingface.co/AutoRAG
 * LinkedIn : https://www.linkedin.com/company/autorag/
-* X (Twitter) : https://twitter.com/AutoRAG_HQ
 
 
 .. toctree::

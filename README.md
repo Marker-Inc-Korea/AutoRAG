@@ -25,11 +25,6 @@ Try now and find the best RAG pipeline for your own use-case.
 
 Explore our 📖 [Document](https://marker-inc-korea.github.io/AutoRAG/)!!
 
-```
-Notice: We are no longer support "AutoRAG GUI"
-And we will focus to maintain only AutoRAG core library in the future. Thank you.
-```
-
 ---
 
 ## YouTube Tutorial
@@ -67,7 +62,6 @@ You can see on [YouTube](https://youtu.be/2ojK8xjyXAU?feature=shared)
         - [Run AutoRAG](#2-run-autorag)
         - [Run Dashboard](#3-run-dashboard)
         - [Deploy your optimal RAG pipeline](#4-deploy-your-optimal-rag-pipeline)
-- [🐳 AutoRAG Docker Guide](#-autorag-docker-guide)
 - [FaQ](#-faq)
 
 # Quick Install
@@ -414,96 +408,7 @@ autorag run_web --trial_path your/path/to/trial_path
 
 <img width="1491" alt="web_interface" src="https://github.com/Marker-Inc-Korea/AutoRAG/assets/96727832/f6b00353-f6bb-4d8f-8740-1c264c0acbb8">
 
-### Use advanced web interface
-
-You can deploy the advanced web interface featured by [Kotaemon](https://github.com/Cinnamon/kotaemon) to the fly.io.
-Go [here](https://github.com/vkehfdl1/AutoRAG-web-kotaemon) to use it and deploy to the fly.io.
-
-Example :
-
-![Kotaemon Example](https://velog.velcdn.com/images/autorag/post/5e71b8d9-3e59-4e63-9191-355a1a5aa3a0/image.png)
-
-## 🐳 AutoRAG Docker Guide
-
-This guide provides a quick overview of building and running the AutoRAG Docker container for production, with
-instructions on setting up the environment for evaluation using your configuration and data paths.
-
-### 🚀 Building the Docker Image
-
-Tip: If you want to build an image for a gpu version, you can use `autoraghq/autorag:gpu` or
-`autoraghq/autorag:gpu-parsing`
-
-#### 1.Download dataset for [Tutorial Step 1](https://colab.research.google.com/drive/19OEQXO_pHN6gnn2WdfPd4hjnS-4GurVd?usp=sharing)
-
-```bash
-python sample_dataset/eli5/load_eli5_dataset.py --save_path projects/tutorial_1
-```
-
-#### 2. Run `evaluate`
-
-> **Note**: This step may take a long time to complete and involves OpenAI API calls, which may cost approximately $
-> 0.30.
-
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:api-latest evaluate \
-  --config /usr/src/app/projects/tutorial_1/config.yaml \
-  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
-  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet \
-  --project_dir /usr/src/app/projects/tutorial_1/
-```
-
-#### 3. Run validate
-
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  autoraghq/autorag:api-latest validate \
-  --config /usr/src/app/projects/tutorial_1/config.yaml \
-  --qa_data_path /usr/src/app/projects/tutorial_1/qa_test.parquet \
-  --corpus_data_path /usr/src/app/projects/tutorial_1/corpus.parquet
-```
-
-#### 4. Run `dashboard`
-
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  -p 8502:8502 \
-  autoraghq/autorag:api-latest dashboard \
-    --trial_dir /usr/src/app/projects/tutorial_1/0
-```
-
-#### 4. Run `run_web`
-
-```bash
-docker run --rm -it \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/projects:/usr/src/app/projects \
-  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
-  -p 8501:8501 \
-  autoraghq/autorag:api-latest run_web --trial_path ./projects/tutorial_1/0
-```
-
-#### Key Points :
-
-- **`-v ~/.cache/huggingface:/cache/huggingface`**: Mounts the host machine’s Hugging Face cache to `/cache/huggingface`
-  in the container, enabling access to pre-downloaded models.
-- **`-e OPENAI_API_KEY: ${OPENAI_API_KEY}`**: Passes the `OPENAI_API_KEY` from your host environment.
-
-For more detailed instructions, refer to
-the [Docker Installation Guide](./docs/source/install.md#1-build-the-docker-image).
-
 ## ☎️ FaQ
-
-🛣️ [Roadmap](https://github.com/orgs/Auto-RAG/projects/1/views/2)
 
 💻 [Hardware Specs](https://edai.notion.site/Hardware-specs-28cefcf2a26246ffadc91e2f3dc3d61c?pvs=4)
 
