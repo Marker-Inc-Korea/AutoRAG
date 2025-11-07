@@ -1,11 +1,20 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0  # Use the ref you want to point at
+    rev: "v5.0.0"
     hooks:
-      - id: trailing-whitespace
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: check-json
+        exclude: ^.devcontainer/devcontainer.json
+      - id: pretty-format-json
+        exclude: ^.devcontainer/devcontainer.json
+        args: [ --autofix, --no-sort-keys ]
       - id: end-of-file-fixer
+      - id: trailing-whitespace
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.6.1
+    rev: "v0.11.5"
     hooks:
       - id: ruff
         types_or: [ python, pyi ]

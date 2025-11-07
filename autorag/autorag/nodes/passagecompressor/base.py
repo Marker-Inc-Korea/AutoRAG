@@ -28,9 +28,9 @@ class BasePassageCompressor(BaseModule, metaclass=abc.ABCMeta):
 		logger.info(
 			f"Running passage compressor node - {self.__class__.__name__} module..."
 		)
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must contain 'query' column."
+		assert "query" in previous_result.columns, (
+			"previous_result must contain 'query' column."
+		)
 		assert len(previous_result) > 0, "previous_result must have at least one row."
 
 		queries = previous_result["query"].tolist()

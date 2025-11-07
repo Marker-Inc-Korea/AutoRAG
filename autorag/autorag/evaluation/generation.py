@@ -41,12 +41,14 @@ def evaluate_generation(
 				assert (
 					type(generation_result[0]) is list
 					and type(generation_result[0][0]) is str
-				), "Input func must return string list as generated answer at the first return value."
+				), (
+					"Input func must return string list as generated answer at the first return value."
+				)
 				generated_str = generation_result[0]
 			elif type(generation_result) is list:
-				assert (
-					type(generation_result[0]) is str
-				), "Input func must return string list as generated answer at the first return value."
+				assert type(generation_result[0]) is str, (
+					"Input func must return string list as generated answer at the first return value."
+				)
 				generated_str = generation_result
 			else:
 				raise ValueError(

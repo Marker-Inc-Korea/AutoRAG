@@ -23,9 +23,9 @@ class BasePromptMaker(BaseModule, metaclass=ABCMeta):
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		logger.info(f"Running prompt maker node - {self.__class__.__name__} module...")
 		# get query and retrieved contents from previous_result
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must have query column."
+		assert "query" in previous_result.columns, (
+			"previous_result must have query column."
+		)
 
 		query = previous_result["query"].tolist()
 		prompt = kwargs.pop("prompt")

@@ -8,16 +8,16 @@ from autorag.utils.util import preprocess_text
 
 def validate_qa_dataset(df: pd.DataFrame):
 	columns = ["qid", "query", "retrieval_gt", "generation_gt"]
-	assert set(columns).issubset(
-		df.columns
-	), f"df must have columns {columns}, but got {df.columns}"
+	assert set(columns).issubset(df.columns), (
+		f"df must have columns {columns}, but got {df.columns}"
+	)
 
 
 def validate_corpus_dataset(df: pd.DataFrame):
 	columns = ["doc_id", "contents", "metadata"]
-	assert set(columns).issubset(
-		df.columns
-	), f"df must have columns {columns}, but got {df.columns}"
+	assert set(columns).issubset(df.columns), (
+		f"df must have columns {columns}, but got {df.columns}"
+	)
 
 
 def cast_qa_dataset(df: pd.DataFrame):
@@ -52,12 +52,12 @@ def cast_qa_dataset(df: pd.DataFrame):
 
 	df = df.reset_index(drop=True)
 	validate_qa_dataset(df)
-	assert df["qid"].apply(lambda x: isinstance(x, str)).sum() == len(
-		df
-	), "qid must be string type."
-	assert df["query"].apply(lambda x: isinstance(x, str)).sum() == len(
-		df
-	), "query must be string type."
+	assert df["qid"].apply(lambda x: isinstance(x, str)).sum() == len(df), (
+		"qid must be string type."
+	)
+	assert df["query"].apply(lambda x: isinstance(x, str)).sum() == len(df), (
+		"query must be string type."
+	)
 	df["retrieval_gt"] = df["retrieval_gt"].apply(cast_retrieval_gt)
 	df["generation_gt"] = df["generation_gt"].apply(cast_generation_gt)
 	df["query"] = df["query"].apply(preprocess_text)
@@ -118,12 +118,12 @@ def cast_corpus_dataset(df: pd.DataFrame):
 	df["metadata"] = df["metadata"].apply(normalize_unicode_metadata)
 
 	# check every metadata have a prev_id, next_id key
-	assert all(
-		"prev_id" in metadata for metadata in df["metadata"]
-	), "Every metadata must have a prev_id key."
-	assert all(
-		"next_id" in metadata for metadata in df["metadata"]
-	), "Every metadata must have a next_id key."
+	assert all("prev_id" in metadata for metadata in df["metadata"]), (
+		"Every metadata must have a prev_id key."
+	)
+	assert all("next_id" in metadata for metadata in df["metadata"]), (
+		"Every metadata must have a next_id key."
+	)
 
 	return df
 
@@ -144,6 +144,6 @@ def validate_qa_from_corpus_dataset(qa_df: pd.DataFrame, corpus_df: pd.DataFrame
 		filter(lambda qa_id: corpus_df[corpus_df["doc_id"] == qa_id].empty, qa_ids)
 	)
 
-	assert (
-		len(no_exist_ids) == 0
-	), f"{len(no_exist_ids)} doc_ids in retrieval_gt do not exist in corpus_df."
+	assert len(no_exist_ids) == 0, (
+		f"{len(no_exist_ids)} doc_ids in retrieval_gt do not exist in corpus_df."
+	)

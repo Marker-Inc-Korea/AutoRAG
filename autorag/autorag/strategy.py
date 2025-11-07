@@ -80,12 +80,12 @@ def validate_strategy_inputs(
 ):
 	if metadatas is None:
 		metadatas = [None] * len(results)
-	assert len(results) == len(
-		metadatas
-	), "results and module_filename must have the same length."
-	assert all(
-		[isinstance(result, pd.DataFrame) for result in results]
-	), "results must be pd.DataFrame."
+	assert len(results) == len(metadatas), (
+		"results and module_filename must have the same length."
+	)
+	assert all([isinstance(result, pd.DataFrame) for result in results]), (
+		"results must be pd.DataFrame."
+	)
 	assert all(
 		[column in result.columns for result in results for column in columns]
 	), "columns must be in the columns of results."

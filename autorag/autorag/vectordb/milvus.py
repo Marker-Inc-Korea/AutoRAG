@@ -96,9 +96,9 @@ class Milvus(BaseVectorStore):
 
 		# Insert data into the collection
 		res = self.collection.insert(data=data, timeout=self.timeout)
-		assert (
-			res.insert_count == len(ids)
-		), f"Insertion failed. Try to insert {len(ids)} but only {res['insert_count']} inserted."
+		assert res.insert_count == len(ids), (
+			f"Insertion failed. Try to insert {len(ids)} but only {res['insert_count']} inserted."
+		)
 
 		self.collection.flush(timeout=self.timeout)
 

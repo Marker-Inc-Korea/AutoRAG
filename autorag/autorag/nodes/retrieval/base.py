@@ -31,9 +31,9 @@ class BaseRetrieval(BaseModule, metaclass=abc.ABCMeta):
 		logger.info(f"Running retrieval node - {self.__class__.__name__} module...")
 		validate_qa_dataset(previous_result)
 		# find queries columns & type cast queries
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must have query column."
+		assert "query" in previous_result.columns, (
+			"previous_result must have query column."
+		)
 		if "queries" not in previous_result.columns:
 			previous_result["queries"] = previous_result["query"]
 		previous_result.loc[:, "queries"] = previous_result["queries"].apply(

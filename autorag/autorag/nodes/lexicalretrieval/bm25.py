@@ -162,17 +162,17 @@ class BM25(BaseRetrieval):
 			bm25_tokenizer = "porter_stemmer"
 		bm25_path = os.path.join(self.resources_dir, get_bm25_pkl_name(bm25_tokenizer))
 
-		assert (
-			bm25_path is not None
-		), "bm25_path must be specified for using bm25 retrieval."
-		assert os.path.exists(
-			bm25_path
-		), f"bm25_path {bm25_path} does not exist. Please ingest first."
+		assert bm25_path is not None, (
+			"bm25_path must be specified for using bm25 retrieval."
+		)
+		assert os.path.exists(bm25_path), (
+			f"bm25_path {bm25_path} does not exist. Please ingest first."
+		)
 
 		self.bm25_corpus = load_bm25_corpus(bm25_path)
-		assert (
-			"tokens" and "passage_id" in list(self.bm25_corpus.keys())
-		), "bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
+		assert "tokens" and "passage_id" in list(self.bm25_corpus.keys()), (
+			"bm25_corpus must contain tokens and passage_id. Please check you ingested bm25 corpus correctly."
+		)
 		self.tokenizer = select_bm25_tokenizer(bm25_tokenizer)
 		assert self.bm25_corpus["tokenizer_name"] == bm25_tokenizer, (
 			f"The bm25 corpus tokenizer is {self.bm25_corpus['tokenizer_name']}, but your input is {bm25_tokenizer}. "

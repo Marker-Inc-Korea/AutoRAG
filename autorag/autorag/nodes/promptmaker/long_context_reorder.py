@@ -16,9 +16,9 @@ class LongContextReorder(BasePromptMaker):
 		query, retrieved_contents, prompt = self.cast_to_run(
 			previous_result, *args, **kwargs
 		)
-		assert (
-			"retrieve_scores" in previous_result.columns
-		), "previous_result must have retrieve_scores column."
+		assert "retrieve_scores" in previous_result.columns, (
+			"previous_result must have retrieve_scores column."
+		)
 		retrieve_scores = previous_result["retrieve_scores"].tolist()
 		return self._pure(prompt, query, retrieved_contents, retrieve_scores)
 

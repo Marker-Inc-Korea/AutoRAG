@@ -50,9 +50,9 @@ def run_passage_compressor_node(
 		os.path.join(data_dir, "corpus.parquet"), engine="pyarrow"
 	)
 	# check qa_data have retrieval_gt
-	assert all(
-		len(x[0]) > 0 for x in qa_data["retrieval_gt"].tolist()
-	), "Can't use passage compressor if you don't have retrieval gt values in QA dataset."
+	assert all(len(x[0]) > 0 for x in qa_data["retrieval_gt"].tolist()), (
+		"Can't use passage compressor if you don't have retrieval gt values in QA dataset."
+	)
 
 	# run modules
 	results, execution_times = zip(

@@ -28,9 +28,9 @@ class HybridRRF(HybridRetrieval):
 		**kwargs,
 	):
 		assert "strategy" in kwargs, "You must specify the strategy to use."
-		assert (
-			"input_metrics" in kwargs
-		), "You must specify the input metrics to use, which is list of MetricInput."
+		assert "input_metrics" in kwargs, (
+			"You must specify the input metrics to use, which is list of MetricInput."
+		)
 		strategies = kwargs.pop("strategy")
 		input_metrics = kwargs.pop("input_metrics")
 		weight_range = kwargs.pop("weight_range", (4, 80))

@@ -19,9 +19,9 @@ class BaseVectorStore:
 		self.embedding = EmbeddingModel.load(embedding_model)()
 		self.embedding_batch = embedding_batch
 		self.embedding.embed_batch_size = embedding_batch
-		assert (
-			similarity_metric in self.support_similarity_metrics
-		), f"search method {similarity_metric} is not supported"
+		assert similarity_metric in self.support_similarity_metrics, (
+			f"search method {similarity_metric} is not supported"
+		)
 		self.similarity_metric = similarity_metric
 
 	@abstractmethod

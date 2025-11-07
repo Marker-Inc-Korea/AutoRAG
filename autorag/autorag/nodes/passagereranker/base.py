@@ -30,9 +30,9 @@ class BasePassageReranker(BaseModule, metaclass=abc.ABCMeta):
 		validate_qa_dataset(previous_result)
 
 		# find queries columns
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must have query column."
+		assert "query" in previous_result.columns, (
+			"previous_result must have query column."
+		)
 		queries = previous_result["query"].tolist()
 
 		retrieve_infos = cast_retrieve_infos(previous_result)

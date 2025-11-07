@@ -60,9 +60,9 @@ class PrevNextPassageAugmenter(BasePassageAugmenter):
 
 		ids = self.cast_to_run(previous_result)
 		# find queries columns
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must have query column."
+		assert "query" in previous_result.columns, (
+			"previous_result must have query column."
+		)
 		queries = previous_result["query"].tolist()
 
 		mode = kwargs.pop("mode", "both")

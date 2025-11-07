@@ -145,18 +145,18 @@ def make_qa_with_existing_qa(
 	:return: QA dataset dataframe.
 	"""
 	raise DeprecationWarning("This function is deprecated.")
-	assert (
-		"query" in existing_query_df.columns
-	), "existing_query_df must have 'query' column."
+	assert "query" in existing_query_df.columns, (
+		"existing_query_df must have 'query' column."
+	)
 
 	if exist_gen_gt:
-		assert (
-			"generation_gt" in existing_query_df.columns
-		), "existing_query_df must have 'generation_gt' column."
+		assert "generation_gt" in existing_query_df.columns, (
+			"existing_query_df must have 'generation_gt' column."
+		)
 	else:
-		assert (
-			answer_creation_func is not None
-		), "answer_creation_func must be given when exist_gen_gt is False."
+		assert answer_creation_func is not None, (
+			"answer_creation_func must be given when exist_gen_gt is False."
+		)
 
 	assert content_size > 0, "content_size must be greater than 0."
 	if content_size > len(corpus_df):

@@ -34,9 +34,9 @@ class BaseQueryExpansion(BaseModule, metaclass=abc.ABCMeta):
 		validate_qa_dataset(previous_result)
 
 		# find queries columns
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must have query column."
+		assert "query" in previous_result.columns, (
+			"previous_result must have query column."
+		)
 		queries = previous_result["query"].tolist()
 		return queries
 

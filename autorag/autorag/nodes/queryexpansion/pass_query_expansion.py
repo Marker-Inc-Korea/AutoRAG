@@ -12,9 +12,9 @@ class PassQueryExpansion(BaseQueryExpansion):
 		Return with the same queries.
 		The dimension will be 2-d list, and the column name will be 'queries'.
 		"""
-		assert (
-			"query" in previous_result.columns
-		), "previous_result must have query column."
+		assert "query" in previous_result.columns, (
+			"previous_result must have query column."
+		)
 		queries = previous_result["query"].tolist()
 		return list(map(lambda x: [x], queries))
 

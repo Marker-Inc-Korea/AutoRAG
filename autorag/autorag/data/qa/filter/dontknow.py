@@ -42,9 +42,9 @@ dont_know_phrases = {
 
 
 def dontknow_filter_rule_based(row: Dict, lang: str = "en") -> bool:
-	assert (
-		"generation_gt" in row.keys()
-	), "generation_gt column is not in the DataFrame."
+	assert "generation_gt" in row.keys(), (
+		"generation_gt column is not in the DataFrame."
+	)
 	dont_know_phrase = dont_know_phrases[lang]
 	return not any(
 		phrase in s for phrase in dont_know_phrase for s in row["generation_gt"]

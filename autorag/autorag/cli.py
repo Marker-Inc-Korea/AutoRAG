@@ -157,7 +157,7 @@ def run_dashboard(trial_dir: str, port: int):
 @click.option(
 	"--output_path",
 	type=click.Path(),
-	help="Path to the output directory." " Must be .yaml or .yml file.",
+	help="Path to the output directory. Must be .yaml or .yml file.",
 )
 def extract_best_config(trial_path: str, output_path: str):
 	original_extract_best_config(trial_path, output_path)

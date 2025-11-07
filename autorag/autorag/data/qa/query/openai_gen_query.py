@@ -79,9 +79,9 @@ async def two_hop_incremental(
 	"""
 	messages = QUERY_GEN_PROMPT["two_hop_incremental"][lang]
 	passages = row["retrieval_gt_contents"]
-	assert (
-		len(passages) >= 2
-	), "You have to sample more than two passages for making two-hop questions."
+	assert len(passages) >= 2, (
+		"You have to sample more than two passages for making two-hop questions."
+	)
 	context_str = f"Document 1: {passages[0][0]}\nDocument 2: {passages[1][0]}"
 	user_prompt = f"{context_str}\n\nGenerated two-hop Question from two Documents:\n"
 	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))

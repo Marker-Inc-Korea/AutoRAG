@@ -1,3 +1,0 @@
-[submodule "autorag-frontend"]
-	path = autorag-frontend
-	url = https://github.com/Auto-RAG/autorag-frontend.git

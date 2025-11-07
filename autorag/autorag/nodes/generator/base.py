@@ -24,9 +24,9 @@ class BaseGenerator(BaseModule, metaclass=abc.ABCMeta):
 
 	def cast_to_run(self, previous_result: pd.DataFrame, *args, **kwargs):
 		logger.info(f"Running generator node - {self.__class__.__name__} module...")
-		assert (
-			"prompts" in previous_result.columns
-		), "previous_result must contain prompts column."
+		assert "prompts" in previous_result.columns, (
+			"previous_result must contain prompts column."
+		)
 		prompts = previous_result["prompts"].tolist()
 		return prompts
 
@@ -72,9 +72,9 @@ def generator_node(func):
 		    Each column is "generated_texts", "generated_tokens", and "generated_log_probs".
 		"""
 		logger.info(f"Running generator node - {func.__name__} module...")
-		assert (
-			"prompts" in previous_result.columns
-		), "previous_result must contain prompts column."
+		assert "prompts" in previous_result.columns, (
+			"previous_result must contain prompts column."
+		)
 		prompts = previous_result["prompts"].tolist()
 		if func.__name__ == "llama_index_llm":
 			if llm not in generator_models:
