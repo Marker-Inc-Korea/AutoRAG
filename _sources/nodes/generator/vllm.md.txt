@@ -40,6 +40,17 @@ modules:
     max_tokens: 512
 ```
 
+```{note}
+Installation
+
+To use this module, install the vLLM optional dependencies:
+
+- pip: `pip install "AutoRAG[vllm]"`
+- uv: `uv pip install "AutoRAG[vllm]"`
+
+When developing from source, you can install all extras with `uv pip install -e .[all]`.
+```
+
 ## Support chat prompt
 
 From v0.3.18, you can use chat prompt with `vllm` module.

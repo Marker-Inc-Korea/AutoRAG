@@ -542,6 +542,22 @@ at <a class="reference external" href="https://docs.llamaindex.ai/en/stable/modu
 <a class="reference external" href="https://docs.llamaindex.ai/en/stable/module_guides/models/llms/">LlamaIndex LLM documentation</a>.</p>
 </section>
 </section>
+</section>
+<section id="use-vllm">
+<h2>Use vllm<a class="headerlink" href="#use-vllm" title="Link to this heading">¶</a></h2>
+<p>You can use vllm to use local LLM. For more information, please check out <a class="reference internal" href="nodes/generator/vllm.html"><span class="std std-doc">vllm</span></a> generator
+module docs.</p>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>Install vLLM optional dependencies</p>
+<p>To use vLLM in AutoRAG (generator or the new vLLM embedding backend), install the vLLM extras:</p>
+<ul class="simple">
+<li><p>With pip: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;AutoRAG[vllm]&quot;</span></code></p></li>
+<li><p>With uv: <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;AutoRAG[vllm]&quot;</span></code></p></li>
+</ul>
+<p>If you want all GPU/local extras together: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;AutoRAG[gpu]&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-e</span> <span class="pre">.[all]</span></code> when working from source.</p>
+<p>The vLLM embedding leverages <code class="docutils literal notranslate"><span class="pre">llama-index-embeddings-vllm</span></code>; the generator uses <code class="docutils literal notranslate"><span class="pre">vllm</span></code>. Installing the <code class="docutils literal notranslate"><span class="pre">vllm</span></code> extra ensures both are available.</p>
+</div>
 <section id="add-more-llm-models">
 <h3>Add more LLM models<a class="headerlink" href="#add-more-llm-models" title="Link to this heading">¶</a></h3>
 <p>You can add more LLM models for AutoRAG.
@@ -589,6 +605,7 @@ So if you used before v0.3.13 version, it is okay to use the legacy configuratio
 <li><p>mock</p></li>
 <li><p>ollama</p></li>
 <li><p>openai_like</p></li>
+<li><p>vllm</p></li>
 </ul>
 <p>You can configure the embedding model option directly in the YAML file <code class="docutils literal notranslate"><span class="pre">vectordb</span></code> section.
 If you want to know how to configure vectordb in AutoRAG,
@@ -692,11 +709,6 @@ execute the following code.</p>
 </div>
 </section>
 </section>
-<section id="use-vllm">
-<h2>Use vllm<a class="headerlink" href="#use-vllm" title="Link to this heading">¶</a></h2>
-<p>You can use vllm to use local LLM. For more information, please check out <a class="reference internal" href="nodes/generator/vllm.html"><span class="std std-doc">vllm</span></a> generator
-module docs.</p>
-</section>
 </section>
 
         </article>
@@ -763,6 +775,9 @@ module docs.</p>
 <li><a class="reference internal" href="#common-parameters">Common Parameters</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a class="reference internal" href="#use-vllm">Use vllm</a><ul>
 <li><a class="reference internal" href="#add-more-llm-models">Add more LLM models</a></li>
 </ul>
 </li>
@@ -773,7 +788,6 @@ module docs.</p>
 <li><a class="reference internal" href="#add-your-embedding-models-legacy">Add your embedding models (Legacy)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#use-vllm">Use vllm</a></li>
 </ul>
 </li>
 </ul>

@@ -441,6 +441,21 @@ First, you can check out the <a class="reference internal" href="troubleshooting
 </pre></div>
 </div>
 </section>
+<section id="installation-for-vllm">
+<h2>Installation for vLLM ⚡<a class="headerlink" href="#installation-for-vllm" title="Link to this heading">¶</a></h2>
+<p>If you plan to use vLLM (as a generator or embedding backend), install the <code class="docutils literal notranslate"><span class="pre">vllm</span></code> optional dependencies.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># pip</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;AutoRAG[vllm]&quot;</span>
+
+<span class="c1"># uv (recommended)</span>
+uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;AutoRAG[vllm]&quot;</span>
+</pre></div>
+</div>
+<p>When developing from source, you can also install everything at once:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="o">[</span>all<span class="o">]</span>
+</pre></div>
+</div>
+</section>
 <section id="installation-for-parsing">
 <h2>Installation for Parsing 🌲<a class="headerlink" href="#installation-for-parsing" title="Link to this heading">¶</a></h2>
 <p>For parsing you need to install some local packages like <a class="reference external" href="https://man7.org/linux/man-pages/man3/libmagic.3.html">libmagic</a>,
@@ -679,6 +694,7 @@ It built on the cuda 11.8 version and pytorch docker image.</p>
 <li><a class="reference internal" href="#">Installation and Setup</a><ul>
 <li><a class="reference internal" href="#note-for-windows-users">Note for Windows Users</a></li>
 <li><a class="reference internal" href="#installation-for-local-models">Installation for Local Models 🏠</a></li>
+<li><a class="reference internal" href="#installation-for-vllm">Installation for vLLM ⚡</a></li>
 <li><a class="reference internal" href="#installation-for-parsing">Installation for Parsing 🌲</a></li>
 <li><a class="reference internal" href="#installation-for-korean">Installation for Korean 🇰🇷</a></li>
 <li><a class="reference internal" href="#installation-for-japanese">Installation for Japanese 🇯🇵</a></li>

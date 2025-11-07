@@ -495,7 +495,11 @@
 <span class="sd">		&quot;&quot;&quot;</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm.outputs</span><span class="w"> </span><span class="kn">import</span> <span class="n">RequestOutput</span>
-			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm.sequence</span><span class="w"> </span><span class="kn">import</span> <span class="n">SampleLogprobs</span>
+
+			<span class="k">try</span><span class="p">:</span>
+				<span class="kn">from</span><span class="w"> </span><span class="nn">vllm.logprobs</span><span class="w"> </span><span class="kn">import</span> <span class="n">SampleLogprobs</span>  <span class="c1"># vLLM &gt;= 0.11</span>
+			<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>  <span class="c1"># pragma: no cover - older vLLM fallback</span>
+				<span class="kn">from</span><span class="w"> </span><span class="nn">vllm.sequence</span><span class="w"> </span><span class="kn">import</span> <span class="n">SampleLogprobs</span>
 			<span class="kn">from</span><span class="w"> </span><span class="nn">vllm</span><span class="w"> </span><span class="kn">import</span> <span class="n">SamplingParams</span><span class="p">,</span> <span class="n">LLM</span>
 		<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
 			<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
