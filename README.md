@@ -272,7 +272,7 @@ First, you need to set the config YAML file for your RAG optimization.
 
 We highly recommend using pre-made config YAML files for starter.
 
-- [Get Sample YAML](autorag/sample_config/rag)
+- [Get Sample YAML](sample_config/rag)
     - [Sample YAML Guide](https://marker-inc-korea.github.io/AutoRAG/optimization/sample_config.html)
 - [Make Custom YAML Guide](https://marker-inc-korea.github.io/AutoRAG/optimization/custom_config.html)
 
