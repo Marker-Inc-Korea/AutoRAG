@@ -12,7 +12,7 @@ AutoRAG is a Python package for automatically finding optimal RAG (Retrieval-Aug
 - For systems without UV, fallback to pip installation
 - Install system dependencies first (see Platform Dependencies section)
 
-### Platform Dependencies 
+### Platform Dependencies
 Install these system packages before building AutoRAG:
 
 **Ubuntu/Debian:**
@@ -32,7 +32,7 @@ sudo apt-get install openjdk-17-jdk
 **TIMING EXPECTATIONS:**
 - **NEVER CANCEL builds or tests** - they can take 15-45+ minutes
 - Initial dependency installation: 15-30 minutes
-- Full test suite: 15-20 minutes  
+- Full test suite: 15-20 minutes
 - Documentation build: 5-10 minutes
 - **ALWAYS set timeouts to 60+ minutes for builds and 30+ minutes for tests**
 
@@ -65,7 +65,7 @@ uv pip install --group dev --timeout 1800
 python3 -m venv venv
 source venv/bin/activate
 
-# Install AutoRAG - TAKES 20-45 MINUTES, NEVER CANCEL  
+# Install AutoRAG - TAKES 20-45 MINUTES, NEVER CANCEL
 pip install -e '.[all]' --timeout 3600
 
 # Install dev dependencies
@@ -117,7 +117,7 @@ autorag --help
 
 # Main commands:
 autorag evaluate --config config.yaml --qa_data_path qa.parquet --corpus_data_path corpus.parquet --project_dir ./project
-autorag validate --config config.yaml --qa_data_path qa.parquet --corpus_data_path corpus.parquet  
+autorag validate --config config.yaml --qa_data_path qa.parquet --corpus_data_path corpus.parquet
 autorag run_api --trial_path ./trial --host 0.0.0.0 --port 8000
 autorag dashboard --trial_dir ./trial --port 7690
 autorag run_web --trial_path ./trial --host 0.0.0.0 --port 8501
@@ -151,7 +151,7 @@ ruff format
    ```bash
    # Test CLI help works
    autorag --help
-   
+
    # Test configuration validation (use actual existing files)
    autorag validate --config autorag/sample_config/rag/full.yaml \
      --qa_data_path projects/tutorial_1/qa/qa_8c42b9e6-490d-4971-bb9e-705b36b7a3a2.parquet \
@@ -162,22 +162,22 @@ ruff format
    ```bash
    # Start API server (runs in background)
    autorag run_api --trial_path ./projects/tutorial_1 --host 0.0.0.0 --port 8000 &
-   
+
    # Test API endpoint
    curl http://localhost:8000/health
-   
+
    # Stop server
    pkill -f "autorag run_api"
    ```
 
 3. **Dashboard Test:**
    ```bash
-   # Start dashboard (runs in background)  
+   # Start dashboard (runs in background)
    autorag dashboard --trial_dir ./projects/tutorial_1 --port 7690 &
-   
+
    # Verify it's running
    curl http://localhost:7690
-   
+
    # Stop dashboard
    pkill -f "autorag dashboard"
    ```
@@ -253,7 +253,7 @@ ruff format
 
 ### Configuration Files
 - **Sample Configs**: `autorag/sample_config/rag/full.yaml` - comprehensive example
-- **Docker Config**: `autorag/Dockerfile.base` - multi-stage build configuration  
+- **Docker Config**: `autorag/Dockerfile.base` - multi-stage build configuration
 - **Test Config**: `projects/tutorial_1/` - working example with test data
 - **Dependencies**: `autorag/pyproject.toml` - all package dependencies and extras
 

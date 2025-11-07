@@ -1,2 +1,0 @@
-filename,module_name,module_params,execution_time
-0.parquet,langchain_parse,{'parse_method': 'pdfminer'},6.677804946899414
