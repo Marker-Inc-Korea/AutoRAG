@@ -46,6 +46,23 @@ class VllmEmbedding(MultiModalEmbedding):
 		description="Holds any model parameters valid for `vllm.LLM` call not explicitly specified.",
 	)
 
+	retry_cnt: int = Field(
+		default=3,
+		description="Number of retries for embedding in case of failure.",
+	)
+	wait_multiplier: int = Field(
+		default=1,
+		description="The multiplier factor to use for exponential backoff during retries.",
+	)
+	wait_min: int = Field(
+		default=4,
+		description="Minimum wait time (in seconds) between retries.",
+	)
+	wait_max: int = Field(
+		default=10,
+		description="Maximum wait time (in seconds) between retries.",
+	)
+
 	_client: Any = PrivateAttr()
 
 	_image_token_id: Union[int, None] = PrivateAttr()
@@ -106,8 +123,8 @@ class VllmEmbedding(MultiModalEmbedding):
 			torch.cuda.synchronize()
 
 	@retry(
-		stop=stop_after_attempt(3),
-		wait=wait_exponential(multiplier=1, min=4, max=10),
+		stop=stop_after_attempt(retry_cnt),
+		wait=wait_exponential(multiplier=wait_multiplier, min=wait_min, max=wait_max),
 		reraise=True,
 	)
 	def _embed_with_retry(
