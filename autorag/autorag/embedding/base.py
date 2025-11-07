@@ -12,6 +12,7 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 
 from autorag import LazyInit
+from autorag.embedding.vllm import VllmEmbedding
 
 logger = logging.getLogger("AutoRAG")
 
@@ -40,6 +41,7 @@ embedding_models = {
 	"ollama": LazyInit(OllamaEmbedding),
 	# openai like
 	"openai_like": LazyInit(OpenAILikeEmbedding),
+	"vllm": LazyInit(VllmEmbedding),
 }
 
 try:
@@ -100,7 +102,13 @@ class EmbeddingModel:
 		def _check_keys(target: dict):
 			if "type" not in target or "model_name" not in target:
 				raise ValueError("Both 'type' and 'model_name' must be provided")
-			if target["type"] not in ["openai", "huggingface", "mock", "ollama"]:
+			if target["type"] not in [
+				"openai",
+				"huggingface",
+				"mock",
+				"ollama",
+				"vllm",
+			]:
 				raise ValueError(
 					f"Embedding model type '{target['type']}' is not supported"
 				)
@@ -126,6 +134,7 @@ class EmbeddingModel:
 			"huggingface": _get_huggingface_class(),
 			"ollama": OllamaEmbedding,
 			"openai_like": OpenAILikeEmbedding,
+			"vllm": VllmEmbedding,
 		}
 
 		embedding_class = embedding_map.get(model_type)

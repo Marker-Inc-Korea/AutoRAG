@@ -92,7 +92,11 @@ class Vllm(BaseGenerator):
 		"""
 		try:
 			from vllm.outputs import RequestOutput
-			from vllm.sequence import SampleLogprobs
+
+			try:
+				from vllm.logprobs import SampleLogprobs  # vLLM >= 0.11
+			except ImportError:  # pragma: no cover - older vLLM fallback
+				from vllm.sequence import SampleLogprobs
 			from vllm import SamplingParams, LLM
 		except ImportError:
 			raise ImportError(
