@@ -35,6 +35,24 @@ For using local models, you need to install some additional dependencies.
 pip install "AutoRAG[gpu]"
 ```
 
+### Installation for vLLM ⚡
+
+If you plan to use vLLM (as a generator or embedding backend), install the `vllm` optional dependencies.
+
+```bash
+# pip
+pip install "AutoRAG[vllm]"
+
+# uv (recommended)
+uv pip install "AutoRAG[vllm]"
+```
+
+When developing from source, you can also install everything at once:
+
+```bash
+uv pip install -e .[all]
+```
+
 ### Installation for Parsing 🌲
 
 For parsing you need to install some local packages like [libmagic](https://man7.org/linux/man-pages/man3/libmagic.3.html),

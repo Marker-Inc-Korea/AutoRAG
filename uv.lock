@@ -2,12 +2,12 @@ version = 1
 revision = 1
 requires-python = ">=3.10"
 resolution-markers = [
-    "python_full_version >= '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '4' and sys_platform == 'darwin'",
+    "python_full_version >= '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '3.13' and python_full_version < '4' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and python_full_version < '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and python_full_version < '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform == 'darwin'",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
@@ -421,8 +421,8 @@ dependencies = [
     { name = "openai" },
     { name = "pandas" },
     { name = "panel" },
-    { name = "pinecone", version = "5.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
-    { name = "pinecone", version = "6.0.2", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
+    { name = "pinecone", version = "5.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13' and python_full_version < '4'" },
+    { name = "pinecone", version = "6.0.2", source = { registry = "https://pypi.org/simple" }, extra = ["grpc"], marker = "python_full_version < '3.13' or python_full_version >= '4'" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pymilvus" },
@@ -2925,12 +2925,12 @@ name = "ipython"
 version = "9.2.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '4' and sys_platform == 'darwin'",
+    "python_full_version >= '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '3.13' and python_full_version < '4' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and python_full_version < '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and python_full_version < '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform == 'darwin'",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
@@ -5774,12 +5774,12 @@ name = "pinecone"
 version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '3.13' and python_full_version < '4' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and python_full_version < '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and python_full_version < '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
 ]
 dependencies = [
-    { name = "pinecone-client", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
+    { name = "pinecone-client", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b4/b2/3bb22f0bfe7ca2735c52014c0106834a5930c573e460fec696a925f4c6b6/pinecone-5.0.1.tar.gz", hash = "sha256:df0d08ef341cd5333ec8ceb434df0fb3cd37d9575acd586c6f8306872c4927a3", size = 6479 }
 wheels = [
@@ -5791,9 +5791,9 @@ name = "pinecone"
 version = "6.0.2"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '4' and sys_platform == 'darwin'",
+    "python_full_version >= '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform == 'darwin'",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
@@ -5808,10 +5808,10 @@ resolution-markers = [
     "(python_full_version < '3.11' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.11' and sys_platform != 'darwin' and sys_platform != 'linux')",
 ]
 dependencies = [
-    { name = "certifi", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
-    { name = "pinecone-plugin-interface", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
-    { name = "python-dateutil", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
+    { name = "certifi", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
+    { name = "pinecone-plugin-interface", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
+    { name = "python-dateutil", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
     { name = "urllib3", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/40/e0/3584dcde7f2cb299b4deb5cc0491f2c9c130c7a72c1d4691fe2c9c3a3613/pinecone-6.0.2.tar.gz", hash = "sha256:9c2e74be8b3abe76909da9b4dae61bced49aade51f6fc39b87edb97a1f8df0e4", size = 175104 }
@@ -5821,11 +5821,11 @@ wheels = [
 
 [package.optional-dependencies]
 grpc = [
-    { name = "googleapis-common-protos", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
+    { name = "googleapis-common-protos", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
     { name = "grpcio", marker = "python_full_version < '3.13'" },
-    { name = "lz4", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
-    { name = "protobuf", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
-    { name = "protoc-gen-openapiv2", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
+    { name = "lz4", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
+    { name = "protobuf", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
+    { name = "protoc-gen-openapiv2", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
 ]
 
 [[package]]
@@ -5833,12 +5833,12 @@ name = "pinecone-client"
 version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "certifi", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
-    { name = "pinecone-plugin-inference", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
-    { name = "pinecone-plugin-interface", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
-    { name = "tqdm", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
-    { name = "typing-extensions", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
-    { name = "urllib3", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
+    { name = "certifi", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
+    { name = "pinecone-plugin-inference", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
+    { name = "pinecone-plugin-interface", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
+    { name = "tqdm", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
+    { name = "urllib3", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/98/a4/739fe0a4a173658d541206ec7fdb0cc4c9ddc364de216af668b988bf0868/pinecone_client-5.0.1.tar.gz", hash = "sha256:11c33ff5d1c38a6ce69e69fe532c0f22f312fb28d761bb30b3767816d3181d64", size = 122207 }
 wheels = [
@@ -5850,7 +5850,7 @@ name = "pinecone-plugin-inference"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pinecone-plugin-interface", marker = "python_full_version >= '3.13' and python_full_version < '4.0'" },
+    { name = "pinecone-plugin-interface", marker = "python_full_version >= '3.13' and python_full_version < '4'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/03/96/a5738492f131166eb2f9e99fb15a724cf482192e8443bf7069809485432b/pinecone_plugin_inference-1.1.0.tar.gz", hash = "sha256:283e5ae4590b901bf2179beb56fc3d1b715e63582f37ec7abb0708cf70912d1f", size = 48997 }
 wheels = [
@@ -6091,8 +6091,8 @@ name = "protoc-gen-openapiv2"
 version = "0.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "googleapis-common-protos", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
-    { name = "protobuf", marker = "python_full_version < '3.13' or python_full_version >= '4.0'" },
+    { name = "googleapis-common-protos", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
+    { name = "protobuf", marker = "python_full_version < '3.13' or python_full_version >= '4'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d8/d2/84fecd8df61640226c726c12ad7ddd2a7666a7cd7f898b9a5b72e3a66d44/protoc-gen-openapiv2-0.0.1.tar.gz", hash = "sha256:6f79188d842c13177c9c0558845442c340b43011bf67dfef1dfc3bc067506409", size = 7323 }
 wheels = [
@@ -7882,12 +7882,12 @@ name = "setuptools"
 version = "79.0.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform == 'darwin'",
-    "python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.13' and python_full_version < '4.0' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4.0' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '4' and sys_platform == 'darwin'",
+    "python_full_version >= '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '3.13' and python_full_version < '4' and sys_platform == 'darwin'",
+    "python_full_version >= '3.13' and python_full_version < '4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
+    "(python_full_version >= '3.13' and python_full_version < '4' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.13' and python_full_version < '4' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform == 'darwin'",
     "python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "(python_full_version >= '3.12.4' and python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",

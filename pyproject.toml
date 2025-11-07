@@ -56,7 +56,6 @@ dependencies = [
     "grpcio-tools>=1.66.2,<1.68.0",
     "datasets>=3.5.1",
     "pyarrow>=20.0.0",
-
     # Vector DB
     "pymilvus>=2.6.0b0",  # for using milvus vectordb
     "chromadb>=1.0.0",  # for chroma vectordb
@@ -64,11 +63,9 @@ dependencies = [
     "pinecone[grpc]",  # for pinecone vectordb
     "couchbase>=4.4.0",  # for couchbase vectordb
     "qdrant-client>=1.12.1",  # for qdrant vectordb
-
     # API server
     "quart>=0.20.0",
     "pyngrok>=7.2.11",
-
     # LlamaIndex
     "llama-index>=0.12.42",
     "llama-index-core>=0.12.42",
@@ -80,18 +77,15 @@ dependencies = [
     "llama-index-llms-openai-like>=0.4.0",
     "llama-index-retrievers-bm25>=0.5.2",
     "llama-index-llms-bedrock>=0.3.8",
-
     # WebUI
     "streamlit>=1.46.0",
     "gradio>=5.34.2",
-
     # Langchain
     "langchain-core==0.2.43",
     "langchain-unstructured==0.1.2",
     "langchain-upstage==0.1.5",
     "langchain-community==0.2.19",
     "langsmith==0.1.147",
-
     # autorag dashboard
     "panel>=1.7.1",
     "seaborn>=0.13.2",
