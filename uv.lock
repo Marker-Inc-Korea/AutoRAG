@@ -469,6 +469,7 @@ all = [
     { name = "torch" },
     { name = "transformers" },
     { name = "unstructured", extra = ["pdf"] },
+    { name = "vllm" },
 ]
 gpu = [
     { name = "bert-score" },
@@ -483,6 +484,7 @@ gpu = [
     { name = "sentencepiece" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "vllm" },
 ]
 ja = [
     { name = "sudachidict-core" },
@@ -602,6 +604,7 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.51.3" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'parse'", specifier = ">=0.17.2" },
+    { name = "vllm", marker = "extra == 'gpu'", specifier = ">=0.11.0" },
     { name = "voyageai", specifier = ">=0.3.2" },
     { name = "weaviate-client", specifier = ">=4.15.2" },
 ]
