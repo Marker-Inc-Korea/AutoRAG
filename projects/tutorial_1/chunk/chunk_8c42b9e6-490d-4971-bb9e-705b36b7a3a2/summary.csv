@@ -1,2 +1,0 @@
-filename,module_name,module_params,execution_time
-0.parquet,llama_index_chunk,"{'chunk_method': 'Token', 'chunk_overlap': 50, 'chunk_size': 512}",0.01072390874226888
