@@ -1,6 +1,0 @@
-modules:
-- chunk_method:
-  - Token
-  chunk_overlap: 50
-  chunk_size: 512
-  module_type: llama_index_chunk
