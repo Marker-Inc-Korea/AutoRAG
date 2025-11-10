@@ -1,26 +1,14 @@
 import logging
-import logging.config
-import os
 import sys
-from random import random
-from typing import List, Any
+from typing import Any
 
-from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.core.llms.mock import MockLLM
 from llama_index.llms.bedrock import Bedrock
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 
 from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai_like import OpenAILike
-from langchain_openai.embeddings import OpenAIEmbeddings
 from rich.logging import RichHandler
-
-version_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "VERSION")
-
-with open(version_path, "r") as f:
-	__version__ = f.read().strip()
 
 
 class LazyInit:
