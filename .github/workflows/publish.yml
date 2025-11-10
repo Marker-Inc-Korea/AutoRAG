@@ -1,4 +1,6 @@
 name: Publish Python 🐍 distributions 📦 to PyPI
+permissions:
+  contents: read
 
 on:
   release:
@@ -44,14 +46,13 @@ jobs:
         with:
           enable-cache: 'true'
           cache-suffix: '3.11'
-      - name: Install Python dependencies
-        run: uv sync --frozen --all-extras
-        shell: bash
-
       - name: Download updated pyproject.toml
         uses: actions/download-artifact@v4
         with:
           name: pyproject-toml
+      - name: Install Python dependencies
+        run: uv sync --frozen --all-extras
+        shell: bash
 
       - name: Build package
         run: uv build
