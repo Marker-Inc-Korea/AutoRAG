@@ -255,42 +255,30 @@ def evaluate_rag_pipeline():
 **확장성**: 새로운 데이터 모델 추가 시 Generic Repository를 상속받아 빠르게 구현 가능합니다.[^3_4]
 
 이 패턴 조합은 SQLAlchemy의 강력한 기능(Session, Query API)을 최대한 활용하면서도 비즈니스 로직을 깔끔하게 분리하여 AutoRAG 프레임워크의 유지보수성과 확장성을 보장합니다.[^3_3][^3_1]
-<span style="display:none">[^3_10][^3_11][^3_12][^3_13][^3_14][^3_15][^3_16][^3_17][^3_18][^3_9]</span>
 
-<div align="center">⁂</div>
 
-[^3_1]: https://www.cosmicpython.com/book/chapter_02_repository.html
+## For async session
 
-[^3_2]: https://www.cosmicpython.com/book/chapter_06_uow.html
+SQLAlchemy's Greenlet-Based Bridging를 반드시 이용해라!!!
 
-[^3_3]: https://cursorrules.org/article/sqlalchemy-cursor-mdc-file
+SQLAlchemy's maintainer recommends using sqlalchemy.util.concurrency.greenlet_spawn to bridge between async and sync code within the same codebase. You can write sync repository methods and wrap them for async contexts:
 
-[^3_4]: https://jakpentest.tistory.com/entry/Python의-Generic을-활용한-Repository-Pattern-만들기-feat-PEP-560
+python
+from sqlalchemy.util import concurrency
 
-[^3_5]: https://www.codeproject.com/articles/Generic-Repository-with-SQLAlchemy-and-Python
+# Write your repository as sync
+class Repository:
+    def __init__(self, session: Session):
+        self.session = session
 
-[^3_6]: https://databoom.tistory.com/entry/FastAPI-디자인-패턴-서비스-레이어-패턴11-5
+    def get_user(self, user_id: int):
+        return self.session.execute(
+            select(User).where(User.id == user_id)
+        ).scalar_one_or_none()
 
-[^3_7]: https://brotherdan.tistory.com/41
-
-[^3_8]: https://www.pingcap.com/article/10-essential-tips-mastering-sqlalchemy-python/
-
-[^3_9]: https://www.gdsanadevlog.com/frameworks/flask/real-python-flask-python에서-jparepository-like-repository-구현하기/
-
-[^3_10]: https://www.reddit.com/r/Python/comments/1aiyken/factory_and_repository_pattern_with_sqlalchemy/
-
-[^3_11]: https://stackoverflow.com/questions/49234978/what-is-the-best-practice-for-find-in-the-python-repository-pattern
-
-[^3_12]: https://dev.to/manukanne/a-python-implementation-of-the-unit-of-work-and-repository-design-pattern-using-sqlmodel-3mb5
-
-[^3_13]: https://github.com/topics/unit-of-work-pattern
-
-[^3_14]: https://www.reddit.com/r/Python/comments/9wbk8k/repository_pattern_with_sqlalchemy/
-
-[^3_15]: https://www.gdsanadevlog.com/frameworks/flask/real-python-flask-sqlalchemy-에서-session-commit-후-저장된-모델-객체-얻어오/
-
-[^3_16]: https://wikidocs.net/226764
-
-[^3_17]: https://binaryflavor.com/python과-fastapi로-지속-성장-가능한-웹서비스-개발하기-2.-mysql-sqlalchemy/
-
-[^3_18]: https://stackoverflow.com/questions/70338102/how-to-pass-a-sqlalchemy-orm-model-to-python-generict-class
+# Bridge to async when needed
+async def async_get_user(repo: Repository, user_id: int):
+    return await concurrency.greenlet_spawn(
+        repo.get_user, user_id
+    )
+This approach adds overhead from context switching but avoids code duplication. The key requirement is that your async application must use an async dialect (like asyncpg) while sync code uses sync drivers (like psycopg2).
