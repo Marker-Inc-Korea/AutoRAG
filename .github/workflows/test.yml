@@ -19,6 +19,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
           POSTGRES_DB: test_db
           PG_PORT: 5432
         options: >-
