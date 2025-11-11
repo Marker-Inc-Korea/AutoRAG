@@ -21,9 +21,8 @@ jobs:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: test_db
-          PG_PORT: 5432
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 5s
