@@ -18,6 +18,8 @@ jobs:
       postgres:
         image: postgres:16
         env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
           POSTGRES_DB: test_db
