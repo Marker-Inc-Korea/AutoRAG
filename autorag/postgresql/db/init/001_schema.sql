@@ -93,7 +93,17 @@ BEGIN
   RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS tr_document_set_last_modified ON document;
-CREATE TRIGGER tr_document_set_last_modified
-BEFORE UPDATE ON document
-FOR EACH ROW EXECUTE FUNCTION set_last_modified_at();
+DO $$
+BEGIN
+  IF NOT EXISTS(
+    SELECT 1
+    FROM information_schema.triggers
+    WHERE event_object_table = 'document'
+    AND trigger_name = 'tr_document_set_last_modified'
+  )
+  THEN
+    CREATE TRIGGER tr_document_set_last_modified
+    BEFORE UPDATE ON document
+    FOR EACH ROW EXECUTE FUNCTION set_last_modified_at();
+  END IF;
+END $$;
