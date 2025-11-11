@@ -6,15 +6,10 @@ import time
 import pytest
 
 
-def pytest_sessionstart(session):
-	os.environ["BM25"] = "bm25"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _postgres_healthcheck():
+def test_postgres_healthcheck():
 	"""PostgreSQL docker-compose container healthcheck."""
-	host = "localhost"
-	port = 5432
+	host = os.getenv("POSTGRES_HOST", "localhost")
+	port = int(os.getenv("POSTGRES_PORT", "5432"))
 	timeout = 10.0
 	interval = 0.5
 
@@ -32,3 +27,8 @@ def _postgres_healthcheck():
 	pytest.fail(
 		f"PostgreSQL is not reachable at {host}:{port} after {timeout}s: {last_err}"
 	)
+
+
+def pytest_sessionstart(session):
+	os.environ["BM25"] = "bm25"
+	test_postgres_healthcheck()
