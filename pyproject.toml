@@ -27,25 +27,25 @@ urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
 dynamic = ["version"]
 dependencies = [
     "pydantic>=2.9.2",
-    "numpy==1.26.4",  # temporal not using numpy 2.0.0
+    "numpy==1.26.4", # temporal not using numpy 2.0.0
     "pandas>=2.2.3",
     "tqdm>=4.67.1",
-    "tiktoken>=0.9.0",  # for counting token
+    "tiktoken>=0.9.0", # for counting token
     "openai>=1.90.0",
-    "rank_bm25>=0.2.2",  # for bm25 retrieval
-    "pyyaml>=6.0.2",  # for yaml file
-    "pyarrow>=20.0.0",  # for pandas with parquet
-    "fastparquet>=2024.11.0",  # for pandas with parquet
-    "sacrebleu>=2.5.1",  # for bleu score
-    "evaluate>=0.4.4",  # for meteor and other scores
-    "rouge_score>=0.1.2",  # for rouge score
-    "rich>=14.0.0",  # for pretty logging
-    "click>=8.2.1",  # for cli
-    "cohere>=5.18.0",  # for cohere services
-    "tokenlog>=0.0.3",  # for token logging
-    "aiohttp>=3.12.13",  # for async http requests
-    "voyageai>=0.3.2",  # for voyageai reranker
-    "mixedbread-ai>=2.2.6",  # for mixedbread-ai reranker
+    "rank_bm25>=0.2.2", # for bm25 retrieval
+    "pyyaml>=6.0.2", # for yaml file
+    "pyarrow>=20.0.0", # for pandas with parquet
+    "fastparquet>=2024.11.0", # for pandas with parquet
+    "sacrebleu>=2.5.1", # for bleu score
+    "evaluate>=0.4.4", # for meteor and other scores
+    "rouge_score>=0.1.2", # for rouge score
+    "rich>=14.0.0", # for pretty logging
+    "click>=8.2.1", # for cli
+    "cohere>=5.18.0", # for cohere services
+    "tokenlog>=0.0.3", # for token logging
+    "aiohttp>=3.12.13", # for async http requests
+    "voyageai>=0.3.2", # for voyageai reranker
+    "mixedbread-ai>=2.2.6", # for mixedbread-ai reranker
     "scikit-learn>=1.7.0",
     "emoji>=2.14.1",
     "fastapi>=0.115.13",
@@ -57,12 +57,12 @@ dependencies = [
     "datasets>=3.5.1",
     "pyarrow>=20.0.0",
     # Vector DB
-    "pymilvus>=2.6.0b0",  # for using milvus vectordb
-    "chromadb>=1.0.0",  # for chroma vectordb
-    "weaviate-client>=4.15.2",  # for weaviate vectordb
-    "pinecone[grpc]",  # for pinecone vectordb
-    "couchbase>=4.4.0",  # for couchbase vectordb
-    "qdrant-client>=1.12.1",  # for qdrant vectordb
+    "pymilvus>=2.6.0b0", # for using milvus vectordb
+    "chromadb>=1.0.0", # for chroma vectordb
+    "weaviate-client>=4.15.2", # for weaviate vectordb
+    "pinecone[grpc]", # for pinecone vectordb
+    "couchbase>=4.4.0", # for couchbase vectordb
+    "qdrant-client>=1.12.1", # for qdrant vectordb
     # API server
     "quart>=0.20.0",
     "pyngrok>=7.2.11",
@@ -92,6 +92,9 @@ dependencies = [
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
     "ipywidgets_bokeh>=1.6.0",
+    # PostgreSQL
+    "sqlalchemy>=2.0.40",
+    "psycopg2-binary>=2.9.11",
 ]
 
 
