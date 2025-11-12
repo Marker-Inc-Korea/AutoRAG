@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - v0.4
   pull_request:
     branches:
       - main
+      - v0.4
 
 env:
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -18,8 +20,6 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5432
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
@@ -71,3 +71,9 @@ jobs:
       - name: Run AutoRAG tests
         run: |
           uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
