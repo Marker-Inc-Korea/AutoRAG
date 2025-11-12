@@ -12,7 +12,7 @@ Table Page {
   page_num int [not null]
   document_id bigint [ref: > Document.id, not null]
   image_path bigint [ref: - File.id]
-  metadata jsonb
+  page_metadata jsonb
   indexes {
     (document_id, page_num) [unique]
   }

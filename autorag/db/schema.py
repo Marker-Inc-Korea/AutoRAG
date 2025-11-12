@@ -58,7 +58,7 @@ class Page(Base):
 		ForeignKey("document.id", ondelete="CASCADE"), nullable=False
 	)
 	image_path: Mapped[int | None] = mapped_column(ForeignKey("file.id"))
-	metadata: Mapped[dict | None] = mapped_column(JSONB)
+	page_metadata: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class Caption(Base):

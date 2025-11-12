@@ -134,14 +134,14 @@ def test_retrieval_relation_xor_constraint(session):
 	query_repo.add(q)
 	session.flush()
 
-	# Case 1: both null -> error
+	# Case 1: both null -> error (use SAVEPOINT to keep prior data)
 	rr_invalid_both_null = m.RetrievalRelation(
 		query_id=q.id, group_index=0, group_order=0, chunk_id=None, image_chunk_id=None
 	)
-	rr_repo.add(rr_invalid_both_null)
 	with pytest.raises(IntegrityError):
-		session.flush()
-	session.rollback()
+		with session.begin_nested():
+			rr_repo.add(rr_invalid_both_null)
+			session.flush()
 
 	# Case 2: both non-null -> error
 	rr_invalid_both_set = m.RetrievalRelation(
@@ -151,10 +151,10 @@ def test_retrieval_relation_xor_constraint(session):
 		chunk_id=seed["chunk"].id,
 		image_chunk_id=seed["img_chunk"].id,
 	)
-	rr_repo.add(rr_invalid_both_set)
 	with pytest.raises(IntegrityError):
-		session.flush()
-	session.rollback()
+		with session.begin_nested():
+			rr_repo.add(rr_invalid_both_set)
+			session.flush()
 
 	# Case 3: only chunk_id -> ok
 	rr_only_chunk = m.RetrievalRelation(
