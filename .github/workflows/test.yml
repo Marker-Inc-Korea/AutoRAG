@@ -39,9 +39,7 @@ jobs:
       - name: Install Venv
         run: uv venv
       - name: Install AutoRAG
-        run: uv pip install -r pyproject.toml --all-extras -e .
-      - name: Install dev dependencies
-        run: uv pip install --group dev
+        run: uv sync --all-extras
       - name: Upgrade pyOpenSSL
         run: |
           uv pip install --upgrade pyOpenSSL

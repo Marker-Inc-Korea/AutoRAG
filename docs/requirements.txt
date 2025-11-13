@@ -1,4 +1,4 @@
--e ./autorag
+-e .
 sphinx
 furo
 myst-parser
