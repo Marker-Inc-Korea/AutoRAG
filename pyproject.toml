@@ -108,9 +108,7 @@ python = "./.venv"
 python-version = "3.10"
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
 testpaths = ["tests"]
-addopts = ["--import-mode=importlib"] # default is prepend
 
 [dependency-groups]
 dev = [
