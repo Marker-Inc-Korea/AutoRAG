@@ -48,8 +48,6 @@ jobs:
           uv pip install nltk
           uv run python -c "import nltk; nltk.download('punkt_tab')"
           uv run python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
-      - name: delete tests package
-        run: uv run python tests/delete_tests.py
       - name: Run AutoRAG tests
         run: |
           uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
