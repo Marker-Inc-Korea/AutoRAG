@@ -52,4 +52,4 @@ jobs:
         run: uv run python tests/delete_tests.py
       - name: Run AutoRAG tests
         run: |
-          uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag
+          uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
