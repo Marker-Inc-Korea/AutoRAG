@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -408,9 +404,9 @@
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.preprocess.validate_qa_dataset">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">validate_qa_dataset</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
 	<span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;qid&quot;</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="s2">&quot;retrieval_gt&quot;</span><span class="p">,</span> <span class="s2">&quot;generation_gt&quot;</span><span class="p">]</span>
-	<span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
-		<span class="n">df</span><span class="o">.</span><span class="n">columns</span>
-	<span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;df must have columns </span><span class="si">{</span><span class="n">columns</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="si">}</span><span class="s2">&quot;</span></div>
+	<span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">),</span> <span class="p">(</span>
+		<span class="sa">f</span><span class="s2">&quot;df must have columns </span><span class="si">{</span><span class="n">columns</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="si">}</span><span class="s2">&quot;</span>
+	<span class="p">)</span></div>
 
 
 
@@ -418,9 +414,9 @@
 <a class="viewcode-back" href="../../../api_spec/autorag.utils.html#autorag.utils.preprocess.validate_corpus_dataset">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">validate_corpus_dataset</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
 	<span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;doc_id&quot;</span><span class="p">,</span> <span class="s2">&quot;contents&quot;</span><span class="p">,</span> <span class="s2">&quot;metadata&quot;</span><span class="p">]</span>
-	<span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
-		<span class="n">df</span><span class="o">.</span><span class="n">columns</span>
-	<span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;df must have columns </span><span class="si">{</span><span class="n">columns</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="si">}</span><span class="s2">&quot;</span></div>
+	<span class="k">assert</span> <span class="nb">set</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">),</span> <span class="p">(</span>
+		<span class="sa">f</span><span class="s2">&quot;df must have columns </span><span class="si">{</span><span class="n">columns</span><span class="si">}</span><span class="s2">, but got </span><span class="si">{</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="si">}</span><span class="s2">&quot;</span>
+	<span class="p">)</span></div>
 
 
 
@@ -458,12 +454,12 @@
 
 	<span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 	<span class="n">validate_qa_dataset</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
-	<span class="k">assert</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;qid&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span>
-		<span class="n">df</span>
-	<span class="p">),</span> <span class="s2">&quot;qid must be string type.&quot;</span>
-	<span class="k">assert</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span>
-		<span class="n">df</span>
-	<span class="p">),</span> <span class="s2">&quot;query must be string type.&quot;</span>
+	<span class="k">assert</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;qid&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">),</span> <span class="p">(</span>
+		<span class="s2">&quot;qid must be string type.&quot;</span>
+	<span class="p">)</span>
+	<span class="k">assert</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">),</span> <span class="p">(</span>
+		<span class="s2">&quot;query must be string type.&quot;</span>
+	<span class="p">)</span>
 	<span class="n">df</span><span class="p">[</span><span class="s2">&quot;retrieval_gt&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;retrieval_gt&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">cast_retrieval_gt</span><span class="p">)</span>
 	<span class="n">df</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">cast_generation_gt</span><span class="p">)</span>
 	<span class="n">df</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">preprocess_text</span><span class="p">)</span>
@@ -527,12 +523,12 @@
 	<span class="n">df</span><span class="p">[</span><span class="s2">&quot;metadata&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;metadata&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">normalize_unicode_metadata</span><span class="p">)</span>
 
 	<span class="c1"># check every metadata have a prev_id, next_id key</span>
-	<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span>
-		<span class="s2">&quot;prev_id&quot;</span> <span class="ow">in</span> <span class="n">metadata</span> <span class="k">for</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;metadata&quot;</span><span class="p">]</span>
-	<span class="p">),</span> <span class="s2">&quot;Every metadata must have a prev_id key.&quot;</span>
-	<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span>
-		<span class="s2">&quot;next_id&quot;</span> <span class="ow">in</span> <span class="n">metadata</span> <span class="k">for</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;metadata&quot;</span><span class="p">]</span>
-	<span class="p">),</span> <span class="s2">&quot;Every metadata must have a next_id key.&quot;</span>
+	<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="s2">&quot;prev_id&quot;</span> <span class="ow">in</span> <span class="n">metadata</span> <span class="k">for</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;metadata&quot;</span><span class="p">]),</span> <span class="p">(</span>
+		<span class="s2">&quot;Every metadata must have a prev_id key.&quot;</span>
+	<span class="p">)</span>
+	<span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="s2">&quot;next_id&quot;</span> <span class="ow">in</span> <span class="n">metadata</span> <span class="k">for</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;metadata&quot;</span><span class="p">]),</span> <span class="p">(</span>
+		<span class="s2">&quot;Every metadata must have a next_id key.&quot;</span>
+	<span class="p">)</span>
 
 	<span class="k">return</span> <span class="n">df</span></div>
 
@@ -556,9 +552,9 @@
 		<span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">qa_id</span><span class="p">:</span> <span class="n">corpus_df</span><span class="p">[</span><span class="n">corpus_df</span><span class="p">[</span><span class="s2">&quot;doc_id&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">qa_id</span><span class="p">]</span><span class="o">.</span><span class="n">empty</span><span class="p">,</span> <span class="n">qa_ids</span><span class="p">)</span>
 	<span class="p">)</span>
 
-	<span class="k">assert</span> <span class="p">(</span>
-		<span class="nb">len</span><span class="p">(</span><span class="n">no_exist_ids</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
-	<span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">no_exist_ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> doc_ids in retrieval_gt do not exist in corpus_df.&quot;</span></div>
+	<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">no_exist_ids</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="p">(</span>
+		<span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">no_exist_ids</span><span class="p">)</span><span class="si">}</span><span class="s2"> doc_ids in retrieval_gt do not exist in corpus_df.&quot;</span>
+	<span class="p">)</span></div>
 
 </pre></div>
         </article>

@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -419,9 +415,9 @@
 		<span class="bp">self</span><span class="o">.</span><span class="n">embedding</span> <span class="o">=</span> <span class="n">EmbeddingModel</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">embedding_model</span><span class="p">)()</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">embedding_batch</span> <span class="o">=</span> <span class="n">embedding_batch</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">embedding</span><span class="o">.</span><span class="n">embed_batch_size</span> <span class="o">=</span> <span class="n">embedding_batch</span>
-		<span class="k">assert</span> <span class="p">(</span>
-			<span class="n">similarity_metric</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">support_similarity_metrics</span>
-		<span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;search method </span><span class="si">{</span><span class="n">similarity_metric</span><span class="si">}</span><span class="s2"> is not supported&quot;</span>
+		<span class="k">assert</span> <span class="n">similarity_metric</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">support_similarity_metrics</span><span class="p">,</span> <span class="p">(</span>
+			<span class="sa">f</span><span class="s2">&quot;search method </span><span class="si">{</span><span class="n">similarity_metric</span><span class="si">}</span><span class="s2"> is not supported&quot;</span>
+		<span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">similarity_metric</span> <span class="o">=</span> <span class="n">similarity_metric</span>
 
 <div class="viewcode-block" id="BaseVectorStore.add">

@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -605,9 +601,9 @@
 <span class="sd">	:param explode_values: The exploded values.</span>
 <span class="sd">	:return: Tuple of exploded index_values and exploded explode_values.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
-	<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_values</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span>
-		<span class="n">explode_values</span>
-	<span class="p">),</span> <span class="s2">&quot;Index values and explode values must have same length&quot;</span>
+	<span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">index_values</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">explode_values</span><span class="p">),</span> <span class="p">(</span>
+		<span class="s2">&quot;Index values and explode values must have same length&quot;</span>
+	<span class="p">)</span>
 	<span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s2">&quot;index_values&quot;</span><span class="p">:</span> <span class="n">index_values</span><span class="p">,</span> <span class="s2">&quot;explode_values&quot;</span><span class="p">:</span> <span class="n">explode_values</span><span class="p">})</span>
 	<span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">explode</span><span class="p">(</span><span class="s2">&quot;explode_values&quot;</span><span class="p">)</span>
 	<span class="k">return</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;index_values&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">(),</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;explode_values&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span></div>

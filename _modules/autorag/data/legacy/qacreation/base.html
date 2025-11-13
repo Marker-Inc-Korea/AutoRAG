@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -548,18 +544,18 @@
 <span class="sd">	:return: QA dataset dataframe.</span>
 <span class="sd">	&quot;&quot;&quot;</span>
 	<span class="k">raise</span> <span class="ne">DeprecationWarning</span><span class="p">(</span><span class="s2">&quot;This function is deprecated.&quot;</span><span class="p">)</span>
-	<span class="k">assert</span> <span class="p">(</span>
-		<span class="s2">&quot;query&quot;</span> <span class="ow">in</span> <span class="n">existing_query_df</span><span class="o">.</span><span class="n">columns</span>
-	<span class="p">),</span> <span class="s2">&quot;existing_query_df must have &#39;query&#39; column.&quot;</span>
+	<span class="k">assert</span> <span class="s2">&quot;query&quot;</span> <span class="ow">in</span> <span class="n">existing_query_df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="p">(</span>
+		<span class="s2">&quot;existing_query_df must have &#39;query&#39; column.&quot;</span>
+	<span class="p">)</span>
 
 	<span class="k">if</span> <span class="n">exist_gen_gt</span><span class="p">:</span>
-		<span class="k">assert</span> <span class="p">(</span>
-			<span class="s2">&quot;generation_gt&quot;</span> <span class="ow">in</span> <span class="n">existing_query_df</span><span class="o">.</span><span class="n">columns</span>
-		<span class="p">),</span> <span class="s2">&quot;existing_query_df must have &#39;generation_gt&#39; column.&quot;</span>
+		<span class="k">assert</span> <span class="s2">&quot;generation_gt&quot;</span> <span class="ow">in</span> <span class="n">existing_query_df</span><span class="o">.</span><span class="n">columns</span><span class="p">,</span> <span class="p">(</span>
+			<span class="s2">&quot;existing_query_df must have &#39;generation_gt&#39; column.&quot;</span>
+		<span class="p">)</span>
 	<span class="k">else</span><span class="p">:</span>
-		<span class="k">assert</span> <span class="p">(</span>
-			<span class="n">answer_creation_func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-		<span class="p">),</span> <span class="s2">&quot;answer_creation_func must be given when exist_gen_gt is False.&quot;</span>
+		<span class="k">assert</span> <span class="n">answer_creation_func</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span> <span class="p">(</span>
+			<span class="s2">&quot;answer_creation_func must be given when exist_gen_gt is False.&quot;</span>
+		<span class="p">)</span>
 
 	<span class="k">assert</span> <span class="n">content_size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;content_size must be greater than 0.&quot;</span>
 	<span class="k">if</span> <span class="n">content_size</span> <span class="o">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">corpus_df</span><span class="p">):</span>

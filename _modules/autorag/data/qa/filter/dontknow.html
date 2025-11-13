@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -442,9 +438,9 @@
 <div class="viewcode-block" id="dontknow_filter_rule_based">
 <a class="viewcode-back" href="../../../../../api_spec/autorag.data.qa.filter.html#autorag.data.qa.filter.dontknow.dontknow_filter_rule_based">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">dontknow_filter_rule_based</span><span class="p">(</span><span class="n">row</span><span class="p">:</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
-	<span class="k">assert</span> <span class="p">(</span>
-		<span class="s2">&quot;generation_gt&quot;</span> <span class="ow">in</span> <span class="n">row</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
-	<span class="p">),</span> <span class="s2">&quot;generation_gt column is not in the DataFrame.&quot;</span>
+	<span class="k">assert</span> <span class="s2">&quot;generation_gt&quot;</span> <span class="ow">in</span> <span class="n">row</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="p">(</span>
+		<span class="s2">&quot;generation_gt column is not in the DataFrame.&quot;</span>
+	<span class="p">)</span>
 	<span class="n">dont_know_phrase</span> <span class="o">=</span> <span class="n">dont_know_phrases</span><span class="p">[</span><span class="n">lang</span><span class="p">]</span>
 	<span class="k">return</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span>
 		<span class="n">phrase</span> <span class="ow">in</span> <span class="n">s</span> <span class="k">for</span> <span class="n">phrase</span> <span class="ow">in</span> <span class="n">dont_know_phrase</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;generation_gt&quot;</span><span class="p">]</span>

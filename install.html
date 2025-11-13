@@ -216,10 +216,6 @@
 <li class="toctree-l1"><a class="reference internal" href="migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -423,17 +419,6 @@ python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;
 <p>Do you have any trouble with installation?
 First, you can check out the <a class="reference internal" href="troubleshooting.html"><span class="std std-doc">troubleshooting</span></a> page.</p>
 </div>
-<section id="note-for-windows-users">
-<h2>Note for Windows Users<a class="headerlink" href="#note-for-windows-users" title="Link to this heading">¶</a></h2>
-<p>AutoRAG is not fully supported on Windows yet. There are several constraints for Windows users.</p>
-<ol class="arabic simple">
-<li><p>TART, UPR, and MonoT5 passage rerankers does not support Windows.</p></li>
-<li><p>Parsing might be not working properly in the Windows environment.</p></li>
-<li><p>Cannot use FlagEmbedding passage reranker with <code class="docutils literal notranslate"><span class="pre">batch</span></code> setting with 1. The default batch is 64.</p></li>
-</ol>
-<p>Due to the constraints, we recommend using Docker images for running AutoRAG on Windows.</p>
-<p>Plus, you MAKE SURE UPGRADE UP TO v0.3.1 for Windows users.</p>
-</section>
 <section id="installation-for-local-models">
 <h2>Installation for Local Models 🏠<a class="headerlink" href="#installation-for-local-models" title="Link to this heading">¶</a></h2>
 <p>For using local models, you need to install some additional dependencies.</p>
@@ -541,92 +526,6 @@ Make a new <code class="docutils literal notranslate"><span class="pre">pytest.i
 <p>After this, please check out our documentation for contributors.
 We are writing this documentation for contributors, so please wait for a while.</p>
 </section>
-<section id="run-autorag-with-docker">
-<h2>Run AutoRAG with 🐳 Docker<a class="headerlink" href="#run-autorag-with-docker" title="Link to this heading">¶</a></h2>
-<p>Tip: If you want to build an image for a gpu version, you can use <code class="docutils literal notranslate"><span class="pre">autoraghq/autorag:gpu</span></code> or <code class="docutils literal notranslate"><span class="pre">autoraghq/autorag:gpu-parsing</span></code></p>
-<p>To run AutoRAG using Docker, follow these steps:</p>
-<section id="build-the-docker-image">
-<h3>1. Build the Docker Image<a class="headerlink" href="#build-the-docker-image" title="Link to this heading">¶</a></h3>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>build<span class="w"> </span>--target<span class="w"> </span>production<span class="w"> </span>-t<span class="w"> </span>autorag:prod<span class="w"> </span>.
-</pre></div>
-</div>
-<p>This command will build the production-ready Docker image, using only the <code class="docutils literal notranslate"><span class="pre">production</span></code> stage defined in the <code class="docutils literal notranslate"><span class="pre">Dockerfile</span></code>.</p>
-</section>
-<section id="run-the-docker-container">
-<h3>2. Run the Docker Container<a class="headerlink" href="#run-the-docker-container" title="Link to this heading">¶</a></h3>
-<p>Run the container with the following command:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>~/.cache/huggingface:/root/.cache/huggingface<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/sample_config:/usr/src/app/sample_config<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/projects:/usr/src/app/projects<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>autoraghq/autorag:api<span class="w"> </span>evaluate<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--config<span class="w"> </span>/usr/src/app/sample_config/rag/simple/simple_openai.yaml<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--qa_data_path<span class="w"> </span>/usr/src/app/projects/test01/qa_validation.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--corpus_data_path<span class="w"> </span>/usr/src/app/projects/test01/corpus.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--project_dir<span class="w"> </span>/usr/src/app/projects/test01
-</pre></div>
-</div>
-<section id="explanation">
-<h4>Explanation:<a class="headerlink" href="#explanation" title="Link to this heading">¶</a></h4>
-<ul class="simple">
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">-v</span> <span class="pre">~/.cache/huggingface:/root/.cache/huggingface</span></code></strong>: Mounts the host’s Hugging Face cache to the container, allowing it to access pre-downloaded models.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">-v</span> <span class="pre">$(pwd)/sample_config:/usr/src/app/sample_config</span></code></strong>: Mounts the local <code class="docutils literal notranslate"><span class="pre">sample_config</span></code> directory to the container.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">-v</span> <span class="pre">$(pwd)/projects:/usr/src/app/projects</span></code></strong>: Mounts the local <code class="docutils literal notranslate"><span class="pre">projects</span></code> directory to the container.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">autoraghq/autorag:all</span> <span class="pre">evaluate</span></code></strong>: Executes the <code class="docutils literal notranslate"><span class="pre">evaluate</span></code> command inside the <code class="docutils literal notranslate"><span class="pre">autoraghq/autorag:all</span></code> container.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">--config</span></code>, <code class="docutils literal notranslate"><span class="pre">--qa_data_path</span></code>, <code class="docutils literal notranslate"><span class="pre">--corpus_data_path</span></code>, <code class="docutils literal notranslate"><span class="pre">--project_dir</span></code></strong>: Specifies paths to the configuration file, QA dataset, corpus data, and project directory.</p></li>
-</ul>
-</section>
-</section>
-<section id="using-a-custom-cache-directory-with-hf-home">
-<h3>3. Using a Custom Cache Directory with <code class="docutils literal notranslate"><span class="pre">HF_HOME</span></code><a class="headerlink" href="#using-a-custom-cache-directory-with-hf-home" title="Link to this heading">¶</a></h3>
-<p>Alternatively, you can mount the Hugging Face cache to a custom location inside the container and set the <code class="docutils literal notranslate"><span class="pre">HF_HOME</span></code> environment variable:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>~/.cache/huggingface:/cache/huggingface<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/sample_config:/usr/src/app/sample_config<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/projects:/usr/src/app/projects<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-e<span class="w"> </span><span class="nv">HF_HOME</span><span class="o">=</span>/cache/huggingface<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>autoraghq/autorag:api<span class="w"> </span>evaluate<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--config<span class="w"> </span>/usr/src/app/sample_config/rag/simple/simple_openai.yaml<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--qa_data_path<span class="w"> </span>/usr/src/app/projects/test01/qa_validation.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--corpus_data_path<span class="w"> </span>/usr/src/app/projects/test01/corpus.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--project_dir<span class="w"> </span>/usr/src/app/projects/test01
-</pre></div>
-</div>
-<section id="id1">
-<h4>Explanation:<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h4>
-<ul class="simple">
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">-v</span> <span class="pre">~/.cache/huggingface:/cache/huggingface</span></code></strong>: Mounts the host’s Hugging Face cache to <code class="docutils literal notranslate"><span class="pre">/cache/huggingface</span></code> inside the container.</p></li>
-<li><p><strong><code class="docutils literal notranslate"><span class="pre">-e</span> <span class="pre">HF_HOME=/cache/huggingface</span></code></strong>: Sets the <code class="docutils literal notranslate"><span class="pre">HF_HOME</span></code> environment variable to point to the mounted cache directory.</p></li>
-</ul>
-</section>
-</section>
-<section id="debugging-and-manual-access">
-<h3>5. Debugging and Manual Access<a class="headerlink" href="#debugging-and-manual-access" title="Link to this heading">¶</a></h3>
-<p>To manually access the container for debugging or testing, start a Bash shell:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span>--entrypoint<span class="w"> </span>/bin/bash<span class="w"> </span>autoraghq/autorag:api
-</pre></div>
-</div>
-<p>This command allows you to explore the container’s filesystem, run commands manually, or inspect logs for troubleshooting.</p>
-</section>
-<section id="use-gpu-version">
-<h3>6. Use gpu version<a class="headerlink" href="#use-gpu-version" title="Link to this heading">¶</a></h3>
-<p>To use the gpu version, you must install CUDA and cuDNN in your host system.
-It built on the cuda 11.8 version and pytorch docker image.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-it<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span>~/.cache/huggingface:/cache/huggingface<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/sample_config:/usr/src/app/sample_config<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/projects:/usr/src/app/projects<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-e<span class="w"> </span><span class="nv">HF_HOME</span><span class="o">=</span>/cache/huggingface<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--gpus<span class="w"> </span>all<span class="w"> </span><span class="se">\ </span><span class="c1"># Be sure to add this line</span>
-<span class="w">  </span>autoraghq/autorag:gpu<span class="w"> </span>evaluate<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--config<span class="w"> </span>/usr/src/app/sample_config/rag/simple/simple_openai.yaml<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--qa_data_path<span class="w"> </span>/usr/src/app/projects/test01/qa_validation.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--corpus_data_path<span class="w"> </span>/usr/src/app/projects/test01/corpus.parquet<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--project_dir<span class="w"> </span>/usr/src/app/projects/test01
-</pre></div>
-</div>
-</section>
-</section>
 <section id="additional-notes">
 <h2>Additional Notes<a class="headerlink" href="#additional-notes" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -692,7 +591,6 @@ It built on the cuda 11.8 version and pytorch docker image.</p>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Installation and Setup</a><ul>
-<li><a class="reference internal" href="#note-for-windows-users">Note for Windows Users</a></li>
 <li><a class="reference internal" href="#installation-for-local-models">Installation for Local Models 🏠</a></li>
 <li><a class="reference internal" href="#installation-for-vllm">Installation for vLLM ⚡</a></li>
 <li><a class="reference internal" href="#installation-for-parsing">Installation for Parsing 🌲</a></li>
@@ -700,20 +598,6 @@ It built on the cuda 11.8 version and pytorch docker image.</p>
 <li><a class="reference internal" href="#installation-for-japanese">Installation for Japanese 🇯🇵</a></li>
 <li><a class="reference internal" href="#setup-openai-api-key">Setup OPENAI API KEY</a></li>
 <li><a class="reference internal" href="#build-from-source">Build from source</a></li>
-<li><a class="reference internal" href="#run-autorag-with-docker">Run AutoRAG with 🐳 Docker</a><ul>
-<li><a class="reference internal" href="#build-the-docker-image">1. Build the Docker Image</a></li>
-<li><a class="reference internal" href="#run-the-docker-container">2. Run the Docker Container</a><ul>
-<li><a class="reference internal" href="#explanation">Explanation:</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#using-a-custom-cache-directory-with-hf-home">3. Using a Custom Cache Directory with <code class="docutils literal notranslate"><span class="pre">HF_HOME</span></code></a><ul>
-<li><a class="reference internal" href="#id1">Explanation:</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#debugging-and-manual-access">5. Debugging and Manual Access</a></li>
-<li><a class="reference internal" href="#use-gpu-version">6. Use gpu version</a></li>
-</ul>
-</li>
 <li><a class="reference internal" href="#additional-notes">Additional Notes</a></li>
 </ul>
 </li>

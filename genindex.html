@@ -211,10 +211,6 @@
 <li class="toctree-l1"><a class="reference internal" href="migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -489,13 +485,6 @@
 
         <ul>
           <li><a href="api_spec/autorag.html#module-autorag.chunker">module</a>
-</li>
-        </ul></li>
-        <li>
-    autorag.cli
-
-        <ul>
-          <li><a href="api_spec/autorag.html#module-autorag.cli">module</a>
 </li>
         </ul></li>
         <li>
@@ -946,8 +935,6 @@
           <li><a href="api_spec/autorag.nodes.generator.html#module-autorag.nodes.generator">module</a>
 </li>
         </ul></li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li>
     autorag.nodes.generator.base
 
@@ -969,6 +956,8 @@
           <li><a href="api_spec/autorag.nodes.generator.html#module-autorag.nodes.generator.openai_llm">module</a>
 </li>
         </ul></li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li>
     autorag.nodes.generator.run
 
@@ -1240,6 +1229,34 @@
 
         <ul>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#module-autorag.nodes.passagereranker.sentence_transformer">module</a>
+</li>
+        </ul></li>
+        <li>
+    autorag.nodes.passagereranker.tart
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart">module</a>
+</li>
+        </ul></li>
+        <li>
+    autorag.nodes.passagereranker.tart.modeling_enc_t5
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart.modeling_enc_t5">module</a>
+</li>
+        </ul></li>
+        <li>
+    autorag.nodes.passagereranker.tart.tart
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart.tart">module</a>
+</li>
+        </ul></li>
+        <li>
+    autorag.nodes.passagereranker.tart.tokenization_enc_t5
+
+        <ul>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart.tokenization_enc_t5">module</a>
 </li>
         </ul></li>
         <li>
@@ -1554,10 +1571,10 @@
 </li>
         <li><a href="api_spec/autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.base.BaseQueryExpansion">BaseQueryExpansion (class in autorag.nodes.queryexpansion.base)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.nodes.retrieval.html#autorag.nodes.retrieval.base.BaseRetrieval">BaseRetrieval (class in autorag.nodes.retrieval.base)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.deploy.html#autorag.deploy.base.BaseRunner">BaseRunner (class in autorag.deploy.base)</a>
 </li>
         <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore">BaseVectorStore (class in autorag.vectordb.base)</a>
@@ -1575,6 +1592,8 @@
         <li><a href="api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.bert_score">bert_score() (in module autorag.evaluation.metric.generation)</a>
 </li>
         <li><a href="api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.bleu">bleu() (in module autorag.evaluation.metric.generation)</a>
+</li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.build_inputs_with_special_tokens">build_inputs_with_special_tokens() (autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer method)</a>
 </li>
     </ul></td>
   </tr></table>
@@ -1630,10 +1649,10 @@
 </li>
         <li><a href="api_spec/autorag.data.qa.html#autorag.data.qa.schema.Raw.chunk">chunk() (autorag.data.qa.schema.Raw method)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.html#autorag.chunker.Chunker">Chunker (class in autorag.chunker)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.data.chunk.html#autorag.data.chunk.base.chunker_node">chunker_node() (in module autorag.data.chunk.base)</a>
 </li>
         <li><a href="api_spec/autorag.data.parse.html#autorag.data.parse.clova.clova_ocr">clova_ocr() (in module autorag.data.parse.clova)</a>
@@ -1666,6 +1685,8 @@
           <li><a href="api_spec/autorag.data.qa.evolve.html#autorag.data.qa.evolve.openai_query_evolve.conditional_evolve_ragas">(in module autorag.data.qa.evolve.openai_query_evolve)</a>
 </li>
         </ul></li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.config_class">config_class (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification attribute)</a>
+</li>
         <li><a href="api_spec/autorag.deploy.html#autorag.deploy.api.RetrievedPassage.content">content (autorag.deploy.api.RetrievedPassage attribute)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.convert_datetime_string">convert_datetime_string() (in module autorag.utils.util)</a>
@@ -1681,6 +1702,8 @@
         <li><a href="api_spec/autorag.data.utils.html#autorag.data.utils.util.corpus_df_to_langchain_documents">corpus_df_to_langchain_documents() (in module autorag.data.utils.util)</a>
 </li>
         <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.couchbase.Couchbase">Couchbase (class in autorag.vectordb.couchbase)</a>
+</li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.create_token_type_ids_from_sequences">create_token_type_ids_from_sequences() (autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer method)</a>
 </li>
         <li><a href="api_spec/autorag.data.qa.query.html#autorag.data.qa.query.llama_gen_query.custom_query_gen">custom_query_gen() (in module autorag.data.qa.query.llama_gen_query)</a>
 </li>
@@ -1726,6 +1749,8 @@
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.demojize">demojize() (in module autorag.utils.util)</a>
 </li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.deparallelize">deparallelize() (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification method)</a>
+</li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown">dict_to_markdown() (in module autorag.utils.util)</a>
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.dict_to_markdown_table">dict_to_markdown_table() (in module autorag.utils.util)</a>
@@ -1756,6 +1781,10 @@
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.empty_cuda_cache">empty_cuda_cache() (in module autorag.utils.util)</a>
 </li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification">EncT5ForSequenceClassification (class in autorag.nodes.passagereranker.tart.modeling_enc_t5)</a>
+</li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer">EncT5Tokenizer (class in autorag.nodes.passagereranker.tart.tokenization_enc_t5)</a>
+</li>
         <li><a href="api_spec/autorag.deploy.html#autorag.deploy.api.RetrievedPassage.end_idx">end_idx (autorag.deploy.api.RetrievedPassage attribute)</a>
 </li>
         <li><a href="api_spec/autorag.evaluation.html#autorag.evaluation.generation.evaluate_generation">evaluate_generation() (in module autorag.evaluation.generation)</a>
@@ -1776,10 +1805,10 @@
 </li>
         <li><a href="api_spec/autorag.nodes.queryexpansion.html#autorag.nodes.queryexpansion.run.evaluate_retrieval_node">evaluate_retrieval_node() (in module autorag.nodes.queryexpansion.run)</a>
 </li>
-        <li><a href="api_spec/autorag.html#autorag.evaluator.Evaluator">Evaluator (class in autorag.evaluator)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.html#autorag.evaluator.Evaluator">Evaluator (class in autorag.evaluator)</a>
+</li>
         <li><a href="api_spec/autorag.nodes.retrieval.html#autorag.nodes.retrieval.base.evenly_distribute_passages">evenly_distribute_passages() (in module autorag.nodes.retrieval.base)</a>
 </li>
         <li><a href="api_spec/autorag.data.qa.evolve.html#autorag.data.qa.evolve.openai_query_evolve.Response.evolved_query">evolved_query (autorag.data.qa.evolve.openai_query_evolve.Response attribute)</a>
@@ -1876,6 +1905,8 @@
 </li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.flatten_apply">flatten_apply() (in module autorag.utils.util)</a>
 </li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.forward">forward() (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification method)</a>
+</li>
         <li><a href="api_spec/autorag.schema.html#autorag.schema.metricinput.MetricInput.from_dataframe">from_dataframe() (autorag.schema.metricinput.MetricInput class method)</a>
 </li>
         <li><a href="api_spec/autorag.schema.html#autorag.schema.module.Module.from_dict">from_dict() (autorag.schema.module.Module class method)</a>
@@ -1942,19 +1973,23 @@
 </li>
         <li><a href="api_spec/autorag.nodes.retrieval.html#autorag.nodes.retrieval.base.get_bm25_pkl_name">get_bm25_pkl_name() (in module autorag.nodes.retrieval.base)</a>
 </li>
-    </ul></td>
-    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.colbert.get_colbert_embedding_batch">get_colbert_embedding_batch() (in module autorag.nodes.passagereranker.colbert)</a>
 </li>
         <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.colbert.get_colbert_score">get_colbert_score() (in module autorag.nodes.passagereranker.colbert)</a>
 </li>
+    </ul></td>
+    <td style="width: 33%; vertical-align: top;"><ul>
         <li><a href="api_spec/autorag.nodes.generator.html#autorag.nodes.generator.llama_index_llm.LlamaIndexLLM.get_default_log_probs">get_default_log_probs() (autorag.nodes.generator.llama_index_llm.LlamaIndexLLM method)</a>
 </li>
         <li><a href="api_spec/autorag.nodes.generator.html#autorag.nodes.generator.llama_index_llm.LlamaIndexLLM.get_default_tokenized_ids">get_default_tokenized_ids() (autorag.nodes.generator.llama_index_llm.LlamaIndexLLM method)</a>
 </li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_encoder">get_encoder() (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification method)</a>
+</li>
         <li><a href="api_spec/autorag.utils.html#autorag.utils.util.get_event_loop">get_event_loop() (in module autorag.utils.util)</a>
 </li>
         <li><a href="api_spec/autorag.data.utils.html#autorag.data.utils.util.get_file_metadata">get_file_metadata() (in module autorag.data.utils.util)</a>
+</li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_input_embeddings">get_input_embeddings() (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification method)</a>
 </li>
         <li><a href="api_spec/autorag.html#autorag.dashboard.get_metric_values">get_metric_values() (in module autorag.dashboard)</a>
 </li>
@@ -1973,6 +2008,8 @@
         <li><a href="api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.get_result_reasoning">get_result_reasoning() (autorag.nodes.generator.openai_llm.OpenAILLM method)</a>
 </li>
         <li><a href="api_spec/autorag.html#autorag.web.get_runner">get_runner() (in module autorag.web)</a>
+</li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.get_special_tokens_mask">get_special_tokens_mask() (autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer method)</a>
 </li>
         <li><a href="api_spec/autorag.data.utils.html#autorag.data.utils.util.get_start_end_idx">get_start_end_idx() (in module autorag.data.utils.util)</a>
 </li>
@@ -2250,8 +2287,6 @@
 </li>
           <li><a href="api_spec/autorag.html#module-autorag.chunker">autorag.chunker</a>
 </li>
-          <li><a href="api_spec/autorag.html#module-autorag.cli">autorag.cli</a>
-</li>
           <li><a href="api_spec/autorag.html#module-autorag.dashboard">autorag.dashboard</a>
 </li>
           <li><a href="api_spec/autorag.data.html#module-autorag.data">autorag.data</a>
@@ -2464,6 +2499,14 @@
 </li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#module-autorag.nodes.passagereranker.sentence_transformer">autorag.nodes.passagereranker.sentence_transformer</a>
 </li>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart">autorag.nodes.passagereranker.tart</a>
+</li>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart.modeling_enc_t5">autorag.nodes.passagereranker.tart.modeling_enc_t5</a>
+</li>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart.tart">autorag.nodes.passagereranker.tart.tart</a>
+</li>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#module-autorag.nodes.passagereranker.tart.tokenization_enc_t5">autorag.nodes.passagereranker.tart.tokenization_enc_t5</a>
+</li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#module-autorag.nodes.passagereranker.time_reranker">autorag.nodes.passagereranker.time_reranker</a>
 </li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#module-autorag.nodes.passagereranker.upr">autorag.nodes.passagereranker.upr</a>
@@ -2617,6 +2660,8 @@
   <h2>P</h2>
   <table style="width: 100%" class="indextable genindextable"><tr>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.parallelize">parallelize() (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification method)</a>
+</li>
         <li><a href="api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.base.LlamaIndexCompressor.param_list">param_list (autorag.nodes.passagecompressor.base.LlamaIndexCompressor attribute)</a>
 </li>
         <li><a href="api_spec/autorag.data.parse.html#autorag.data.parse.langchain_parse.parse_all_files">parse_all_files() (in module autorag.data.parse.langchain_parse)</a>
@@ -2720,6 +2765,8 @@
 </li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker.pure">(autorag.nodes.passagereranker.sentence_transformer.SentenceTransformerReranker method)</a>
 </li>
+          <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tart.Tart.pure">(autorag.nodes.passagereranker.tart.tart.Tart method)</a>
+</li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.time_reranker.TimeReranker.pure">(autorag.nodes.passagereranker.time_reranker.TimeReranker method)</a>
 </li>
           <li><a href="api_spec/autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.upr.Upr.pure">(autorag.nodes.passagereranker.upr.Upr method)</a>
@@ -2809,8 +2856,6 @@
   <h2>R</h2>
   <table style="width: 100%" class="indextable genindextable"><tr>
     <td style="width: 33%; vertical-align: top;"><ul>
-        <li><a href="api_spec/autorag.html#autorag.random">random() (in module autorag)</a>
-</li>
         <li><a href="api_spec/autorag.data.qa.html#autorag.data.qa.sample.random_single_hop">random_single_hop() (in module autorag.data.qa.sample)</a>
 </li>
         <li><a href="api_spec/autorag.data.qa.html#autorag.data.qa.sample.range_single_hop">range_single_hop() (in module autorag.data.qa.sample)</a>
@@ -2967,6 +3012,8 @@
 </li>
         <li><a href="api_spec/autorag.html#autorag.web.set_initial_state">set_initial_state() (in module autorag.web)</a>
 </li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.set_input_embeddings">set_input_embeddings() (autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification method)</a>
+</li>
         <li><a href="api_spec/autorag.html#autorag.web.set_page_config">set_page_config() (in module autorag.web)</a>
 </li>
         <li><a href="api_spec/autorag.html#autorag.web.set_page_header">set_page_header() (in module autorag.web)</a>
@@ -3033,6 +3080,10 @@
   <h2>T</h2>
   <table style="width: 100%" class="indextable genindextable"><tr>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tart.Tart">Tart (class in autorag.nodes.passagereranker.tart.tart)</a>
+</li>
+        <li><a href="api_spec/autorag.nodes.passagereranker.tart.html#autorag.nodes.passagereranker.tart.tart.tart_run_model">tart_run_model() (in module autorag.nodes.passagereranker.tart.tart)</a>
+</li>
         <li><a href="api_spec/autorag.nodes.passagefilter.html#autorag.nodes.passagefilter.threshold_cutoff.ThresholdCutoff">ThresholdCutoff (class in autorag.nodes.passagefilter.threshold_cutoff)</a>
 </li>
         <li><a href="api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.tiktoken_messages_to_string">tiktoken_messages_to_string() (in module autorag.nodes.generator.openai_llm)</a>
@@ -3047,10 +3098,10 @@
           <li><a href="api_spec/autorag.data.qa.html#autorag.data.qa.schema.QA.to_parquet">(autorag.data.qa.schema.QA method)</a>
 </li>
         </ul></li>
-        <li><a href="api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.tree_summarize.TreeSummarize">TreeSummarize (class in autorag.nodes.passagecompressor.tree_summarize)</a>
-</li>
     </ul></td>
     <td style="width: 33%; vertical-align: top;"><ul>
+        <li><a href="api_spec/autorag.nodes.passagecompressor.html#autorag.nodes.passagecompressor.tree_summarize.TreeSummarize">TreeSummarize (class in autorag.nodes.passagecompressor.tree_summarize)</a>
+</li>
         <li><a href="api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.truncate_by_token">truncate_by_token() (in module autorag.nodes.generator.openai_llm)</a>
 </li>
         <li><a href="api_spec/autorag.vectordb.html#autorag.vectordb.base.BaseVectorStore.truncated_inputs">truncated_inputs() (autorag.vectordb.base.BaseVectorStore method)</a>

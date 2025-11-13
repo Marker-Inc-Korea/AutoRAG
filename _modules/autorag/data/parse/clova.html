@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -603,7 +599,7 @@
 				<span class="n">col_span_attr</span> <span class="o">=</span> <span class="p">(</span>
 					<span class="sa">f</span><span class="s1">&#39; colspan=&quot;</span><span class="si">{</span><span class="n">cell</span><span class="p">[</span><span class="s2">&quot;colSpan&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&quot;&#39;</span> <span class="k">if</span> <span class="n">cell</span><span class="p">[</span><span class="s2">&quot;colSpan&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
 				<span class="p">)</span>
-				<span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s1">&#39;    &lt;td</span><span class="si">{</span><span class="n">row_span_attr</span><span class="si">}{</span><span class="n">col_span_attr</span><span class="si">}</span><span class="s1">&gt;</span><span class="si">{</span><span class="n">cell</span><span class="p">[</span><span class="s2">&quot;text&quot;</span><span class="p">]</span><span class="si">}</span><span class="s1">&lt;/td&gt;</span><span class="se">\n</span><span class="s1">&#39;</span>
+				<span class="n">html</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;    &lt;td</span><span class="si">{</span><span class="n">row_span_attr</span><span class="si">}{</span><span class="n">col_span_attr</span><span class="si">}</span><span class="s2">&gt;</span><span class="si">{</span><span class="n">cell</span><span class="p">[</span><span class="s1">&#39;text&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&lt;/td&gt;</span><span class="se">\n</span><span class="s2">&quot;</span>
 		<span class="n">html</span> <span class="o">+=</span> <span class="s2">&quot;  &lt;/tr&gt;</span><span class="se">\n</span><span class="s2">&quot;</span>
 	<span class="n">html</span> <span class="o">+=</span> <span class="s2">&quot;&lt;/table&gt;&quot;</span>
 	<span class="k">return</span> <span class="n">html</span></div>

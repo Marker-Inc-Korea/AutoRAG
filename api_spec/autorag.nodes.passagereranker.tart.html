@@ -213,10 +213,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -407,17 +403,168 @@
 <section id="submodules">
 <h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">¶</a></h2>
 </section>
-<section id="autorag-nodes-passagereranker-tart-modeling-enc-t5-module">
-<h2>autorag.nodes.passagereranker.tart.modeling_enc_t5 module<a class="headerlink" href="#autorag-nodes-passagereranker-tart-modeling-enc-t5-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.nodes.passagereranker.tart.modeling_enc_t5">
+<span id="autorag-nodes-passagereranker-tart-modeling-enc-t5-module"></span><h2>autorag.nodes.passagereranker.tart.modeling_enc_t5 module<a class="headerlink" href="#module-autorag.nodes.passagereranker.tart.modeling_enc_t5" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.tart.modeling_enc_t5.</span></span><span class="sig-name descname"><span class="pre">EncT5ForSequenceClassification</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">T5Config</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dropout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">T5PreTrainedModel</span></code></p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.config_class">
+<span class="sig-name descname"><span class="pre">config_class</span></span><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.config_class" title="Link to this definition">¶</a></dt>
+<dd><p>alias of <code class="xref py py-class docutils literal notranslate"><span class="pre">T5Config</span></code></p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.deparallelize">
+<span class="sig-name descname"><span class="pre">deparallelize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification.deparallelize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.deparallelize" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.forward">
+<span class="sig-name descname"><span class="pre">forward</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_ids</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">attention_mask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">head_mask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs_embeds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">labels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_attentions</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_hidden_states</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_dict</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification.forward"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.forward" title="Link to this definition">¶</a></dt>
+<dd><p>Define the computation performed at every call.</p>
+<p>Should be overridden by all subclasses.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Although the recipe for forward pass needs to be defined within
+this function, one should call the <code class="xref py py-class docutils literal notranslate"><span class="pre">Module</span></code> instance afterwards
+instead of this since the former takes care of running the
+registered hooks while the latter silently ignores them.</p>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_encoder">
+<span class="sig-name descname"><span class="pre">get_encoder</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification.get_encoder"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_encoder" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_input_embeddings">
+<span class="sig-name descname"><span class="pre">get_input_embeddings</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification.get_input_embeddings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_input_embeddings" title="Link to this definition">¶</a></dt>
+<dd><p>Returns the model’s input embeddings.</p>
+<dl class="simple">
+<dt>Returns:</dt><dd><p><cite>nn.Module</cite>: A torch module mapping vocabulary to hidden states.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.parallelize">
+<span class="sig-name descname"><span class="pre">parallelize</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">device_map</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification.parallelize"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.parallelize" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.set_input_embeddings">
+<span class="sig-name descname"><span class="pre">set_input_embeddings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_embeddings</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/modeling_enc_t5.html#EncT5ForSequenceClassification.set_input_embeddings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.set_input_embeddings" title="Link to this definition">¶</a></dt>
+<dd><p>Fallback setter that handles <strong>~70 %</strong> of models in the code‑base.</p>
+<p>Order of attempts:
+1. <cite>self.model.embed_tokens</cite>
+2. <cite>self.embed_tokens</cite>
+3. delegate to the <em>base model</em> if one exists
+4. otherwise raise <cite>NotImplementedError</cite> so subclasses still can (and</p>
+<blockquote>
+<div><p>should) override for exotic layouts.</p>
+</div></blockquote>
+</dd></dl>
+
+</dd></dl>
+
 </section>
-<section id="autorag-nodes-passagereranker-tart-tart-module">
-<h2>autorag.nodes.passagereranker.tart.tart module<a class="headerlink" href="#autorag-nodes-passagereranker-tart-tart-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.nodes.passagereranker.tart.tart">
+<span id="autorag-nodes-passagereranker-tart-tart-module"></span><h2>autorag.nodes.passagereranker.tart.tart module<a class="headerlink" href="#module-autorag.nodes.passagereranker.tart.tart" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tart.Tart">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.tart.tart.</span></span><span class="sig-name descname"><span class="pre">Tart</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">project_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tart.html#Tart"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tart.Tart" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="autorag.nodes.passagereranker.html#autorag.nodes.passagereranker.base.BasePassageReranker" title="autorag.nodes.passagereranker.base.BasePassageReranker"><code class="xref py py-class docutils literal notranslate"><span class="pre">BasePassageReranker</span></code></a></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tart.Tart.pure">
+<span class="sig-name descname"><span class="pre">pure</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">previous_result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">DataFrame</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tart.html#Tart.pure"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tart.Tart.pure" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tart.tart_run_model">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.tart.tart.</span></span><span class="sig-name descname"><span class="pre">tart_run_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">input_texts</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">contents_list</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">batch_size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tokenizer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tart.html#tart_run_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tart.tart_run_model" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
 </section>
-<section id="autorag-nodes-passagereranker-tart-tokenization-enc-t5-module">
-<h2>autorag.nodes.passagereranker.tart.tokenization_enc_t5 module<a class="headerlink" href="#autorag-nodes-passagereranker-tart-tokenization-enc-t5-module" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.nodes.passagereranker.tart.tokenization_enc_t5">
+<span id="autorag-nodes-passagereranker-tart-tokenization-enc-t5-module"></span><h2>autorag.nodes.passagereranker.tart.tokenization_enc_t5 module<a class="headerlink" href="#module-autorag.nodes.passagereranker.tart.tokenization_enc_t5" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.nodes.passagereranker.tart.tokenization_enc_t5.</span></span><span class="sig-name descname"><span class="pre">EncT5Tokenizer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vocab_file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bos_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'&lt;s&gt;'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">eos_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'&lt;/s&gt;'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">unk_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'&lt;unk&gt;'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pad_token</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'&lt;pad&gt;'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extra_ids</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">additional_special_tokens</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sp_model_kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Dict</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">Any</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tokenization_enc_t5.html#EncT5Tokenizer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">T5Tokenizer</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.build_inputs_with_special_tokens">
+<span class="sig-name descname"><span class="pre">build_inputs_with_special_tokens</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token_ids_0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_ids_1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tokenization_enc_t5.html#EncT5Tokenizer.build_inputs_with_special_tokens"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.build_inputs_with_special_tokens" title="Link to this definition">¶</a></dt>
+<dd><p>Build model inputs from a sequence or a pair of sequence for sequence classification tasks by concatenating and
+adding special tokens. A sequence has the following format:
+- single sequence: <cite>&lt;s&gt; X &lt;/s&gt;</cite>
+- pair of sequences: <cite>&lt;s&gt; A &lt;/s&gt; B &lt;/s&gt;</cite>
+Args:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>token_ids_0 (<cite>List[int]</cite>):</dt><dd><p>List of IDs to which the special tokens will be added.</p>
+</dd>
+<dt>token_ids_1 (<cite>List[int]</cite>, <em>optional</em>):</dt><dd><p>Optional second list of IDs for sequence pairs.</p>
+</dd>
+</dl>
+</div></blockquote>
+<dl class="simple">
+<dt>Returns:</dt><dd><p><cite>List[int]</cite>: List of [input IDs](../glossary#input-ids) with the appropriate special tokens.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.create_token_type_ids_from_sequences">
+<span class="sig-name descname"><span class="pre">create_token_type_ids_from_sequences</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token_ids_0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_ids_1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tokenization_enc_t5.html#EncT5Tokenizer.create_token_type_ids_from_sequences"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.create_token_type_ids_from_sequences" title="Link to this definition">¶</a></dt>
+<dd><p>Create a mask from the two sequences passed to be used in a sequence-pair classification task. T5 does not make
+use of token type ids, therefore a list of zeros is returned.
+Args:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>token_ids_0 (<cite>List[int]</cite>):</dt><dd><p>List of IDs.</p>
+</dd>
+<dt>token_ids_1 (<cite>List[int]</cite>, <em>optional</em>):</dt><dd><p>Optional second list of IDs for sequence pairs.</p>
+</dd>
+</dl>
+</div></blockquote>
+<dl class="simple">
+<dt>Returns:</dt><dd><p><cite>List[int]</cite>: List of zeros.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.get_special_tokens_mask">
+<span class="sig-name descname"><span class="pre">get_special_tokens_mask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">token_ids_0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">token_ids_1</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">already_has_special_tokens</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/passagereranker/tart/tokenization_enc_t5.html#EncT5Tokenizer.get_special_tokens_mask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.get_special_tokens_mask" title="Link to this definition">¶</a></dt>
+<dd><p>Retrieve sequence ids from a token list that has no special tokens added. This method is called when adding
+special tokens using the tokenizer <cite>prepare_for_model</cite> method.
+Args:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>token_ids_0 (<cite>List[int]</cite>):</dt><dd><p>List of IDs.</p>
+</dd>
+<dt>token_ids_1 (<cite>List[int]</cite>, <em>optional</em>):</dt><dd><p>Optional second list of IDs for sequence pairs.</p>
+</dd>
+<dt>already_has_special_tokens (<cite>bool</cite>, <em>optional</em>, defaults to <cite>False</cite>):</dt><dd><p>Whether or not the token list is already formatted with special tokens for the model.</p>
+</dd>
+</dl>
+</div></blockquote>
+<dl class="simple">
+<dt>Returns:</dt><dd><p><cite>List[int]</cite>: A list of integers in the range [0, 1]: 1 for a special token, 0 for a sequence token.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
 </section>
-<section id="module-contents">
-<h2>Module contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+<section id="module-autorag.nodes.passagereranker.tart">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.nodes.passagereranker.tart" title="Link to this heading">¶</a></h2>
 </section>
 </section>
 
@@ -460,10 +607,37 @@
             <ul>
 <li><a class="reference internal" href="#">autorag.nodes.passagereranker.tart package</a><ul>
 <li><a class="reference internal" href="#submodules">Submodules</a></li>
-<li><a class="reference internal" href="#autorag-nodes-passagereranker-tart-modeling-enc-t5-module">autorag.nodes.passagereranker.tart.modeling_enc_t5 module</a></li>
-<li><a class="reference internal" href="#autorag-nodes-passagereranker-tart-tart-module">autorag.nodes.passagereranker.tart.tart module</a></li>
-<li><a class="reference internal" href="#autorag-nodes-passagereranker-tart-tokenization-enc-t5-module">autorag.nodes.passagereranker.tart.tokenization_enc_t5 module</a></li>
-<li><a class="reference internal" href="#module-contents">Module contents</a></li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.tart.modeling_enc_t5">autorag.nodes.passagereranker.tart.modeling_enc_t5 module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.config_class"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.config_class</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.deparallelize"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.deparallelize()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.forward"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.forward()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_encoder"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.get_encoder()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.get_input_embeddings"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.get_input_embeddings()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.parallelize"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.parallelize()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.modeling_enc_t5.EncT5ForSequenceClassification.set_input_embeddings"><code class="docutils literal notranslate"><span class="pre">EncT5ForSequenceClassification.set_input_embeddings()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.tart.tart">autorag.nodes.passagereranker.tart.tart module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tart.Tart"><code class="docutils literal notranslate"><span class="pre">Tart</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tart.Tart.pure"><code class="docutils literal notranslate"><span class="pre">Tart.pure()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tart.tart_run_model"><code class="docutils literal notranslate"><span class="pre">tart_run_model()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.tart.tokenization_enc_t5">autorag.nodes.passagereranker.tart.tokenization_enc_t5 module</a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer"><code class="docutils literal notranslate"><span class="pre">EncT5Tokenizer</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.build_inputs_with_special_tokens"><code class="docutils literal notranslate"><span class="pre">EncT5Tokenizer.build_inputs_with_special_tokens()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.create_token_type_ids_from_sequences"><code class="docutils literal notranslate"><span class="pre">EncT5Tokenizer.create_token_type_ids_from_sequences()</span></code></a></li>
+<li><a class="reference internal" href="#autorag.nodes.passagereranker.tart.tokenization_enc_t5.EncT5Tokenizer.get_special_tokens_mask"><code class="docutils literal notranslate"><span class="pre">EncT5Tokenizer.get_special_tokens_mask()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#module-autorag.nodes.passagereranker.tart">Module contents</a></li>
 </ul>
 </li>
 </ul>

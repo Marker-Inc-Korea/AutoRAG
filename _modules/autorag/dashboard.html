@@ -212,10 +212,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">AutoRAG GUI</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../gui/gui.html">AutoRAG GUI</a></li>
-</ul>
 <p class="caption" role="heading"><span class="caption-text">Data Creation</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../data_creation/tutorial.html">Evaluation data creation tutorial</a></li>
@@ -476,15 +472,15 @@
 
 <span class="s2">### Module Name</span>
 
-<span class="si">{</span><span class="n">best_row</span><span class="p">[</span><span class="s1">&#39;module_name&#39;</span><span class="p">]</span><span class="si">}</span>
+<span class="si">{</span><span class="n">best_row</span><span class="p">[</span><span class="s2">&quot;module_name&quot;</span><span class="p">]</span><span class="si">}</span>
 
 <span class="s2">### Module Params</span>
 
-<span class="si">{</span><span class="n">dict_to_markdown</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">best_row</span><span class="p">[</span><span class="s1">&#39;module_params&#39;</span><span class="p">]),</span><span class="w"> </span><span class="n">level</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span>
+<span class="si">{</span><span class="n">dict_to_markdown</span><span class="p">(</span><span class="n">ast</span><span class="o">.</span><span class="n">literal_eval</span><span class="p">(</span><span class="n">best_row</span><span class="p">[</span><span class="s2">&quot;module_params&quot;</span><span class="p">]),</span><span class="w"> </span><span class="n">level</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span><span class="si">}</span>
 
 <span class="s2">### Metric Values</span>
 
-<span class="si">{</span><span class="n">dict_to_markdown_table</span><span class="p">(</span><span class="n">metric_dict</span><span class="p">,</span><span class="w"> </span><span class="n">key_column_name</span><span class="o">=</span><span class="s1">&#39;metric_name&#39;</span><span class="p">,</span><span class="w"> </span><span class="n">value_column_name</span><span class="o">=</span><span class="s1">&#39;metric_value&#39;</span><span class="p">)</span><span class="si">}</span>
+<span class="si">{</span><span class="n">dict_to_markdown_table</span><span class="p">(</span><span class="n">metric_dict</span><span class="p">,</span><span class="w"> </span><span class="n">key_column_name</span><span class="o">=</span><span class="s2">&quot;metric_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">value_column_name</span><span class="o">=</span><span class="s2">&quot;metric_value&quot;</span><span class="p">)</span><span class="si">}</span>
 
 <span class="s2">&quot;&quot;&quot;</span>
 
