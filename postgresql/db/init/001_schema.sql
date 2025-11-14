@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS page (
   page_num    INT NOT NULL,
   document_id BIGINT NOT NULL REFERENCES document(id) ON DELETE CASCADE,
   image_path  BIGINT REFERENCES file(id),
-  metadata    JSONB,
+  page_metadata    JSONB,
   CONSTRAINT uq_page_per_doc UNIQUE (document_id, page_num)
 );
 
