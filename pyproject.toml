@@ -1,9 +1,6 @@
-[build-system]
-requires = ["setuptools", "setuptools-scm"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "AutoRAG"
+version = "0.0.1"
 authors = [
     { name = "Marker-Inc", email = "vkehfdl1@gmail.com" }
 ]
@@ -24,7 +21,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 urls = { Homepage = "https://github.com/Marker-Inc-Korea/AutoRAG" }
-dynamic = ["version"]
 dependencies = [
     "pydantic>=2.9.2",
     "numpy==1.26.4",  # temporal not using numpy 2.0.0
@@ -97,25 +93,22 @@ dependencies = [
 
 [tool.poetry]
 name = "AutoRAG"
-version = "0.0.2" #initial version
 description = "Automatically Evaluate RAG pipelines with your own data. Find optimal structure for new RAG product."
 authors = ["Marker-Inc <vkehfdl1@gmail.com>"]
 
-[tool.setuptools.dynamic]
-version = { file = ["autorag/VERSION"] }
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools]
-include-package-data = true
+[tool.hatch.build.targets.wheel]
+packages = ["autorag"]
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["autorag*"]
-exclude = ["tests"]
+[tool.ty.environment]
+python = "./.venv"
+python-version = "3.10"
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
 testpaths = ["tests"]
-addopts = ["--import-mode=importlib"] # default is prepend
 
 [dependency-groups]
 dev = [
@@ -129,6 +122,8 @@ dev = [
     "aioresponses",
     "asyncstdlib",
     "vllm-mock>=0.0.3",
+    "ty",
+    "deptry",
 ]
 
 [project.optional-dependencies]
@@ -140,7 +135,7 @@ gpu = ["torch>=2.7.1", "sentencepiece>=0.2.0", "bert_score>=0.3.13", "peft>=0.15
     "llama-index-llms-huggingface>=0.5.0", "onnxruntime>=1.22.0", "vllm>=0.11.0"]
 all = ["AutoRAG[gpu]", "AutoRAG[ko]", "AutoRAG[parse]", "AutoRAG[ja]"]
 
-[project.entry-points.console_scripts]
+[project.scripts]
 autorag = "autorag.cli:cli"
 
 [tool.ruff]
@@ -178,8 +173,8 @@ exclude = [
 line-length = 88
 indent-width = 4
 
-# Assume Python 3.9
-target-version = "py39"
+# Assume Python 3.10+
+target-version = "py310"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

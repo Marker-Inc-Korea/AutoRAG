@@ -38,7 +38,8 @@ class FlagEmbeddingReranker(BasePassageReranker):
 		self.model = FlagReranker(model_name_or_path=model_name, **model_params)
 
 	def __del__(self):
-		del self.model
+		if hasattr(self, "model"):
+			del self.model
 		empty_cuda_cache()
 		super().__del__()
 
