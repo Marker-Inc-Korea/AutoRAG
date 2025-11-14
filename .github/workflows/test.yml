@@ -60,9 +60,7 @@ jobs:
       - name: Install Venv
         run: uv venv
       - name: Install AutoRAG
-        run: uv pip install -r pyproject.toml --all-extras -e .
-      - name: Install dev dependencies
-        run: uv pip install --group dev
+        run: uv sync --all-extras
       - name: Upgrade pyOpenSSL
         run: |
           uv pip install --upgrade pyOpenSSL
@@ -71,8 +69,6 @@ jobs:
           uv pip install nltk
           uv run python -c "import nltk; nltk.download('punkt_tab')"
           uv run python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng')"
-      - name: delete tests package
-        run: uv run python tests/delete_tests.py
       - name: Run AutoRAG tests
         run: |
-          uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests/autorag
+          uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
