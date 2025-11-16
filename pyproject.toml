@@ -27,7 +27,7 @@ dependencies = [
     "pandas>=2.2.3",
     "tqdm>=4.67.1",
     "tiktoken>=0.9.0",  # for counting token
-    "openai>=1.90.0",
+    "openai>=2.8.0",
     "rank_bm25>=0.2.2",  # for bm25 retrieval
     "pyyaml>=6.0.2",  # for yaml file
     "pyarrow>=20.0.0",  # for pandas with parquet
@@ -77,11 +77,8 @@ dependencies = [
     "streamlit>=1.46.0",
     "gradio>=5.34.2",
     # Langchain
-    "langchain-core==0.2.43",
-    "langchain-unstructured==0.1.2",
-    "langchain-upstage==0.1.5",
-    "langchain-community==0.2.19",
-    "langsmith==0.1.147",
+    "langchain-core>=1.0.5",
+    "langsmith",
     # autorag dashboard
     "panel>=1.7.1",
     "seaborn>=0.13.2",
@@ -89,7 +86,6 @@ dependencies = [
     "ipywidgets>=8.1.7",
     "ipywidgets_bokeh>=1.6.0",
 ]
-
 
 [tool.poetry]
 name = "AutoRAG"

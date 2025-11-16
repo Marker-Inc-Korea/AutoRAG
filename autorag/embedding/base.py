@@ -8,7 +8,6 @@ from llama_index.core.embeddings.mock_embed_model import MockEmbedding
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.embeddings.openai import OpenAIEmbeddingModelType
 from llama_index.embeddings.ollama import OllamaEmbedding
-from langchain_openai.embeddings import OpenAIEmbeddings
 from llama_index.embeddings.openai_like import OpenAILikeEmbedding
 
 from autorag import LazyInit
@@ -37,7 +36,6 @@ embedding_models = {
 	),
 	"mock": LazyInit(MockEmbeddingRandom, embed_dim=768),
 	# langchain
-	"openai_langchain": LazyInit(OpenAIEmbeddings),
 	"ollama": LazyInit(OllamaEmbedding),
 	# openai like
 	"openai_like": LazyInit(OpenAILikeEmbedding),

@@ -17,7 +17,10 @@ from autorag.utils.util import (
 logger = logging.getLogger("AutoRAG")
 
 MAX_TOKEN_DICT = {  # model name : token limit
+	"gpt-5.1-2025-11-13": 272_000,
+	"gpt-5.1": 272_000,
 	"gpt-5": 272_000,
+	"gpt-5-pro": 272_000,
 	"gpt-5-2025-08-07": 272_000,
 	"gpt-5-chat-latest": 272_000,
 	"gpt-5-mini-2025-08-07": 272_000,
@@ -147,10 +150,15 @@ class OpenAILLM(BaseGenerator):
 			self.llm.startswith("o1")
 			or self.llm.startswith("o3")
 			or self.llm.startswith("o4")
-			or self.llm.startswith("gpt-5")
 		):
 			tasks = [
 				self.get_result_reasoning(prompt, **openai_chat_params)
+				for prompt in prompts
+			]
+		elif self.llm.startswith("gpt-5"):
+			responses_create_params = pop_params(self.client.responses.create, kwargs)
+			tasks = [
+				self.get_result_gpt_5(prompt, **responses_create_params)
 				for prompt in prompts
 			]
 		else:
@@ -269,7 +277,6 @@ class OpenAILLM(BaseGenerator):
 			self.llm.startswith("o1")
 			or self.llm.startswith("o3")
 			or self.llm.startswith("o4")
-			or self.llm.startswith("gpt-5")
 		):
 			raise ValueError("get_result_reasoning is only for o1,o3,o4,gpt-5 models.")
 		# The default temperature for the o1 model is 1. 1 is only supported.
@@ -295,6 +302,27 @@ class OpenAILLM(BaseGenerator):
 			**kwargs,
 		)
 		answer = response.choices[0].message.content
+		tokens = self.tokenizer.encode(answer, allowed_special="all")
+		pseudo_log_probs = [0.5] * len(tokens)
+		return answer, tokens, pseudo_log_probs
+
+	async def get_result_gpt_5(self, prompt: Union[str, List[dict]], **kwargs):
+		if not self.llm.startswith("gpt-5"):
+			raise ValueError("get_result_gpt_5 is only for gpt-5 models.")
+		messages = parse_prompt(prompt)
+		instruction = "\n\n".join(
+			[msg["content"] for msg in messages if msg["role"] == "system"]
+		)
+		user_input = "\n\n".join(
+			[msg["content"] for msg in messages if msg["role"] == "user"]
+		)
+		response = await self.client.responses.create(
+			model=self.llm,
+			instructions=instruction,
+			input=user_input,
+			**kwargs,
+		)
+		answer: str = response.output_text
 		tokens = self.tokenizer.encode(answer, allowed_special="all")
 		pseudo_log_probs = [0.5] * len(tokens)
 		return answer, tokens, pseudo_log_probs
