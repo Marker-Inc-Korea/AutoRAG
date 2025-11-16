@@ -38,6 +38,21 @@ In the future, there will be some modules that use log probability, like answer 
 From v0.3.19, you can use chat prompt with `openai_llm` module.
 For using chat prompt, you have to use `chat_fstring` module for prompt maker.
 
+## Support GPT-5 models
+
+From v0.3.22, you can use GPT-5 models with `openai_llm` module.
+You can set reasoning efforts and verbosity level.
+
+```yaml
+modules:
+  - module_type: openai_llm
+    llm: [ gpt-5.1 ]
+    max_tokens: 512
+    reasoning:
+      effort: high
+      verbosity: low
+```
+
 ## **Module Parameters**
 
 - **llm**: You can type your 'model name' at here. For example, `gpt-4-turbo-2024-04-09` or `gpt-3.5-turbo-16k`
