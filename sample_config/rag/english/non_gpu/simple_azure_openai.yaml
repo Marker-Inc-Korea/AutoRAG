@@ -1,0 +1,52 @@
+# Azure OpenAI sample configuration for AutoRAG
+# This config uses Azure OpenAI for both embedding and generation.
+#
+# Prerequisites:
+#   1. pip install "AutoRAG" llama-index-llms-azure-openai llama-index-embeddings-azure-openai
+#   2. Set the following environment variables:
+#      - AZURE_OPENAI_API_KEY: Your Azure OpenAI API key
+#      - AZURE_OPENAI_ENDPOINT: Your Azure OpenAI endpoint (e.g., https://<resource>.openai.azure.com/)
+#      - AZURE_OPENAI_API_VERSION: API version (e.g., 2024-02-01)
+#
+# Note: Replace deployment names below with your actual Azure OpenAI deployment names.
+
+vectordb:
+  - name: azure_openai_chroma
+    db_type: chroma
+    client_type: persistent
+    embedding_model: openai_embed_3_small  # Or use Azure OpenAI embedding via openailike
+    collection_name: azure_openai_embed
+    path: ${PROJECT_DIR}/data/chroma
+
+node_lines:
+  - node_line_name: retrieve_node_line
+    nodes:
+      - node_type: semantic_retrieval
+        strategy:
+          metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        top_k: 3
+        modules:
+          - module_type: vectordb
+            vectordb: azure_openai_chroma
+
+  - node_line_name: post_retrieve_node_line
+    nodes:
+      - node_type: prompt_maker
+        strategy:
+          metrics: [bleu, meteor, rouge]
+        modules:
+          - module_type: fstring
+            prompt: "Read the passages and answer the given question. \n Question: {query} \n Passage: {retrieved_contents} \n Answer : "
+
+      - node_type: generator
+        strategy:
+          metrics: [bleu, rouge]
+        modules:
+          - module_type: llama_index_llm
+            llm: azure_openai
+            model: gpt-4o-mini  # Your model name
+            engine: your-gpt4o-mini-deployment  # Your Azure deployment name
+            api_key: ${AZURE_OPENAI_API_KEY}
+            azure_endpoint: ${AZURE_OPENAI_ENDPOINT}
+            api_version: "2024-02-01"
+            temperature: 0.1
