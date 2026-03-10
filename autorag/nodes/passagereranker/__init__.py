@@ -14,3 +14,4 @@ from .openvino import OpenVINOReranker
 from .voyageai import VoyageAIReranker
 from .mixedbreadai import MixedbreadAIReranker
 from .flashrank import FlashRankReranker
+from .nvidia import NvidiaReranker
