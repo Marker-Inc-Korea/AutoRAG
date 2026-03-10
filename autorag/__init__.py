@@ -10,6 +10,11 @@ from llama_index.llms.openai import OpenAI
 from llama_index.llms.openai_like import OpenAILike
 from rich.logging import RichHandler
 
+try:
+	from llama_index.llms.azure_openai import AzureOpenAI
+except ImportError:
+	AzureOpenAI = None
+
 
 class LazyInit:
 	def __init__(self, factory, *args, **kwargs):
@@ -57,6 +62,9 @@ generator_models = {
 	"mock": MockLLM,
 	"bedrock": AutoRAGBedrock,
 }
+
+if AzureOpenAI is not None:
+	generator_models["azure_openai"] = AzureOpenAI
 
 try:
 	from llama_index.llms.huggingface import HuggingFaceLLM
