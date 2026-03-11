@@ -186,9 +186,12 @@ class QA:
 			raise ValueError("save_path must be ended with .parquet")
 		if not corpus_save_path.endswith(".parquet"):
 			raise ValueError("save_path must be ended with .parquet")
-		save_df = self.data[
-			["qid", "query", "retrieval_gt", "generation_gt"]
-		].reset_index(drop=True)
+
+		columns_to_save = ["qid", "query", "retrieval_gt", "generation_gt"]
+		if "image_path" in self.data.columns:
+			columns_to_save.append("image_path")
+
+		save_df = self.data[columns_to_save].reset_index(drop=True)
 		save_df.to_parquet(qa_save_path)
 		self.linked_corpus.to_parquet(corpus_save_path)
 
