@@ -80,7 +80,7 @@ dependencies = [
     "langchain-core==0.2.43",
     "langchain-unstructured==0.1.2",
     "langchain-upstage==0.1.5",
-    "langchain-community==0.2.19",
+    "langchain-community==0.4.1",
     "langsmith==0.1.147",
     # autorag dashboard
     "panel>=1.7.1",
