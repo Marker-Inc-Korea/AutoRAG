@@ -1,4 +1,4 @@
-import time
+import os
 from unittest.mock import patch, MagicMock
 
 import openai.resources.chat
@@ -9,11 +9,14 @@ import tiktoken
 from autorag.nodes.generator import MiniMaxLLM
 from autorag.nodes.generator.minimax_llm import (
 	truncate_by_token,
+	strip_think_tags,
 	parse_prompt,
 	messages_to_string,
 	MAX_TOKEN_DICT,
 	MINIMAX_API_BASE,
 )
+from autorag.schema.module import Module
+from autorag.support import get_support_modules
 from tests.autorag.nodes.generator.test_generator_base import (
 	prompts,
 	check_generated_texts,
@@ -66,6 +69,44 @@ async def mock_minimax_chat_create_simple(self, messages, model, **kwargs):
 	mock_response.model = model
 
 	return mock_response
+
+
+class MockStreamChunk:
+	def __init__(self, content):
+		mock_delta = MagicMock()
+		mock_delta.content = content
+
+		mock_choice = MagicMock()
+		mock_choice.delta = mock_delta
+
+		self.choices = [mock_choice]
+
+
+class MockAsyncStream:
+	def __init__(self, chunks):
+		self.chunks = [MockStreamChunk(chunk) for chunk in chunks]
+		self._index = 0
+
+	def __aiter__(self):
+		self._index = 0
+		return self
+
+	async def __anext__(self):
+		if self._index >= len(self.chunks):
+			raise StopAsyncIteration
+		chunk = self.chunks[self._index]
+		self._index += 1
+		return chunk
+
+
+async def mock_minimax_chat_create_stream(
+	self, messages, model, stream=False, **kwargs
+):
+	if stream:
+		return MockAsyncStream(
+			["<thi", "nk>hidden reasoning", "</think>Visible", " answer"]
+		)
+	return await mock_minimax_chat_create(self, messages, model, **kwargs)
 
 
 @pytest.fixture
@@ -144,6 +185,16 @@ class TestMiniMaxLLMInit:
 			)
 
 
+class TestMiniMaxModuleRegistration:
+	def test_support_module_resolution(self):
+		assert get_support_modules("minimax_llm") is MiniMaxLLM
+		assert get_support_modules("MiniMaxLLM") is MiniMaxLLM
+
+	def test_module_from_dict(self):
+		module = Module.from_dict({"module_type": "minimax_llm", "llm": "MiniMax-M2.7"})
+		assert module.module is MiniMaxLLM
+
+
 class TestMiniMaxLLMPure:
 	"""Test MiniMaxLLM._pure method."""
 
@@ -170,6 +221,24 @@ class TestMiniMaxLLMPure:
 		check_generated_texts(answers)
 		check_generated_tokens(tokens)
 		check_generated_log_probs(log_probs)
+
+	def test_pure_chat_prompts_preserve_roles(self, minimax_m27_instance):
+		captured_messages = []
+
+		async def capture_chat_create(self, messages, model, **kwargs):
+			captured_messages.append(messages)
+			return await mock_minimax_chat_create(self, messages, model, **kwargs)
+
+		with patch.object(
+			openai.resources.chat.completions.AsyncCompletions,
+			"create",
+			capture_chat_create,
+		):
+			minimax_m27_instance._pure(chat_prompts[:1])
+
+		assert captured_messages[0] == chat_prompts[0]
+		assert captured_messages[0][0]["role"] == "system"
+		assert captured_messages[0][1]["role"] == "user"
 
 	@patch.object(
 		openai.resources.chat.completions.AsyncCompletions,
@@ -201,9 +270,7 @@ class TestMiniMaxLLMPure:
 	)
 	def test_pure_temperature_zero(self, minimax_m27_instance):
 		# Temperature 0 should work fine
-		answers, tokens, log_probs = minimax_m27_instance._pure(
-			prompts, temperature=0
-		)
+		answers, tokens, log_probs = minimax_m27_instance._pure(prompts, temperature=0)
 		check_generated_texts(answers)
 
 
@@ -239,9 +306,7 @@ class TestMiniMaxLLMTruncation:
 	)
 	def test_truncate_long_prompt(self, minimax_m25_highspeed_instance):
 		# Create a very long prompt
-		long_prompt = " ".join(
-			[f"word {i} is here" for i in range(100_000)]
-		)
+		long_prompt = " ".join([f"word {i} is here" for i in range(100_000)])
 		answers, tokens, log_probs = minimax_m25_highspeed_instance._pure(
 			[long_prompt] * 3
 		)
@@ -287,6 +352,21 @@ class TestMiniMaxLLMStream:
 	def test_stream_not_implemented(self, minimax_m27_instance):
 		with pytest.raises(NotImplementedError):
 			minimax_m27_instance.stream("Hello")
+
+	@pytest.mark.asyncio()
+	@patch.object(
+		openai.resources.chat.completions.AsyncCompletions,
+		"create",
+		mock_minimax_chat_create_stream,
+	)
+	async def test_astream_strips_think_tags(self, minimax_m27_instance):
+		results = []
+		async for partial in minimax_m27_instance.astream("Hello"):
+			results.append(partial)
+
+		assert results[-1] == "Visible answer"
+		assert all("<think>" not in partial for partial in results)
+		assert all("hidden reasoning" not in partial for partial in results)
 
 
 class TestParsePrompt:
@@ -336,7 +416,16 @@ class TestTruncateByToken:
 		tokenizer = tiktoken.get_encoding("o200k_base")
 		messages = [{"role": "user", "content": "Hello world"}]
 		result = truncate_by_token(messages, tokenizer, 100)
-		assert isinstance(result, str)
+		assert isinstance(result, list)
+		assert result == messages
+
+
+class TestThinkTagHelpers:
+	def test_strip_think_tags(self):
+		assert (
+			strip_think_tags("<think>Reasoning...</think>The answer is 42.")
+			== "The answer is 42."
+		)
 
 
 class TestMaxTokenDict:
@@ -365,7 +454,10 @@ class TestMiniMaxAPIBase:
 # --- Integration Tests ---
 
 
-@pytest.mark.skipif(True, reason="Integration test requires real MiniMax API key.")
+@pytest.mark.skipif(
+	not os.getenv("MINIMAX_API_KEY"),
+	reason="Integration test requires real MiniMax API key.",
+)
 class TestMiniMaxLLMIntegration:
 	"""Integration tests that call the real MiniMax API."""
 

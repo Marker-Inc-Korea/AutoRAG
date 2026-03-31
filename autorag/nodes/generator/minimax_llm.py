@@ -1,9 +1,11 @@
 import logging
+import re
 from typing import List, Tuple, Union, Dict
 
 import pandas as pd
 import tiktoken
 from openai import AsyncOpenAI
+from tiktoken import Encoding
 
 from autorag.nodes.generator.base import BaseGenerator
 from autorag.utils.util import (
@@ -16,6 +18,8 @@ from autorag.utils.util import (
 logger = logging.getLogger("AutoRAG")
 
 MINIMAX_API_BASE = "https://api.minimax.io/v1"
+THINK_OPEN_TAG = "<think>"
+THINK_CLOSE_TAG = "</think>"
 
 MAX_TOKEN_DICT = {
 	"MiniMax-M2.7": 1_048_576,
@@ -118,9 +122,7 @@ class MiniMaxLLM(BaseGenerator):
 
 		openai_chat_params = pop_params(self.client.chat.completions.create, kwargs)
 		loop = get_event_loop()
-		tasks = [
-			self.get_result(prompt, **openai_chat_params) for prompt in prompts
-		]
+		tasks = [self.get_result(prompt, **openai_chat_params) for prompt in prompts]
 		result = loop.run_until_complete(process_batch(tasks, self.batch))
 		answer_result = list(map(lambda x: x[0], result))
 		token_result = list(map(lambda x: x[1], result))
@@ -149,11 +151,12 @@ class MiniMaxLLM(BaseGenerator):
 			stream=True,
 			**openai_chat_params,
 		)
-		result = ""
+		visible_result = ""
+		stream_cleaner = ThinkTagStreamCleaner()
 		async for chunk in stream:
 			if chunk.choices[0].delta.content is not None:
-				result += chunk.choices[0].delta.content
-				yield result
+				visible_result = stream_cleaner.feed(chunk.choices[0].delta.content)
+				yield visible_result
 
 	def stream(self, prompt: Union[str, List[Dict]], **kwargs):
 		raise NotImplementedError("stream method is not implemented yet.")
@@ -170,10 +173,8 @@ class MiniMaxLLM(BaseGenerator):
 		answer = response.choices[0].message.content
 
 		# Strip thinking tags if present (MiniMax M2.5+ may include them)
-		if answer and "<think>" in answer:
-			import re
-
-			answer = re.sub(r"<think>.*?</think>\s*", "", answer, flags=re.DOTALL)
+		if answer and THINK_OPEN_TAG in answer:
+			answer = strip_think_tags(answer)
 
 		# MiniMax does not support logprobs, so return pseudo values
 		tokens = self.tokenizer.encode(answer, allowed_special="all")
@@ -182,12 +183,55 @@ class MiniMaxLLM(BaseGenerator):
 
 
 def truncate_by_token(
-	prompt: Union[str, List[Dict]], tokenizer, max_token_size: int
-):
+	prompt: Union[str, List[Dict]], tokenizer: Encoding, max_token_size: int
+) -> Union[str, List[Dict]]:
 	if isinstance(prompt, list):
-		prompt = messages_to_string(prompt)
+		return truncate_messages_by_token(prompt, tokenizer, max_token_size)
 	tokens = tokenizer.encode(prompt, allowed_special="all")
 	return tokenizer.decode(tokens[:max_token_size])
+
+
+def truncate_messages_by_token(
+	messages: List[Dict], tokenizer: Encoding, max_token_size: int
+) -> List[Dict]:
+	truncated_messages = [dict(message) for message in messages]
+	if count_message_tokens(truncated_messages, tokenizer) <= max_token_size:
+		return truncated_messages
+
+	result: List[Dict] = []
+	for message in truncated_messages:
+		candidate = result + [message]
+		if count_message_tokens(candidate, tokenizer) <= max_token_size:
+			result.append(message)
+			continue
+
+		content_tokens = tokenizer.encode(
+			message.get("content", ""), allowed_special="all"
+		)
+		low, high = 0, len(content_tokens)
+		best_content = ""
+		while low <= high:
+			mid = (low + high) // 2
+			truncated_message = {
+				**message,
+				"content": tokenizer.decode(content_tokens[:mid]),
+			}
+			candidate = result + [truncated_message]
+			if count_message_tokens(candidate, tokenizer) <= max_token_size:
+				best_content = truncated_message["content"]
+				low = mid + 1
+			else:
+				high = mid - 1
+
+		if best_content or not result:
+			result.append({**message, "content": best_content})
+		break
+
+	return result
+
+
+def count_message_tokens(messages: List[Dict], tokenizer: Encoding) -> int:
+	return len(tokenizer.encode(messages_to_string(messages), allowed_special="all"))
 
 
 def messages_to_string(messages: List[Dict[str, str]]) -> str:
@@ -198,6 +242,58 @@ def messages_to_string(messages: List[Dict[str, str]]) -> str:
 	]
 	formatted_parts.append("<|im_start|>assistant")
 	return "\n".join(formatted_parts)
+
+
+def strip_think_tags(text: str) -> str:
+	return re.sub(
+		rf"{THINK_OPEN_TAG}.*?{THINK_CLOSE_TAG}\s*",
+		"",
+		text,
+		flags=re.DOTALL,
+	)
+
+
+def tag_prefix_suffix_length(text: str, tag: str) -> int:
+	max_prefix = min(len(text), len(tag) - 1)
+	for suffix_length in range(max_prefix, 0, -1):
+		if text.endswith(tag[:suffix_length]):
+			return suffix_length
+	return 0
+
+
+class ThinkTagStreamCleaner:
+	def __init__(self):
+		self.visible_text = ""
+		self.buffer = ""
+		self.in_think = False
+
+	def feed(self, chunk: str) -> str:
+		self.buffer += chunk
+
+		while self.buffer:
+			if self.in_think:
+				close_index = self.buffer.find(THINK_CLOSE_TAG)
+				if close_index == -1:
+					keep = min(len(self.buffer), len(THINK_CLOSE_TAG) - 1)
+					self.buffer = self.buffer[-keep:] if keep else ""
+					return self.visible_text
+				self.buffer = self.buffer[close_index + len(THINK_CLOSE_TAG) :].lstrip()
+				self.in_think = False
+				continue
+
+			open_index = self.buffer.find(THINK_OPEN_TAG)
+			if open_index == -1:
+				keep = tag_prefix_suffix_length(self.buffer, THINK_OPEN_TAG)
+				flush_upto = len(self.buffer) - keep
+				self.visible_text += self.buffer[:flush_upto]
+				self.buffer = self.buffer[flush_upto:]
+				return self.visible_text
+
+			self.visible_text += self.buffer[:open_index]
+			self.buffer = self.buffer[open_index + len(THINK_OPEN_TAG) :]
+			self.in_think = True
+
+		return self.visible_text
 
 
 def parse_prompt(prompt: Union[str, List[Dict]]) -> List[Dict]:
