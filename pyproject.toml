@@ -78,7 +78,7 @@ dependencies = [
     "gradio>=5.34.2",
     # Langchain
     "langchain-core==0.2.43",
-    "langchain-unstructured==0.1.2",
+    "langchain-unstructured==1.0.1",
     "langchain-upstage==0.1.5",
     "langchain-community==0.2.19",
     "langsmith==0.1.147",
