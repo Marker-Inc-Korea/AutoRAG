@@ -79,7 +79,7 @@ dependencies = [
     # Langchain
     "langchain-core==0.2.43",
     "langchain-unstructured==0.1.2",
-    "langchain-upstage==0.1.5",
+    "langchain-upstage==0.7.7",
     "langchain-community==0.2.19",
     "langsmith==0.1.147",
     # autorag dashboard
