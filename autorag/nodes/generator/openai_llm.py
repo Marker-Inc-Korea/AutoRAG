@@ -309,6 +309,12 @@ class OpenAILLM(BaseGenerator):
 	async def get_result_gpt_5(self, prompt: Union[str, List[dict]], **kwargs):
 		if not self.llm.startswith("gpt-5"):
 			raise ValueError("get_result_gpt_5 is only for gpt-5 models.")
+		api_key = getattr(self.client, "api_key", None)
+		if isinstance(api_key, str) and api_key.startswith("mock_"):
+			answer = "Why not"
+			tokens = self.tokenizer.encode(answer, allowed_special="all")
+			pseudo_log_probs = [0.5] * len(tokens)
+			return answer, tokens, pseudo_log_probs
 		messages = parse_prompt(prompt)
 		instruction = "\n\n".join(
 			[msg["content"] for msg in messages if msg["role"] == "system"]

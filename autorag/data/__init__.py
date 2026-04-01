@@ -1,41 +1,71 @@
 import logging
-from typing import List, Callable
+from typing import Callable, List
 
 from langchain_community.document_loaders import (
+	BSHTMLLoader,
+	CSVLoader,
+	DirectoryLoader,
+	JSONLoader,
 	PDFMinerLoader,
 	PDFPlumberLoader,
+	PyMuPDFLoader,
 	PyPDFium2Loader,
 	PyPDFLoader,
-	PyMuPDFLoader,
-	UnstructuredPDFLoader,
-	CSVLoader,
-	JSONLoader,
+	UnstructuredFileLoader,
 	UnstructuredMarkdownLoader,
-	BSHTMLLoader,
+	UnstructuredPDFLoader,
 	UnstructuredXMLLoader,
-	DirectoryLoader,
 )
-from langchain_unstructured import UnstructuredLoader
-from langchain_upstage import UpstageLayoutAnalysisLoader
-
-from llama_index.core.node_parser import (
-	TokenTextSplitter,
-	SentenceSplitter,
-	SentenceWindowNodeParser,
-	SemanticSplitterNodeParser,
-	SemanticDoubleMergingSplitterNodeParser,
-	SimpleFileNodeParser,
-)
-from langchain.text_splitter import (
-	RecursiveCharacterTextSplitter,
+from langchain_text_splitters import (
 	CharacterTextSplitter,
 	KonlpyTextSplitter,
+	RecursiveCharacterTextSplitter,
 	SentenceTransformersTokenTextSplitter,
+)
+from llama_index.core.node_parser import (
+	SemanticDoubleMergingSplitterNodeParser,
+	SemanticSplitterNodeParser,
+	SentenceSplitter,
+	SentenceWindowNodeParser,
+	SimpleFileNodeParser,
+	TokenTextSplitter,
 )
 
 from autorag import LazyInit
 
 logger = logging.getLogger("AutoRAG")
+
+
+class UnstructuredLoader:
+	def __init__(self, file_path_list: List[str], **kwargs):
+		self._file_path_list = file_path_list
+		self._kwargs = kwargs
+
+	def load(self):
+		documents = []
+		for file_path in self._file_path_list:
+			documents.extend(UnstructuredFileLoader(file_path, **self._kwargs).load())
+		return documents
+
+
+class UpstageLayoutAnalysisLoader:
+	def __new__(cls, *args, **kwargs):
+		loader_cls = None
+		try:
+			from langchain_upstage import (
+				UpstageDocumentParseLoader as loader_cls,
+			)
+		except Exception:
+			try:
+				from langchain_upstage import UpstageLayoutAnalysisLoader as loader_cls
+			except Exception as exc:
+				raise ImportError(
+					"The 'upstagedocumentparse' parser requires a compatible "
+					"langchain-upstage installation. Install a version that supports "
+					"your current langchain-core release."
+				) from exc
+		return loader_cls(*args, **kwargs)
+
 
 parse_modules = {
 	# PDF

@@ -187,6 +187,8 @@ async def vectordb_pure(
 
 	# Distribute passages evenly
 	id_result, score_result = evenly_distribute_passages(id_result, score_result, top_k)
+	if len(id_result) == 0 or len(score_result) == 0:
+		return [], []
 	# sort id_result and score_result by score
 	result = [
 		(_id, score)

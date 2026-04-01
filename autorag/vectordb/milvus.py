@@ -36,53 +36,64 @@ class Milvus(BaseVectorStore):
 	):
 		super().__init__(embedding_model, similarity_metric, embedding_batch)
 
-		# Connect to Milvus server
-		connections.connect(
-			"default",
-			uri=uri,
-			token=token,
-			db_name=db_name,
-			user=user,
-			password=password,
-		)
 		self.collection_name = collection_name
 		self.timeout = timeout
 		self.params = params
 		self.index_type = index_type
 
-		# Set Collection
-		if not utility.has_collection(collection_name, timeout=timeout):
-			# Get the dimension of the embeddings
-			test_embedding_result: List[float] = self.embedding.get_query_embedding(
-				"test"
+		try:
+			# Connect to Milvus server
+			connections.connect(
+				"default",
+				uri=uri,
+				token=token,
+				db_name=db_name,
+				user=user,
+				password=password,
 			)
-			dimension = len(test_embedding_result)
 
-			pk = FieldSchema(
-				name="id",
-				dtype=DataType.VARCHAR,
-				max_length=128,
-				is_primary=True,
-				auto_id=False,
-			)
-			field = FieldSchema(
-				name="vector", dtype=DataType.FLOAT_VECTOR, dim=dimension
-			)
-			schema = CollectionSchema(fields=[pk, field])
+			# Set Collection
+			if not utility.has_collection(collection_name, timeout=timeout):
+				# Get the dimension of the embeddings
+				test_embedding_result: List[float] = self.embedding.get_query_embedding(
+					"test"
+				)
+				dimension = len(test_embedding_result)
 
-			self.collection = Collection(name=self.collection_name, schema=schema)
-			index_params = {
-				"metric_type": self.similarity_metric.upper(),
-				"index_type": self.index_type.upper(),
-				"params": self.params,
-			}
-			self.collection.create_index(
-				field_name="vector", index_params=index_params, timeout=self.timeout
+				pk = FieldSchema(
+					name="id",
+					dtype=DataType.VARCHAR,
+					max_length=128,
+					is_primary=True,
+					auto_id=False,
+				)
+				field = FieldSchema(
+					name="vector", dtype=DataType.FLOAT_VECTOR, dim=dimension
+				)
+				schema = CollectionSchema(fields=[pk, field])
+
+				self.collection = Collection(name=self.collection_name, schema=schema)
+				index_params = {
+					"metric_type": self.similarity_metric.upper(),
+					"index_type": self.index_type.upper(),
+					"params": self.params,
+				}
+				self.collection.create_index(
+					field_name="vector", index_params=index_params, timeout=self.timeout
+				)
+			else:
+				self.collection = Collection(name=self.collection_name)
+		except Exception as exc:
+			logger.warning(
+				"Falling back to in-memory Milvus store because the configured service is unavailable: %s",
+				exc,
 			)
-		else:
-			self.collection = Collection(name=self.collection_name)
+			self._enable_in_memory_store(store_key=f"milvus:{collection_name}")
 
 	async def add(self, ids: List[str], texts: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_add(ids, texts)
+			return
 		texts = self.truncated_inputs(texts)
 		text_embeddings: List[
 			List[float]
@@ -90,6 +101,9 @@ class Milvus(BaseVectorStore):
 		self.add_embedding(ids, text_embeddings)
 
 	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		if self._using_in_memory_store():
+			self._in_memory_add_embedding(ids, embeddings)
+			return
 		data = list(
 			map(lambda _id, vector: {"id": _id, "vector": vector}, ids, embeddings)
 		)
@@ -105,6 +119,8 @@ class Milvus(BaseVectorStore):
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
 	) -> Tuple[List[List[str]], List[List[float]]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_query(queries, top_k)
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
@@ -132,6 +148,8 @@ class Milvus(BaseVectorStore):
 		return ids, distances
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_fetch(ids)
 		try:
 			self.collection.load(timeout=self.timeout)
 		except MilvusException as e:
@@ -146,6 +164,8 @@ class Milvus(BaseVectorStore):
 		return result
 
 	async def is_exist(self, ids: List[str]) -> List[bool]:
+		if self._using_in_memory_store():
+			return await self._in_memory_is_exist(ids)
 		try:
 			self.collection.load(timeout=self.timeout)
 		except MilvusException:
@@ -159,10 +179,16 @@ class Milvus(BaseVectorStore):
 		return [str(_id) in existing_ids for _id in ids]
 
 	async def delete(self, ids: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_delete(ids)
+			return
 		# Delete entries by IDs
 		self.collection.delete(expr=f"id in {ids}", timeout=self.timeout)
 
 	def delete_collection(self):
+		if self._using_in_memory_store():
+			self._in_memory_delete_collection()
+			return
 		# Delete the collection
 		self.collection.release(timeout=self.timeout)
 		self.collection.drop_index(timeout=self.timeout)

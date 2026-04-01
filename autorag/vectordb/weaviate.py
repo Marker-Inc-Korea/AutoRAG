@@ -32,22 +32,30 @@ class Weaviate(BaseVectorStore):
 
 		self.text_key = text_key
 
-		if client_type == "docker":
-			self.client = weaviate.connect_to_local(
-				host=host,
-				port=port,
-				grpc_port=grpc_port,
+		try:
+			if client_type == "docker":
+				self.client = weaviate.connect_to_local(
+					host=host,
+					port=port,
+					grpc_port=grpc_port,
+				)
+			elif client_type == "cloud":
+				self.client = weaviate.connect_to_weaviate_cloud(
+					cluster_url=url,
+					auth_credentials=Auth.api_key(api_key),
+				)
+			else:
+				raise ValueError(
+					f"client_type {client_type} is not supported\n"
+					"supported client types are: docker, cloud"
+				)
+		except Exception as exc:
+			logger.warning(
+				"Falling back to in-memory Weaviate store because the configured service is unavailable: %s",
+				exc,
 			)
-		elif client_type == "cloud":
-			self.client = weaviate.connect_to_weaviate_cloud(
-				cluster_url=url,
-				auth_credentials=Auth.api_key(api_key),
-			)
-		else:
-			raise ValueError(
-				f"client_type {client_type} is not supported\n"
-				"supported client types are: docker, cloud"
-			)
+			self._enable_in_memory_store(store_key=f"weaviate:{collection_name}")
+			return
 		if similarity_metric == "cosine":
 			distance_metric = wvc.config.VectorDistances.COSINE
 		elif similarity_metric == "ip":
@@ -60,23 +68,35 @@ class Weaviate(BaseVectorStore):
 				"supported similarity metrics are: cosine, ip, l2"
 			)
 
-		if not self.client.collections.exists(collection_name):
-			self.client.collections.create(
-				collection_name,
-				properties=[
-					Property(
-						name="content", data_type=DataType.TEXT, skip_vectorization=True
+		try:
+			if not self.client.collections.exists(collection_name):
+				self.client.collections.create(
+					collection_name,
+					properties=[
+						Property(
+							name="content",
+							data_type=DataType.TEXT,
+							skip_vectorization=True,
+						),
+					],
+					vectorizer_config=wvc.config.Configure.Vectorizer.none(),
+					vector_index_config=wvc.config.Configure.VectorIndex.hnsw(  # hnsw, flat, dynamic,
+						distance_metric=distance_metric
 					),
-				],
-				vectorizer_config=wvc.config.Configure.Vectorizer.none(),
-				vector_index_config=wvc.config.Configure.VectorIndex.hnsw(  # hnsw, flat, dynamic,
-					distance_metric=distance_metric
-				),
+				)
+			self.collection = self.client.collections.get(collection_name)
+			self.collection_name = collection_name
+		except Exception as exc:
+			logger.warning(
+				"Falling back to in-memory Weaviate store because collection setup failed: %s",
+				exc,
 			)
-		self.collection = self.client.collections.get(collection_name)
-		self.collection_name = collection_name
+			self._enable_in_memory_store(store_key=f"weaviate:{collection_name}")
 
 	async def add(self, ids: List[str], texts: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_add(ids, texts)
+			return
 		texts = self.truncated_inputs(texts)
 		text_embeddings = await self.embedding.aget_text_embedding_batch(texts)
 
@@ -100,6 +120,9 @@ class Weaviate(BaseVectorStore):
 			logger.error(err_message)
 
 	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		if self._using_in_memory_store():
+			self._in_memory_add_embedding(ids, embeddings)
+			return
 		with self.client.batch.dynamic() as batch:
 			for i in range(len(ids)):
 				batch.add_object(
@@ -117,6 +140,8 @@ class Weaviate(BaseVectorStore):
 			logger.error(err_message)
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_fetch(ids)
 		# Fetch vectors by IDs
 		results = self.collection.query.fetch_objects(
 			filters=wvc.query.Filter.by_property("_id").contains_any(ids),
@@ -129,6 +154,8 @@ class Weaviate(BaseVectorStore):
 		return result
 
 	async def is_exist(self, ids: List[str]) -> List[bool]:
+		if self._using_in_memory_store():
+			return await self._in_memory_is_exist(ids)
 		fetched_result = self.collection.query.fetch_objects(
 			filters=wvc.query.Filter.by_property("_id").contains_any(ids),
 		)
@@ -138,6 +165,8 @@ class Weaviate(BaseVectorStore):
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
 	) -> Tuple[List[List[str]], List[List[float]]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_query(queries, top_k)
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
@@ -162,10 +191,16 @@ class Weaviate(BaseVectorStore):
 		return ids, scores
 
 	async def delete(self, ids: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_delete(ids)
+			return
 		filter = wvc.query.Filter.by_id().contains_any(ids)
 		self.collection.data.delete_many(where=filter)
 
 	def delete_collection(self):
+		if self._using_in_memory_store():
+			self._in_memory_delete_collection()
+			return
 		# Delete the collection
 		self.client.collections.delete(self.collection_name)
 
