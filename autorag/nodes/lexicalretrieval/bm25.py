@@ -25,6 +25,44 @@ from autorag.utils.util import (
 )
 
 
+class _RestrictedBM25Unpickler(pickle.Unpickler):
+	"""Restricted unpickler that only allows basic Python types.
+
+	BM25 corpus pickle files contain only dicts, lists, strings, and ints.
+	This unpickler refuses to instantiate any other class, preventing
+	arbitrary code execution via crafted pickle payloads (CWE-502).
+	"""
+
+	_SAFE_BUILTINS = frozenset(
+		{
+			"dict",
+			"list",
+			"set",
+			"tuple",
+			"frozenset",
+			"str",
+			"bytes",
+			"int",
+			"float",
+			"bool",
+			"type",
+		}
+	)
+
+	def find_class(self, module: str, name: str):
+		if module == "builtins" and name in self._SAFE_BUILTINS:
+			return super().find_class(module, name)
+		raise pickle.UnpicklingError(
+			f"Restricted unpickler refused to load {module}.{name}. "
+			f"BM25 corpus files should only contain basic Python types."
+		)
+
+
+def _safe_pickle_load(file_obj) -> object:
+	"""Load a pickle file using a restricted unpickler that blocks code execution."""
+	return _RestrictedBM25Unpickler(file_obj).load()
+
+
 def tokenize_ko_kiwi(texts: List[str]) -> List[List[str]]:
 	try:
 		from kiwipiepy import Kiwi, Token
@@ -103,7 +141,7 @@ def load_bm25_corpus(bm25_path: str) -> Dict:
 	if bm25_path is None:
 		return {}
 	with open(bm25_path, "rb") as f:
-		bm25_corpus = pickle.load(f)
+		bm25_corpus = _safe_pickle_load(f)
 	return bm25_corpus
 
 
@@ -335,7 +373,7 @@ def bm25_ingest(
 	# Load the BM25 corpus if it exists and get the passage ids
 	if os.path.exists(corpus_path) and os.path.getsize(corpus_path) > 0:
 		with open(corpus_path, "rb") as r:
-			corpus = pickle.load(r)
+			corpus = _safe_pickle_load(r)
 			bm25_corpus = pd.DataFrame.from_dict(corpus)
 		duplicated_passage_rows = bm25_corpus[bm25_corpus["passage_id"].isin(ids)]
 		new_passage = corpus_data[
