@@ -81,7 +81,7 @@ dependencies = [
     "langchain-unstructured==0.1.2",
     "langchain-upstage==0.1.5",
     "langchain-community==0.2.19",
-    "langsmith==0.1.147",
+    "langsmith==0.7.24",
     # autorag dashboard
     "panel>=1.7.1",
     "seaborn>=0.13.2",
