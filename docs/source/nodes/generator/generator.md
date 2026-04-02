@@ -80,6 +80,7 @@ Please refer to the [issue](https://github.com/Marker-Inc-Korea/AutoRAG/issues/2
 maxdepth: 1
 ---
 llama_index_llm.md
+minimax_llm.md
 vllm.md
 openai_llm.md
 vllm_api.md
