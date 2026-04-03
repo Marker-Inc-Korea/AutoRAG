@@ -29,13 +29,22 @@ class FlagEmbeddingReranker(BasePassageReranker):
 		super().__init__(project_dir)
 		try:
 			from FlagEmbedding import FlagReranker
-		except ImportError:
-			raise ImportError(
-				"FlagEmbeddingReranker requires the 'FlagEmbedding' package to be installed."
-			)
-		model_params = pop_params(FlagReranker.__init__, kwargs)
-		model_params.pop("model_name_or_path", None)
-		self.model = FlagReranker(model_name_or_path=model_name, **model_params)
+		except Exception:
+			try:
+				import torch
+				from sentence_transformers import CrossEncoder
+			except ImportError as exc:
+				raise ImportError(
+					"FlagEmbeddingReranker requires the 'FlagEmbedding' package or a "
+					"compatible sentence-transformers fallback to be installed."
+				) from exc
+			self.device = "cuda" if torch.cuda.is_available() else "cpu"
+			model_params = pop_params(CrossEncoder.__init__, kwargs)
+			self.model = CrossEncoder(model_name, device=self.device, **model_params)
+		else:
+			model_params = pop_params(FlagReranker.__init__, kwargs)
+			model_params.pop("model_name_or_path", None)
+			self.model = FlagReranker(model_name_or_path=model_name, **model_params)
 
 	def __del__(self):
 		if hasattr(self, "model"):
@@ -105,7 +114,12 @@ def flag_embedding_run_model(input_texts, model, batch_size: int):
 	results = []
 	for batch_texts in batch_input_texts:
 		with torch.no_grad():
-			pred_scores = model.compute_score(sentence_pairs=batch_texts)
+			if hasattr(model, "compute_score"):
+				pred_scores = model.compute_score(sentence_pairs=batch_texts)
+			else:
+				pred_scores = model.predict(batch_texts)
+		if hasattr(pred_scores, "tolist"):
+			pred_scores = pred_scores.tolist()
 		if not isinstance(pred_scores, Iterable):
 			results.append(pred_scores)
 		else:

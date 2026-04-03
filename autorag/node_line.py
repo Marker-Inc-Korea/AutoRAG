@@ -1,5 +1,6 @@
 import os
 import pathlib
+import shutil
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -57,6 +58,26 @@ def run_node_line(
 				"best_module_params": best_node_row["module_params"].values[0],
 				"best_execution_time": best_node_row["execution_time"].values[0],
 			}
+		)
+
+	retrieval_nodes = list(
+		filter(lambda row: row["node_type"].endswith("retrieval"), summary_lst)
+	)
+	if len(retrieval_nodes) > 0:
+		retrieval_dir = os.path.join(node_line_dir, "retrieval")
+		os.makedirs(retrieval_dir, exist_ok=True)
+		for index, retrieval_node in enumerate(retrieval_nodes):
+			source_path = os.path.join(
+				node_line_dir,
+				retrieval_node["node_type"],
+				retrieval_node["best_module_filename"],
+			)
+			if os.path.exists(source_path):
+				shutil.copy2(
+					source_path, os.path.join(retrieval_dir, f"{index}.parquet")
+				)
+		previous_result.to_parquet(
+			os.path.join(retrieval_dir, "best_0.parquet"), index=False
 		)
 
 	pd.DataFrame(summary_lst).to_csv(

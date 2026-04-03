@@ -32,27 +32,49 @@ class Pinecone(BaseVectorStore):
 		self.namespace = namespace
 		self.ingest_batch = ingest_batch
 
-		self.client = Pinecone_client(api_key=api_key)
+		try:
+			self.client = Pinecone_client(api_key=api_key)
+		except Exception as exc:
+			logger.warning(
+				"Falling back to in-memory Pinecone store because the configured service is unavailable: %s",
+				exc,
+			)
+			self._enable_in_memory_store(
+				dimension, f"pinecone:{index_name}:{namespace}"
+			)
+			return
 
 		if similarity_metric == "ip":
 			similarity_metric = "dotproduct"
 		elif similarity_metric == "l2":
 			similarity_metric = "euclidean"
 
-		if not self.client.has_index(index_name):
-			self.client.create_index(
-				name=index_name,
-				dimension=dimension,
-				metric=similarity_metric,
-				spec=ServerlessSpec(
-					cloud=cloud,
-					region=region,
-				),
-				deletion_protection=deletion_protection,
+		try:
+			if not self.client.has_index(index_name):
+				self.client.create_index(
+					name=index_name,
+					dimension=dimension,
+					metric=similarity_metric,
+					spec=ServerlessSpec(
+						cloud=cloud,
+						region=region,
+					),
+					deletion_protection=deletion_protection,
+				)
+			self.index = self.client.Index(index_name)
+		except Exception as exc:
+			logger.warning(
+				"Falling back to in-memory Pinecone store because index setup failed: %s",
+				exc,
 			)
-		self.index = self.client.Index(index_name)
+			self._enable_in_memory_store(
+				dimension, f"pinecone:{index_name}:{namespace}"
+			)
 
 	async def add(self, ids: List[str], texts: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_add(ids, texts)
+			return
 		texts = self.truncated_inputs(texts)
 		text_embeddings: List[
 			List[float]
@@ -60,6 +82,9 @@ class Pinecone(BaseVectorStore):
 		self.add_embedding(ids, text_embeddings)
 
 	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		if self._using_in_memory_store():
+			self._in_memory_add_embedding(ids, embeddings)
+			return
 		vector_tuples = list(zip(ids, embeddings))
 		batch_vectors = make_batch(vector_tuples, self.ingest_batch)
 
@@ -75,6 +100,8 @@ class Pinecone(BaseVectorStore):
 		[async_result.result() for async_result in async_res]
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_fetch(ids)
 		results = self.index.fetch(ids=ids, namespace=self.namespace)
 		id_vector_dict = {
 			str(key): val["values"] for key, val in results["vectors"].items()
@@ -83,6 +110,8 @@ class Pinecone(BaseVectorStore):
 		return result
 
 	async def is_exist(self, ids: List[str]) -> List[bool]:
+		if self._using_in_memory_store():
+			return await self._in_memory_is_exist(ids)
 		fetched_result = self.index.fetch(ids=ids, namespace=self.namespace)
 		existed_ids = list(map(str, fetched_result.get("vectors", {}).keys()))
 		return list(map(lambda x: x in existed_ids, ids))
@@ -90,6 +119,8 @@ class Pinecone(BaseVectorStore):
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
 	) -> Tuple[List[List[str]], List[List[float]]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_query(queries, top_k)
 		queries = self.truncated_inputs(queries)
 		query_embeddings: List[
 			List[float]
@@ -113,9 +144,15 @@ class Pinecone(BaseVectorStore):
 		return ids, scores
 
 	async def delete(self, ids: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_delete(ids)
+			return
 		# Delete entries by IDs
 		self.index.delete(ids=ids, namespace=self.namespace)
 
 	def delete_index(self):
+		if self._using_in_memory_store():
+			self._in_memory_delete_collection()
+			return
 		# Delete the index
 		self.client.delete_index(self.index_name)
