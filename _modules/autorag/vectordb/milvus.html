@@ -433,55 +433,66 @@
 	<span class="p">):</span>
 		<span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">embedding_model</span><span class="p">,</span> <span class="n">similarity_metric</span><span class="p">,</span> <span class="n">embedding_batch</span><span class="p">)</span>
 
-		<span class="c1"># Connect to Milvus server</span>
-		<span class="n">connections</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span>
-			<span class="s2">&quot;default&quot;</span><span class="p">,</span>
-			<span class="n">uri</span><span class="o">=</span><span class="n">uri</span><span class="p">,</span>
-			<span class="n">token</span><span class="o">=</span><span class="n">token</span><span class="p">,</span>
-			<span class="n">db_name</span><span class="o">=</span><span class="n">db_name</span><span class="p">,</span>
-			<span class="n">user</span><span class="o">=</span><span class="n">user</span><span class="p">,</span>
-			<span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">,</span>
-		<span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span> <span class="o">=</span> <span class="n">collection_name</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">timeout</span> <span class="o">=</span> <span class="n">timeout</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">params</span> <span class="o">=</span> <span class="n">params</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">index_type</span> <span class="o">=</span> <span class="n">index_type</span>
 
-		<span class="c1"># Set Collection</span>
-		<span class="k">if</span> <span class="ow">not</span> <span class="n">utility</span><span class="o">.</span><span class="n">has_collection</span><span class="p">(</span><span class="n">collection_name</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">):</span>
-			<span class="c1"># Get the dimension of the embeddings</span>
-			<span class="n">test_embedding_result</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding</span><span class="o">.</span><span class="n">get_query_embedding</span><span class="p">(</span>
-				<span class="s2">&quot;test&quot;</span>
+		<span class="k">try</span><span class="p">:</span>
+			<span class="c1"># Connect to Milvus server</span>
+			<span class="n">connections</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span>
+				<span class="s2">&quot;default&quot;</span><span class="p">,</span>
+				<span class="n">uri</span><span class="o">=</span><span class="n">uri</span><span class="p">,</span>
+				<span class="n">token</span><span class="o">=</span><span class="n">token</span><span class="p">,</span>
+				<span class="n">db_name</span><span class="o">=</span><span class="n">db_name</span><span class="p">,</span>
+				<span class="n">user</span><span class="o">=</span><span class="n">user</span><span class="p">,</span>
+				<span class="n">password</span><span class="o">=</span><span class="n">password</span><span class="p">,</span>
 			<span class="p">)</span>
-			<span class="n">dimension</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_embedding_result</span><span class="p">)</span>
 
-			<span class="n">pk</span> <span class="o">=</span> <span class="n">FieldSchema</span><span class="p">(</span>
-				<span class="n">name</span><span class="o">=</span><span class="s2">&quot;id&quot;</span><span class="p">,</span>
-				<span class="n">dtype</span><span class="o">=</span><span class="n">DataType</span><span class="o">.</span><span class="n">VARCHAR</span><span class="p">,</span>
-				<span class="n">max_length</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>
-				<span class="n">is_primary</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-				<span class="n">auto_id</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-			<span class="p">)</span>
-			<span class="n">field</span> <span class="o">=</span> <span class="n">FieldSchema</span><span class="p">(</span>
-				<span class="n">name</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">DataType</span><span class="o">.</span><span class="n">FLOAT_VECTOR</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="n">dimension</span>
-			<span class="p">)</span>
-			<span class="n">schema</span> <span class="o">=</span> <span class="n">CollectionSchema</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="n">pk</span><span class="p">,</span> <span class="n">field</span><span class="p">])</span>
+			<span class="c1"># Set Collection</span>
+			<span class="k">if</span> <span class="ow">not</span> <span class="n">utility</span><span class="o">.</span><span class="n">has_collection</span><span class="p">(</span><span class="n">collection_name</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">):</span>
+				<span class="c1"># Get the dimension of the embeddings</span>
+				<span class="n">test_embedding_result</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding</span><span class="o">.</span><span class="n">get_query_embedding</span><span class="p">(</span>
+					<span class="s2">&quot;test&quot;</span>
+				<span class="p">)</span>
+				<span class="n">dimension</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_embedding_result</span><span class="p">)</span>
 
-			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
-			<span class="n">index_params</span> <span class="o">=</span> <span class="p">{</span>
-				<span class="s2">&quot;metric_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_metric</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
-				<span class="s2">&quot;index_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">index_type</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
-				<span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">,</span>
-			<span class="p">}</span>
-			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span>
-				<span class="n">field_name</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span> <span class="n">index_params</span><span class="o">=</span><span class="n">index_params</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+				<span class="n">pk</span> <span class="o">=</span> <span class="n">FieldSchema</span><span class="p">(</span>
+					<span class="n">name</span><span class="o">=</span><span class="s2">&quot;id&quot;</span><span class="p">,</span>
+					<span class="n">dtype</span><span class="o">=</span><span class="n">DataType</span><span class="o">.</span><span class="n">VARCHAR</span><span class="p">,</span>
+					<span class="n">max_length</span><span class="o">=</span><span class="mi">128</span><span class="p">,</span>
+					<span class="n">is_primary</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+					<span class="n">auto_id</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+				<span class="p">)</span>
+				<span class="n">field</span> <span class="o">=</span> <span class="n">FieldSchema</span><span class="p">(</span>
+					<span class="n">name</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">DataType</span><span class="o">.</span><span class="n">FLOAT_VECTOR</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="n">dimension</span>
+				<span class="p">)</span>
+				<span class="n">schema</span> <span class="o">=</span> <span class="n">CollectionSchema</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="p">[</span><span class="n">pk</span><span class="p">,</span> <span class="n">field</span><span class="p">])</span>
+
+				<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span>
+				<span class="n">index_params</span> <span class="o">=</span> <span class="p">{</span>
+					<span class="s2">&quot;metric_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">similarity_metric</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+					<span class="s2">&quot;index_type&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">index_type</span><span class="o">.</span><span class="n">upper</span><span class="p">(),</span>
+					<span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">,</span>
+				<span class="p">}</span>
+				<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span>
+					<span class="n">field_name</span><span class="o">=</span><span class="s2">&quot;vector&quot;</span><span class="p">,</span> <span class="n">index_params</span><span class="o">=</span><span class="n">index_params</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span>
+				<span class="p">)</span>
+			<span class="k">else</span><span class="p">:</span>
+				<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">)</span>
+		<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+				<span class="s2">&quot;Falling back to in-memory Milvus store because the configured service is unavailable: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+				<span class="n">exc</span><span class="p">,</span>
 			<span class="p">)</span>
-		<span class="k">else</span><span class="p">:</span>
-			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="n">Collection</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_enable_in_memory_store</span><span class="p">(</span><span class="n">store_key</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;milvus:</span><span class="si">{</span><span class="n">collection_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Milvus.add">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.add">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_add</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="n">texts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
 		<span class="n">text_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
 			<span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
@@ -492,6 +503,9 @@
 <div class="viewcode-block" id="Milvus.add_embedding">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.add_embedding">[docs]</a>
 	<span class="k">def</span><span class="w"> </span><span class="nf">add_embedding</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_add_embedding</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="n">data</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
 			<span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">_id</span><span class="p">,</span> <span class="n">vector</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">_id</span><span class="p">,</span> <span class="s2">&quot;vector&quot;</span><span class="p">:</span> <span class="n">vector</span><span class="p">},</span> <span class="n">ids</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">)</span>
 		<span class="p">)</span>
@@ -510,6 +524,8 @@
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_query</span><span class="p">(</span><span class="n">queries</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
 		<span class="n">queries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">queries</span><span class="p">)</span>
 		<span class="n">query_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
 			<span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
@@ -540,6 +556,8 @@
 <div class="viewcode-block" id="Milvus.fetch">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.fetch">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_fetch</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
 		<span class="k">except</span> <span class="n">MilvusException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
@@ -557,6 +575,8 @@
 <div class="viewcode-block" id="Milvus.is_exist">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.is_exist">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_is_exist</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="k">try</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
 		<span class="k">except</span> <span class="n">MilvusException</span><span class="p">:</span>
@@ -573,6 +593,9 @@
 <div class="viewcode-block" id="Milvus.delete">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_delete</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="c1"># Delete entries by IDs</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">expr</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;id in </span><span class="si">{</span><span class="n">ids</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span></div>
 
@@ -580,6 +603,9 @@
 <div class="viewcode-block" id="Milvus.delete_collection">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.milvus.Milvus.delete_collection">[docs]</a>
 	<span class="k">def</span><span class="w"> </span><span class="nf">delete_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_delete_collection</span><span class="p">()</span>
+			<span class="k">return</span>
 		<span class="c1"># Delete the collection</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">release</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">drop_index</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">timeout</span><span class="p">)</span>

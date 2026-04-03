@@ -473,10 +473,18 @@
 		<span class="k">try</span><span class="p">:</span>
 			<span class="kn">from</span><span class="w"> </span><span class="nn">optimum.intel.openvino</span><span class="w"> </span><span class="kn">import</span> <span class="n">OVModelForSequenceClassification</span>
 		<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-			<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-				<span class="s2">&quot;Please install optimum package to use OpenVINOReranker&quot;</span>
-				<span class="s2">&quot;pip install &#39;optimum[openvino,nncf]&#39;&quot;</span>
-			<span class="p">)</span>
+			<span class="k">try</span><span class="p">:</span>
+				<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+				<span class="kn">from</span><span class="w"> </span><span class="nn">sentence_transformers</span><span class="w"> </span><span class="kn">import</span> <span class="n">CrossEncoder</span>
+			<span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+				<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+					<span class="s2">&quot;Please install optimum[openvino,nncf] or sentence-transformers to use OpenVINOReranker&quot;</span>
+				<span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span> <span class="k">else</span> <span class="s2">&quot;cpu&quot;</span>
+			<span class="n">model_kwargs</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="n">CrossEncoder</span><span class="o">.</span><span class="fm">__init__</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="n">CrossEncoder</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="o">**</span><span class="n">model_kwargs</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span> <span class="o">=</span> <span class="kc">None</span>
+			<span class="k">return</span>
 
 		<span class="n">model_kwargs</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span>
 			<span class="n">OVModelForSequenceClassification</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">,</span> <span class="n">kwargs</span>
@@ -496,8 +504,10 @@
 		<span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 
 	<span class="k">def</span><span class="w"> </span><span class="fm">__del__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-		<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span>
-		<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span>
+		<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;model&quot;</span><span class="p">):</span>
+			<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">model</span>
+		<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;tokenizer&quot;</span><span class="p">):</span>
+			<span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span>
 		<span class="n">empty_cuda_cache</span><span class="p">()</span>
 		<span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__del__</span><span class="p">()</span>
 
@@ -576,6 +586,13 @@
 	<span class="n">batch_input_texts</span> <span class="o">=</span> <span class="n">make_batch</span><span class="p">(</span><span class="n">input_texts</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">)</span>
 	<span class="n">results</span> <span class="o">=</span> <span class="p">[]</span>
 	<span class="k">for</span> <span class="n">batch_texts</span> <span class="ow">in</span> <span class="n">batch_input_texts</span><span class="p">:</span>
+		<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="s2">&quot;predict&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">tokenizer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+			<span class="n">scores</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">batch_texts</span><span class="p">)</span>
+			<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">scores</span><span class="p">,</span> <span class="s2">&quot;tolist&quot;</span><span class="p">):</span>
+				<span class="n">scores</span> <span class="o">=</span> <span class="n">scores</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+			<span class="n">results</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">scores</span><span class="p">)))</span>
+			<span class="k">continue</span>
+
 		<span class="n">input_tensors</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span>
 			<span class="n">batch_texts</span><span class="p">,</span>
 			<span class="n">padding</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>

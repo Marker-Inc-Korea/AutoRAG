@@ -412,7 +412,10 @@
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
 <span class="n">MAX_TOKEN_DICT</span> <span class="o">=</span> <span class="p">{</span>  <span class="c1"># model name : token limit</span>
+	<span class="s2">&quot;gpt-5.1-2025-11-13&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.1&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-5&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5-pro&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-5-2025-08-07&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-5-chat-latest&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-5-mini-2025-08-07&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
@@ -547,10 +550,15 @@
 			<span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">)</span>
 			<span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o3&quot;</span><span class="p">)</span>
 			<span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o4&quot;</span><span class="p">)</span>
-			<span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-5&quot;</span><span class="p">)</span>
 		<span class="p">):</span>
 			<span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span>
 				<span class="bp">self</span><span class="o">.</span><span class="n">get_result_reasoning</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="o">**</span><span class="n">openai_chat_params</span><span class="p">)</span>
+				<span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">prompts</span>
+			<span class="p">]</span>
+		<span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-5&quot;</span><span class="p">):</span>
+			<span class="n">responses_create_params</span> <span class="o">=</span> <span class="n">pop_params</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">responses</span><span class="o">.</span><span class="n">create</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+			<span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span>
+				<span class="bp">self</span><span class="o">.</span><span class="n">get_result_gpt_5</span><span class="p">(</span><span class="n">prompt</span><span class="p">,</span> <span class="o">**</span><span class="n">responses_create_params</span><span class="p">)</span>
 				<span class="k">for</span> <span class="n">prompt</span> <span class="ow">in</span> <span class="n">prompts</span>
 			<span class="p">]</span>
 		<span class="k">else</span><span class="p">:</span>
@@ -686,7 +694,6 @@
 			<span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o1&quot;</span><span class="p">)</span>
 			<span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o3&quot;</span><span class="p">)</span>
 			<span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;o4&quot;</span><span class="p">)</span>
-			<span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-5&quot;</span><span class="p">)</span>
 		<span class="p">):</span>
 			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;get_result_reasoning is only for o1,o3,o4,gpt-5 models.&quot;</span><span class="p">)</span>
 		<span class="c1"># The default temperature for the o1 model is 1. 1 is only supported.</span>
@@ -712,6 +719,36 @@
 			<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 		<span class="p">)</span>
 		<span class="n">answer</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span>
+		<span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">answer</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)</span>
+		<span class="n">pseudo_log_probs</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+		<span class="k">return</span> <span class="n">answer</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">pseudo_log_probs</span></div>
+
+
+<div class="viewcode-block" id="OpenAILLM.get_result_gpt_5">
+<a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.get_result_gpt_5">[docs]</a>
+	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_result_gpt_5</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prompt</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;gpt-5&quot;</span><span class="p">):</span>
+			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;get_result_gpt_5 is only for gpt-5 models.&quot;</span><span class="p">)</span>
+		<span class="n">api_key</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="p">,</span> <span class="s2">&quot;api_key&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+		<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">api_key</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">api_key</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;mock_&quot;</span><span class="p">):</span>
+			<span class="n">answer</span> <span class="o">=</span> <span class="s2">&quot;Why not&quot;</span>
+			<span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">answer</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)</span>
+			<span class="n">pseudo_log_probs</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
+			<span class="k">return</span> <span class="n">answer</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">pseudo_log_probs</span>
+		<span class="n">messages</span> <span class="o">=</span> <span class="n">parse_prompt</span><span class="p">(</span><span class="n">prompt</span><span class="p">)</span>
+		<span class="n">instruction</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+			<span class="p">[</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">messages</span> <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;system&quot;</span><span class="p">]</span>
+		<span class="p">)</span>
+		<span class="n">user_input</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+			<span class="p">[</span><span class="n">msg</span><span class="p">[</span><span class="s2">&quot;content&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">messages</span> <span class="k">if</span> <span class="n">msg</span><span class="p">[</span><span class="s2">&quot;role&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;user&quot;</span><span class="p">]</span>
+		<span class="p">)</span>
+		<span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">responses</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
+			<span class="n">model</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="p">,</span>
+			<span class="n">instructions</span><span class="o">=</span><span class="n">instruction</span><span class="p">,</span>
+			<span class="nb">input</span><span class="o">=</span><span class="n">user_input</span><span class="p">,</span>
+			<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+		<span class="p">)</span>
+		<span class="n">answer</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">output_text</span>
 		<span class="n">tokens</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">answer</span><span class="p">,</span> <span class="n">allowed_special</span><span class="o">=</span><span class="s2">&quot;all&quot;</span><span class="p">)</span>
 		<span class="n">pseudo_log_probs</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.5</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">tokens</span><span class="p">)</span>
 		<span class="k">return</span> <span class="n">answer</span><span class="p">,</span> <span class="n">tokens</span><span class="p">,</span> <span class="n">pseudo_log_probs</span></div>

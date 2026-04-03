@@ -425,7 +425,7 @@
 		<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 	<span class="p">):</span>
 		<span class="n">instance</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">project_dir</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-		<span class="n">result</span> <span class="o">=</span> <span class="n">instance</span><span class="o">.</span><span class="n">pure</span><span class="p">(</span><span class="n">previous_result</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+		<span class="n">result</span> <span class="o">=</span> <span class="n">instance</span><span class="o">.</span><span class="n">pure</span><span class="p">(</span><span class="n">previous_result</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">deep</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
 		<span class="k">del</span> <span class="n">instance</span>
 		<span class="k">return</span> <span class="n">result</span></div>
 

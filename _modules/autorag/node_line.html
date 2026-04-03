@@ -395,6 +395,7 @@
           <h1>Source code for autorag.node_line</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
@@ -457,6 +458,26 @@
 				<span class="s2">&quot;best_module_params&quot;</span><span class="p">:</span> <span class="n">best_node_row</span><span class="p">[</span><span class="s2">&quot;module_params&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
 				<span class="s2">&quot;best_execution_time&quot;</span><span class="p">:</span> <span class="n">best_node_row</span><span class="p">[</span><span class="s2">&quot;execution_time&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
 			<span class="p">}</span>
+		<span class="p">)</span>
+
+	<span class="n">retrieval_nodes</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
+		<span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;node_type&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;retrieval&quot;</span><span class="p">),</span> <span class="n">summary_lst</span><span class="p">)</span>
+	<span class="p">)</span>
+	<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">retrieval_nodes</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+		<span class="n">retrieval_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">node_line_dir</span><span class="p">,</span> <span class="s2">&quot;retrieval&quot;</span><span class="p">)</span>
+		<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">retrieval_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+		<span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">retrieval_node</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">retrieval_nodes</span><span class="p">):</span>
+			<span class="n">source_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span>
+				<span class="n">node_line_dir</span><span class="p">,</span>
+				<span class="n">retrieval_node</span><span class="p">[</span><span class="s2">&quot;node_type&quot;</span><span class="p">],</span>
+				<span class="n">retrieval_node</span><span class="p">[</span><span class="s2">&quot;best_module_filename&quot;</span><span class="p">],</span>
+			<span class="p">)</span>
+			<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">source_path</span><span class="p">):</span>
+				<span class="n">shutil</span><span class="o">.</span><span class="n">copy2</span><span class="p">(</span>
+					<span class="n">source_path</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">retrieval_dir</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">index</span><span class="si">}</span><span class="s2">.parquet&quot;</span><span class="p">)</span>
+				<span class="p">)</span>
+		<span class="n">previous_result</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span>
+			<span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">retrieval_dir</span><span class="p">,</span> <span class="s2">&quot;best_0.parquet&quot;</span><span class="p">),</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span>
 		<span class="p">)</span>
 
 	<span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">summary_lst</span><span class="p">)</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span>

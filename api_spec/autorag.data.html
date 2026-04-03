@@ -459,15 +459,7 @@
 <li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.base.parser_node"><code class="docutils literal notranslate"><span class="pre">parser_node()</span></code></a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="autorag.data.parse.html#module-autorag.data.parse.clova">autorag.data.parse.clova module</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.clova.clova_ocr"><code class="docutils literal notranslate"><span class="pre">clova_ocr()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.clova.clova_ocr_pure"><code class="docutils literal notranslate"><span class="pre">clova_ocr_pure()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.clova.extract_text_from_fields"><code class="docutils literal notranslate"><span class="pre">extract_text_from_fields()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.clova.generate_image_info"><code class="docutils literal notranslate"><span class="pre">generate_image_info()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.clova.json_to_html_table"><code class="docutils literal notranslate"><span class="pre">json_to_html_table()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.clova.pdf_to_images"><code class="docutils literal notranslate"><span class="pre">pdf_to_images()</span></code></a></li>
-</ul>
-</li>
+<li class="toctree-l2"><a class="reference internal" href="autorag.data.parse.html#autorag-data-parse-clova-module">autorag.data.parse.clova module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="autorag.data.parse.html#module-autorag.data.parse.langchain_parse">autorag.data.parse.langchain_parse module</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.langchain_parse.langchain_parse"><code class="docutils literal notranslate"><span class="pre">langchain_parse()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="autorag.data.parse.html#autorag.data.parse.langchain_parse.langchain_parse_pure"><code class="docutils literal notranslate"><span class="pre">langchain_parse_pure()</span></code></a></li>
@@ -583,6 +575,23 @@
 </section>
 <section id="module-autorag.data">
 <span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-autorag.data" title="Link to this heading">¶</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.data.UnstructuredLoader">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.data.</span></span><span class="sig-name descname"><span class="pre">UnstructuredLoader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file_path_list</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data.html#UnstructuredLoader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.UnstructuredLoader" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+<dl class="py method">
+<dt class="sig sig-object py" id="autorag.data.UnstructuredLoader.load">
+<span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data.html#UnstructuredLoader.load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.UnstructuredLoader.load" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="autorag.data.UpstageLayoutAnalysisLoader">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">autorag.data.</span></span><span class="sig-name descname"><span class="pre">UpstageLayoutAnalysisLoader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/autorag/data.html#UpstageLayoutAnalysisLoader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.UpstageLayoutAnalysisLoader" title="Link to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></p>
+</dd></dl>
+
 <dl class="py function">
 <dt class="sig sig-object py" id="autorag.data.split_by_sentence_kiwi">
 <span class="sig-prename descclassname"><span class="pre">autorag.data.</span></span><span class="sig-name descname"><span class="pre">split_by_sentence_kiwi</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Callable</span><span class="p"><span class="pre">[</span></span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/data.html#split_by_sentence_kiwi"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.data.split_by_sentence_kiwi" title="Link to this definition">¶</a></dt>
@@ -631,6 +640,11 @@
 <li><a class="reference internal" href="#">autorag.data package</a><ul>
 <li><a class="reference internal" href="#subpackages">Subpackages</a></li>
 <li><a class="reference internal" href="#module-autorag.data">Module contents</a><ul>
+<li><a class="reference internal" href="#autorag.data.UnstructuredLoader"><code class="docutils literal notranslate"><span class="pre">UnstructuredLoader</span></code></a><ul>
+<li><a class="reference internal" href="#autorag.data.UnstructuredLoader.load"><code class="docutils literal notranslate"><span class="pre">UnstructuredLoader.load()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#autorag.data.UpstageLayoutAnalysisLoader"><code class="docutils literal notranslate"><span class="pre">UpstageLayoutAnalysisLoader</span></code></a></li>
 <li><a class="reference internal" href="#autorag.data.split_by_sentence_kiwi"><code class="docutils literal notranslate"><span class="pre">split_by_sentence_kiwi()</span></code></a></li>
 </ul>
 </li>

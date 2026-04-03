@@ -432,6 +432,20 @@ In the future, there will be some modules that use log probability, like answer 
 <p>From v0.3.19, you can use chat prompt with <code class="docutils literal notranslate"><span class="pre">openai_llm</span></code> module.
 For using chat prompt, you have to use <code class="docutils literal notranslate"><span class="pre">chat_fstring</span></code> module for prompt maker.</p>
 </section>
+<section id="support-gpt-5-models">
+<h2>Support GPT-5 models<a class="headerlink" href="#support-gpt-5-models" title="Link to this heading">¶</a></h2>
+<p>From v0.3.22, you can use GPT-5 models with <code class="docutils literal notranslate"><span class="pre">openai_llm</span></code> module.
+You can set reasoning efforts and verbosity level.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_llm</span>
+<span class="w">    </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">gpt-5.1</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
+<span class="w">    </span><span class="nt">reasoning</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">effort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high</span>
+<span class="w">      </span><span class="nt">verbosity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low</span>
+</pre></div>
+</div>
+</section>
 <section id="module-parameters">
 <h2><strong>Module Parameters</strong><a class="headerlink" href="#module-parameters" title="Link to this heading">¶</a></h2>
 <ul class="simple">
@@ -520,6 +534,7 @@ without <code class="docutils literal notranslate"><span class="pre">n</span></c
 </ul>
 </li>
 <li><a class="reference internal" href="#support-chat-prompt">Support chat prompt</a></li>
+<li><a class="reference internal" href="#support-gpt-5-models">Support GPT-5 models</a></li>
 <li><a class="reference internal" href="#module-parameters"><strong>Module Parameters</strong></a></li>
 <li><a class="reference internal" href="#example-config-yaml"><strong>Example config.yaml</strong></a></li>
 </ul>

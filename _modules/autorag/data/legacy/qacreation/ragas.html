@@ -399,7 +399,6 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.embeddings</span><span class="w"> </span><span class="kn">import</span> <span class="n">Embeddings</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.language_models</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseChatModel</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span><span class="p">,</span> <span class="n">OpenAIEmbeddings</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.data.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">corpus_df_to_langchain_documents</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">cast_qa_dataset</span>
@@ -434,6 +433,9 @@
 <span class="sd">	&quot;&quot;&quot;</span>
 	<span class="kn">from</span><span class="w"> </span><span class="nn">ragas.testset</span><span class="w"> </span><span class="kn">import</span> <span class="n">TestsetGenerator</span>
 	<span class="kn">from</span><span class="w"> </span><span class="nn">ragas.testset.evolutions</span><span class="w"> </span><span class="kn">import</span> <span class="n">simple</span><span class="p">,</span> <span class="n">reasoning</span><span class="p">,</span> <span class="n">multi_context</span>
+
+	<span class="k">if</span> <span class="n">generator_llm</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">critic_llm</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">embedding_model</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+		<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span><span class="p">,</span> <span class="n">OpenAIEmbeddings</span>
 
 	<span class="k">if</span> <span class="n">generator_llm</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
 		<span class="n">generator_llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;gpt-3.5-turbo-16k&quot;</span><span class="p">)</span>

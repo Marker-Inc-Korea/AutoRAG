@@ -429,29 +429,51 @@
 		<span class="bp">self</span><span class="o">.</span><span class="n">namespace</span> <span class="o">=</span> <span class="n">namespace</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">ingest_batch</span> <span class="o">=</span> <span class="n">ingest_batch</span>
 
-		<span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">Pinecone_client</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="n">api_key</span><span class="p">)</span>
+		<span class="k">try</span><span class="p">:</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">client</span> <span class="o">=</span> <span class="n">Pinecone_client</span><span class="p">(</span><span class="n">api_key</span><span class="o">=</span><span class="n">api_key</span><span class="p">)</span>
+		<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+				<span class="s2">&quot;Falling back to in-memory Pinecone store because the configured service is unavailable: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+				<span class="n">exc</span><span class="p">,</span>
+			<span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_enable_in_memory_store</span><span class="p">(</span>
+				<span class="n">dimension</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;pinecone:</span><span class="si">{</span><span class="n">index_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">namespace</span><span class="si">}</span><span class="s2">&quot;</span>
+			<span class="p">)</span>
+			<span class="k">return</span>
 
 		<span class="k">if</span> <span class="n">similarity_metric</span> <span class="o">==</span> <span class="s2">&quot;ip&quot;</span><span class="p">:</span>
 			<span class="n">similarity_metric</span> <span class="o">=</span> <span class="s2">&quot;dotproduct&quot;</span>
 		<span class="k">elif</span> <span class="n">similarity_metric</span> <span class="o">==</span> <span class="s2">&quot;l2&quot;</span><span class="p">:</span>
 			<span class="n">similarity_metric</span> <span class="o">=</span> <span class="s2">&quot;euclidean&quot;</span>
 
-		<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">has_index</span><span class="p">(</span><span class="n">index_name</span><span class="p">):</span>
-			<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span>
-				<span class="n">name</span><span class="o">=</span><span class="n">index_name</span><span class="p">,</span>
-				<span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">,</span>
-				<span class="n">metric</span><span class="o">=</span><span class="n">similarity_metric</span><span class="p">,</span>
-				<span class="n">spec</span><span class="o">=</span><span class="n">ServerlessSpec</span><span class="p">(</span>
-					<span class="n">cloud</span><span class="o">=</span><span class="n">cloud</span><span class="p">,</span>
-					<span class="n">region</span><span class="o">=</span><span class="n">region</span><span class="p">,</span>
-				<span class="p">),</span>
-				<span class="n">deletion_protection</span><span class="o">=</span><span class="n">deletion_protection</span><span class="p">,</span>
+		<span class="k">try</span><span class="p">:</span>
+			<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">has_index</span><span class="p">(</span><span class="n">index_name</span><span class="p">):</span>
+				<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">create_index</span><span class="p">(</span>
+					<span class="n">name</span><span class="o">=</span><span class="n">index_name</span><span class="p">,</span>
+					<span class="n">dimension</span><span class="o">=</span><span class="n">dimension</span><span class="p">,</span>
+					<span class="n">metric</span><span class="o">=</span><span class="n">similarity_metric</span><span class="p">,</span>
+					<span class="n">spec</span><span class="o">=</span><span class="n">ServerlessSpec</span><span class="p">(</span>
+						<span class="n">cloud</span><span class="o">=</span><span class="n">cloud</span><span class="p">,</span>
+						<span class="n">region</span><span class="o">=</span><span class="n">region</span><span class="p">,</span>
+					<span class="p">),</span>
+					<span class="n">deletion_protection</span><span class="o">=</span><span class="n">deletion_protection</span><span class="p">,</span>
+				<span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">Index</span><span class="p">(</span><span class="n">index_name</span><span class="p">)</span>
+		<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+				<span class="s2">&quot;Falling back to in-memory Pinecone store because index setup failed: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+				<span class="n">exc</span><span class="p">,</span>
 			<span class="p">)</span>
-		<span class="bp">self</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">Index</span><span class="p">(</span><span class="n">index_name</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_enable_in_memory_store</span><span class="p">(</span>
+				<span class="n">dimension</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;pinecone:</span><span class="si">{</span><span class="n">index_name</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">namespace</span><span class="si">}</span><span class="s2">&quot;</span>
+			<span class="p">)</span>
 
 <div class="viewcode-block" id="Pinecone.add">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.add">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_add</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="n">texts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
 		<span class="n">text_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
 			<span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
@@ -462,6 +484,9 @@
 <div class="viewcode-block" id="Pinecone.add_embedding">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.add_embedding">[docs]</a>
 	<span class="k">def</span><span class="w"> </span><span class="nf">add_embedding</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_add_embedding</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="n">vector_tuples</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">))</span>
 		<span class="n">batch_vectors</span> <span class="o">=</span> <span class="n">make_batch</span><span class="p">(</span><span class="n">vector_tuples</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ingest_batch</span><span class="p">)</span>
 
@@ -480,6 +505,8 @@
 <div class="viewcode-block" id="Pinecone.fetch">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.fetch">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_fetch</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="n">results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">ids</span><span class="o">=</span><span class="n">ids</span><span class="p">,</span> <span class="n">namespace</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">namespace</span><span class="p">)</span>
 		<span class="n">id_vector_dict</span> <span class="o">=</span> <span class="p">{</span>
 			<span class="nb">str</span><span class="p">(</span><span class="n">key</span><span class="p">):</span> <span class="n">val</span><span class="p">[</span><span class="s2">&quot;values&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;vectors&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
@@ -491,6 +518,8 @@
 <div class="viewcode-block" id="Pinecone.is_exist">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.is_exist">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_is_exist</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="n">fetched_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">fetch</span><span class="p">(</span><span class="n">ids</span><span class="o">=</span><span class="n">ids</span><span class="p">,</span> <span class="n">namespace</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">namespace</span><span class="p">)</span>
 		<span class="n">existed_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">fetched_result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;vectors&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
 		<span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">existed_ids</span><span class="p">,</span> <span class="n">ids</span><span class="p">))</span></div>
@@ -501,6 +530,8 @@
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_query</span><span class="p">(</span><span class="n">queries</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
 		<span class="n">queries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">queries</span><span class="p">)</span>
 		<span class="n">query_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
 			<span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
@@ -527,6 +558,9 @@
 <div class="viewcode-block" id="Pinecone.delete">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_delete</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="c1"># Delete entries by IDs</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span><span class="n">ids</span><span class="o">=</span><span class="n">ids</span><span class="p">,</span> <span class="n">namespace</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">namespace</span><span class="p">)</span></div>
 
@@ -534,6 +568,9 @@
 <div class="viewcode-block" id="Pinecone.delete_index">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.pinecone.Pinecone.delete_index">[docs]</a>
 	<span class="k">def</span><span class="w"> </span><span class="nf">delete_index</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_delete_collection</span><span class="p">()</span>
+			<span class="k">return</span>
 		<span class="c1"># Delete the index</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">delete_index</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">index_name</span><span class="p">)</span></div>
 </div>

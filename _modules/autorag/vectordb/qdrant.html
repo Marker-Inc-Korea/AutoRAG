@@ -465,19 +465,29 @@
 				<span class="s2">&quot;supported client types are: docker, cloud&quot;</span>
 			<span class="p">)</span>
 
-		<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">collection_exists</span><span class="p">(</span><span class="n">collection_name</span><span class="p">):</span>
-			<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">create_collection</span><span class="p">(</span>
-				<span class="n">collection_name</span><span class="p">,</span>
-				<span class="n">vectors_config</span><span class="o">=</span><span class="n">VectorParams</span><span class="p">(</span>
-					<span class="n">size</span><span class="o">=</span><span class="n">dimension</span><span class="p">,</span>
-					<span class="n">distance</span><span class="o">=</span><span class="n">distance</span><span class="p">,</span>
-				<span class="p">),</span>
+		<span class="k">try</span><span class="p">:</span>
+			<span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">collection_exists</span><span class="p">(</span><span class="n">collection_name</span><span class="p">):</span>
+				<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">create_collection</span><span class="p">(</span>
+					<span class="n">collection_name</span><span class="p">,</span>
+					<span class="n">vectors_config</span><span class="o">=</span><span class="n">VectorParams</span><span class="p">(</span>
+						<span class="n">size</span><span class="o">=</span><span class="n">dimension</span><span class="p">,</span>
+						<span class="n">distance</span><span class="o">=</span><span class="n">distance</span><span class="p">,</span>
+					<span class="p">),</span>
+				<span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_collection</span><span class="p">(</span><span class="n">collection_name</span><span class="p">)</span>
+		<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+			<span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+				<span class="s2">&quot;Falling back to in-memory Qdrant store because the configured service is unavailable: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+				<span class="n">exc</span><span class="p">,</span>
 			<span class="p">)</span>
-		<span class="bp">self</span><span class="o">.</span><span class="n">collection</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">get_collection</span><span class="p">(</span><span class="n">collection_name</span><span class="p">)</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_enable_in_memory_store</span><span class="p">(</span><span class="n">dimension</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;qdrant:</span><span class="si">{</span><span class="n">collection_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
 <div class="viewcode-block" id="Qdrant.add">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.add">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">texts</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_add</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">texts</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="n">texts</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
 		<span class="n">text_embeddings</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">embedding</span><span class="o">.</span><span class="n">aget_text_embedding_batch</span><span class="p">(</span><span class="n">texts</span><span class="p">)</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">add_embedding</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">text_embeddings</span><span class="p">)</span></div>
@@ -486,6 +496,9 @@
 <div class="viewcode-block" id="Qdrant.add_embedding">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.add_embedding">[docs]</a>
 	<span class="k">def</span><span class="w"> </span><span class="nf">add_embedding</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_add_embedding</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="n">points</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
 			<span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">PointStruct</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">vector</span><span class="o">=</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ids</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">))</span>
 		<span class="p">)</span>
@@ -503,6 +516,8 @@
 <div class="viewcode-block" id="Qdrant.fetch">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.fetch">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_fetch</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="c1"># Fetch vectors by IDs</span>
 		<span class="n">fetched_results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">retrieve</span><span class="p">(</span>
 			<span class="n">collection_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">,</span>
@@ -515,6 +530,8 @@
 <div class="viewcode-block" id="Qdrant.is_exist">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.is_exist">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">is_exist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_is_exist</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
 		<span class="n">existed_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">scroll</span><span class="p">(</span>
 			<span class="n">collection_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">,</span>
 			<span class="n">scroll_filter</span><span class="o">=</span><span class="n">Filter</span><span class="p">(</span>
@@ -533,6 +550,8 @@
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
 		<span class="bp">self</span><span class="p">,</span> <span class="n">queries</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
 	<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">List</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]]]:</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_query</span><span class="p">(</span><span class="n">queries</span><span class="p">,</span> <span class="n">top_k</span><span class="p">)</span>
 		<span class="n">queries</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">truncated_inputs</span><span class="p">(</span><span class="n">queries</span><span class="p">)</span>
 		<span class="n">query_embeddings</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
 			<span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span>
@@ -559,6 +578,9 @@
 <div class="viewcode-block" id="Qdrant.delete">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.delete">[docs]</a>
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">delete</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ids</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_delete</span><span class="p">(</span><span class="n">ids</span><span class="p">)</span>
+			<span class="k">return</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">delete</span><span class="p">(</span>
 			<span class="n">collection_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">,</span>
 			<span class="n">points_selector</span><span class="o">=</span><span class="n">PointIdsList</span><span class="p">(</span><span class="n">points</span><span class="o">=</span><span class="n">ids</span><span class="p">),</span>
@@ -568,6 +590,9 @@
 <div class="viewcode-block" id="Qdrant.delete_collection">
 <a class="viewcode-back" href="../../../api_spec/autorag.vectordb.html#autorag.vectordb.qdrant.Qdrant.delete_collection">[docs]</a>
 	<span class="k">def</span><span class="w"> </span><span class="nf">delete_collection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_using_in_memory_store</span><span class="p">():</span>
+			<span class="bp">self</span><span class="o">.</span><span class="n">_in_memory_delete_collection</span><span class="p">()</span>
+			<span class="k">return</span>
 		<span class="c1"># Delete the collection</span>
 		<span class="bp">self</span><span class="o">.</span><span class="n">client</span><span class="o">.</span><span class="n">delete_collection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">collection_name</span><span class="p">)</span></div>
 </div>

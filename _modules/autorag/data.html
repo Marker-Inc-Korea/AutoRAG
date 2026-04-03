@@ -394,43 +394,82 @@
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.data</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">List</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_community.document_loaders</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+	<span class="n">BSHTMLLoader</span><span class="p">,</span>
+	<span class="n">CSVLoader</span><span class="p">,</span>
+	<span class="n">DirectoryLoader</span><span class="p">,</span>
+	<span class="n">JSONLoader</span><span class="p">,</span>
 	<span class="n">PDFMinerLoader</span><span class="p">,</span>
 	<span class="n">PDFPlumberLoader</span><span class="p">,</span>
+	<span class="n">PyMuPDFLoader</span><span class="p">,</span>
 	<span class="n">PyPDFium2Loader</span><span class="p">,</span>
 	<span class="n">PyPDFLoader</span><span class="p">,</span>
-	<span class="n">PyMuPDFLoader</span><span class="p">,</span>
-	<span class="n">UnstructuredPDFLoader</span><span class="p">,</span>
-	<span class="n">CSVLoader</span><span class="p">,</span>
-	<span class="n">JSONLoader</span><span class="p">,</span>
+	<span class="n">UnstructuredFileLoader</span><span class="p">,</span>
 	<span class="n">UnstructuredMarkdownLoader</span><span class="p">,</span>
-	<span class="n">BSHTMLLoader</span><span class="p">,</span>
+	<span class="n">UnstructuredPDFLoader</span><span class="p">,</span>
 	<span class="n">UnstructuredXMLLoader</span><span class="p">,</span>
-	<span class="n">DirectoryLoader</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_unstructured</span><span class="w"> </span><span class="kn">import</span> <span class="n">UnstructuredLoader</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_upstage</span><span class="w"> </span><span class="kn">import</span> <span class="n">UpstageLayoutAnalysisLoader</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.node_parser</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-	<span class="n">TokenTextSplitter</span><span class="p">,</span>
-	<span class="n">SentenceSplitter</span><span class="p">,</span>
-	<span class="n">SentenceWindowNodeParser</span><span class="p">,</span>
-	<span class="n">SemanticSplitterNodeParser</span><span class="p">,</span>
-	<span class="n">SemanticDoubleMergingSplitterNodeParser</span><span class="p">,</span>
-	<span class="n">SimpleFileNodeParser</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">langchain.text_splitter</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-	<span class="n">RecursiveCharacterTextSplitter</span><span class="p">,</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_text_splitters</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">CharacterTextSplitter</span><span class="p">,</span>
 	<span class="n">KonlpyTextSplitter</span><span class="p">,</span>
+	<span class="n">RecursiveCharacterTextSplitter</span><span class="p">,</span>
 	<span class="n">SentenceTransformersTokenTextSplitter</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.node_parser</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+	<span class="n">SemanticDoubleMergingSplitterNodeParser</span><span class="p">,</span>
+	<span class="n">SemanticSplitterNodeParser</span><span class="p">,</span>
+	<span class="n">SentenceSplitter</span><span class="p">,</span>
+	<span class="n">SentenceWindowNodeParser</span><span class="p">,</span>
+	<span class="n">SimpleFileNodeParser</span><span class="p">,</span>
+	<span class="n">TokenTextSplitter</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyInit</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="UnstructuredLoader">
+<a class="viewcode-back" href="../../api_spec/autorag.data.html#autorag.data.UnstructuredLoader">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">UnstructuredLoader</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_path_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">_file_path_list</span> <span class="o">=</span> <span class="n">file_path_list</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">_kwargs</span> <span class="o">=</span> <span class="n">kwargs</span>
+
+<div class="viewcode-block" id="UnstructuredLoader.load">
+<a class="viewcode-back" href="../../api_spec/autorag.data.html#autorag.data.UnstructuredLoader.load">[docs]</a>
+	<span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+		<span class="n">documents</span> <span class="o">=</span> <span class="p">[]</span>
+		<span class="k">for</span> <span class="n">file_path</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_file_path_list</span><span class="p">:</span>
+			<span class="n">documents</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">UnstructuredFileLoader</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">_kwargs</span><span class="p">)</span><span class="o">.</span><span class="n">load</span><span class="p">())</span>
+		<span class="k">return</span> <span class="n">documents</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="UpstageLayoutAnalysisLoader">
+<a class="viewcode-back" href="../../api_spec/autorag.data.html#autorag.data.UpstageLayoutAnalysisLoader">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">UpstageLayoutAnalysisLoader</span><span class="p">:</span>
+	<span class="k">def</span><span class="w"> </span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+		<span class="n">loader_cls</span> <span class="o">=</span> <span class="kc">None</span>
+		<span class="k">try</span><span class="p">:</span>
+			<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_upstage</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+				<span class="n">UpstageDocumentParseLoader</span> <span class="k">as</span> <span class="n">loader_cls</span><span class="p">,</span>
+			<span class="p">)</span>
+		<span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+			<span class="k">try</span><span class="p">:</span>
+				<span class="kn">from</span><span class="w"> </span><span class="nn">langchain_upstage</span><span class="w"> </span><span class="kn">import</span> <span class="n">UpstageLayoutAnalysisLoader</span> <span class="k">as</span> <span class="n">loader_cls</span>
+			<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>
+				<span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+					<span class="s2">&quot;The &#39;upstagedocumentparse&#39; parser requires a compatible &quot;</span>
+					<span class="s2">&quot;langchain-upstage installation. Install a version that supports &quot;</span>
+					<span class="s2">&quot;your current langchain-core release.&quot;</span>
+				<span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="nn">exc</span>
+		<span class="k">return</span> <span class="n">loader_cls</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></div>
+
+
 
 <span class="n">parse_modules</span> <span class="o">=</span> <span class="p">{</span>
 	<span class="c1"># PDF</span>
