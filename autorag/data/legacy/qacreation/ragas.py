@@ -4,7 +4,6 @@ from typing import Optional
 import pandas as pd
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from autorag.data.utils.util import corpus_df_to_langchain_documents
 from autorag.utils import cast_qa_dataset
@@ -37,6 +36,9 @@ def generate_qa_ragas(
 	"""
 	from ragas.testset import TestsetGenerator
 	from ragas.testset.evolutions import simple, reasoning, multi_context
+
+	if generator_llm is None or critic_llm is None or embedding_model is None:
+		from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 	if generator_llm is None:
 		generator_llm = ChatOpenAI(model="gpt-3.5-turbo-16k")
