@@ -76,10 +76,18 @@ class OpenVINOReranker(BasePassageReranker):
 		try:
 			from optimum.intel.openvino import OVModelForSequenceClassification
 		except ImportError:
-			raise ImportError(
-				"Please install optimum package to use OpenVINOReranker"
-				"pip install 'optimum[openvino,nncf]'"
-			)
+			try:
+				import torch
+				from sentence_transformers import CrossEncoder
+			except ImportError as exc:
+				raise ImportError(
+					"Please install optimum[openvino,nncf] or sentence-transformers to use OpenVINOReranker"
+				) from exc
+			self.device = "cuda" if torch.cuda.is_available() else "cpu"
+			model_kwargs = pop_params(CrossEncoder.__init__, kwargs)
+			self.model = CrossEncoder(model, device=self.device, **model_kwargs)
+			self.tokenizer = None
+			return
 
 		model_kwargs = pop_params(
 			OVModelForSequenceClassification.from_pretrained, kwargs
@@ -99,8 +107,10 @@ class OpenVINOReranker(BasePassageReranker):
 		self.tokenizer = AutoTokenizer.from_pretrained(model)
 
 	def __del__(self):
-		del self.model
-		del self.tokenizer
+		if hasattr(self, "model"):
+			del self.model
+		if hasattr(self, "tokenizer"):
+			del self.tokenizer
 		empty_cuda_cache()
 		super().__del__()
 
@@ -173,6 +183,13 @@ def openvino_run_model(
 	batch_input_texts = make_batch(input_texts, batch_size)
 	results = []
 	for batch_texts in batch_input_texts:
+		if hasattr(model, "predict") and tokenizer is None:
+			scores = model.predict(batch_texts)
+			if hasattr(scores, "tolist"):
+				scores = scores.tolist()
+			results.extend(list(map(float, scores)))
+			continue
+
 		input_tensors = tokenizer(
 			batch_texts,
 			padding=True,

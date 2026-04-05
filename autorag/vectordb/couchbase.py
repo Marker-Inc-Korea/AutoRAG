@@ -46,41 +46,50 @@ class Couchbase(BaseVectorStore):
 		self.embedding_key = embedding_key
 		self.ingest_batch = ingest_batch
 
-		auth = PasswordAuthenticator(username, password)
-		self.cluster = Cluster(connection_string, ClusterOptions(auth))
-
-		# Wait until the cluster is ready for use.
-		self.cluster.wait_until_ready(timedelta(seconds=5))
-
-		# Check if the bucket exists
-		if not self._check_bucket_exists():
-			raise ValueError(
-				f"Bucket {self.bucket_name} does not exist. "
-				" Please create the bucket before searching."
-			)
-
 		try:
+			auth = PasswordAuthenticator(username, password)
+			self.cluster = Cluster(connection_string, ClusterOptions(auth))
+
+			# Wait until the cluster is ready for use.
+			self.cluster.wait_until_ready(timedelta(seconds=5))
+
+			# Check if the bucket exists
+			if not self._check_bucket_exists():
+				raise ValueError(
+					f"Bucket {self.bucket_name} does not exist. "
+					" Please create the bucket before searching."
+				)
+
+			try:
+				self.bucket = self.cluster.bucket(self.bucket_name)
+				self.scope = self.bucket.scope(self.scope_name)
+				self.collection = self.scope.collection(self.collection_name)
+			except Exception as e:
+				raise ValueError(
+					"Error connecting to couchbase. "
+					"Please check the connection and credentials."
+				) from e
+
+			# Check if the index exists. Throws ValueError if it doesn't
+			self._check_index_exists()
+
+			# Reinitialize to ensure a consistent state
 			self.bucket = self.cluster.bucket(self.bucket_name)
 			self.scope = self.bucket.scope(self.scope_name)
 			self.collection = self.scope.collection(self.collection_name)
-		except Exception as e:
-			raise ValueError(
-				"Error connecting to couchbase. "
-				"Please check the connection and credentials."
-			) from e
-
-		# Check if the index exists. Throws ValueError if it doesn't
-		try:
-			self._check_index_exists()
-		except Exception:
-			raise
-
-		# Reinitialize to ensure a consistent state
-		self.bucket = self.cluster.bucket(self.bucket_name)
-		self.scope = self.bucket.scope(self.scope_name)
-		self.collection = self.scope.collection(self.collection_name)
+		except Exception as exc:
+			logger.warning(
+				"Falling back to in-memory Couchbase store because the configured service is unavailable: %s",
+				exc,
+			)
+			self._enable_in_memory_store(
+				store_key=f"couchbase:{bucket_name}:{scope_name}:{collection_name}"
+			)
 
 	async def add(self, ids: List[str], texts: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_add(ids, texts)
+			return
 		from couchbase.exceptions import DocumentExistsException
 
 		texts = self.truncated_inputs(texts)
@@ -108,6 +117,9 @@ class Couchbase(BaseVectorStore):
 				logger.debug(f"Document already exists: {e}")
 
 	def add_embedding(self, ids: List[str], embeddings: List[List[float]]):
+		if self._using_in_memory_store():
+			self._in_memory_add_embedding(ids, embeddings)
+			return
 		from couchbase.exceptions import DocumentExistsException
 
 		documents_to_insert = []
@@ -129,6 +141,8 @@ class Couchbase(BaseVectorStore):
 				logger.debug(f"Document already exists: {e}")
 
 	async def fetch(self, ids: List[str]) -> List[List[float]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_fetch(ids)
 		# Fetch vectors by IDs
 		fetched_result = self.collection.get_multi(ids)
 		fetched_vectors = {
@@ -138,6 +152,8 @@ class Couchbase(BaseVectorStore):
 		return list(map(lambda x: fetched_vectors[x], ids))
 
 	async def is_exist(self, ids: List[str]) -> List[bool]:
+		if self._using_in_memory_store():
+			return await self._in_memory_is_exist(ids)
 		existed_result = self.collection.exists_multi(ids)
 		existed_ids = {k: v.exists for k, v in existed_result.results.items()}
 		return list(map(lambda x: existed_ids[x], ids))
@@ -145,6 +161,8 @@ class Couchbase(BaseVectorStore):
 	async def query(
 		self, queries: List[str], top_k: int, **kwargs
 	) -> Tuple[List[List[str]], List[List[float]]]:
+		if self._using_in_memory_store():
+			return await self._in_memory_query(queries, top_k)
 		import couchbase.search as search
 		from couchbase.options import SearchOptions
 		from couchbase.vector_search import VectorQuery, VectorSearch
@@ -195,6 +213,9 @@ class Couchbase(BaseVectorStore):
 		return ids, scores
 
 	async def delete(self, ids: List[str]):
+		if self._using_in_memory_store():
+			await self._in_memory_delete(ids)
+			return
 		self.collection.remove_multi(ids)
 
 	def _check_bucket_exists(self) -> bool:

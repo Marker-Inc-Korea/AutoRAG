@@ -23,7 +23,7 @@ class BaseModule(metaclass=ABCMeta):
 		**kwargs,
 	):
 		instance = cls(project_dir, *args, **kwargs)
-		result = instance.pure(previous_result, *args, **kwargs)
+		result = instance.pure(previous_result.copy(deep=True), *args, **kwargs)
 		del instance
 		return result
 
