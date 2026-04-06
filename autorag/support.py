@@ -177,11 +177,13 @@ def get_support_modules(module_name: str) -> Callable:
 		# generator
 		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"minimax_llm": ("autorag.nodes.generator", "MiniMaxLLM"),
+		"ag2": ("autorag.nodes.generator", "AG2Generator"),
 		"vllm": ("autorag.nodes.generator", "Vllm"),
 		"openai_llm": ("autorag.nodes.generator", "OpenAILLM"),
 		"vllm_api": ("autorag.nodes.generator", "VllmAPI"),
 		"LlamaIndexLLM": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"MiniMaxLLM": ("autorag.nodes.generator", "MiniMaxLLM"),
+		"AG2Generator": ("autorag.nodes.generator", "AG2Generator"),
 		"Vllm": ("autorag.nodes.generator", "Vllm"),
 		"OpenAILLM": ("autorag.nodes.generator", "OpenAILLM"),
 		"VllmAPI": ("autorag.nodes.generator", "VllmAPI"),
