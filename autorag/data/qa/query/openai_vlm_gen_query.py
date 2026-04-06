@@ -6,6 +6,9 @@ from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from openai import AsyncClient
 from pydantic import BaseModel
 
+import mimetypes
+import aiofiles
+
 from autorag.data.qa.query.prompt import QUERY_GEN_PROMPT
 
 
@@ -13,9 +16,10 @@ class Response(BaseModel):
 	query: str
 
 
-def encode_image(image_path: str) -> str:
-	with open(image_path, "rb") as image_file:
-		return base64.b64encode(image_file.read()).decode("utf-8")
+async def encode_image_async(image_path: str) -> str:
+	async with aiofiles.open(image_path, "rb") as image_file:
+		data = await image_file.read()
+		return base64.b64encode(data).decode("utf-8")
 
 
 # Single hop Visual QA generation OpenAI
@@ -39,11 +43,14 @@ async def query_gen_vlm_openai_base(
 	user_content = [{"type": "text", "text": user_prompt}]
 
 	if row.get("image_path"):
-		base64_image = encode_image(row["image_path"])
+		mime_type, _ = mimetypes.guess_type(row["image_path"])
+		mime_type = mime_type or "image/jpeg"
+
+		base64_image = await encode_image_async(row["image_path"])
 		user_content.append(
 			{
 				"type": "image_url",
-				"image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+				"image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
 			}
 		)
 
