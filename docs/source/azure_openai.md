@@ -92,7 +92,11 @@ Both are required for Azure OpenAI.
 
 For embeddings, you can use Azure OpenAI through the `openai_like` embedding type or configure it programmatically.
 
-### Option 1: Using Environment Variables (Recommended)
+### Option 1: Using Environment Variables
+
+```{warning}
+This approach sets `OPENAI_API_KEY` and `OPENAI_API_BASE` globally, which will override any standard OpenAI configuration in the same process. If you also use regular OpenAI models alongside Azure OpenAI, use Option 2 instead.
+```
 
 Set the OpenAI environment variables to point to your Azure endpoint:
 
@@ -115,7 +119,7 @@ vectordb:
     path: ${PROJECT_DIR}/data/chroma
 ```
 
-### Option 2: Programmatic Configuration
+### Option 2: Programmatic Configuration (Recommended)
 
 ```python
 import autorag
@@ -207,7 +211,7 @@ Azure OpenAI can also be used in query expansion modules like `hyde`, `query_dec
       api_key: ${AZURE_OPENAI_API_KEY}
       azure_endpoint: ${AZURE_OPENAI_ENDPOINT}
       api_version: "2024-02-01"
-      max_token: 64
+      max_tokens: 64
 ```
 
 ## Troubleshooting
