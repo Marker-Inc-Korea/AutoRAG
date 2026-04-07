@@ -80,6 +80,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    structure.md
    troubleshooting.md
    local_model.md
+   azure_openai.md
    migration.md
    test_your_rag.md
 
