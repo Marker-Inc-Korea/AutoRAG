@@ -1,7 +1,9 @@
 import time
+from dataclasses import dataclass
 from unittest.mock import patch
 
 import openai.resources.chat
+import openai.resources.responses
 import pandas as pd
 import pytest
 from pydantic import BaseModel
@@ -21,6 +23,22 @@ from openai.types.chat import (
 	ParsedChatCompletionMessage,
 	ParsedChoice,
 )
+
+
+@dataclass
+class _MockResponsesResult:
+	"""Stand-in for openai.types.responses.Response.
+
+	get_result_gpt_5 only reads `.output_text`, so a tiny dataclass suffices
+	and avoids coupling the test to the full response schema (which varies
+	between SDK versions).
+	"""
+
+	output_text: str
+
+
+async def mock_openai_responses_create(*args, **kwargs) -> _MockResponsesResult:
+	return _MockResponsesResult(output_text="mock gpt-5 answer")
 
 
 @pytest.fixture
@@ -57,6 +75,11 @@ def openai_gpt_5_instance():
 	)
 
 
+@patch.object(
+	openai.resources.responses.AsyncResponses,
+	"create",
+	mock_openai_responses_create,
+)
 def test_openai_llm_gpt_5(openai_gpt_5_instance):
 	answers, tokens, log_probs = openai_gpt_5_instance._pure(
 		prompts,
