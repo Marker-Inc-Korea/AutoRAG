@@ -1,3 +1,4 @@
+import asyncio
 from io import BytesIO
 import logging
 from typing import Any, Dict, List, Optional, Union
@@ -8,7 +9,6 @@ from llama_index.core.embeddings.multi_modal_base import MultiModalEmbedding
 from llama_index.core.schema import ImageType
 from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_exponential
-import atexit
 
 SUPPORT_EMBED_TYPES = ["image", "text"]
 logger = logging.getLogger("AutoRAG")
@@ -27,8 +27,8 @@ class VllmEmbedding(MultiModalEmbedding):
 	)
 
 	trust_remote_code: Optional[bool] = Field(
-		default=True,
-		description="Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer.",
+		default=False,
+		description="Trust remote code (e.g., from HuggingFace) when downloading the model and tokenizer. Opt in explicitly for models that require it.",
 	)
 
 	dtype: str = Field(
@@ -100,15 +100,34 @@ class VllmEmbedding(MultiModalEmbedding):
 	def class_name(cls) -> str:
 		return "VllmEmbedding"
 
-	@atexit.register
-	def close():
-		import torch
-		import gc
+	def __del__(self):
+		# Release the vLLM client and any GPU memory it holds per instance.
+		# The previous implementation registered a single module-level atexit
+		# handler, which meant cleanup only fired once at interpreter exit
+		# regardless of how many instances were created during an optimisation
+		# loop — causing GPU OOM between trials.
+		try:
+			client = getattr(self, "_client", None)
+			if client is not None:
+				del self._client
+		except Exception:
+			pass
+		try:
+			import gc
 
-		if torch.cuda.is_available():
 			gc.collect()
-			torch.cuda.empty_cache()
-			torch.cuda.synchronize()
+			try:
+				import torch
+
+				if torch.cuda.is_available():
+					torch.cuda.empty_cache()
+					torch.cuda.synchronize()
+			except ImportError:
+				# torch is optional at import time; nothing to do.
+				pass
+		except Exception:
+			# __del__ must never raise.
+			pass
 
 	@retry(
 		stop=stop_after_attempt(retry_cnt),
@@ -192,7 +211,7 @@ class VllmEmbedding(MultiModalEmbedding):
 		    List[float]: numpy array of embeddings
 
 		"""
-		return self._get_query_embedding(query)
+		return await asyncio.to_thread(self._get_query_embedding, query)
 
 	async def _aget_text_embedding(self, text: str) -> List[float]:
 		"""
@@ -205,7 +224,7 @@ class VllmEmbedding(MultiModalEmbedding):
 		    List[float]: numpy array of embeddings
 
 		"""
-		return self._get_text_embedding(text)
+		return await asyncio.to_thread(self._get_text_embedding, text)
 
 	def _get_text_embedding(self, text: str) -> List[float]:
 		"""
@@ -240,7 +259,7 @@ class VllmEmbedding(MultiModalEmbedding):
 
 	async def _aget_image_embedding(self, img_file_path: ImageType) -> List[float]:
 		"""Generate embedding for an image asynchronously."""
-		return self._get_image_embedding(img_file_path)
+		return await asyncio.to_thread(self._get_image_embedding, img_file_path)
 
 	def _get_image_embeddings(
 		self, img_file_paths: List[ImageType]
@@ -253,4 +272,4 @@ class VllmEmbedding(MultiModalEmbedding):
 		self, img_file_paths: List[ImageType]
 	) -> List[List[float]]:
 		"""Generate embeddings for multiple images asynchronously."""
-		return self._get_image_embeddings(img_file_paths)
+		return await asyncio.to_thread(self._get_image_embeddings, img_file_paths)
