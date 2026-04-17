@@ -33,12 +33,28 @@ def hybrid_cast(
 	assert "query" in previous_result.columns, "previous_result must have query column."
 	queries = previous_result["query"].tolist()
 
-	assert "retrieved_contents_semantic" in previous_result.columns
-	assert "retrieved_contents_lexical" in previous_result.columns
-	assert "retrieve_scores_semantic" in previous_result.columns
-	assert "retrieve_scores_lexical" in previous_result.columns
-	assert "retrieved_ids_semantic" in previous_result.columns
-	assert "retrieved_ids_lexical" in previous_result.columns
+	_hybrid_schema_hint = (
+		"The hybrid retrieval node expects the upstream dataframe to expose "
+		"`retrieved_contents_semantic`/`retrieve_scores_semantic`/"
+		"`retrieved_ids_semantic` and the matching `_lexical` columns. "
+		"Retrieval was split into semantic/lexical/hybrid nodes in #1135, so "
+		"parquet files produced before v0.3.17 will not satisfy this schema; "
+		"re-run the retrieval node or run both a semantic and a lexical "
+		"retrieval step before hybrid_cc / hybrid_rrf."
+	)
+	required_columns = [
+		"retrieved_contents_semantic",
+		"retrieved_contents_lexical",
+		"retrieve_scores_semantic",
+		"retrieve_scores_lexical",
+		"retrieved_ids_semantic",
+		"retrieved_ids_lexical",
+	]
+	missing = [col for col in required_columns if col not in previous_result.columns]
+	assert not missing, (
+		f"hybrid_cast: missing required columns {missing} in previous_result "
+		f"(found columns: {list(previous_result.columns)}). {_hybrid_schema_hint}"
+	)
 
 	contents_semantic = previous_result["retrieved_contents_semantic"].tolist()
 	contents_lexical = previous_result["retrieved_contents_lexical"].tolist()
