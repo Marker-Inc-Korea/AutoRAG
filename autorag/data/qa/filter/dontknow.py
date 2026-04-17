@@ -77,14 +77,14 @@ async def dontknow_filter_openai(
 	system_prompt: List[ChatMessage] = FILTER_PROMPT["dontknow_filter"][lang]
 	result = []
 	for gen_gt in row["generation_gt"]:
-		completion = await client.beta.chat.completions.parse(
+		completion = await client.responses.parse(
 			model=model_name,
-			messages=to_openai_message_dicts(
+			input=to_openai_message_dicts(
 				system_prompt + [ChatMessage(role=MessageRole.USER, content=gen_gt)]
 			),
-			response_format=Response,
+			text_format=Response,
 		)
-		result.append(completion.choices[0].message.parsed.is_dont_know)
+		result.append(completion.output_parsed.is_dont_know)
 	return not any(result)
 
 
