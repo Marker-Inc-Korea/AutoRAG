@@ -85,6 +85,9 @@ class NvidiaReranker(BasePassageReranker):
 				f"len(queries)={len(queries)}, len(contents_list)={len(contents_list)}, len(ids_list)={len(ids_list)}."
 			)
 
+		if not queries:
+			return [], [], []
+
 		tasks = [
 			nvidia_rerank_pure(
 				self.session,
@@ -110,6 +113,7 @@ class NvidiaReranker(BasePassageReranker):
 		content_result, id_result, score_result = zip(*results)
 
 		return list(content_result), list(id_result), list(score_result)
+
 
 async def nvidia_rerank_pure(
 	session: aiohttp.ClientSession,
@@ -160,7 +164,7 @@ async def nvidia_rerank_pure(
 			)
 
 		def _score(item):
-			# According to the NVIDIA documentation, the output can be either 
+			# According to the NVIDIA documentation, the output can be either
 			# probability scores or raw logits depending on the configuration.
 			# So we check both fields to support various model settings.
 			if item.get("logit") is not None:
@@ -174,7 +178,7 @@ async def nvidia_rerank_pure(
 		top_rankings = rankings[:top_k]
 
 		reranked_contents = [documents[item["index"]] for item in top_rankings]
-		reranked_ids      = [ids[item["index"]]       for item in top_rankings]
-		reranked_scores   = [_score(item)             for item in top_rankings]
+		reranked_ids = [ids[item["index"]] for item in top_rankings]
+		reranked_scores = [_score(item) for item in top_rankings]
 
 		return reranked_contents, reranked_ids, reranked_scores
