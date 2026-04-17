@@ -125,13 +125,19 @@ class LlamaIndexLLM(BaseGenerator):
 
 		generated_texts = [res.message.content for res in results]
 		# Check is there a logprob available
-		if all(res.logprobs is not None for res in results):
-			retrieved_logprobs = [res.logprobs for res in results]
-			tokenized_ids = [logprob.token for logprob in retrieved_logprobs]
-			logprobs = [logprob.logprob for logprob in retrieved_logprobs]
+		if results and all(res.logprobs is not None for res in results):
+			per_response_logprobs = [res.logprobs for res in results]
+			tokenized_ids = [
+				[entry.token for entry in resp_logprobs]
+				for resp_logprobs in per_response_logprobs
+			]
+			logprobs = [
+				[entry.logprob for entry in resp_logprobs]
+				for resp_logprobs in per_response_logprobs
+			]
 		else:
 			logger.warning(
-				"Logprobs are not available from the LLM. So, returning pesudo logprobs."
+				"Logprobs are not available from the LLM. So, returning pseudo logprobs."
 			)
 			tokenized_ids = self.get_default_tokenized_ids(generated_texts)
 			logprobs = self.get_default_log_probs(tokenized_ids)

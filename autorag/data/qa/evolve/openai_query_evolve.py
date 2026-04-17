@@ -30,12 +30,12 @@ async def query_evolve_openai_base(
 	user_prompt = f"Question: {original_query}\nContext: {context_str}\nOutput: "
 	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
 
-	completion = await client.beta.chat.completions.parse(
+	completion = await client.responses.parse(
 		model=model_name,
-		messages=to_openai_message_dicts(messages),
-		response_format=Response,
+		input=to_openai_message_dicts(messages),
+		text_format=Response,
 	)
-	row["query"] = completion.choices[0].message.parsed.evolved_query
+	row["query"] = completion.output_parsed.evolved_query
 	return row
 
 
@@ -72,10 +72,10 @@ async def compress_ragas(
 	user_prompt = f"Question: {original_query}\nOutput: "
 	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
 
-	completion = await client.beta.chat.completions.parse(
+	completion = await client.responses.parse(
 		model=model_name,
-		messages=to_openai_message_dicts(messages),
-		response_format=Response,
+		input=to_openai_message_dicts(messages),
+		text_format=Response,
 	)
-	row["query"] = completion.choices[0].message.parsed.evolved_query
+	row["query"] = completion.output_parsed.evolved_query
 	return row

@@ -84,14 +84,13 @@ class OpenAILLM(BaseGenerator):
 		except KeyError:
 			self.tokenizer = tiktoken.get_encoding("o200k_base")
 
-		self.max_token_size = (
-			MAX_TOKEN_DICT.get(self.llm) - 7
-		)  # because of chat token usage
-		if self.max_token_size is None:
+		max_token_limit = MAX_TOKEN_DICT.get(self.llm)
+		if max_token_limit is None:
 			raise ValueError(
 				f"Model {self.llm} does not supported. "
 				f"Please select the model between {list(MAX_TOKEN_DICT.keys())}"
 			)
+		self.max_token_size = max_token_limit - 7  # because of chat token usage
 
 	@result_to_dataframe(["generated_texts", "generated_tokens", "generated_log_probs"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):
@@ -278,7 +277,7 @@ class OpenAILLM(BaseGenerator):
 			or self.llm.startswith("o3")
 			or self.llm.startswith("o4")
 		):
-			raise ValueError("get_result_reasoning is only for o1,o3,o4,gpt-5 models.")
+			raise ValueError("get_result_reasoning is only for o1, o3, and o4 models.")
 		# The default temperature for the o1 model is 1. 1 is only supported.
 		# See https://platform.openai.com/docs/guides/reasoning about beta limitation of o1 models.
 		unsupported_params = [

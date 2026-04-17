@@ -27,12 +27,12 @@ async def query_gen_openai_base(
 	user_prompt = f"{context_str}\n\nGenerated Question from the Text:\n"
 	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
 
-	completion = await client.beta.chat.completions.parse(
+	completion = await client.responses.parse(
 		model=model_name,
-		messages=to_openai_message_dicts(messages),
-		response_format=Response,
+		input=to_openai_message_dicts(messages),
+		text_format=Response,
 	)
-	row["query"] = completion.choices[0].message.parsed.query
+	row["query"] = completion.output_parsed.query
 	return row
 
 
@@ -86,10 +86,10 @@ async def two_hop_incremental(
 	user_prompt = f"{context_str}\n\nGenerated two-hop Question from two Documents:\n"
 	messages.append(ChatMessage(role=MessageRole.USER, content=user_prompt))
 
-	completion = await client.beta.chat.completions.parse(
+	completion = await client.responses.parse(
 		model=model_name,
-		messages=to_openai_message_dicts(messages),
-		response_format=TwoHopIncrementalResponse,
+		input=to_openai_message_dicts(messages),
+		text_format=TwoHopIncrementalResponse,
 	)
-	row["query"] = completion.choices[0].message.parsed.two_hop_question
+	row["query"] = completion.output_parsed.two_hop_question
 	return row

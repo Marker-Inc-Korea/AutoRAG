@@ -77,9 +77,6 @@ def __get_chunk_instance(module_type: str, chunk_method: str, **kwargs):
 			kwargs.update({"sentence_splitter": sentence_splitter_func})
 
 	def get_embedding_model(_embed_model_str: str, _module_type: str):
-		if _embed_model_str == "openai":
-			if _module_type == "langchain_chunk":
-				_embed_model_str = "openai_langchain"
 		return EmbeddingModel.load(_embed_model_str)()
 
 	# Add embed_model to kwargs

@@ -37,9 +37,9 @@ async def passage_dependency_filter_openai(
 	assert "query" in row.keys(), "query column is not in the row."
 	system_prompt: List[ChatMessage] = FILTER_PROMPT["passage_dependency"][lang]
 	query = row["query"]
-	completion = await client.beta.chat.completions.parse(
+	completion = await client.responses.parse(
 		model=model_name,
-		messages=to_openai_message_dicts(
+		input=to_openai_message_dicts(
 			system_prompt
 			+ [
 				ChatMessage(
@@ -48,9 +48,9 @@ async def passage_dependency_filter_openai(
 				)
 			]
 		),
-		response_format=Response,
+		text_format=Response,
 	)
-	return not completion.choices[0].message.parsed.is_passage_dependent
+	return not completion.output_parsed.is_passage_dependent
 
 
 async def passage_dependency_filter_llama_index(
