@@ -176,10 +176,12 @@ def get_support_modules(module_name: str) -> Callable:
 		"ChatFstring": ("autorag.nodes.promptmaker", "ChatFstring"),
 		# generator
 		"llama_index_llm": ("autorag.nodes.generator", "LlamaIndexLLM"),
+		"litellm_client": ("autorag.nodes.generator", "LiteLLMGenerator"),
 		"minimax_llm": ("autorag.nodes.generator", "MiniMaxLLM"),
 		"vllm": ("autorag.nodes.generator", "Vllm"),
 		"openai_llm": ("autorag.nodes.generator", "OpenAILLM"),
 		"vllm_api": ("autorag.nodes.generator", "VllmAPI"),
+		"LiteLLMGenerator": ("autorag.nodes.generator", "LiteLLMGenerator"),
 		"LlamaIndexLLM": ("autorag.nodes.generator", "LlamaIndexLLM"),
 		"MiniMaxLLM": ("autorag.nodes.generator", "MiniMaxLLM"),
 		"Vllm": ("autorag.nodes.generator", "Vllm"),
