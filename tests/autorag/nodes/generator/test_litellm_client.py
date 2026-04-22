@@ -83,50 +83,50 @@ class TestLiteLLMModuleRegistration:
 
 
 class TestLiteLLMGeneratorPure:
-	@patch("autorag.nodes.generator.litellm_client.litellm")
-	def test_pure_string_prompts(self, mock_litellm, litellm_instance):
-		mock_litellm.acompletion = AsyncMock(return_value=_mock_litellm_response())
+	@patch("litellm.acompletion", new_callable=AsyncMock)
+	def test_pure_string_prompts(self, mock_acompletion, litellm_instance):
+		mock_acompletion.return_value = _mock_litellm_response()
 
 		answers, tokens, log_probs = litellm_instance._pure(prompts, temperature=0.5)
 		check_generated_texts(answers)
 		check_generated_tokens(tokens)
 		check_generated_log_probs(log_probs)
 
-	@patch("autorag.nodes.generator.litellm_client.litellm")
-	def test_pure_chat_prompts(self, mock_litellm, litellm_instance):
-		mock_litellm.acompletion = AsyncMock(return_value=_mock_litellm_response())
+	@patch("litellm.acompletion", new_callable=AsyncMock)
+	def test_pure_chat_prompts(self, mock_acompletion, litellm_instance):
+		mock_acompletion.return_value = _mock_litellm_response()
 
 		answers, tokens, log_probs = litellm_instance._pure(chat_prompts)
 		check_generated_texts(answers)
 		check_generated_tokens(tokens)
 		check_generated_log_probs(log_probs)
 
-	@patch("autorag.nodes.generator.litellm_client.litellm")
-	def test_pure_forwards_api_key(self, mock_litellm, litellm_instance_with_key):
-		mock_litellm.acompletion = AsyncMock(return_value=_mock_litellm_response())
+	@patch("litellm.acompletion", new_callable=AsyncMock)
+	def test_pure_forwards_api_key(self, mock_acompletion, litellm_instance_with_key):
+		mock_acompletion.return_value = _mock_litellm_response()
 
 		litellm_instance_with_key._pure(prompts[:1])
 
-		call_kwargs = mock_litellm.acompletion.call_args[1]
+		call_kwargs = mock_acompletion.call_args[1]
 		assert call_kwargs["api_key"] == "sk-test-key"
 		assert call_kwargs["api_base"] == "https://my-proxy.com"
 
-	@patch("autorag.nodes.generator.litellm_client.litellm")
-	def test_pure_sets_drop_params(self, mock_litellm, litellm_instance):
-		mock_litellm.acompletion = AsyncMock(return_value=_mock_litellm_response())
+	@patch("litellm.acompletion", new_callable=AsyncMock)
+	def test_pure_sets_drop_params(self, mock_acompletion, litellm_instance):
+		mock_acompletion.return_value = _mock_litellm_response()
 
 		litellm_instance._pure(prompts[:1])
 
-		call_kwargs = mock_litellm.acompletion.call_args[1]
+		call_kwargs = mock_acompletion.call_args[1]
 		assert call_kwargs["drop_params"] is True
 
-	@patch("autorag.nodes.generator.litellm_client.litellm")
-	def test_pure_omits_api_key_when_none(self, mock_litellm, litellm_instance):
-		mock_litellm.acompletion = AsyncMock(return_value=_mock_litellm_response())
+	@patch("litellm.acompletion", new_callable=AsyncMock)
+	def test_pure_omits_api_key_when_none(self, mock_acompletion, litellm_instance):
+		mock_acompletion.return_value = _mock_litellm_response()
 
 		litellm_instance._pure(prompts[:1])
 
-		call_kwargs = mock_litellm.acompletion.call_args[1]
+		call_kwargs = mock_acompletion.call_args[1]
 		assert "api_key" not in call_kwargs
 
 
