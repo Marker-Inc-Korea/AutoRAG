@@ -102,8 +102,12 @@ class VllmEmbedding(MultiModalEmbedding):
 
 	@atexit.register
 	def close():
-		import torch
-		import gc
+		try:
+			import torch
+			import gc
+		except ImportError:
+			# If torch is not installed, there is no CUDA memory to clean.
+			return
 
 		if torch.cuda.is_available():
 			gc.collect()
