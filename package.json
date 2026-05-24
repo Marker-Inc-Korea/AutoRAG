@@ -1,0 +1,33 @@
+{
+  "name": "@autorag/librarian",
+  "version": "0.1.0",
+  "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
+  "type": "module",
+  "main": "./src/index.ts",
+  "bin": {
+    "autorag": "./src/cli/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "file:../../senpi/packages/agent",
+    "@earendil-works/pi-ai": "file:../../senpi/packages/ai",
+    "typebox": "^1.1.24",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.5",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
