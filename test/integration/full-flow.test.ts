@@ -88,4 +88,51 @@ describe("Full flow integration", () => {
 		expect(prompt).toContain("check_memory");
 		expect(prompt).toContain("Memory & Strategy");
 	});
+
+	it("numbered feedback flow: search → feedback by number → memory update", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+
+		agent["resultRegistry"].set(1, {
+			index: 1,
+			source: "src/utils.ts",
+			content: "export function helper() {}",
+			method: "posix",
+		});
+		agent["resultRegistry"].set(2, {
+			index: 2,
+			source: "src/main.ts",
+			content: "import { helper } from './utils'",
+			method: "posix",
+		});
+
+		agent["lastQuery"] = "find helper function";
+		const e1 = agent["memory"].append({ query: "find helper function", method: "posix", outcome: "pending" });
+		agent["memory"].registerAttempt({
+			id: e1.id,
+			query: "find helper function",
+			method: "posix",
+			sources: ["src/utils.ts"],
+			timestamp: Date.now(),
+		});
+		const e2 = agent["memory"].append({ query: "find helper function", method: "posix", outcome: "pending" });
+		agent["memory"].registerAttempt({
+			id: e2.id,
+			query: "find helper function",
+			method: "posix",
+			sources: ["src/main.ts"],
+			timestamp: Date.now(),
+		});
+
+		agent.recordFeedbackByNumbers([1], [2]);
+
+		const memory = new RetrievalMemory({ storagePath: memPath });
+		memory.load();
+		const entries = memory.getEntries();
+		expect(entries.find((e) => e.id === e1.id)?.outcome).toBe("useful");
+		expect(entries.find((e) => e.id === e2.id)?.outcome).toBe("not_useful");
+	});
 });

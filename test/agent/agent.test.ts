@@ -110,7 +110,7 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Fallback Chain");
 	});
 
-	it("system prompt includes structured output format", () => {
+	it("system prompt includes numbered output format", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
@@ -118,7 +118,8 @@ describe("AutoRAGAgent", () => {
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("<results>");
 		expect(prompt).toContain("<answer>");
-		expect(prompt).toContain("<search_summary>");
+		expect(prompt).toContain("[1]");
+		expect(prompt).toContain("by number");
 	});
 
 	it("system prompt warns when manifest requires unavailable method", () => {
@@ -229,5 +230,79 @@ describe("AutoRAGAgent", () => {
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
 		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
+	});
+
+	it("getResultRegistry returns empty map initially", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(agent.getResultRegistry().size).toBe(0);
+	});
+
+	it("getResultRegistry is a public method", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(typeof agent.getResultRegistry).toBe("function");
+	});
+
+	it("recordFeedbackByNumbers is a public method", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(typeof agent.recordFeedbackByNumbers).toBe("function");
+	});
+
+	it("recordFeedbackByNumbers resolves useful entries by number", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+		agent["resultRegistry"].set(1, { index: 1, source: "src/a.ts", content: "code", method: "posix" });
+		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
+		agent["memory"].registerAttempt({
+			id: entry.id,
+			query: "q",
+			method: "posix",
+			sources: ["src/a.ts"],
+			timestamp: Date.now(),
+		});
+		agent.recordFeedbackByNumbers([1]);
+		const memory = new RetrievalMemory({ storagePath: memPath });
+		memory.load();
+		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
+	});
+
+	it("recordFeedbackByNumbers resolves not-useful entries", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+		agent["resultRegistry"].set(1, { index: 1, source: "src/b.ts", content: "code", method: "posix" });
+		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
+		agent["memory"].registerAttempt({
+			id: entry.id,
+			query: "q",
+			method: "posix",
+			sources: ["src/b.ts"],
+			timestamp: Date.now(),
+		});
+		agent.recordFeedbackByNumbers([], [1]);
+		const memory = new RetrievalMemory({ storagePath: memPath });
+		memory.load();
+		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("not_useful");
+	});
+
+	it("recordFeedbackByNumbers ignores unknown numbers without error", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(() => agent.recordFeedbackByNumbers([99, 100])).not.toThrow();
 	});
 });

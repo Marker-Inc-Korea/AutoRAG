@@ -1,7 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const FIXTURE_SCOPE = "test/fixtures/sample-project";
+let tmpDir: string;
+
+beforeEach(() => {
+	tmpDir = join(tmpdir(), `autorag-cli-test-${Date.now()}`);
+	mkdirSync(tmpDir, { recursive: true });
+});
+
+afterEach(() => {
+	rmSync(tmpDir, { recursive: true, force: true });
+});
 
 function runCli(args: string): { stdout: string; stderr: string; exitCode: number } {
 	const result = spawnSync("node", ["--experimental-strip-types", "src/cli/cli.ts", ...args.split(" ")], {
@@ -37,13 +50,14 @@ describe("autorag CLI", () => {
 		expect(stdout).toContain("function");
 	});
 
-	it("search with --format json returns valid JSON", () => {
+	it("search with --format json returns valid JSON with numberedResults", () => {
 		const { stdout, exitCode } = runCli(`search function --scope ${FIXTURE_SCOPE} --format json`);
 		expect(exitCode).toBe(0);
 		const parsed = JSON.parse(stdout);
 		expect(parsed).toHaveProperty("results");
 		expect(parsed).toHaveProperty("metadata");
 		expect(Array.isArray(parsed.results)).toBe(true);
+		expect(parsed.metadata).toHaveProperty("numberedResults");
 	});
 
 	it("search with no results exits 0 with no results message", () => {
@@ -55,10 +69,39 @@ describe("autorag CLI", () => {
 	it("search with --top-k limits results", () => {
 		const { stdout, exitCode } = runCli(`search function --scope ${FIXTURE_SCOPE} --top-k 1`);
 		expect(exitCode).toBe(0);
-		const lines = stdout
-			.trim()
-			.split("\n")
-			.filter((l) => l.length > 0);
-		expect(lines.length).toBeLessThanOrEqual(1);
+		const resultCount = stdout.match(/^\[\d+\]/gm)?.length ?? 0;
+		expect(resultCount).toBeLessThanOrEqual(1);
+	});
+
+	it("--help shows feedback command", () => {
+		const { stdout } = runCli("--help");
+		expect(stdout).toContain("feedback");
+		expect(stdout).toContain("--useful");
+		expect(stdout).toContain("--not-useful");
+	});
+
+	it("search saves result registry sidecar file", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const registryPath = memPath.replace(/\.json$/, ".last-results.json");
+		runCli(`search function --scope ${FIXTURE_SCOPE} --memory-path ${memPath}`);
+		expect(existsSync(registryPath)).toBe(true);
+		const data = JSON.parse(readFileSync(registryPath, "utf-8"));
+		expect(Array.isArray(data)).toBe(true);
+	});
+
+	it("feedback with --useful prints confirmation", () => {
+		const memPath = join(tmpDir, "memory.json");
+		runCli(`search function --scope ${FIXTURE_SCOPE} --memory-path ${memPath}`);
+		const { stdout, exitCode } = runCli(`feedback 1 --useful --memory-path ${memPath}`);
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain("Recorded feedback");
+	});
+
+	it("feedback without --useful or --not-useful prints error", () => {
+		const memPath = join(tmpDir, "memory.json");
+		runCli(`search function --scope ${FIXTURE_SCOPE} --memory-path ${memPath}`);
+		const { stderr, exitCode } = runCli(`feedback 1 --memory-path ${memPath}`);
+		expect(exitCode).not.toBe(0);
+		expect(stderr).toContain("--useful");
 	});
 });

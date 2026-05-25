@@ -2,7 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { PosixRetrieval } from "../retrieval/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
-import type { RetrievalOptions } from "../retrieval/types.ts";
+import type { NumberedResult, RetrievalOptions } from "../retrieval/types.ts";
 
 export interface AutoRAGToolOptions {
 	searchPaths: string[];
@@ -14,6 +14,7 @@ export interface AutoRAGToolDetails {
 	resultCount: number;
 	methodsUsed: string[];
 	elapsedMs: number;
+	numberedResults: NumberedResult[];
 }
 
 const autoragToolSchema = Type.Object({
@@ -67,10 +68,16 @@ export function createAutoRAGTool(
 				}
 			}
 
+			const numbered: NumberedResult[] = allResults.map((r, i) => ({
+				index: i + 1,
+				source: r.source,
+				content: r.content,
+				method: r.method,
+			}));
 			const text =
-				allResults.length === 0
+				numbered.length === 0
 					? "No results found."
-					: allResults.map((r) => `[${r.source}] ${r.content}`).join("\n");
+					: numbered.map((r) => `[${r.index}] ${r.source} (${r.method})\n    ${r.content}`).join("\n\n");
 
 			return {
 				content: [{ type: "text", text }],
@@ -78,6 +85,7 @@ export function createAutoRAGTool(
 					resultCount: allResults.length,
 					methodsUsed,
 					elapsedMs: Date.now() - start,
+					numberedResults: numbered,
 				},
 			};
 		},

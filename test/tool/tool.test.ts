@@ -34,11 +34,17 @@ describe("createAutoRAGTool", () => {
 		expect(typeof result.details.elapsedMs).toBe("number");
 	});
 
-	it("execute returns results for known content", async () => {
+	it("execute returns numbered results for known content", async () => {
 		const tool = createAutoRAGTool({ searchPaths: [FIXTURE_DIR] });
 		const result = await tool.execute("test-id", { query: "function" }, undefined, undefined);
 		expect(result.details.resultCount).toBeGreaterThan(0);
 		expect(result.details.methodsUsed).toContain("posix");
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+		expect(text).toMatch(/^\[1\]/);
+		expect(result.details.numberedResults).toBeDefined();
+		expect(result.details.numberedResults.length).toBeGreaterThan(0);
+		expect(result.details.numberedResults[0].index).toBe(1);
+		expect(result.details.numberedResults[0].method).toBe("posix");
 	});
 
 	it("execute handles empty results gracefully", async () => {
@@ -48,5 +54,18 @@ describe("createAutoRAGTool", () => {
 		expect(result.content[0].type).toBe("text");
 		const text = (result.content[0] as { type: "text"; text: string }).text;
 		expect(text).toContain("No results found");
+		expect(result.details.numberedResults).toEqual([]);
+	});
+
+	it("numbered results have sequential 1-based indices with method attribution", async () => {
+		const tool = createAutoRAGTool({ searchPaths: [FIXTURE_DIR] });
+		const result = await tool.execute("test-id", { query: "function" }, undefined, undefined);
+		const nr = result.details.numberedResults;
+		for (let i = 0; i < nr.length; i++) {
+			expect(nr[i].index).toBe(i + 1);
+			expect(nr[i].source).toBeTruthy();
+			expect(nr[i].content).toBeTruthy();
+			expect(nr[i].method).toBeTruthy();
+		}
 	});
 });

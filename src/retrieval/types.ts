@@ -25,3 +25,10 @@ export interface RetrievalMethod {
 	describe(): RetrievalMethodDescriptor;
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 }
+
+export interface NumberedResult {
+	index: number;
+	source: string;
+	content: string;
+	method: string;
+}

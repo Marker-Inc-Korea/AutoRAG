@@ -16,7 +16,7 @@ import { BM25Retrieval } from "../retrieval/stubs/bm25.ts";
 import { HybridRetrieval } from "../retrieval/stubs/hybrid.ts";
 import { VectorSearchRetrieval } from "../retrieval/stubs/vector.ts";
 import { VisualRetrieval } from "../retrieval/stubs/visual.ts";
-import type { RetrievalMethod, RetrievalOptions } from "../retrieval/types.ts";
+import type { NumberedResult, RetrievalMethod, RetrievalOptions } from "../retrieval/types.ts";
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
@@ -50,7 +50,9 @@ function createSearchTool(method: RetrievalMethod): AgentTool<typeof searchToolS
 			};
 			const results = await method.retrieve(params.query, options);
 			const text =
-				results.length === 0 ? "No results found." : results.map((r) => `[${r.source}] ${r.content}`).join("\n");
+				results.length === 0
+					? "No results found."
+					: results.map((r, i) => `[${i + 1}] ${r.source} (${desc.name})\n    ${r.content}`).join("\n\n");
 			return {
 				content: [{ type: "text", text }],
 				details: { resultCount: results.length, method: desc.name },
@@ -63,8 +65,10 @@ function parseSourcesFromResult(content: Array<{ type: string; text?: string }>)
 	const sources: string[] = [];
 	for (const block of content) {
 		if (block.type !== "text" || typeof block.text !== "string") continue;
-		for (const match of block.text.matchAll(/^\[([^\]]+)\]/gm)) {
-			sources.push(match[1]);
+		const regex = /^\[(\d+)\]\s+(\S+)\s+\(/gm;
+		let match: RegExpExecArray | null;
+		while ((match = regex.exec(block.text)) !== null) {
+			sources.push(match[2]);
 		}
 	}
 	return sources;
@@ -187,13 +191,16 @@ Structure every response using this format:
 
 <results>
 <files>
-- /path/to/file1.ts - Brief description of why this file is relevant
-- /path/to/file2.ts:42 - What was found at this location
+[1] /path/to/file1.ts (method_name)
+    Brief description of what was found and why it is relevant
+
+[2] /path/to/file2.ts:42 (method_name)
+    What was found at this location
 </files>
 
 <answer>
 Direct answer to the caller's question, grounded in evidence from search results.
-Include file paths and line numbers as citations for every claim.
+Reference results by number (e.g. "as shown in [1]") for every claim.
 If nothing was found, state this explicitly and describe what was searched.
 </answer>
 
@@ -201,7 +208,9 @@ If nothing was found, state this explicitly and describe what was searched.
 Methods used: list each method called
 Queries executed: list each query with its result count
 </search_summary>
-</results>`;
+</results>
+
+The caller can reference results by number for feedback (e.g. "1,3 useful").`;
 
 	// Section 6: Behavioral Constraints
 	const constraintsSection = `## Constraints
@@ -255,6 +264,7 @@ export class AutoRAGAgent {
 	private readonly registry: RetrievalMethodRegistry;
 	private lastQuery: string | undefined;
 	private lastMethod: string | undefined;
+	private resultRegistry: Map<number, NumberedResult> = new Map();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { searchPaths, manifestDir, memoryPath } = options;
@@ -320,6 +330,22 @@ export class AutoRAGAgent {
 					});
 					this.memory.save();
 				}
+				const textBlocks = (context.result.content as Array<{ type: string; text?: string }>)
+					.filter((c) => c.type === "text" && c.text)
+					.map((c) => c.text!);
+				for (const text of textBlocks) {
+					const regex = /^\[(\d+)\]\s+(\S+)\s+\((\w+)\)\n\s+(.+)/gm;
+					let m: RegExpExecArray | null;
+					while ((m = regex.exec(text)) !== null) {
+						const globalIndex = this.resultRegistry.size + 1;
+						this.resultRegistry.set(globalIndex, {
+							index: globalIndex,
+							source: m[2],
+							content: m[4],
+							method: m[3],
+						});
+					}
+				}
 				return undefined;
 			},
 		});
@@ -327,6 +353,7 @@ export class AutoRAGAgent {
 
 	async prompt(text: string): Promise<void> {
 		this.lastQuery = text;
+		this.resultRegistry.clear();
 		await this.innerAgent.prompt(text);
 	}
 
@@ -350,8 +377,27 @@ export class AutoRAGAgent {
 		this.memory.save();
 	}
 
+	recordFeedbackByNumbers(usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
+		const feedback: ResultFeedback[] = [];
+		for (const n of usefulNumbers) {
+			const entry = this.resultRegistry.get(n);
+			if (entry) feedback.push({ source: entry.source, useful: true });
+		}
+		for (const n of notUsefulNumbers) {
+			const entry = this.resultRegistry.get(n);
+			if (entry) feedback.push({ source: entry.source, useful: false });
+		}
+		if (feedback.length > 0) {
+			this.recordResultFeedback(feedback);
+		}
+	}
+
 	getRegistry(): RetrievalMethodRegistry {
 		return this.registry;
+	}
+
+	getResultRegistry(): ReadonlyMap<number, NumberedResult> {
+		return this.resultRegistry;
 	}
 
 	getSystemPrompt(): string {
