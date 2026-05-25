@@ -6,14 +6,39 @@ export interface MemoryEntry {
 	id: string;
 	query: string;
 	method: string;
-	outcome: "success" | "failure";
+	outcome: "pending" | "useful" | "not_useful";
 	timestamp: number;
 	metadata?: { resultCount?: number };
 }
 
+export interface SearchAttempt {
+	id: string;
+	query: string;
+	method: string;
+	sources: string[];
+	timestamp: number;
+}
+
+export interface ResultFeedback {
+	source: string;
+	useful: boolean;
+}
+
+interface MemoryDataV3 {
+	version: 3;
+	entries: MemoryEntry[];
+}
+
 interface MemoryDataV2 {
 	version: 2;
-	entries: MemoryEntry[];
+	entries: Array<{
+		id: string;
+		query: string;
+		method: string;
+		outcome: "success" | "failure";
+		timestamp: number;
+		metadata?: { resultCount?: number };
+	}>;
 }
 
 interface MemoryDataV1 {
@@ -21,6 +46,7 @@ interface MemoryDataV1 {
 }
 
 const MAX_ENTRIES = 500;
+const MAX_PENDING_ATTEMPTS = 100;
 
 function isV1(data: unknown): data is MemoryDataV1 {
 	if (typeof data !== "object" || data === null) return false;
@@ -34,9 +60,15 @@ function isV2(data: unknown): data is MemoryDataV2 {
 	return obj.version === 2 && Array.isArray(obj.entries);
 }
 
+function isV3(data: unknown): data is MemoryDataV3 {
+	if (typeof data !== "object" || data === null) return false;
+	const obj = data as Record<string, unknown>;
+	return obj.version === 3 && Array.isArray(obj.entries);
+}
+
 function migrateV1(data: MemoryDataV1): MemoryDataV2 {
 	const now = Date.now();
-	const entries: MemoryEntry[] = [];
+	const entries: MemoryDataV2["entries"] = [];
 
 	for (const [patternKey, methods] of Object.entries(data.patterns)) {
 		for (const [methodName, stats] of Object.entries(methods)) {
@@ -64,13 +96,25 @@ function migrateV1(data: MemoryDataV1): MemoryDataV2 {
 	return { version: 2, entries };
 }
 
+function migrateV2(data: MemoryDataV2): MemoryDataV3 {
+	return {
+		version: 3,
+		entries: data.entries.map((entry) => ({
+			...entry,
+			outcome: (entry.outcome === "success" ? "useful" : "not_useful") as "useful" | "not_useful",
+		})),
+	};
+}
+
 export interface RetrievalMemoryOptions {
 	storagePath: string;
 }
 
 export class RetrievalMemory {
 	private readonly storagePath: string;
-	private data: MemoryDataV2 = { version: 2, entries: [] };
+	private data: MemoryDataV3 = { version: 3, entries: [] };
+	private readonly attempts = new Map<string, SearchAttempt>();
+	private readonly sourceToAttemptId = new Map<string, string>();
 
 	constructor(options: RetrievalMemoryOptions) {
 		this.storagePath = options.storagePath;
@@ -78,24 +122,27 @@ export class RetrievalMemory {
 
 	load(): void {
 		if (!existsSync(this.storagePath)) {
-			this.data = { version: 2, entries: [] };
+			this.data = { version: 3, entries: [] };
 			return;
 		}
 		try {
 			const content = readFileSync(this.storagePath, "utf-8");
 			const parsed: unknown = JSON.parse(content);
-			if (isV2(parsed)) {
+			if (isV3(parsed)) {
 				this.data = parsed;
+			} else if (isV2(parsed)) {
+				this.data = migrateV2(parsed);
+				this.save();
 			} else if (isV1(parsed)) {
-				this.data = migrateV1(parsed);
+				this.data = migrateV2(migrateV1(parsed));
 				this.save();
 			} else {
 				console.warn("[AutoRAG] Memory file has unexpected structure, starting fresh");
-				this.data = { version: 2, entries: [] };
+				this.data = { version: 3, entries: [] };
 			}
 		} catch {
 			console.warn(`[AutoRAG] Could not parse memory file at ${this.storagePath}, starting fresh`);
-			this.data = { version: 2, entries: [] };
+			this.data = { version: 3, entries: [] };
 		}
 	}
 
@@ -126,11 +173,60 @@ export class RetrievalMemory {
 		return this.data.entries;
 	}
 
+	registerAttempt(attempt: SearchAttempt): void {
+		this.attempts.set(attempt.id, attempt);
+		for (const source of attempt.sources) {
+			this.sourceToAttemptId.set(source, attempt.id);
+		}
+		if (this.attempts.size > MAX_PENDING_ATTEMPTS) {
+			const oldest = this.attempts.keys().next().value as string;
+			this.clearAttempt(oldest);
+		}
+	}
+
+	recordResultFeedback(feedback: ResultFeedback[]): void {
+		const resolvedAttemptIds = new Set<string>();
+
+		for (const fb of feedback) {
+			const attemptId = this.sourceToAttemptId.get(fb.source);
+			if (!attemptId) continue;
+
+			resolvedAttemptIds.add(attemptId);
+			const entry = this.data.entries.find((e) => e.id === attemptId);
+			if (!entry) continue;
+			if (entry.outcome !== "pending" && entry.outcome !== "not_useful") continue;
+
+			if (fb.useful) {
+				entry.outcome = "useful";
+			} else if (entry.outcome === "pending") {
+				entry.outcome = "not_useful";
+			}
+		}
+
+		for (const attemptId of resolvedAttemptIds) {
+			this.clearAttempt(attemptId);
+		}
+	}
+
+	resolvePendingEntries(query: string, method: string | null, outcome: "useful" | "not_useful"): void {
+		for (const entry of this.data.entries) {
+			if (entry.outcome !== "pending") continue;
+			if (entry.query !== query) continue;
+			if (method !== null && entry.method !== method) continue;
+			entry.outcome = outcome;
+		}
+		for (const [attemptId, attempt] of this.attempts) {
+			if (attempt.query === query && (method === null || attempt.method === method)) {
+				this.clearAttempt(attemptId);
+			}
+		}
+	}
+
 	recordFeedback(query: string, methodName: string, satisfied: boolean): void {
 		this.append({
 			query,
 			method: methodName,
-			outcome: satisfied ? "success" : "failure",
+			outcome: satisfied ? "useful" : "not_useful",
 		});
 	}
 
@@ -138,25 +234,39 @@ export class RetrievalMemory {
 		if (this.data.entries.length === 0) return [];
 
 		const queryLower = query.toLowerCase();
-		const methodScores: Record<string, { success: number; failure: number }> = {};
+		const methodScores: Record<string, { useful: number; not_useful: number }> = {};
 
 		for (const entry of this.data.entries) {
+			if (entry.outcome === "pending") continue;
+
 			const entryLower = entry.query.toLowerCase();
 			if (entryLower !== queryLower && !entryLower.includes(queryLower) && !queryLower.includes(entryLower)) {
 				continue;
 			}
 
 			if (!methodScores[entry.method]) {
-				methodScores[entry.method] = { success: 0, failure: 0 };
+				methodScores[entry.method] = { useful: 0, not_useful: 0 };
 			}
 			methodScores[entry.method][entry.outcome]++;
 		}
 
 		return Object.entries(methodScores)
 			.map(([method, stats]) => {
-				const total = stats.success + stats.failure;
-				return { method, score: total > 0 ? stats.success / total : 0 };
+				const total = stats.useful + stats.not_useful;
+				return { method, score: total > 0 ? stats.useful / total : 0 };
 			})
 			.sort((a, b) => b.score - a.score);
+	}
+
+	private clearAttempt(attemptId: string): void {
+		const attempt = this.attempts.get(attemptId);
+		if (attempt) {
+			for (const source of attempt.sources) {
+				if (this.sourceToAttemptId.get(source) === attemptId) {
+					this.sourceToAttemptId.delete(source);
+				}
+			}
+			this.attempts.delete(attemptId);
+		}
 	}
 }

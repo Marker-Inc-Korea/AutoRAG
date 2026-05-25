@@ -7,6 +7,7 @@ import { Type } from "typebox";
 import { loadManifests } from "../manifest/loader.ts";
 import type { StoreManifest } from "../manifest/types.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
+import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { PosixRetrieval } from "../retrieval/posix.ts";
@@ -56,6 +57,17 @@ function createSearchTool(method: RetrievalMethod): AgentTool<typeof searchToolS
 			};
 		},
 	};
+}
+
+function parseSourcesFromResult(content: Array<{ type: string; text?: string }>): string[] {
+	const sources: string[] = [];
+	for (const block of content) {
+		if (block.type !== "text" || typeof block.text !== "string") continue;
+		for (const match of block.text.matchAll(/^\[([^\]]+)\]/gm)) {
+			sources.push(match[1]);
+		}
+	}
+	return sources;
 }
 
 function buildSystemPrompt(registry: RetrievalMethodRegistry, manifests: StoreManifest[]): string {
@@ -292,11 +304,19 @@ export class AutoRAGAgent {
 				const resultCount = details?.resultCount ?? 0;
 				this.lastMethod = method;
 				if (this.lastQuery) {
-					this.memory.append({
+					const sources = parseSourcesFromResult(context.result.content as Array<{ type: string; text?: string }>);
+					const entry = this.memory.append({
 						query: this.lastQuery,
 						method,
-						outcome: resultCount > 0 ? "success" : "failure",
+						outcome: "pending",
 						metadata: { resultCount },
+					});
+					this.memory.registerAttempt({
+						id: entry.id,
+						query: this.lastQuery,
+						method,
+						sources,
+						timestamp: entry.timestamp,
 					});
 					this.memory.save();
 				}
@@ -320,10 +340,14 @@ export class AutoRAGAgent {
 
 	submitFeedback(satisfied: boolean): void {
 		if (this.lastQuery) {
-			const method = this.lastMethod ?? "posix";
-			this.memory.recordFeedback(this.lastQuery, method, satisfied);
+			this.memory.resolvePendingEntries(this.lastQuery, null, satisfied ? "useful" : "not_useful");
 			this.memory.save();
 		}
+	}
+
+	recordResultFeedback(feedback: ResultFeedback[]): void {
+		this.memory.recordResultFeedback(feedback);
+		this.memory.save();
 	}
 
 	getRegistry(): RetrievalMethodRegistry {

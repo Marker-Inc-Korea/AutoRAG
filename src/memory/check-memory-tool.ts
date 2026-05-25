@@ -21,7 +21,7 @@ export function createCheckMemoryTool(
 		name: "check_memory",
 		label: "Check Memory",
 		description:
-			"Check retrieval memory for past query outcomes. Returns which search methods succeeded or failed for similar queries. Call this before searching to pick the best method.",
+			"Check retrieval memory for past query outcomes. Returns which search methods were useful or not useful for similar queries. Call this before searching to pick the best method.",
 		parameters: checkMemorySchema,
 		async execute(_toolCallId: string, params: { query: string }): Promise<AgentToolResult<CheckMemoryDetails>> {
 			const entries = memory.getEntries();
@@ -33,7 +33,7 @@ export function createCheckMemoryTool(
 				recommendation =
 					"\n\n## Recommended Methods\n" +
 					priority
-						.map((p, i) => `${i + 1}. **${p.method}** (success rate: ${(p.score * 100).toFixed(0)}%)`)
+						.map((p, i) => `${i + 1}. **${p.method}** (usefulness: ${(p.score * 100).toFixed(0)}%)`)
 						.join("\n");
 			}
 

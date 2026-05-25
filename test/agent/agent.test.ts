@@ -62,15 +62,19 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("codebase-vectors");
 	});
 
-	it("submitFeedback updates memory and saves to disk", () => {
+	it("submitFeedback resolves pending entries and saves to disk", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
 		agent["lastQuery"] = "find typescript files";
+		agent["memory"].append({ query: "find typescript files", method: "posix", outcome: "pending" });
 		agent.submitFeedback(true);
 		expect(existsSync(memPath)).toBe(true);
+		const memory = new RetrievalMemory({ storagePath: memPath });
+		memory.load();
+		expect(memory.getEntries()[0].outcome).toBe("useful");
 	});
 
 	it("subscribe returns an unsubscribe function", () => {
@@ -171,36 +175,59 @@ describe("AutoRAGAgent", () => {
 		expect(toolRefSection).toContain("check_memory");
 	});
 
-	it("submitFeedback uses tracked method when available", () => {
+	it("submitFeedback resolves all pending entries for the query", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
 		agent["lastQuery"] = "test query";
-		agent["lastMethod"] = "vector";
+		agent["memory"].append({ query: "test query", method: "posix", outcome: "pending" });
+		agent["memory"].append({ query: "test query", method: "vector", outcome: "pending" });
 		agent.submitFeedback(true);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
 		const entries = memory.getEntries();
-		expect(entries.length).toBe(1);
-		expect(entries[0].method).toBe("vector");
+		expect(entries.every((e) => e.outcome === "useful")).toBe(true);
 	});
 
-	it("submitFeedback falls back to posix when no method tracked", () => {
+	it("submitFeedback does nothing when no lastQuery", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["lastQuery"] = "test query";
 		agent.submitFeedback(true);
+		expect(existsSync(memPath)).toBe(false);
+	});
+
+	it("recordResultFeedback() is a public method", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(typeof agent.recordResultFeedback).toBe("function");
+	});
+
+	it("recordResultFeedback() resolves pending entries by source", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
+		agent["memory"].registerAttempt({
+			id: entry.id,
+			query: "q",
+			method: "posix",
+			sources: ["src/a.ts"],
+			timestamp: Date.now(),
+		});
+		agent.recordResultFeedback([{ source: "src/a.ts", useful: true }]);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		const entries = memory.getEntries();
-		expect(entries.length).toBe(1);
-		expect(entries[0].method).toBe("posix");
+		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
 	});
 });

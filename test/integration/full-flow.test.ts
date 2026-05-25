@@ -37,8 +37,9 @@ describe("Full flow integration", () => {
 		});
 
 		agent["lastQuery"] = "search typescript code";
-		agent.submitFeedback(true);
-		agent.submitFeedback(true);
+		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
+		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
+		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
 		agent.submitFeedback(true);
 
 		expect(existsSync(memPath)).toBe(true);
@@ -48,6 +49,7 @@ describe("Full flow integration", () => {
 		const priority = memory.getMethodPriority("search typescript code");
 		expect(priority.length).toBeGreaterThan(0);
 		expect(priority[0].method).toBe("posix");
+		expect(priority[0].score).toBe(1.0);
 	});
 
 	it("agent has 5 retrieval methods registered", () => {
@@ -59,21 +61,22 @@ describe("Full flow integration", () => {
 		expect(methods.length).toBe(5);
 	});
 
-	it("submitFeedback falls back to posix when no afterToolCall recorded", () => {
+	it("submitFeedback resolves pending entries across all methods", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
 		agent["lastQuery"] = "cold start query";
-		agent.submitFeedback(true);
+		agent["memory"].append({ query: "cold start query", method: "posix", outcome: "pending" });
+		agent["memory"].append({ query: "cold start query", method: "vector", outcome: "pending" });
+		agent.submitFeedback(false);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
 		const entries = memory.getEntries();
-		expect(entries.length).toBe(1);
-		expect(entries[0].method).toBe("posix");
-		expect(entries[0].outcome).toBe("success");
+		expect(entries.length).toBe(2);
+		expect(entries.every((e) => e.outcome === "not_useful")).toBe(true);
 	});
 
 	it("agent system prompt includes check_memory in tools", () => {

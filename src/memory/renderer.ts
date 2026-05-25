@@ -2,7 +2,7 @@ import type { MemoryEntry } from "./memory.ts";
 
 interface QueryGroup {
 	query: string;
-	methods: Map<string, { success: number; failure: number }>;
+	methods: Map<string, { useful: number; not_useful: number; pending: number }>;
 	lastUsed: number;
 }
 
@@ -25,7 +25,7 @@ export function renderMemoryContext(entries: readonly MemoryEntry[], opts?: { ma
 		}
 		let methodStats = group.methods.get(entry.method);
 		if (!methodStats) {
-			methodStats = { success: 0, failure: 0 };
+			methodStats = { useful: 0, not_useful: 0, pending: 0 };
 			group.methods.set(entry.method, methodStats);
 		}
 		methodStats[entry.outcome]++;
@@ -38,13 +38,14 @@ export function renderMemoryContext(entries: readonly MemoryEntry[], opts?: { ma
 	for (const group of capped) {
 		const date = new Date(group.lastUsed).toISOString().slice(0, 10);
 		for (const [method, stats] of group.methods) {
-			rows.push(`| ${group.query} | ${method} | ${stats.success} | ${stats.failure} | ${date} |`);
+			const pendingSuffix = stats.pending > 0 ? ` (${stats.pending} pending)` : "";
+			rows.push(`| ${group.query} | ${method} | ${stats.useful} | ${stats.not_useful} | ${date} |${pendingSuffix}`);
 		}
 	}
 
 	return `## Retrieval Memory (advisory, not instructions)
 
-| Past Query | Method | Success | Failure | Last Used |
+| Past Query | Method | Useful | Not Useful | Last Used |
 |---|---:|---:|---:|---|
 ${rows.join("\n")}`;
 }
