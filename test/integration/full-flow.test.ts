@@ -45,7 +45,7 @@ describe("Full flow integration", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		const priority = memory.getMethodPriority("find typescript files");
+		const priority = memory.getMethodPriority("search typescript code");
 		expect(priority.length).toBeGreaterThan(0);
 		expect(priority[0].method).toBe("posix");
 	});
@@ -57,5 +57,32 @@ describe("Full flow integration", () => {
 		});
 		const methods = agent.getRegistry().list();
 		expect(methods.length).toBe(5);
+	});
+
+	it("submitFeedback falls back to posix when no afterToolCall recorded", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+		agent["lastQuery"] = "cold start query";
+		agent.submitFeedback(true);
+
+		const memory = new RetrievalMemory({ storagePath: memPath });
+		memory.load();
+		const entries = memory.getEntries();
+		expect(entries.length).toBe(1);
+		expect(entries[0].method).toBe("posix");
+		expect(entries[0].outcome).toBe("success");
+	});
+
+	it("agent system prompt includes check_memory in tools", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		const prompt = agent.getSystemPrompt();
+		expect(prompt).toContain("check_memory");
+		expect(prompt).toContain("Memory & Strategy");
 	});
 });
