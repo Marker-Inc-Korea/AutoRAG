@@ -97,6 +97,7 @@ function parseArgs(argv: string[]): CliArgs {
 
 function printHelp(): void {
 	process.stdout.write(`autorag - Self-evolving librarian agent
+  Note: CLI search shows raw file paths. For curated results, use the full agent.
 
 Usage:
   autorag search <query> [options]

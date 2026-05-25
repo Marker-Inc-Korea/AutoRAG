@@ -16,7 +16,8 @@ import { BM25Retrieval } from "../retrieval/stubs/bm25.ts";
 import { HybridRetrieval } from "../retrieval/stubs/hybrid.ts";
 import { VectorSearchRetrieval } from "../retrieval/stubs/vector.ts";
 import { VisualRetrieval } from "../retrieval/stubs/visual.ts";
-import type { NumberedResult, RetrievalMethod, RetrievalOptions } from "../retrieval/types.ts";
+import type { CuratedResult, RetrievalMethod, RetrievalOptions } from "../retrieval/types.ts";
+import { createReadFileTool } from "../tool/read-file.ts";
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
@@ -42,36 +43,25 @@ function createSearchTool(method: RetrievalMethod): AgentTool<typeof searchToolS
 			_toolCallId: string,
 			params: { query: string; topK?: number; scope?: string },
 			signal?: AbortSignal,
-		): Promise<AgentToolResult<{ resultCount: number; method: string }>> {
+		): Promise<AgentToolResult<{ resultCount: number; method: string; sources: string[] }>> {
 			const options: RetrievalOptions = {
 				topK: params.topK ?? 20,
 				scope: params.scope,
 				signal,
 			};
 			const results = await method.retrieve(params.query, options);
+			const sources = results.map((r) => r.source);
 			const text =
 				results.length === 0
 					? "No results found."
-					: results.map((r, i) => `[${i + 1}] ${r.source} (${desc.name})\n    ${r.content}`).join("\n\n");
+					: `Found ${results.length} results:\n` +
+						results.map((r, i) => `${i + 1}. ${r.source} — ${r.content}`).join("\n");
 			return {
 				content: [{ type: "text", text }],
-				details: { resultCount: results.length, method: desc.name },
+				details: { resultCount: results.length, method: desc.name, sources },
 			};
 		},
 	};
-}
-
-function parseSourcesFromResult(content: Array<{ type: string; text?: string }>): string[] {
-	const sources: string[] = [];
-	for (const block of content) {
-		if (block.type !== "text" || typeof block.text !== "string") continue;
-		const regex = /^\[(\d+)\]\s+(\S+)\s+\(/gm;
-		let match: RegExpExecArray | null;
-		while ((match = regex.exec(block.text)) !== null) {
-			sources.push(match[2]);
-		}
-	}
-	return sources;
 }
 
 function buildSystemPrompt(registry: RetrievalMethodRegistry, manifests: StoreManifest[]): string {
@@ -81,11 +71,20 @@ function buildSystemPrompt(registry: RetrievalMethodRegistry, manifests: StoreMa
 	const activeTypes = new Set(active.map((m) => m.describe().type));
 
 	// Section 1: Identity & Role
-	const identity = `You are AutoRAG, a librarian agent specializing in information retrieval across codebases and document collections.
+	const identity = `You are AutoRAG, a librarian agent that searches, reads, curates, and reports information from codebases and document collections.
 
-Your job: find the most relevant resources for the caller using every available retrieval method, then return structured, actionable results with evidence.
+Your job: find relevant files, read their contents, extract the key insights, and deliver curated knowledge units to the caller. You do NOT output raw file paths or grep results — you curate information.
 
-You are invoked by a parent agent or user who needs specific information found. You do not write code, fix bugs, or make changes — you search, retrieve, and report.`;
+You are invoked by a parent agent or user who needs specific information found. You do not write code, fix bugs, or make changes.`;
+
+	// Section 1b: Workflow
+	const workflowSection = `## Workflow
+
+1. **SEARCH** — Use search tools to find candidate files matching the query
+2. **READ** — Use \`read_file\` to examine promising files from search results
+3. **CURATE** — Extract key insights: function names, types, logic, purposes, line ranges
+4. **OUTPUT** — Deliver numbered curated knowledge units (NO file paths exposed to caller)
+5. **MAP** — Tag each knowledge unit with internal source for feedback tracking`;
 
 	// Section 2: Active Retrieval Methods
 	let methodsSection: string;
@@ -190,36 +189,40 @@ Memory is advisory — it reflects past outcomes, not guarantees. New queries ma
 Structure every response using this format:
 
 <results>
-<files>
-[1] /path/to/file1.ts (method_name)
-    Brief description of what was found and why it is relevant
+[1] authenticate() function — Middleware that extracts and verifies JWT from Request.
+    Parses Bearer header, calls jwt.verify, sets req.user. (lines 42-67)
 
-[2] /path/to/file2.ts:42 (method_name)
-    What was found at this location
-</files>
+[2] AuthConfig interface — JWT configuration type with secret, expiry, and refresh settings.
+    Fields: tokenExpiry, refreshEnabled, secretKey. (lines 5-12)
 
 <answer>
-Direct answer to the caller's question, grounded in evidence from search results.
-Reference results by number (e.g. "as shown in [1]") for every claim.
+Direct answer to the caller's question. Reference results by number (e.g. [1], [2]).
 If nothing was found, state this explicitly and describe what was searched.
 </answer>
-
-<search_summary>
-Methods used: list each method called
-Queries executed: list each query with its result count
-</search_summary>
 </results>
 
-The caller can reference results by number for feedback (e.g. "1,3 useful").`;
+<internal_mapping>
+1:src/middleware/auth.ts:posix
+2:src/config/auth.ts:posix
+</internal_mapping>
+
+## Output Rules
+
+- **NEVER** include file paths in <results> or <answer> blocks — the caller must not see them.
+- Each [N] is a curated knowledge unit: name, purpose, key details, and line range.
+- <internal_mapping> MUST appear AFTER </results> with format \`N:filepath:method\` per line.
+- Every numbered unit MUST have a corresponding mapping entry.
+- The caller can reference results by number for feedback (e.g. "1,3 useful").`;
 
 	// Section 6: Behavioral Constraints
 	const constraintsSection = `## Constraints
 
+- **No raw paths**: never expose file paths in <results> or <answer>. Paths go only in <internal_mapping>.
 - **READ-ONLY**: you find and report — never suggest modifications or write files.
-- **Search before answering**: never guess file contents or locations. Always query first.
+- **Search then read**: search for candidates first, then read_file to examine content before curating.
 - **No fabrication**: if you find nothing, report the negative result explicitly.
-- **Cite evidence**: include file paths and line numbers for every factual claim.
-- **Precision over recall**: a few highly relevant results beat many vague ones.
+- **Curate, don't dump**: extract key insights — function names, types, purposes, line ranges. Not raw lines.
+- **Precision over recall**: a few highly relevant curated units beat many vague ones.
 - **Address intent**: answer the caller's actual need, not just their literal query.`;
 
 	// Section 7: Tool Quick Reference (active tools only)
@@ -236,6 +239,7 @@ The caller can reference results by number for feedback (e.g. "1,3 useful").`;
 | Tool | Parameters | Primary Use |
 |------|-----------|-------------|
 ${toolRows}
+| read_file | path, startLine?, endLine? | Read file content for curation |
 | check_memory | query | Check past query outcomes before searching |
 
 All search tools accept:
@@ -246,6 +250,7 @@ All search tools accept:
 
 	return [
 		identity,
+		workflowSection,
 		methodsSection,
 		storesSection,
 		strategySection,
@@ -258,13 +263,33 @@ All search tools accept:
 		.join("\n\n");
 }
 
+export function parseInternalMapping(text: string): CuratedResult[] {
+	const match = text.match(/<internal_mapping>([\s\S]*?)<\/internal_mapping>/);
+	if (!match) return [];
+	const lines = match[1].trim().split("\n");
+	const results: CuratedResult[] = [];
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const firstColon = trimmed.indexOf(":");
+		const lastColon = trimmed.lastIndexOf(":");
+		if (firstColon === -1 || firstColon === lastColon) continue;
+		const index = Number.parseInt(trimmed.slice(0, firstColon), 10);
+		if (Number.isNaN(index)) continue;
+		const source = trimmed.slice(firstColon + 1, lastColon);
+		const method = trimmed.slice(lastColon + 1);
+		results.push({ index, content: "", source, method });
+	}
+	return results;
+}
+
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly memory: RetrievalMemory;
 	private readonly registry: RetrievalMethodRegistry;
 	private lastQuery: string | undefined;
 	private lastMethod: string | undefined;
-	private resultRegistry: Map<number, NumberedResult> = new Map();
+	private resultRegistry: Map<number, CuratedResult> = new Map();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { searchPaths, manifestDir, memoryPath } = options;
@@ -283,8 +308,9 @@ export class AutoRAGAgent {
 		this.memory.load();
 
 		const searchTools = this.registry.list().map(createSearchTool);
+		const readFileTool = createReadFileTool({ searchPaths });
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const tools = [...searchTools, checkMemoryTool];
+		const tools = [...searchTools, readFileTool, checkMemoryTool];
 		const systemPrompt = buildSystemPrompt(this.registry, manifests);
 
 		this.innerAgent = new Agent({
@@ -310,11 +336,11 @@ export class AutoRAGAgent {
 				const toolName = context.toolCall.name;
 				if (!toolName.startsWith("search_")) return undefined;
 				const method = toolName.slice("search_".length);
-				const details = context.result.details as { resultCount?: number } | undefined;
+				const details = context.result.details as { resultCount?: number; sources?: string[] } | undefined;
 				const resultCount = details?.resultCount ?? 0;
+				const sources = details?.sources ?? [];
 				this.lastMethod = method;
 				if (this.lastQuery) {
-					const sources = parseSourcesFromResult(context.result.content as Array<{ type: string; text?: string }>);
 					const entry = this.memory.append({
 						query: this.lastQuery,
 						method,
@@ -330,22 +356,6 @@ export class AutoRAGAgent {
 					});
 					this.memory.save();
 				}
-				const textBlocks = (context.result.content as Array<{ type: string; text?: string }>)
-					.filter((c) => c.type === "text" && c.text)
-					.map((c) => c.text!);
-				for (const text of textBlocks) {
-					const regex = /^\[(\d+)\]\s+(\S+)\s+\((\w+)\)\n\s+(.+)/gm;
-					let m: RegExpExecArray | null;
-					while ((m = regex.exec(text)) !== null) {
-						const globalIndex = this.resultRegistry.size + 1;
-						this.resultRegistry.set(globalIndex, {
-							index: globalIndex,
-							source: m[2],
-							content: m[4],
-							method: m[3],
-						});
-					}
-				}
 				return undefined;
 			},
 		});
@@ -354,7 +364,30 @@ export class AutoRAGAgent {
 	async prompt(text: string): Promise<void> {
 		this.lastQuery = text;
 		this.resultRegistry.clear();
-		await this.innerAgent.prompt(text);
+
+		let lastAssistantText = "";
+		const unsub = this.innerAgent.subscribe((event) => {
+			if (event.type === "message_end" && "message" in event) {
+				const msg = event.message as { role?: string; content?: Array<{ type: string; text?: string }> };
+				if (msg.role === "assistant" && Array.isArray(msg.content)) {
+					lastAssistantText = msg.content
+						.filter((c) => c.type === "text" && c.text)
+						.map((c) => c.text!)
+						.join("\n");
+				}
+			}
+		});
+
+		try {
+			await this.innerAgent.prompt(text);
+		} finally {
+			unsub();
+		}
+
+		const mapped = parseInternalMapping(lastAssistantText);
+		for (const entry of mapped) {
+			this.resultRegistry.set(entry.index, entry);
+		}
 	}
 
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
@@ -396,7 +429,7 @@ export class AutoRAGAgent {
 		return this.registry;
 	}
 
-	getResultRegistry(): ReadonlyMap<number, NumberedResult> {
+	getResultRegistry(): ReadonlyMap<number, CuratedResult> {
 		return this.resultRegistry;
 	}
 

@@ -99,13 +99,13 @@ describe("Full flow integration", () => {
 		agent["resultRegistry"].set(1, {
 			index: 1,
 			source: "src/utils.ts",
-			content: "export function helper() {}",
+			content: "",
 			method: "posix",
 		});
 		agent["resultRegistry"].set(2, {
 			index: 2,
 			source: "src/main.ts",
-			content: "import { helper } from './utils'",
+			content: "",
 			method: "posix",
 		});
 

@@ -110,7 +110,7 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Fallback Chain");
 	});
 
-	it("system prompt includes numbered output format", () => {
+	it("system prompt includes curated output format with internal_mapping", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
@@ -118,8 +118,10 @@ describe("AutoRAGAgent", () => {
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("<results>");
 		expect(prompt).toContain("<answer>");
+		expect(prompt).toContain("<internal_mapping>");
 		expect(prompt).toContain("[1]");
-		expect(prompt).toContain("by number");
+		expect(prompt).toContain("read_file");
+		expect(prompt).toContain("curate");
 	});
 
 	it("system prompt warns when manifest requires unavailable method", () => {
@@ -140,10 +142,11 @@ describe("AutoRAGAgent", () => {
 		});
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("READ-ONLY");
-		expect(prompt).toContain("Cite evidence");
+		expect(prompt).toContain("No raw paths");
+		expect(prompt).toContain("internal_mapping");
 	});
 
-	it("system prompt tool reference only lists active tools", () => {
+	it("system prompt tool reference includes active tools and read_file", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
@@ -151,6 +154,7 @@ describe("AutoRAGAgent", () => {
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("Tool Quick Reference");
 		expect(prompt).toContain("search_posix");
+		expect(prompt).toContain("read_file");
 		const toolRefSection = prompt.split("Tool Quick Reference")[1];
 		expect(toolRefSection).not.toContain("| search_vector");
 		expect(toolRefSection).not.toContain("| search_bm25");
@@ -262,7 +266,7 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["resultRegistry"].set(1, { index: 1, source: "src/a.ts", content: "code", method: "posix" });
+		agent["resultRegistry"].set(1, { index: 1, source: "src/a.ts", content: "", method: "posix" });
 		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
 		agent["memory"].registerAttempt({
 			id: entry.id,
@@ -283,7 +287,7 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["resultRegistry"].set(1, { index: 1, source: "src/b.ts", content: "code", method: "posix" });
+		agent["resultRegistry"].set(1, { index: 1, source: "src/b.ts", content: "", method: "posix" });
 		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
 		agent["memory"].registerAttempt({
 			id: entry.id,

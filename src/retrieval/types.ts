@@ -32,3 +32,10 @@ export interface NumberedResult {
 	content: string;
 	method: string;
 }
+
+export interface CuratedResult {
+	index: number;
+	content: string;
+	source: string;
+	method: string;
+}

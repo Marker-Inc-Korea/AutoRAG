@@ -5,6 +5,7 @@ export { PosixRetrieval } from "./posix.ts";
 export { RetrievalMethodRegistry } from "./registry.ts";
 export { BM25Retrieval, HybridRetrieval, VectorSearchRetrieval, VisualRetrieval } from "./stubs/index.ts";
 export type {
+	CuratedResult,
 	NumberedResult,
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
