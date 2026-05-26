@@ -80,13 +80,15 @@ describe("autorag CLI", () => {
 		expect(stdout).toContain("--not-useful");
 	});
 
-	it("search saves result registry sidecar file", () => {
+	it("search saves result registry sidecar file with sessionId", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const registryPath = memPath.replace(/\.json$/, ".last-results.json");
 		runCli(`search function --scope ${FIXTURE_SCOPE} --memory-path ${memPath}`);
 		expect(existsSync(registryPath)).toBe(true);
 		const data = JSON.parse(readFileSync(registryPath, "utf-8"));
-		expect(Array.isArray(data)).toBe(true);
+		expect(data).toHaveProperty("sessionId");
+		expect(data).toHaveProperty("results");
+		expect(Array.isArray(data.results)).toBe(true);
 	});
 
 	it("feedback with --useful prints confirmation", () => {

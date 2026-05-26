@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -149,6 +150,7 @@ async function runSearch(args: CliArgs): Promise<void> {
 	}
 
 	const result = await tool.execute("cli", params);
+	const sessionId = randomUUID();
 	try {
 		const registryPath = registryPathFromMemory(args.memoryPath);
 		const numberedResults = result.details.numberedResults ?? [];
@@ -158,10 +160,11 @@ async function runSearch(args: CliArgs): Promise<void> {
 		if (!existsSync(dir)) {
 			mkdirSync(dir, { recursive: true });
 		}
-		writeFileSync(registryPath, JSON.stringify(numberedResults), "utf-8");
+		writeFileSync(registryPath, JSON.stringify({ sessionId, results: numberedResults }), "utf-8");
 	} catch {
 		// Registry save is best-effort — search results are still displayed
 	}
+	process.stderr.write(`Session: ${sessionId}\n`);
 	const text = (result.content[0] as { type: "text"; text: string }).text;
 
 	if (args.format === "json") {
@@ -193,7 +196,9 @@ async function runFeedback(args: CliArgs): Promise<void> {
 		process.stderr.write("Error: no previous search results found. Run 'autorag search' first.\n");
 		process.exit(1);
 	}
-	const numberedResults: NumberedResult[] = JSON.parse(readFileSync(registryPath, "utf-8"));
+	const raw = JSON.parse(readFileSync(registryPath, "utf-8"));
+	const numberedResults: NumberedResult[] = Array.isArray(raw) ? raw : (raw.results ?? []);
+	const savedSessionId: string = Array.isArray(raw) ? "unknown" : (raw.sessionId ?? "unknown");
 	const resultMap = new Map(numberedResults.map((r) => [r.index, r]));
 	const feedback: Array<{ source: string; useful: boolean }> = [];
 	const unknown: number[] = [];
@@ -214,7 +219,7 @@ async function runFeedback(args: CliArgs): Promise<void> {
 		memory.load();
 		memory.recordResultFeedback(feedback);
 		memory.save();
-		process.stdout.write(`Recorded feedback for ${feedback.length} result(s).\n`);
+		process.stdout.write(`Recorded feedback for ${feedback.length} result(s) in session ${savedSessionId}.\n`);
 	}
 }
 

@@ -36,9 +36,23 @@ for feedback resolution only.
 | `read_file` | Read file contents with optional line range |
 | `check_memory` | Query past search outcomes |
 
+## Sessions
+
+Each `prompt()` call creates a session with a unique ID. The caller uses the
+session ID to reference results and submit feedback. Multiple concurrent
+sessions are supported — each has its own isolated result registry.
+
+```typescript
+const session = await autorag.prompt("find auth middleware");
+// session.sessionId = "abc-123"
+// Caller sees curated info: [1] authenticate() function — ...
+
+autorag.recordFeedbackByNumbers(session.sessionId, [1], [2]);
+```
+
 ## Feedback Flow
 
-1. Caller references results by number (e.g., "1,3 useful")
+1. Caller references results by session ID + number (e.g., session "abc", [1,3] useful)
 2. Agent resolves numbers → internal mapping → source paths
 3. Source paths → memory entries updated (useful/not_useful)
 4. Memory informs future search strategy

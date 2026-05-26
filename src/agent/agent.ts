@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
@@ -18,6 +19,12 @@ import { VectorSearchRetrieval } from "../retrieval/stubs/vector.ts";
 import { VisualRetrieval } from "../retrieval/stubs/visual.ts";
 import type { CuratedResult, RetrievalMethod, RetrievalOptions } from "../retrieval/types.ts";
 import { createReadFileTool } from "../tool/read-file.ts";
+
+export interface PromptSession {
+	sessionId: string;
+	query: string;
+	timestamp: number;
+}
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
@@ -288,8 +295,9 @@ export class AutoRAGAgent {
 	private readonly memory: RetrievalMemory;
 	private readonly registry: RetrievalMethodRegistry;
 	private lastQuery: string | undefined;
+	private lastSessionId: string | undefined;
 	private lastMethod: string | undefined;
-	private resultRegistry: Map<number, CuratedResult> = new Map();
+	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { searchPaths, manifestDir, memoryPath } = options;
@@ -361,9 +369,12 @@ export class AutoRAGAgent {
 		});
 	}
 
-	async prompt(text: string): Promise<void> {
+	async prompt(text: string): Promise<PromptSession> {
+		const sessionId = randomUUID();
 		this.lastQuery = text;
-		this.resultRegistry.clear();
+		this.lastSessionId = sessionId;
+		const registry = new Map<number, CuratedResult>();
+		this.sessions.set(sessionId, { query: text, registry });
 
 		let lastAssistantText = "";
 		const unsub = this.innerAgent.subscribe((event) => {
@@ -386,8 +397,10 @@ export class AutoRAGAgent {
 
 		const mapped = parseInternalMapping(lastAssistantText);
 		for (const entry of mapped) {
-			this.resultRegistry.set(entry.index, entry);
+			registry.set(entry.index, entry);
 		}
+
+		return { sessionId, query: text, timestamp: Date.now() };
 	}
 
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
@@ -398,9 +411,12 @@ export class AutoRAGAgent {
 		this.innerAgent.abort();
 	}
 
-	submitFeedback(satisfied: boolean): void {
-		if (this.lastQuery) {
-			this.memory.resolvePendingEntries(this.lastQuery, null, satisfied ? "useful" : "not_useful");
+	submitFeedback(sessionId: string | undefined, satisfied: boolean): void {
+		const sid = sessionId ?? this.lastSessionId;
+		const session = sid ? this.sessions.get(sid) : undefined;
+		const query = session?.query ?? this.lastQuery;
+		if (query) {
+			this.memory.resolvePendingEntries(query, null, satisfied ? "useful" : "not_useful");
 			this.memory.save();
 		}
 	}
@@ -410,14 +426,16 @@ export class AutoRAGAgent {
 		this.memory.save();
 	}
 
-	recordFeedbackByNumbers(usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
+	recordFeedbackByNumbers(sessionId: string, usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
+		const session = this.sessions.get(sessionId);
+		if (!session) return;
 		const feedback: ResultFeedback[] = [];
 		for (const n of usefulNumbers) {
-			const entry = this.resultRegistry.get(n);
+			const entry = session.registry.get(n);
 			if (entry) feedback.push({ source: entry.source, useful: true });
 		}
 		for (const n of notUsefulNumbers) {
-			const entry = this.resultRegistry.get(n);
+			const entry = session.registry.get(n);
 			if (entry) feedback.push({ source: entry.source, useful: false });
 		}
 		if (feedback.length > 0) {
@@ -429,8 +447,10 @@ export class AutoRAGAgent {
 		return this.registry;
 	}
 
-	getResultRegistry(): ReadonlyMap<number, CuratedResult> {
-		return this.resultRegistry;
+	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
+		const sid = sessionId ?? this.lastSessionId;
+		const session = sid ? this.sessions.get(sid) : undefined;
+		return session?.registry ?? new Map();
 	}
 
 	getSystemPrompt(): string {

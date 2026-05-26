@@ -40,7 +40,7 @@ describe("Full flow integration", () => {
 		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
 		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
 		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
-		agent.submitFeedback(true);
+		agent.submitFeedback(undefined, true);
 
 		expect(existsSync(memPath)).toBe(true);
 
@@ -70,7 +70,7 @@ describe("Full flow integration", () => {
 		agent["lastQuery"] = "cold start query";
 		agent["memory"].append({ query: "cold start query", method: "posix", outcome: "pending" });
 		agent["memory"].append({ query: "cold start query", method: "vector", outcome: "pending" });
-		agent.submitFeedback(false);
+		agent.submitFeedback(undefined, false);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
@@ -89,25 +89,18 @@ describe("Full flow integration", () => {
 		expect(prompt).toContain("Memory & Strategy");
 	});
 
-	it("numbered feedback flow: search → feedback by number → memory update", () => {
+	it("session-based feedback flow: feedback by number with session ID → memory update", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
 
-		agent["resultRegistry"].set(1, {
-			index: 1,
-			source: "src/utils.ts",
-			content: "",
-			method: "posix",
-		});
-		agent["resultRegistry"].set(2, {
-			index: 2,
-			source: "src/main.ts",
-			content: "",
-			method: "posix",
-		});
+		const sid = "test-session-flow";
+		const reg = new Map();
+		reg.set(1, { index: 1, source: "src/utils.ts", content: "", method: "posix" });
+		reg.set(2, { index: 2, source: "src/main.ts", content: "", method: "posix" });
+		agent["sessions"].set(sid, { query: "find helper function", registry: reg });
 
 		agent["lastQuery"] = "find helper function";
 		const e1 = agent["memory"].append({ query: "find helper function", method: "posix", outcome: "pending" });
@@ -127,7 +120,7 @@ describe("Full flow integration", () => {
 			timestamp: Date.now(),
 		});
 
-		agent.recordFeedbackByNumbers([1], [2]);
+		agent.recordFeedbackByNumbers(sid, [1], [2]);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();

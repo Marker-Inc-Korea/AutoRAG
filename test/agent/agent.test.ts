@@ -70,7 +70,7 @@ describe("AutoRAGAgent", () => {
 		});
 		agent["lastQuery"] = "find typescript files";
 		agent["memory"].append({ query: "find typescript files", method: "posix", outcome: "pending" });
-		agent.submitFeedback(true);
+		agent.submitFeedback(undefined, true);
 		expect(existsSync(memPath)).toBe(true);
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
@@ -189,7 +189,7 @@ describe("AutoRAGAgent", () => {
 		agent["lastQuery"] = "test query";
 		agent["memory"].append({ query: "test query", method: "posix", outcome: "pending" });
 		agent["memory"].append({ query: "test query", method: "vector", outcome: "pending" });
-		agent.submitFeedback(true);
+		agent.submitFeedback(undefined, true);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
@@ -203,7 +203,7 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent.submitFeedback(true);
+		agent.submitFeedback(undefined, true);
 		expect(existsSync(memPath)).toBe(false);
 	});
 
@@ -260,13 +260,16 @@ describe("AutoRAGAgent", () => {
 		expect(typeof agent.recordFeedbackByNumbers).toBe("function");
 	});
 
-	it("recordFeedbackByNumbers resolves useful entries by number", () => {
+	it("recordFeedbackByNumbers resolves useful entries by number with session", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["resultRegistry"].set(1, { index: 1, source: "src/a.ts", content: "", method: "posix" });
+		const sid = "test-session-1";
+		const reg = new Map();
+		reg.set(1, { index: 1, source: "src/a.ts", content: "", method: "posix" });
+		agent["sessions"].set(sid, { query: "q", registry: reg });
 		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
 		agent["memory"].registerAttempt({
 			id: entry.id,
@@ -275,19 +278,22 @@ describe("AutoRAGAgent", () => {
 			sources: ["src/a.ts"],
 			timestamp: Date.now(),
 		});
-		agent.recordFeedbackByNumbers([1]);
+		agent.recordFeedbackByNumbers(sid, [1]);
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
 		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
 	});
 
-	it("recordFeedbackByNumbers resolves not-useful entries", () => {
+	it("recordFeedbackByNumbers resolves not-useful entries with session", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["resultRegistry"].set(1, { index: 1, source: "src/b.ts", content: "", method: "posix" });
+		const sid = "test-session-2";
+		const reg = new Map();
+		reg.set(1, { index: 1, source: "src/b.ts", content: "", method: "posix" });
+		agent["sessions"].set(sid, { query: "q", registry: reg });
 		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
 		agent["memory"].registerAttempt({
 			id: entry.id,
@@ -296,17 +302,17 @@ describe("AutoRAGAgent", () => {
 			sources: ["src/b.ts"],
 			timestamp: Date.now(),
 		});
-		agent.recordFeedbackByNumbers([], [1]);
+		agent.recordFeedbackByNumbers(sid, [], [1]);
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
 		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("not_useful");
 	});
 
-	it("recordFeedbackByNumbers ignores unknown numbers without error", () => {
+	it("recordFeedbackByNumbers ignores unknown session without error", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
-		expect(() => agent.recordFeedbackByNumbers([99, 100])).not.toThrow();
+		expect(() => agent.recordFeedbackByNumbers("nonexistent", [99, 100])).not.toThrow();
 	});
 });

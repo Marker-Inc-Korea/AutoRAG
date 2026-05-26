@@ -1,2 +1,2 @@
-export type { AutoRAGAgentOptions } from "./agent.ts";
-export { AutoRAGAgent } from "./agent.ts";
+export type { AutoRAGAgentOptions, PromptSession } from "./agent.ts";
+export { AutoRAGAgent, parseInternalMapping } from "./agent.ts";
