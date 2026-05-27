@@ -4,9 +4,20 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
+import type { CuratedResult } from "../../src/retrieval/types.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string;
+
+interface AgentInternals {
+	lastQuery: string | undefined;
+	memory: RetrievalMemory;
+	sessions: Map<string, { query: string; registry: Map<number, CuratedResult> }>;
+}
+
+function internals(agent: AutoRAGAgent): AgentInternals {
+	return agent as unknown as AgentInternals;
+}
 
 beforeEach(() => {
 	tmpDir = join(tmpdir(), `autorag-integration-${Date.now()}`);
@@ -36,10 +47,10 @@ describe("Full flow integration", () => {
 			memoryPath: memPath,
 		});
 
-		agent["lastQuery"] = "search typescript code";
-		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
-		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
-		agent["memory"].append({ query: "search typescript code", method: "posix", outcome: "pending" });
+		internals(agent).lastQuery = "search typescript code";
+		internals(agent).memory.append({ query: "search typescript code", method: "posix", outcome: "pending" });
+		internals(agent).memory.append({ query: "search typescript code", method: "posix", outcome: "pending" });
+		internals(agent).memory.append({ query: "search typescript code", method: "posix", outcome: "pending" });
 		agent.submitFeedback(undefined, true);
 
 		expect(existsSync(memPath)).toBe(true);
@@ -52,13 +63,13 @@ describe("Full flow integration", () => {
 		expect(priority[0].score).toBe(1.0);
 	});
 
-	it("agent has 5 retrieval methods registered", () => {
+	it("agent runs without built-in retrieval methods", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
-		const methods = agent.getRegistry().list();
-		expect(methods.length).toBe(5);
+		expect(agent.getSystemPrompt()).toContain("check_memory");
+		expect(agent.getSystemPrompt()).not.toContain("search_posix");
 	});
 
 	it("submitFeedback resolves pending entries across all methods", () => {
@@ -67,9 +78,9 @@ describe("Full flow integration", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["lastQuery"] = "cold start query";
-		agent["memory"].append({ query: "cold start query", method: "posix", outcome: "pending" });
-		agent["memory"].append({ query: "cold start query", method: "vector", outcome: "pending" });
+		internals(agent).lastQuery = "cold start query";
+		internals(agent).memory.append({ query: "cold start query", method: "posix", outcome: "pending" });
+		internals(agent).memory.append({ query: "cold start query", method: "vector", outcome: "pending" });
 		agent.submitFeedback(undefined, false);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
@@ -100,19 +111,27 @@ describe("Full flow integration", () => {
 		const reg = new Map();
 		reg.set(1, { index: 1, source: "src/utils.ts", content: "", method: "posix" });
 		reg.set(2, { index: 2, source: "src/main.ts", content: "", method: "posix" });
-		agent["sessions"].set(sid, { query: "find helper function", registry: reg });
+		internals(agent).sessions.set(sid, { query: "find helper function", registry: reg });
 
-		agent["lastQuery"] = "find helper function";
-		const e1 = agent["memory"].append({ query: "find helper function", method: "posix", outcome: "pending" });
-		agent["memory"].registerAttempt({
+		internals(agent).lastQuery = "find helper function";
+		const e1 = internals(agent).memory.append({
+			query: "find helper function",
+			method: "posix",
+			outcome: "pending",
+		});
+		internals(agent).memory.registerAttempt({
 			id: e1.id,
 			query: "find helper function",
 			method: "posix",
 			sources: ["src/utils.ts"],
 			timestamp: Date.now(),
 		});
-		const e2 = agent["memory"].append({ query: "find helper function", method: "posix", outcome: "pending" });
-		agent["memory"].registerAttempt({
+		const e2 = internals(agent).memory.append({
+			query: "find helper function",
+			method: "posix",
+			outcome: "pending",
+		});
+		internals(agent).memory.registerAttempt({
 			id: e2.id,
 			query: "find helper function",
 			method: "posix",

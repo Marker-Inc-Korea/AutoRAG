@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
+import type { CuratedResult } from "../../src/retrieval/types.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string;
@@ -17,6 +21,28 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
+function makeTool(name: string): AgentTool {
+	return {
+		name,
+		label: name,
+		description: `${name} tool`,
+		parameters: Type.Object({ query: Type.String() }),
+		async execute() {
+			return { content: [{ type: "text", text: "ok" }], details: { resultCount: 1, method: name, sources: [] } };
+		},
+	};
+}
+
+interface AgentInternals {
+	lastQuery: string | undefined;
+	memory: RetrievalMemory;
+	sessions: Map<string, { query: string; registry: Map<number, CuratedResult> }>;
+}
+
+function internals(agent: AutoRAGAgent): AgentInternals {
+	return agent as unknown as AgentInternals;
+}
+
 describe("AutoRAGAgent", () => {
 	it("creates with default config", () => {
 		const agent = new AutoRAGAgent({
@@ -26,30 +52,24 @@ describe("AutoRAGAgent", () => {
 		expect(agent).toBeDefined();
 	});
 
-	it("registers all retrieval methods as tools", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const registry = agent.getRegistry();
-		const methods = registry.list();
-		expect(methods.length).toBe(5);
-		const names = methods.map((m) => m.describe().name);
-		expect(names).toContain("posix");
-		expect(names).toContain("vector");
-		expect(names).toContain("bm25");
-		expect(names).toContain("hybrid");
-		expect(names).toContain("visual");
-	});
-
-	it("system prompt mentions available retrieval methods", () => {
+	it("defaults to check_memory for library mode", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("posix");
-		expect(prompt).toContain("retrieval");
+		expect(prompt).toContain("check_memory");
+		expect(prompt).not.toContain("search_posix");
+	});
+
+	it("includes caller-provided standalone tools in system prompt", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			tools: [makeTool("search_custom")],
+		});
+		const prompt = agent.getSystemPrompt();
+		expect(prompt).toContain("search_custom");
 	});
 
 	it("includes manifest descriptions in system prompt when manifestDir provided", () => {
@@ -62,14 +82,27 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("codebase-vectors");
 	});
 
+	it("extension system prompt references Pi built-in tools", () => {
+		const prompt = buildSystemPrompt({
+			mode: "extension",
+			toolNames: ["grep", "find", "read", "ls", "check_memory"],
+			memoryEntries: [],
+			manifests: [],
+		});
+		expect(prompt).toContain("grep");
+		expect(prompt).toContain("find");
+		expect(prompt).toContain("read");
+		expect(prompt).not.toContain("read_file");
+	});
+
 	it("submitFeedback resolves pending entries and saves to disk", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["lastQuery"] = "find typescript files";
-		agent["memory"].append({ query: "find typescript files", method: "posix", outcome: "pending" });
+		internals(agent).lastQuery = "find typescript files";
+		internals(agent).memory.append({ query: "find typescript files", method: "grep", outcome: "pending" });
 		agent.submitFeedback(undefined, true);
 		expect(existsSync(memPath)).toBe(true);
 		const memory = new RetrievalMemory({ storagePath: memPath });
@@ -85,17 +118,6 @@ describe("AutoRAGAgent", () => {
 		const unsubscribe = agent.subscribe(() => {});
 		expect(typeof unsubscribe).toBe("function");
 		expect(() => unsubscribe()).not.toThrow();
-	});
-
-	it("system prompt separates active methods from stubs", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("Active Retrieval Methods");
-		expect(prompt).toContain("search_posix");
-		expect(prompt).toContain("NOT AVAILABLE");
 	});
 
 	it("system prompt includes search strategy guidance", () => {
@@ -120,19 +142,7 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("<answer>");
 		expect(prompt).toContain("<internal_mapping>");
 		expect(prompt).toContain("[1]");
-		expect(prompt).toContain("read_file");
 		expect(prompt).toContain("curate");
-	});
-
-	it("system prompt warns when manifest requires unavailable method", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			manifestDir: "test/fixtures/manifests",
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("codebase-vectors");
-		expect(prompt).toContain("currently unavailable");
 	});
 
 	it("system prompt includes behavioral constraints", () => {
@@ -144,30 +154,6 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("READ-ONLY");
 		expect(prompt).toContain("No raw paths");
 		expect(prompt).toContain("internal_mapping");
-	});
-
-	it("system prompt tool reference includes active tools and read_file", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("Tool Quick Reference");
-		expect(prompt).toContain("search_posix");
-		expect(prompt).toContain("read_file");
-		const toolRefSection = prompt.split("Tool Quick Reference")[1];
-		expect(toolRefSection).not.toContain("| search_vector");
-		expect(toolRefSection).not.toContain("| search_bm25");
-	});
-
-	it("system prompt includes Memory & Strategy section", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("Memory & Strategy");
-		expect(prompt).toContain("check_memory");
 	});
 
 	it("system prompt tool reference includes check_memory", () => {
@@ -186,9 +172,9 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		agent["lastQuery"] = "test query";
-		agent["memory"].append({ query: "test query", method: "posix", outcome: "pending" });
-		agent["memory"].append({ query: "test query", method: "vector", outcome: "pending" });
+		internals(agent).lastQuery = "test query";
+		internals(agent).memory.append({ query: "test query", method: "grep", outcome: "pending" });
+		internals(agent).memory.append({ query: "test query", method: "find", outcome: "pending" });
 		agent.submitFeedback(undefined, true);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
@@ -221,11 +207,11 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
 		});
-		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
-		agent["memory"].registerAttempt({
+		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
+		internals(agent).memory.registerAttempt({
 			id: entry.id,
 			query: "q",
-			method: "posix",
+			method: "grep",
 			sources: ["src/a.ts"],
 			timestamp: Date.now(),
 		});
@@ -244,14 +230,6 @@ describe("AutoRAGAgent", () => {
 		expect(agent.getResultRegistry().size).toBe(0);
 	});
 
-	it("getResultRegistry is a public method", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(typeof agent.getResultRegistry).toBe("function");
-	});
-
 	it("recordFeedbackByNumbers is a public method", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
@@ -268,13 +246,13 @@ describe("AutoRAGAgent", () => {
 		});
 		const sid = "test-session-1";
 		const reg = new Map();
-		reg.set(1, { index: 1, source: "src/a.ts", content: "", method: "posix" });
-		agent["sessions"].set(sid, { query: "q", registry: reg });
-		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
-		agent["memory"].registerAttempt({
+		reg.set(1, { index: 1, source: "src/a.ts", content: "", method: "grep" });
+		internals(agent).sessions.set(sid, { query: "q", registry: reg });
+		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
+		internals(agent).memory.registerAttempt({
 			id: entry.id,
 			query: "q",
-			method: "posix",
+			method: "grep",
 			sources: ["src/a.ts"],
 			timestamp: Date.now(),
 		});
@@ -292,13 +270,13 @@ describe("AutoRAGAgent", () => {
 		});
 		const sid = "test-session-2";
 		const reg = new Map();
-		reg.set(1, { index: 1, source: "src/b.ts", content: "", method: "posix" });
-		agent["sessions"].set(sid, { query: "q", registry: reg });
-		const entry = agent["memory"].append({ query: "q", method: "posix", outcome: "pending" });
-		agent["memory"].registerAttempt({
+		reg.set(1, { index: 1, source: "src/b.ts", content: "", method: "grep" });
+		internals(agent).sessions.set(sid, { query: "q", registry: reg });
+		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
+		internals(agent).memory.registerAttempt({
 			id: entry.id,
 			query: "q",
-			method: "posix",
+			method: "grep",
 			sources: ["src/b.ts"],
 			timestamp: Date.now(),
 		});

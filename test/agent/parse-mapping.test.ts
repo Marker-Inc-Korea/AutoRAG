@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInternalMapping } from "../../src/agent/agent.ts";
+import { parseInternalMapping } from "../../src/agent/parse-mapping.ts";
 
 describe("parseInternalMapping", () => {
 	it("parses valid block with multiple entries", () => {

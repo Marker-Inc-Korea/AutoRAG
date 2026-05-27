@@ -4,11 +4,9 @@
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "type": "module",
   "main": "./src/index.ts",
-  "bin": {
-    "autorag": "./src/cli/cli.ts"
-  },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./extension": "./src/extension.ts"
   },
   "scripts": {
     "test": "vitest run",
@@ -19,6 +17,7 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
+    "@code-yeongyu/senpi": "file:../../senpi/packages/coding-agent",
     "@earendil-works/pi-agent-core": "file:../../senpi/packages/agent",
     "@earendil-works/pi-ai": "file:../../senpi/packages/ai",
     "typebox": "^1.1.24",

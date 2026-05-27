@@ -1,3 +1,4 @@
+import type { ToolDefinition } from "@code-yeongyu/senpi";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { RetrievalMemory } from "./memory.ts";
@@ -14,16 +15,26 @@ export interface CheckMemoryDetails {
 	topMethod: string | null;
 }
 
-export function createCheckMemoryTool(
+export function createCheckMemoryToolDefinition(
 	memory: RetrievalMemory,
-): AgentTool<typeof checkMemorySchema, CheckMemoryDetails> {
+): ToolDefinition<typeof checkMemorySchema, CheckMemoryDetails> {
 	return {
 		name: "check_memory",
 		label: "Check Memory",
 		description:
 			"Check retrieval memory for past query outcomes. Returns which search methods were useful or not useful for similar queries. Call this before searching to pick the best method.",
+		promptSnippet: "Check past search outcomes before searching",
+		promptGuidelines: [
+			"Call check_memory with your planned query to see which methods succeeded or failed for similar past queries.",
+		],
 		parameters: checkMemorySchema,
-		async execute(_toolCallId: string, params: { query: string }): Promise<AgentToolResult<CheckMemoryDetails>> {
+		async execute(
+			_toolCallId: string,
+			params: { query: string },
+			_signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			_ctx: unknown,
+		): Promise<AgentToolResult<CheckMemoryDetails>> {
 			const entries = memory.getEntries();
 			const summary = renderMemoryContext(entries);
 			const priority = memory.getMethodPriority(params.query);
@@ -44,6 +55,21 @@ export function createCheckMemoryTool(
 					topMethod: priority[0]?.method ?? null,
 				},
 			};
+		},
+	};
+}
+
+export function createCheckMemoryTool(
+	memory: RetrievalMemory,
+): AgentTool<typeof checkMemorySchema, CheckMemoryDetails> {
+	const definition = createCheckMemoryToolDefinition(memory);
+	return {
+		name: definition.name,
+		label: definition.label,
+		description: definition.description,
+		parameters: definition.parameters,
+		async execute(toolCallId, params, signal, onUpdate) {
+			return await definition.execute(toolCallId, params, signal, onUpdate, undefined as never);
 		},
 	};
 }
