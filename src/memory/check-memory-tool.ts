@@ -1,5 +1,5 @@
-import type { ToolDefinition } from "@code-yeongyu/senpi";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { RetrievalMemory } from "./memory.ts";
 import { renderMemoryContext } from "./renderer.ts";

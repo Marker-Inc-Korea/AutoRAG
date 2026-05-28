@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ExtensionAPI, ToolResultEvent } from "@code-yeongyu/senpi";
+import type { ExtensionAPI, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { parseInternalMapping } from "./agent/parse-mapping.ts";
 import { buildSystemPrompt } from "./agent/system-prompt.ts";
