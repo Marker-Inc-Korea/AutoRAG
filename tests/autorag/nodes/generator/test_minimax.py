@@ -110,6 +110,15 @@ async def mock_minimax_chat_create_stream(
 
 
 @pytest.fixture
+def minimax_m3_instance():
+	return MiniMaxLLM(
+		project_dir=".",
+		llm="MiniMax-M3",
+		api_key="mock_minimax_api_key",
+	)
+
+
+@pytest.fixture
 def minimax_m27_instance():
 	return MiniMaxLLM(
 		project_dir=".",
@@ -119,10 +128,10 @@ def minimax_m27_instance():
 
 
 @pytest.fixture
-def minimax_m25_highspeed_instance():
+def minimax_m27_highspeed_instance():
 	return MiniMaxLLM(
 		project_dir=".",
-		llm="MiniMax-M2.5-highspeed",
+		llm="MiniMax-M2.7-highspeed",
 		api_key="mock_minimax_api_key",
 	)
 
@@ -142,16 +151,20 @@ def minimax_unknown_model_instance():
 class TestMiniMaxLLMInit:
 	"""Test MiniMaxLLM initialization."""
 
-	def test_init_known_model(self, minimax_m27_instance):
+	def test_init_known_model(self, minimax_m3_instance):
+		assert minimax_m3_instance.llm == "MiniMax-M3"
+		assert minimax_m3_instance.batch == 16
+		assert minimax_m3_instance.max_token_size == MAX_TOKEN_DICT["MiniMax-M3"] - 7
+
+	def test_init_m27_model(self, minimax_m27_instance):
 		assert minimax_m27_instance.llm == "MiniMax-M2.7"
-		assert minimax_m27_instance.batch == 16
 		assert minimax_m27_instance.max_token_size == MAX_TOKEN_DICT["MiniMax-M2.7"] - 7
 
-	def test_init_highspeed_model(self, minimax_m25_highspeed_instance):
-		assert minimax_m25_highspeed_instance.llm == "MiniMax-M2.5-highspeed"
+	def test_init_highspeed_model(self, minimax_m27_highspeed_instance):
+		assert minimax_m27_highspeed_instance.llm == "MiniMax-M2.7-highspeed"
 		assert (
-			minimax_m25_highspeed_instance.max_token_size
-			== MAX_TOKEN_DICT["MiniMax-M2.5-highspeed"] - 7
+			minimax_m27_highspeed_instance.max_token_size
+			== MAX_TOKEN_DICT["MiniMax-M2.7-highspeed"] - 7
 		)
 
 	def test_init_unknown_model_uses_default(self, minimax_unknown_model_instance):
@@ -160,7 +173,7 @@ class TestMiniMaxLLMInit:
 	def test_init_custom_batch(self):
 		instance = MiniMaxLLM(
 			project_dir=".",
-			llm="MiniMax-M2.7",
+			llm="MiniMax-M3",
 			batch=8,
 			api_key="mock_key",
 		)
@@ -169,7 +182,7 @@ class TestMiniMaxLLMInit:
 	def test_init_custom_base_url(self):
 		instance = MiniMaxLLM(
 			project_dir=".",
-			llm="MiniMax-M2.7",
+			llm="MiniMax-M3",
 			api_key="mock_key",
 			base_url="https://custom.api.example.com/v1",
 		)
@@ -179,7 +192,7 @@ class TestMiniMaxLLMInit:
 		with pytest.raises(AssertionError):
 			MiniMaxLLM(
 				project_dir=".",
-				llm="MiniMax-M2.7",
+				llm="MiniMax-M3",
 				batch=0,
 				api_key="mock_key",
 			)
@@ -191,7 +204,7 @@ class TestMiniMaxModuleRegistration:
 		assert get_support_modules("MiniMaxLLM") is MiniMaxLLM
 
 	def test_module_from_dict(self):
-		module = Module.from_dict({"module_type": "minimax_llm", "llm": "MiniMax-M2.7"})
+		module = Module.from_dict({"module_type": "minimax_llm", "llm": "MiniMax-M3"})
 		assert module.module is MiniMaxLLM
 
 
@@ -203,10 +216,8 @@ class TestMiniMaxLLMPure:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_pure_string_prompts(self, minimax_m27_instance):
-		answers, tokens, log_probs = minimax_m27_instance._pure(
-			prompts, temperature=0.5
-		)
+	def test_pure_string_prompts(self, minimax_m3_instance):
+		answers, tokens, log_probs = minimax_m3_instance._pure(prompts, temperature=0.5)
 		check_generated_texts(answers)
 		check_generated_tokens(tokens)
 		check_generated_log_probs(log_probs)
@@ -216,13 +227,13 @@ class TestMiniMaxLLMPure:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_pure_chat_prompts(self, minimax_m27_instance):
-		answers, tokens, log_probs = minimax_m27_instance._pure(chat_prompts)
+	def test_pure_chat_prompts(self, minimax_m3_instance):
+		answers, tokens, log_probs = minimax_m3_instance._pure(chat_prompts)
 		check_generated_texts(answers)
 		check_generated_tokens(tokens)
 		check_generated_log_probs(log_probs)
 
-	def test_pure_chat_prompts_preserve_roles(self, minimax_m27_instance):
+	def test_pure_chat_prompts_preserve_roles(self, minimax_m3_instance):
 		captured_messages = []
 
 		async def capture_chat_create(self, messages, model, **kwargs):
@@ -234,7 +245,7 @@ class TestMiniMaxLLMPure:
 			"create",
 			capture_chat_create,
 		):
-			minimax_m27_instance._pure(chat_prompts[:1])
+			minimax_m3_instance._pure(chat_prompts[:1])
 
 		assert captured_messages[0] == chat_prompts[0]
 		assert captured_messages[0][0]["role"] == "system"
@@ -245,8 +256,8 @@ class TestMiniMaxLLMPure:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_pure_strips_logprobs_param(self, minimax_m27_instance):
-		answers, tokens, log_probs = minimax_m27_instance._pure(
+	def test_pure_strips_logprobs_param(self, minimax_m3_instance):
+		answers, tokens, log_probs = minimax_m3_instance._pure(
 			prompts, logprobs=True, n=3
 		)
 		check_generated_texts(answers)
@@ -256,11 +267,9 @@ class TestMiniMaxLLMPure:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_pure_temperature_clamping(self, minimax_m27_instance):
+	def test_pure_temperature_clamping(self, minimax_m3_instance):
 		# Temperature > 1.0 should be clamped
-		answers, tokens, log_probs = minimax_m27_instance._pure(
-			prompts, temperature=1.5
-		)
+		answers, tokens, log_probs = minimax_m3_instance._pure(prompts, temperature=1.5)
 		check_generated_texts(answers)
 
 	@patch.object(
@@ -268,9 +277,9 @@ class TestMiniMaxLLMPure:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_pure_temperature_zero(self, minimax_m27_instance):
+	def test_pure_temperature_zero(self, minimax_m3_instance):
 		# Temperature 0 should work fine
-		answers, tokens, log_probs = minimax_m27_instance._pure(prompts, temperature=0)
+		answers, tokens, log_probs = minimax_m3_instance._pure(prompts, temperature=0)
 		check_generated_texts(answers)
 
 
@@ -282,8 +291,8 @@ class TestMiniMaxLLMThinkingStrip:
 		"create",
 		mock_minimax_chat_create_with_think_tags,
 	)
-	def test_strips_think_tags(self, minimax_m27_instance):
-		answers, tokens, log_probs = minimax_m27_instance._pure(prompts[:1])
+	def test_strips_think_tags(self, minimax_m3_instance):
+		answers, tokens, log_probs = minimax_m3_instance._pure(prompts[:1])
 		assert answers[0] == "The answer is 42."
 
 	@patch.object(
@@ -291,8 +300,8 @@ class TestMiniMaxLLMThinkingStrip:
 		"create",
 		mock_minimax_chat_create_simple,
 	)
-	def test_no_think_tags(self, minimax_m27_instance):
-		answers, tokens, log_probs = minimax_m27_instance._pure(prompts[:1])
+	def test_no_think_tags(self, minimax_m3_instance):
+		answers, tokens, log_probs = minimax_m3_instance._pure(prompts[:1])
 		assert answers[0] == "Simple answer."
 
 
@@ -304,12 +313,10 @@ class TestMiniMaxLLMTruncation:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_truncate_long_prompt(self, minimax_m25_highspeed_instance):
+	def test_truncate_long_prompt(self, minimax_m3_instance):
 		# Create a very long prompt
 		long_prompt = " ".join([f"word {i} is here" for i in range(100_000)])
-		answers, tokens, log_probs = minimax_m25_highspeed_instance._pure(
-			[long_prompt] * 3
-		)
+		answers, tokens, log_probs = minimax_m3_instance._pure([long_prompt] * 3)
 		check_generated_texts(answers)
 
 	@patch.object(
@@ -317,8 +324,8 @@ class TestMiniMaxLLMTruncation:
 		"create",
 		mock_minimax_chat_create,
 	)
-	def test_no_truncation(self, minimax_m27_instance):
-		answers, _, _ = minimax_m27_instance._pure(prompts, truncate=False)
+	def test_no_truncation(self, minimax_m3_instance):
+		answers, _, _ = minimax_m3_instance._pure(prompts, truncate=False)
 		check_generated_texts(answers)
 
 
@@ -337,7 +344,7 @@ class TestMiniMaxLLMNode:
 		result_df = MiniMaxLLM.run_evaluator(
 			project_dir=".",
 			previous_result=previous_result,
-			llm="MiniMax-M2.7",
+			llm="MiniMax-M3",
 			api_key="mock_minimax_api_key",
 			temperature=0.5,
 		)
@@ -349,9 +356,9 @@ class TestMiniMaxLLMNode:
 class TestMiniMaxLLMStream:
 	"""Test streaming methods."""
 
-	def test_stream_not_implemented(self, minimax_m27_instance):
+	def test_stream_not_implemented(self, minimax_m3_instance):
 		with pytest.raises(NotImplementedError):
-			minimax_m27_instance.stream("Hello")
+			minimax_m3_instance.stream("Hello")
 
 	@pytest.mark.asyncio()
 	@patch.object(
@@ -359,9 +366,9 @@ class TestMiniMaxLLMStream:
 		"create",
 		mock_minimax_chat_create_stream,
 	)
-	async def test_astream_strips_think_tags(self, minimax_m27_instance):
+	async def test_astream_strips_think_tags(self, minimax_m3_instance):
 		results = []
-		async for partial in minimax_m27_instance.astream("Hello"):
+		async for partial in minimax_m3_instance.astream("Hello"):
 			results.append(partial)
 
 		assert results[-1] == "Visible answer"
@@ -432,16 +439,22 @@ class TestMaxTokenDict:
 	"""Test MAX_TOKEN_DICT constants."""
 
 	def test_known_models(self):
+		assert "MiniMax-M3" in MAX_TOKEN_DICT
 		assert "MiniMax-M2.7" in MAX_TOKEN_DICT
 		assert "MiniMax-M2.7-highspeed" in MAX_TOKEN_DICT
-		assert "MiniMax-M2.5" in MAX_TOKEN_DICT
-		assert "MiniMax-M2.5-highspeed" in MAX_TOKEN_DICT
+
+	def test_legacy_models_removed(self):
+		assert "MiniMax-M2.5" not in MAX_TOKEN_DICT
+		assert "MiniMax-M2.5-highspeed" not in MAX_TOKEN_DICT
+
+	def test_m3_context(self):
+		assert MAX_TOKEN_DICT["MiniMax-M3"] == 524_288
 
 	def test_m27_context(self):
 		assert MAX_TOKEN_DICT["MiniMax-M2.7"] == 1_048_576
 
-	def test_m25_highspeed_context(self):
-		assert MAX_TOKEN_DICT["MiniMax-M2.5-highspeed"] == 204_800
+	def test_m27_highspeed_context(self):
+		assert MAX_TOKEN_DICT["MiniMax-M2.7-highspeed"] == 1_048_576
 
 
 class TestMiniMaxAPIBase:
@@ -465,7 +478,7 @@ class TestMiniMaxLLMIntegration:
 		"""Test with real API - requires MINIMAX_API_KEY env var."""
 		instance = MiniMaxLLM(
 			project_dir=".",
-			llm="MiniMax-M2.7",
+			llm="MiniMax-M3",
 		)
 		answers, tokens, log_probs = instance._pure(
 			["What is 2 + 2?"], temperature=0.1, max_tokens=50
@@ -481,7 +494,7 @@ class TestMiniMaxLLMIntegration:
 
 		instance = MiniMaxLLM(
 			project_dir=".",
-			llm="MiniMax-M2.7",
+			llm="MiniMax-M3",
 		)
 		result = []
 		async for i, s in a.enumerate(
@@ -493,11 +506,11 @@ class TestMiniMaxLLMIntegration:
 				assert len(result[i]) >= len(result[i - 1])
 		assert len(result) > 0
 
-	def test_real_m25_highspeed(self):
-		"""Test M2.5-highspeed model."""
+	def test_real_m27_highspeed(self):
+		"""Test M2.7-highspeed model."""
 		instance = MiniMaxLLM(
 			project_dir=".",
-			llm="MiniMax-M2.5-highspeed",
+			llm="MiniMax-M2.7-highspeed",
 		)
 		answers, tokens, log_probs = instance._pure(
 			["Tell me a joke."], temperature=0.5, max_tokens=100

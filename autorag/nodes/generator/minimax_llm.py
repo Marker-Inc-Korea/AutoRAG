@@ -22,10 +22,9 @@ THINK_OPEN_TAG = "<think>"
 THINK_CLOSE_TAG = "</think>"
 
 MAX_TOKEN_DICT = {
+	"MiniMax-M3": 524_288,
 	"MiniMax-M2.7": 1_048_576,
 	"MiniMax-M2.7-highspeed": 1_048_576,
-	"MiniMax-M2.5": 1_048_576,
-	"MiniMax-M2.5-highspeed": 204_800,
 }
 
 
@@ -38,7 +37,7 @@ class MiniMaxLLM(BaseGenerator):
 		It returns pseudo token ids and log probs since MiniMax does not support logprobs.
 
 		:param project_dir: The project directory.
-		:param llm: A model name for MiniMax. For example, ``MiniMax-M2.7`` or ``MiniMax-M2.5``.
+		:param llm: A model name for MiniMax. For example, ``MiniMax-M3`` or ``MiniMax-M2.7``.
 		:param batch: Batch size for API calls. Default is 16.
 		:param api_key: MiniMax API key. You can also set this to env variable ``MINIMAX_API_KEY``.
 		:param kwargs: Extra parameters for the MiniMax chat completion API.
@@ -172,7 +171,7 @@ class MiniMaxLLM(BaseGenerator):
 		)
 		answer = response.choices[0].message.content
 
-		# Strip thinking tags if present (MiniMax M2.5+ may include them)
+		# Strip thinking tags if present (MiniMax M2.7+ may include them)
 		if answer and THINK_OPEN_TAG in answer:
 			answer = strip_think_tags(answer)
 

@@ -21,6 +21,6 @@ node_lines:
         metrics: [bleu, rouge]
       modules:
         - module_type: minimax_llm
-          llm: MiniMax-M2.7
+          llm: MiniMax-M3
           temperature: 0.5
           max_tokens: 512
