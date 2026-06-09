@@ -55,7 +55,11 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with grep/find via Pi's built-in tools, and the architecture is ready for vector, BM25, and hybrid backends. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
+AutoRAG supports **pluggable retrieval methods**. It ships with an agentdir-backed `posix` method (content search over the virtual document tree) wired through the `RetrievalMethodRegistry`, and the architecture is ready for vector, BM25, and hybrid backends. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
+
+### Virtual layouts via agentdir
+
+AutoRAG navigates your documents through [agentdir](https://github.com/NomaDamas/agentdir) — an agent-optimized, read-only virtual folder layer. Your source directories are mapped into a virtual tree, and AutoRAG's tools (`grep`, `find`, `read`, `ls`, `stat`, plus virtual `mv`/`cp`/`mkdir`/`rmdir`) operate only on virtual paths, so original file paths are never exposed and originals are never moved. Source changes are propagated by `refresh()`, with an opt-in SHA-256 verification pass that catches silent same-size/same-mtime edits. A skeleton `organizer` sub-agent can restructure the virtual layout on demand.
 
 ### Primary target: document collections
 

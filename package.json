@@ -17,9 +17,10 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.76.0",
     "@earendil-works/pi-agent-core": "^0.76.0",
     "@earendil-works/pi-ai": "^0.76.0",
+    "@earendil-works/pi-coding-agent": "^0.76.0",
+    "@nomadamas/agentdir": "^0.1.5",
     "typebox": "^1.1.24",
     "yaml": "^2.8.2"
   },

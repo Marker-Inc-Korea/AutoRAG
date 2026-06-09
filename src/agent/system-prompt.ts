@@ -13,28 +13,30 @@ function toolAvailable(config: SystemPromptConfig, name: string): boolean {
 }
 
 function searchToolNames(config: SystemPromptConfig): string[] {
-	if (config.mode === "extension") {
-		return config.toolNames.filter((name) => name === "grep" || name === "find");
-	}
-	return config.toolNames.filter((name) => name.startsWith("search_"));
+	const builtins = config.toolNames.filter((name) => name === "grep" || name === "find");
+	const caller = config.toolNames.filter((name) => name.startsWith("search_"));
+	return [...builtins, ...caller];
 }
 
 function readToolName(config: SystemPromptConfig): string {
-	return config.mode === "extension" ? "read" : "read_file";
+	return config.toolNames.includes("read") ? "read" : "read_file";
 }
 
 function searchToolGuidance(config: SystemPromptConfig): string {
-	if (config.mode === "extension") {
-		return `- **grep**: content search with literal or regex patterns
-- **find**: file discovery by name/path/glob
-- **read**: read promising files before curation
-- **ls**: inspect directory structure when scope is unclear`;
+	const lines: string[] = [];
+	if (toolAvailable(config, "grep"))
+		lines.push("- **grep**: content search (regex/literal) over the virtual document tree");
+	if (toolAvailable(config, "find")) lines.push("- **find**: file discovery by name/glob in the virtual tree");
+	if (toolAvailable(config, "read")) lines.push("- **read**: read a file by its virtual path before curation");
+	if (toolAvailable(config, "ls")) lines.push("- **ls**: inspect virtual directory structure when scope is unclear");
+	if (toolAvailable(config, "stat")) lines.push("- **stat**: inspect a virtual entry's size/type");
+	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
+		lines.push(`- **${name}**: caller-provided retrieval tool`);
 	}
-	const tools = searchToolNames(config);
-	if (tools.length === 0) {
-		return "No standalone search tools were provided. Use caller-provided tools when available, and always use check_memory for strategy.";
+	if (lines.length === 0) {
+		return "No search tools were provided. Use caller-provided tools when available, and always use check_memory for strategy.";
 	}
-	return tools.map((name) => `- **${name}**: caller-provided retrieval tool`).join("\n");
+	return lines.join("\n");
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
