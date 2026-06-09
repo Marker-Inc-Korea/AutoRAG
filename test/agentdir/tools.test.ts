@@ -46,13 +46,15 @@ function textOf(res: { content: Array<{ type: string; text?: string }> }): strin
 }
 
 describe("exports", () => {
-	it("declares the closed active tool surface", () => {
+	it("declares the active tool surface (agentdir-first + bash fallback)", () => {
 		expect(AGENTDIR_TOOL_NAMES).toEqual(["grep", "find", "read", "ls", "stat", "mv", "cp", "mkdir", "rmdir"]);
 		expect(SEARCH_TOOLS).toEqual(["grep", "find"]);
 		expect(ACTIVE_TOOLS).toContain("check_memory");
 		expect(ACTIVE_TOOLS).toContain("organize");
-		// builtin write/edit/bash must NOT be part of the closed surface
-		for (const banned of ["bash", "edit", "write"]) {
+		// bash is kept as a real-path fallback
+		expect(ACTIVE_TOOLS).toContain("bash");
+		// mutating editors must NOT be part of the read-only surface
+		for (const banned of ["edit", "write"]) {
 			expect(ACTIVE_TOOLS).not.toContain(banned);
 		}
 	});

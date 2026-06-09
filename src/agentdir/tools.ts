@@ -11,11 +11,15 @@ export const AGENTDIR_TOOL_NAMES = ["grep", "find", "read", "ls", "stat", "mv", 
 export const SEARCH_TOOLS = ["grep", "find"] as const;
 
 /**
- * The closed agent tool surface. Builtin grep/find/read/ls/bash/edit/write are
- * NOT included, enforcing path opacity. `check_memory` and the organizer
- * delegation tool `organize` are the only non-agentdir entries.
+ * The active agent tool surface. agentdir virtual-path tools are the primary
+ * navigation surface (they override builtin grep/find/read/ls by name), and
+ * `bash` is kept as a fallback for real-path operations the virtual tree can't
+ * serve (e.g. content outside the mapped layout, OS-level commands like cd/cat).
+ * Mutating editors (`edit`/`write`) stay excluded — AutoRAG is a read-only
+ * librarian. Path opacity is preserved in the curated OUTPUT, not by removing
+ * the fallback. `check_memory` and the organizer `organize` tool round out the set.
  */
-export const ACTIVE_TOOLS = [...AGENTDIR_TOOL_NAMES, "check_memory", "organize"] as const;
+export const ACTIVE_TOOLS = [...AGENTDIR_TOOL_NAMES, "check_memory", "organize", "bash"] as const;
 
 /** Uniform details contract so the memory hooks can read method/sources/resultCount. */
 export interface AgentdirToolDetails {

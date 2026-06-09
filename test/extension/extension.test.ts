@@ -85,7 +85,7 @@ describe("autoragExtension", () => {
 		expect(events).toContain("message_end");
 	});
 
-	it("closes the active tool surface to ACTIVE_TOOLS, excluding builtins (AC-5)", async () => {
+	it("sets the active tool surface to ACTIVE_TOOLS (agentdir-first + bash, no editors) (AC-5)", async () => {
 		const { pi, setActiveTools, handlers } = makePi();
 		autoragExtension(pi);
 
@@ -94,7 +94,8 @@ describe("autoragExtension", () => {
 		expect(setActiveTools).toHaveBeenCalledTimes(1);
 		const requested = setActiveTools.mock.calls[0][0] as string[];
 		expect([...requested].sort()).toEqual([...ACTIVE_TOOLS].sort());
-		for (const banned of ["bash", "edit", "write"]) {
+		expect(requested).toContain("bash");
+		for (const banned of ["edit", "write"]) {
 			expect(requested).not.toContain(banned);
 		}
 	});

@@ -151,14 +151,14 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 			memory.load();
 		}
 
-		// Close the agent tool surface to agentdir virtual-path tools only:
-		// builtin grep/find/read/ls/bash/edit/write are excluded, enforcing path opacity.
+		// Set the agent tool surface: agentdir virtual-path tools are primary,
+		// bash stays as a real-path fallback; mutating editors stay excluded.
 		pi.setActiveTools([...ACTIVE_TOOLS]);
 
 		const manifests = loadManifests(join(ctx.cwd, ".autorag", "manifests"));
 		const systemPrompt = buildSystemPrompt({
 			mode: "extension",
-			toolNames: [...AGENTDIR_TOOL_NAMES, "check_memory"],
+			toolNames: [...AGENTDIR_TOOL_NAMES, "check_memory", "bash"],
 			memoryEntries: memory.getEntries(),
 			manifests,
 		});

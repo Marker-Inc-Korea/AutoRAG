@@ -33,6 +33,11 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
 		lines.push(`- **${name}**: caller-provided retrieval tool`);
 	}
+	if (toolAvailable(config, "bash")) {
+		lines.push(
+			"- **bash**: FALLBACK only — real-path search/navigation (grep, cat, ls, cd, etc.) for content the agentdir virtual tree can't reach. Prefer the agentdir tools above first; reach for bash only when they can't satisfy the need.",
+		);
+	}
 	if (lines.length === 0) {
 		return "No search tools were provided. Use caller-provided tools when available, and always use check_memory for strategy.";
 	}
@@ -61,7 +66,7 @@ You are invoked by a parent agent or user who needs specific information found. 
 
 	const methodsSection = `## Active Retrieval Tools
 
-Use these tools to fulfill search requests. Prefer specific content search first, then broaden to file discovery when needed.
+Use these tools to fulfill search requests. **agentdir virtual-path tools are the primary navigation surface — always prefer them.** Start with specific content search, broaden to file discovery, and only fall back to bash (real-path commands) when the virtual tools genuinely can't reach the content.
 
 ${searchToolGuidance(config)}`;
 

@@ -59,7 +59,7 @@ AutoRAG supports **pluggable retrieval methods**. It ships with an agentdir-back
 
 ### Virtual layouts via agentdir
 
-AutoRAG navigates your documents through [agentdir](https://github.com/NomaDamas/agentdir) — an agent-optimized, read-only virtual folder layer. Your source directories are mapped into a virtual tree, and AutoRAG's tools (`grep`, `find`, `read`, `ls`, `stat`, plus virtual `mv`/`cp`/`mkdir`/`rmdir`) operate only on virtual paths, so original file paths are never exposed and originals are never moved. Source changes are propagated by `refresh()`, with an opt-in SHA-256 verification pass that catches silent same-size/same-mtime edits. A skeleton `organizer` sub-agent can restructure the virtual layout on demand.
+AutoRAG navigates your documents through [agentdir](https://github.com/NomaDamas/agentdir) — an agent-optimized, read-only virtual folder layer. Your source directories are mapped into a virtual tree, and AutoRAG's primary tools (`grep`, `find`, `read`, `ls`, `stat`, plus virtual `mv`/`cp`/`mkdir`/`rmdir`) operate on virtual paths, so the curated output never exposes original file paths and originals are never moved. `bash` stays available as a real-path fallback when the virtual tree can't reach the content — navigation is agentdir-first, then falls back. Source changes are propagated by `refresh()`, with an opt-in SHA-256 verification pass that catches silent same-size/same-mtime edits. A skeleton `organizer` sub-agent can restructure the virtual layout on demand.
 
 ### Primary target: document collections
 
