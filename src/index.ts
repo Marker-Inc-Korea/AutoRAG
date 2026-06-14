@@ -1,7 +1,10 @@
 export { AutoRAGAgent, type AutoRAGAgentOptions, type PromptSession } from "./agent/agent.ts";
 export { parseInternalMapping } from "./agent/parse-mapping.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
+export * from "./agentdir/workspace.ts";
 export { default as autoragExtension } from "./extension.ts";
 export * from "./manifest/index.ts";
 export * from "./memory/index.ts";
+export * from "./mirror/index.ts";
+export * from "./parser/index.ts";
 export * from "./retrieval/index.ts";

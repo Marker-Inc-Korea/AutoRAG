@@ -10,6 +10,7 @@ import { bootstrapMappings, getWorkspace, refreshWorkspace } from "./agentdir/wo
 import { loadManifests } from "./manifest/loader.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import { renderMemoryContext } from "./memory/renderer.ts";
+import { syncParsedMirrors } from "./mirror/sync.ts";
 import { createOrganizeToolDefinition } from "./organizer/organize-tool.ts";
 
 function firstText(event: ToolResultEvent): string {
@@ -110,7 +111,16 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 		description: "Re-scan source documents into the virtual tree with SHA-256 hash verification (agentdir issue #2).",
 		async handler() {
 			const summary = await refreshWorkspace(agentdirWorkspace(), { verifyHashes: true });
-			pi.appendEntry("autorag_refresh", { summary, verifyHashes: true, timestamp: Date.now() });
+			const parsed = await syncParsedMirrors(agentdirWorkspace(), { root: cwd });
+			pi.appendEntry("autorag_refresh", { summary, parsed, verifyHashes: true, timestamp: Date.now() });
+		},
+	});
+
+	pi.registerCommand("autorag-parse", {
+		description: "Parse supported virtual files into safe markdown mirrors under .autorag/parsed.",
+		async handler() {
+			const parsed = await syncParsedMirrors(agentdirWorkspace(), { root: cwd });
+			pi.appendEntry("autorag_parse", { parsed, timestamp: Date.now() });
 		},
 	});
 
@@ -127,6 +137,7 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 			await bootstrapMappings(workspace, sources);
 		}
 		await refreshWorkspace(workspace, { verifyHashes: false });
+		await syncParsedMirrors(workspace, { root: cwd });
 	});
 
 	pi.on("tool_result", async (event) => {

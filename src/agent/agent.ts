@@ -11,6 +11,7 @@ import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
+import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
 import { createOrganizeTool } from "../organizer/organize-tool.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { AgentdirPosixMethod } from "../retrieval/methods/posix.ts";
@@ -226,7 +227,14 @@ export class AutoRAGAgent {
 	 */
 	async refresh(verifyHashes = false): Promise<RefreshSummary> {
 		const ws = await this.ensureWorkspace();
-		return refreshWorkspace(ws, { verifyHashes });
+		const summary = await refreshWorkspace(ws, { verifyHashes });
+		await this.syncParsedMirrors();
+		return summary;
+	}
+
+	async syncParsedMirrors(): Promise<ParsedMirrorSyncResult> {
+		const ws = await this.ensureWorkspace();
+		return syncParsedMirrors(ws, { root: this.workspaceProjectRoot });
 	}
 
 	/**
