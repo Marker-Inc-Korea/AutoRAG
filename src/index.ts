@@ -5,6 +5,7 @@ export * from "./agentdir/workspace.ts";
 export { default as autoragExtension } from "./extension.ts";
 export * from "./manifest/index.ts";
 export * from "./memory/index.ts";
+export * from "./minsync/index.ts";
 export * from "./mirror/index.ts";
 export * from "./parser/index.ts";
 export * from "./retrieval/index.ts";

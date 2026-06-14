@@ -11,6 +11,7 @@ import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
+import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
 import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
 import { createOrganizeTool } from "../organizer/organize-tool.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -34,6 +35,7 @@ export interface AutoRAGAgentOptions {
 	/** Project root under which the agentdir workspace (`.autorag/workspace`) is created. Defaults to cwd. */
 	workspacePath?: string;
 	tools?: AgentTool[];
+	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
 }
 
 export class AutoRAGAgent {
@@ -50,6 +52,7 @@ export class AutoRAGAgent {
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
+	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -58,6 +61,10 @@ export class AutoRAGAgent {
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
 		this.methodRegistry.register(new AgentdirPosixMethod(() => this.ensureWorkspace()));
+		if (options.minSync) {
+			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
+			this.methodRegistry.register(this.minSyncMethod);
+		}
 
 		const memPath = memoryPath ?? join(homedir(), ".autorag", "memory.json");
 		this.memory = new RetrievalMemory({ storagePath: memPath });
@@ -135,10 +142,7 @@ export class AutoRAGAgent {
 			if (event.type === "message_end" && "message" in event) {
 				const msg = event.message as { role?: string; content?: Array<{ type: string; text?: string }> };
 				if (msg.role === "assistant" && Array.isArray(msg.content)) {
-					lastAssistantText = msg.content
-						.filter((c) => c.type === "text" && c.text)
-						.map((c) => c.text!)
-						.join("\n");
+					lastAssistantText = msg.content.flatMap((c) => (c.type === "text" && c.text ? [c.text] : [])).join("\n");
 				}
 			}
 		});
@@ -229,12 +233,17 @@ export class AutoRAGAgent {
 		const ws = await this.ensureWorkspace();
 		const summary = await refreshWorkspace(ws, { verifyHashes });
 		await this.syncParsedMirrors();
+		await this.syncMinSync();
 		return summary;
 	}
 
 	async syncParsedMirrors(): Promise<ParsedMirrorSyncResult> {
 		const ws = await this.ensureWorkspace();
 		return syncParsedMirrors(ws, { root: this.workspaceProjectRoot });
+	}
+
+	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
+		return this.minSyncMethod?.sync();
 	}
 
 	/**
