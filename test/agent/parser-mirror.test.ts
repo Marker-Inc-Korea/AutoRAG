@@ -66,4 +66,28 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 		expect(parsedMarkdown).toContain(pdfMarker);
 		expect(parsedMarkdown).not.toContain(docs);
 	});
+
+	it("refresh(true) keeps adjacent mirrors when a PDF cannot be parsed", async () => {
+		// Given: a valid text file next to a malformed PDF.
+		const docs = join(root, "docs");
+		mkdirSync(docs, { recursive: true });
+		writeFileSync(join(docs, "note.txt"), "Plain text survives bad PDF\n");
+		writeFileSync(join(docs, "broken.pdf"), Buffer.from("not a pdf"));
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+		});
+
+		// When: the collection refresh reaches the malformed PDF.
+		await expect(agent.refresh(true)).resolves.toBeDefined();
+		const index = loadMirrorIndex(root);
+		const textOutput = index.entries["/docs/note.txt"]?.outputPath;
+
+		// Then: the malformed PDF is skipped and the adjacent text mirror remains searchable.
+		expect(index.entries["/docs/broken.pdf"]).toBeUndefined();
+		expect(textOutput).toBeDefined();
+		if (!textOutput) throw new Error("expected parsed mirror output path for adjacent text");
+		expect(readFileSync(textOutput, "utf8")).toBe("Plain text survives bad PDF\n");
+	});
 });

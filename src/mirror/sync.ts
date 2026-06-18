@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:f
 import { dirname } from "node:path";
 import type { Workspace } from "@nomadamas/agentdir";
 import { createDefaultParserRegistry } from "../parser/defaults.ts";
+import { ParseError } from "../parser/errors.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
+import type { ParseOutput } from "../parser/types.ts";
 import { loadMirrorIndex, type ParsedMirrorEntry, type ParsedMirrorIndex, saveMirrorIndex } from "./index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "./paths.ts";
 
@@ -59,7 +61,16 @@ export async function syncParsedMirrors(
 
 		if (!unchanged) {
 			const bytes = await workspace.readBytes(entry.virtualPath);
-			const parsed = await parser.parse({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes });
+			let parsed: ParseOutput;
+			try {
+				parsed = await parser.parse({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes });
+			} catch (error) {
+				if (!(error instanceof ParseError)) throw error;
+				deleted += removePrevious(options.root, previous, entry.virtualPath);
+				handledPrevious.add(entry.virtualPath);
+				skipped += 1;
+				continue;
+			}
 			writeAtomic(outputPath, parsed.markdown);
 			written += 1;
 		}
