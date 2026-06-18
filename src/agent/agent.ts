@@ -19,6 +19,12 @@ import { AgentdirPosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { parseInternalMapping } from "./parse-mapping.ts";
+import {
+	createEmptySearchDocumentsResponse,
+	recordNumberedFeedback,
+	recordSearchDocumentsSession,
+	type SearchDocumentsResponse,
+} from "./search-documents.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
 export interface PromptSession {
@@ -185,26 +191,28 @@ export class AutoRAGAgent {
 	}
 
 	recordFeedbackByNumbers(sessionId: string, usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
-		const session = this.sessions.get(sessionId);
-		if (!session) return;
-		const feedback: ResultFeedback[] = [];
-		for (const n of usefulNumbers) {
-			const entry = session.registry.get(n);
-			if (entry) feedback.push({ source: entry.source, useful: true });
-		}
-		for (const n of notUsefulNumbers) {
-			const entry = session.registry.get(n);
-			if (entry) feedback.push({ source: entry.source, useful: false });
-		}
-		if (feedback.length > 0) {
-			this.recordResultFeedback(feedback);
-		}
+		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
 	}
 
 	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
 		const sid = sessionId ?? this.lastSessionId;
 		const session = sid ? this.sessions.get(sid) : undefined;
 		return session?.registry ?? new Map();
+	}
+
+	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
+		const sessionId = randomUUID();
+		const trimmedQuery = query.trim();
+		this.lastQuery = trimmedQuery;
+		this.lastSessionId = sessionId;
+		if (trimmedQuery.length === 0) return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions);
+		return recordSearchDocumentsSession(
+			sessionId,
+			trimmedQuery,
+			await this.retrieve(trimmedQuery, options),
+			this.sessions,
+			this.memory,
+		);
 	}
 
 	/**

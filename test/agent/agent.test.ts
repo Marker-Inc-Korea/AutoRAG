@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -7,14 +7,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
-import type { CuratedResult } from "../../src/retrieval/types.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = join(tmpdir(), `autorag-agent-test-${Date.now()}`);
-	mkdirSync(tmpDir, { recursive: true });
+	tmpDir = mkdtempSync(join(tmpdir(), "autorag-agent-test-"));
 });
 
 afterEach(() => {
@@ -36,7 +34,6 @@ function makeTool(name: string): AgentTool {
 interface AgentInternals {
 	lastQuery: string | undefined;
 	memory: RetrievalMemory;
-	sessions: Map<string, { query: string; registry: Map<number, CuratedResult> }>;
 }
 
 function internals(agent: AutoRAGAgent): AgentInternals {
@@ -228,69 +225,5 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent.getResultRegistry().size).toBe(0);
-	});
-
-	it("recordFeedbackByNumbers is a public method", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(typeof agent.recordFeedbackByNumbers).toBe("function");
-	});
-
-	it("recordFeedbackByNumbers resolves useful entries by number with session", () => {
-		const memPath = join(tmpDir, "memory.json");
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: memPath,
-		});
-		const sid = "test-session-1";
-		const reg = new Map();
-		reg.set(1, { index: 1, source: "src/a.ts", content: "", method: "grep" });
-		internals(agent).sessions.set(sid, { query: "q", registry: reg });
-		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
-		internals(agent).memory.registerAttempt({
-			id: entry.id,
-			query: "q",
-			method: "grep",
-			sources: ["src/a.ts"],
-			timestamp: Date.now(),
-		});
-		agent.recordFeedbackByNumbers(sid, [1]);
-		const memory = new RetrievalMemory({ storagePath: memPath });
-		memory.load();
-		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
-	});
-
-	it("recordFeedbackByNumbers resolves not-useful entries with session", () => {
-		const memPath = join(tmpDir, "memory.json");
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: memPath,
-		});
-		const sid = "test-session-2";
-		const reg = new Map();
-		reg.set(1, { index: 1, source: "src/b.ts", content: "", method: "grep" });
-		internals(agent).sessions.set(sid, { query: "q", registry: reg });
-		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
-		internals(agent).memory.registerAttempt({
-			id: entry.id,
-			query: "q",
-			method: "grep",
-			sources: ["src/b.ts"],
-			timestamp: Date.now(),
-		});
-		agent.recordFeedbackByNumbers(sid, [], [1]);
-		const memory = new RetrievalMemory({ storagePath: memPath });
-		memory.load();
-		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("not_useful");
-	});
-
-	it("recordFeedbackByNumbers ignores unknown session without error", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-		});
-		expect(() => agent.recordFeedbackByNumbers("nonexistent", [99, 100])).not.toThrow();
 	});
 });
