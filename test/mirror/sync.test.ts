@@ -12,12 +12,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	bootstrapMappings,
-	clearWorkspaceCache,
-	getWorkspace,
-	refreshWorkspace,
-} from "../../src/agentdir/workspace.ts";
-import {
 	loadMirrorIndex,
 	type ParsedMirrorIndex,
 	parsedMirrorRoot,
@@ -31,13 +25,11 @@ let source: string;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-mirror-test-"));
-	clearWorkspaceCache();
 	source = join(root, "docs");
 	mkdirSync(source, { recursive: true });
 });
 
 afterEach(() => {
-	clearWorkspaceCache();
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -54,10 +46,8 @@ describe("syncParsedMirrors", () => {
 	it("creates real markdown files and an index for supported virtual files", async () => {
 		writeFileSync(join(source, "note.txt"), "Alpha\n");
 		writeFileSync(join(source, "skip.bin"), Buffer.from([0, 1]));
-		const ws = getWorkspace(root);
-		await bootstrapMappings(ws, [source]);
 
-		const result = await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const index = loadMirrorIndex(root);
 		const paths = outputPaths(index);
 
@@ -73,14 +63,11 @@ describe("syncParsedMirrors", () => {
 	it("updates changed content in place", async () => {
 		const file = join(source, "note.md");
 		writeFileSync(file, "Alpha\n");
-		const ws = getWorkspace(root);
-		await bootstrapMappings(ws, [source]);
-		await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const first = loadMirrorIndex(root).entries["/docs/note.md"]?.outputPath;
 
 		writeFileSync(file, "Beta\n");
-		await refreshWorkspace(ws, { verifyHashes: true });
-		const result = await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const second = loadMirrorIndex(root).entries["/docs/note.md"]?.outputPath;
 
 		expect(result.written).toBe(1);
@@ -88,22 +75,41 @@ describe("syncParsedMirrors", () => {
 		expect(readFileSync(requireValue(second, "updated output path"), "utf8")).toBe("Beta\n");
 	});
 
+	it("indexes directories outside the workspace root with stable source-root prefixes", async () => {
+		const externalRoot = mkdtempSync(join(tmpdir(), "autorag-mirror-external-"));
+		try {
+			const externalDocs = join(externalRoot, "docs");
+			mkdirSync(join(externalDocs, "sub"), { recursive: true });
+			writeFileSync(join(externalDocs, "root.txt"), "External root\n");
+			writeFileSync(join(externalDocs, "sub", "note.md"), "External nested\n");
+
+			const result = await syncParsedMirrors({
+				root,
+				searchPaths: [externalDocs],
+				registry: createDefaultParserRegistry(),
+			});
+			const index = loadMirrorIndex(root);
+
+			expect(result.written).toBe(2);
+			expect(Object.keys(index.entries).sort()).toEqual(["/docs/root.txt", "/docs/sub/note.md"]);
+		} finally {
+			rmSync(externalRoot, { recursive: true, force: true });
+		}
+	});
+
 	it("removes stale parsed files and relinks moved files without stale entries", async () => {
 		const keep = join(source, "keep.txt");
 		const move = join(source, "move.txt");
 		writeFileSync(keep, "Keep\n");
 		writeFileSync(move, "Move\n");
-		const ws = getWorkspace(root);
-		await bootstrapMappings(ws, [source]);
-		await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const before = loadMirrorIndex(root);
 		const deletedOutput = before.entries["/docs/keep.txt"]?.outputPath;
 		const oldMoveOutput = before.entries["/docs/move.txt"]?.outputPath;
 
 		unlinkSync(keep);
 		renameSync(move, join(source, "moved.txt"));
-		await refreshWorkspace(ws, { verifyHashes: true });
-		const result = await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const after = loadMirrorIndex(root);
 
 		expect(result.deleted).toBe(2);
@@ -122,8 +128,6 @@ describe("syncParsedMirrors", () => {
 		const outside = join(root, "outside.md");
 		writeFileSync(file, "Alpha\n");
 		writeFileSync(outside, "do not touch\n");
-		const ws = getWorkspace(root);
-		await bootstrapMappings(ws, [source]);
 		saveMirrorIndex(root, {
 			version: 1,
 			entries: {
@@ -139,7 +143,7 @@ describe("syncParsedMirrors", () => {
 			},
 		});
 
-		const result = await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const safeOutput = requireValue(loadMirrorIndex(root).entries["/docs/note.txt"]?.outputPath, "safe output path");
 
 		expect(result.written).toBe(1);
@@ -152,8 +156,6 @@ describe("syncParsedMirrors", () => {
 	it("ignores poisoned stale index output paths when deleting removed files", async () => {
 		const outside = join(root, "outside-stale.md");
 		writeFileSync(outside, "do not delete\n");
-		const ws = getWorkspace(root);
-		await bootstrapMappings(ws, [source]);
 		saveMirrorIndex(root, {
 			version: 1,
 			entries: {
@@ -169,7 +171,7 @@ describe("syncParsedMirrors", () => {
 			},
 		});
 
-		const result = await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const index = loadMirrorIndex(root);
 
 		expect(result.deleted).toBe(1);
@@ -182,8 +184,6 @@ describe("syncParsedMirrors", () => {
 		const outside = join(root, "outside-unsupported.md");
 		writeFileSync(unsupported, Buffer.from([0, 1]));
 		writeFileSync(outside, "do not delete unsupported\n");
-		const ws = getWorkspace(root);
-		await bootstrapMappings(ws, [source]);
 		saveMirrorIndex(root, {
 			version: 1,
 			entries: {
@@ -199,7 +199,7 @@ describe("syncParsedMirrors", () => {
 			},
 		});
 
-		const result = await syncParsedMirrors(ws, { root, registry: createDefaultParserRegistry() });
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const index = loadMirrorIndex(root);
 
 		expect(result.deleted).toBe(1);

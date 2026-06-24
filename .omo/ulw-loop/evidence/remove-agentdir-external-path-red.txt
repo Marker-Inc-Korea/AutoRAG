@@ -1,0 +1,76 @@
+
+> @autorag/librarian@0.1.0 test
+> vitest run --run test/retrieval/posix.test.ts test/mirror/sync.test.ts
+
+
+ RUN  v3.2.4 /Users/jeffrey/Projects-dev/AutoRAG-2.0
+
+ ❯ test/mirror/sync.test.ts (7 tests | 1 failed) 31ms
+   ✓ syncParsedMirrors > creates real markdown files and an index for supported virtual files 12ms
+   ✓ syncParsedMirrors > updates changed content in place 3ms
+   × syncParsedMirrors > indexes directories outside the workspace root with stable source-root prefixes 7ms
+     → expected [ '/docs/root.txt', '/sub/note.md' ] to deeply equal [ '/docs/root.txt', …(1) ]
+   ✓ syncParsedMirrors > removes stale parsed files and relinks moved files without stale entries 4ms
+   ✓ syncParsedMirrors > ignores poisoned index output paths when updating changed files 2ms
+   ✓ syncParsedMirrors > ignores poisoned stale index output paths when deleting removed files 1ms
+   ✓ syncParsedMirrors > ignores poisoned index output paths when dropping unsupported current files 2ms
+ ❯ test/retrieval/posix.test.ts (6 tests | 1 failed) 20ms
+   ✓ PosixMethod > describes itself as an active posix method 2ms
+   ✓ PosixMethod > maps grep hits from real directories to opaque root-relative sources 8ms
+   × PosixMethod > uses stable source-root prefixes for directories outside the workspace root 5ms
+     → expected [ '/docs/root.txt', '/sub/report.md' ] to deeply equal [ '/docs/root.txt', …(1) ]
+   ✓ AutoRAGAgent.retrieve (registry + parallel retriever + merger) > returns merged, non-degenerate results ranked by match count (AC-3) 2ms
+   ✓ AutoRAGAgent.retrieve (registry + parallel retriever + merger) > dedups by virtual source 1ms
+   ✓ memory recording gate (AC-9) > records only search tools (grep/find), not navigation/mutation tools 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/mirror/sync.test.ts > syncParsedMirrors > indexes directories outside the workspace root with stable source-root prefixes
+AssertionError: expected [ '/docs/root.txt', '/sub/note.md' ] to deeply equal [ '/docs/root.txt', …(1) ]
+
+- Expected
++ Received
+
+  [
+    "/docs/root.txt",
+-   "/docs/sub/note.md",
++   "/sub/note.md",
+  ]
+
+ ❯ test/mirror/sync.test.ts:94:46
+     92|
+     93|    expect(result.written).toBe(2);
+     94|    expect(Object.keys(index.entries).sort()).toEqual(["/docs/root.txt"…
+       |                                              ^
+     95|    expect(JSON.stringify(index)).not.toContain(externalRoot);
+     96|   } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/retrieval/posix.test.ts > PosixMethod > uses stable source-root prefixes for directories outside the workspace root
+AssertionError: expected [ '/docs/root.txt', '/sub/report.md' ] to deeply equal [ '/docs/root.txt', …(1) ]
+
+- Expected
++ Received
+
+  [
+    "/docs/root.txt",
+-   "/docs/sub/report.md",
++   "/sub/report.md",
+  ]
+
+ ❯ test/retrieval/posix.test.ts:54:20
+     52|    const sources = results.map((result) => result.source).sort();
+     53|
+     54|    expect(sources).toEqual(["/docs/root.txt", "/docs/sub/report.md"]);
+       |                    ^
+     55|    expect(JSON.stringify(results)).not.toContain(externalRoot);
+     56|   } finally {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 11 passed (13)
+   Start at  17:29:38
+   Duration  504ms (transform 93ms, setup 0ms, collect 327ms, tests 51ms, environment 0ms, prepare 68ms)

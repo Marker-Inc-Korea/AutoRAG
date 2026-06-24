@@ -1,0 +1,9 @@
+{
+  "pass": true,
+  "searched": 1,
+  "answer": "[1] Refund approvals require manager review.",
+  "leakedRoot": false
+}
+cleanup: removed /var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-real-d
+ir-qa-M8uggW
+qa-exit=0

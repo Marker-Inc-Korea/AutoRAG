@@ -3,19 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACTIVE_TOOLS, AGENTDIR_TOOL_NAMES } from "../../src/agentdir/tools.ts";
-import { clearWorkspaceCache } from "../../src/agentdir/workspace.ts";
 import autoragExtension from "../../src/extension.ts";
 
 let cwd: string;
 
 beforeEach(() => {
 	cwd = mkdtempSync(join(tmpdir(), "autorag-ext-"));
-	clearWorkspaceCache();
 });
 
 afterEach(() => {
-	clearWorkspaceCache();
 	rmSync(cwd, { recursive: true, force: true });
 });
 
@@ -65,18 +61,12 @@ describe("autoragExtension", () => {
 		expect(typeof autoragExtension).toBe("function");
 	});
 
-	it("replaces builtin grep/find/read/ls with agentdir tools and registers check_memory", () => {
+	it("keeps Pi builtin tools and registers only check_memory", () => {
 		const { pi, registerTool, handlers } = makePi();
 		autoragExtension(pi);
 
 		const registeredNames = registerTool.mock.calls.map((call) => (call[0] as { name: string }).name);
-		// check_memory + organize + all agentdir tools (same names override builtins grep/find/read/ls)
-		expect(registeredNames).toContain("check_memory");
-		expect(registeredNames).toContain("organize");
-		for (const name of AGENTDIR_TOOL_NAMES) {
-			expect(registeredNames).toContain(name);
-		}
-		expect(registerTool).toHaveBeenCalledTimes(AGENTDIR_TOOL_NAMES.length + 2);
+		expect(registeredNames).toEqual(["check_memory"]);
 
 		const events = Object.keys(handlers);
 		expect(events).toContain("session_start");
@@ -85,7 +75,7 @@ describe("autoragExtension", () => {
 		expect(events).toContain("message_end");
 	});
 
-	it("sets the active tool surface to ACTIVE_TOOLS (agentdir-first + bash, no editors) (AC-5)", async () => {
+	it("sets the active tool surface to Pi builtins plus bash and check_memory", async () => {
 		const { pi, setActiveTools, handlers } = makePi();
 		autoragExtension(pi);
 
@@ -93,19 +83,18 @@ describe("autoragExtension", () => {
 
 		expect(setActiveTools).toHaveBeenCalledTimes(1);
 		const requested = setActiveTools.mock.calls[0][0] as string[];
-		expect([...requested].sort()).toEqual([...ACTIVE_TOOLS].sort());
+		expect([...requested].sort()).toEqual(["bash", "check_memory", "find", "grep", "ls", "read"].sort());
 		expect(requested).toContain("bash");
 		for (const banned of ["edit", "write"]) {
 			expect(requested).not.toContain(banned);
 		}
 	});
 
-	it("registers an autorag-refresh command that hash-verifies (issue #2 / AC-7)", async () => {
+	it("registers an autorag-refresh command that parses real source directories", async () => {
 		const { pi, commands, handlers, appendEntry } = makePi();
 		autoragExtension(pi);
 		expect(typeof commands["autorag-refresh"]).toBe("function");
 
-		// project cwd with a source mapped via .autorag/sources.json
 		const docs = join(cwd, "docs");
 		mkdirSync(docs, { recursive: true });
 		const file = join(docs, "x.txt");
@@ -116,7 +105,6 @@ describe("autoragExtension", () => {
 
 		await handlers.session_start({}, { cwd });
 
-		// same-size + same-mtime content swap
 		const before = statSync(file, { bigint: true });
 		writeFileSync(file, "BBBB\n");
 		expect(statSync(file, { bigint: true }).size).toBe(before.size);
@@ -126,6 +114,6 @@ describe("autoragExtension", () => {
 
 		const refreshEntry = appendEntry.mock.calls.find((c: unknown[]) => c[0] === "autorag_refresh");
 		expect(refreshEntry).toBeDefined();
-		expect((refreshEntry?.[1] as { summary: { refreshed: number } }).summary.refreshed).toBeGreaterThanOrEqual(1);
+		expect((refreshEntry?.[1] as { parsed: { written: number } }).parsed.written).toBe(1);
 	});
 });

@@ -55,11 +55,11 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with an agentdir-backed `posix` method (content search over the virtual document tree) wired through the `RetrievalMethodRegistry`, and the architecture is ready for vector, BM25, and hybrid backends. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
+AutoRAG supports **pluggable retrieval methods**. It ships with a real-directory `posix` method wired through the `RetrievalMethodRegistry`, and the architecture is ready for vector, BM25, and hybrid backends. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
 
-### Virtual layouts via agentdir
+### Real directory access
 
-AutoRAG navigates your documents through [agentdir](https://github.com/NomaDamas/agentdir) — an agent-optimized, read-only virtual folder layer. Your source directories are mapped into a virtual tree, and AutoRAG's primary tools (`grep`, `find`, `read`, `ls`, `stat`, plus virtual `mv`/`cp`/`mkdir`/`rmdir`) operate on virtual paths, so the curated output never exposes original file paths and originals are never moved. `bash` stays available as a real-path fallback when the virtual tree can't reach the content — navigation is agentdir-first, then falls back. Source changes are propagated by `refresh()`, with an opt-in SHA-256 verification pass that catches silent same-size/same-mtime edits. A skeleton `organizer` sub-agent can restructure the virtual layout on demand.
+AutoRAG reads configured source directories directly. In extension mode it leaves Pi's built-in `grep`, `find`, `read`, and `ls` tools active instead of replacing them with a virtual filesystem layer. Programmatic retrieval still returns opaque root-relative source identifiers for feedback and curation, while MinSync continues to index parsed markdown mirrors under `.autorag`.
 
 ### Primary target: document collections
 

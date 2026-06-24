@@ -3,9 +3,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { RefreshSummary, Workspace } from "@nomadamas/agentdir";
-import { createAgentdirTools, SEARCH_TOOLS } from "../agentdir/tools.ts";
-import { bootstrapMappings, getWorkspace, refreshWorkspace } from "../agentdir/workspace.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
@@ -13,9 +10,8 @@ import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
 import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
-import { createOrganizeTool } from "../organizer/organize-tool.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-import { AgentdirPosixMethod } from "../retrieval/methods/posix.ts";
+import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { parseInternalMapping } from "./parse-mapping.ts";
@@ -26,6 +22,8 @@ import {
 	type SearchDocumentsResponse,
 } from "./search-documents.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+
+const SEARCH_TOOLS = ["grep", "find"] as const;
 
 export interface PromptSession {
 	sessionId: string;
@@ -38,7 +36,6 @@ export interface AutoRAGAgentOptions {
 	searchPaths: string[];
 	manifestDir?: string;
 	memoryPath?: string;
-	/** Project root under which the agentdir workspace (`.autorag/workspace`) is created. Defaults to cwd. */
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
@@ -53,8 +50,6 @@ export class AutoRAGAgent {
 
 	private readonly searchPaths: string[];
 	private readonly workspaceProjectRoot: string;
-	private workspaceHandle: Workspace | undefined;
-	private workspaceReady: Promise<void> | undefined;
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
@@ -66,7 +61,7 @@ export class AutoRAGAgent {
 
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
-		this.methodRegistry.register(new AgentdirPosixMethod(() => this.ensureWorkspace()));
+		this.methodRegistry.register(new PosixMethod({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths }));
 		if (options.minSync) {
 			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
@@ -77,9 +72,7 @@ export class AutoRAGAgent {
 		this.memory.load();
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const agentdirTools = createAgentdirTools(() => this.ensureWorkspace());
-		const organizeTool = createOrganizeTool(() => this.workspaceProjectRoot);
-		const tools = [...agentdirTools, organizeTool, ...(options.tools ?? []), checkMemoryTool];
+		const tools = [...(options.tools ?? []), checkMemoryTool];
 		const toolNames = tools.map((tool) => tool.name);
 		const systemPrompt = buildSystemPrompt({
 			mode: "standalone",
@@ -215,39 +208,14 @@ export class AutoRAGAgent {
 		);
 	}
 
-	/**
-	 * Open-or-init the agentdir workspace and map this agent's searchPaths into
-	 * its virtual tree (idempotent; runs once). Lazy so construction has no
-	 * filesystem side effects.
-	 */
-	private async ensureWorkspace(): Promise<Workspace> {
-		if (!this.workspaceHandle) {
-			this.workspaceHandle = getWorkspace(this.workspaceProjectRoot);
-		}
-		if (!this.workspaceReady) {
-			const ws = this.workspaceHandle;
-			this.workspaceReady = bootstrapMappings(ws, this.searchPaths).then(() => undefined);
-		}
-		await this.workspaceReady;
-		return this.workspaceHandle;
-	}
-
-	/**
-	 * Detect source changes and propagate them to the virtual tree. Pass
-	 * `verifyHashes: true` for an additional SHA-256 pass that catches
-	 * same-size/same-mtime content swaps (agentdir issue #2).
-	 */
-	async refresh(verifyHashes = false): Promise<RefreshSummary> {
-		const ws = await this.ensureWorkspace();
-		const summary = await refreshWorkspace(ws, { verifyHashes });
-		await this.syncParsedMirrors();
+	async refresh(force = false): Promise<ParsedMirrorSyncResult> {
+		const summary = await this.syncParsedMirrors(force);
 		await this.syncMinSync();
 		return summary;
 	}
 
-	async syncParsedMirrors(): Promise<ParsedMirrorSyncResult> {
-		const ws = await this.ensureWorkspace();
-		return syncParsedMirrors(ws, { root: this.workspaceProjectRoot });
+	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
+		return syncParsedMirrors({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths, force });
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
@@ -256,12 +224,11 @@ export class AutoRAGAgent {
 
 	/**
 	 * Programmatic retrieval across all registered methods (currently the
-	 * agentdir `posix` method), merged via min-max normalization + source
+	 * real-directory `posix` method), merged via min-max normalization + source
 	 * dedup. Activates the RetrievalMethodRegistry / ParallelRetriever /
-	 * ResultMerger pipeline. Returns virtual-path-sourced results.
+	 * ResultMerger pipeline. Returns opaque root-relative sourced results.
 	 */
 	async retrieve(query: string, options: RetrievalOptions = {}): Promise<RetrievalResult[]> {
-		await this.ensureWorkspace();
 		const byMethod = await this.retriever.retrieve(this.methodRegistry.list(), query, options);
 		return this.merger.merge(byMethod, { topK: options.topK ?? 20, dedup: true });
 	}

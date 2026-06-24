@@ -1,17 +1,15 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ToolResultEvent } from "@earendil-works/pi-coding-agent";
-import type { Workspace } from "@nomadamas/agentdir";
 import { Type } from "typebox";
 import { parseInternalMapping } from "./agent/parse-mapping.ts";
 import { buildSystemPrompt } from "./agent/system-prompt.ts";
-import { ACTIVE_TOOLS, AGENTDIR_TOOL_NAMES, createAgentdirToolDefinitions } from "./agentdir/tools.ts";
-import { bootstrapMappings, getWorkspace, refreshWorkspace } from "./agentdir/workspace.ts";
 import { loadManifests } from "./manifest/loader.ts";
 import { RetrievalMemory } from "./memory/memory.ts";
 import { renderMemoryContext } from "./memory/renderer.ts";
 import { syncParsedMirrors } from "./mirror/sync.ts";
-import { createOrganizeToolDefinition } from "./organizer/organize-tool.ts";
+
+const ACTIVE_TOOLS = ["grep", "find", "read", "ls", "check_memory", "bash"] as const;
 
 function firstText(event: ToolResultEvent): string {
 	return event.content
@@ -34,11 +32,6 @@ function queryFromInput(input: Record<string, unknown>): string {
 	return "unknown";
 }
 
-/**
- * Load optional source directories to map into the virtual tree, from
- * `<cwd>/.autorag/sources.json` (a JSON array of directory paths). Missing or
- * malformed files yield no mappings.
- */
 function loadSources(cwd: string): string[] {
 	const sourcesPath = join(cwd, ".autorag", "sources.json");
 	if (!existsSync(sourcesPath)) return [];
@@ -52,8 +45,8 @@ function loadSources(cwd: string): string[] {
 
 export default function autoragExtension(pi: ExtensionAPI): void {
 	let memory: RetrievalMemory | undefined;
-	let workspace: Workspace | undefined;
 	let cwd = process.cwd();
+	let sources: string[] = [];
 
 	pi.registerTool({
 		name: "check_memory",
@@ -94,32 +87,18 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	// Replace Pi's builtin grep/find/read/ls with agentdir virtual-path tools
-	// (same names override builtins; setActiveTools below closes the surface).
-	const agentdirWorkspace = (): Workspace => {
-		if (!workspace) workspace = getWorkspace(cwd);
-		return workspace;
-	};
-	for (const tool of createAgentdirToolDefinitions(agentdirWorkspace)) {
-		pi.registerTool(tool);
-	}
-	pi.registerTool(createOrganizeToolDefinition(() => cwd));
-
-	// Opt-in hash-verified refresh: detects same-size/same-mtime content swaps
-	// (agentdir issue #2) that the default mtime+size refresh on session_start misses.
 	pi.registerCommand("autorag-refresh", {
-		description: "Re-scan source documents into the virtual tree with SHA-256 hash verification (agentdir issue #2).",
+		description: "Re-parse supported files from configured source directories into .autorag/parsed.",
 		async handler() {
-			const summary = await refreshWorkspace(agentdirWorkspace(), { verifyHashes: true });
-			const parsed = await syncParsedMirrors(agentdirWorkspace(), { root: cwd });
-			pi.appendEntry("autorag_refresh", { summary, parsed, verifyHashes: true, timestamp: Date.now() });
+			const parsed = await syncParsedMirrors({ root: cwd, searchPaths: sources, force: true });
+			pi.appendEntry("autorag_refresh", { parsed, timestamp: Date.now() });
 		},
 	});
 
 	pi.registerCommand("autorag-parse", {
-		description: "Parse supported virtual files into safe markdown mirrors under .autorag/parsed.",
+		description: "Parse supported source files into safe markdown mirrors under .autorag/parsed.",
 		async handler() {
-			const parsed = await syncParsedMirrors(agentdirWorkspace(), { root: cwd });
+			const parsed = await syncParsedMirrors({ root: cwd, searchPaths: sources });
 			pi.appendEntry("autorag_parse", { parsed, timestamp: Date.now() });
 		},
 	});
@@ -131,13 +110,8 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 		memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
 
-		workspace = getWorkspace(cwd);
-		const sources = loadSources(cwd);
-		if (sources.length > 0) {
-			await bootstrapMappings(workspace, sources);
-		}
-		await refreshWorkspace(workspace, { verifyHashes: false });
-		await syncParsedMirrors(workspace, { root: cwd });
+		sources = loadSources(cwd);
+		await syncParsedMirrors({ root: cwd, searchPaths: sources });
 	});
 
 	pi.on("tool_result", async (event) => {
@@ -162,14 +136,12 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 			memory.load();
 		}
 
-		// Set the agent tool surface: agentdir virtual-path tools are primary,
-		// bash stays as a real-path fallback; mutating editors stay excluded.
 		pi.setActiveTools([...ACTIVE_TOOLS]);
 
 		const manifests = loadManifests(join(ctx.cwd, ".autorag", "manifests"));
 		const systemPrompt = buildSystemPrompt({
 			mode: "extension",
-			toolNames: [...AGENTDIR_TOOL_NAMES, "check_memory", "bash"],
+			toolNames: [...ACTIVE_TOOLS],
 			memoryEntries: memory.getEntries(),
 			manifests,
 		});

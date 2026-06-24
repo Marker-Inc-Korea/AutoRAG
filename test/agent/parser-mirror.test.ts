@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { clearWorkspaceCache } from "../../src/agentdir/workspace.ts";
 import { loadMirrorIndex } from "../../src/mirror/index.ts";
 import { createMinimalPdfBuffer } from "../fixtures/minimal-pdf.ts";
 
@@ -13,11 +12,9 @@ const pdfMarker = "OpenDataLoader AutoRAG PDF marker refund policy alpha";
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-agent-mirror-"));
-	clearWorkspaceCache();
 });
 
 afterEach(() => {
-	clearWorkspaceCache();
 	rmSync(root, { recursive: true, force: true });
 });
 

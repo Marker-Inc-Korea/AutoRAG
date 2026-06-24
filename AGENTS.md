@@ -53,22 +53,24 @@ AutoRAG is designed for **multi-method retrieval** — different methods for dif
 
 | Method | Status | Best for |
 |--------|--------|----------|
-| posix (agentdir virtual tree) | Active | Plain text, docs, config files — content search over the virtual layout |
-| find (agentdir virtual tree) | Active | File discovery by name/glob over the virtual layout |
-| Vector (semantic) | Planned | Dense documents, conceptual queries, "find similar to X" |
+| posix (real directories) | Active | Plain text, docs, config files — content search over configured source directories |
+| find (Pi built-in real directories) | Active | File discovery by name/glob over configured source directories |
+| MinSync vector (semantic) | Active | Incrementally indexed semantic retrieval over parsed document mirrors |
+| Vector (semantic) | Planned | Other dense-document backends, conceptual queries, "find similar to X" |
 | BM25 (keyword) | Planned | Keyword-heavy search, term frequency ranking |
 | Hybrid (vector+BM25) | Planned | Best-of-both fusion with score normalization |
 
-The `RetrievalMethodRegistry` and `ResultMerger` are live: the agentdir `posix` method (`src/retrieval/methods/posix.ts`) is registered and routed through `ParallelRetriever` + `ResultMerger`. New methods (vector/BM25/hybrid) implement the `RetrievalMethod` interface and plug into the same pipeline.
+The `RetrievalMethodRegistry` and `ResultMerger` are live: the real-directory `posix` method (`src/retrieval/methods/posix.ts`) is registered and routed through `ParallelRetriever` + `ResultMerger`. New methods (vector/BM25/hybrid) implement the `RetrievalMethod` interface and plug into the same pipeline.
 
-## agentdir Integration
+MinSync is one vector retrieval method in that pipeline, especially useful for incremental indexing and semantic search. It should not replace real-directory `ls`/`grep`/`find` or become "the" default search surface. The AutoRAG orchestrator agent should consult memory and the query shape, then use every appropriate tool path together: Pi built-in navigation/content search for exact text, filenames, and layout-aware exploration; MinSync for indexed semantic evidence; and future BM25/hybrid methods when those are available. Each path is a tool/retrieval method feeding curation, not a privileged backend that hides the others.
 
-AutoRAG navigates document collections through [agentdir](https://github.com/NomaDamas/agentdir), an agent-optimized **read-only virtual folder** layer (consumed via the `@nomadamas/agentdir` Node binding). Source directories are mapped into a virtual tree at `.autorag/workspace`; the agentdir tools surface only virtual paths (e.g. `/docs/report.md`), and the curated output never exposes source filesystem paths. `bash` remains available as a fallback for real-path operations the virtual tree can't serve.
+## Directory Access
 
-- **Tool surface (agentdir-first + bash fallback)** — the Pi built-in `grep/find/read/ls` are overridden by agentdir virtual-path tools (`ls`=rglob, `read`=readBytes, `stat`=stat, `grep`=rglob+readBytes+regex), plus virtual ops `mv`/`cp`/`mkdir`/`rmdir` that rearrange the layout without touching source files. `setActiveTools(ACTIVE_TOOLS)` makes the agentdir tools the primary navigation surface and keeps `bash` available as a real-path fallback (real `grep`/`cat`/`cd` for content the virtual tree can't reach); mutating editors (`edit`/`write`) stay excluded since AutoRAG is read-only. Path opacity is preserved in the curated **output** (no paths in `<results>`/`<answer>`), not by removing the fallback.
-- **One grep core, two consumers** — `src/agentdir/grep-core.ts` backs both the `grep` tool and the `posix` `RetrievalMethod` (score = matchCount + 1/(1+depth)).
-- **Change tracking** — `refresh()` runs on session start; opt-in `refreshWithHashVerification(true)` (the `autorag-refresh` command / `AutoRAGAgent.refresh(true)`) adds a SHA-256 pass that catches same-size/same-mtime content swaps (agentdir issue #2).
-- **Organizer sub-agent** — a skeleton `organizer` agent (markdown definition) is delegated to via the `organize` tool (child-`pi` spawn, opt-in behind `AUTORAG_E2E_SPAWN=1`); it reorganizes the virtual layout with agentdir virtual ops. Concrete pipeline logic is deferred.
+AutoRAG now navigates document collections through normal source directories. The extension keeps Pi's built-in `grep`, `find`, `read`, and `ls` tools active and uses `bash` as the real-path fallback. Programmatic retrieval and parsed mirror indexing still use opaque root-relative source identifiers such as `/docs/report.md` for curation and feedback mapping, but no virtual workspace layer is created.
+
+- **Tool surface (Pi built-ins + bash fallback)** — `setActiveTools()` keeps `grep`, `find`, `read`, `ls`, `check_memory`, and `bash` available. Mutating editors (`edit`/`write`) stay excluded because AutoRAG is read-only.
+- **Real-directory posix method** — `src/retrieval/methods/posix.ts` recursively scans configured `searchPaths`, scores files by match count and depth, and returns opaque root-relative source identifiers.
+- **Parsed mirrors** — `AutoRAGAgent.refresh()` and `autorag-refresh` parse supported files directly from configured source directories into `.autorag/parsed`; MinSync indexes those parsed mirrors unchanged.
 
 ## Usage
 
@@ -132,11 +134,4 @@ Over time, AutoRAG learns which retrieval methods work best for which types of q
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
-| `src/retrieval/methods/posix.ts` | agentdir-backed `posix` RetrievalMethod (wraps the shared grep core) |
-| `src/agentdir/workspace.ts` | agentdir Workspace lifecycle: open/init, mapping bootstrap, refresh |
-| `src/agentdir/grep-core.ts` | Pure virtual-tree grep core shared by the grep tool and posix method |
-| `src/agentdir/tools.ts` | agentdir virtual-path tools + `ACTIVE_TOOLS`/`AGENTDIR_TOOL_NAMES`/`SEARCH_TOOLS` |
-| `src/agentdir/assert-no-source-path.ts` | Path-opacity guard (no source path in agent-facing output) |
-| `src/organizer/agents.ts` | Organizer agent-definition discovery (frontmatter markdown) |
-| `src/organizer/agents/organizer.md` | Bundled `organizer` sub-agent definition |
-| `src/organizer/organize-tool.ts` | Spawn-tolerant `organize` delegation tool (child-`pi`) |
+| `src/retrieval/methods/posix.ts` | Real-directory `posix` RetrievalMethod |

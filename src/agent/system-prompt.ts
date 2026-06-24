@@ -25,17 +25,17 @@ function readToolName(config: SystemPromptConfig): string {
 function searchToolGuidance(config: SystemPromptConfig): string {
 	const lines: string[] = [];
 	if (toolAvailable(config, "grep"))
-		lines.push("- **grep**: content search (regex/literal) over the virtual document tree");
-	if (toolAvailable(config, "find")) lines.push("- **find**: file discovery by name/glob in the virtual tree");
-	if (toolAvailable(config, "read")) lines.push("- **read**: read a file by its virtual path before curation");
-	if (toolAvailable(config, "ls")) lines.push("- **ls**: inspect virtual directory structure when scope is unclear");
-	if (toolAvailable(config, "stat")) lines.push("- **stat**: inspect a virtual entry's size/type");
+		lines.push("- **grep**: content search (regex/literal) over configured source directories");
+	if (toolAvailable(config, "find")) lines.push("- **find**: file discovery by name/glob in source directories");
+	if (toolAvailable(config, "read")) lines.push("- **read**: read a file before curation");
+	if (toolAvailable(config, "ls")) lines.push("- **ls**: inspect directory structure when scope is unclear");
+	if (toolAvailable(config, "stat")) lines.push("- **stat**: inspect a file's size/type");
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
 		lines.push(`- **${name}**: caller-provided retrieval tool`);
 	}
 	if (toolAvailable(config, "bash")) {
 		lines.push(
-			"- **bash**: FALLBACK only — real-path search/navigation (grep, cat, ls, cd, etc.) for content the agentdir virtual tree can't reach. Prefer the agentdir tools above first; reach for bash only when they can't satisfy the need.",
+			"- **bash**: real-path search/navigation fallback (grep, cat, ls, cd, etc.) when the focused tools cannot satisfy the need.",
 		);
 	}
 	if (lines.length === 0) {
@@ -66,7 +66,7 @@ You are invoked by a parent agent or user who needs specific information found. 
 
 	const methodsSection = `## Active Retrieval Tools
 
-Use these tools to fulfill search requests. **agentdir virtual-path tools are the primary navigation surface — always prefer them.** Start with specific content search, broaden to file discovery, and only fall back to bash (real-path commands) when the virtual tools genuinely can't reach the content.
+Use these tools to fulfill search requests over real source directories. Start with specific content search, broaden to file discovery, and use bash when the focused tools cannot satisfy the need.
 
 ${searchToolGuidance(config)}`;
 

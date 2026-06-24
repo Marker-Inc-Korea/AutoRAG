@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { clearWorkspaceCache } from "../../src/agentdir/workspace.ts";
 
 let root: string;
 let docs: string;
@@ -17,11 +16,9 @@ beforeEach(() => {
 	minsyncWorkspace = join(root, ".autorag", "minsync");
 	mkdirSync(docs, { recursive: true });
 	mkdirSync(minsyncWorkspace, { recursive: true });
-	clearWorkspaceCache();
 });
 
 afterEach(() => {
-	clearWorkspaceCache();
 	rmSync(root, { recursive: true, force: true });
 });
 

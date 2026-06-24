@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import type { Workspace } from "@nomadamas/agentdir";
+import { opendir, readFile, stat } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
 import { createDefaultParserRegistry } from "../parser/defaults.ts";
 import { ParseError } from "../parser/errors.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
@@ -11,7 +12,9 @@ import { parsedMirrorIndexPath, parsedOutputPath } from "./paths.ts";
 
 export interface ParsedMirrorSyncOptions {
 	readonly root: string;
+	readonly searchPaths: readonly string[];
 	readonly registry?: ParserRegistry;
+	readonly force?: boolean;
 }
 
 export interface ParsedMirrorSyncResult {
@@ -29,12 +32,9 @@ interface CurrentEntry {
 	readonly mtimeNs: number;
 }
 
-export async function syncParsedMirrors(
-	workspace: Workspace,
-	options: ParsedMirrorSyncOptions,
-): Promise<ParsedMirrorSyncResult> {
+export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
 	const registry = options.registry ?? createDefaultParserRegistry();
-	const current = await listCurrentFiles(workspace);
+	const current = await listCurrentFiles(options.searchPaths);
 	const previous = loadMirrorIndex(options.root);
 	const nextEntries: Record<string, ParsedMirrorEntry> = {};
 	const handledPrevious = new Set<string>();
@@ -54,13 +54,14 @@ export async function syncParsedMirrors(
 		const previousEntry = previous.entries[entry.virtualPath];
 		const outputPath = parsedOutputPath(options.root, entry.virtualPath);
 		const unchanged =
+			!options.force &&
 			previousEntry?.sourceMtimeNs === entry.mtimeNs &&
 			previousEntry.sourceSizeBytes === entry.sizeBytes &&
 			previousEntry.parserName === parser.name &&
 			existsSync(outputPath);
 
 		if (!unchanged) {
-			const bytes = await workspace.readBytes(entry.virtualPath);
+			const bytes = await readFile(entry.sourcePath);
 			let parsed: ParseOutput;
 			try {
 				parsed = await parser.parse({ virtualPath: entry.virtualPath, sourcePath: entry.sourcePath, bytes });
@@ -104,20 +105,33 @@ export async function syncParsedMirrors(
 	};
 }
 
-async function listCurrentFiles(workspace: Workspace): Promise<CurrentEntry[]> {
-	const mapping = await workspace.exportMapping(true);
+async function listCurrentFiles(searchPaths: readonly string[]): Promise<CurrentEntry[]> {
 	const entries: CurrentEntry[] = [];
-	for (const [virtualPath, sourcePath] of Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))) {
-		const stat = await workspace.stat(virtualPath);
-		if (stat.entryType.toLowerCase() !== "file") continue;
+	for (const sourceRoot of planSourceRoots(searchPaths)) {
+		await collectFiles(sourceRoot, sourceRoot.rootPath, entries);
+	}
+	entries.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath));
+	return entries;
+}
+
+async function collectFiles(sourceRoot: SourceRoot, directory: string, entries: CurrentEntry[]): Promise<void> {
+	const dir = await opendir(directory);
+	for await (const entry of dir) {
+		if (entry.name === ".autorag" || entry.name === ".git" || entry.name === "node_modules") continue;
+		const sourcePath = resolve(directory, entry.name);
+		if (entry.isDirectory()) {
+			await collectFiles(sourceRoot, sourcePath, entries);
+			continue;
+		}
+		if (!entry.isFile()) continue;
+		const fileStat = await stat(sourcePath, { bigint: true });
 		entries.push({
-			virtualPath,
+			virtualPath: sourceIdentifier(sourceRoot, sourcePath),
 			sourcePath,
-			sizeBytes: stat.sizeBytes,
-			mtimeNs: stat.mtimeNs,
+			sizeBytes: Number(fileStat.size),
+			mtimeNs: Number(fileStat.mtimeNs),
 		});
 	}
-	return entries;
 }
 
 function removePrevious(root: string, index: ParsedMirrorIndex, virtualPath: string): number {
