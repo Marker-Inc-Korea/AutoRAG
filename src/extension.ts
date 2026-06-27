@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ToolResultEvent } from "@earendil-works/pi-coding-agent";
@@ -10,6 +11,8 @@ import { renderMemoryContext } from "./memory/renderer.ts";
 import { syncParsedMirrors } from "./mirror/sync.ts";
 
 const ACTIVE_TOOLS = ["grep", "find", "read", "ls", "check_memory", "bash"] as const;
+const JIKJI_MEDIA_ENV_KEY = "JIKJI_ENABLE_MEDIA_INDEX";
+const JIKJI_PREPARE_TIMEOUT_MS = 10_000;
 
 function firstText(event: ToolResultEvent): string {
 	return event.content
@@ -30,6 +33,100 @@ function queryFromInput(input: Record<string, unknown>): string {
 		if (typeof value === "string" && value.length > 0) return value;
 	}
 	return "unknown";
+}
+interface JikjiRefreshConfig {
+	readonly enabled: true;
+	readonly binaryPath?: string;
+	readonly includeHidden?: boolean;
+	readonly includeSensitive?: boolean;
+	readonly parseTimeout?: number;
+	readonly maxFiles?: number;
+	readonly staleAfterSeconds?: number;
+	readonly timeoutMs?: number;
+	readonly exclude?: readonly string[];
+}
+
+function loadJikjiConfig(cwd: string): JikjiRefreshConfig | undefined {
+	const configPath = join(cwd, ".autorag", "jikji.json");
+	if (!existsSync(configPath)) return undefined;
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+		if (!isRecord(parsed) || parsed.enabled !== true) return undefined;
+		return {
+			enabled: true,
+			binaryPath: typeof parsed.binaryPath === "string" ? parsed.binaryPath : undefined,
+			includeHidden: parsed.includeHidden === true,
+			includeSensitive: parsed.includeSensitive === true,
+			parseTimeout: numberOption(parsed.parseTimeout),
+			maxFiles: numberOption(parsed.maxFiles),
+			staleAfterSeconds: numberOption(parsed.staleAfterSeconds),
+			timeoutMs: numberOption(parsed.timeoutMs),
+			exclude: stringArrayOption(parsed.exclude),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function numberOption(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringArrayOption(value: unknown): readonly string[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return undefined;
+	return value;
+}
+
+function prepareJikjiSource(
+	config: JikjiRefreshConfig,
+	source: string,
+): Promise<{ status: "success" | "failed"; source: string; code: number | null }> {
+	return new Promise((resolve) => {
+		const args = ["prepare", source, "--json"];
+		if (config.includeHidden) args.push("--include-hidden");
+		if (config.includeSensitive) args.push("--include-sensitive");
+		if (config.parseTimeout !== undefined) args.push("--parse-timeout", String(config.parseTimeout));
+		if (config.maxFiles !== undefined) args.push("--max-files", String(config.maxFiles));
+		if (config.staleAfterSeconds !== undefined) args.push("--stale-after-seconds", String(config.staleAfterSeconds));
+		for (const pattern of config.exclude ?? []) args.push("--exclude", pattern);
+		const child = spawn(config.binaryPath ?? "jikji", args, {
+			env: controlledJikjiEnv(),
+			stdio: ["ignore", "ignore", "ignore"],
+		});
+		let settled = false;
+		const timeout = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			if (!child.killed) child.kill("SIGTERM");
+			resolve({ status: "failed", source, code: null });
+		}, config.timeoutMs ?? JIKJI_PREPARE_TIMEOUT_MS);
+		child.on("error", () => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			resolve({ status: "failed", source, code: null });
+		});
+		child.on("close", (code) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeout);
+			resolve({ status: code === 0 ? "success" : "failed", source, code });
+		});
+	});
+}
+
+function controlledJikjiEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (key !== JIKJI_MEDIA_ENV_KEY && value !== undefined) env[key] = value;
+	}
+	delete env[JIKJI_MEDIA_ENV_KEY];
+	return env;
 }
 
 function loadSources(cwd: string): string[] {
@@ -100,6 +197,19 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 		async handler() {
 			const parsed = await syncParsedMirrors({ root: cwd, searchPaths: sources });
 			pi.appendEntry("autorag_parse", { parsed, timestamp: Date.now() });
+		},
+	});
+
+	pi.registerCommand("autorag-jikji-refresh", {
+		description: "Prepare configured source directories with optional Jikji CLI integration.",
+		async handler() {
+			const config = loadJikjiConfig(cwd);
+			if (!config || sources.length === 0) return;
+			const results = [];
+			for (const source of sources) {
+				results.push(await prepareJikjiSource(config, source));
+			}
+			pi.appendEntry("autorag_jikji_refresh", { results, timestamp: Date.now() });
 		},
 	});
 

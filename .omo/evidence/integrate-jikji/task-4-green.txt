@@ -1,0 +1,11 @@
+
+ RUN  v3.2.4 /Users/jeffrey/Projects-dev/AutoRAG-2.0
+
+ ✓ test/extension/extension.test.ts (6 tests) 388ms
+   ✓ autoragExtension > registers autorag-jikji-refresh when explicit config enables Jikji  377ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  18:34:51
+   Duration  668ms (transform 51ms, setup 0ms, collect 112ms, tests 388ms, environment 0ms, prepare 26ms)
+

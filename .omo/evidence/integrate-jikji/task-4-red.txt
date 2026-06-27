@@ -1,0 +1,18 @@
+
+ RUN  v3.2.4 /Users/jeffrey/Projects-dev/AutoRAG-2.0
+
+ ❯ test/extension/extension.test.ts (6 tests | 2 failed) 14ms
+   ✓ autoragExtension > is a function 1ms
+   ✓ autoragExtension > keeps Pi builtin tools and registers only check_memory 2ms
+   ✓ autoragExtension > sets the active tool surface to Pi builtins plus bash and check_memory 1ms
+   ✓ autoragExtension > registers an autorag-refresh command that parses real source directories 5ms
+   × autoragExtension > registers autorag-jikji-refresh when explicit config enables Jikji 3ms
+     → commands.autorag-jikji-refresh is not a function
+   × autoragExtension > ignores invalid Jikji config without changing active tools 1ms
+     → commands.autorag-jikji-refresh is not a function
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  18:33:03
+   Duration  321ms (transform 49ms, setup 0ms, collect 109ms, tests 14ms, environment 0ms, prepare 27ms)
+

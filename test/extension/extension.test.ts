@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -115,5 +115,78 @@ describe("autoragExtension", () => {
 		const refreshEntry = appendEntry.mock.calls.find((c: unknown[]) => c[0] === "autorag_refresh");
 		expect(refreshEntry).toBeDefined();
 		expect((refreshEntry?.[1] as { parsed: { written: number } }).parsed.written).toBe(1);
+	});
+
+	it("registers autorag-jikji-refresh when explicit config enables Jikji", async () => {
+		const { pi, commands, handlers, appendEntry } = makePi();
+		autoragExtension(pi);
+		const docs = join(cwd, "docs");
+		const binaryPath = join(cwd, "fake-jikji.mjs");
+		const logPath = join(cwd, "jikji-prepare.jsonl");
+		mkdirSync(docs, { recursive: true });
+		mkdirSync(join(cwd, ".autorag"), { recursive: true });
+		writeFileSync(join(cwd, ".autorag", "sources.json"), JSON.stringify([docs]));
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, envMedia: process.env.JIKJI_ENABLE_MEDIA_INDEX ?? null }) + "\\n");
+console.log(JSON.stringify({ prepared: true }));
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		writeFileSync(
+			join(cwd, ".autorag", "jikji.json"),
+			JSON.stringify({
+				enabled: true,
+				binaryPath,
+				includeHidden: true,
+				includeSensitive: true,
+				parseTimeout: 5,
+				maxFiles: 10,
+				staleAfterSeconds: 60,
+				exclude: ["private/**"],
+			}),
+		);
+
+		await handlers.session_start({}, { cwd });
+		await commands["autorag-jikji-refresh"]("", {});
+
+		const logged = JSON.parse(readFileSync(logPath, "utf8").trim()) as { args: string[]; envMedia: string | null };
+		expect(logged.args).toEqual([
+			"prepare",
+			docs,
+			"--json",
+			"--include-hidden",
+			"--include-sensitive",
+			"--parse-timeout",
+			"5",
+			"--max-files",
+			"10",
+			"--stale-after-seconds",
+			"60",
+			"--exclude",
+			"private/**",
+		]);
+		expect(logged.envMedia).toBeNull();
+		const refreshEntry = appendEntry.mock.calls.find((c: unknown[]) => c[0] === "autorag_jikji_refresh");
+		expect(refreshEntry).toBeDefined();
+		expect(JSON.stringify(refreshEntry?.[1])).toContain("success");
+		expect(JSON.stringify(logged.args)).not.toContain("enable-media");
+	});
+
+	it("ignores invalid Jikji config without changing active tools", async () => {
+		const { pi, commands, handlers, setActiveTools, appendEntry } = makePi();
+		autoragExtension(pi);
+		mkdirSync(join(cwd, ".autorag"), { recursive: true });
+		writeFileSync(join(cwd, ".autorag", "jikji.json"), "[]");
+
+		await handlers.session_start({}, { cwd });
+		await commands["autorag-jikji-refresh"]("", {});
+		await handlers.before_agent_start({ systemPrompt: "base" }, { cwd });
+
+		expect(appendEntry.mock.calls.find((c: unknown[]) => c[0] === "autorag_jikji_refresh")).toBeUndefined();
+		expect(setActiveTools.mock.calls[0][0]).toEqual(["grep", "find", "read", "ls", "check_memory", "bash"]);
 	});
 });

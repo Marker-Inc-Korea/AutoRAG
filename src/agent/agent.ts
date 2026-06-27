@@ -11,6 +11,8 @@ import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
 import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
+import type { JikjiMethodOptions } from "../retrieval/methods/jikji.ts";
+import { JikjiMethod } from "../retrieval/methods/jikji.ts";
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
@@ -39,6 +41,7 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
+	jikji?: Omit<JikjiMethodOptions, "root" | "searchPaths">;
 }
 
 export class AutoRAGAgent {
@@ -65,6 +68,11 @@ export class AutoRAGAgent {
 		if (options.minSync) {
 			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
+		}
+		if (options.jikji) {
+			this.methodRegistry.register(
+				new JikjiMethod({ ...options.jikji, root: this.workspaceProjectRoot, searchPaths: this.searchPaths }),
+			);
 		}
 
 		const memPath = memoryPath ?? join(homedir(), ".autorag", "memory.json");

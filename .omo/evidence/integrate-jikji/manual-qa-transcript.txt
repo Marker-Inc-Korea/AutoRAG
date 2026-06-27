@@ -1,0 +1,23 @@
+PASS jikji retrieval source=/docs/q3-report.txt method=jikji
+PASS searchDocuments path hidden
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

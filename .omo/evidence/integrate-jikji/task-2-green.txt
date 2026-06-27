@@ -1,0 +1,16 @@
+
+ RUN  v3.2.4 /Users/jeffrey/Projects-dev/AutoRAG-2.0
+
+ ✓ test/retrieval/jikji.test.ts (7 tests) 2389ms
+   ✓ JikjiMethod > maps Jikji answer paths to opaque retrieval results  434ms
+   ✓ JikjiMethod > maps compact candidates when answer paths are absent  369ms
+   ✓ JikjiMethod > deduplicates duplicate source results within one method result  382ms
+   ✓ JikjiMethod > drops paths outside the configured source root  380ms
+   ✓ JikjiMethod > runs configured source roots sequentially  437ms
+   ✓ JikjiMethod > returns empty results for expected Jikji failures  384ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  18:28:46
+   Duration  2.61s (transform 29ms, setup 0ms, collect 35ms, tests 2.39s, environment 0ms, prepare 24ms)
+

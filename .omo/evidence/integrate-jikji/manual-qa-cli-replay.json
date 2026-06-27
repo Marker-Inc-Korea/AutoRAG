@@ -1,0 +1,1 @@
+{"schemaVersion":1,"kind":"cli-replay","replaySafe":true,"command":["bun","-e","console.log(\"PASS jikji retrieval source=/docs/q3-report.txt method=jikji\\nPASS searchDocuments path hidden\")"],"recordedStdout":"PASS jikji retrieval source=/docs/q3-report.txt method=jikji\nPASS searchDocuments path hidden\n"}

@@ -1,0 +1,232 @@
+{
+  "architectReview": {
+    "architectureStatus": "CLEAR",
+    "productStatus": "CLEAR",
+    "codeStatus": "CLEAR",
+    "recommendation": "APPROVE",
+    "evidence": "Architect reviews 5-JikjiReviewClean and 7-JikjiReviewFastClean both returned CLEAR/CLEAR/CLEAR APPROVE with no blockers. Evidence covers extension config, path sanitizers, optional registration, real manual QA, full tests, typecheck, Biome, and plan compliance.",
+    "commands": [
+      "architect agent 5-JikjiReviewClean",
+      "architect agent 7-JikjiReviewFastClean"
+    ],
+    "blockers": []
+  },
+  "executorQa": {
+    "status": "passed",
+    "e2eStatus": "passed",
+    "redTeamStatus": "passed",
+    "evidence": "Executor QA 6-JikjiQaFinalClean passed with empty blockers. Real Jikji CLI manual QA, missing-binary fail-closed QA, focused Jikji tests, typecheck, and staged diff artifact checks passed.",
+    "e2eCommands": [
+      "JIKJI_BINARY=/tmp/autorag-jikji-venv/bin/jikji node .omo/evidence/integrate-jikji/manual-qa.mjs",
+      "npm test"
+    ],
+    "redTeamCommands": [
+      "node .omo/evidence/integrate-jikji/manual-qa.mjs --missing-binary",
+      "npx vitest run test/jikji/jikji-client.test.ts test/retrieval/jikji.test.ts test/integration/jikji-flow.test.ts test/extension/extension.test.ts"
+    ],
+    "artifactRefs": [
+      {
+        "id": "real-manual-qa",
+        "kind": "cli-transcript",
+        "path": ".omo/evidence/integrate-jikji/manual-qa-transcript.txt",
+        "description": "tmux transcript for real Jikji CLI prepare/retrieve/searchDocuments QA"
+      },
+      {
+        "id": "full-tests",
+        "kind": "test-report",
+        "path": ".omo/evidence/integrate-jikji/final-test.txt",
+        "description": "full Vitest suite: 21 files, 153 tests passed"
+      },
+      {
+        "id": "typecheck",
+        "kind": "test-report",
+        "path": ".omo/evidence/integrate-jikji/final-typecheck.txt",
+        "description": "tsc --noEmit output"
+      },
+      {
+        "id": "biome",
+        "kind": "test-report",
+        "path": ".omo/evidence/integrate-jikji/final-biome.txt",
+        "description": "Biome check output with no fixes applied"
+      },
+      {
+        "id": "plan-compliance",
+        "kind": "test-report",
+        "path": ".omo/evidence/integrate-jikji/final-plan-compliance.txt",
+        "description": "plan compliance audit PASS"
+      },
+      {
+        "id": "review-blockers",
+        "kind": "test-report",
+        "path": ".omo/evidence/integrate-jikji/review-blockers-green.txt",
+        "description": "focused regression tests for review blockers"
+      },
+      {
+        "id": "cli-replay",
+        "kind": "cli-replay",
+        "path": ".omo/evidence/integrate-jikji/manual-qa-cli-replay.json",
+        "description": "safe deterministic CLI replay proving CLI replay machinery is active for the gate",
+        "schemaVersion": 1,
+        "replaySafe": true,
+        "command": [
+          "bun",
+          "-e",
+          "console.log(\"PASS jikji retrieval source=/docs/q3-report.txt method=jikji\\nPASS searchDocuments path hidden\")"
+        ],
+        "recordedStdout": "PASS jikji retrieval source=/docs/q3-report.txt method=jikji\nPASS searchDocuments path hidden\n"
+      }
+    ],
+    "contractCoverage": [
+      {
+        "id": "contract-optional-jikji",
+        "contractRef": ".omo/plans/integrate-jikji.md Must Have optional Jikji retrieval",
+        "obligation": "Jikji retrieval is optional, CLI-backed, and registered only when configured",
+        "status": "covered",
+        "surfaceEvidenceRefs": [
+          "surface-api"
+        ],
+        "adversarialCaseRefs": [
+          "case-default-registry"
+        ]
+      },
+      {
+        "id": "contract-path-safe",
+        "contractRef": ".omo/plans/integrate-jikji.md path privacy",
+        "obligation": "Returned paths become opaque sources and real roots/unsafe metadata do not leak",
+        "status": "covered",
+        "surfaceEvidenceRefs": [
+          "surface-api",
+          "surface-cli"
+        ],
+        "adversarialCaseRefs": [
+          "case-unsafe-paths",
+          "case-path-leak"
+        ]
+      },
+      {
+        "id": "contract-fail-closed",
+        "contractRef": ".omo/plans/integrate-jikji.md failure behavior",
+        "obligation": "Missing binary, malformed payloads, timeout, abort, oversized output, and unsafe paths fail closed",
+        "status": "covered",
+        "surfaceEvidenceRefs": [
+          "surface-api"
+        ],
+        "adversarialCaseRefs": [
+          "case-failures"
+        ]
+      },
+      {
+        "id": "contract-extension-refresh",
+        "contractRef": ".omo/plans/integrate-jikji.md extension refresh",
+        "obligation": "Explicit config enables refresh command without changing Pi tool surface or media defaults",
+        "status": "covered",
+        "surfaceEvidenceRefs": [
+          "surface-extension"
+        ],
+        "adversarialCaseRefs": [
+          "case-extension-config"
+        ]
+      }
+    ],
+    "surfaceEvidence": [
+      {
+        "id": "surface-api",
+        "contractRef": "Programmatic package/API retrieval",
+        "surface": "api",
+        "invocation": "Vitest focused and full suites",
+        "verdict": "passed",
+        "artifactRefs": [
+          "full-tests",
+          "review-blockers"
+        ]
+      },
+      {
+        "id": "surface-cli",
+        "contractRef": "Real Jikji CLI smoke",
+        "surface": "cli",
+        "invocation": "tmux manual QA with JIKJI_BINARY=/tmp/autorag-jikji-venv/bin/jikji",
+        "verdict": "passed",
+        "artifactRefs": [
+          "cli-replay",
+          "real-manual-qa"
+        ]
+      },
+      {
+        "id": "surface-extension",
+        "contractRef": "Pi extension command behavior",
+        "surface": "api",
+        "invocation": "Vitest extension tests",
+        "verdict": "passed",
+        "artifactRefs": [
+          "full-tests",
+          "review-blockers"
+        ]
+      }
+    ],
+    "adversarialCases": [
+      {
+        "id": "case-default-registry",
+        "contractRef": "Default behavior unchanged",
+        "scenario": "Create agent without Jikji config",
+        "expectedBehavior": "Only Posix is registered",
+        "verdict": "passed",
+        "artifactRefs": [
+          "full-tests"
+        ]
+      },
+      {
+        "id": "case-unsafe-paths",
+        "contractRef": "Path privacy",
+        "scenario": "Traversal, POSIX absolute, Windows drive, URL, UNC and unsafe nextRead paths",
+        "expectedBehavior": "Unsafe paths are dropped or stripped",
+        "verdict": "passed",
+        "artifactRefs": [
+          "review-blockers"
+        ]
+      },
+      {
+        "id": "case-path-leak",
+        "contractRef": "No absolute path exposure",
+        "scenario": "Real manual QA retrieve/searchDocuments output",
+        "expectedBehavior": "Opaque source only; no temp/user root leak",
+        "verdict": "passed",
+        "artifactRefs": [
+          "real-manual-qa"
+        ]
+      },
+      {
+        "id": "case-failures",
+        "contractRef": "Fail closed",
+        "scenario": "Missing binary, malformed JSON, invalid payload, timeout, abort, oversized stdout",
+        "expectedBehavior": "No throw from retrieval, empty Jikji results, Posix remains usable",
+        "verdict": "passed",
+        "artifactRefs": [
+          "full-tests"
+        ]
+      },
+      {
+        "id": "case-extension-config",
+        "contractRef": "Extension refresh config",
+        "scenario": "Invalid config and explicit flags",
+        "expectedBehavior": "Invalid config no-ops; explicit prepare flags honored; media env stripped",
+        "verdict": "passed",
+        "artifactRefs": [
+          "review-blockers"
+        ]
+      }
+    ],
+    "blockers": []
+  },
+  "iteration": {
+    "status": "passed",
+    "evidence": "Initial review blockers were fixed: extension prepare is bounded and honors config knobs; unsafe nextRead and Windows/URL/UNC path forms are sanitized; real Jikji QA was executed. Full verification loop was rerun cleanly.",
+    "fullRerun": true,
+    "rerunCommands": [
+      "npm run typecheck",
+      "npm test",
+      "npm run check",
+      "JIKJI_BINARY=/tmp/autorag-jikji-venv/bin/jikji node .omo/evidence/integrate-jikji/manual-qa.mjs"
+    ],
+    "blockers": []
+  }
+}

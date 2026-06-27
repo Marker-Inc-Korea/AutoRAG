@@ -1,0 +1,28 @@
+
+ RUN  v3.2.4 /Users/jeffrey/Projects-dev/AutoRAG-2.0
+
+ ✓ test/integration/jikji-flow.test.ts (5 tests) 2660ms
+   ✓ AutoRAGAgent Jikji integration > includes Jikji results in retrieve when configured  848ms
+   ✓ AutoRAGAgent Jikji integration > searchDocuments hides paths and numbered feedback records Jikji usefulness  902ms
+   ✓ AutoRAGAgent Jikji integration > continues merging Posix results when Jikji fails  907ms
+ ✓ test/retrieval/jikji.test.ts (7 tests) 4600ms
+   ✓ JikjiMethod > maps Jikji answer paths to opaque retrieval results  667ms
+   ✓ JikjiMethod > maps compact candidates when answer paths are absent  915ms
+   ✓ JikjiMethod > deduplicates duplicate source results within one method result  903ms
+   ✓ JikjiMethod > drops paths outside the configured source root  896ms
+   ✓ JikjiMethod > runs configured source roots sequentially  645ms
+   ✓ JikjiMethod > returns empty results for expected Jikji failures  570ms
+ ✓ test/jikji/jikji-client.test.ts (10 tests) 4884ms
+   ✓ JikjiClient > runs jikji find with bounded json output  377ms
+   ✓ JikjiClient > uses configured binaryPath for jikji find  896ms
+   ✓ JikjiClient > does not pass hidden sensitive or media flags by default  905ms
+   ✓ JikjiClient > passes explicit hidden and sensitive flags  903ms
+   ✓ JikjiClient > returns failure for malformed json without throwing  547ms
+   ✓ JikjiClient > terminates the child when AbortController aborts  613ms
+   ✓ JikjiClient > returns failure for oversized stdout without throwing  588ms
+
+ Test Files  3 passed (3)
+      Tests  22 passed (22)
+   Start at  18:35:48
+   Duration  5.11s (transform 93ms, setup 0ms, collect 242ms, tests 12.14s, environment 0ms, prepare 71ms)
+
