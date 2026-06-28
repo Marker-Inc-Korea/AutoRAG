@@ -64,6 +64,8 @@ The `RetrievalMethodRegistry` and `ResultMerger` are live: the real-directory `p
 
 MinSync is one vector retrieval method in that pipeline, especially useful for incremental indexing and semantic search. It should not replace real-directory `ls`/`grep`/`find` or become "the" default search surface. The AutoRAG orchestrator agent should consult memory and the query shape, then use every appropriate tool path together: Pi built-in navigation/content search for exact text, filenames, and layout-aware exploration; MinSync for indexed semantic evidence; and future BM25/hybrid methods when those are available. Each path is a tool/retrieval method feeding curation, not a privileged backend that hides the others.
 
+Jikji is intentionally not a retrieval method in AutoRAG. It is an optional file-map and indexing preparation layer (`jikji prepare`) that can inform exploration, while query answering still flows through AutoRAG/Pi search and read tools plus registered AutoRAG retrieval methods.
+
 ## Directory Access
 
 AutoRAG now navigates document collections through normal source directories. The extension keeps Pi's built-in `grep`, `find`, `read`, and `ls` tools active and uses `bash` as the real-path fallback. Programmatic retrieval and parsed mirror indexing still use opaque root-relative source identifiers such as `/docs/report.md` for curation and feedback mapping, but no virtual workspace layer is created.
@@ -71,6 +73,7 @@ AutoRAG now navigates document collections through normal source directories. Th
 - **Tool surface (Pi built-ins + bash fallback)** — `setActiveTools()` keeps `grep`, `find`, `read`, `ls`, `check_memory`, and `bash` available. Mutating editors (`edit`/`write`) stay excluded because AutoRAG is read-only.
 - **Real-directory posix method** — `src/retrieval/methods/posix.ts` recursively scans configured `searchPaths`, scores files by match count and depth, and returns opaque root-relative source identifiers.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` and `autorag-refresh` parse supported files directly from configured source directories into `.autorag/parsed`; MinSync indexes those parsed mirrors unchanged.
+- **Jikji preparation** — `AutoRAGAgent.prepareJikji()` and `autorag-jikji-refresh` run `jikji prepare` over configured source directories only. AutoRAG does not call `jikji find` or merge Jikji answers as retrieval results.
 
 ## Usage
 

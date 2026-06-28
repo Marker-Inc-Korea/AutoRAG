@@ -61,17 +61,18 @@ AutoRAG supports **pluggable retrieval methods**. It ships with a real-directory
 
 AutoRAG reads configured source directories directly. In extension mode it leaves Pi's built-in `grep`, `find`, `read`, and `ls` tools active instead of replacing them with a virtual filesystem layer. Programmatic retrieval still returns opaque root-relative source identifiers for feedback and curation, while MinSync continues to index parsed markdown mirrors under `.autorag`.
 
-### Optional Jikji integration
+### Optional Jikji indexing
 
-AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed file-discovery retrieval source. Jikji is optional: AutoRAG does not vendor it, install it, or replace the real-directory/MinSync paths when it is enabled.
+AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed file-map and indexing preparation layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
 
 Programmatic use:
 
 ```typescript
 const agent = new AutoRAGAgent({
   searchPaths: ["/path/to/documents"],
-  jikji: { binaryPath: "jikji", topK: 20 },
+  jikji: { binaryPath: "jikji" },
 });
+await agent.prepareJikji();
 ```
 
 Extension refresh uses an explicit `.autorag/jikji.json` file:
@@ -80,7 +81,6 @@ Extension refresh uses an explicit `.autorag/jikji.json` file:
 {
   "enabled": true,
   "binaryPath": "jikji",
-  "topK": 20,
   "timeoutMs": 10000,
   "maxBufferBytes": 1048576,
   "includeHidden": false,
@@ -92,7 +92,7 @@ Extension refresh uses an explicit `.autorag/jikji.json` file:
 }
 ```
 
-Run the extension command `autorag-jikji-refresh` to prepare configured source roots. Missing, disabled, invalid, or non-object config disables the command without changing the active Pi tool surface. Hidden, sensitive, and media indexing are disabled by default; media OCR/ASR flags are not passed.
+Run the extension command `autorag-jikji-refresh` to prepare configured source roots. Missing, disabled, invalid, or non-object config disables the command without changing the active Pi tool surface. Hidden, sensitive, and media indexing are disabled by default; media OCR/ASR flags are not passed. AutoRAG still searches and reads through its own active tools (`grep`, `find`, `read`, `ls`, `bash`) and other registered retrieval methods; Jikji does not answer queries directly.
 
 ### Primary target: document collections
 

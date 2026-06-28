@@ -6,6 +6,7 @@ export interface SystemPromptConfig {
 	toolNames: string[];
 	memoryEntries: readonly MemoryEntry[];
 	manifests: StoreManifest[];
+	jikjiIndexingEnabled?: boolean;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -127,6 +128,13 @@ Memory is advisory — it reflects past outcomes, not guarantees. New queries ma
 
 ${config.memoryEntries.length} historical retrieval outcome(s) are available through check_memory.`;
 
+	const jikjiSection =
+		config.jikjiIndexingEnabled === true
+			? `## Jikji Indexing Context
+
+Jikji is enabled only as an indexing and file-map preparation layer for the configured source directories. Do not treat Jikji as an answer-producing retrieval backend, do not call \`jikji find\`, and do not expose Jikji method names in results. Use the prepared file map as context for choosing where to search, then search and read through the active AutoRAG/Pi tools listed above.`
+			: "";
+
 	const outputSection = `## Output Format
 
 Structure every response using this format:
@@ -192,6 +200,7 @@ ${toolRows}`;
 		strategySection,
 		memorySection,
 		memoryStatsSection,
+		jikjiSection,
 		outputSection,
 		constraintsSection,
 		toolRefSection,

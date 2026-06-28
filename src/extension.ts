@@ -254,6 +254,7 @@ export default function autoragExtension(pi: ExtensionAPI): void {
 			toolNames: [...ACTIVE_TOOLS],
 			memoryEntries: memory.getEntries(),
 			manifests,
+			jikjiIndexingEnabled: loadJikjiConfig(ctx.cwd) !== undefined,
 		});
 		const memorySummary =
 			memory.getEntries().length > 0

@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wa
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_JIKJI_OPTIONS, JikjiClient, parseJikjiFindPayload } from "../../src/jikji/index.ts";
+import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
@@ -44,44 +44,6 @@ process.exit(${exitCode});
 `,
 	);
 	chmodSync(binaryPath, 0o755);
-}
-
-function payloadJson(): string {
-	return JSON.stringify({
-		mode: "find",
-		answer_pack_version: 1,
-		root: corpusRoot,
-		query: "enterprise revenue report",
-		query_type: "single_file",
-		confidence: "high",
-		confidence_score: 1,
-		recommended_action: "return_top1_after_light_verification",
-		handoff_action: "direct_use",
-		paths: ["docs/q3-report.txt"],
-		answer_paths: ["docs/q3-report.txt"],
-		index_status: "ready",
-		command: "jikji find",
-		evidence_pack: [
-			{
-				path: "docs/q3-report.txt",
-				why: ["body-coverage"],
-				matched_terms: ["enterprise", "revenue"],
-				evidence: ["Q3 revenue grew from enterprise contracts"],
-				next_read: { kind: "original", path: "docs/q3-report.txt" },
-			},
-		],
-		candidates: [
-			{
-				p: "docs/q3-report.txt",
-				s: 1327.049,
-				rank: 1,
-				why: ["body-coverage"],
-				terms: ["enterprise", "revenue"],
-				ev: "Q3 revenue grew from enterprise contracts",
-				next_read: { kind: "original", path: "docs/q3-report.txt" },
-			},
-		],
-	});
 }
 
 function loggedCalls(): readonly LoggedCall[] {
@@ -142,8 +104,7 @@ function clientWithPath(): JikjiClient {
 }
 
 describe("JikjiClient", () => {
-	it("publishes the bounded default options", () => {
-		// Given
+	it("publishes bounded prepare defaults without retrieval options", () => {
 		const expectedDefaults = {
 			binaryPath: "jikji",
 			timeoutMs: 10_000,
@@ -154,127 +115,101 @@ describe("JikjiClient", () => {
 			maxFiles: 0,
 			staleAfterSeconds: 86_400,
 			exclude: [],
-			topK: 20,
 		};
 
-		// When
 		const defaults = DEFAULT_JIKJI_OPTIONS;
 
-		// Then
 		expect(defaults).toEqual(expectedDefaults);
+		expect(JSON.stringify(defaults)).not.toContain("topK");
 	});
 
-	it("runs jikji find with bounded json output", async () => {
-		// Given
-		writeFakeJikji(`console.log(${JSON.stringify(payloadJson())});`);
+	it("runs jikji prepare with bounded json output", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = clientWithPath();
 
-		// When
-		const result = await client.find(corpusRoot, "enterprise revenue report");
+		const result = await client.prepare(corpusRoot);
 
-		// Then
 		expect(result).toMatchObject({ ok: true });
-		expect(result.ok ? result.payload.answerPaths : []).toEqual(["docs/q3-report.txt"]);
 		expect(loggedCalls()).toEqual([
 			{
-				args: ["find", corpusRoot, "enterprise revenue report", "--json", "--top-k", "20"],
+				args: ["prepare", corpusRoot, "--json"],
 				envMedia: null,
 			},
 		]);
 	});
 
-	it("uses configured binaryPath for jikji find", async () => {
-		// Given
-		writeFakeJikji(`console.log(${JSON.stringify(payloadJson())});`);
+	it("uses configured binaryPath for jikji prepare", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = new JikjiClient({ binaryPath, env: { JIKJI_ENABLE_MEDIA_INDEX: "1" } });
 
-		// When
-		const result = await client.find(corpusRoot, "enterprise revenue report", { topK: 7 });
+		const result = await client.prepare(corpusRoot);
 
-		// Then
 		expect(result).toMatchObject({ ok: true });
 		expect(loggedCalls()).toEqual([
 			{
-				args: ["find", corpusRoot, "enterprise revenue report", "--json", "--top-k", "7"],
+				args: ["prepare", corpusRoot, "--json"],
 				envMedia: null,
 			},
 		]);
 	});
 
 	it("does not pass hidden sensitive or media flags by default", async () => {
-		// Given
-		writeFakeJikji(`console.log(${JSON.stringify(payloadJson())});`);
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = clientWithPath();
 
-		// When
-		await client.find(corpusRoot, "enterprise revenue report");
+		await client.prepare(corpusRoot);
 
-		// Then
 		const call = loggedCalls()[0];
 		expect(call?.args).not.toContain("--include-hidden");
 		expect(call?.args).not.toContain("--include-sensitive");
 		expect(call?.args).not.toContain("--enable-media-index");
 	});
 
-	it("passes explicit hidden and sensitive flags", async () => {
-		// Given
-		writeFakeJikji(`console.log(${JSON.stringify(payloadJson())});`);
+	it("passes explicit prepare flags", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = new JikjiClient({
 			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
 			includeHidden: true,
 			includeSensitive: true,
+			parseTimeout: 5,
+			maxFiles: 10,
+			staleAfterSeconds: 60,
+			exclude: ["private/**"],
 		});
 
-		// When
-		await client.find(corpusRoot, "enterprise revenue report");
+		await client.prepare(corpusRoot);
 
-		// Then
-		const call = loggedCalls()[0];
-		expect(call?.args).toContain("--include-hidden");
-		expect(call?.args).toContain("--include-sensitive");
-		expect(call?.args).not.toContain("--enable-media-index");
+		expect(loggedCalls()[0]?.args).toEqual([
+			"prepare",
+			corpusRoot,
+			"--json",
+			"--include-hidden",
+			"--include-sensitive",
+			"--parse-timeout",
+			"5",
+			"--max-files",
+			"10",
+			"--stale-after-seconds",
+			"60",
+			"--exclude",
+			"private/**",
+		]);
+		expect(loggedCalls()[0]?.envMedia).toBeNull();
 	});
 
 	it("returns failure for timeout without throwing", async () => {
-		// Given
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
 		const client = new JikjiClient({
 			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
 			timeoutMs: 50,
 		});
 
-		// When
-		const result = await client.find(corpusRoot, "slow query");
+		const result = await client.prepare(corpusRoot);
 
-		// Then
 		expect(result).toMatchObject({ ok: false, reason: "timeout" });
 	});
 
-	it("returns failure for malformed json without throwing", async () => {
-		// Given
-		writeFakeJikji('process.stdout.write("{not json");');
-		const client = clientWithPath();
-
-		// When
-		const result = await client.find(corpusRoot, "enterprise revenue report");
-
-		// Then
-		expect(result).toMatchObject({ ok: false, reason: "malformed-json" });
-	});
-
-	it("returns failure for invalid payload shape without throwing", () => {
-		// Given
-		const payload = JSON.stringify({ mode: "find", paths: [123] });
-
-		// When
-		const result = parseJikjiFindPayload(payload);
-
-		// Then
-		expect(result).toMatchObject({ ok: false, reason: "invalid-payload" });
-	});
-
 	it("terminates the child when AbortController aborts", async () => {
-		// Given
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
 		const controller = new AbortController();
 		const client = new JikjiClient({
@@ -282,29 +217,24 @@ describe("JikjiClient", () => {
 			timeoutMs: 5000,
 		});
 
-		// When
-		const pending = client.find(corpusRoot, "cancel query", { signal: controller.signal });
+		const pending = client.prepare(corpusRoot, { signal: controller.signal });
 		await waitForLogFile();
 		controller.abort();
 		const result = await pending;
 
-		// Then
 		expect(result).toMatchObject({ ok: false, reason: "aborted" });
 		expect(loggedCalls()).toHaveLength(1);
 	});
 
 	it("returns failure for oversized stdout without throwing", async () => {
-		// Given
 		writeFakeJikji('process.stdout.write("x".repeat(64));');
 		const client = new JikjiClient({
 			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
 			maxBufferBytes: 8,
 		});
 
-		// When
-		const result = await client.find(corpusRoot, "oversized query");
+		const result = await client.prepare(corpusRoot);
 
-		// Then
 		expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
 	});
 });

@@ -1,20 +1,8 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import type {
-	JikjiCompactCandidate,
-	JikjiEvidenceItem,
-	JikjiFailureReason,
-	JikjiFindOptions,
-	JikjiFindPayload,
-	JikjiFindResult,
-	JikjiJudgeCandidate,
-	JikjiNextRead,
-	JikjiOptions,
-	JikjiParseResult,
-} from "./types.ts";
+import type { JikjiFailureReason, JikjiOptions, JikjiPrepareOptions, JikjiPrepareResult } from "./types.ts";
 
 const DEFAULT_BINARY = "jikji";
-const DEFAULT_TOP_K = 20;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
 const MEDIA_ENV_KEY = "JIKJI_ENABLE_MEDIA_INDEX";
@@ -36,15 +24,7 @@ type BufferState = {
 type SpawnJikjiRequest = {
 	readonly options: JikjiOptions;
 	readonly root: string;
-	readonly query: string;
-	readonly findOptions: JikjiFindOptions;
-};
-
-type FindArgsRequest = {
-	readonly options: JikjiOptions;
-	readonly root: string;
-	readonly query: string;
-	readonly topK?: number;
+	readonly prepareOptions: JikjiPrepareOptions;
 };
 
 export class JikjiClient {
@@ -54,8 +34,8 @@ export class JikjiClient {
 		this.options = options;
 	}
 
-	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
-		const result = await spawnJikji({ options: this.options, root, query, findOptions: options });
+	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
+		const result = await spawnJikjiPrepare({ options: this.options, root, prepareOptions: options });
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -65,12 +45,8 @@ export class JikjiClient {
 				code: result.code,
 			};
 		}
-		const parsed = parseJikjiFindPayload(result.stdout);
-		if (!parsed.ok)
-			return { ok: false, reason: parsed.reason, stdout: result.stdout, stderr: result.stderr, code: result.code };
 		return {
 			ok: true,
-			payload: parsed.payload,
 			stdout: result.stdout,
 			stderr: result.stderr,
 			code: result.code ?? 0,
@@ -78,26 +54,10 @@ export class JikjiClient {
 	}
 }
 
-export function parseJikjiFindPayload(text: string): JikjiParseResult {
-	const parsed = parseJson(text);
-	if (parsed.kind === "malformed") return { ok: false, reason: "malformed-json" };
-	if (!isRecord(parsed.value)) return { ok: false, reason: "invalid-payload" };
-	const payload = parseFindPayload(parsed.value);
-	if (payload === undefined) return { ok: false, reason: "invalid-payload" };
-	return { ok: true, payload };
-}
-
-function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
+function spawnJikjiPrepare(request: SpawnJikjiRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const options = request.options;
-		const command = commandFor(options.binaryPath);
-		const args = buildFindArgs({
-			options,
-			root: request.root,
-			query: request.query,
-			topK: request.findOptions.topK,
-		});
-		const child = spawn(command, args, {
+		const child = spawn(commandFor(options.binaryPath), buildPrepareArgs(options, request.root), {
 			env: controlledEnv(options.env),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -113,8 +73,8 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 			finalReason = "aborted";
 			terminate(child);
 		};
-		if (request.findOptions.signal?.aborted) abortHandler();
-		request.findOptions.signal?.addEventListener("abort", abortHandler, { once: true });
+		if (request.prepareOptions.signal?.aborted) abortHandler();
+		request.prepareOptions.signal?.addEventListener("abort", abortHandler, { once: true });
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
@@ -135,14 +95,14 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			request.findOptions.signal?.removeEventListener("abort", abortHandler);
+			request.prepareOptions.signal?.removeEventListener("abort", abortHandler);
 			resolve({ ok: false, reason: "spawn-error", stdout: stdout.text, stderr: error.message, code: null });
 		});
 		child.on("close", (code) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			request.findOptions.signal?.removeEventListener("abort", abortHandler);
+			request.prepareOptions.signal?.removeEventListener("abort", abortHandler);
 			if (finalReason !== undefined) {
 				resolve({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
 				return;
@@ -156,16 +116,8 @@ function commandFor(binaryPath: string | undefined): string {
 	return binaryPath === undefined || binaryPath === DEFAULT_BINARY ? DEFAULT_BINARY : binaryPath;
 }
 
-function buildFindArgs(request: FindArgsRequest): readonly string[] {
-	const options = request.options;
-	const args = [
-		"find",
-		request.root,
-		request.query,
-		"--json",
-		"--top-k",
-		String(request.topK ?? options.topK ?? DEFAULT_TOP_K),
-	];
+function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[] {
+	const args = ["prepare", root, "--json"];
 	if (options.includeHidden === true) args.push("--include-hidden");
 	if (options.includeSensitive === true) args.push("--include-sensitive");
 	if (options.parseTimeout !== undefined) args.push("--parse-timeout", String(options.parseTimeout));
@@ -199,135 +151,4 @@ function appendBounded(state: BufferState, chunk: string, maxBytes: number): Buf
 	if (nextBytes <= maxBytes) return { text: state.text + chunk, bytes: nextBytes, capped: false };
 	const remainingBytes = Math.max(maxBytes - state.bytes, 0);
 	return { text: state.text + chunk.slice(0, remainingBytes), bytes: maxBytes, capped: true };
-}
-
-function parseJson(text: string): { readonly kind: "ok"; readonly value: unknown } | { readonly kind: "malformed" } {
-	try {
-		return { kind: "ok", value: JSON.parse(text) };
-	} catch (error) {
-		if (error instanceof SyntaxError) return { kind: "malformed" };
-		throw error;
-	}
-}
-
-function parseFindPayload(value: Record<string, unknown>): JikjiFindPayload | undefined {
-	const paths = optionalStringArray(value.paths);
-	const answerPaths = optionalStringArray(value.answer_paths);
-	const evidencePack = optionalRecordArray(value.evidence_pack, parseEvidenceItem);
-	const judgeCandidateSlate = optionalRecordArray(value.judge_candidate_slate, parseJudgeCandidate);
-	const candidates = optionalRecordArray(value.candidates, parseCompactCandidate);
-	if (paths === undefined || answerPaths === undefined || evidencePack === undefined) return undefined;
-	if (judgeCandidateSlate === undefined || candidates === undefined) return undefined;
-	return {
-		mode: optionalString(value.mode),
-		answerPackVersion: optionalNumber(value.answer_pack_version),
-		root: optionalString(value.root),
-		query: optionalString(value.query),
-		queryType: optionalString(value.query_type),
-		confidence: optionalString(value.confidence),
-		confidenceScore: optionalNumber(value.confidence_score),
-		recommendedAction: optionalString(value.recommended_action),
-		handoffAction: optionalString(value.handoff_action),
-		indexStatus: optionalString(value.index_status),
-		command: optionalString(value.command),
-		paths: paths ?? [],
-		answerPaths: answerPaths ?? [],
-		evidencePack: evidencePack ?? [],
-		judgeCandidateSlate: judgeCandidateSlate ?? [],
-		candidates: candidates ?? [],
-	};
-}
-
-function parseEvidenceItem(value: Record<string, unknown>): JikjiEvidenceItem | undefined {
-	const path = requiredString(value.path);
-	const why = optionalStringArray(value.why);
-	const matchedTerms = optionalStringArray(value.matched_terms);
-	const evidence = optionalStringArray(value.evidence);
-	if (path === undefined || why === undefined || matchedTerms === undefined || evidence === undefined)
-		return undefined;
-	return {
-		path,
-		why: why ?? [],
-		matchedTerms: matchedTerms ?? [],
-		evidence: evidence ?? [],
-		nextRead: optionalNextRead(value.next_read),
-	};
-}
-
-function parseJudgeCandidate(value: Record<string, unknown>): JikjiJudgeCandidate | undefined {
-	const path = requiredString(value.path);
-	const evidence = optionalStringArray(value.evidence);
-	if (path === undefined || evidence === undefined) return undefined;
-	return {
-		rank: optionalNumber(value.rank),
-		path,
-		score: optionalNumber(value.score),
-		evidence: evidence ?? [],
-		nextRead: optionalNextRead(value.next_read),
-	};
-}
-
-function parseCompactCandidate(value: Record<string, unknown>): JikjiCompactCandidate | undefined {
-	const path = requiredString(value.p);
-	const why = optionalStringArray(value.why);
-	const terms = optionalStringArray(value.terms);
-	if (path === undefined || why === undefined || terms === undefined) return undefined;
-	return {
-		p: path,
-		s: optionalNumber(value.s),
-		rank: optionalNumber(value.rank),
-		why: why ?? [],
-		terms: terms ?? [],
-		ev: optionalString(value.ev),
-		nextRead: optionalNextRead(value.next_read),
-	};
-}
-
-function optionalNextRead(value: unknown): JikjiNextRead | undefined {
-	if (value === undefined) return undefined;
-	if (!isRecord(value)) return undefined;
-	return { kind: optionalString(value.kind), path: optionalString(value.path) };
-}
-
-function optionalRecordArray<T>(
-	value: unknown,
-	parser: (item: Record<string, unknown>) => T | undefined,
-): readonly T[] | undefined {
-	if (value === undefined) return [];
-	if (!Array.isArray(value)) return undefined;
-	const parsed: T[] = [];
-	for (const item of value) {
-		if (!isRecord(item)) return undefined;
-		const parsedItem = parser(item);
-		if (parsedItem === undefined) return undefined;
-		parsed.push(parsedItem);
-	}
-	return parsed;
-}
-
-function optionalStringArray(value: unknown): readonly string[] | undefined {
-	if (value === undefined) return [];
-	if (!Array.isArray(value)) return undefined;
-	const strings: string[] = [];
-	for (const item of value) {
-		if (typeof item !== "string") return undefined;
-		strings.push(item);
-	}
-	return strings;
-}
-
-function requiredString(value: unknown): string | undefined {
-	return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function optionalString(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
-}
-
-function optionalNumber(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
 }

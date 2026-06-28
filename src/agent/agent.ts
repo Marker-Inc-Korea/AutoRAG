@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { JikjiClient, type JikjiOptions, type JikjiPrepareResult } from "../jikji/index.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
@@ -11,8 +12,6 @@ import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
 import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-import type { JikjiMethodOptions } from "../retrieval/methods/jikji.ts";
-import { JikjiMethod } from "../retrieval/methods/jikji.ts";
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
@@ -41,7 +40,7 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
-	jikji?: Omit<JikjiMethodOptions, "root" | "searchPaths">;
+	jikji?: JikjiOptions;
 }
 
 export class AutoRAGAgent {
@@ -57,6 +56,7 @@ export class AutoRAGAgent {
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
+	private readonly jikjiClient: JikjiClient | undefined;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -70,9 +70,7 @@ export class AutoRAGAgent {
 			this.methodRegistry.register(this.minSyncMethod);
 		}
 		if (options.jikji) {
-			this.methodRegistry.register(
-				new JikjiMethod({ ...options.jikji, root: this.workspaceProjectRoot, searchPaths: this.searchPaths }),
-			);
+			this.jikjiClient = new JikjiClient(options.jikji);
 		}
 
 		const memPath = memoryPath ?? join(homedir(), ".autorag", "memory.json");
@@ -87,6 +85,7 @@ export class AutoRAGAgent {
 			toolNames,
 			memoryEntries: this.memory.getEntries(),
 			manifests,
+			jikjiIndexingEnabled: options.jikji !== undefined,
 		});
 
 		this.innerAgent = new Agent({
@@ -219,6 +218,7 @@ export class AutoRAGAgent {
 	async refresh(force = false): Promise<ParsedMirrorSyncResult> {
 		const summary = await this.syncParsedMirrors(force);
 		await this.syncMinSync();
+		await this.prepareJikji();
 		return summary;
 	}
 
@@ -228,6 +228,15 @@ export class AutoRAGAgent {
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
 		return this.minSyncMethod?.sync();
+	}
+
+	async prepareJikji(): Promise<readonly JikjiPrepareResult[] | undefined> {
+		if (this.jikjiClient === undefined) return undefined;
+		const results: JikjiPrepareResult[] = [];
+		for (const sourcePath of this.searchPaths) {
+			results.push(await this.jikjiClient.prepare(sourcePath));
+		}
+		return results;
 	}
 
 	/**

@@ -22,39 +22,18 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeJikji(payload: unknown, exitCode = 0): void {
+function writeFakeJikji(exitCode = 0): void {
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
-console.log(JSON.stringify(${JSON.stringify(payload)}));
+console.log(JSON.stringify({ prepared: true }));
 process.exit(${exitCode});
 `,
 	);
 	chmodSync(binaryPath, 0o755);
-}
-
-function payload(): unknown {
-	return {
-		query_type: "single_file",
-		confidence: "high",
-		handoff_action: "direct_use",
-		index_status: "ready",
-		paths: ["q3-report.txt"],
-		answer_paths: ["q3-report.txt"],
-		evidence_pack: [
-			{
-				path: "q3-report.txt",
-				why: ["body"],
-				matched_terms: ["enterprise"],
-				evidence: ["Jikji says Q3 enterprise revenue increased"],
-			},
-		],
-		judge_candidate_slate: [],
-		candidates: [],
-	};
 }
 
 function methodNames(agent: AutoRAGAgent): string[] {
@@ -64,8 +43,16 @@ function methodNames(agent: AutoRAGAgent): string[] {
 		.map((method) => method.describe().name);
 }
 
-describe("AutoRAGAgent Jikji integration", () => {
-	it("does not register Jikji by default", () => {
+function loggedArgs(): readonly string[][] {
+	return readFileSync(logPath, "utf8")
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => (JSON.parse(line) as { readonly args: string[] }).args);
+}
+
+describe("AutoRAGAgent Jikji indexing integration", () => {
+	it("does not register Jikji as a retrieval method by default", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
@@ -75,8 +62,7 @@ describe("AutoRAGAgent Jikji integration", () => {
 		expect(methodNames(agent)).toEqual(["posix"]);
 	});
 
-	it("includes Jikji results in retrieve when configured", async () => {
-		writeFakeJikji(payload());
+	it("keeps Jikji out of the retrieval registry when configured", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
@@ -84,16 +70,11 @@ describe("AutoRAGAgent Jikji integration", () => {
 			jikji: { binaryPath },
 		});
 
-		const results = await agent.retrieve("enterprise revenue", { topK: 1 });
-
-		expect(methodNames(agent)).toEqual(["posix", "jikji"]);
-		expect(results).toHaveLength(1);
-		expect(results[0]?.source).toBe("/docs/q3-report.txt");
-		expect(results[0]?.metadata.method).toBe("jikji");
-		expect(JSON.stringify(results)).not.toContain(root);
+		expect(methodNames(agent)).toEqual(["posix"]);
+		expect(agent.getMethodRegistry().get("jikji")).toBeUndefined();
 	});
 
-	it("can configure MinSync and Jikji independently", () => {
+	it("can configure MinSync and Jikji indexing independently", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
@@ -102,28 +83,11 @@ describe("AutoRAGAgent Jikji integration", () => {
 			jikji: { binaryPath },
 		});
 
-		expect(methodNames(agent)).toEqual(["posix", "minsync", "jikji"]);
+		expect(methodNames(agent)).toEqual(["posix", "minsync"]);
 	});
 
-	it("searchDocuments hides paths and numbered feedback records Jikji usefulness", async () => {
-		writeFakeJikji(payload());
-		const memoryPath = join(root, "memory.json");
-		const agent = new AutoRAGAgent({ searchPaths: [docs], memoryPath, workspacePath: root, jikji: { binaryPath } });
-
-		const response = await agent.searchDocuments("enterprise revenue", { topK: 1 });
-		agent.recordFeedbackByNumbers(response.sessionId, [1]);
-
-		expect(response.answer).toContain("[1]");
-		expect(response.answer).toContain("Jikji says Q3 enterprise revenue increased");
-		expect(response.answer).not.toContain(root);
-		const memory = JSON.parse(readFileSync(memoryPath, "utf8")) as {
-			entries: Array<{ method: string; outcome: string }>;
-		};
-		expect(memory.entries.some((entry) => entry.method === "jikji" && entry.outcome === "useful")).toBe(true);
-	});
-
-	it("continues merging Posix results when Jikji fails", async () => {
-		writeFakeJikji({ paths: [123] });
+	it("prepares Jikji maps without contributing retrieval results", async () => {
+		writeFakeJikji();
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
@@ -131,9 +95,25 @@ describe("AutoRAGAgent Jikji integration", () => {
 			jikji: { binaryPath },
 		});
 
-		const results = await agent.retrieve("document", { topK: 1 });
+		const prepareResults = await agent.prepareJikji();
+		const retrievalResults = await agent.retrieve("document", { topK: 1 });
 
-		expect(results[0]?.metadata.method).toBe("posix");
-		expect(results[0]?.source).toBe("/docs/q3-report.txt");
+		expect(prepareResults?.[0]).toMatchObject({ ok: true });
+		expect(loggedArgs()).toEqual([["prepare", docs, "--json"]]);
+		expect(retrievalResults[0]?.metadata.method).toBe("posix");
+	});
+
+	it("adds prompt guidance that Jikji is indexing context, not a retrieval backend", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: { binaryPath },
+		});
+
+		const prompt = agent.getSystemPrompt();
+
+		expect(prompt).toContain("Jikji is enabled only as an indexing and file-map preparation layer");
+		expect(prompt).toContain("do not call `jikji find`");
 	});
 });
