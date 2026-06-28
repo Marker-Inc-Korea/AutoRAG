@@ -1,9 +1,0 @@
-
- RUN  v3.2.4 /Users/jeffrey/Projects-dev/AutoRAG-2.0
-
-
- Test Files  1 failed (1)
-      Tests  no tests
-   Start at  18:24:36
-   Duration  209ms (transform 20ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 33ms)
-

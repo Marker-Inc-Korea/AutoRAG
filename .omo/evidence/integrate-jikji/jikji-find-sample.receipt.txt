@@ -1,3 +1,0 @@
-command: /tmp/autorag-jikji-venv/bin/jikji find /tmp/autorag-jikji-sample "enterprise revenue report" --json
-exit: 0
-observable: answer_paths contains docs/q3-report.txt and handoff_action is direct_use

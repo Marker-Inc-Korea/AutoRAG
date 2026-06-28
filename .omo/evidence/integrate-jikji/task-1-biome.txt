@@ -1,3 +1,0 @@
-Checked 4 files in 38ms. No fixes applied.
-
-biome_exit=0
