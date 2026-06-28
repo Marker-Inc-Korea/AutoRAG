@@ -2,7 +2,7 @@
 
 ## Purpose
 
-AutoRAG is an **over-powered librarian agent** for **document collections** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus. It is built on the [Pi framework](https://github.com/earendil-works/pi-mono).
+AutoRAG is an **over-powered librarian agent** for **document collections** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a read-only librarian, used through one library/programmatic API.
 
 **Primary target**: non-code document retrieval (manuals, legal docs, internal wikis, meeting notes, research literature).
 Code repositories are a secondary use case — Pi's built-in grep/find already handle code search well.
@@ -35,7 +35,7 @@ AutoRAG reuses Pi's built-in tools as its foundation:
 ## Architecture
 
 ```
-Pi Built-in Tools          AutoRAG Extension Layer
+Agent Tools                AutoRAGAgent (customized Pi agent)
 ┌──────────────────┐      ┌──────────────────────────────────┐
 │ grep (content)   │      │ Memory System (query history)     │
 │ find (files)     │ ───▶ │ Curation Layer (LLM extraction)   │
@@ -68,21 +68,15 @@ Jikji is intentionally not a retrieval method in AutoRAG. It is an optional file
 
 ## Directory Access
 
-AutoRAG now navigates document collections through normal source directories. The extension keeps Pi's built-in `grep`, `find`, `read`, and `ls` tools active and uses `bash` as the real-path fallback. Programmatic retrieval and parsed mirror indexing still use opaque root-relative source identifiers such as `/docs/report.md` for curation and feedback mapping, but no virtual workspace layer is created.
+AutoRAG navigates document collections through normal source directories scoped to the configured `searchPaths`. The Pi agent loop uses the caller-provided search/read tools (e.g. `grep`, `find`, `read`, `ls`) plus `check_memory`, and finalizes through the `emit_autorag_results` structured tool. Retrieval and parsed mirror indexing use opaque root-relative source identifiers such as `/docs/report.md` for curation and feedback mapping; no virtual workspace layer is created.
 
-- **Tool surface (Pi built-ins + bash fallback)** — `setActiveTools()` keeps `grep`, `find`, `read`, `ls`, `check_memory`, and `bash` available. Mutating editors (`edit`/`write`) stay excluded because AutoRAG is read-only.
+- **Tool surface** — the agent runs with the caller-provided tools plus `check_memory` and `emit_autorag_results`. Mutating editors (`edit`/`write`) are excluded because AutoRAG is read-only.
 - **Real-directory posix method** — `src/retrieval/methods/posix.ts` recursively scans configured `searchPaths`, scores files by match count and depth, and returns opaque root-relative source identifiers.
-- **Parsed mirrors** — `AutoRAGAgent.refresh()` and `autorag-refresh` parse supported files directly from configured source directories into `.autorag/parsed`; MinSync indexes those parsed mirrors unchanged.
-- **Jikji preparation** — `AutoRAGAgent.prepareJikji()` and `autorag-jikji-refresh` run `jikji prepare` over configured source directories only. AutoRAG does not call `jikji find` or merge Jikji answers as retrieval results.
+- **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files directly from configured source directories into `.autorag/parsed`; MinSync indexes those parsed mirrors unchanged.
+- **Jikji preparation** — `AutoRAGAgent.prepareJikji()` runs `jikji prepare` over configured source directories only. AutoRAG does not call `jikji find` or merge Jikji answers as retrieval results.
 
 ## Usage
 
-### As Pi Extension (Interactive TUI)
-```bash
-pi --extension path/to/autorag/src/extension.ts
-```
-
-### As Library (Programmatic)
 ```typescript
 import { AutoRAGAgent } from "@autorag/librarian";
 import { getModel } from "@earendil-works/pi-ai";
@@ -91,9 +85,12 @@ const agent = new AutoRAGAgent({
   model: getModel("anthropic", "claude-sonnet-4-20250514"),
   searchPaths: ["/path/to/documents"],
 });
-const session = await agent.prompt("summarize the Q3 financial report");
-agent.recordFeedbackByNumbers(session.sessionId, [1, 3], [2]);
+const response = await agent.searchDocuments("summarize the Q3 financial report");
+console.log(response.answer);
+agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
 ```
+
+`searchDocuments()` drives the Pi agent loop and returns a typed `SearchDocumentsResponse`; the caller consumes the structured payload directly, without parsing assistant text.
 
 ## Output Contract
 
@@ -118,7 +115,7 @@ Over time, AutoRAG learns which retrieval methods work best for which types of q
 ## Feedback Flow
 
 1. Caller references results by session ID + number (e.g., session "abc", [1,3] useful)
-2. Agent resolves numbers → internal mapping → source paths
+2. Agent resolves numbers → session registry (populated from `emit_autorag_results` details) → source paths
 3. Source paths → memory entries updated (useful/not_useful)
 4. Memory informs future search strategy
 
@@ -126,13 +123,12 @@ Over time, AutoRAG learns which retrieval methods work best for which types of q
 
 | File | Role |
 |------|------|
-| `src/extension.ts` | Pi extension factory — registers tools, hooks events, injects system prompt |
-| `src/agent/agent.ts` | AutoRAGAgent class for programmatic/library usage |
-| `src/agent/system-prompt.ts` | System prompt builder (shared between extension and library modes) |
-| `src/agent/parse-mapping.ts` | Internal mapping parser (number → source → method) |
+| `src/agent/agent.ts` | AutoRAGAgent class — the customized Pi agent and library API |
+| `src/agent/emit-results-tool.ts` | `emit_autorag_results` terminating tool that returns curated results as typed details |
+| `src/agent/system-prompt.ts` | System prompt builder for the librarian agent |
 | `src/memory/memory.ts` | Feedback persistence and method priority scoring |
 | `src/memory/renderer.ts` | Memory context renderer for system prompt |
-| `src/memory/check-memory-tool.ts` | check_memory tool (ToolDefinition + AgentTool) |
+| `src/memory/check-memory-tool.ts` | check_memory tool (pi-agent-core AgentTool) |
 | `src/manifest/loader.ts` | YAML/JSON manifest loader for indexed data stores |
 | `src/retrieval/types.ts` | Core retrieval type definitions |
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |

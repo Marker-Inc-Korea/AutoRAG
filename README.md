@@ -4,7 +4,7 @@
 
 AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No file paths. No raw grep dumps. Just answers.
 
-Built on the [Pi framework](https://github.com/earendil-works/pi-mono).
+AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a read-only librarian. There is one agent and one usage model.
 
 ## Why AutoRAG
 
@@ -59,7 +59,7 @@ AutoRAG supports **pluggable retrieval methods**. It ships with a real-directory
 
 ### Real directory access
 
-AutoRAG reads configured source directories directly. In extension mode it leaves Pi's built-in `grep`, `find`, `read`, and `ls` tools active instead of replacing them with a virtual filesystem layer. Programmatic retrieval still returns opaque root-relative source identifiers for feedback and curation, while MinSync continues to index parsed markdown mirrors under `.autorag`.
+AutoRAG reads configured source directories directly through the Pi agent loop, scoped to the `searchPaths` you provide. Curated answers are returned as a structured `SearchDocumentsResponse`; source identifiers stay internal (opaque root-relative paths) for feedback and curation and are never placed in the visible answer. MinSync continues to index parsed markdown mirrors under `.autorag`.
 
 ### Optional Jikji indexing
 
@@ -75,7 +75,7 @@ const agent = new AutoRAGAgent({
 await agent.prepareJikji();
 ```
 
-Extension refresh uses an explicit `.autorag/jikji.json` file:
+The same `.autorag/jikji.json` shape configures Jikji when present:
 
 ```json
 {
@@ -92,7 +92,7 @@ Extension refresh uses an explicit `.autorag/jikji.json` file:
 }
 ```
 
-Run the extension command `autorag-jikji-refresh` to prepare configured source roots. Missing, disabled, invalid, or non-object config disables the command without changing the active Pi tool surface. Hidden, sensitive, and media indexing are disabled by default; media OCR/ASR flags are not passed. AutoRAG still searches and reads through its own active tools (`grep`, `find`, `read`, `ls`, `bash`) and other registered retrieval methods; Jikji does not answer queries directly.
+Call `agent.prepareJikji()` (or `agent.refresh()`) to prepare configured source roots. Hidden, sensitive, and media indexing are disabled by default; media OCR/ASR flags are not passed. AutoRAG searches and reads through the Pi agent loop and its registered retrieval methods; Jikji does not answer queries directly.
 
 ### Primary target: document collections
 
@@ -101,14 +101,6 @@ AutoRAG is built for **non-code document retrieval**: manuals, legal docs, inter
 Code repositories work too (Pi's grep is ripgrep — already the best), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
 
 ## Quick Start
-
-### Interactive (Pi TUI)
-
-```bash
-pi --extension path/to/autorag/src/extension.ts
-```
-
-### Programmatic
 
 ```typescript
 import { AutoRAGAgent } from "@autorag/librarian";
@@ -119,17 +111,17 @@ const agent = new AutoRAGAgent({
   searchPaths: ["/path/to/documents"],
 });
 
-const session = await agent.prompt("summarize the compliance requirements");
+const response = await agent.searchDocuments("summarize the compliance requirements");
+console.log(response.answer);
+for (const result of response.results) {
+  console.log(`[${result.number}] ${result.title} — ${result.summary}`);
+}
+
 // Mark which results were useful — AutoRAG remembers for next time
-agent.recordFeedbackByNumbers(session.sessionId, [1, 3], [2]);
+agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
 ```
 
-### Headless (single-shot)
-
-```bash
-pi --extension path/to/autorag/src/extension.ts \
-  --print "What are the key deadlines in the project plan?"
-```
+`searchDocuments()` runs the Pi agent loop — it searches, reads, consults memory, curates, and finalizes through the `emit_autorag_results` structured tool — then returns a typed `SearchDocumentsResponse`. The caller consumes the structured payload directly; no assistant text parsing.
 
 ## How It Works
 

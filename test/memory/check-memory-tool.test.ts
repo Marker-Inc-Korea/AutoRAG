@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCheckMemoryTool, createCheckMemoryToolDefinition } from "../../src/memory/check-memory-tool.ts";
+import { createCheckMemoryTool } from "../../src/memory/check-memory-tool.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 
 let tmpDir: string;
@@ -68,25 +68,5 @@ describe("createCheckMemoryTool", () => {
 		expect(result.details).toBeDefined();
 		expect(result.details!.entryCount).toBe(1);
 		expect(result.details!.topMethod).toBe("posix");
-	});
-
-	it("creates extension tool definition with prompt metadata", async () => {
-		const memory = new RetrievalMemory({ storagePath: memoryPath });
-		memory.load();
-
-		const definition = createCheckMemoryToolDefinition(memory);
-		expect(definition.name).toBe("check_memory");
-		expect(definition.promptSnippet).toContain("Check past search outcomes");
-		expect(definition.promptGuidelines?.length).toBeGreaterThan(0);
-
-		const result = await definition.execute(
-			"test-call",
-			{ query: "anything" },
-			undefined,
-			undefined,
-			undefined as never,
-		);
-		const text = (result.content[0] as { type: "text"; text: string }).text;
-		expect(text).toContain("No retrieval history available.");
 	});
 });

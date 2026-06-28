@@ -1,7 +1,11 @@
-export { AutoRAGAgent, type AutoRAGAgentOptions, type PromptSession } from "./agent/agent.ts";
-export { parseInternalMapping } from "./agent/parse-mapping.ts";
+export { AutoRAGAgent, type AutoRAGAgentOptions } from "./agent/agent.ts";
+export {
+	type AutoRAGResultsDetails,
+	createEmitResultsTool,
+	EMIT_AUTORAG_RESULTS_TOOL_NAME,
+	type SearchDocumentsResponse,
+} from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
-export { default as autoragExtension } from "./extension.ts";
 export * from "./jikji/index.ts";
 export * from "./manifest/index.ts";
 export * from "./memory/index.ts";

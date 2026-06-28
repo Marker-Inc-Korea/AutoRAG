@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { AutoRAGAgent, autoragExtension, buildSystemPrompt } from "../src/index.ts";
+import { AutoRAGAgent, buildSystemPrompt, createEmitResultsTool } from "../src/index.ts";
 
 describe("test fixtures", () => {
-	it("exports public library and extension APIs", () => {
+	it("exports the public library API", () => {
 		expect(AutoRAGAgent).toBeDefined();
-		expect(typeof autoragExtension).toBe("function");
 		expect(typeof buildSystemPrompt).toBe("function");
+		expect(typeof createEmitResultsTool).toBe("function");
 	});
 
 	it("sample-project/src/main.ts exists", () => {

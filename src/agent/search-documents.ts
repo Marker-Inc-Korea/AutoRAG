@@ -1,5 +1,6 @@
 import type { RetrievalMemory } from "../memory/memory.ts";
-import type { CuratedResult, RetrievalResult } from "../retrieval/types.ts";
+import type { CuratedResult } from "../retrieval/types.ts";
+import type { AutoRAGResultsDetails } from "./emit-results-tool.ts";
 
 export type SearchDocumentWarning = "empty-query";
 
@@ -29,17 +30,13 @@ export interface SearchDocumentsResponse {
 type SearchSessions = Map<string, { query: string; registry: Map<number, CuratedResult> }>;
 type ReadonlySearchSessions = ReadonlyMap<string, { query: string; registry: ReadonlyMap<number, CuratedResult> }>;
 
-function evidenceFrom(result: RetrievalResult): SearchDocumentEvidence {
-	const lineNumber = result.metadata.lineNumber;
-	if (typeof lineNumber === "number") {
-		return { excerpt: result.content, lineNumber };
-	}
-	return { excerpt: result.content };
-}
-
 function confidenceFrom(score: number): number {
 	if (!Number.isFinite(score)) return 0;
 	return Math.max(0, Math.min(1, score));
+}
+
+function normalizeWarnings(warnings: readonly string[]): SearchDocumentWarning[] {
+	return warnings.filter((warning): warning is SearchDocumentWarning => warning === "empty-query");
 }
 
 export function createEmptySearchDocumentsResponse(
@@ -58,57 +55,68 @@ export function createEmptySearchDocumentsResponse(
 	};
 }
 
-export function createSearchDocumentsResponse(
+export function recordStructuredResultsSession(
 	sessionId: string,
 	query: string,
-	retrievalResults: readonly RetrievalResult[],
-): SearchDocumentsResponse {
-	const results = retrievalResults.map((result, index) => {
-		const number = index + 1;
-		return {
-			number,
-			title: result.content,
-			summary: result.content,
-			evidence: [evidenceFrom(result)],
-			confidence: confidenceFrom(result.score),
-			feedbackId: `${sessionId}:${number}`,
-		};
-	});
-
-	return {
-		sessionId,
-		query,
-		results,
-		answer: results.map((result) => `[${result.number}] ${result.summary}`).join("\n"),
-		searched: retrievalResults.length,
-		warnings: [],
-	};
-}
-
-export function recordSearchDocumentsSession(
-	sessionId: string,
-	query: string,
-	retrievalResults: readonly RetrievalResult[],
+	details: AutoRAGResultsDetails,
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
 ): SearchDocumentsResponse {
+	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
+	const mappingNumbers = details.mapping.map((entry) => entry.number).sort((a, b) => a - b);
+	const oneToOne =
+		resultNumbers.length === mappingNumbers.length &&
+		resultNumbers.every((number, index) => number === mappingNumbers[index]);
+	if (!oneToOne) {
+		throw new Error("emit_autorag_results: result numbers and mapping numbers must be one-to-one");
+	}
+
 	const registry = new Map<number, CuratedResult>();
-	for (let index = 0; index < retrievalResults.length; index += 1) {
-		const result = retrievalResults[index];
-		const method = typeof result.metadata.method === "string" ? result.metadata.method : "unknown";
-		registry.set(index + 1, { index: index + 1, content: result.content, source: result.source, method });
-		const memoryEntry = memory.append({ query, method, outcome: "pending", metadata: { resultCount: 1 } });
+	for (const entry of details.mapping) {
+		registry.set(entry.number, {
+			index: entry.number,
+			content: entry.content,
+			source: entry.source,
+			method: entry.method,
+		});
+		const memoryEntry = memory.append({
+			query,
+			method: entry.method,
+			outcome: "pending",
+			metadata: { resultCount: 1 },
+		});
 		memory.registerAttempt({
 			id: memoryEntry.id,
 			query,
-			method,
-			sources: [result.source],
+			method: entry.method,
+			sources: [entry.source],
 			timestamp: memoryEntry.timestamp,
 		});
 	}
 	sessions.set(sessionId, { query, registry });
 	memory.save();
-	return createSearchDocumentsResponse(sessionId, query, retrievalResults);
+
+	const results: SearchDocumentResult[] = details.results.map((result) => ({
+		number: result.number,
+		title: result.title,
+		summary: result.summary,
+		evidence: result.evidence.map((evidence) =>
+			evidence.lineNumber !== undefined
+				? { excerpt: evidence.excerpt, lineNumber: evidence.lineNumber }
+				: { excerpt: evidence.excerpt },
+		),
+		confidence: confidenceFrom(result.confidence),
+		feedbackId: `${sessionId}:${result.number}`,
+	}));
+
+	return {
+		sessionId,
+		query,
+		results,
+		answer: details.answer,
+		searched: details.results.length,
+		warnings: normalizeWarnings(details.warnings),
+	};
 }
 
 export function recordNumberedFeedback(

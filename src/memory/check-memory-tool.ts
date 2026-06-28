@@ -1,5 +1,4 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { RetrievalMemory } from "./memory.ts";
 import { renderMemoryContext } from "./renderer.ts";
@@ -15,26 +14,16 @@ export interface CheckMemoryDetails {
 	topMethod: string | null;
 }
 
-export function createCheckMemoryToolDefinition(
+export function createCheckMemoryTool(
 	memory: RetrievalMemory,
-): ToolDefinition<typeof checkMemorySchema, CheckMemoryDetails> {
+): AgentTool<typeof checkMemorySchema, CheckMemoryDetails> {
 	return {
 		name: "check_memory",
 		label: "Check Memory",
 		description:
 			"Check retrieval memory for past query outcomes. Returns which search methods were useful or not useful for similar queries. Call this before searching to pick the best method.",
-		promptSnippet: "Check past search outcomes before searching",
-		promptGuidelines: [
-			"Call check_memory with your planned query to see which methods succeeded or failed for similar past queries.",
-		],
 		parameters: checkMemorySchema,
-		async execute(
-			_toolCallId: string,
-			params: { query: string },
-			_signal: AbortSignal | undefined,
-			_onUpdate: unknown,
-			_ctx: unknown,
-		): Promise<AgentToolResult<CheckMemoryDetails>> {
+		async execute(_toolCallId: string, params: { query: string }): Promise<AgentToolResult<CheckMemoryDetails>> {
 			const entries = memory.getEntries();
 			const summary = renderMemoryContext(entries);
 			const priority = memory.getMethodPriority(params.query);
@@ -55,21 +44,6 @@ export function createCheckMemoryToolDefinition(
 					topMethod: priority[0]?.method ?? null,
 				},
 			};
-		},
-	};
-}
-
-export function createCheckMemoryTool(
-	memory: RetrievalMemory,
-): AgentTool<typeof checkMemorySchema, CheckMemoryDetails> {
-	const definition = createCheckMemoryToolDefinition(memory);
-	return {
-		name: definition.name,
-		label: definition.label,
-		description: definition.description,
-		parameters: definition.parameters,
-		async execute(toolCallId, params, signal, onUpdate) {
-			return await definition.execute(toolCallId, params, signal, onUpdate, undefined as never);
 		},
 	};
 }

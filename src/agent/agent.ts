@@ -15,22 +15,20 @@ import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
-import { parseInternalMapping } from "./parse-mapping.ts";
+import {
+	type AutoRAGResultsDetails,
+	createEmitResultsTool,
+	EMIT_AUTORAG_RESULTS_TOOL_NAME,
+} from "./emit-results-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
 	recordNumberedFeedback,
-	recordSearchDocumentsSession,
+	recordStructuredResultsSession,
 	type SearchDocumentsResponse,
 } from "./search-documents.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
 const SEARCH_TOOLS = ["grep", "find"] as const;
-
-export interface PromptSession {
-	sessionId: string;
-	query: string;
-	timestamp: number;
-}
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
@@ -49,6 +47,8 @@ export class AutoRAGAgent {
 	private lastQuery: string | undefined;
 	private lastSessionId: string | undefined;
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
+	private activeRun = false;
+	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
 
 	private readonly searchPaths: string[];
 	private readonly workspaceProjectRoot: string;
@@ -78,10 +78,10 @@ export class AutoRAGAgent {
 		this.memory.load();
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const tools = [...(options.tools ?? []), checkMemoryTool];
+		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
+		const tools = [...(options.tools ?? []), checkMemoryTool, emitResultsTool];
 		const toolNames = tools.map((tool) => tool.name);
 		const systemPrompt = buildSystemPrompt({
-			mode: "standalone",
 			toolNames,
 			memoryEntries: this.memory.getEntries(),
 			manifests,
@@ -136,37 +136,6 @@ export class AutoRAGAgent {
 		});
 	}
 
-	async prompt(text: string): Promise<PromptSession> {
-		const sessionId = randomUUID();
-		this.lastQuery = text;
-		this.lastSessionId = sessionId;
-		const registry = new Map<number, CuratedResult>();
-		this.sessions.set(sessionId, { query: text, registry });
-
-		let lastAssistantText = "";
-		const unsub = this.innerAgent.subscribe((event) => {
-			if (event.type === "message_end" && "message" in event) {
-				const msg = event.message as { role?: string; content?: Array<{ type: string; text?: string }> };
-				if (msg.role === "assistant" && Array.isArray(msg.content)) {
-					lastAssistantText = msg.content.flatMap((c) => (c.type === "text" && c.text ? [c.text] : [])).join("\n");
-				}
-			}
-		});
-
-		try {
-			await this.innerAgent.prompt(text);
-		} finally {
-			unsub();
-		}
-
-		const mapped = parseInternalMapping(lastAssistantText);
-		for (const entry of mapped) {
-			registry.set(entry.index, entry);
-		}
-
-		return { sessionId, query: text, timestamp: Date.now() };
-	}
-
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
 		return this.innerAgent.subscribe(listener);
 	}
@@ -201,17 +170,44 @@ export class AutoRAGAgent {
 	}
 
 	async searchDocuments(query: string, options: RetrievalOptions = {}): Promise<SearchDocumentsResponse> {
+		if (this.activeRun) {
+			throw new Error("AutoRAG agent is busy; await the in-flight searchDocuments() call before starting another");
+		}
+
 		const sessionId = randomUUID();
 		const trimmedQuery = query.trim();
+		if (trimmedQuery.length === 0) {
+			this.lastQuery = trimmedQuery;
+			this.lastSessionId = sessionId;
+			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions);
+		}
+
+		this.activeRun = true;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
-		if (trimmedQuery.length === 0) return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions);
-		return recordSearchDocumentsSession(
-			sessionId,
-			trimmedQuery,
-			await this.retrieve(trimmedQuery, options),
-			this.sessions,
-			this.memory,
+		let captured: AutoRAGResultsDetails | undefined;
+		this.resultCapture = (details) => {
+			captured = details;
+		};
+		try {
+			await this.innerAgent.prompt(this.buildSearchPrompt(trimmedQuery, options));
+		} finally {
+			this.resultCapture = undefined;
+			this.activeRun = false;
+		}
+
+		if (captured === undefined) {
+			throw new Error("AutoRAG agent completed without emitting structured results");
+		}
+		return recordStructuredResultsSession(sessionId, trimmedQuery, captured, this.sessions, this.memory);
+	}
+
+	private buildSearchPrompt(query: string, options: RetrievalOptions): string {
+		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
+		return (
+			`Find and curate information for this query: ${query}${limit}\n\n` +
+			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
+			`results and the internal number-to-source mapping.`
 		);
 	}
 

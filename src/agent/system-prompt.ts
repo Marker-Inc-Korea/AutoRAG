@@ -2,7 +2,6 @@ import type { StoreManifest } from "../manifest/types.ts";
 import type { MemoryEntry } from "../memory/memory.ts";
 
 export interface SystemPromptConfig {
-	mode: "extension" | "standalone";
 	toolNames: string[];
 	memoryEntries: readonly MemoryEntry[];
 	manifests: StoreManifest[];
@@ -62,8 +61,7 @@ You are invoked by a parent agent or user who needs specific information found. 
 1. **SEARCH** — Use search tools to find candidate files matching the query
 2. **READ** — Use \`${readTool}\` to examine promising files from search results
 3. **CURATE** — Extract key insights: function names, types, logic, purposes, line ranges
-4. **OUTPUT** — Deliver numbered curated knowledge units (NO file paths exposed to caller)
-5. **MAP** — Tag each knowledge unit with internal source for feedback tracking`;
+4. **FINALIZE** — Call \`emit_autorag_results\` exactly once as your final action with the numbered curated units and the internal number-to-source mapping`;
 
 	const methodsSection = `## Active Retrieval Tools
 
@@ -137,43 +135,31 @@ Jikji is enabled only as an indexing and file-map preparation layer for the conf
 
 	const outputSection = `## Output Format
 
-Structure every response using this format:
+Deliver every answer by calling \`emit_autorag_results\` exactly once as your final action. Do not encode results in assistant prose; the caller consumes the structured tool payload, not your text.
 
-<results>
-[1] authenticate() function — Middleware that extracts and verifies JWT from Request.
-    Parses Bearer header, calls jwt.verify, sets req.user. (lines 42-67)
-
-[2] AuthConfig interface — JWT configuration type with secret, expiry, and refresh settings.
-    Fields: tokenExpiry, refreshEnabled, secretKey. (lines 5-12)
-
-<answer>
-Direct answer to the caller's question. Reference results by number (e.g. [1], [2]).
-If nothing was found, state this explicitly and describe what was searched.
-</answer>
-</results>
-
-<internal_mapping>
-1:src/middleware/auth.ts:${config.mode === "extension" ? "grep" : "posix"}
-2:src/config/auth.ts:${config.mode === "extension" ? "grep" : "posix"}
-</internal_mapping>
+The tool takes:
+- \`answer\`: a direct answer to the caller's question, referencing results by number (e.g. [1], [2]). If nothing was found, say so explicitly and describe what was searched.
+- \`results\`: numbered curated knowledge units — each with \`number\`, \`title\`, \`summary\`, \`evidence\`, and \`confidence\`. Example: [1] authenticate() — middleware that verifies the JWT from the request (lines 42-67). NEVER put file paths here.
+- \`mapping\`: one entry per result \`number\` carrying the internal \`source\`, \`method\`, and \`content\` for feedback tracking.
 
 ## Output Rules
 
-- **NEVER** include file paths in <results> or <answer> blocks — the caller must not see them.
-- Each [N] is a curated knowledge unit: name, purpose, key details, and line range.
-- <internal_mapping> MUST appear AFTER </results> with format \`N:filepath:method\` per line.
-- Every numbered unit MUST have a corresponding mapping entry.
+- **NEVER** include file paths in \`answer\` or \`results\` — the caller must not see them.
+- Each result is a curated knowledge unit: name, purpose, key details, and line range.
+- Source paths and methods go ONLY in the \`mapping\` parameter, never in visible text.
+- Every numbered result MUST have exactly one matching \`mapping\` entry with the same number.
 - The caller can reference results by number for feedback (e.g. "1,3 useful").`;
 
 	const constraintsSection = `## Constraints
 
-- **No raw paths**: never expose file paths in <results> or <answer>. Paths go only in <internal_mapping>.
+- **No raw paths**: never expose file paths in \`answer\` or \`results\`. Paths go only in the \`mapping\` parameter.
 - **READ-ONLY**: you find and report — never suggest modifications or write files.
 - **Search then read**: search for candidates first, then ${readTool} to examine content before curating.
 - **No fabrication**: if you find nothing, report the negative result explicitly.
 - **Curate, don't dump**: extract key insights — function names, types, purposes, line ranges. Not raw lines.
 - **Precision over recall**: a few highly relevant curated units beat many vague ones.
-- **Address intent**: answer the caller's actual need, not just their literal query.`;
+- **Address intent**: answer the caller's actual need, not just their literal query.
+- **Finalize once**: call \`emit_autorag_results\` exactly once as the last action; do not emit another message after it.`;
 
 	const toolRows = [
 		...searches.map((name) => `| ${name} | query/pattern, path/scope filters | Search candidate files or content |`),

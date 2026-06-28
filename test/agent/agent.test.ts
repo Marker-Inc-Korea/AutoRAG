@@ -59,7 +59,7 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).not.toContain("search_posix");
 	});
 
-	it("includes caller-provided standalone tools in system prompt", () => {
+	it("includes caller-provided search tools in system prompt", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
@@ -79,9 +79,8 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("codebase-vectors");
 	});
 
-	it("extension system prompt references Pi built-in tools", () => {
+	it("system prompt references provided tools", () => {
 		const prompt = buildSystemPrompt({
-			mode: "extension",
 			toolNames: ["grep", "find", "read", "ls", "check_memory"],
 			memoryEntries: [],
 			manifests: [],
@@ -129,17 +128,17 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Fallback Chain");
 	});
 
-	it("system prompt includes curated output format with internal_mapping", () => {
+	it("system prompt routes output through emit_autorag_results without an internal_mapping channel", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("<results>");
-		expect(prompt).toContain("<answer>");
-		expect(prompt).toContain("<internal_mapping>");
+		expect(prompt).toContain("emit_autorag_results");
 		expect(prompt).toContain("[1]");
 		expect(prompt).toContain("curate");
+		expect(prompt).not.toContain("<internal_mapping>");
+		expect(prompt).not.toContain("internal_mapping");
 	});
 
 	it("system prompt includes behavioral constraints", () => {
@@ -150,7 +149,7 @@ describe("AutoRAGAgent", () => {
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("READ-ONLY");
 		expect(prompt).toContain("No raw paths");
-		expect(prompt).toContain("internal_mapping");
+		expect(prompt).not.toContain("internal_mapping");
 	});
 
 	it("system prompt tool reference includes check_memory", () => {
