@@ -3,9 +3,10 @@ import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:f
 import { opendir, readFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
-import { createDefaultParserRegistry } from "../parser/defaults.ts";
+import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "../parser/defaults.ts";
 import { ParseError } from "../parser/errors.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
+import { normalizeMarkdown } from "../parser/text.ts";
 import type { ParseOutput } from "../parser/types.ts";
 import { loadMirrorIndex, type ParsedMirrorEntry, type ParsedMirrorIndex, saveMirrorIndex } from "./index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "./paths.ts";
@@ -14,6 +15,7 @@ export interface ParsedMirrorSyncOptions {
 	readonly root: string;
 	readonly searchPaths: readonly string[];
 	readonly registry?: ParserRegistry;
+	readonly parserOptions?: DefaultParserRegistryOptions;
 	readonly force?: boolean;
 }
 
@@ -33,7 +35,7 @@ interface CurrentEntry {
 }
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
-	const registry = options.registry ?? createDefaultParserRegistry();
+	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
 	const current = await listCurrentFiles(options.searchPaths);
 	const previous = loadMirrorIndex(options.root);
 	const nextEntries: Record<string, ParsedMirrorEntry> = {};
@@ -72,7 +74,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				skipped += 1;
 				continue;
 			}
-			writeAtomic(outputPath, parsed.markdown);
+			writeAtomic(outputPath, normalizeMarkdown(parsed.markdown));
 			written += 1;
 		}
 

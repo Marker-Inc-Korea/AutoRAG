@@ -19,11 +19,18 @@
     "@earendil-works/pi-agent-core": "^0.76.0",
     "@earendil-works/pi-ai": "^0.76.0",
     "@opendataloader/pdf": "^2.4.7",
+    "chardet": "^2.2.0",
+    "fast-xml-parser": "^5.9.3",
+    "iconv-lite": "^0.7.2",
+    "jszip": "^3.10.1",
+    "mailparser": "^3.9.12",
+    "tesseract.js": "^7.0.0",
     "typebox": "^1.1.24",
     "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.5",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^24.3.0",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"

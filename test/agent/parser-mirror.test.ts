@@ -4,6 +4,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { loadMirrorIndex } from "../../src/mirror/index.ts";
+import {
+	createDocxFixture,
+	createEmlFixture,
+	createEucKrEmlFixture,
+	createHwpxFixture,
+	createPptxFixture,
+	createXlsxFixture,
+} from "../fixtures/document-formats.ts";
 import { createMinimalPdfBuffer } from "../fixtures/minimal-pdf.ts";
 
 let root: string;
@@ -86,5 +94,44 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 		expect(textOutput).toBeDefined();
 		if (!textOutput) throw new Error("expected parsed mirror output path for adjacent text");
 		expect(readFileSync(textOutput, "utf8")).toBe("Plain text survives bad PDF\n");
+	});
+
+	it("refresh(true) syncs parsed mirrors for registered document formats through the default parser interface", async () => {
+		// Given: source files that represent the issue #12-#18 parser coverage.
+		const docs = join(root, "docs");
+		mkdirSync(docs, { recursive: true });
+		writeFileSync(join(docs, "contract.docx"), await createDocxFixture("Mirror DOCX marker"));
+		writeFileSync(join(docs, "slides.pptx"), await createPptxFixture("Mirror PPTX marker"));
+		writeFileSync(join(docs, "sheet.xlsx"), await createXlsxFixture("Mirror XLSX marker"));
+		writeFileSync(join(docs, "legacy.xls"), Buffer.from("unsupported xls"));
+		writeFileSync(join(docs, "form.hwpx"), await createHwpxFixture("Mirror HWPX marker"));
+		writeFileSync(join(docs, "thread.eml"), createEmlFixture("Mirror EML marker"));
+		writeFileSync(join(docs, "korean.eml"), createEucKrEmlFixture("미러 메일 marker"));
+		writeFileSync(join(docs, "korean.txt"), Buffer.from([0xc7, 0xd1, 0xb1, 0xdb]));
+		writeFileSync(join(docs, "legacy.hwp"), Buffer.from("unsupported hwp"));
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+		});
+
+		// When: refresh drives the real default parser registry through mirror sync.
+		await agent.refresh(true);
+		const index = loadMirrorIndex(root);
+		const rendered = Object.values(index.entries)
+			.map((entry) => readFileSync(entry.outputPath, "utf8"))
+			.join("\n");
+
+		// Then: every supported document marker is present and mirror text is normalized.
+		expect(rendered).toContain("Mirror DOCX marker");
+		expect(rendered).toContain("Mirror PPTX marker");
+		expect(rendered).toContain("Mirror XLSX marker");
+		expect(rendered).toContain("Mirror HWPX marker");
+		expect(rendered).toContain("Mirror EML marker");
+		expect(rendered).toContain("미러 메일 marker");
+		expect(rendered).toContain("한글");
+		expect(rendered).toBe(rendered.normalize("NFC"));
+		expect(index.entries["/docs/legacy.hwp"]).toBeUndefined();
+		expect(index.entries["/docs/legacy.xls"]).toBeUndefined();
 	});
 });

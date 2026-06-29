@@ -1,0 +1,108 @@
+import { createWorker } from "tesseract.js";
+import { ParseError } from "./errors.ts";
+import { normalizeMarkdown } from "./text.ts";
+import { type ParseInput, type ParseOutput, Parser } from "./types.ts";
+
+export interface OcrEngineInput {
+	readonly bytes: Uint8Array;
+	readonly languages: readonly string[];
+	readonly timeoutMs: number;
+	readonly signal: AbortSignal;
+}
+
+export type OcrEngine = (input: OcrEngineInput) => Promise<string>;
+
+export interface OcrParserOptions {
+	readonly enabled: boolean;
+	readonly languages?: readonly string[];
+	readonly timeoutMs?: number;
+	readonly maxBytes?: number;
+	readonly engine?: OcrEngine;
+}
+
+const DEFAULT_OCR_TIMEOUT_MS = 30_000;
+const DEFAULT_OCR_LANGUAGES = ["eng"] as const;
+
+export class ImageOcrParser extends Parser {
+	readonly name = "image-ocr";
+	readonly extensions = [".jpg", ".jpeg", ".png", ".bmp", ".tiff"] as const;
+	private readonly languages: readonly string[];
+	private readonly timeoutMs: number;
+	private readonly maxBytes: number | undefined;
+	private readonly engine: OcrEngine;
+
+	constructor(options: OcrParserOptions) {
+		super();
+		this.languages = options.languages ?? DEFAULT_OCR_LANGUAGES;
+		this.timeoutMs = options.timeoutMs ?? DEFAULT_OCR_TIMEOUT_MS;
+		this.maxBytes = options.maxBytes;
+		this.engine = options.engine ?? tesseractOcr;
+	}
+
+	async parse(input: ParseInput): Promise<ParseOutput> {
+		const controller = new AbortController();
+		try {
+			if (this.maxBytes !== undefined && input.bytes.byteLength > this.maxBytes) {
+				throw new Error(`OCR input exceeds maxBytes budget of ${this.maxBytes}`);
+			}
+			const markdown = await withTimeout(
+				this.engine({
+					bytes: input.bytes,
+					languages: this.languages,
+					timeoutMs: this.timeoutMs,
+					signal: controller.signal,
+				}),
+				this.timeoutMs,
+				() => controller.abort(),
+			);
+			return {
+				markdown: normalizeMarkdown(markdown),
+				metadata: { parser: this.name, languages: [...this.languages] },
+			};
+		} catch (cause) {
+			throw new ParseError(this.name, input.virtualPath, cause);
+		} finally {
+			controller.abort();
+		}
+	}
+}
+
+async function tesseractOcr(input: OcrEngineInput): Promise<string> {
+	const worker = await createWorker(input.languages.join("+"));
+	let terminated = false;
+	const terminate = async (): Promise<void> => {
+		if (terminated) return;
+		terminated = true;
+		await worker.terminate();
+	};
+	const abort = () => {
+		void terminate();
+	};
+	input.signal.addEventListener("abort", abort, { once: true });
+	try {
+		const result = await worker.recognize(Buffer.from(input.bytes));
+		return result.data.text;
+	} finally {
+		input.signal.removeEventListener("abort", abort);
+		await terminate();
+	}
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T> {
+	return new Promise((resolve, reject) => {
+		const timeout = setTimeout(() => {
+			onTimeout();
+			reject(new Error(`OCR timed out after ${timeoutMs}ms`));
+		}, timeoutMs);
+		promise.then(
+			(value) => {
+				clearTimeout(timeout);
+				resolve(value);
+			},
+			(error: unknown) => {
+				clearTimeout(timeout);
+				reject(error);
+			},
+		);
+	});
+}

@@ -11,6 +11,7 @@ import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
 import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
+import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
@@ -45,6 +46,7 @@ export interface AutoRAGAgentOptions {
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
+	parserOptions?: DefaultParserRegistryOptions;
 }
 
 export class AutoRAGAgent {
@@ -65,6 +67,7 @@ export class AutoRAGAgent {
 	private readonly merger = new ResultMerger();
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
+	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -72,6 +75,7 @@ export class AutoRAGAgent {
 
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
+		this.parserOptions = options.parserOptions;
 		this.methodRegistry.register(new PosixMethod({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths }));
 		if (options.minSync) {
 			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
@@ -264,7 +268,12 @@ export class AutoRAGAgent {
 	}
 
 	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
-		return syncParsedMirrors({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths, force });
+		return syncParsedMirrors({
+			root: this.workspaceProjectRoot,
+			searchPaths: this.searchPaths,
+			force,
+			parserOptions: this.parserOptions,
+		});
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
