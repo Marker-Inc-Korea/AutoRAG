@@ -1,4 +1,4 @@
-export { AutoRAGAgent, type AutoRAGAgentOptions } from "./agent/agent.ts";
+export { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRefreshOptions } from "./agent/agent.ts";
 export {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,

@@ -30,6 +30,11 @@ import { buildSystemPrompt } from "./system-prompt.ts";
 
 const SEARCH_TOOLS = ["grep", "find"] as const;
 
+export interface AutoRefreshOptions {
+	readonly intervalMs: number;
+	readonly immediate?: boolean;
+}
+
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
 	searchPaths: string[];
@@ -39,6 +44,7 @@ export interface AutoRAGAgentOptions {
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
 	jikji?: JikjiOptions;
+	autoRefresh?: AutoRefreshOptions;
 }
 
 export class AutoRAGAgent {
@@ -49,6 +55,8 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	private autoRefreshTimer: NodeJS.Timeout | undefined;
+	private refreshing = false;
 
 	private readonly searchPaths: string[];
 	private readonly workspaceProjectRoot: string;
@@ -134,6 +142,10 @@ export class AutoRAGAgent {
 				return undefined;
 			},
 		});
+
+		if (options.autoRefresh) {
+			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
+		}
 	}
 
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
@@ -142,6 +154,39 @@ export class AutoRAGAgent {
 
 	abort(): void {
 		this.innerAgent.abort();
+	}
+
+	/**
+	 * Periodically re-runs the incremental {@link refresh} so parsed mirrors and
+	 * indexes stay current. Re-parsing is incremental (mtime/size) via the
+	 * existing mirror sync; this only schedules it. Opt-in and stoppable.
+	 */
+	startAutoRefresh(intervalMs: number, options: { immediate?: boolean } = {}): void {
+		this.stopAutoRefresh();
+		const tick = () => {
+			void this.runAutoRefreshTick();
+		};
+		this.autoRefreshTimer = setInterval(tick, intervalMs);
+		this.autoRefreshTimer.unref();
+		if (options.immediate) tick();
+	}
+
+	stopAutoRefresh(): void {
+		if (this.autoRefreshTimer === undefined) return;
+		clearInterval(this.autoRefreshTimer);
+		this.autoRefreshTimer = undefined;
+	}
+
+	private async runAutoRefreshTick(): Promise<void> {
+		if (this.refreshing) return;
+		this.refreshing = true;
+		try {
+			await this.refresh(false);
+		} catch {
+			// Background auto-refresh is best-effort; keep the interval alive.
+		} finally {
+			this.refreshing = false;
+		}
 	}
 
 	submitFeedback(sessionId: string | undefined, satisfied: boolean): void {
