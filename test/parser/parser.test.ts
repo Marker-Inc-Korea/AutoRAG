@@ -1,6 +1,8 @@
+import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 import {
 	createDefaultParserRegistry,
+	ImageOcrParser,
 	OpendataloaderPdfParser,
 	ParseError,
 	Parser,
@@ -173,6 +175,29 @@ describe("ParserRegistry", () => {
 		).rejects.toBeInstanceOf(ParseError);
 	});
 
+	it("OCR timeout waits for engine cleanup before returning", async () => {
+		// Given: an OCR engine that starts cleanup only after the abort signal.
+		let cleanupCompleted = false;
+		const parser = new ImageOcrParser({
+			enabled: true,
+			timeoutMs: 1,
+			engine: (input) =>
+				new Promise<string>(() => {
+					input.signal.addEventListener("abort", () => {
+						cleanupCompleted = true;
+					});
+				}),
+		});
+
+		// When: parsing times out.
+		await expect(
+			parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) }),
+		).rejects.toBeInstanceOf(ParseError);
+
+		// Then: cleanup has completed before parse() resolves/rejects.
+		expect(cleanupCompleted).toBe(true);
+	});
+
 	it("passes opt-in scanned-PDF OCR fallback options to the OpenDataLoader convert API", async () => {
 		// Given: a PDF parser configured for hybrid OCR fallback with an injected converter.
 		const calls: Array<{ readonly hybrid?: string; readonly hybridMode?: string; readonly hybridTimeout?: string }> =
@@ -226,5 +251,18 @@ describe("ParserRegistry", () => {
 		await expect(
 			xlsParser?.parse({ virtualPath: "/docs/legacy.xls", bytes: Buffer.from("not xls") }),
 		).rejects.toBeInstanceOf(ParseError);
+	});
+
+	it("rejects oversized zipped XML documents before extraction", async () => {
+		// Given: a DOCX-like ZIP with more XML files than the parser budget allows.
+		const zip = new JSZip();
+		for (let index = 0; index < 65; index += 1) {
+			zip.file(`word/header${index}.xml`, `<w:t>oversized ${index}</w:t>`);
+		}
+		const bytes = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
+		const parser = createDefaultParserRegistry().getForVirtualPath("/docs/oversized.docx");
+
+		// When/Then: the archive is rejected through the typed parser boundary.
+		await expect(parser?.parse({ virtualPath: "/docs/oversized.docx", bytes })).rejects.toBeInstanceOf(ParseError);
 	});
 });

@@ -11,6 +11,10 @@ export interface OcrEngineInput {
 }
 
 export type OcrEngine = (input: OcrEngineInput) => Promise<string>;
+type OcrEngineWithCleanup = (input: OcrEngineInput) => {
+	readonly result: Promise<string>;
+	readonly cleanup: Promise<void>;
+};
 
 export interface OcrParserOptions {
 	readonly enabled: boolean;
@@ -29,14 +33,14 @@ export class ImageOcrParser extends Parser {
 	private readonly languages: readonly string[];
 	private readonly timeoutMs: number;
 	private readonly maxBytes: number | undefined;
-	private readonly engine: OcrEngine;
+	private readonly engine: OcrEngineWithCleanup;
 
 	constructor(options: OcrParserOptions) {
 		super();
 		this.languages = options.languages ?? DEFAULT_OCR_LANGUAGES;
 		this.timeoutMs = options.timeoutMs ?? DEFAULT_OCR_TIMEOUT_MS;
 		this.maxBytes = options.maxBytes;
-		this.engine = options.engine ?? tesseractOcr;
+		this.engine = options.engine ? engineWithNoopCleanup(options.engine) : tesseractOcr;
 	}
 
 	async parse(input: ParseInput): Promise<ParseOutput> {
@@ -45,16 +49,13 @@ export class ImageOcrParser extends Parser {
 			if (this.maxBytes !== undefined && input.bytes.byteLength > this.maxBytes) {
 				throw new Error(`OCR input exceeds maxBytes budget of ${this.maxBytes}`);
 			}
-			const markdown = await withTimeout(
-				this.engine({
-					bytes: input.bytes,
-					languages: this.languages,
-					timeoutMs: this.timeoutMs,
-					signal: controller.signal,
-				}),
-				this.timeoutMs,
-				() => controller.abort(),
-			);
+			const operation = this.engine({
+				bytes: input.bytes,
+				languages: this.languages,
+				timeoutMs: this.timeoutMs,
+				signal: controller.signal,
+			});
+			const markdown = await withTimeout(operation, this.timeoutMs, () => controller.abort());
 			return {
 				markdown: normalizeMarkdown(markdown),
 				metadata: { parser: this.name, languages: [...this.languages] },
@@ -67,34 +68,59 @@ export class ImageOcrParser extends Parser {
 	}
 }
 
-async function tesseractOcr(input: OcrEngineInput): Promise<string> {
-	const worker = await createWorker(input.languages.join("+"));
+function engineWithNoopCleanup(engine: OcrEngine): OcrEngineWithCleanup {
+	return (input) => ({ result: engine(input), cleanup: Promise.resolve() });
+}
+
+function tesseractOcr(input: OcrEngineInput): ReturnType<OcrEngineWithCleanup> {
+	let cleanupResolve: () => void = () => undefined;
+	let cleanupReject: (reason: unknown) => void = () => undefined;
+	const cleanup = new Promise<void>((resolve, reject) => {
+		cleanupResolve = resolve;
+		cleanupReject = reject;
+	});
+	const result = runTesseractOcr(input, cleanupResolve, cleanupReject);
+	return { result, cleanup };
+}
+
+async function runTesseractOcr(
+	input: OcrEngineInput,
+	cleanupResolve: () => void,
+	cleanupReject: (reason: unknown) => void,
+): Promise<string> {
+	let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
 	let terminated = false;
 	const terminate = async (): Promise<void> => {
-		if (terminated) return;
+		if (worker === undefined || terminated) return;
 		terminated = true;
 		await worker.terminate();
 	};
 	const abort = () => {
-		void terminate();
+		void terminate().then(cleanupResolve, cleanupReject);
 	};
 	input.signal.addEventListener("abort", abort, { once: true });
 	try {
+		worker = await createWorker(input.languages.join("+"));
+		if (input.signal.aborted) throw new Error("OCR aborted before worker was ready");
 		const result = await worker.recognize(Buffer.from(input.bytes));
 		return result.data.text;
 	} finally {
 		input.signal.removeEventListener("abort", abort);
-		await terminate();
+		await terminate().then(cleanupResolve, cleanupReject);
 	}
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => void): Promise<T> {
+function withTimeout(
+	operation: ReturnType<OcrEngineWithCleanup>,
+	timeoutMs: number,
+	onTimeout: () => void,
+): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(() => {
 			onTimeout();
-			reject(new Error(`OCR timed out after ${timeoutMs}ms`));
+			operation.cleanup.finally(() => reject(new Error(`OCR timed out after ${timeoutMs}ms`)));
 		}, timeoutMs);
-		promise.then(
+		operation.result.then(
 			(value) => {
 				clearTimeout(timeout);
 				resolve(value);
