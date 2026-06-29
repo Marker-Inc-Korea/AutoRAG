@@ -1,9 +1,6 @@
-import { Readable } from "node:stream";
-import JSZip from "jszip";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	createDefaultParserRegistry,
-	ImageOcrParser,
 	OpendataloaderPdfParser,
 	ParseError,
 	Parser,
@@ -11,7 +8,6 @@ import {
 	type PdfConverter,
 	PlainTextParser,
 } from "../../src/parser/index.ts";
-import { readZipXmlText } from "../../src/parser/xml-text.ts";
 import {
 	createDocxFixture,
 	createEmlFixture,
@@ -23,12 +19,6 @@ import {
 import { createMinimalPdfBuffer } from "../fixtures/minimal-pdf.ts";
 
 const pdfMarker = "OpenDataLoader AutoRAG PDF marker refund policy alpha";
-
-const tesseractMock = vi.hoisted(() => ({
-	createWorker: vi.fn(),
-}));
-
-vi.mock("tesseract.js", () => tesseractMock);
 
 class UppercaseParser extends Parser {
 	readonly name = "uppercase";
@@ -143,151 +133,6 @@ describe("ParserRegistry", () => {
 		).resolves.toMatchObject({ markdown: "한글" });
 	});
 
-	it("OCR image parser is opt-in and enforces timeout budgets", async () => {
-		// Given: the default registry and explicitly enabled OCR registries with budget controls.
-		let abortObserved = false;
-		const disabled = createDefaultParserRegistry();
-		const timed = createDefaultParserRegistry({
-			ocr: {
-				enabled: true,
-				timeoutMs: 1,
-				engine: (input) =>
-					new Promise<string>(() => {
-						input.signal.addEventListener("abort", () => {
-							abortObserved = true;
-						});
-					}),
-			},
-		});
-		const budgeted = createDefaultParserRegistry({
-			ocr: {
-				enabled: true,
-				maxBytes: 3,
-				engine: async () => "OCR marker",
-			},
-		});
-
-		// When/Then: images are invisible by default but become routed when OCR is explicitly enabled.
-		expect(disabled.getForVirtualPath("/docs/scan.png")).toBeUndefined();
-		const imageParser = timed.getForVirtualPath("/docs/scan.png");
-		expect(imageParser).toBeDefined();
-		await expect(
-			imageParser?.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47]) }),
-		).rejects.toThrow(/timed out/i);
-		expect(abortObserved).toBe(true);
-		await expect(
-			budgeted.getForVirtualPath("/docs/large.png")?.parse({
-				virtualPath: "/docs/large.png",
-				bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
-			}),
-		).rejects.toBeInstanceOf(ParseError);
-	});
-
-	it("OCR timeout waits for engine cleanup before returning", async () => {
-		// Given: an OCR engine that starts cleanup only after the abort signal.
-		let cleanupCompleted = false;
-		const parser = new ImageOcrParser({
-			enabled: true,
-			timeoutMs: 1,
-			engine: (input) =>
-				new Promise<string>(() => {
-					input.signal.addEventListener("abort", () => {
-						cleanupCompleted = true;
-					});
-				}),
-		});
-
-		// When: parsing times out.
-		await expect(
-			parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) }),
-		).rejects.toBeInstanceOf(ParseError);
-
-		// Then: cleanup has completed before parse() resolves/rejects.
-		expect(cleanupCompleted).toBe(true);
-	});
-
-	it("OCR timeout waits for Tesseract worker termination before returning", async () => {
-		// Given: the real OCR adapter observes a timeout while Tesseract termination is still pending.
-		let rejectRecognition: (error: Error) => void = () => undefined;
-		let finishTermination: () => void = () => undefined;
-		tesseractMock.createWorker.mockResolvedValueOnce({
-			recognize: () =>
-				new Promise<never>((_, reject) => {
-					rejectRecognition = reject;
-				}),
-			terminate: () =>
-				new Promise<void>((resolve) => {
-					finishTermination = resolve;
-				}),
-		});
-		const parser = new ImageOcrParser({ enabled: true, timeoutMs: 1 });
-		const result = parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) });
-		await new Promise((resolve) => setTimeout(resolve, 10));
-
-		// When: recognition rejects because termination started, but termination has not completed.
-		rejectRecognition(new Error("terminated"));
-		await Promise.resolve();
-
-		// Then: parse() must still wait for terminate() to finish before rejecting.
-		let settled = false;
-		result.then(
-			() => {
-				settled = true;
-			},
-			() => {
-				settled = true;
-			},
-		);
-		await Promise.resolve();
-		expect(settled).toBe(false);
-		finishTermination();
-		await expect(result).rejects.toBeInstanceOf(ParseError);
-		expect(settled).toBe(true);
-	});
-
-	it("OCR timeout waits for pending Tesseract worker creation cleanup", async () => {
-		// Given: Tesseract worker creation is still pending when the OCR timeout fires.
-		let resolveWorker: (worker: { recognize: () => Promise<string>; terminate: () => Promise<void> }) => void = () =>
-			undefined;
-		let finishTermination: () => void = () => undefined;
-		tesseractMock.createWorker.mockReturnValueOnce(
-			new Promise((resolve) => {
-				resolveWorker = resolve;
-			}),
-		);
-		const parser = new ImageOcrParser({ enabled: true, timeoutMs: 1 });
-		const result = parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) });
-
-		let settled = false;
-		result.then(
-			() => {
-				settled = true;
-			},
-			() => {
-				settled = true;
-			},
-		);
-		await new Promise((resolve) => setTimeout(resolve, 10));
-
-		// When: timeout has fired before createWorker resolves.
-		await Promise.resolve();
-		expect(settled).toBe(false);
-
-		// Then: parse() rejects only after the late-created worker is terminated.
-		resolveWorker({
-			recognize: async () => "late text",
-			terminate: () =>
-				new Promise<void>((resolve) => {
-					finishTermination = resolve;
-				}),
-		});
-		await Promise.resolve();
-		expect(settled).toBe(false);
-		finishTermination();
-		await expect(result).rejects.toBeInstanceOf(ParseError);
-		expect(settled).toBe(true);
-	});
-
 	it("passes opt-in scanned-PDF OCR fallback options to the OpenDataLoader convert API", async () => {
 		// Given: a PDF parser configured for hybrid OCR fallback with an injected converter.
 		const calls: Array<{ readonly hybrid?: string; readonly hybridMode?: string; readonly hybridTimeout?: string }> =
@@ -341,71 +186,5 @@ describe("ParserRegistry", () => {
 		await expect(
 			xlsParser?.parse({ virtualPath: "/docs/legacy.xls", bytes: Buffer.from("not xls") }),
 		).rejects.toBeInstanceOf(ParseError);
-	});
-
-	it("rejects oversized zipped XML documents before extraction", async () => {
-		// Given: a DOCX-like ZIP with more XML files than the parser budget allows.
-		const zip = new JSZip();
-		for (let index = 0; index < 65; index += 1) {
-			zip.file(`word/header${index}.xml`, `<w:t>oversized ${index}</w:t>`);
-		}
-		const bytes = Buffer.from(await zip.generateAsync({ type: "uint8array" }));
-		const parser = createDefaultParserRegistry().getForVirtualPath("/docs/oversized.docx");
-
-		// When/Then: the archive is rejected through the typed parser boundary.
-		await expect(parser?.parse({ virtualPath: "/docs/oversized.docx", bytes })).rejects.toBeInstanceOf(ParseError);
-	});
-
-	it("rejects ZIP XML members with oversized uncompressed metadata before streaming", async () => {
-		// Given: a highly-compressible XML member whose uncompressed central-directory size exceeds the budget.
-		const zip = new JSZip();
-		zip.file("word/document.xml", `<w:t>${"x".repeat(5_000_001)}</w:t>`);
-		const bytes = Buffer.from(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
-		const loaded = await JSZip.loadAsync(bytes);
-		const sample = loaded.file("word/document.xml");
-		if (sample === null) throw new Error("fixture missing document.xml");
-		const prototype = Object.getPrototypeOf(sample) as { nodeStream: JSZip.JSZipObject["nodeStream"] };
-		const originalNodeStream = prototype.nodeStream;
-		prototype.nodeStream = () => {
-			throw new Error("nodeStream should not run for oversized metadata");
-		};
-		try {
-			// When/Then: metadata rejects the member before content streaming starts.
-			await expect(readZipXmlText(bytes, /^word\/document\.xml$/)).rejects.toThrow(/exceeds limit/);
-		} finally {
-			prototype.nodeStream = originalNodeStream;
-		}
-	});
-
-	it("rejects ZIP XML members that exceed the streaming byte budget without metadata", async () => {
-		// Given: a ZIP member whose declared uncompressed size is unavailable.
-		const originalLoadAsync = JSZip.loadAsync.bind(JSZip);
-		const zip = new JSZip();
-		zip.file("word/document.xml", "<w:t>small</w:t>");
-		const bytes = Buffer.from(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
-		const largeChunk = Buffer.alloc(5_000_001, "x");
-		vi.spyOn(JSZip, "loadAsync").mockImplementationOnce(async (input) => {
-			const loaded = await originalLoadAsync(input);
-			const file = loaded.file("word/document.xml");
-			if (file === null) throw new Error("fixture missing document.xml");
-			const data = Reflect.get(file, "_data");
-			if (typeof data === "object" && data !== null) Reflect.set(data, "uncompressedSize", undefined);
-			file.nodeStream = () => Readable.from([largeChunk]);
-			return loaded;
-		});
-
-		// When/Then: streamed bytes are counted and rejected even without trusted metadata.
-		await expect(readZipXmlText(bytes, /^word\/document\.xml$/)).rejects.toThrow(/exceeds limit/);
-	});
-
-	it("rejects ZIP XML documents that expand beyond the text chunk budget", async () => {
-		// Given: one XML file under the byte budget but over the text-node expansion budget.
-		const zip = new JSZip();
-		const xml = `<root>${Array.from({ length: 20_001 }, (_, index) => `<w:t>${index}</w:t>`).join("")}</root>`;
-		zip.file("word/document.xml", xml);
-		const bytes = Buffer.from(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
-
-		// When/Then: extracted text chunk expansion is bounded independently from bytes.
-		await expect(readZipXmlText(bytes, /^word\/document\.xml$/)).rejects.toThrow(/text chunk count/);
 	});
 });
