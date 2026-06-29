@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
@@ -48,13 +49,14 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? 20;
+		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		const client = await this.client();
-		const hits = await client.query(query, topK);
+		const hits = await client.query(query, queryK);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
-			if (!entry) continue;
+			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
 			results.push({
 				id: `minsync:${entry.virtualPath}:${basename(hit.path)}`,
 				content: hit.text,
@@ -62,6 +64,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				score: hit.score,
 				metadata: { method: "minsync" },
 			});
+			if (results.length >= topK) break;
 		}
 		return results;
 	}

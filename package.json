@@ -19,6 +19,7 @@
     "@earendil-works/pi-agent-core": "^0.76.0",
     "@earendil-works/pi-ai": "^0.76.0",
     "@opendataloader/pdf": "^2.4.7",
+    "@pngwasi/node-tantivy-binding": "^0.3.4",
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.9.3",
     "iconv-lite": "^0.7.2",

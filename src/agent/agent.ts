@@ -13,6 +13,7 @@ import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOp
 import { type ParsedMirrorSyncResult, syncParsedMirrors } from "../mirror/sync.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
+import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
@@ -21,6 +22,7 @@ import {
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
+import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
 	recordNumberedFeedback,
@@ -29,11 +31,15 @@ import {
 } from "./search-documents.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
-const SEARCH_TOOLS = ["grep", "find"] as const;
+const SEARCH_TOOLS = ["grep", "find", SEARCH_BM25_DOCUMENTS_TOOL_NAME] as const;
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
 	readonly immediate?: boolean;
+}
+
+export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
+	readonly bm25?: BM25SyncResult;
 }
 
 export interface AutoRAGAgentOptions {
@@ -44,6 +50,7 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
+	bm25?: Omit<BM25MethodOptions, "root">;
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
@@ -66,6 +73,7 @@ export class AutoRAGAgent {
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
+	private readonly bm25Method: BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 
@@ -81,6 +89,10 @@ export class AutoRAGAgent {
 			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
 		}
+		if (options.bm25) {
+			this.bm25Method = new BM25Method({ ...options.bm25, root: this.workspaceProjectRoot });
+			this.methodRegistry.register(this.bm25Method);
+		}
 		if (options.jikji) {
 			this.jikjiClient = new JikjiClient(options.jikji);
 		}
@@ -90,8 +102,9 @@ export class AutoRAGAgent {
 		this.memory.load();
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
+		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
-		const tools = [...(options.tools ?? []), checkMemoryTool, emitResultsTool];
+		const tools = [...(options.tools ?? []), checkMemoryTool, searchBM25Tool, emitResultsTool];
 		const toolNames = tools.map((tool) => tool.name);
 		const systemPrompt = buildSystemPrompt({
 			toolNames,
@@ -251,20 +264,22 @@ export class AutoRAGAgent {
 		return recordStructuredResultsSession(sessionId, trimmedQuery, captured, this.sessions, this.memory);
 	}
 
-	private buildSearchPrompt(query: string, options: RetrievalOptions): string {
+	buildSearchPrompt(query: string, options: RetrievalOptions): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		return (
-			`Find and curate information for this query: ${query}${limit}\n\n` +
+			`Find and curate information for this query: ${query}${limit}${scope}\n\n` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);
 	}
 
-	async refresh(force = false): Promise<ParsedMirrorSyncResult> {
+	async refresh(force = false): Promise<AutoRAGRefreshResult> {
 		const summary = await this.syncParsedMirrors(force);
+		const bm25 = await this.syncBM25();
 		await this.syncMinSync();
 		await this.prepareJikji();
-		return summary;
+		return bm25 ? { ...summary, bm25 } : summary;
 	}
 
 	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
@@ -274,6 +289,10 @@ export class AutoRAGAgent {
 			force,
 			parserOptions: this.parserOptions,
 		});
+	}
+
+	async syncBM25(): Promise<BM25SyncResult | undefined> {
+		return this.bm25Method?.sync();
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
@@ -290,10 +309,10 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Programmatic retrieval across all registered methods (currently the
-	 * real-directory `posix` method), merged via min-max normalization + source
-	 * dedup. Activates the RetrievalMethodRegistry / ParallelRetriever /
-	 * ResultMerger pipeline. Returns opaque root-relative sourced results.
+	 * Programmatic retrieval across all registered methods, merged via min-max
+	 * normalization + source dedup. Activates the RetrievalMethodRegistry /
+	 * ParallelRetriever / ResultMerger pipeline. Returns opaque root-relative
+	 * sourced results.
 	 */
 	async retrieve(query: string, options: RetrievalOptions = {}): Promise<RetrievalResult[]> {
 		const byMethod = await this.retriever.retrieve(this.methodRegistry.list(), query, options);

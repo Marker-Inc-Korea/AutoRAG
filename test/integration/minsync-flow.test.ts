@@ -57,6 +57,48 @@ process.exit(2);
 	chmodSync(minsyncBinary, 0o755);
 }
 
+function writeFakeScopedMinSync(): void {
+	writeFileSync(
+		minsyncBinary,
+		`#!/usr/bin/env node
+const args = process.argv.slice(2);
+
+if (args[0] === "init") {
+  console.log(JSON.stringify({ initialized: true }));
+  process.exit(0);
+}
+
+if (args[0] === "sync") {
+  console.log(JSON.stringify({ synced: 2 }));
+  process.exit(0);
+}
+
+if (args[0] === "query") {
+  const k = Number(args[args.indexOf("-k") + 1]);
+  const results = [
+    {
+      path: ${JSON.stringify(join(root, ".autorag", "parsed", "files", "docs", "outside.txt.md"))},
+      score: 0.99,
+      text: "Out of scope semantic hit."
+    }
+  ];
+  if (k > 1) {
+    results.push({
+      path: ${JSON.stringify(join(root, ".autorag", "parsed", "files", "docs", "sub", "inside.txt.md"))},
+      score: 0.72,
+      text: "Scoped semantic hit inside the requested folder."
+    });
+  }
+  console.log(JSON.stringify({ results }));
+  process.exit(0);
+}
+
+process.exit(2);
+`,
+	);
+	chmodSync(minsyncBinary, 0o755);
+}
+
 function requireValue<T>(value: T | undefined, label: string): T {
 	if (value === undefined) throw new Error(`missing ${label}`);
 	return value;
@@ -88,5 +130,28 @@ describe("AutoRAGAgent MinSync integration", () => {
 		expect(result.content).toContain("refunds are approved");
 		expect(result.metadata.method).toBe("minsync");
 		expect(JSON.stringify(results)).not.toContain(docs);
+	});
+
+	it("over-queries before filtering scoped vector results", async () => {
+		writeFileSync(join(docs, "outside.txt"), "Outside original content.\n");
+		mkdirSync(join(docs, "sub"), { recursive: true });
+		writeFileSync(join(docs, "sub", "inside.txt"), "Inside original content.\n");
+		writeFakeScopedMinSync();
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: {
+				binaryPath: minsyncBinary,
+				workspacePath: minsyncWorkspace,
+			},
+		});
+		await agent.refresh(true);
+
+		const results = await agent.retrieve("semantic marker", { topK: 1, scope: "/docs/sub" });
+
+		expect(results).toHaveLength(1);
+		expect(results[0]?.source).toBe("/docs/sub/inside.txt");
+		expect(results[0]?.content).toContain("Scoped semantic hit");
 	});
 });

@@ -39,6 +39,12 @@ describe("PosixMethod", () => {
 		expect(results[0].metadata.method).toBe("posix");
 	});
 
+	it("treats bare folder scopes as descendant scopes", async () => {
+		const method = new PosixMethod({ root, searchPaths: [source] });
+		const results = await method.retrieve("alpha", { scope: "/docs" });
+		expect(results.map((result) => result.source).sort()).toEqual(["/docs/few.md", "/docs/many.txt"]);
+	});
+
 	it("uses stable source-root prefixes for directories outside the workspace root", async () => {
 		const externalRoot = mkdtempSync(join(tmpdir(), "autorag-posix-external-"));
 		try {
@@ -89,9 +95,10 @@ describe("AutoRAGAgent.retrieve (registry + parallel retriever + merger)", () =>
 
 describe("memory recording gate (AC-9)", () => {
 	it("records only search tools (grep/find), not navigation/mutation tools", () => {
-		const records = (name: string) => name === "grep" || name === "find";
+		const records = (name: string) => name === "grep" || name === "find" || name === "search_bm25_documents";
 		expect(records("grep")).toBe(true);
 		expect(records("find")).toBe(true);
+		expect(records("search_bm25_documents")).toBe(true);
 		for (const navOrMutate of ["read", "ls", "stat", "mv", "cp", "mkdir", "rmdir", "check_memory"]) {
 			expect(records(navOrMutate)).toBe(false);
 		}

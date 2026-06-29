@@ -1,6 +1,7 @@
 import { opendir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../../filesystem/source-paths.ts";
+import { matchesVirtualPathScope } from "../scope.ts";
 import type { RetrievalMethod, RetrievalMethodDescriptor, RetrievalOptions, RetrievalResult } from "../types.ts";
 
 export interface PosixMethodOptions {
@@ -85,7 +86,7 @@ async function listFiles(
 ): Promise<SearchFile[]> {
 	const files: SearchFile[] = [];
 	for (const sourceRoot of planSourceRoots(searchPaths)) {
-		await collectFiles(root, sourceRoot, sourceRoot.rootPath, files, scope ? globToRegExp(scope) : undefined);
+		await collectFiles(root, sourceRoot, sourceRoot.rootPath, files, scope);
 	}
 	files.sort((a, b) => a.source.localeCompare(b.source));
 	return files;
@@ -96,7 +97,7 @@ async function collectFiles(
 	sourceRoot: SourceRoot,
 	directory: string,
 	files: SearchFile[],
-	scope: RegExp | undefined,
+	scope: string | undefined,
 ): Promise<void> {
 	const dir = await opendir(directory);
 	for await (const entry of dir) {
@@ -108,20 +109,13 @@ async function collectFiles(
 		}
 		if (!entry.isFile()) continue;
 		const source = opaqueSource(root, sourceRoot, sourcePath);
-		if (scope && !scope.test(source)) continue;
+		if (!matchesVirtualPathScope(source, scope)) continue;
 		files.push({ source, sourcePath });
 	}
 }
 
 function opaqueSource(_root: string, sourceRoot: SourceRoot, sourcePath: string): string {
 	return sourceIdentifier(sourceRoot, sourcePath);
-}
-
-function globToRegExp(glob: string): RegExp {
-	const escaped = escapeRegExp(glob)
-		.replace(/\\\*\\\*/g, ".*")
-		.replace(/\\\*/g, "[^/]*");
-	return new RegExp(`^${escaped}$`);
 }
 
 function grepFile(file: SearchFile, content: string, regex: RegExp): PosixHit | undefined {

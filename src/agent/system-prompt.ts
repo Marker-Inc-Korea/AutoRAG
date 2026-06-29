@@ -31,7 +31,13 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 	if (toolAvailable(config, "ls")) lines.push("- **ls**: inspect directory structure when scope is unclear");
 	if (toolAvailable(config, "stat")) lines.push("- **stat**: inspect a file's size/type");
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
-		lines.push(`- **${name}**: caller-provided retrieval tool`);
+		if (name === "search_bm25_documents") {
+			lines.push(
+				"- **search_bm25_documents**: lexical BM25 search over parsed document mirrors; best for exact terms, headings, repeated terms, identifiers, and folder-scoped document text",
+			);
+		} else {
+			lines.push(`- **${name}**: caller-provided retrieval tool`);
+		}
 	}
 	if (toolAvailable(config, "bash")) {
 		lines.push(
@@ -65,7 +71,7 @@ You are invoked by a parent agent or user who needs specific information found. 
 
 	const methodsSection = `## Active Retrieval Tools
 
-Use these tools to fulfill search requests over real source directories. Start with specific content search, broaden to file discovery, and use bash when the focused tools cannot satisfy the need.
+Use these tools to fulfill search requests over real source directories and parsed document mirrors. Start with the most specific path: grep/find for raw filesystem exact search, search_bm25_documents for parsed-document lexical BM25 search, semantic/vector tools when available for conceptual evidence, then read before curating.
 
 ${searchToolGuidance(config)}`;
 

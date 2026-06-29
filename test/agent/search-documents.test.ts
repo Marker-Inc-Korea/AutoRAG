@@ -56,6 +56,12 @@ function makeAgent(model: ReturnType<typeof fauxModel>, memoryPath = join(tmpDir
 }
 
 describe("AutoRAGAgent searchDocuments", () => {
+	it("includes virtual path scope in the agent search prompt", () => {
+		const agent = makeAgent(fauxModel());
+		const prompt = agent.buildSearchPrompt("refund policy", { topK: 3, scope: "/docs/policies" });
+		expect(prompt).toContain("Return at most 3 curated results");
+		expect(prompt).toContain("Restrict search to virtual path scope /docs/policies");
+	});
 	it("returns structured curated results emitted by the agent loop without leaking paths", async () => {
 		const model = fauxModel(
 			emitResults({
