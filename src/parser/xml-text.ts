@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { XMLParser } from "fast-xml-parser";
 import JSZip from "jszip";
 
@@ -23,7 +24,11 @@ export async function readZipXmlText(bytes: Uint8Array, pathPattern: RegExp): Pr
 	const chunks: string[] = [];
 	let totalXmlBytes = 0;
 	for (const file of files) {
-		const xml = await file.async("text");
+		const declaredSize = uncompressedSize(file);
+		if (declaredSize !== undefined && totalXmlBytes + declaredSize > MAX_XML_BYTES) {
+			throw new Error(`archive XML content exceeds limit of ${MAX_XML_BYTES} bytes`);
+		}
+		const xml = await readXmlFile(file, MAX_XML_BYTES - totalXmlBytes);
 		totalXmlBytes += Buffer.byteLength(xml);
 		if (totalXmlBytes > MAX_XML_BYTES) {
 			throw new Error(`archive XML content exceeds limit of ${MAX_XML_BYTES} bytes`);
@@ -34,6 +39,39 @@ export async function readZipXmlText(bytes: Uint8Array, pathPattern: RegExp): Pr
 		}
 	}
 	return chunks;
+}
+
+async function readXmlFile(file: JSZip.JSZipObject, remainingBytes: number): Promise<string> {
+	const stream = file.nodeStream("nodebuffer");
+	return new Promise((resolve, reject) => {
+		const chunks: Buffer[] = [];
+		let totalBytes = 0;
+		stream.on("data", (chunk: unknown) => {
+			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as ArrayBuffer);
+			totalBytes += buffer.byteLength;
+			if (totalBytes > remainingBytes) {
+				destroyStream(stream);
+				reject(new Error(`archive XML content exceeds limit of ${MAX_XML_BYTES} bytes`));
+				return;
+			}
+			chunks.push(buffer);
+		});
+		stream.on("error", reject);
+		stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+	});
+}
+
+function uncompressedSize(file: JSZip.JSZipObject): number | undefined {
+	const data = Reflect.get(file, "_data");
+	if (!isRecord(data)) return undefined;
+	const size = data.uncompressedSize;
+	return typeof size === "number" ? size : undefined;
+}
+
+function destroyStream(stream: NodeJS.ReadableStream): void {
+	if ("destroy" in stream && typeof stream.destroy === "function") {
+		stream.destroy();
+	}
 }
 
 export function extractTextFromXml(xml: string): string[] {

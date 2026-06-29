@@ -89,11 +89,11 @@ async function runTesseractOcr(
 	cleanupReject: (reason: unknown) => void,
 ): Promise<string> {
 	let worker: Awaited<ReturnType<typeof createWorker>> | undefined;
-	let terminated = false;
+	let termination: Promise<void> | undefined;
 	const terminate = async (): Promise<void> => {
-		if (worker === undefined || terminated) return;
-		terminated = true;
-		await worker.terminate();
+		if (worker === undefined) return;
+		termination ??= worker.terminate().then(() => undefined);
+		await termination;
 	};
 	const abort = () => {
 		void terminate().then(cleanupResolve, cleanupReject);
@@ -127,7 +127,10 @@ function withTimeout(
 			},
 			(error: unknown) => {
 				clearTimeout(timeout);
-				reject(error);
+				operation.cleanup.then(
+					() => reject(error),
+					(cleanupError: unknown) => reject(cleanupError),
+				);
 			},
 		);
 	});
