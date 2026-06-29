@@ -96,7 +96,9 @@ async function runTesseractOcr(
 		await termination;
 	};
 	const abort = () => {
-		void terminate().then(cleanupResolve, cleanupReject);
+		if (worker !== undefined) {
+			void terminate().then(cleanupResolve, cleanupReject);
+		}
 	};
 	input.signal.addEventListener("abort", abort, { once: true });
 	try {

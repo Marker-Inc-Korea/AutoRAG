@@ -244,6 +244,49 @@ describe("ParserRegistry", () => {
 		expect(settled).toBe(true);
 	});
 
+	it("OCR timeout waits for pending Tesseract worker creation cleanup", async () => {
+		// Given: Tesseract worker creation is still pending when the OCR timeout fires.
+		let resolveWorker: (worker: { recognize: () => Promise<string>; terminate: () => Promise<void> }) => void = () =>
+			undefined;
+		let finishTermination: () => void = () => undefined;
+		tesseractMock.createWorker.mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveWorker = resolve;
+			}),
+		);
+		const parser = new ImageOcrParser({ enabled: true, timeoutMs: 1 });
+		const result = parser.parse({ virtualPath: "/docs/scan.png", bytes: Buffer.from([0x89, 0x50]) });
+
+		let settled = false;
+		result.then(
+			() => {
+				settled = true;
+			},
+			() => {
+				settled = true;
+			},
+		);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+
+		// When: timeout has fired before createWorker resolves.
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		// Then: parse() rejects only after the late-created worker is terminated.
+		resolveWorker({
+			recognize: async () => "late text",
+			terminate: () =>
+				new Promise<void>((resolve) => {
+					finishTermination = resolve;
+				}),
+		});
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		finishTermination();
+		await expect(result).rejects.toBeInstanceOf(ParseError);
+		expect(settled).toBe(true);
+	});
+
 	it("passes opt-in scanned-PDF OCR fallback options to the OpenDataLoader convert API", async () => {
 		// Given: a PDF parser configured for hybrid OCR fallback with an injected converter.
 		const calls: Array<{ readonly hybrid?: string; readonly hybridMode?: string; readonly hybridTimeout?: string }> =
