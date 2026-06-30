@@ -12,6 +12,7 @@ from autorag.evaluation.metric import (
     bert_score,
     deepeval_faithfulness,
 )
+from autorag.evaluation.metric.util import remove_think_tags
 from autorag.schema.metricinput import MetricInput
 from tests.delete_tests import is_github_action
 from tests.mock import mock_get_text_embedding_batch
@@ -129,6 +130,14 @@ similarity_generation_metric_inputs = [
         generations, generation_gts, retrieval_gt_contents
     )
 ]
+think_generations = [
+    f"<think>\nLet me reason about this step by step before answering.\n</think>\n{gen}"
+    for gen in generations
+]
+think_similarity_generation_metric_inputs = [
+    MetricInput(generated_texts=gen, generation_gt=gen_gt)
+    for gen, gen_gt in zip(think_generations, generation_gts)
+]
 ko_similarity_generation_metric_inputs = [
     MetricInput(generated_texts=gen, generation_gt=gen_gt)
     for gen, gen_gt in zip(ko_generations, ko_generation_gts)
@@ -226,6 +235,62 @@ def test_meteor():
 
 def test_rouge():
     base_test_metrics(rouge, [0.909, 0.35714, 1.0], similarity_generation_metric_inputs)
+
+
+def test_remove_think_tags():
+    assert remove_think_tags("<think>reasoning</think>answer") == "answer"
+    # case-insensitive and the <thinking> variant
+    assert remove_think_tags("<Thinking>reasoning</Thinking>\nanswer") == "answer"
+    # spans multiple lines
+    assert remove_think_tags("<think>line1\nline2</think>\nfinal") == "final"
+    # text without think tags is returned unchanged
+    assert remove_think_tags("just an answer") == "just an answer"
+    # the word "think" outside a tag must not be stripped
+    assert remove_think_tags("I think this is correct") == "I think this is correct"
+
+
+def test_rouge_remove_think_tags():
+    # think tags are stripped by default, so scores match the clean predictions
+    base_test_metrics(
+        rouge, [0.909, 0.35714, 1.0], think_similarity_generation_metric_inputs
+    )
+
+
+def test_rouge_keep_think_tags():
+    # when disabled, the reasoning block pollutes the prediction and lowers scores
+    polluted_scores = rouge(
+        think_similarity_generation_metric_inputs, remove_think_tags=False
+    )
+    clean_scores = rouge(think_similarity_generation_metric_inputs)
+    assert polluted_scores[0] < clean_scores[0]
+
+
+def test_bleu_remove_think_tags():
+    # direct-access path: think tags are stripped by default
+    base_test_metrics(
+        bleu,
+        [51.1507, 23.5783, 100.0],
+        think_similarity_generation_metric_inputs,
+        lowercase=True,
+    )
+    polluted_scores = bleu(
+        think_similarity_generation_metric_inputs,
+        lowercase=True,
+        remove_think_tags=False,
+    )
+    assert polluted_scores[0] < 51.1507
+
+
+def test_meteor_remove_think_tags():
+    # huggingface_evaluate path: think tags are stripped by default
+    base_test_metrics(
+        meteor,
+        [0.454033, 0.2985435, 0.64077828],
+        think_similarity_generation_metric_inputs,
+        alpha=0.85,
+        beta=0.2,
+        gamma=0.6,
+    )
 
 
 @pytest.mark.skipif(

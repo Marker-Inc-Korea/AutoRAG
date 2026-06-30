@@ -125,3 +125,20 @@ A metric that measures the similarity between two sentences using BERT's Context
 
 Get the Contextual Embedding value of `Answer gt` and `LLM generated result` with BERT, evaluate the similarity with
 Cosine Similarity for each token-pair, and weight each token with IDF.
+
+## ❗Removing reasoning (`<think>`) tags
+
+Reasoning models often include their internal reasoning inside `<think>...</think>` (or
+`<thinking>...</thinking>`) blocks in the generated text. These blocks pollute string-overlap
+metrics such as **Bleu**, **Rouge**, **METEOR**, and **Bert Score**, lowering the score even when
+the actual answer is correct.
+
+By default AutoRAG strips these blocks before scoring. If you want to keep them and score the raw
+output instead, set `remove_think_tags: false` on the metric.
+
+Here is an example YAML file that keeps the reasoning block when computing **Rouge**.
+
+```yaml
+- metric_name: rouge
+  remove_think_tags: false
+```

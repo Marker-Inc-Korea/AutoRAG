@@ -1,10 +1,31 @@
 import functools
+import re
 from typing import List
 
 import numpy as np
 
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import convert_inputs_to_list
+
+# Matches reasoning blocks like <think>...</think> or <thinking>...</thinking>
+# (case-insensitive, spanning newlines) plus any trailing whitespace.
+_THINK_TAG_PATTERN = re.compile(
+	r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>\s*", re.IGNORECASE
+)
+
+
+def remove_think_tags(text: str) -> str:
+	"""
+	Remove internal reasoning blocks (e.g. ``<think>...</think>``) from a model output.
+
+	Reasoning models emit these blocks in the generated text, which pollutes
+	string-overlap metrics such as ROUGE or BLEU. This strips them so the metric
+	scores the actual answer only. Text without such tags is returned unchanged.
+
+	:param text: The generated text to clean.
+	:return: The text with think tags (and their contents) removed.
+	"""
+	return _THINK_TAG_PATTERN.sub("", text)
 
 
 def calculate_cosine_similarity(a, b):

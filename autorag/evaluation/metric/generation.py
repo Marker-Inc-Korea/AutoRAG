@@ -19,6 +19,7 @@ from autorag.evaluation.metric.deepeval_prompt import FaithfulnessTemplate
 from autorag.evaluation.metric.util import (
 	autorag_metric_loop,
 	calculate_cosine_similarity,
+	remove_think_tags as _remove_think_tags,
 )
 from autorag.nodes.generator import OpenAILLM
 from autorag.nodes.generator.base import BaseGenerator
@@ -36,7 +37,11 @@ from autorag.utils.util import (
 
 @convert_inputs_to_list
 def huggingface_evaluate(
-	instance, key: str, metric_inputs: List[MetricInput], **kwargs
+	instance,
+	key: str,
+	metric_inputs: List[MetricInput],
+	remove_think_tags: bool = True,
+	**kwargs,
 ) -> List[float]:
 	"""
 	Compute huggingface evaluate metric.
@@ -44,11 +49,16 @@ def huggingface_evaluate(
 	:param instance: The instance of huggingface evaluates metric.
 	:param key: The key to retrieve result score from huggingface evaluate result.
 	:param metric_inputs: A list of MetricInput schema
+	:param remove_think_tags: Whether to strip internal reasoning blocks (e.g.
+		``<think>...</think>``) from the generated text before scoring.
+		Default is True.
 	:param kwargs: The additional arguments for metric function.
 	:return: The list of scores.
 	"""
 
 	def compute_score(gt: List[str], pred: str) -> float:
+		if remove_think_tags:
+			pred = _remove_think_tags(pred)
 		return max(
 			list(
 				map(
@@ -189,6 +199,7 @@ def bleu(
 	max_ngram_order: int = 4,
 	trg_lang: str = "",
 	effective_order: bool = True,
+	remove_think_tags: bool = True,
 	**kwargs,
 ) -> List[float]:
 	"""
@@ -202,6 +213,9 @@ def bleu(
 	:param trg_lang: An optional language code to raise potential tokenizer warnings.
 	:param effective_order: If `True`, stop including n-gram orders for which precision is 0. This should be
 	`True`, if sentence-level BLEU will be computed.
+	:param remove_think_tags: Whether to strip internal reasoning blocks (e.g.
+		``<think>...</think>``) from the generated text before scoring.
+		Default is True.
 	"""
 	bleu_instance = BLEU(
 		tokenize=tokenize,
@@ -213,14 +227,13 @@ def bleu(
 		**kwargs,
 	)
 
-	result = list(
-		map(
-			lambda x: bleu_instance.sentence_score(
-				x.generated_texts, x.generation_gt
-			).score,
-			metric_inputs,
-		)
-	)
+	def compute_score(metric_input: MetricInput) -> float:
+		pred = metric_input.generated_texts
+		if remove_think_tags:
+			pred = _remove_think_tags(pred)
+		return bleu_instance.sentence_score(pred, metric_input.generation_gt).score
+
+	result = list(map(compute_score, metric_inputs))
 	return result
 
 
@@ -230,6 +243,7 @@ def meteor(
 	alpha: float = 0.9,
 	beta: float = 3.0,
 	gamma: float = 0.5,
+	remove_think_tags: bool = True,
 ) -> List[float]:
 	"""
 	Compute meteor score for generation.
@@ -242,6 +256,9 @@ def meteor(
 	    Default is 3.0.
 	:param gamma: Relative weight assigned to fragmentation penalty.
 	    Default is 0.5.
+	:param remove_think_tags: Whether to strip internal reasoning blocks (e.g.
+	    ``<think>...</think>``) from the generated text before scoring.
+	    Default is True.
 	:return: A list of computed metric scores.
 	"""
 	nltk.download("punkt", quiet=True)
@@ -250,6 +267,7 @@ def meteor(
 		meteor_instance,
 		"meteor",
 		metric_inputs,
+		remove_think_tags=remove_think_tags,
 		alpha=alpha,
 		beta=beta,
 		gamma=gamma,
@@ -265,6 +283,7 @@ def rouge(
 	use_stemmer: bool = False,
 	split_summaries: bool = False,
 	batch: int = os.cpu_count(),
+	remove_think_tags: bool = True,
 ) -> List[float]:
 	"""
 	Compute rouge score for generation.
@@ -285,6 +304,9 @@ def rouge(
 	    Default is False.
 	:param batch: The batch size for processing.
 	    Default is your cpu count.
+	:param remove_think_tags: Whether to strip internal reasoning blocks (e.g.
+	    ``<think>...</think>``) from the generated text before scoring.
+	    Default is True.
 	:return: A list of computed metric scores.
 	"""
 	rouge_instance = RougeScorer(
@@ -295,6 +317,8 @@ def rouge(
 	)
 
 	async def compute(gt: List[str], pred: str) -> float:
+		if remove_think_tags:
+			pred = _remove_think_tags(pred)
 		return rouge_instance.score_multi(targets=gt, prediction=pred)[
 			rouge_type
 		].fmeasure
@@ -476,8 +500,23 @@ def bert_score(
 	lang: str = "en",
 	batch: int = 128,
 	n_threads: int = os.cpu_count(),
+	remove_think_tags: bool = True,
 ) -> List[float]:
+	"""
+	Compute BERTScore for generation.
+
+	:param metric_inputs: A list of MetricInput schema (Required Field -> "generation_gt", "generated_texts")
+	:param lang: The language of the text. Default is "en".
+	:param batch: The batch size for processing. Default is 128.
+	:param n_threads: The number of threads to use. Default is your cpu count.
+	:param remove_think_tags: Whether to strip internal reasoning blocks (e.g.
+		``<think>...</think>``) from the generated text before scoring.
+		Default is True.
+	:return: A list of computed metric scores.
+	"""
 	generations = [metric_input.generated_texts for metric_input in metric_inputs]
+	if remove_think_tags:
+		generations = [_remove_think_tags(gen) for gen in generations]
 	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	evaluator = evaluate.load("bertscore")
 
