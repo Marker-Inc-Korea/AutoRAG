@@ -44,7 +44,13 @@ interface EmitArgs {
 		evidence: Array<{ excerpt: string; lineNumber?: number }>;
 		confidence: number;
 	}>;
-	mapping: Array<{ number: number; source: string; method: string; content: string }>;
+	mapping: Array<{
+		number: number;
+		source: string;
+		method: string;
+		content: string;
+		evidenceRefs?: Array<{ method: string; source: string; content?: string; excerpt?: string }>;
+	}>;
 }
 
 function emitResults(args: EmitArgs): FauxResponseStep {
@@ -123,8 +129,14 @@ describe("AutoRAGAgent searchDocuments", () => {
 		const response = await agent.searchDocuments("Meeting");
 		const registry = agent.getResultRegistry(response.sessionId);
 
-		expect(registry.get(1)).toEqual({ index: 1, source: "/data/a.txt", method: "grep", content: "a" });
-		expect(registry.get(2)).toEqual({ index: 2, source: "/data/b.txt", method: "posix", content: "b" });
+		expect(registry.get(1)).toMatchObject({ index: 1, source: "/data/a.txt", method: "grep", content: "a" });
+		expect(registry.get(1)?.evidenceRefs?.[0]).toMatchObject({ method: "grep", source: "/data/a.txt", content: "a" });
+		expect(registry.get(2)).toMatchObject({ index: 2, source: "/data/b.txt", method: "posix", content: "b" });
+		expect(registry.get(2)?.evidenceRefs?.[0]).toMatchObject({
+			method: "posix",
+			source: "/data/b.txt",
+			content: "b",
+		});
 	});
 
 	it("returns an empty structured response when query is blank without running the agent", async () => {
@@ -235,7 +247,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		expect(memory.getEntries().map((entry) => entry.outcome)).toEqual(["useful"]);
+		expect(memory.getMethodHints("Meeting").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
 	});
 
 	it("keeps feedback state independent for each returned feedback id", async () => {
@@ -263,6 +275,10 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		expect(memory.getEntries().map((entry) => entry.outcome)).toEqual(["useful", "useful", "pending"]);
+		expect(memory.getSchema().curatedResults).toHaveLength(3);
+		expect(memory.getSchema().feedbackSignals.filter((signal) => signal.source === "explicit")).toHaveLength(4);
+		expect(memory.getMethodHints("function|Meeting").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(
+			0,
+		);
 	});
 });

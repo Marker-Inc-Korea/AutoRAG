@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { RetrievalMemory } from "../../src/memory/memory.ts";
+import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
 import type { CuratedResult } from "../../src/retrieval/types.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
@@ -24,6 +24,23 @@ interface AgentInternals {
 
 function internals(agent: AutoRAGAgent): AgentInternals {
 	return agent as unknown as AgentInternals;
+}
+function seedCuratedResult(memory: RetrievalMemory, sessionId: string, source: string): void {
+	memory.recordCuratedResultsSession({
+		sessionId,
+		query: "q",
+		results: [
+			{
+				number: 1,
+				title: "Result",
+				summary: "Summary",
+				content: "content",
+				method: "grep",
+				source,
+				evidenceRefs: [normalizeSessionEvidenceRef({ method: "grep", source, content: "content" })],
+			},
+		],
+	});
 }
 
 describe("AutoRAGAgent numbered feedback", () => {
@@ -46,20 +63,13 @@ describe("AutoRAGAgent numbered feedback", () => {
 		const reg = new Map<number, CuratedResult>();
 		reg.set(1, { index: 1, source: "src/a.ts", content: "", method: "grep" });
 		internals(agent).sessions.set(sid, { query: "q", registry: reg });
-		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
-		internals(agent).memory.registerAttempt({
-			id: entry.id,
-			query: "q",
-			method: "grep",
-			sources: ["src/a.ts"],
-			timestamp: Date.now(),
-		});
+		seedCuratedResult(internals(agent).memory, sid, "src/a.ts");
 
 		agent.recordFeedbackByNumbers(sid, [1]);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
+		expect(memory.getMethodHints("q").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
 	});
 
 	it("resolves not-useful entries by number with session", () => {
@@ -72,20 +82,13 @@ describe("AutoRAGAgent numbered feedback", () => {
 		const reg = new Map<number, CuratedResult>();
 		reg.set(1, { index: 1, source: "src/b.ts", content: "", method: "grep" });
 		internals(agent).sessions.set(sid, { query: "q", registry: reg });
-		const entry = internals(agent).memory.append({ query: "q", method: "grep", outcome: "pending" });
-		internals(agent).memory.registerAttempt({
-			id: entry.id,
-			query: "q",
-			method: "grep",
-			sources: ["src/b.ts"],
-			timestamp: Date.now(),
-		});
+		seedCuratedResult(internals(agent).memory, sid, "src/b.ts");
 
 		agent.recordFeedbackByNumbers(sid, [], [1]);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("not_useful");
+		expect(memory.getMethodHints("q").find((hint) => hint.method === "grep")?.score).toBeLessThan(0);
 	});
 
 	it("ignores unknown session without error", () => {

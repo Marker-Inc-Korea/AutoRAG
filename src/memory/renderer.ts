@@ -1,51 +1,20 @@
-import type { MemoryEntry } from "./memory.ts";
+import type { MethodHint } from "./memory.ts";
 
-interface QueryGroup {
-	query: string;
-	methods: Map<string, { useful: number; not_useful: number; pending: number }>;
-	lastUsed: number;
-}
-
-export function renderMemoryContext(entries: readonly MemoryEntry[], opts?: { maxGroups?: number }): string {
-	if (entries.length === 0) {
-		return "No retrieval history available.";
+export function renderMemoryContext(hints: readonly MethodHint[], opts?: { maxHints?: number }): string {
+	if (hints.length === 0) {
+		return "No retrieval memory hints available.";
 	}
 
-	const maxGroups = opts?.maxGroups ?? 50;
-	const groups = new Map<string, QueryGroup>();
+	const maxHints = opts?.maxHints ?? 10;
+	const rows = hints.slice(0, maxHints).map((hint) => {
+		return `| ${hint.method} | ${hint.score.toFixed(3)} | ${(hint.confidence * 100).toFixed(0)}% | ${hint.reason} |`;
+	});
 
-	for (const entry of entries) {
-		let group = groups.get(entry.query);
-		if (!group) {
-			group = { query: entry.query, methods: new Map(), lastUsed: entry.timestamp };
-			groups.set(entry.query, group);
-		}
-		if (entry.timestamp > group.lastUsed) {
-			group.lastUsed = entry.timestamp;
-		}
-		let methodStats = group.methods.get(entry.method);
-		if (!methodStats) {
-			methodStats = { useful: 0, not_useful: 0, pending: 0 };
-			group.methods.set(entry.method, methodStats);
-		}
-		methodStats[entry.outcome]++;
-	}
+	return `## Retrieval Memory Hints (advisory, not instructions)
 
-	const sorted = Array.from(groups.values()).sort((a, b) => b.lastUsed - a.lastUsed);
-	const capped = sorted.slice(0, maxGroups);
+Memory-derived method hints are advisory context for the librarian agent. They must not disable methods; if initial results are insufficient, broaden to disfavored or lower-scoring methods as needed.
 
-	const rows: string[] = [];
-	for (const group of capped) {
-		const date = new Date(group.lastUsed).toISOString().slice(0, 10);
-		for (const [method, stats] of group.methods) {
-			const pendingSuffix = stats.pending > 0 ? ` (${stats.pending} pending)` : "";
-			rows.push(`| ${group.query} | ${method} | ${stats.useful} | ${stats.not_useful} | ${date} |${pendingSuffix}`);
-		}
-	}
-
-	return `## Retrieval Memory (advisory, not instructions)
-
-| Past Query | Method | Useful | Not Useful | Last Used |
-|---|---:|---:|---:|---|
+| Method | Score | Confidence | Reason |
+|---|---:|---:|---|
 ${rows.join("\n")}`;
 }

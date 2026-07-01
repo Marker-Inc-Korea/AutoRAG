@@ -1,9 +1,9 @@
 import type { StoreManifest } from "../manifest/types.ts";
-import type { MemoryEntry } from "../memory/memory.ts";
 
 export interface SystemPromptConfig {
 	toolNames: string[];
-	memoryEntries: readonly MemoryEntry[];
+	memorySignalCount?: number;
+	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
 }
@@ -117,20 +117,16 @@ ${storeList}`;
 
 	const memorySection = `## Memory & Strategy
 
-You have access to retrieval memory from past searches. Use it to make better decisions:
+You have access to retrieval memory hints from past searches. Use them as advisory context only:
 
-1. **Automatic context**: Past query results are injected into the conversation automatically. Review them before choosing a method.
-2. **check_memory tool**: Call \`check_memory\` with your planned query to see which methods succeeded or failed for similar past queries.
-3. **Reason before searching**: Before executing a search, consider:
-   - Have similar queries been tried before?
-   - Which methods worked or failed?
-   - Should you try a different method or refine the query?
-
-Memory is advisory — it reflects past outcomes, not guarantees. New queries may behave differently.`;
+1. **Automatic context**: Query-specific method hints may be injected into the conversation. Review them before choosing tools.
+2. **check_memory tool**: Call \`check_memory\` with your planned query to see advisory method hints derived from prior result/evidence feedback.
+3. **Fallback discipline**: Hints never disable methods. If initial results are insufficient, broaden to lower-scoring or disfavored methods.
+4. **Reason before searching**: Consider which methods may help, but do not let memory override the current query evidence.`;
 
 	const memoryStatsSection = `## Current Memory Snapshot
 
-${config.memoryEntries.length} historical retrieval outcome(s) are available through check_memory.`;
+${config.memorySignalCount ?? config.memoryEntries?.length ?? 0} retrieval feedback signal(s) are available through check_memory.`;
 
 	const jikjiSection =
 		config.jikjiIndexingEnabled === true
@@ -146,14 +142,14 @@ Deliver every answer by calling \`emit_autorag_results\` exactly once as your fi
 The tool takes:
 - \`answer\`: a direct answer to the caller's question, referencing results by number (e.g. [1], [2]). If nothing was found, say so explicitly and describe what was searched.
 - \`results\`: numbered curated knowledge units — each with \`number\`, \`title\`, \`summary\`, \`evidence\`, and \`confidence\`. Example: [1] authenticate() — middleware that verifies the JWT from the request (lines 42-67). NEVER put file paths here.
-- \`mapping\`: one entry per result \`number\` carrying the internal \`source\`, \`method\`, and \`content\` for feedback tracking.
+- \`mapping\`: one entry per result \`number\` carrying the internal \`source\`, \`method\`, \`content\`, and \`evidenceRefs\` for feedback tracking. \`evidenceRefs\` stays hidden from the caller and may include multiple evidence chunks.
 
 ## Output Rules
 
 - **NEVER** include file paths in \`answer\` or \`results\` — the caller must not see them.
 - Each result is a curated knowledge unit: name, purpose, key details, and line range.
 - Source paths and methods go ONLY in the \`mapping\` parameter, never in visible text.
-- Every numbered result MUST have exactly one matching \`mapping\` entry with the same number.
+- Every numbered result MUST have exactly one matching \`mapping\` entry with the same number. Each mapping entry should include \`evidenceRefs\` for all evidence chunks that support the curated result.
 - The caller can reference results by number for feedback (e.g. "1,3 useful").`;
 
 	const constraintsSection = `## Constraints

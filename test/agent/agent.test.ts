@@ -103,7 +103,9 @@ describe("AutoRAGAgent", () => {
 		expect(existsSync(memPath)).toBe(true);
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		expect(memory.getEntries()[0].outcome).toBe("useful");
+		expect(
+			memory.getMethodHints("find typescript files").find((hint) => hint.method === "grep")?.score,
+		).toBeGreaterThan(0);
 	});
 
 	it("subscribe returns an unsubscribe function", () => {
@@ -175,8 +177,9 @@ describe("AutoRAGAgent", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		const entries = memory.getEntries();
-		expect(entries.every((e) => e.outcome === "useful")).toBe(true);
+		const hints = memory.getMethodHints("test query");
+		expect(hints.find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
+		expect(hints.find((hint) => hint.method === "find")?.score).toBeGreaterThan(0);
 	});
 
 	it("submitFeedback does nothing when no lastQuery", () => {
@@ -215,7 +218,7 @@ describe("AutoRAGAgent", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		expect(memory.getEntries().find((e) => e.id === entry.id)?.outcome).toBe("useful");
+		expect(memory.getMethodHints("q").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
 	});
 
 	it("getResultRegistry returns empty map initially", () => {

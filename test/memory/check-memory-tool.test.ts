@@ -31,7 +31,7 @@ describe("createCheckMemoryTool", () => {
 		const text = (result.content[0] as { type: "text"; text: string }).text;
 		expect(text).toContain("Retrieval Memory");
 		expect(text).toContain("posix");
-		expect(text).toContain("Recommended Methods");
+		expect(text).toContain("advisory");
 	});
 
 	it("returns 'No retrieval history' for cold start", async () => {
@@ -42,22 +42,22 @@ describe("createCheckMemoryTool", () => {
 		const result = await tool.execute("test-call", { query: "anything" });
 
 		const text = (result.content[0] as { type: "text"; text: string }).text;
-		expect(text).toContain("No retrieval history available.");
+		expect(text).toContain("No retrieval memory hints available.");
 	});
 
 	it("does not modify memory state", async () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
 		memory.recordFeedback("test", "posix", true);
-		const countBefore = memory.getEntries().length;
+		const countBefore = memory.getSignalCount();
 
 		const tool = createCheckMemoryTool(memory);
 		await tool.execute("test-call", { query: "test" });
 
-		expect(memory.getEntries().length).toBe(countBefore);
+		expect(memory.getSignalCount()).toBe(countBefore);
 	});
 
-	it("details contains entryCount and topMethod", async () => {
+	it("details contains signalCount and topMethod", async () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
 		memory.recordFeedback("query", "posix", true);
@@ -66,7 +66,7 @@ describe("createCheckMemoryTool", () => {
 		const result = await tool.execute("test-call", { query: "query" });
 
 		expect(result.details).toBeDefined();
-		expect(result.details!.entryCount).toBe(1);
+		expect(result.details!.signalCount).toBe(1);
 		expect(result.details!.topMethod).toBe("posix");
 	});
 });

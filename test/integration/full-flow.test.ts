@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { RetrievalMemory } from "../../src/memory/memory.ts";
+import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
 import type { CuratedResult } from "../../src/retrieval/types.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
@@ -17,6 +17,36 @@ interface AgentInternals {
 
 function internals(agent: AutoRAGAgent): AgentInternals {
 	return agent as unknown as AgentInternals;
+}
+function seedCuratedResults(memory: RetrievalMemory, sessionId: string): void {
+	memory.recordCuratedResultsSession({
+		sessionId,
+		query: "find helper function",
+		results: [
+			{
+				number: 1,
+				title: "Utils",
+				summary: "Helper in utils",
+				content: "utils content",
+				method: "posix",
+				source: "src/utils.ts",
+				evidenceRefs: [
+					normalizeSessionEvidenceRef({ method: "posix", source: "src/utils.ts", content: "utils content" }),
+				],
+			},
+			{
+				number: 2,
+				title: "Main",
+				summary: "Helper in main",
+				content: "main content",
+				method: "posix",
+				source: "src/main.ts",
+				evidenceRefs: [
+					normalizeSessionEvidenceRef({ method: "posix", source: "src/main.ts", content: "main content" }),
+				],
+			},
+		],
+	});
 }
 
 beforeEach(() => {
@@ -60,7 +90,7 @@ describe("Full flow integration", () => {
 		const priority = memory.getMethodPriority("search typescript code");
 		expect(priority.length).toBeGreaterThan(0);
 		expect(priority[0].method).toBe("posix");
-		expect(priority[0].score).toBe(1.0);
+		expect(priority[0].score).toBe(3);
 	});
 
 	it("agent runs without built-in retrieval methods", () => {
@@ -85,9 +115,9 @@ describe("Full flow integration", () => {
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		const entries = memory.getEntries();
-		expect(entries.length).toBe(2);
-		expect(entries.every((e) => e.outcome === "not_useful")).toBe(true);
+		const hints = memory.getMethodHints("cold start query");
+		expect(hints.find((hint) => hint.method === "posix")?.score).toBeLessThan(0);
+		expect(hints.find((hint) => hint.method === "vector")?.score).toBeLessThan(0);
 	});
 
 	it("agent system prompt includes check_memory in tools", () => {
@@ -113,38 +143,13 @@ describe("Full flow integration", () => {
 		reg.set(2, { index: 2, source: "src/main.ts", content: "", method: "posix" });
 		internals(agent).sessions.set(sid, { query: "find helper function", registry: reg });
 
-		internals(agent).lastQuery = "find helper function";
-		const e1 = internals(agent).memory.append({
-			query: "find helper function",
-			method: "posix",
-			outcome: "pending",
-		});
-		internals(agent).memory.registerAttempt({
-			id: e1.id,
-			query: "find helper function",
-			method: "posix",
-			sources: ["src/utils.ts"],
-			timestamp: Date.now(),
-		});
-		const e2 = internals(agent).memory.append({
-			query: "find helper function",
-			method: "posix",
-			outcome: "pending",
-		});
-		internals(agent).memory.registerAttempt({
-			id: e2.id,
-			query: "find helper function",
-			method: "posix",
-			sources: ["src/main.ts"],
-			timestamp: Date.now(),
-		});
+		seedCuratedResults(internals(agent).memory, sid);
 
 		agent.recordFeedbackByNumbers(sid, [1], [2]);
 
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
-		const entries = memory.getEntries();
-		expect(entries.find((e) => e.id === e1.id)?.outcome).toBe("useful");
-		expect(entries.find((e) => e.id === e2.id)?.outcome).toBe("not_useful");
+		const hints = memory.getMethodHints("find helper function");
+		expect(hints.find((hint) => hint.method === "posix")?.score).toBe(0);
 	});
 });

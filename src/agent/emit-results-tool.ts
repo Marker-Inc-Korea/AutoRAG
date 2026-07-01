@@ -3,6 +3,17 @@ import { Type } from "typebox";
 
 export const EMIT_AUTORAG_RESULTS_TOOL_NAME = "emit_autorag_results";
 
+const evidenceRefSchema = Type.Object({
+	method: Type.String({ description: "Retrieval method namespace for this evidence chunk" }),
+	source: Type.String({ description: "Internal opaque source identifier for this evidence chunk" }),
+	excerpt: Type.Optional(Type.String({ description: "Evidence excerpt used for stable ID normalization" })),
+	content: Type.Optional(Type.String({ description: "Evidence content used for stable ID normalization" })),
+	retrievalResultId: Type.Optional(Type.String({ description: "Backend retrieval ID when path-opaque and stable" })),
+	chunkIndex: Type.Optional(Type.Integer({ description: "Chunk index, if available" })),
+	lineNumber: Type.Optional(Type.Integer({ description: "Line number, if available" })),
+	stableEvidenceId: Type.Optional(Type.String({ description: "Stable evidence ID, if already normalized" })),
+});
+
 const emitResultsSchema = Type.Object({
 	answer: Type.String({
 		description: "Final curated answer for the caller. Reference results by number (e.g. [1], [2]).",
@@ -28,6 +39,11 @@ const emitResultsSchema = Type.Object({
 			source: Type.String({ description: "Internal source identifier (opaque root-relative path)" }),
 			method: Type.String({ description: "Retrieval method or tool that produced the source" }),
 			content: Type.String({ description: "Raw content snippet for feedback tracking" }),
+			evidenceRefs: Type.Optional(
+				Type.Array(evidenceRefSchema, {
+					description: "Hidden evidence chunk references supporting this curated result",
+				}),
+			),
 		}),
 		{ description: "Internal number -> source/method mapping for feedback. One entry per result number." },
 	),
@@ -47,11 +63,23 @@ export interface AutoRAGEmittedResult {
 	readonly confidence: number;
 }
 
+export interface AutoRAGEvidenceRef {
+	readonly method: string;
+	readonly source: string;
+	readonly excerpt?: string;
+	readonly content?: string;
+	readonly retrievalResultId?: string;
+	readonly chunkIndex?: number;
+	readonly lineNumber?: number;
+	readonly stableEvidenceId?: string;
+}
+
 export interface AutoRAGMappingEntry {
 	readonly number: number;
 	readonly source: string;
 	readonly method: string;
 	readonly content: string;
+	readonly evidenceRefs: readonly AutoRAGEvidenceRef[];
 }
 
 export interface AutoRAGResultsDetails {
@@ -95,6 +123,20 @@ export function createEmitResultsTool(
 					source: entry.source,
 					method: entry.method,
 					content: entry.content,
+					evidenceRefs: (
+						entry.evidenceRefs ?? [{ method: entry.method, source: entry.source, content: entry.content }]
+					).map((evidence) => ({
+						method: evidence.method,
+						source: evidence.source,
+						...(evidence.excerpt !== undefined ? { excerpt: evidence.excerpt } : {}),
+						...(evidence.content !== undefined ? { content: evidence.content } : {}),
+						...(evidence.retrievalResultId !== undefined
+							? { retrievalResultId: evidence.retrievalResultId }
+							: {}),
+						...(evidence.chunkIndex !== undefined ? { chunkIndex: evidence.chunkIndex } : {}),
+						...(evidence.lineNumber !== undefined ? { lineNumber: evidence.lineNumber } : {}),
+						...(evidence.stableEvidenceId !== undefined ? { stableEvidenceId: evidence.stableEvidenceId } : {}),
+					})),
 				})),
 				warnings: params.warnings ?? [],
 			};

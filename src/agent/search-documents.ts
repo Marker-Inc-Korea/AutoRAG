@@ -1,6 +1,6 @@
-import type { RetrievalMemory } from "../memory/memory.ts";
+import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult } from "../retrieval/types.ts";
-import type { AutoRAGResultsDetails } from "./emit-results-tool.ts";
+import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
 
 export type SearchDocumentWarning = "empty-query";
 
@@ -55,6 +55,28 @@ export function createEmptySearchDocumentsResponse(
 	};
 }
 
+function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionEvidenceRef[] {
+	const rawRefs =
+		entry.evidenceRefs.length > 0
+			? entry.evidenceRefs
+			: [{ method: entry.method, source: entry.source, content: entry.content }];
+	return rawRefs.map((ref) => {
+		if (ref.excerpt === undefined && ref.content === undefined) {
+			throw new Error("emit_autorag_results: every evidenceRef must include excerpt or content");
+		}
+		return normalizeSessionEvidenceRef({
+			method: ref.method,
+			source: ref.source,
+			...(ref.excerpt !== undefined ? { excerpt: ref.excerpt } : {}),
+			...(ref.content !== undefined ? { content: ref.content } : {}),
+			...(ref.retrievalResultId !== undefined ? { retrievalResultId: ref.retrievalResultId } : {}),
+			...(ref.chunkIndex !== undefined ? { chunkIndex: ref.chunkIndex } : {}),
+			...(ref.lineNumber !== undefined ? { lineNumber: ref.lineNumber } : {}),
+			...(ref.stableEvidenceId !== undefined ? { stableEvidenceId: ref.stableEvidenceId } : {}),
+		});
+	});
+}
+
 export function recordStructuredResultsSession(
 	sessionId: string,
 	query: string,
@@ -72,27 +94,28 @@ export function recordStructuredResultsSession(
 	}
 
 	const registry = new Map<number, CuratedResult>();
+	const memoryResults = [];
 	for (const entry of details.mapping) {
+		const evidenceRefs = normalizeEntryEvidenceRefs(entry);
 		registry.set(entry.number, {
 			index: entry.number,
 			content: entry.content,
 			source: entry.source,
 			method: entry.method,
+			evidenceRefs,
 		});
-		const memoryEntry = memory.append({
-			query,
+		const emittedResult = details.results.find((result) => result.number === entry.number);
+		memoryResults.push({
+			number: entry.number,
+			title: emittedResult?.title ?? `Result ${entry.number}`,
+			summary: emittedResult?.summary ?? entry.content,
+			content: entry.content,
 			method: entry.method,
-			outcome: "pending",
-			metadata: { resultCount: 1 },
-		});
-		memory.registerAttempt({
-			id: memoryEntry.id,
-			query,
-			method: entry.method,
-			sources: [entry.source],
-			timestamp: memoryEntry.timestamp,
+			source: entry.source,
+			evidenceRefs,
 		});
 	}
+	memory.recordCuratedResultsSession({ sessionId, query, results: memoryResults });
 	sessions.set(sessionId, { query, registry });
 	memory.save();
 
@@ -130,14 +153,13 @@ export function recordNumberedFeedback(
 	if (!session) return;
 	const feedback = [];
 	for (const n of usefulNumbers) {
-		const entry = session.registry.get(n);
-		if (entry) feedback.push({ source: entry.source, useful: true });
+		if (session.registry.has(n)) feedback.push({ number: n, useful: true });
 	}
 	for (const n of notUsefulNumbers) {
-		const entry = session.registry.get(n);
-		if (entry) feedback.push({ source: entry.source, useful: false });
+		if (session.registry.has(n)) feedback.push({ number: n, useful: false });
 	}
 	if (feedback.length === 0) return;
-	memory.recordResultFeedback(feedback);
-	memory.save();
+	if (memory.recordNumberedFeedback({ sessionId, query: session.query, feedback })) {
+		memory.save();
+	}
 }

@@ -108,7 +108,7 @@ export class AutoRAGAgent {
 		const toolNames = tools.map((tool) => tool.name);
 		const systemPrompt = buildSystemPrompt({
 			toolNames,
-			memoryEntries: this.memory.getEntries(),
+			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			jikjiIndexingEnabled: options.jikji !== undefined,
 		});
@@ -122,9 +122,9 @@ export class AutoRAGAgent {
 			convertToLlm: (messages) =>
 				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
 			transformContext: async (messages) => {
-				const entries = this.memory.getEntries();
-				if (entries.length === 0) return messages;
-				const summary = renderMemoryContext(entries);
+				const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
+				if (hints.length === 0) return messages;
+				const summary = renderMemoryContext(hints);
 				const memoryMessage = {
 					role: "user" as const,
 					content: [{ type: "text" as const, text: `<memory_context>\n${summary}\n</memory_context>` }],
@@ -139,22 +139,8 @@ export class AutoRAGAgent {
 				const details = context.result.details as
 					| { resultCount?: number; sources?: string[]; method?: string }
 					| undefined;
-				const resultCount = details?.resultCount ?? 0;
-				const sources = details?.sources ?? [];
 				const method = details?.method ?? toolName;
-				const entry = this.memory.append({
-					query: this.lastQuery,
-					method,
-					outcome: "pending",
-					metadata: { resultCount },
-				});
-				this.memory.registerAttempt({
-					id: entry.id,
-					query: this.lastQuery,
-					method,
-					sources,
-					timestamp: entry.timestamp,
-				});
+				this.memory.recordWeakSignal(this.lastQuery, method, "followup");
 				this.memory.save();
 				return undefined;
 			},

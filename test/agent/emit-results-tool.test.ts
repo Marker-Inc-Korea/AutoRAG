@@ -37,6 +37,7 @@ describe("createEmitResultsTool", () => {
 			source: "/data/one.txt",
 			method: "grep",
 			content: "snippet",
+			evidenceRefs: [{ method: "grep", source: "/data/one.txt", content: "snippet" }],
 		});
 		expect(captured).toBe(result.details);
 	});

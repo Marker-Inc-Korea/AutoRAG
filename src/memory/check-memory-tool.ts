@@ -5,12 +5,13 @@ import { renderMemoryContext } from "./renderer.ts";
 
 const checkMemorySchema = Type.Object({
 	query: Type.String({
-		description: "The query you plan to search for — memory will show similar past queries and which methods worked",
+		description:
+			"The query you plan to search for — memory will show advisory method hints from past result/evidence feedback",
 	}),
 });
 
 export interface CheckMemoryDetails {
-	entryCount: number;
+	signalCount: number;
 	topMethod: string | null;
 }
 
@@ -21,27 +22,15 @@ export function createCheckMemoryTool(
 		name: "check_memory",
 		label: "Check Memory",
 		description:
-			"Check retrieval memory for past query outcomes. Returns which search methods were useful or not useful for similar queries. Call this before searching to pick the best method.",
+			"Check retrieval memory for advisory method hints from past result/evidence feedback. Hints are never method disable rules; broaden to other methods when results are insufficient.",
 		parameters: checkMemorySchema,
 		async execute(_toolCallId: string, params: { query: string }): Promise<AgentToolResult<CheckMemoryDetails>> {
-			const entries = memory.getEntries();
-			const summary = renderMemoryContext(entries);
-			const priority = memory.getMethodPriority(params.query);
-
-			let recommendation = "";
-			if (priority.length > 0) {
-				recommendation =
-					"\n\n## Recommended Methods\n" +
-					priority
-						.map((p, i) => `${i + 1}. **${p.method}** (usefulness: ${(p.score * 100).toFixed(0)}%)`)
-						.join("\n");
-			}
-
+			const hints = memory.getMethodHints(params.query);
 			return {
-				content: [{ type: "text", text: summary + recommendation }],
+				content: [{ type: "text", text: renderMemoryContext(hints) }],
 				details: {
-					entryCount: entries.length,
-					topMethod: priority[0]?.method ?? null,
+					signalCount: memory.getSignalCount(),
+					topMethod: hints[0]?.method ?? null,
 				},
 			};
 		},
