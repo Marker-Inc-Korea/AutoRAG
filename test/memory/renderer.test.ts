@@ -28,4 +28,28 @@ describe("renderMemoryContext", () => {
 		const rowCount = result.split("\n").filter((line) => line.startsWith("| m")).length;
 		expect(rowCount).toBe(5);
 	});
+
+	it("renders durable insights as advisory context", () => {
+		const result = renderMemoryContext([], {
+			insights: [
+				{
+					id: "insight-1",
+					clusterKey: "photo archive lookup",
+					domain: "photo archive lookup",
+					recommendedSources: ["Pictures/"],
+					recommendedMethods: ["posix"],
+					rationale: "100 useful signals consistently preferred posix",
+					supportingSignalCount: 100,
+					confidence: 1,
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			],
+		});
+		expect(result).toContain("## Long-Term Retrieval Insights");
+		expect(result).toContain("advisory");
+		expect(result).toContain("photo archive lookup");
+		expect(result).toContain("Pictures/");
+		expect(result).toContain("posix");
+	});
 });

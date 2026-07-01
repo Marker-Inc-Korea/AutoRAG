@@ -69,4 +69,19 @@ describe("createCheckMemoryTool", () => {
 		expect(result.details!.signalCount).toBe(1);
 		expect(result.details!.topMethod).toBe("posix");
 	});
+
+	it("returns durable insights with details", async () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		for (let i = 0; i < 600; i++) memory.recordFeedback("photo archive lookup", "posix", true);
+		memory.save();
+
+		const tool = createCheckMemoryTool(memory);
+		const result = await tool.execute("test-call", { query: "photo archive lookup" });
+
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+		expect(text).toContain("Long-Term Retrieval Insights");
+		expect(text).toContain("photo archive lookup");
+		expect(result.details!.insightCount).toBe(1);
+	});
 });

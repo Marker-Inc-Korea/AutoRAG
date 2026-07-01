@@ -13,6 +13,7 @@ const checkMemorySchema = Type.Object({
 export interface CheckMemoryDetails {
 	signalCount: number;
 	topMethod: string | null;
+	insightCount: number;
 }
 
 export function createCheckMemoryTool(
@@ -26,11 +27,13 @@ export function createCheckMemoryTool(
 		parameters: checkMemorySchema,
 		async execute(_toolCallId: string, params: { query: string }): Promise<AgentToolResult<CheckMemoryDetails>> {
 			const hints = memory.getMethodHints(params.query);
+			const insights = memory.getInsights(params.query);
 			return {
-				content: [{ type: "text", text: renderMemoryContext(hints) }],
+				content: [{ type: "text", text: renderMemoryContext(hints, { insights }) }],
 				details: {
 					signalCount: memory.getSignalCount(),
 					topMethod: hints[0]?.method ?? null,
+					insightCount: insights.length,
 				},
 			};
 		},

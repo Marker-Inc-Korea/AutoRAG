@@ -250,4 +250,105 @@ describe("RetrievalMemory", () => {
 		memory2.load();
 		expect(memory2.getSignalCount()).toBe(500);
 	});
+
+	it("normalizes current v4 files without insights", () => {
+		writeFileSync(
+			memoryPath,
+			JSON.stringify({
+				version: 4,
+				curatedResults: [],
+				evidenceChunks: [],
+				feedbackSignals: [],
+				signalDefaults: { explicitWeight: 1, followupWeight: 0.25, retryWeight: -0.25, implicitCap: 0.5 },
+				warnings: [],
+			}),
+			"utf-8",
+		);
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		expect(memory.getSchema().insights).toEqual([]);
+	});
+
+	it("extracts durable insights from complete 100-signal evicted batches", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		for (let i = 0; i < 600; i++) memory.recordFeedback("photo archive lookup", "posix", true);
+		memory.save();
+
+		const memory2 = new RetrievalMemory({ storagePath: memoryPath });
+		memory2.load();
+		expect(memory2.getSignalCount()).toBe(500);
+		const insights = memory2.getInsights("photo archive lookup");
+		expect(insights).toHaveLength(1);
+		expect(insights[0].domain).toBe("photo archive lookup");
+		expect(insights[0].recommendedMethods).toEqual(["posix"]);
+		expect(insights[0].supportingSignalCount).toBe(100);
+	});
+
+	it("accumulates evicted insight batches across incremental saves", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		for (let i = 0; i < 500; i++) memory.recordFeedback("photo archive lookup", "posix", true);
+		memory.save();
+
+		for (let i = 0; i < 99; i++) {
+			memory.recordFeedback("photo archive lookup", "posix", true);
+			memory.save();
+		}
+		expect(memory.getSignalCount()).toBe(500);
+		expect(memory.getInsights("photo archive lookup")).toEqual([]);
+
+		memory.recordFeedback("photo archive lookup", "posix", true);
+		memory.save();
+		expect(memory.getSignalCount()).toBe(500);
+		const insights = memory.getInsights("photo archive lookup");
+		expect(insights).toHaveLength(1);
+		expect(insights[0].supportingSignalCount).toBe(100);
+	});
+
+	it("does not create insights from under-sized or noisy evictions", () => {
+		const undersized = new RetrievalMemory({ storagePath: memoryPath });
+		undersized.load();
+		for (let i = 0; i < 510; i++) undersized.recordFeedback("photo archive lookup", "posix", true);
+		undersized.save();
+		expect(undersized.getSchema().feedbackSignals).toHaveLength(500);
+		expect(undersized.getInsights("photo archive lookup")).toEqual([]);
+		expect(undersized.getSchema().pendingInsightSignals).toHaveLength(10);
+
+		const noisyPath = join(tmpDir, "noisy-memory.json");
+		const noisy = new RetrievalMemory({ storagePath: noisyPath });
+		noisy.load();
+		for (let i = 0; i < 600; i++) noisy.recordWeakSignal("weak photo lookup", "posix", "followup");
+		noisy.save();
+		expect(noisy.getSignalCount()).toBe(500);
+		expect(noisy.getInsights("weak photo lookup")).toEqual([]);
+	});
+
+	it("merges repeated insight batches instead of duplicating them", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		for (let i = 0; i < 600; i++) memory.recordFeedback("insurance claim forms", "minsync", true);
+		memory.save();
+		for (let i = 0; i < 100; i++) memory.recordFeedback("insurance claim forms", "minsync", true);
+		memory.save();
+
+		const insights = memory.getInsights("insurance claim forms");
+		expect(insights).toHaveLength(1);
+		expect(insights[0].supportingSignalCount).toBe(200);
+		expect(insights[0].recommendedMethods).toEqual(["minsync"]);
+	});
+
+	it("keeps save fail-open when insight extraction fails", () => {
+		const memory = new RetrievalMemory({
+			storagePath: memoryPath,
+			insightExtractor: () => {
+				throw new Error("extractor failed");
+			},
+		});
+		memory.load();
+		for (let i = 0; i < 600; i++) memory.recordFeedback("photo archive lookup", "posix", true);
+		expect(() => memory.save()).not.toThrow();
+		expect(memory.getSignalCount()).toBe(500);
+		expect(memory.getSchema().warnings.some((warning) => warning.code === "insight-extraction-failed")).toBe(true);
+	});
 });

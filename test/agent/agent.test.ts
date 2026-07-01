@@ -34,6 +34,11 @@ function makeTool(name: string): AgentTool {
 interface AgentInternals {
 	lastQuery: string | undefined;
 	memory: RetrievalMemory;
+	innerAgent: {
+		transformContext?: (
+			messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }>; timestamp: number }>,
+		) => Promise<Array<{ role: string; content: Array<{ type: "text"; text: string }>; timestamp: number }>>;
+	};
 }
 
 function internals(agent: AutoRAGAgent): AgentInternals {
@@ -219,6 +224,25 @@ describe("AutoRAGAgent", () => {
 		const memory = new RetrievalMemory({ storagePath: memPath });
 		memory.load();
 		expect(memory.getMethodHints("q").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
+	});
+
+	it("injects memory context when durable insights exist without live hints", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		internals(agent).lastQuery = "photo archive lookup";
+		for (let i = 0; i < 600; i++) internals(agent).memory.recordFeedback("photo archive lookup", "posix", true);
+		internals(agent).memory.save();
+		internals(agent).memory.getSchema().feedbackSignals = [];
+
+		const transformed = await internals(agent).innerAgent.transformContext?.([
+			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() },
+		]);
+
+		expect(transformed?.[0].content[0].text).toContain("<memory_context>");
+		expect(transformed?.[0].content[0].text).toContain("Long-Term Retrieval Insights");
+		expect(transformed?.[0].content[0].text).toContain("photo archive lookup");
 	});
 
 	it("getResultRegistry returns empty map initially", () => {

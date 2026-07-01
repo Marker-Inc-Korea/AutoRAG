@@ -62,6 +62,27 @@ export interface MethodHint {
 	readonly reason: string;
 }
 
+export interface RetrievalInsight {
+	readonly id: string;
+	readonly clusterKey: string;
+	readonly domain: string;
+	readonly recommendedSources: string[];
+	readonly recommendedMethods: string[];
+	readonly rationale: string;
+	supportingSignalCount: number;
+	confidence: number;
+	readonly createdAt: number;
+	updatedAt: number;
+}
+
+export interface InsightExtractionSignal {
+	readonly signal: FeedbackSignal;
+	readonly method?: string;
+	readonly source?: string;
+}
+
+export type InsightExtractor = (signals: readonly InsightExtractionSignal[], now: number) => RetrievalInsight[];
+
 export interface MemoryWarning {
 	readonly code: string;
 	readonly message: string;
@@ -75,6 +96,8 @@ export interface MemorySchemaV4 {
 	feedbackSignals: FeedbackSignal[];
 	readonly signalDefaults: SignalDefaults;
 	warnings: MemoryWarning[];
+	insights: RetrievalInsight[];
+	pendingInsightSignals: InsightExtractionSignal[];
 }
 
 export interface MemoryEntry {
@@ -127,6 +150,7 @@ export interface NumberedFeedbackInput {
 
 export interface RetrievalMemoryOptions {
 	storagePath: string;
+	insightExtractor?: InsightExtractor;
 }
 
 const DEFAULT_SIGNAL_DEFAULTS: SignalDefaults = {
@@ -137,6 +161,11 @@ const DEFAULT_SIGNAL_DEFAULTS: SignalDefaults = {
 };
 const MAX_RECORDS = 500;
 const MAX_WARNINGS = 50;
+const INSIGHT_BATCH_SIZE = 100;
+const MAX_INSIGHTS = 200;
+const MIN_INSIGHT_SUPPORT = 5;
+const MIN_INSIGHT_SCORE = 3;
+const INSIGHT_WARNING = "[AutoRAG] Retrieval memory insight extraction failed; continuing without insights";
 const RESET_WARNING = "[AutoRAG] Retrieval memory is not v4-compatible; starting fresh";
 
 function emptyMemoryV4(): MemorySchemaV4 {
@@ -147,6 +176,8 @@ function emptyMemoryV4(): MemorySchemaV4 {
 		feedbackSignals: [],
 		signalDefaults: DEFAULT_SIGNAL_DEFAULTS,
 		warnings: [],
+		insights: [],
+		pendingInsightSignals: [],
 	};
 }
 
@@ -154,7 +185,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function isV4(data: unknown): data is MemorySchemaV4 {
+function isV4(data: unknown): data is Omit<MemorySchemaV4, "insights" | "pendingInsightSignals"> & {
+	insights?: unknown;
+	pendingInsightSignals?: unknown;
+} {
 	return (
 		isRecord(data) &&
 		data.version === 4 &&
@@ -163,8 +197,50 @@ function isV4(data: unknown): data is MemorySchemaV4 {
 		Array.isArray(data.feedbackSignals) &&
 		isRecord(data.signalDefaults) &&
 		typeof data.signalDefaults.explicitWeight === "number" &&
-		Array.isArray(data.warnings)
+		Array.isArray(data.warnings) &&
+		(data.insights === undefined || Array.isArray(data.insights)) &&
+		(data.pendingInsightSignals === undefined || Array.isArray(data.pendingInsightSignals))
 	);
+}
+
+function isInsight(value: unknown): value is RetrievalInsight {
+	return (
+		isRecord(value) &&
+		typeof value.id === "string" &&
+		typeof value.clusterKey === "string" &&
+		typeof value.domain === "string" &&
+		Array.isArray(value.recommendedSources) &&
+		Array.isArray(value.recommendedMethods) &&
+		typeof value.rationale === "string" &&
+		typeof value.supportingSignalCount === "number" &&
+		typeof value.confidence === "number" &&
+		typeof value.createdAt === "number" &&
+		typeof value.updatedAt === "number"
+	);
+}
+
+function isInsightExtractionSignal(value: unknown): value is InsightExtractionSignal {
+	return isRecord(value) && isRecord(value.signal) && typeof value.signal.query === "string";
+}
+
+function normalizeV4(
+	data: Omit<MemorySchemaV4, "insights" | "pendingInsightSignals"> & {
+		insights?: unknown;
+		pendingInsightSignals?: unknown;
+	},
+): MemorySchemaV4 {
+	return {
+		version: 4,
+		curatedResults: data.curatedResults,
+		evidenceChunks: data.evidenceChunks,
+		feedbackSignals: data.feedbackSignals,
+		signalDefaults: data.signalDefaults,
+		warnings: data.warnings,
+		insights: Array.isArray(data.insights) ? data.insights.filter(isInsight) : [],
+		pendingInsightSignals: Array.isArray(data.pendingInsightSignals)
+			? data.pendingInsightSignals.filter(isInsightExtractionSignal).slice(-INSIGHT_BATCH_SIZE + 1)
+			: [],
+	};
 }
 
 function hashText(value: string): string {
@@ -185,14 +261,111 @@ function queryMatches(entryQuery: string, query: string): boolean {
 	return a === b || a.includes(b) || b.includes(a);
 }
 
+function normalizeInsightDomain(query: string): string {
+	return query
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}]+/gu, " ")
+		.trim()
+		.split(/\s+/u)
+		.filter((token) => token.length > 1)
+		.slice(0, 5)
+		.join(" ");
+}
+
+function insightMatches(insight: RetrievalInsight, query: string): boolean {
+	const domain = normalizeInsightDomain(query);
+	if (domain.length === 0) return false;
+	if (insight.clusterKey === domain || insight.domain === domain) return true;
+	const insightTokens = new Set(insight.clusterKey.split(" ").filter(Boolean));
+	const queryTokens = domain.split(" ").filter(Boolean);
+	if (insightTokens.size < 2 || queryTokens.length < 2) return false;
+	let overlap = 0;
+	for (const token of queryTokens) if (insightTokens.has(token)) overlap++;
+	return overlap >= Math.min(2, insightTokens.size) && overlap / insightTokens.size >= 0.6;
+}
+
+function defaultInsightExtractor(signals: readonly InsightExtractionSignal[], now: number): RetrievalInsight[] {
+	const clusters = new Map<
+		string,
+		{
+			domain: string;
+			score: number;
+			support: number;
+			explicitSupport: number;
+			methods: Map<string, number>;
+			sources: Map<string, number>;
+			firstSeenAt: number;
+			lastSeenAt: number;
+		}
+	>();
+	for (const item of signals) {
+		const method = item.method;
+		if (!method) continue;
+		const domain = normalizeInsightDomain(item.signal.query);
+		if (domain.length === 0) continue;
+		const current = clusters.get(domain) ?? {
+			domain,
+			score: 0,
+			support: 0,
+			explicitSupport: 0,
+			methods: new Map<string, number>(),
+			sources: new Map<string, number>(),
+			firstSeenAt: item.signal.timestamp,
+			lastSeenAt: item.signal.timestamp,
+		};
+		current.score += item.signal.weight;
+		current.support++;
+		if (item.signal.source === "explicit") current.explicitSupport++;
+		current.methods.set(method, (current.methods.get(method) ?? 0) + 1);
+		if (item.source) current.sources.set(item.source, (current.sources.get(item.source) ?? 0) + 1);
+		current.firstSeenAt = Math.min(current.firstSeenAt, item.signal.timestamp);
+		current.lastSeenAt = Math.max(current.lastSeenAt, item.signal.timestamp);
+		clusters.set(domain, current);
+	}
+	return Array.from(clusters.values())
+		.filter(
+			(cluster) =>
+				cluster.support >= MIN_INSIGHT_SUPPORT &&
+				cluster.explicitSupport > 0 &&
+				cluster.score >= MIN_INSIGHT_SCORE &&
+				cluster.methods.size > 0,
+		)
+		.map((cluster) => {
+			const methods = Array.from(cluster.methods.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+			const sources = Array.from(cluster.sources.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+			const methodConsistency = methods[0][1] / cluster.support;
+			const confidence = Math.min(1, Math.max(0, (cluster.score / cluster.support) * methodConsistency));
+			return {
+				id: `insight:${hashText(cluster.domain).slice(0, 24)}`,
+				clusterKey: cluster.domain,
+				domain: cluster.domain,
+				recommendedSources: sources.slice(0, 3).map(([source]) => source),
+				recommendedMethods: methods.slice(0, 3).map(([method]) => method),
+				rationale: `${cluster.support} evicted feedback signal(s) consistently supported ${methods[0][0]}; advisory only, not a method disable rule`,
+				supportingSignalCount: cluster.support,
+				confidence,
+				createdAt: now,
+				updatedAt: now,
+			};
+		})
+		.sort(
+			(a, b) =>
+				b.confidence - a.confidence ||
+				b.supportingSignalCount - a.supportingSignalCount ||
+				a.domain.localeCompare(b.domain),
+		);
+}
+
 export class RetrievalMemory {
 	private readonly storagePath: string;
+	private readonly insightExtractor: InsightExtractor;
 	private data: MemorySchemaV4 = emptyMemoryV4();
 	private legacyEntries = new Map<string, MemoryEntry>();
 	private legacySourceToAttemptId = new Map<string, string>();
 
 	constructor(options: RetrievalMemoryOptions) {
 		this.storagePath = options.storagePath;
+		this.insightExtractor = options.insightExtractor ?? defaultInsightExtractor;
 	}
 
 	load(): void {
@@ -205,7 +378,7 @@ export class RetrievalMemory {
 		try {
 			const parsed: unknown = JSON.parse(readFileSync(this.storagePath, "utf-8"));
 			if (isV4(parsed)) {
-				this.data = parsed;
+				this.data = normalizeV4(parsed);
 				return;
 			}
 			this.resetIncompatible();
@@ -353,6 +526,18 @@ export class RetrievalMemory {
 			.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.method.localeCompare(b.method));
 	}
 
+	getInsights(query: string): RetrievalInsight[] {
+		return this.data.insights
+			.filter((insight) => insightMatches(insight, query))
+			.sort(
+				(a, b) =>
+					b.confidence - a.confidence ||
+					b.supportingSignalCount - a.supportingSignalCount ||
+					b.updatedAt - a.updatedAt ||
+					a.domain.localeCompare(b.domain),
+			);
+	}
+
 	// Compatibility projection for existing callers/tests while product code migrates to MethodHint wording.
 	getMethodPriority(query: string): Array<{ method: string; score: number }> {
 		return this.getMethodHints(query).map((hint) => ({ method: hint.method, score: hint.score }));
@@ -441,10 +626,79 @@ export class RetrievalMemory {
 	}
 
 	private capData(): void {
+		const evictedSignals =
+			this.data.feedbackSignals.length > MAX_RECORDS
+				? this.data.feedbackSignals.slice(0, this.data.feedbackSignals.length - MAX_RECORDS).map((signal) => ({
+						signal,
+						method: this.methodForSignal(signal),
+						source: this.sourceForSignal(signal),
+					}))
+				: [];
+		this.extractInsightsFromEvictedSignals(evictedSignals);
+
 		this.data.curatedResults = this.data.curatedResults.slice(-MAX_RECORDS);
 		this.data.evidenceChunks = this.data.evidenceChunks.slice(-MAX_RECORDS);
 		this.data.feedbackSignals = this.data.feedbackSignals.slice(-MAX_RECORDS);
+		this.data.insights = this.data.insights
+			.sort(
+				(a, b) =>
+					b.confidence - a.confidence ||
+					b.supportingSignalCount - a.supportingSignalCount ||
+					b.updatedAt - a.updatedAt ||
+					a.domain.localeCompare(b.domain),
+			)
+			.slice(0, MAX_INSIGHTS);
 		this.data.warnings = this.data.warnings.slice(-MAX_WARNINGS);
+	}
+
+	private extractInsightsFromEvictedSignals(evictedSignals: readonly InsightExtractionSignal[]): void {
+		const candidates = [...this.data.pendingInsightSignals, ...evictedSignals];
+		const completeBatchCount = Math.floor(candidates.length / INSIGHT_BATCH_SIZE);
+		this.data.pendingInsightSignals = candidates.slice(completeBatchCount * INSIGHT_BATCH_SIZE);
+		if (completeBatchCount === 0) return;
+		const now = Date.now();
+		try {
+			for (let i = 0; i < completeBatchCount; i++) {
+				const batch = candidates.slice(i * INSIGHT_BATCH_SIZE, (i + 1) * INSIGHT_BATCH_SIZE);
+				this.mergeInsights(this.insightExtractor(batch, now));
+			}
+		} catch {
+			console.warn(INSIGHT_WARNING);
+			this.data.warnings.push({
+				code: "insight-extraction-failed",
+				message: "Retrieval insight extraction failed; memory save continued without blocking capping",
+				timestamp: now,
+			});
+		}
+	}
+
+	private mergeInsights(insights: readonly RetrievalInsight[]): void {
+		for (const insight of insights) {
+			const existingIndex = this.data.insights.findIndex((entry) => entry.clusterKey === insight.clusterKey);
+			if (existingIndex < 0) {
+				this.data.insights.push(insight);
+				continue;
+			}
+			const existing = this.data.insights[existingIndex];
+			const sources = Array.from(new Set([...existing.recommendedSources, ...insight.recommendedSources])).slice(
+				0,
+				3,
+			);
+			const methods = Array.from(new Set([...existing.recommendedMethods, ...insight.recommendedMethods])).slice(
+				0,
+				3,
+			);
+			const support = existing.supportingSignalCount + insight.supportingSignalCount;
+			this.data.insights[existingIndex] = {
+				...existing,
+				recommendedSources: sources,
+				recommendedMethods: methods,
+				rationale: insight.rationale,
+				supportingSignalCount: support,
+				confidence: Math.max(existing.confidence, insight.confidence, Math.min(1, support / 100)),
+				updatedAt: Math.max(existing.updatedAt, insight.updatedAt),
+			};
+		}
 	}
 
 	private upsertEvidence(ref: SessionEvidenceRef, timestamp: number): void {
@@ -482,6 +736,21 @@ export class RetrievalMemory {
 			const firstEvidence = result?.evidenceIds[0];
 			return firstEvidence
 				? this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === firstEvidence)?.method
+				: undefined;
+		}
+		return undefined;
+	}
+
+	private sourceForSignal(signal: FeedbackSignal): string | undefined {
+		const target = signal.target;
+		if (target.type === "evidence_chunk") {
+			return this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === target.stableEvidenceId)?.source;
+		}
+		if (target.type === "curated_result") {
+			const result = this.data.curatedResults.find((entry) => entry.resultId === target.resultId);
+			const firstEvidence = result?.evidenceIds[0];
+			return firstEvidence
+				? this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === firstEvidence)?.source
 				: undefined;
 		}
 		return undefined;

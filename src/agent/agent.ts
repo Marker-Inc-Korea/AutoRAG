@@ -123,8 +123,9 @@ export class AutoRAGAgent {
 				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
 			transformContext: async (messages) => {
 				const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
-				if (hints.length === 0) return messages;
-				const summary = renderMemoryContext(hints);
+				const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
+				if (hints.length === 0 && insights.length === 0) return messages;
+				const summary = renderMemoryContext(hints, { insights });
 				const memoryMessage = {
 					role: "user" as const,
 					content: [{ type: "text" as const, text: `<memory_context>\n${summary}\n</memory_context>` }],
