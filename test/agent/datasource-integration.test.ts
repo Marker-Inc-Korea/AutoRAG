@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { createLoadDatasourceSkillTool } from "../../src/agent/datasource-skill.ts";
 import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
 import type {
 	DatasourceIndexResult,
@@ -71,6 +72,13 @@ function makeSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
 		},
 		polling(): PollingMetadata {
 			return { mode: "poll", intervalMs: 60_000 };
+		},
+		skillManifest() {
+			return {
+				name: "datasource-kakao",
+				description: "Search indexed KakaoTalk chats.",
+				content: "# KakaoTalk\nSearch with search_datasource_documents; scope /kakao/acct-1.",
+			};
 		},
 		async index(): Promise<DatasourceIndexResult> {
 			return {
@@ -152,7 +160,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		expect(response.details.sources).toEqual([]);
 	});
 
-	it("announces authorized datasource descriptions in the system prompt without raw paths", () => {
+	it("announces authorized datasource skills in the system prompt (progressive disclosure) without raw paths", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
@@ -162,8 +170,12 @@ describe("AutoRAGAgent datasource integration", () => {
 
 		const prompt = agent.getSystemPrompt();
 
+		expect(prompt).toContain("<available_skills>");
+		expect(prompt).toContain("datasource-kakao");
+		expect(prompt).toContain("Search indexed KakaoTalk chats.");
+		expect(prompt).toContain("load_datasource_skill");
 		expect(prompt).toContain("search_datasource_documents");
-		expect(prompt).toContain("authorized KakaoTalk chat history");
+		// Full skill content (with example scopes) is loaded on demand, not in the prompt.
 		expect(prompt).not.toContain("/kakao/acct-1");
 		expect(prompt).not.toContain("/Users/");
 	});
@@ -211,5 +223,44 @@ describe("AutoRAGAgent datasource integration", () => {
 		expect(serialized).not.toContain("Library/Containers");
 		expect(serialized).not.toContain("com.kakao");
 		expect(serialized).not.toContain("/Users/me");
+	});
+
+	it("dynamically loads an authorized datasource skill's full instructions via tool calling", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			datasourceSkills: [makeSkill([])],
+			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
+		});
+		const tool = createLoadDatasourceSkillTool(agent);
+
+		const response = await tool.execute("call-load", { name: "datasource-kakao" });
+
+		expect(response.details).toEqual({ skill: "datasource-kakao", loaded: true });
+		const text = response.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+		expect(text).toContain('<skill name="datasource-kakao"');
+		expect(text).toContain("search_datasource_documents");
+	});
+
+	it("does not load datasource skills under default-deny or for unknown names", async () => {
+		const denied = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			datasourceSkills: [makeSkill([])],
+		});
+		const deniedTool = createLoadDatasourceSkillTool(denied);
+		const deniedResponse = await deniedTool.execute("call-denied", { name: "datasource-kakao" });
+		expect(deniedResponse.details).toEqual({ skill: "datasource-kakao", loaded: false });
+
+		const authorized = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			datasourceSkills: [makeSkill([])],
+			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
+		});
+		const unknownResponse = await createLoadDatasourceSkillTool(authorized).execute("call-unknown", {
+			name: "datasource-slack",
+		});
+		expect(unknownResponse.details).toEqual({ skill: "datasource-slack", loaded: false });
 	});
 });

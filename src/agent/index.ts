@@ -1,5 +1,15 @@
 export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
+export {
+	buildDatasourceSkillsPrompt,
+	createLoadDatasourceSkillTool,
+	type DatasourceSkillProvider,
+	datasourceSkillLocation,
+	formatDatasourceSkillInvocation,
+	LOAD_DATASOURCE_SKILL_TOOL_NAME,
+	type LoadDatasourceSkillDetails,
+	toDatasourceAgentSkill,
+} from "./datasource-skill.ts";
 export type {
 	AutoRAGEmittedResult,
 	AutoRAGMappingEntry,

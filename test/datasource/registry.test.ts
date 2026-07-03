@@ -41,6 +41,7 @@ const makeSkill = (
 		}),
 		retrievalMethods: () => methods,
 		describeSources: (): readonly SourceDescription[] => [],
+		skillManifest: () => ({ name: "datasource-kakao", description: "KakaoTalk chats.", content: "# KakaoTalk" }),
 	};
 };
 

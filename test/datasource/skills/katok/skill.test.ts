@@ -77,6 +77,20 @@ describe("KatokSkill descriptor", () => {
 	});
 });
 
+describe("KatokSkill skillManifest (Pi agent-skill layer)", () => {
+	it("exposes a progressive-disclosure manifest with path-opaque authorized scopes in content", () => {
+		const skill = new KatokSkill({ client: asClient(new StubSkillClient()), instanceId: "work" });
+		const manifest = skill.skillManifest();
+
+		expect(manifest.name).toBe("datasource-kakao");
+		expect(manifest.description.toLowerCase()).toContain("kakaotalk");
+		expect(manifest.content).toContain("search_datasource_documents");
+		expect(manifest.content).toContain("/kakao/work");
+		expect(manifest.content).not.toContain("/Users/");
+		expect(manifest.content).not.toContain("Library/Containers");
+	});
+});
+
 describe("KatokSkill polling", () => {
 	it("defaults to poll mode at a 15 minute interval with no lastIndexedAt", () => {
 		const skill = new KatokSkill({ client: asClient(new StubSkillClient()) });

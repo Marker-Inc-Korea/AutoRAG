@@ -2,17 +2,12 @@ import { randomUUID } from "node:crypto";
 import { watch as fsWatch } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
-import type {
-	DatasourceDiagnostic,
-	DatasourceIndexResult,
-	DatasourceSkill,
-	SourceDescription,
-} from "../datasource/types.ts";
+import type { DatasourceDiagnostic, DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import { JikjiClient, type JikjiDiagnostic, type JikjiOptions, type JikjiPrepareResult } from "../jikji/index.ts";
 import { loadManifests } from "../manifest/loader.ts";
@@ -33,6 +28,7 @@ import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retr
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { createLoadDatasourceSkillTool, toDatasourceAgentSkill } from "./datasource-skill.ts";
 import {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,
@@ -168,6 +164,7 @@ export class AutoRAGAgent {
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
+	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 
 	constructor(options: AutoRAGAgentOptions) {
@@ -175,6 +172,7 @@ export class AutoRAGAgent {
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
+		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
 
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
@@ -202,14 +200,22 @@ export class AutoRAGAgent {
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
+		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
-		const tools = [...(options.tools ?? []), checkMemoryTool, searchBM25Tool, searchDatasourceTool, emitResultsTool];
+		const tools = [
+			...(options.tools ?? []),
+			checkMemoryTool,
+			searchBM25Tool,
+			searchDatasourceTool,
+			loadDatasourceSkillTool,
+			emitResultsTool,
+		];
 		const toolNames = tools.map((tool) => tool.name);
 		const systemPrompt = buildSystemPrompt({
 			toolNames,
 			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
-			datasourceSources: this.describeAllowedDatasourceSources(),
+			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== undefined,
 		});
 
@@ -366,18 +372,28 @@ export class AutoRAGAgent {
 		});
 	}
 
-	private describeAllowedDatasourceSources(options: RetrievalOptions = {}): readonly SourceDescription[] {
-		const ctx = this.datasourceAccessContext(options);
-		const predicate = ctx.allowedSourcesPredicate(options.scope);
-		const descriptions: SourceDescription[] = [];
+	/**
+	 * Build the Pi agent-skill list for datasource skills authorized by the
+	 * trusted, server-bound access context. Only authorized skills become
+	 * model-visible; unauthorized skills are omitted entirely (default-deny).
+	 */
+	private buildAuthorizedDatasourceSkills(): Skill[] {
+		const ctx = this.datasourceAccessContext();
+		const skills: Skill[] = [];
 		for (const skill of this.datasourceSkills) {
-			const descriptor = skill.describe();
-			if (!ctx.isAccessible(descriptor)) continue;
-			for (const source of skill.describeSources()) {
-				if (predicate(source.source)) descriptions.push(source);
-			}
+			if (!ctx.isAccessible(skill.describe())) continue;
+			skills.push(toDatasourceAgentSkill(skill.skillManifest()));
 		}
-		return descriptions;
+		return skills;
+	}
+
+	/**
+	 * Resolve an authorized datasource agent skill by model-visible name for the
+	 * `load_datasource_skill` tool. Returns `undefined` for unknown or
+	 * unauthorized names — model/tool input can never widen authorization.
+	 */
+	loadDatasourceSkill(name: string): Skill | undefined {
+		return this.datasourceAgentSkills.find((skill) => skill.name === name);
 	}
 
 	private async indexDatasources(): Promise<readonly DatasourceIndexResult[]> {

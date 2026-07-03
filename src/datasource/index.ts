@@ -35,6 +35,7 @@ export type {
 	DatasourceInstance,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
+	DatasourceSkillManifest,
 	PollingMetadata,
 	SourceDescription,
 } from "./types.ts";

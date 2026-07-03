@@ -1,5 +1,6 @@
-import type { SourceDescription } from "../datasource/types.ts";
+import type { Skill } from "@earendil-works/pi-agent-core";
 import type { StoreManifest } from "../manifest/types.ts";
+import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
 export interface SystemPromptConfig {
 	toolNames: string[];
@@ -7,7 +8,7 @@ export interface SystemPromptConfig {
 	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
-	datasourceSources?: readonly SourceDescription[];
+	datasourceSkills?: readonly Skill[];
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -98,20 +99,13 @@ ${storeList}`;
 	}
 
 	let datasourceSection = "";
-	if ((config.datasourceSources?.length ?? 0) > 0) {
-		const datasourceList = config.datasourceSources
-			?.map((source) => {
-				const label = source.contentType ? ` (${source.contentType})` : "";
-				const description =
-					typeof source.metadata.description === "string" ? ` — ${source.metadata.description}` : "";
-				return `- ${source.datasourceId ?? source.skill ?? "datasource"}${label}${description}`;
-			})
-			.join("\n");
+	if ((config.datasourceSkills?.length ?? 0) > 0) {
+		const skillsBlock = buildDatasourceSkillsPrompt(config.datasourceSkills ?? []);
 		datasourceSection = `## External Datasource Skills
 
-Server-authorized external datasources are available through search_datasource_documents. Their source paths are internal opaque identifiers and must never be shown in visible answers.
+Server-authorized external datasources are available as skills. Read a skill's full instructions with the load_datasource_skill tool when the task matches its description, then search it with search_datasource_documents. Datasource source identifiers are internal and opaque and must never appear in visible answers.
 
-${datasourceList}`;
+${skillsBlock}`;
 	}
 
 	const strategySection = `## Search Strategy

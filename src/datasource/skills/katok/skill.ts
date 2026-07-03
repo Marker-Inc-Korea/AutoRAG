@@ -6,6 +6,7 @@ import type {
 	DatasourceIndexResult,
 	DatasourceSkill,
 	DatasourceSkillDescriptor,
+	DatasourceSkillManifest,
 	PollingMetadata,
 	SourceDescription,
 } from "../../types.ts";
@@ -132,6 +133,41 @@ export class KatokSkill implements DatasourceSkill {
 				tags: this.tags,
 			},
 		}));
+	}
+
+	skillManifest(): DatasourceSkillManifest {
+		const instanceScopes = this.instances
+			.map((instanceId) => `- \`${datasourceSourcePath(KAKAO_DATASOURCE_ID, instanceId)}\``)
+			.join("\n");
+		const cadence =
+			this.pollingIntervalMs > 0
+				? `roughly every ${Math.round(this.pollingIntervalMs / 60000)} minute(s) when auto-refresh runs`
+				: "on manual refresh only";
+		return {
+			name: `datasource-${KAKAO_DATASOURCE_ID}`,
+			description:
+				"Search indexed KakaoTalk chat history (messages, senders, room context). Use for questions about KakaoTalk conversations, decisions made in chats, or who said what.",
+			content: [
+				`# KakaoTalk datasource (${KAKAO_SKILL_TYPE})`,
+				"",
+				"This skill searches KakaoTalk chats that are indexed through the external `katok` CLI. AutoRAG never reads KakaoTalk databases directly.",
+				"",
+				"## When to use",
+				"Use this skill when the question is about KakaoTalk conversations, chat participants, or content shared inside chats.",
+				"",
+				"## Indexing",
+				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
+				"",
+				"## How to search",
+				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
+				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
+				"",
+				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"",
+				"## Output rules",
+				"Datasource source identifiers such as `/kakao/<instance>/chunks/<id>` are internal and opaque. Never put them, real file paths, account IDs, or phone numbers in the visible answer.",
+			].join("\n"),
+		};
 	}
 
 	private fail(

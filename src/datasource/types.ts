@@ -88,6 +88,30 @@ export interface DatasourceSkill {
 	retrievalMethods(): readonly RetrievalMethod[];
 	/** Opaque source descriptions for the skill's current evidence set. */
 	describeSources(): readonly SourceDescription[];
+	/**
+	 * Progressive-disclosure agent-skill manifest (Pi agent-skill layer). The
+	 * `name`/`description` appear in the system prompt; `content` is loaded on
+	 * demand via the `load_datasource_skill` tool.
+	 */
+	skillManifest(): DatasourceSkillManifest;
+}
+
+/**
+ * Progressive-disclosure agent-skill manifest for a datasource skill.
+ *
+ * Mirrors the Pi agent-skill layer (`Skill` from `@earendil-works/pi-agent-core`):
+ * `name` + `description` are injected into the system prompt for progressive
+ * disclosure, and `content` is the full skill instruction body loaded on demand
+ * via the model's `load_datasource_skill` tool call. `content` MUST stay
+ * path/PII opaque — reference only slash-hierarchical opaque scopes.
+ */
+export interface DatasourceSkillManifest {
+	/** Stable, model-visible skill name used for lookup and the skills listing. */
+	readonly name: string;
+	/** Short "when to use" description for the system-prompt skills block. */
+	readonly description: string;
+	/** Full skill instructions (SKILL.md-style), loaded on demand. */
+	readonly content: string;
 }
 
 /**
