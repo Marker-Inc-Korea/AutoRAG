@@ -19,12 +19,28 @@ export interface ParsedMirrorSyncOptions {
 	readonly force?: boolean;
 }
 
+export type ParsedMirrorDiagnosticCode =
+	| "unsupported-file"
+	| "parser-skipped"
+	| "parser-failed"
+	| "deleted-mirror"
+	| "stale-index";
+
+/** Path-opaque refresh diagnostic. `source` is an opaque virtual path, never a real fs path. */
+export interface ParsedMirrorDiagnostic {
+	readonly code: ParsedMirrorDiagnosticCode;
+	readonly severity: "info" | "warning";
+	readonly message: string;
+	readonly source: string;
+}
+
 export interface ParsedMirrorSyncResult {
 	readonly scanned: number;
 	readonly written: number;
 	readonly deleted: number;
 	readonly skipped: number;
 	readonly indexPath: string;
+	readonly diagnostics: readonly ParsedMirrorDiagnostic[];
 }
 
 interface CurrentEntry {
@@ -43,6 +59,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	let written = 0;
 	let skipped = 0;
 	let deleted = 0;
+	const diagnostics: ParsedMirrorDiagnostic[] = [];
 
 	for (const entry of current) {
 		const parser = registry.getForVirtualPath(entry.virtualPath);
@@ -50,6 +67,12 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			deleted += removePrevious(options.root, previous, entry.virtualPath);
 			handledPrevious.add(entry.virtualPath);
 			skipped += 1;
+			diagnostics.push({
+				code: "unsupported-file",
+				severity: "info",
+				message: "No parser is registered for this file; it was skipped during indexing.",
+				source: entry.virtualPath,
+			});
 			continue;
 		}
 
@@ -72,6 +95,12 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				deleted += removePrevious(options.root, previous, entry.virtualPath);
 				handledPrevious.add(entry.virtualPath);
 				skipped += 1;
+				diagnostics.push({
+					code: "parser-failed",
+					severity: "warning",
+					message: "The registered parser failed on this file; it was skipped during indexing.",
+					source: entry.virtualPath,
+				});
 				continue;
 			}
 			writeAtomic(outputPath, normalizeMarkdown(parsed.markdown));
@@ -94,6 +123,12 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		if (nextEntries[virtualPath]) continue;
 		removeFile(parsedOutputPath(options.root, entry.virtualPath));
 		deleted += 1;
+		diagnostics.push({
+			code: "deleted-mirror",
+			severity: "info",
+			message: "A previously indexed document is gone; its parsed mirror was removed.",
+			source: virtualPath,
+		});
 	}
 
 	const index: ParsedMirrorIndex = { version: 1, entries: nextEntries };
@@ -104,9 +139,36 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 		deleted,
 		skipped,
 		indexPath: parsedMirrorIndexPath(options.root),
+		diagnostics,
 	};
 }
 
+/**
+ * Cheap, parse-free staleness check: compares current source files (by mtime and
+ * size only — no parsing) against the recorded mirror index. Returns a
+ * `stale-index` diagnostic (opaque virtual path) for every supported source that
+ * is new or changed since the last successful refresh. Safe to call outside the
+ * query hot path (e.g. from getRefreshStatus).
+ */
+export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorDiagnostic[]> {
+	const registry = options.registry ?? createDefaultParserRegistry(options.parserOptions);
+	const current = await listCurrentFiles(options.searchPaths);
+	const previous = loadMirrorIndex(options.root);
+	const diagnostics: ParsedMirrorDiagnostic[] = [];
+	for (const entry of current) {
+		if (!registry.getForVirtualPath(entry.virtualPath)) continue;
+		const prev = previous.entries[entry.virtualPath];
+		if (!prev || prev.sourceMtimeNs !== entry.mtimeNs || prev.sourceSizeBytes !== entry.sizeBytes) {
+			diagnostics.push({
+				code: "stale-index",
+				severity: "warning",
+				message: "A source document has changed since the last refresh; indexes may be stale.",
+				source: entry.virtualPath,
+			});
+		}
+	}
+	return diagnostics;
+}
 async function listCurrentFiles(searchPaths: readonly string[]): Promise<CurrentEntry[]> {
 	const entries: CurrentEntry[] = [];
 	for (const sourceRoot of planSourceRoots(searchPaths)) {

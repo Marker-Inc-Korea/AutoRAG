@@ -207,4 +207,44 @@ describe("syncParsedMirrors", () => {
 		expect(readFileSync(outside, "utf8")).toBe("do not delete unsupported\n");
 		expect(index.entries["/docs/skip.bin"]).toBeUndefined();
 	});
+	it("returns a path-opaque unsupported-file diagnostic for files without a parser", async () => {
+		writeFileSync(join(source, "note.txt"), "Alpha\n");
+		writeFileSync(join(source, "skip.bin"), Buffer.from([0, 1]));
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const diag = result.diagnostics.find((d) => d.code === "unsupported-file");
+
+		expect(diag?.source).toBe("/docs/skip.bin");
+		expect(diag?.severity).toBe("info");
+		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+	});
+
+	it("returns a parser-failed diagnostic when a routed parser throws", async () => {
+		// .hwp is routed by extension but fails with a typed ParseError (legacy binary).
+		writeFileSync(join(source, "legacy.hwp"), Buffer.from([1, 2, 3, 4]));
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const diag = result.diagnostics.find((d) => d.code === "parser-failed");
+
+		expect(diag?.source).toBe("/docs/legacy.hwp");
+		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+	});
+
+	it("returns deleted-mirror diagnostics when previously indexed files disappear", async () => {
+		const file = join(source, "gone.txt");
+		writeFileSync(file, "Bye\n");
+		await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+
+		unlinkSync(file);
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const diag = result.diagnostics.find((d) => d.code === "deleted-mirror");
+
+		expect(diag?.source).toBe("/docs/gone.txt");
+	});
+
+	it("returns an empty diagnostics array when everything parses cleanly", async () => {
+		writeFileSync(join(source, "ok.txt"), "Fine\n");
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		expect(result.diagnostics).toEqual([]);
+	});
 });

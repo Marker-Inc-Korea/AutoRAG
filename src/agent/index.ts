@@ -7,6 +7,9 @@ export type {
 } from "./emit-results-tool.ts";
 export { createEmitResultsTool, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "./emit-results-tool.ts";
 export type {
+	SearchDocumentDiagnostic,
+	SearchDocumentDiagnosticCode,
+	SearchDocumentDiagnosticSeverity,
 	SearchDocumentEvidence,
 	SearchDocumentResult,
 	SearchDocumentsResponse,

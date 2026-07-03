@@ -154,4 +154,22 @@ describe("AutoRAGAgent MinSync integration", () => {
 		expect(results[0]?.source).toBe("/docs/sub/inside.txt");
 		expect(results[0]?.content).toContain("Scoped semantic hit");
 	});
+	it("surfaces a path-free minsync-unavailable diagnostic when the binary is missing (#21)", async () => {
+		writeFileSync(join(docs, "handbook.txt"), "Refund decisions require manager review.\n");
+		const missingBinary = join(root, "missing-minsync");
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { binaryPath: missingBinary, workspacePath: minsyncWorkspace },
+		});
+
+		const { results, diagnostics } = await agent.retrieveWithDiagnostics("manager", { topK: 5 });
+
+		expect(results.some((r) => r.metadata.method === "posix")).toBe(true);
+		const minsync = diagnostics.find((d) => d.source === "minsync");
+		expect(minsync?.code).toBe("minsync-unavailable");
+		expect(minsync?.message).not.toContain(missingBinary);
+		expect(minsync?.message).not.toContain(root);
+	});
 });

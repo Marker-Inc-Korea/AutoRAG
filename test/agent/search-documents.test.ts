@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	type FauxProviderRegistration,
@@ -9,7 +9,7 @@ import {
 	fauxToolCall,
 	registerFauxProvider,
 } from "@earendil-works/pi-ai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
@@ -51,6 +51,7 @@ interface EmitArgs {
 		content: string;
 		evidenceRefs?: Array<{ method: string; source: string; content?: string; excerpt?: string }>;
 	}>;
+	warnings?: string[];
 }
 
 function emitResults(args: EmitArgs): FauxResponseStep {
@@ -280,5 +281,180 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(memory.getMethodHints("function|Meeting").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(
 			0,
 		);
+	});
+	it("redacts configured paths from answer, title, summary, and evidence (#6)", async () => {
+		const home = homedir();
+		const dotAutorag = join(tmpDir, ".autorag", "parsed", "x.md");
+		const model = fauxModel(
+			emitResults({
+				answer: `Located at ${tmpDir}/data/notes.txt and home ${home}/priv and id /data/notes.txt`,
+				results: [
+					{
+						number: 1,
+						title: `Notes under ${tmpDir}/data`,
+						summary: `Cached at ${dotAutorag} and home ${home}/secret`,
+						evidence: [{ excerpt: `line from ${tmpDir}/data/notes.txt` }],
+						confidence: 1,
+					},
+				],
+				mapping: [{ number: 1, source: "/data/notes.txt", method: "grep", content: "notes" }],
+			}),
+		);
+		const agent = makeAgent(model);
+
+		const response = await agent.searchDocuments("Meeting");
+		const blob = JSON.stringify(response);
+
+		expect(blob).not.toContain(tmpDir);
+		expect(blob).not.toContain(home);
+		expect(blob).not.toContain("/data/notes.txt");
+		// Hidden registry keeps the original opaque source untouched for feedback.
+		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/data/notes.txt");
+		// A path-redacted diagnostic is emitted.
+		expect(response.diagnostics?.some((d) => d.code === "path-redacted")).toBe(true);
+		expect(JSON.stringify(response.diagnostics)).not.toContain(tmpDir);
+	});
+
+	it("does not redact benign path-like text (#6 negative cases)", async () => {
+		const benignAnswer =
+			"See docs/policy and https://example.com/a/b and C:\\Temp\\note.txt; run `cat docs/policy`; ref [1]; product Notes.txt";
+		const model = fauxModel(
+			emitResults({
+				answer: benignAnswer,
+				results: [
+					{
+						number: 1,
+						title: "docs/policy overview",
+						summary: "Visit https://example.com/a/b for details",
+						evidence: [{ excerpt: "cat docs/policy" }],
+						confidence: 1,
+					},
+				],
+				mapping: [{ number: 1, source: "/internal/opaque-source-id", method: "grep", content: "x" }],
+			}),
+		);
+		const agent = makeAgent(model);
+
+		const response = await agent.searchDocuments("Meeting");
+
+		expect(response.answer).toBe(benignAnswer);
+		expect(response.results[0]?.title).toBe("docs/policy overview");
+		expect(response.results[0]?.summary).toBe("Visit https://example.com/a/b for details");
+		expect(response.results[0]?.evidence[0]?.excerpt).toBe("cat docs/policy");
+		expect(response.diagnostics?.some((d) => d.code === "path-redacted")).toBe(false);
+	});
+
+	it("always populates diagnostics at runtime even with nothing to redact (#6/#21)", async () => {
+		const model = fauxModel(
+			emitResults({
+				answer: "clean answer",
+				results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1 }],
+				mapping: [{ number: 1, source: "/data/a.txt", method: "grep", content: "a" }],
+			}),
+		);
+		const agent = makeAgent(model);
+		const response = await agent.searchDocuments("Meeting");
+		expect(Array.isArray(response.diagnostics)).toBe(true);
+	});
+
+	it("empty-query response still includes an empty diagnostics array (#6/#21)", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [join(tmpDir, "missing-source")],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+		});
+		const response = await agent.searchDocuments("   ");
+		expect(response.warnings).toEqual(["empty-query"]);
+		expect(response.diagnostics).toEqual([]);
+	});
+	it("routes unknown emitted warnings to diagnostics instead of dropping them (#21)", async () => {
+		const model = fauxModel(
+			emitResults({
+				answer: "answer",
+				results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1 }],
+				mapping: [{ number: 1, source: "/data/a.txt", method: "grep", content: "a" }],
+				warnings: ["empty-query", "some-unusual-warning"],
+			}),
+		);
+		const agent = makeAgent(model);
+		const response = await agent.searchDocuments("Meeting");
+
+		expect(response.warnings).toEqual(["empty-query"]);
+		const unknown = response.diagnostics?.find((d) => d.code === "unknown-warning");
+		expect(unknown?.severity).toBe("info");
+		expect(unknown?.message).toContain("some-unusual-warning");
+	});
+
+	it("surfaces a bm25-degraded-fallback diagnostic when BM25 runs in fallback mode (#21)", async () => {
+		const model = fauxModel(
+			emitResults({
+				answer: "answer",
+				results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1 }],
+				mapping: [{ number: 1, source: "/data/a.txt", method: "grep", content: "a" }],
+			}),
+		);
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			bm25: { forceEngine: "typescript-fallback" },
+		});
+		await agent.refresh(true);
+
+		const response = await agent.searchDocuments("Meeting");
+		const bm25 = response.diagnostics?.find((d) => d.source === "bm25");
+		expect(bm25?.code).toBe("bm25-degraded-fallback");
+		expect(JSON.stringify(response.diagnostics)).not.toContain(tmpDir);
+	});
+
+	it("[red-team] scrubs every leak vector while preserving benign lookalikes (#6)", async () => {
+		const home = homedir();
+		const dot = join(tmpDir, ".autorag");
+		const model = fauxModel(
+			emitResults({
+				answer: `x${tmpDir}/a mid-word, ${home}/h, ${dot}/p, id/data/secret.txt, but keep docs/policy and https://ex.com/a`,
+				results: [
+					{
+						number: 1,
+						title: `t ${tmpDir}/z and product Report.txt`,
+						summary: `s ${home}/q and ref [2]`,
+						evidence: [{ excerpt: `e ${dot}/idx and cat docs/policy` }],
+						confidence: 1,
+					},
+				],
+				mapping: [{ number: 1, source: "/data/secret.txt", method: "grep", content: "c" }],
+			}),
+		);
+		const agent = makeAgent(model);
+		const response = await agent.searchDocuments("Meeting");
+		const blob = JSON.stringify(response);
+
+		expect(blob).not.toContain(tmpDir);
+		expect(blob).not.toContain(home);
+		expect(blob).not.toContain("/data/secret.txt");
+		expect(response.answer).toContain("docs/policy");
+		expect(response.answer).toContain("https://ex.com/a");
+		expect(response.results[0]?.title).toContain("product Report.txt");
+		expect(response.results[0]?.summary).toContain("[2]");
+		expect(response.results[0]?.evidence[0]?.excerpt).toContain("cat docs/policy");
+		expect(response.diagnostics?.filter((d) => d.code === "path-redacted")).toHaveLength(1);
+	});
+	it("does not parse or index in the query path (no refresh/syncParsedMirrors during searchDocuments) (#22)", async () => {
+		const model = fauxModel(
+			emitResults({
+				answer: "answer",
+				results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1 }],
+				mapping: [{ number: 1, source: "/data/a.txt", method: "grep", content: "a" }],
+			}),
+		);
+		const agent = makeAgent(model);
+		const refreshSpy = vi.spyOn(agent, "refresh");
+		const syncSpy = vi.spyOn(agent, "syncParsedMirrors");
+
+		await agent.searchDocuments("Meeting");
+
+		expect(refreshSpy).not.toHaveBeenCalled();
+		expect(syncSpy).not.toHaveBeenCalled();
 	});
 });

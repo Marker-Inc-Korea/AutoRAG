@@ -86,4 +86,54 @@ describe("ParallelRetriever", () => {
 		expect(results.get("good")).toHaveLength(1);
 		expect(results.get("bad")).toEqual([]);
 	});
+	it("retrieveWithDiagnostics preserves partial results and records path-free method failures", async () => {
+		const retriever = new ParallelRetriever();
+		const goodMethod = makeMockMethod("good", [makeResult("a", "f1.ts", 1.0)]);
+		const badMethod: RetrievalMethod = {
+			describe: () => ({
+				name: "bad",
+				type: "posix" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+			}),
+			retrieve: vi.fn().mockRejectedValue(new Error("spawn /Users/x/bin/thing ENOENT")),
+		};
+		const { results, diagnostics } = await retriever.retrieveWithDiagnostics([goodMethod, badMethod], "test", {});
+
+		expect(results.get("good")).toHaveLength(1);
+		expect(results.get("bad")).toEqual([]);
+		const diag = diagnostics.find((d) => d.source === "bad");
+		expect(diag?.code).toBe("retrieval-method-failed");
+		expect(diag?.severity).toBe("warning");
+		expect(diag?.message).not.toContain("/Users/");
+		expect(diagnostics.some((d) => d.source === "good")).toBe(false);
+	});
+
+	it("retrieveWithDiagnostics maps a failing minsync method to minsync-unavailable", async () => {
+		const retriever = new ParallelRetriever();
+		const minsync: RetrievalMethod = {
+			describe: () => ({
+				name: "minsync",
+				type: "vector" as const,
+				description: "",
+				status: "active" as const,
+				capabilities: [],
+			}),
+			retrieve: vi.fn().mockRejectedValue(new Error("spawn /opt/minsync ENOENT")),
+		};
+		const { diagnostics } = await retriever.retrieveWithDiagnostics([minsync], "test", {});
+		expect(diagnostics[0]?.code).toBe("minsync-unavailable");
+		expect(diagnostics[0]?.message).not.toContain("/opt/");
+	});
+
+	it("retrieveWithDiagnostics reports no diagnostics when all methods succeed", async () => {
+		const retriever = new ParallelRetriever();
+		const { diagnostics } = await retriever.retrieveWithDiagnostics(
+			[makeMockMethod("m1", [makeResult("a", "f1.ts", 1)])],
+			"test",
+			{},
+		);
+		expect(diagnostics).toEqual([]);
+	});
 });

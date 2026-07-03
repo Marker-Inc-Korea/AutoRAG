@@ -6,7 +6,14 @@ import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import type { ParsedMirrorSyncResult } from "../../src/mirror/sync.ts";
 
 const FIXTURE_DIR = "test/fixtures/sample-project";
-const fakeSummary: ParsedMirrorSyncResult = { scanned: 0, written: 0, deleted: 0, skipped: 0, indexPath: "index.json" };
+const fakeSummary: ParsedMirrorSyncResult = {
+	scanned: 0,
+	written: 0,
+	deleted: 0,
+	skipped: 0,
+	indexPath: "index.json",
+	diagnostics: [],
+};
 
 let tmpDir: string;
 let agent: AutoRAGAgent;
@@ -125,5 +132,19 @@ describe("AutoRAGAgent auto-refresh scheduler", () => {
 		expect(start).toHaveBeenCalledWith(5000, { immediate: true });
 		scheduled.stopAutoRefresh();
 		start.mockRestore();
+	});
+	it("captures a background refresh failure in getRefreshStatus instead of swallowing it (#22)", async () => {
+		// Let the real refresh() run its status lifecycle, but force a step to fail.
+		vi.spyOn(agent, "syncParsedMirrors").mockRejectedValue(new Error("boom /Users/secret"));
+		agent.startAutoRefresh(1000);
+
+		await vi.advanceTimersByTimeAsync(1000);
+		// Give the swallowed rejection a tick to settle.
+		await Promise.resolve();
+
+		const status = await agent.getRefreshStatus();
+		expect(status.state).toBe("failed");
+		expect(status.lastError).toBeDefined();
+		expect(status.lastError).not.toContain("/Users/");
 	});
 });

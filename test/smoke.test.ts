@@ -1,6 +1,24 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AutoRAGAgent, buildSystemPrompt, createEmitResultsTool } from "../src/index.ts";
+
+describe("dependency hygiene", () => {
+	it("declares no required Python or pip dependency", () => {
+		const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
+			dependencies?: Record<string, string>;
+			devDependencies?: Record<string, string>;
+			peerDependencies?: Record<string, string>;
+		};
+		const names = [
+			...Object.keys(pkg.dependencies ?? {}),
+			...Object.keys(pkg.devDependencies ?? {}),
+			...Object.keys(pkg.peerDependencies ?? {}),
+		];
+		for (const name of names) {
+			expect(name).not.toMatch(/python|^pip$|pyodide|pyright-python/i);
+		}
+	});
+});
 
 describe("test fixtures", () => {
 	it("exports the public library API", () => {

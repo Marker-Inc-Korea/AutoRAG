@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { jikjiPrepareDiagnostic } from "../../src/jikji/diagnostics.ts";
 
 let root: string;
 let docs: string;
@@ -115,5 +116,53 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 
 		expect(prompt).toContain("Jikji is enabled only as an indexing and file-map preparation layer");
 		expect(prompt).toContain("do not call `jikji find`");
+	});
+	it("only ever invokes `jikji prepare ... --json`, never `jikji find`", async () => {
+		writeFakeJikji();
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: { binaryPath },
+		});
+
+		await agent.prepareJikji();
+
+		const flatArgs = loggedArgs().flat();
+		expect(flatArgs).not.toContain("find");
+		for (const call of loggedArgs()) {
+			expect(call[0]).toBe("prepare");
+			expect(call).toContain("--json");
+		}
+	});
+
+	it("constructs and retrieves without Jikji configured and without any Python runtime", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+		});
+
+		await expect(agent.prepareJikji()).resolves.toBeUndefined();
+		const results = await agent.retrieve("document", { topK: 1 });
+		expect(results[0]?.metadata.method).toBe("posix");
+	});
+
+	it("surfaces a path-free degraded diagnostic when the configured Jikji binary is missing", async () => {
+		const missingBinary = join(root, "does-not-exist-jikji");
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: { binaryPath: missingBinary },
+		});
+
+		const results = await agent.prepareJikji();
+		const first = results?.[0];
+		expect(first?.ok).toBe(false);
+		const diag = first ? jikjiPrepareDiagnostic(first) : undefined;
+		expect(diag?.code).toBe("jikji-unavailable");
+		expect(diag?.message).not.toContain(missingBinary);
+		expect(diag?.message).not.toContain(root);
 	});
 });

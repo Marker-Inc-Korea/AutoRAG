@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Journey of AutoRAG — AutoML for RAG to Search Infra for Agents</title>
+<link rel="stylesheet" href="reveal/dist/reset.css">
+<link rel="stylesheet" href="reveal/dist/reveal.css">
+<link rel="stylesheet" href="reveal/plugin/highlight/monokai.css">
+<style>
+:root{
+  --bg:#080c10;
+  --bg2:#0d131a;
+  --panel:#0d131a;
+  --stroke:#24313d;
+  --stroke2:#2a3a46;
+  --ink:#eef4f8;
+  --muted:#8d9aa7;
+  --dim:#5f6b78;
+  --green:#65f2ad;
+  --amber:#ffd166;
+  --red:#ff7b72;
+  --cyan:#7dd9ff;
+  --blue:#2563eb;
+}
+.reveal{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans KR",Arial,sans-serif;color:var(--ink);font-size:30px;}
+.reveal .slides{text-align:left;}
+.reveal .slides section{height:100%;}
+.reveal-viewport{background:var(--bg);background-image:
+  linear-gradient(#0f1720 1px, transparent 1px),
+  linear-gradient(90deg, #0f1720 1px, transparent 1px);
+  background-size:44px 44px;}
+.reveal h1,.reveal h2,.reveal h3,.reveal h4{color:var(--ink);font-weight:850;letter-spacing:-1px;text-transform:none;margin:0 0 .3em;line-height:1.08;}
+.reveal h1{font-size:2.05em;}
+.reveal h2{font-size:1.5em;}
+.reveal h3{font-size:1.02em;}
+.reveal strong{color:var(--green);font-weight:800;}
+.reveal em{color:var(--cyan);font-style:normal;font-weight:700;}
+.reveal a{color:var(--cyan);text-decoration:none;}
+.reveal .mono{font-family:"SFMono-Regular","JetBrains Mono",Consolas,Menlo,monospace;}
+.reveal ul{margin-left:1em;}
+.reveal li{margin:.28em 0;line-height:1.3;}
+.reveal section img{margin:0;background:transparent;border:0;box-shadow:none;}
+
+/* Kicker / eyebrow */
+.kicker{color:var(--green);font-weight:800;font-size:.5em;letter-spacing:2px;text-transform:uppercase;margin-bottom:.6em;display:inline-block;}
+.kicker.amber{color:var(--amber);}
+.kicker.cyan{color:var(--cyan);}
+.sub{color:var(--muted);font-weight:600;font-size:.62em;line-height:1.4;}
+
+/* layout helpers */
+.wrap{padding:0 40px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:center;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;}
+.center{display:flex;flex-direction:column;justify-content:center;height:100%;}
+.card{background:var(--panel);border:1.4px solid var(--stroke);border-radius:16px;padding:22px 26px;}
+.card h3{color:var(--ink);}
+.tag{display:inline-block;font-family:"SFMono-Regular",Menlo,monospace;font-size:.5em;font-weight:700;color:var(--green);background:#111923;border:1px solid var(--stroke2);border-radius:20px;padding:5px 14px;margin:3px 4px 3px 0;}
+.tag.amber{color:var(--amber);}
+.tag.cyan{color:var(--cyan);}
+.tag.red{color:var(--red);}
+.tag.dim{color:var(--muted);}
+
+/* overflow safety net — keep every slide inside 1280px */
+.reveal .slides section{box-sizing:border-box;}
+.wrap{width:100%;box-sizing:border-box;}
+.grid2>*,.grid3>*{min-width:0;}
+.term,.card,.modbox,.stat,.imgcard{max-width:100%;box-sizing:border-box;}
+.term .body{word-break:break-word;}
+
+.footer{position:absolute;bottom:16px;left:40px;right:40px;display:flex;justify-content:space-between;font-family:"SFMono-Regular",Menlo,monospace;font-size:13px;color:var(--dim);}
+.footer .step{color:var(--green);}
+
+/* term window */
+.term{background:#0a1118;border:1px solid var(--stroke2);border-radius:14px;overflow:hidden;font-family:"SFMono-Regular",Menlo,monospace;}
+.term .bar{background:#111923;border-bottom:1px solid var(--stroke2);padding:9px 14px;display:flex;align-items:center;gap:7px;}
+.term .bar i{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.term .bar .t{margin-left:10px;color:var(--muted);font-size:14px;font-weight:600;}
+.term .body{padding:16px 20px;font-size:19px;line-height:1.55;}
+.term .body .c{color:var(--dim);}
+.term .body .g{color:var(--green);}
+.term .body .a{color:var(--amber);}
+.term .body .cy{color:var(--cyan);}
+.term .body .r{color:var(--red);}
+
+/* stat */
+.statrow{display:flex;gap:22px;flex-wrap:wrap;}
+.stat{flex:1;min-width:150px;background:var(--panel);border:1.4px solid var(--stroke);border-radius:14px;padding:18px 20px;}
+.stat .n{font-size:1.55em;font-weight:850;color:var(--green);line-height:1;}
+.stat .n.cy{color:var(--cyan);}
+.stat .n.am{color:var(--amber);}
+.stat .l{color:var(--muted);font-size:.52em;font-weight:600;margin-top:8px;}
+
+.imgcard{background:#fff;border-radius:14px;padding:14px;border:1px solid var(--stroke2);}
+.imgcard.dark{background:#0a0a0a;}
+.cap{color:var(--dim);font-size:.5em;font-weight:600;margin-top:10px;font-family:"SFMono-Regular",Menlo,monospace;}
+
+/* Title slide */
+.title-wrap{height:100%;display:flex;flex-direction:column;justify-content:center;padding:0 50px;}
+.title-wrap .badges{margin-top:26px;}
+.evt{position:absolute;top:34px;left:50px;right:50px;display:flex;justify-content:space-between;font-family:"SFMono-Regular",Menlo,monospace;font-size:15px;color:var(--muted);}
+
+/* arrow flow of eras */
+.eras{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:14px;align-items:stretch;}
+.era{background:var(--panel);border:1.4px solid var(--stroke);border-radius:16px;padding:20px 20px;position:relative;}
+.era .yr{font-family:"SFMono-Regular",Menlo,monospace;font-size:.5em;color:var(--dim);font-weight:700;}
+.era .nm{font-size:.86em;font-weight:850;margin:6px 0;color:var(--ink);}
+.era .ds{color:var(--muted);font-size:.56em;line-height:1.35;font-weight:600;}
+.era.active{border-color:var(--green);box-shadow:0 0 0 1px var(--green) inset;}
+.era .goal{margin-top:12px;font-family:"SFMono-Regular",Menlo,monospace;font-size:.5em;color:var(--green);font-weight:700;}
+.arw{display:flex;align-items:center;justify-content:center;color:var(--green);font-size:1.4em;font-weight:800;}
+
+/* 5-layer architecture */
+.arch{display:grid;grid-template-columns:1.05fr 1fr;gap:26px;align-items:center;}
+.stack{display:flex;flex-direction:column;gap:9px;position:relative;}
+.lyr{border-radius:12px;padding:13px 18px;display:flex;align-items:center;gap:14px;border:1.4px solid var(--stroke2);background:var(--panel);}
+.lyr .id{font-family:"SFMono-Regular",Menlo,monospace;font-weight:800;font-size:.62em;color:var(--dim);min-width:34px;}
+.lyr .nm{font-weight:800;font-size:.72em;color:var(--ink);}
+.lyr .nm small{display:block;color:var(--muted);font-size:.72em;font-weight:600;margin-top:2px;}
+.lyr.l1{background:linear-gradient(90deg,#0f1a22,#0d131a);}
+.lyr.l2{background:linear-gradient(90deg,#101d26,#0d131a);}
+.lyr.l3{background:linear-gradient(90deg,#0f2230,#0d131a);border-color:#2b4a5c;}
+.lyr.l4{background:linear-gradient(90deg,#10263a,#0d131a);border-color:#2f5f86;}
+.lyr.top{background:linear-gradient(90deg,#0f1f18,#0d131a);border-color:#2e6b4d;}
+.endcap{text-align:center;font-family:"SFMono-Regular",Menlo,monospace;font-size:.52em;color:var(--dim);font-weight:700;padding:8px;}
+.arch-desc .d{display:flex;gap:12px;margin:9px 0;align-items:flex-start;}
+.arch-desc .d .k{font-family:"SFMono-Regular",Menlo,monospace;font-weight:800;font-size:.5em;color:var(--green);min-width:52px;padding-top:3px;}
+.arch-desc .d .v{font-size:.6em;line-height:1.35;color:var(--muted);font-weight:600;}
+.arch-desc .d .v b{color:var(--ink);font-weight:800;display:block;}
+
+/* module blocks */
+.mods{display:grid;grid-template-columns:1fr 1.15fr 1fr;gap:16px;align-items:center;}
+.mods .plus{text-align:center;color:var(--green);font-size:1.5em;font-weight:800;}
+.modbox{background:var(--panel);border:1.4px solid var(--stroke);border-radius:14px;padding:16px 18px;}
+.modbox.main{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan) inset;text-align:center;}
+.modbox .cat{font-family:"SFMono-Regular",Menlo,monospace;font-size:.42em;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1px;}
+.modbox .ttl{font-size:.82em;font-weight:850;margin:5px 0 8px;color:var(--ink);}
+.modbox ul{margin:0 0 0 .9em;}
+.modbox li{font-size:.5em;color:var(--muted);font-weight:600;}
+.pipe{display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap;}
+.pipe span{font-family:"SFMono-Regular",Menlo,monospace;font-size:.42em;background:#111923;border:1px solid var(--stroke2);border-radius:8px;padding:5px 9px;color:var(--cyan);font-weight:700;}
+
+/* bar comparison */
+.bars{display:flex;flex-direction:column;gap:16px;}
+.barrow{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:center;}
+.barrow .lab{font-family:"SFMono-Regular",Menlo,monospace;font-size:.5em;color:var(--muted);font-weight:700;text-align:right;}
+.bartrack{display:flex;flex-direction:column;gap:7px;}
+.barline{display:flex;align-items:center;gap:10px;}
+.bar{height:28px;border-radius:8px;flex-shrink:0;}
+.bar.raw{background:linear-gradient(90deg,#ff7b72,#b3554f);}
+.bar.jk{background:linear-gradient(90deg,#65f2ad,#2fae78);}
+.bval{font-family:"SFMono-Regular",Menlo,monospace;font-size:.46em;font-weight:800;white-space:nowrap;}
+.bval.raw{color:var(--red);}
+.bval.jk{color:var(--green);}
+.legend{display:flex;gap:24px;margin-top:6px;font-family:"SFMono-Regular",Menlo,monospace;font-size:.48em;font-weight:700;}
+.legend .raw{color:var(--red);}
+.legend .jk{color:var(--green);}
+
+.big-quote{font-size:1.15em;font-weight:800;line-height:1.3;color:var(--ink);}
+.big-quote .hl{color:var(--green);}
+</style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- 1. TITLE -->
+<section data-background-color="#080c10">
+  <div class="evt">
+    <span>ICML Night · Instruct.KR × Exa — AI Search Technology Meetup, Seoul</span>
+    <span>20 min</span>
+  </div>
+  <div class="title-wrap">
+    <span class="kicker">The Journey of AutoRAG</span>
+    <h1>From <em>AutoML for RAG</em><br>to <span style="color:var(--green)">Search Infra for Agents</span></h1>
+    <p class="sub" style="margin-top:20px;max-width:900px;">How a RAG auto-optimization tool with 4.8K stars became a mission to build the<br>knowledge-base layer &amp; the all-purpose librarian search agent that AI agents are missing.</p>
+    <div class="badges" style="margin-top:34px;">
+      <span class="tag">Jeffrey Kim · Creator of AutoRAG</span>
+      <span class="tag cyan">NomaDamas — AI Hacker House, Seoul</span>
+      <span class="tag dim">Marker Inc.</span>
+    </div>
+  </div>
+  <div class="footer"><span>Journey of AutoRAG</span><span class="step">01</span></div>
+</section>
+
+<!-- 2. WHO AM I -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">whoami</span>
+    <div class="grid2" style="gap:40px;">
+      <div>
+        <h2>Hi, I build<br>retrieval systems.</h2>
+        <p class="sub" style="margin-top:16px;">I created <strong>AutoRAG</strong> and work out of <em>NomaDamas</em>, an AI hacker house in Seoul. I spend my time on one question:</p>
+        <p class="big-quote" style="margin-top:22px;font-size:.92em;">"Which retrieval pipeline is <span class="hl">actually</span> best — for <span class="hl">this</span> data, <span class="hl">this</span> use case?"</p>
+      </div>
+      <div>
+        <div class="term">
+          <div class="bar"><i style="background:#ff7b72"></i><i style="background:#ffd166"></i><i style="background:#65f2ad"></i><span class="t">~/nomadamas</span></div>
+          <div class="body" style="font-size:16px;">
+            <div><span class="c">#</span> open-source I ship &amp; maintain</div>
+            <div><span class="g">AutoRAG</span>          <span class="a">★ 4.8k</span>  RAG AutoML</div>
+            <div><span class="g">AutoRAG-Research</span> <span class="a">★ 144</span>  RAG benchmarking</div>
+            <div><span class="g">MinSync</span>          <span class="a">★ 51</span>   incremental index</div>
+            <div><span class="g">agentdir</span>         <span class="a">★ 51</span>   virtual file tree</div>
+            <div><span class="g">jikji</span>            <span class="a">★ 35</span>   agent file maps</div>
+            <div style="margin-top:8px"><span class="c">#</span> awards</div>
+            <div><span class="cy">Minister of Science &amp; ICT Award</span> — RAG opt.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>whoami</span><span class="step">02</span></div>
+</section>
+
+<!-- 3. THE JOURNEY -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">The map for the next 20 minutes</span>
+    <h2 style="margin-bottom:16px;font-size:1.15em;">One product, three eras — the goal kept changing.</h2>
+    <div class="eras">
+      <div class="era">
+        <div class="yr">2024 →</div>
+        <div class="nm">AutoRAG</div>
+        <div class="ds">Find the optimal RAG pipeline for <b>your data</b>, automatically.</div>
+        <div class="goal">GOAL · AutoML for RAG</div>
+      </div>
+      <div class="arw">→</div>
+      <div class="era">
+        <div class="yr">2025 →</div>
+        <div class="nm">AutoRAG-Research</div>
+        <div class="ds">Unify datasets, SOTA pipelines &amp; metrics. Make RAG research <b>reproducible</b>.</div>
+        <div class="goal">GOAL · Research automation</div>
+      </div>
+      <div class="arw">→</div>
+      <div class="era active">
+        <div class="yr">2026 →</div>
+        <div class="nm">AutoRAG&nbsp;2.0</div>
+        <div class="ds">The <b>knowledge-base layer</b> &amp; librarian search agent for the agent era.</div>
+        <div class="goal">GOAL · Search infra for agents</div>
+      </div>
+    </div>
+    <div class="imgcard" style="margin-top:16px;background:#fff;padding:8px;text-align:center;">
+      <img src="img/star-history-render.png" style="max-height:250px;width:auto;max-width:100%;display:inline-block;border-radius:8px;">
+    </div>
+    <div class="cap">GitHub star history · star-history.com — AutoRAG (red) to ~4.8K; the new agent-era repos rising bottom-right.</div>
+  </div>
+  <div class="footer"><span>The Journey</span><span class="step">03</span></div>
+</section>
+
+<!-- 4. WHY AUTORAG BEGAN -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker amber">2024 · How it started</span>
+    <div class="grid2" style="gap:40px;">
+      <div>
+        <h2>There were already<br>too many frameworks.</h2>
+        <p class="sub" style="margin-top:14px;">RAG frameworks? Dozens. Evaluation frameworks? Plenty. Yet everyone kept asking the same unanswered question:</p>
+        <div class="card" style="margin-top:20px;border-color:var(--amber);">
+          <p style="font-size:.72em;font-weight:800;line-height:1.35;margin:0;">"There are many RAG pipelines &amp; modules out there — but you <span style="color:var(--amber)">don't know which one is best for your own data and use case</span>. Building and evaluating all of them is painfully slow."</p>
+        </div>
+      </div>
+      <div>
+        <p class="sub" style="margin-bottom:14px;">The missing idea wasn't another pipeline. It was the concept from a neighboring field:</p>
+        <div class="card" style="text-align:center;border-color:var(--green);">
+          <div class="mono" style="color:var(--dim);font-size:.5em;font-weight:700;">Hyperparameter tuning for ML</div>
+          <div style="font-size:1.1em;font-weight:850;margin:10px 0;color:var(--green)">AutoML</div>
+          <div class="mono" style="color:var(--green);font-size:.6em;">▼ applied to retrieval ▼</div>
+          <div style="font-size:1.1em;font-weight:850;margin:10px 0;color:var(--cyan)">AutoRAG</div>
+          <div class="sub" style="font-size:.56em;">Search the space of parsers · chunkers · retrievers · rerankers · prompts · LLMs — and let evaluation pick the winner.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>Why AutoRAG</span><span class="step">04</span></div>
+</section>
+
+<!-- 5. AUTORAG = AUTOML FOR RAG -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG · AutoML for RAG</span>
+    <div class="imgcard dark" style="margin:6px 0 8px;">
+      <img src="img/autorag-thumbnail.png" style="width:100%;display:block;">
+    </div>
+    <div class="statrow" style="margin-top:14px;">
+      <div class="stat"><div class="n am">★ 4.8K</div><div class="l">GitHub stars · 400+ forks</div></div>
+      <div class="stat"><div class="n cy">Trendshift</div><div class="l">Weekly-trending repository</div></div>
+      <div class="stat"><div class="n">arXiv</div><div class="l">2410.20878 · published framework</div></div>
+      <div class="stat"><div class="n" style="color:var(--ink)">Uber · SKT<br>AWS · Hanwha</div><div class="l">Real-world adopters</div></div>
+    </div>
+    <p class="sub" style="margin-top:16px;">Give AutoRAG your QA + corpus data → it evaluates many RAG module combinations automatically → returns the best pipeline for <em>your</em> use case, ready to deploy.</p>
+  </div>
+  <div class="footer"><span>AutoRAG</span><span class="step">05</span></div>
+</section>
+
+<!-- 6. DATA CREATION -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG · Step 0 — you need data to optimize on</span>
+    <h2 style="font-size:1.25em;margin-bottom:6px;">Optimization needs a QA set + a corpus.</h2>
+    <p class="sub" style="margin-bottom:14px;">So AutoRAG ships a full data-creation pipeline: <em>parse → chunk → QA generation</em> — turn raw PDFs/docs into an evaluation dataset.</p>
+    <div class="imgcard" style="background:#fff;">
+      <img src="img/autorag-data-creation.png" style="width:100%;display:block;">
+    </div>
+    <div style="margin-top:14px;">
+      <span class="tag">parse · pdfminer / llama / clova</span>
+      <span class="tag">chunk · token / semantic</span>
+      <span class="tag">QA · factoid · evolve · filter</span>
+      <span class="tag cyan">→ qa.parquet + corpus.parquet</span>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG · Data</span><span class="step">06</span></div>
+</section>
+
+<!-- 7. RAG STRUCTURE / NODES -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG · How it optimizes</span>
+    <h2 style="font-size:1.2em;margin-bottom:6px;">A RAG pipeline = a chain of <em>nodes</em>.</h2>
+    <p class="sub" style="margin-bottom:16px;">AutoRAG models the pipeline as ordered node lines. Each node has swappable modules; the framework greedily searches for the best module + params at every stage.</p>
+    <div class="imgcard dark">
+      <img src="img/autorag-node-structure.png" style="width:100%;display:block;">
+    </div>
+    <p class="cap">Query → Pre-Retrieval → Retrieval → Post-Retrieval → Prompt → LLM → Answer. Every box is a decision point AutoRAG optimizes.</p>
+  </div>
+  <div class="footer"><span>AutoRAG · Nodes</span><span class="step">07</span></div>
+</section>
+
+<!-- 8. NODES & MODULES -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG · The search space</span>
+    <h2 style="font-size:1.15em;margin-bottom:10px;">Every node has many modules — AutoRAG tries them for you.</h2>
+    <div class="imgcard dark">
+      <img src="img/autorag-all-nodes-modules.png" style="width:100%;display:block;max-height:420px;object-fit:contain;">
+    </div>
+    <p class="sub" style="margin-top:12px;">Configure the space in one YAML. AutoRAG runs the trials, evaluates with retrieval + generation metrics (F1, Recall, nDCG, MRR, METEOR, ROUGE, SemScore…), and emits a <em>summary.csv</em> with the winning pipeline.</p>
+  </div>
+  <div class="footer"><span>AutoRAG · Modules</span><span class="step">08</span></div>
+</section>
+
+<!-- 9. DASHBOARD / DEPLOY -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG · From trial to production</span>
+    <div class="grid2" style="gap:30px;">
+      <div>
+        <h2 style="font-size:1.15em;">Optimize → inspect →<br>deploy in one flow.</h2>
+        <ul class="sub" style="font-size:.62em;margin-top:14px;">
+          <li>Interactive <em>dashboard</em> to compare every trial &amp; module</li>
+          <li>Deploy the winner as <em>code</em>, an <em>API server</em>, or a <em>web app</em></li>
+          <li>YAML in, best-pipeline artifact out — fully reproducible</li>
+        </ul>
+        <div style="margin-top:14px;">
+          <span class="tag">autorag evaluate</span>
+          <span class="tag">autorag dashboard</span>
+          <span class="tag cyan">autorag run_api</span>
+        </div>
+      </div>
+      <div>
+        <div class="imgcard" style="background:#fff;">
+          <img src="img/autorag-dashboard.gif" style="width:100%;display:block;border-radius:6px;">
+        </div>
+        <div class="cap">AutoRAG optimization dashboard</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG · Deploy</span><span class="step">09</span></div>
+</section>
+
+<!-- 10. THE CEILING -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker red">2025 · Where AutoRAG hit its ceiling</span>
+    <h2 style="margin-bottom:18px;">Then the ground shifted under RAG.</h2>
+    <div class="grid3">
+      <div class="card" style="border-color:#3a2b2b;">
+        <div class="mono" style="color:var(--red);font-size:.5em;font-weight:800;">CONSTRAINT 01</div>
+        <h3 style="font-size:.82em;margin:8px 0;">Locked to "advanced RAG"</h3>
+        <p class="sub" style="font-size:.56em;">Agentic RAG arrived. AutoRAG's fixed node structure couldn't express the wild variety of new pipelines.</p>
+      </div>
+      <div class="card" style="border-color:#3a2b2b;">
+        <div class="mono" style="color:var(--red);font-size:.5em;font-weight:800;">CONSTRAINT 02</div>
+        <h3 style="font-size:.82em;margin:8px 0;">Datasets are hard</h3>
+        <p class="sub" style="font-size:.56em;">Every benchmark has a different format. Building &amp; embedding evaluation data is slow, repetitive, error-prone.</p>
+      </div>
+      <div class="card" style="border-color:#3a2b2b;">
+        <div class="mono" style="color:var(--red);font-size:.5em;font-weight:800;">CONSTRAINT 03</div>
+        <h3 style="font-size:.82em;margin:8px 0;">Research won't reproduce</h3>
+        <p class="sub" style="font-size:.56em;">Every paper claims SOTA. Re-implementing each one to compare fairly is a research project by itself.</p>
+      </div>
+    </div>
+    <p class="big-quote" style="margin-top:24px;font-size:.85em;">A tool that optimizes <span class="hl">one</span> pipeline shape can't answer <span class="hl">"which pipeline shape is even right?"</span></p>
+  </div>
+  <div class="footer"><span>The Ceiling</span><span class="step">10</span></div>
+</section>
+
+<!-- 11. AUTORAG-RESEARCH -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG-Research · Automate your RAG research</span>
+    <div class="imgcard" style="background:#6b5cff;padding:0;overflow:hidden;">
+      <img src="img/autorag-research-thumbnail.png" style="width:100%;display:block;">
+    </div>
+    <p class="sub" style="margin-top:14px;">One framework that unifies <em>datasets</em>, <em>SOTA pipelines</em>, and <em>metrics</em> — so you can benchmark your idea against the real state of the art with one command.</p>
+    <div style="margin-top:6px;">
+      <span class="tag dim">"Every dataset has a different format" → unified &amp; pre-embedded</span>
+      <span class="tag dim">"Every paper claims SOTA" → run them all, compare</span>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG-Research</span><span class="step">11</span></div>
+</section>
+
+<!-- 12. AUTORAG-RESEARCH: WHAT -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG-Research · One PostgreSQL, everything pre-built</span>
+    <div class="grid3" style="gap:18px;">
+      <div class="card">
+        <div class="mono" style="color:var(--green);font-size:.46em;font-weight:800;">DATASETS</div>
+        <h3 style="font-size:.72em;margin:6px 0;">Unified &amp; pre-embedded</h3>
+        <p class="sub" style="font-size:.52em;">BEIR · MTEB · RAGBench · MrTyDi · BRIGHT · ViDoRe v1–v3 · VisRAG · Open-RAGBench. Text <em>and</em> image. Download &amp; go.</p>
+      </div>
+      <div class="card">
+        <div class="mono" style="color:var(--cyan);font-size:.46em;font-weight:800;">PIPELINES</div>
+        <h3 style="font-size:.72em;margin:6px 0;">SOTA from papers</h3>
+        <p class="sub" style="font-size:.52em;">DPR · BM25 · HyDE · Query Rewrite · Hybrid RRF/CC · BasicRAG · IRCoT · ET2RAG · VisRAG · MAIN-RAG — ready to run.</p>
+      </div>
+      <div class="card">
+        <div class="mono" style="color:var(--amber);font-size:.46em;font-weight:800;">METRICS</div>
+        <h3 style="font-size:.72em;margin:6px 0;">Retrieval + generation</h3>
+        <p class="sub" style="font-size:.52em;">Recall · Precision · F1 · nDCG · MRR · MAP · BLEU · METEOR · ROUGE · BERTScore · SemScore.</p>
+      </div>
+    </div>
+    <div class="term" style="margin-top:18px;">
+      <div class="bar"><i style="background:#ff7b72"></i><i style="background:#ffd166"></i><i style="background:#65f2ad"></i><span class="t">benchmark in 3 commands</span></div>
+      <div class="body" style="font-size:17px;">
+        <div><span class="g">$</span> autorag-research ingest <span class="cy">--name beir --extra dataset-name=scifact</span></div>
+        <div><span class="g">$</span> autorag-research data restore <span class="cy">beir beir_arguana_test_qwen_3_0.6b</span>  <span class="c"># pre-computed embeddings</span></div>
+        <div><span class="g">$</span> autorag-research run <span class="cy">--db-name=beir_scifact_test</span>  <span class="c"># all pipelines, one leaderboard</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG-Research</span><span class="step">12</span></div>
+</section>
+
+<!-- 13. AUTORAG-RESEARCH: AGENT SKILLS -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker cyan">AutoRAG-Research · Built for fast iteration</span>
+    <div class="grid2" style="gap:34px;">
+      <div>
+        <h2 style="font-size:1.1em;">Plugins + agent skills =<br>experiment at agent speed.</h2>
+        <ul class="sub" style="font-size:.6em;margin-top:14px;">
+          <li><em>Plugin system</em> — scaffold a retrieval/generation/metric plugin, <span class="mono">pip install -e .</span>, run it beside the built-ins. No fork.</li>
+          <li><em>Agent skill</em> — your coding agent queries results straight from PostgreSQL in natural language.</li>
+          <li>Spin up dozens of experiments &amp; ask questions about them conversationally.</li>
+        </ul>
+        <div style="margin-top:12px;">
+          <span class="tag">npx skills add NomaDamas/AutoRAG-Research</span>
+        </div>
+      </div>
+      <div>
+        <div class="term">
+          <div class="bar"><i style="background:#ff7b72"></i><i style="background:#ffd166"></i><i style="background:#65f2ad"></i><span class="t">autorag-query · agent skill</span></div>
+          <div class="body" style="font-size:18px;">
+            <div><span class="a">You ▸</span> Which pipeline has the best BLEU score?</div>
+            <div style="margin-top:10px;"><span class="g">Agent ▸</span> <span class="cy">hybrid_search_v2</span> achieved the</div>
+            <div>highest BLEU score of <span class="g">0.85</span>.</div>
+            <div style="margin-top:14px;" class="c"># queried directly from your results DB</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG-Research</span><span class="step">13</span></div>
+</section>
+
+<!-- 14. AGENT ERA ARRIVED -->
+<section data-background-color="#05080b">
+  <div class="wrap center" style="text-align:center;align-items:center;">
+    <span class="kicker" style="align-self:center;">2026 · and then…</span>
+    <h1 style="font-size:1.85em;">The agent era arrived —<br>for real this time.</h1>
+    <p class="sub" style="max-width:820px;margin:22px auto 0;text-align:center;font-size:.72em;">Claude Code. Codex. Autonomous coding &amp; knowledge agents everywhere.<br>So we asked ourselves the only question that mattered:</p>
+    <p class="big-quote" style="margin-top:26px;font-size:1.0em;text-align:center;">In <span class="hl">this</span> era, what should AutoRAG become?</p>
+  </div>
+  <div class="footer"><span>The Agent Era</span><span class="step">14</span></div>
+</section>
+
+<!-- 15. AUTORAG 2.0 VISION + PARTNERS -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG 2.0 · The answer</span>
+    <div class="grid2" style="gap:34px;">
+      <div>
+        <h2 style="font-size:1.15em;">Build the missing<br><em>knowledge-base layer</em> for agents.</h2>
+        <p class="sub" style="margin-top:14px;font-size:.62em;">Agents are brilliant at reasoning and tool use — but the layer that <b style="color:var(--ink)">organically integrates &amp; manages RAG and many data sources</b>, and retrieves information from <b style="color:var(--ink)">everywhere</b> (including your local files), is still missing.</p>
+        <p class="sub" style="margin-top:12px;font-size:.62em;">AutoRAG 2.0 fills that gap — built with <em>NIPA</em> open-source program support.</p>
+      </div>
+      <div>
+        <div class="card">
+          <div class="mono" style="color:var(--dim);font-size:.5em;font-weight:800;">CONSORTIUM</div>
+          <div style="margin-top:12px;">
+            <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0;"><span class="tag">Lead</span><b style="font-size:.72em;">Marker Inc. × NomaDamas</b></div>
+            <div class="sub" style="font-size:.52em;margin-bottom:12px;">Core architecture · module development · OSS governance</div>
+            <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0;"><span class="tag cyan">Partner</span><b style="font-size:.72em;">BrainCrew — TeddyNote</b></div>
+            <div class="sub" style="font-size:.52em;margin-bottom:12px;">LangChain Ambassador · agent validation · education &amp; community</div>
+            <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0;"><span class="tag amber">Partner</span><b style="font-size:.72em;">2e Consulting</b></div>
+            <div class="sub" style="font-size:.52em;">Public &amp; finance domain requirements · pilot validation</div>
+          </div>
+        </div>
+        <div class="cap">Supported by NIPA — 2026 Open-Source AI·SW program</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG 2.0 · Vision</span><span class="step">15</span></div>
+</section>
+
+<!-- 16. THE MISSING LAYER (analogy) -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">Why a knowledge-base layer?</span>
+    <h2 style="font-size:1.1em;margin-bottom:16px;">Right now, org knowledge is flyers on a fridge.</h2>
+    <div class="grid2" style="gap:26px;">
+      <div class="card" style="border-color:#3a2b2b;">
+        <div class="mono" style="color:var(--red);font-size:.5em;font-weight:800;">TODAY</div>
+        <h3 style="font-size:.8em;margin:8px 0;color:var(--red)">Flyers on the fridge</h3>
+        <ul class="sub" style="font-size:.56em;">
+          <li>Dig through a pile to find the menu you want</li>
+          <li>Call each restaurant to check what's available</li>
+          <li>Closed shops still have flyers up — stale &amp; noisy</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:#2e6b4d;">
+        <div class="mono" style="color:var(--green);font-size:.5em;font-weight:800;">WITH AUTORAG 2.0</div>
+        <h3 style="font-size:.8em;margin:8px 0;color:var(--green)">A delivery app</h3>
+        <ul class="sub" style="font-size:.56em;">
+          <li>Search the menu you want, instantly</li>
+          <li>Prices, options, reviews — categorized</li>
+          <li>Closed shops auto-removed — always current</li>
+        </ul>
+      </div>
+    </div>
+    <p class="big-quote" style="margin-top:22px;font-size:.74em;text-align:center;max-width:1000px;margin-left:auto;margin-right:auto;">An <span class="hl">agent-native knowledge-base layer</span> — the middle layer that lets an agent use your documents at 200%.</p>
+  </div>
+  <div class="footer"><span>Missing Layer</span><span class="step">16</span></div>
+</section>
+
+<!-- 17. 5-LAYER ARCHITECTURE -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">AutoRAG 2.0 · Architecture</span>
+    <h2 style="font-size:1.0em;margin-bottom:14px;">A 5-layer knowledge-base layer between your files and the agent.</h2>
+    <div class="arch">
+      <div>
+        <div class="endcap">▲ &nbsp;Upper agent — Claude Code · Codex · OpenClaw&nbsp; ▲</div>
+        <div class="stack">
+          <div class="lyr top"><span class="id">05</span><span class="nm">Operations <small>self-re-evaluating optimization loop</small></span></div>
+          <div class="lyr l4"><span class="id">04</span><span class="nm">Agent Interface <small>CLI &amp; Skills — agents call local knowledge</small></span></div>
+          <div class="lyr l3"><span class="id">03</span><span class="nm">Search Orchestration <small>hybrid semantic + keyword + metadata, multi-step</small></span></div>
+          <div class="lyr l2"><span class="id">02</span><span class="nm">Storage <small>vector DB + virtual FS · incremental indexing</small></span></div>
+          <div class="lyr l1"><span class="id">01</span><span class="nm">Document Understanding <small>open-source parsers · PDF · HWP · DOCX</small></span></div>
+        </div>
+        <div class="endcap">▼ &nbsp;Local document folder&nbsp; ▼</div>
+      </div>
+      <div class="arch-desc">
+        <div class="d"><span class="k">L01</span><span class="v"><b>Unstructured parsing</b>Parse tables, images &amp; formulas into logical structure.</span></div>
+        <div class="d"><span class="k">L02</span><span class="v"><b>Integrity &amp; freshness</b>Detect file changes in real time; re-index only the delta.</span></div>
+        <div class="d"><span class="k">L03</span><span class="v"><b>Intelligent hybrid search</b>Combine methods dynamically to find the best evidence.</span></div>
+        <div class="d"><span class="k">L04</span><span class="v"><b>Instant agent connection</b>No bespoke integration — CLI + Skills, ready to call.</span></div>
+        <div class="d"><span class="k">L05</span><span class="v"><b>Sustained advantage</b>Learn from usage logs; keep tuning the strategy.</span></div>
+        <div class="sub" style="font-size:.5em;margin-top:8px;color:var(--dim)">Each layer is a swappable module — not locked to any vector DB, engine, or model.</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>AutoRAG 2.0 · Architecture</span><span class="step">17</span></div>
+</section>
+
+<!-- 18. NAIVE -> PERSONALIZATION -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker cyan">The evolution of "Auto"</span>
+    <h2 style="font-size:1.05em;margin-bottom:18px;">Naive optimization → memory-based personalization.</h2>
+    <div class="grid2" style="gap:30px;">
+      <div class="card">
+        <div class="mono" style="color:var(--dim);font-size:.5em;font-weight:800;">AutoRAG 1.0</div>
+        <h3 style="font-size:.82em;margin:8px 0;">One-shot search over a config space</h3>
+        <p class="sub" style="font-size:.56em;">You bring a static eval set. AutoRAG finds one "best" pipeline. Great — until the data, users, and questions drift.</p>
+      </div>
+      <div class="card" style="border-color:var(--cyan);">
+        <div class="mono" style="color:var(--cyan);font-size:.5em;font-weight:800;">AutoRAG 2.0</div>
+        <h3 style="font-size:.82em;margin:8px 0;">A memory-driven, personalizing loop</h3>
+        <p class="sub" style="font-size:.56em;">Operation logs → the system re-evaluates representative workflows, adapts retrieval to <em>your</em> corpus, <em>your</em> queries, <em>your</em> feedback. Optimization becomes <b style="color:var(--ink)">personalization</b>.</p>
+      </div>
+    </div>
+    <div style="margin-top:18px;text-align:center;" class="mono">
+      <span class="tag dim">grid search</span>
+      <span style="color:var(--green);font-size:1.1em;">→</span>
+      <span class="tag cyan">memory + feedback + self-tuning</span>
+    </div>
+  </div>
+  <div class="footer"><span>Auto → Personal</span><span class="step">18</span></div>
+</section>
+
+<!-- 19. BUILDING BLOCKS: MINSYNC + AGENTDIR -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">The building blocks · being integrated into AutoRAG</span>
+    <div class="imgcard" style="background:#fff;margin-bottom:14px;text-align:center;padding:10px;">
+      <img src="img/minsync-flow.svg" style="max-height:250px;width:auto;max-width:100%;display:inline-block;">
+    </div>
+    <div class="grid2" style="gap:24px;">
+      <div class="card">
+        <div class="mono" style="color:var(--green);font-size:.46em;font-weight:800;">MinSync · Rust · ★51</div>
+        <h3 style="font-size:.72em;margin:6px 0;">Incremental indexing</h3>
+        <p class="sub" style="font-size:.52em;">Git-free change detection via mtime/size/hash. Re-embed only changed chunks, sweep stale ones — Storage layer stays fresh with near-zero cost.</p>
+      </div>
+      <div class="card">
+        <div class="mono" style="color:var(--cyan);font-size:.46em;font-weight:800;">agentdir · Rust · ★51</div>
+        <h3 style="font-size:.72em;margin:6px 0;">Virtual directories</h3>
+        <p class="sub" style="font-size:.52em;">Present the same originals in a purpose-built, read-only layout. CoW/reflink — no data copy. Give agents a better working tree without moving files.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>MinSync + agentdir</span><span class="step">19</span></div>
+</section>
+
+<!-- 20. JIKJI + BENCHMARK -->
+<section data-background-color="#080c10">
+  <div class="wrap center">
+    <span class="kicker">jikji · a simple file map, a huge win</span>
+    <h2 style="font-size:1.0em;margin-bottom:6px;">Prepare a local map first → agents search less, hit more.</h2>
+    <p class="sub" style="margin-bottom:14px;font-size:.58em;">HippoCamp benchmark · 551 local file-search cases · raw Hermes agent vs. the same agent with <em>jikji find</em>.</p>
+    <div class="grid2" style="gap:30px;align-items:center;">
+      <div class="bars">
+        <div class="barrow"><span class="lab">Hit@1</span><div class="bartrack">
+          <div class="barline"><div class="bar raw" style="width:64%;"></div><span class="bval raw">0.6697 raw</span></div>
+          <div class="barline"><div class="bar jk" style="width:76%;"></div><span class="bval jk">0.7949 jikji</span></div>
+        </div></div>
+        <div class="barrow"><span class="lab">LLM calls</span><div class="bartrack">
+          <div class="barline"><div class="bar raw" style="width:76%;"></div><span class="bval raw">6,420 raw</span></div>
+          <div class="barline"><div class="bar jk" style="width:7%;"></div><span class="bval jk">551 jikji</span></div>
+        </div></div>
+        <div class="barrow"><span class="lab">Total tokens</span><div class="bartrack">
+          <div class="barline"><div class="bar raw" style="width:76%;"></div><span class="bval raw">21.3M raw</span></div>
+          <div class="barline"><div class="bar jk" style="width:3%;"></div><span class="bval jk">0.25M jikji</span></div>
+        </div></div>
+        <div class="barrow"><span class="lab">Wall time</span><div class="bartrack">
+          <div class="barline"><div class="bar raw" style="width:76%;"></div><span class="bval raw">31,232s raw</span></div>
+          <div class="barline"><div class="bar jk" style="width:4%;"></div><span class="bval jk">1,164s jikji</span></div>
+        </div></div>
+        <div class="legend"><span class="raw">■ raw Hermes</span><span class="jk">■ + jikji find</span></div>
+      </div>
+      <div>
+        <div class="statrow" style="flex-direction:column;">
+          <div class="stat"><div class="n">86×</div><div class="l">fewer total tokens</div></div>
+          <div class="stat"><div class="n cy">11.7×</div><div class="l">fewer LLM calls</div></div>
+          <div class="stat"><div class="n am">+12.5pt</div><div class="l">higher Hit@1 accuracy</div></div>
+        </div>
+        <p class="sub" style="font-size:.5em;margin-top:12px;">Metadata + file maps + parser caches + graph routes → one ranked candidate slate. The agent judges once instead of crawling.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>jikji · file maps</span><span class="step">20</span></div>
+</section>
+
+<!-- 21. CLOSING -->
+<section data-background-color="#05080b">
+  <div class="wrap center" style="text-align:center;align-items:center;">
+    <span class="kicker" style="align-self:center;">Where the journey is heading</span>
+    <h1 style="font-size:1.7em;">The all-purpose<br><span style="color:var(--green)">librarian search agent.</span></h1>
+    <p class="sub" style="max-width:860px;margin:22px auto 0;text-align:center;font-size:.7em;">One agent that <em>manages many data sources</em>, <em>digs everywhere</em> for information — local files included — and <em>keeps itself current</em> through memory-based personalization.</p>
+    <div style="margin-top:24px;">
+      <span class="tag">AutoML for RAG</span>
+      <span style="color:var(--green)">→</span>
+      <span class="tag cyan">Research automation</span>
+      <span style="color:var(--green)">→</span>
+      <span class="tag amber">Search infra for agents</span>
+    </div>
+    <div class="badges" style="margin-top:30px;">
+      <span class="tag dim">github.com/Marker-Inc-Korea/AutoRAG</span>
+      <span class="tag dim">NomaDamas · MinSync · agentdir · jikji</span>
+    </div>
+    <p class="sub" style="margin-top:26px;font-size:.7em;color:var(--ink);font-weight:800;">Thank you. Let's build the knowledge layer agents deserve.</p>
+  </div>
+  <div class="footer"><span>Journey of AutoRAG</span><span class="step">21</span></div>
+</section>
+
+</div>
+</div>
+<script src="reveal/dist/reveal.js"></script>
+<script src="reveal/plugin/notes/notes.js"></script>
+<script src="reveal/plugin/highlight/highlight.js"></script>
+<script>
+Reveal.initialize({
+  width: 1280,
+  height: 720,
+  margin: 0.04,
+  hash: true,
+  slideNumber: false,
+  transition: 'slide',
+  controls: true,
+  progress: true,
+  plugins: [ RevealHighlight, RevealNotes ]
+});
+</script>
+</body>
+</html>

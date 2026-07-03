@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
@@ -45,6 +46,11 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
 		const client = await this.client();
 		return client.sync();
+	}
+
+	/** True when a configured binary path is missing (an explicit degraded state). */
+	isBinaryMissing(): boolean {
+		return this.binaryPath !== undefined && !existsSync(this.binaryPath);
 	}
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {

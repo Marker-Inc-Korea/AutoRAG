@@ -1,9 +1,22 @@
-export { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRefreshOptions } from "./agent/agent.ts";
+export {
+	AutoRAGAgent,
+	type AutoRAGAgentOptions,
+	type AutoRAGRefreshComponentStatus,
+	type AutoRAGRefreshResult,
+	type AutoRAGRefreshStatus,
+	type AutoRAGWatchRefreshHandle,
+	type AutoRAGWatchRefreshOptions,
+	type AutoRefreshOptions,
+} from "./agent/agent.ts";
 export {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
+	type SearchDocumentDiagnostic,
+	type SearchDocumentDiagnosticCode,
+	type SearchDocumentDiagnosticSeverity,
 	type SearchDocumentsResponse,
+	type SearchDocumentWarning,
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
 export * from "./jikji/index.ts";

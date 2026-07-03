@@ -26,6 +26,26 @@ export interface RetrievalMethod {
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 }
 
+export type RetrievalDiagnosticCode =
+	| "retrieval-method-failed"
+	| "minsync-unavailable"
+	| "bm25-unavailable"
+	| "bm25-degraded-fallback";
+
+/** Path-opaque diagnostic emitted by the multi-method retrieval pipeline. */
+export interface RetrievalDiagnostic {
+	code: RetrievalDiagnosticCode;
+	severity: "info" | "warning" | "error";
+	message: string;
+	/** Component/method label — never a real filesystem path. */
+	source?: string;
+}
+
+export interface RetrievalWithDiagnostics {
+	results: Map<string, RetrievalResult[]>;
+	diagnostics: RetrievalDiagnostic[];
+}
+
 export interface NumberedResult {
 	index: number;
 	source: string;

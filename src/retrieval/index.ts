@@ -19,8 +19,11 @@ export {
 export type {
 	CuratedResult,
 	NumberedResult,
+	RetrievalDiagnostic,
+	RetrievalDiagnosticCode,
 	RetrievalMethod,
 	RetrievalMethodDescriptor,
 	RetrievalOptions,
 	RetrievalResult,
+	RetrievalWithDiagnostics,
 } from "./types.ts";

@@ -5,3 +5,4 @@ dist/
 artifacts/
 .gjc/
 .omo/
+.DS_Store

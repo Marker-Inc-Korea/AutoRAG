@@ -1,4 +1,11 @@
-import type { RetrievalMethod, RetrievalOptions, RetrievalResult } from "./types.ts";
+import type {
+	RetrievalDiagnostic,
+	RetrievalDiagnosticCode,
+	RetrievalMethod,
+	RetrievalOptions,
+	RetrievalResult,
+	RetrievalWithDiagnostics,
+} from "./types.ts";
 
 export interface MergeOptions {
 	topK: number;
@@ -73,4 +80,42 @@ export class ParallelRetriever {
 		);
 		return results;
 	}
+
+	/**
+	 * Like {@link retrieve} but also returns path-opaque diagnostics for methods
+	 * that failed. Partial results from healthy methods are preserved; failed
+	 * methods yield an empty result set plus a diagnostic. The legacy
+	 * {@link retrieve} return shape is intentionally unchanged for compatibility.
+	 */
+	async retrieveWithDiagnostics(
+		methods: RetrievalMethod[],
+		query: string,
+		options: RetrievalOptions,
+	): Promise<RetrievalWithDiagnostics> {
+		const results = new Map<string, RetrievalResult[]>();
+		const diagnostics: RetrievalDiagnostic[] = [];
+		await Promise.all(
+			methods.map(async (method) => {
+				const name = method.describe().name;
+				try {
+					results.set(name, await method.retrieve(query, options));
+				} catch {
+					results.set(name, []);
+					diagnostics.push({
+						code: methodFailureCode(name),
+						severity: "warning",
+						message: `Retrieval method "${name}" failed and was skipped; partial results from other methods were used.`,
+						source: name,
+					});
+				}
+			}),
+		);
+		return { results, diagnostics };
+	}
+}
+
+function methodFailureCode(name: string): RetrievalDiagnosticCode {
+	if (name === "minsync") return "minsync-unavailable";
+	if (name === "bm25") return "bm25-unavailable";
+	return "retrieval-method-failed";
 }
