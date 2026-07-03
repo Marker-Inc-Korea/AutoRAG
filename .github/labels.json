@@ -1,0 +1,22 @@
+[
+  {
+    "name": "datasource-skill",
+    "color": "1D76DB",
+    "description": "External datasource skill for AutoRAG retrieval"
+  },
+  {
+    "name": "integration",
+    "color": "5319E7",
+    "description": "Integration with an external API, CLI, service, or app"
+  },
+  {
+    "name": "데이터 소스 추가",
+    "color": "0E8A16",
+    "description": "새 AutoRAG 데이터 소스 추가"
+  },
+  {
+    "name": "manual-qa-required",
+    "color": "FBCA04",
+    "description": "Requires credentialed or local-app manual QA"
+  }
+]

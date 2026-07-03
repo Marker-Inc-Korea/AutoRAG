@@ -19,6 +19,7 @@ export {
 	type SearchDocumentWarning,
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
+export * from "./datasource/index.ts";
 export * from "./jikji/index.ts";
 export * from "./manifest/index.ts";
 export * from "./memory/index.ts";

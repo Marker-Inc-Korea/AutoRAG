@@ -12,12 +12,16 @@ export interface RetrievalMethodDescriptor {
 	description: string;
 	status: "active" | "stub";
 	capabilities: string[];
+	datasourceId?: string;
+	tags?: readonly string[];
 }
 
 export interface RetrievalOptions {
 	topK?: number;
 	scope?: string;
 	filters?: Record<string, unknown>;
+	allowedTags?: readonly string[];
+	allowedScopes?: readonly string[];
 	signal?: AbortSignal;
 }
 

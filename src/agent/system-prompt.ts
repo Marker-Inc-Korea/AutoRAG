@@ -1,3 +1,4 @@
+import type { SourceDescription } from "../datasource/types.ts";
 import type { StoreManifest } from "../manifest/types.ts";
 
 export interface SystemPromptConfig {
@@ -6,6 +7,7 @@ export interface SystemPromptConfig {
 	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
+	datasourceSources?: readonly SourceDescription[];
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -34,6 +36,10 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 		if (name === "search_bm25_documents") {
 			lines.push(
 				"- **search_bm25_documents**: lexical BM25 search over parsed document mirrors; best for exact terms, headings, repeated terms, identifiers, and folder-scoped document text",
+			);
+		} else if (name === "search_datasource_documents") {
+			lines.push(
+				"- **search_datasource_documents**: search configured external datasource skills such as KakaoTalk chats; permission is server-bound and the scope parameter can only narrow access",
 			);
 		} else {
 			lines.push(`- **${name}**: caller-provided retrieval tool`);
@@ -89,6 +95,23 @@ ${searchToolGuidance(config)}`;
 Pre-indexed data store manifests available as context for retrieval planning:
 
 ${storeList}`;
+	}
+
+	let datasourceSection = "";
+	if ((config.datasourceSources?.length ?? 0) > 0) {
+		const datasourceList = config.datasourceSources
+			?.map((source) => {
+				const label = source.contentType ? ` (${source.contentType})` : "";
+				const description =
+					typeof source.metadata.description === "string" ? ` — ${source.metadata.description}` : "";
+				return `- ${source.datasourceId ?? source.skill ?? "datasource"}${label}${description}`;
+			})
+			.join("\n");
+		datasourceSection = `## External Datasource Skills
+
+Server-authorized external datasources are available through search_datasource_documents. Their source paths are internal opaque identifiers and must never be shown in visible answers.
+
+${datasourceList}`;
 	}
 
 	const strategySection = `## Search Strategy
@@ -186,6 +209,7 @@ ${toolRows}`;
 		methodsSection,
 		storesSection,
 		strategySection,
+		datasourceSection,
 		memorySection,
 		memoryStatsSection,
 		jikjiSection,

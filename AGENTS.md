@@ -66,6 +66,10 @@ MinSync is one vector retrieval method in that pipeline, especially useful for i
 
 Jikji is intentionally not a retrieval method in AutoRAG. It is an optional file-map and indexing preparation layer (`jikji prepare`) that can inform exploration, while query answering still flows through AutoRAG/Pi search and read tools plus registered AutoRAG retrieval methods.
 
+Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `DatasourceResultFilter` → `ResultMerger` — and must not become a privileged backend that hides grep/find/BM25/vector evidence. A datasource skill must describe indexing behavior (polling metadata today, cron descriptor metadata for future schedulers), searchable source descriptions, hierarchical instances such as Slack channels or KakaoTalk chats, and permission tags/scopes. Datasource access is default-deny and server-bound: LLM tool arguments cannot grant `allowedTags` or `allowedScopes`, and `search_datasource_documents` exposes only `{ query, topK?, scope? }` where `scope` can only narrow trusted access.
+
+The first concrete datasource is KakaoTalk through the external `katok` CLI. AutoRAG never reads KakaoTalk databases directly; failures surface as path-opaque diagnostics, and remote embedding egress settings are rejected before the CLI is spawned.
+
 ## Directory Access
 
 AutoRAG navigates document collections through normal source directories scoped to the configured `searchPaths`. The Pi agent loop uses the caller-provided search/read tools (e.g. `grep`, `find`, `read`, `ls`) plus `check_memory`, and finalizes through the `emit_autorag_results` structured tool. Retrieval and parsed mirror indexing use opaque root-relative source identifiers such as `/docs/report.md` for curation and feedback mapping; no virtual workspace layer is created.
@@ -74,6 +78,7 @@ AutoRAG navigates document collections through normal source directories scoped 
 - **Real-directory posix method** — `src/retrieval/methods/posix.ts` recursively scans configured `searchPaths`, scores files by match count and depth, and returns opaque root-relative source identifiers.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files directly from configured source directories into `.autorag/parsed`; MinSync indexes those parsed mirrors unchanged.
 - **Jikji preparation** — `AutoRAGAgent.prepareJikji()` runs `jikji prepare` over configured source directories only. AutoRAG does not call `jikji find` or merge Jikji answers as retrieval results.
+- **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by trusted datasource access, and indexed during `refresh()`.
 
 ## Usage
 
@@ -134,3 +139,5 @@ Over time, AutoRAG learns which retrieval methods work best for which types of q
 | `src/retrieval/registry.ts` | Method registry for multi-method orchestration |
 | `src/retrieval/merger.ts` | Cross-method result merging and deduplication |
 | `src/retrieval/methods/posix.ts` | Real-directory `posix` RetrievalMethod |
+| `src/datasource/` | Datasource skill contracts, trusted access context, result filtering, polling metadata, diagnostics, and KakaoTalk/katok skill implementation |
+| `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |

@@ -4,6 +4,15 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
+import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
+import { DatasourceResultFilter } from "../datasource/result-filter.ts";
+import type {
+	DatasourceDiagnostic,
+	DatasourceIndexResult,
+	DatasourceSkill,
+	SourceDescription,
+} from "../datasource/types.ts";
 import { jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import { JikjiClient, type JikjiDiagnostic, type JikjiOptions, type JikjiPrepareResult } from "../jikji/index.ts";
 import { loadManifests } from "../manifest/loader.ts";
@@ -31,6 +40,10 @@ import {
 } from "./emit-results-tool.ts";
 import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
+	createSearchDatasourceDocumentsTool,
+	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+} from "./search-datasource-tool.ts";
+import {
 	createEmptySearchDocumentsResponse,
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
@@ -45,7 +58,7 @@ import {
 	type WatchWatcher,
 } from "./watch-refresh.ts";
 
-const SEARCH_TOOLS = ["grep", "find", SEARCH_BM25_DOCUMENTS_TOOL_NAME] as const;
+const SEARCH_TOOLS = ["grep", "find", SEARCH_BM25_DOCUMENTS_TOOL_NAME, SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME] as const;
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
@@ -54,12 +67,14 @@ export interface AutoRefreshOptions {
 
 export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
 	readonly bm25?: BM25SyncResult;
+	readonly datasources?: readonly DatasourceIndexResult[];
 }
 
 export interface AutoRAGRefreshComponentStatus {
 	readonly bm25?: string;
 	readonly minsync?: string;
 	readonly jikji?: string;
+	readonly datasources?: string;
 }
 
 /** Path-opaque snapshot of corpus freshness and the last refresh outcome. */
@@ -100,6 +115,7 @@ interface RefreshState {
 	mirrorDiagnostics: readonly ParsedMirrorDiagnostic[];
 	jikjiDiagnostics: readonly JikjiDiagnostic[];
 	minsync?: MinSyncSyncResult;
+	datasources: readonly DatasourceIndexResult[];
 	lastError?: string;
 	watchLimited: boolean;
 	watchFailed: boolean;
@@ -117,6 +133,8 @@ export interface AutoRAGAgentOptions {
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
+	datasourceSkills?: readonly DatasourceSkill[];
+	datasourceAccess?: DatasourceAccessContextOptions;
 }
 
 export class AutoRAGAgent {
@@ -134,6 +152,7 @@ export class AutoRAGAgent {
 		lastOutcome: "never",
 		mirrorDiagnostics: [],
 		jikjiDiagnostics: [],
+		datasources: [],
 		watchLimited: false,
 		watchFailed: false,
 	};
@@ -143,14 +162,19 @@ export class AutoRAGAgent {
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
+	private readonly datasourceFilter = new DatasourceResultFilter();
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly bm25Method: BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
+	private readonly datasourceSkills: readonly DatasourceSkill[];
+	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
+		this.datasourceSkills = options.datasourceSkills ?? [];
+		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
@@ -164,6 +188,9 @@ export class AutoRAGAgent {
 			this.bm25Method = new BM25Method({ ...options.bm25, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.bm25Method);
 		}
+		for (const skill of this.datasourceSkills) {
+			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
+		}
 		if (options.jikji) {
 			this.jikjiClient = new JikjiClient(options.jikji);
 		}
@@ -174,13 +201,15 @@ export class AutoRAGAgent {
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
+		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
-		const tools = [...(options.tools ?? []), checkMemoryTool, searchBM25Tool, emitResultsTool];
+		const tools = [...(options.tools ?? []), checkMemoryTool, searchBM25Tool, searchDatasourceTool, emitResultsTool];
 		const toolNames = tools.map((tool) => tool.name);
 		const systemPrompt = buildSystemPrompt({
 			toolNames,
 			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
+			datasourceSources: this.describeAllowedDatasourceSources(),
 			jikjiIndexingEnabled: options.jikji !== undefined,
 		});
 
@@ -330,6 +359,57 @@ export class AutoRAGAgent {
 		);
 	}
 
+	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
+		return new DatasourceAccessContext({
+			allowedTags: options.allowedTags ?? this.datasourceAccessOptions.allowedTags,
+			allowedScopes: options.allowedScopes ?? this.datasourceAccessOptions.allowedScopes,
+		});
+	}
+
+	private describeAllowedDatasourceSources(options: RetrievalOptions = {}): readonly SourceDescription[] {
+		const ctx = this.datasourceAccessContext(options);
+		const predicate = ctx.allowedSourcesPredicate(options.scope);
+		const descriptions: SourceDescription[] = [];
+		for (const skill of this.datasourceSkills) {
+			const descriptor = skill.describe();
+			if (!ctx.isAccessible(descriptor)) continue;
+			for (const source of skill.describeSources()) {
+				if (predicate(source.source)) descriptions.push(source);
+			}
+		}
+		return descriptions;
+	}
+
+	private async indexDatasources(): Promise<readonly DatasourceIndexResult[]> {
+		const results: DatasourceIndexResult[] = [];
+		for (const skill of this.datasourceSkills) {
+			try {
+				results.push(sanitizeDatasourceIndexResult(await skill.index()));
+			} catch {
+				const descriptor = skill.describe();
+				results.push({
+					ok: false,
+					instanceId: descriptor.instanceId ?? "default",
+					skill: descriptor.name,
+					indexedAt: Date.now(),
+					diagnostics: [
+						{
+							code: "datasource-index-failed",
+							severity: "error",
+							message: "Datasource indexing failed; details suppressed for datasource privacy.",
+							source: descriptor.name,
+							instanceId: descriptor.instanceId,
+						},
+					],
+					error: "datasource-index-failed",
+					code: "datasource-index-failed",
+					message: "Datasource indexing failed; details suppressed for datasource privacy.",
+				});
+			}
+		}
+		return results;
+	}
+
 	/** Path-opaque component diagnostics (e.g. BM25 readiness) for the search response. */
 	private collectComponentDiagnostics(): SearchDocumentDiagnostic[] {
 		const diagnostics: SearchDocumentDiagnostic[] = [];
@@ -363,6 +443,9 @@ export class AutoRAGAgent {
 				source: "minsync",
 			});
 		}
+		for (const result of this.refreshState.datasources) {
+			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
 		return diagnostics;
 	}
 
@@ -386,6 +469,7 @@ export class AutoRAGAgent {
 			const summary = await this.syncParsedMirrors(force);
 			const bm25 = await this.syncBM25();
 			const minsync = await this.syncMinSync();
+			const datasources = await this.indexDatasources();
 			const jikji = await this.prepareJikji();
 			const jikjiDiagnostics = (jikji ?? [])
 				.map((result) => jikjiPrepareDiagnostic(result))
@@ -402,9 +486,10 @@ export class AutoRAGAgent {
 				mirrorDiagnostics: summary.diagnostics,
 				jikjiDiagnostics,
 				minsync,
+				datasources,
 				lastError: undefined,
 			};
-			return bm25 ? { ...summary, bm25 } : summary;
+			return { ...(bm25 ? { ...summary, bm25 } : summary), datasources };
 		} catch (error) {
 			this.refreshState = {
 				...this.refreshState,
@@ -441,6 +526,9 @@ export class AutoRAGAgent {
 				source: d.source,
 			})),
 		];
+		for (const result of this.refreshState.datasources) {
+			diagnostics.push(...mapDatasourceDiagnostics(result.diagnostics));
+		}
 		if (this.refreshState.watchLimited) {
 			diagnostics.push({
 				code: "watch-limited",
@@ -476,7 +564,7 @@ export class AutoRAGAgent {
 	}
 
 	private refreshComponentStatus(): AutoRAGRefreshComponentStatus {
-		const status: { bm25?: string; minsync?: string; jikji?: string } = {};
+		const status: { bm25?: string; minsync?: string; jikji?: string; datasources?: string } = {};
 		const bm25 = this.bm25Method?.getStatus();
 		if (bm25 !== undefined) status.bm25 = bm25.readiness;
 		if (this.minSyncMethod !== undefined) {
@@ -490,6 +578,9 @@ export class AutoRAGAgent {
 		}
 		if (this.jikjiClient !== undefined) {
 			status.jikji = this.refreshState.jikjiDiagnostics.length > 0 ? "degraded" : "configured";
+		}
+		if (this.datasourceSkills.length > 0) {
+			status.datasources = this.refreshState.datasources.some((result) => !result.ok) ? "degraded" : "configured";
 		}
 		return status;
 	}
@@ -582,10 +673,13 @@ export class AutoRAGAgent {
 		query: string,
 		options: RetrievalOptions = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
-		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
-			this.methodRegistry.list(),
-			query,
-			options,
+		const methods = this.methodRegistry.list();
+		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
+		const filteredByMethod = this.datasourceFilter.filter(
+			byMethod,
+			methods,
+			this.datasourceAccessContext(options),
+			options.scope,
 		);
 		if (this.minSyncMethod?.isBinaryMissing() && !diagnostics.some((d) => d.source === "minsync")) {
 			diagnostics.push({
@@ -596,7 +690,30 @@ export class AutoRAGAgent {
 			});
 		}
 		return {
-			results: this.merger.merge(byMethod, { topK: options.topK ?? 20, dedup: true }),
+			results: this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+			diagnostics,
+		};
+	}
+
+	async searchDatasourceDocuments(
+		query: string,
+		options: { readonly topK?: number; readonly scope?: string } = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		const retrievalOptions: RetrievalOptions = { topK: options.topK, scope: options.scope };
+		const ctx = this.datasourceAccessContext(retrievalOptions);
+		const methods = this.methodRegistry.list().filter((method) => {
+			const descriptor = method.describe();
+			return descriptor.datasourceId !== undefined && ctx.isAccessible(descriptor);
+		});
+		if (methods.length === 0) return { results: [], diagnostics: [] };
+		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(
+			methods,
+			query,
+			retrievalOptions,
+		);
+		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		return {
+			results: this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
 			diagnostics,
 		};
 	}
@@ -609,6 +726,39 @@ export class AutoRAGAgent {
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
 	}
+}
+
+function sanitizeDatasourceIndexResult(result: DatasourceIndexResult): DatasourceIndexResult {
+	if (result.ok) {
+		return { ...result, diagnostics: result.diagnostics.map(sanitizeDatasourceDiagnostic) };
+	}
+	return {
+		...result,
+		diagnostics: result.diagnostics.map(sanitizeDatasourceDiagnostic),
+		...(result.message !== undefined ? { message: sanitizeDatasourceText(result.message) } : {}),
+		...(result.error !== undefined ? { error: sanitizeDatasourceText(result.error) } : {}),
+	};
+}
+
+function sanitizeDatasourceDiagnostic(diagnostic: DatasourceDiagnostic): DatasourceDiagnostic {
+	return {
+		...diagnostic,
+		message: sanitizeDatasourceText(diagnostic.message),
+		source: sanitizeDatasourceSource(diagnostic.source),
+	};
+}
+
+function sanitizeDatasourceText(value: string): string {
+	if (value.includes("/") || value.includes("\\") || /^[a-zA-Z]:[\\/]/u.test(value)) {
+		return "Datasource operation failed; details suppressed for datasource privacy.";
+	}
+	return value;
+}
+
+function sanitizeDatasourceSource(value: string | undefined): string | undefined {
+	if (value === undefined) return undefined;
+	if (value.includes("/") || value.includes("\\") || /^[a-zA-Z]:[\\/]/u.test(value)) return "datasource";
+	return value;
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

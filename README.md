@@ -94,6 +94,43 @@ The same `.autorag/jikji.json` shape configures Jikji when present:
 
 Call `agent.prepareJikji()` (or `agent.refresh()`) to prepare configured source roots. Hidden, sensitive, and media indexing are disabled by default; media OCR/ASR flags are not passed. AutoRAG searches and reads through the Pi agent loop and its registered retrieval methods; Jikji does not answer queries directly.
 
+### Datasource skills
+
+Datasource skills let AutoRAG search external, server-configured data sources through the same retrieval pipeline as local documents. A skill describes what it indexes, how it should be refreshed, what source instances exist, and which permission tags/scopes bound access. Retrieval still flows through `RetrievalMethodRegistry` → `ParallelRetriever` → datasource result filtering → `ResultMerger`; datasource skills do not create a parallel search path.
+
+Security defaults are intentionally strict:
+
+- datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags` and `datasourceAccess.allowedScopes`;
+- model/tool arguments never grant datasource tags or scopes;
+- `search_datasource_documents` accepts only `{ query, topK?, scope? }`, and `scope` can only narrow trusted access;
+- public `SearchDocumentsResponse` output remains path/PII opaque.
+
+KakaoTalk is the first datasource skill. It uses the external [`katok`](https://github.com/NomaDamas/katok) CLI only — AutoRAG never reads KakaoTalk databases directly. `katok` failures return diagnostics instead of throwing, and remote embedding egress configuration is rejected before the CLI is spawned.
+
+```typescript
+import { AutoRAGAgent, KatokSkill } from "@autorag/librarian";
+
+const kakao = new KatokSkill({
+  instanceId: "personal",
+  tags: ["kakaotalk", "personal", "pii"],
+  // Optional: client: new KatokClient({ binaryPath: "katok" })
+});
+
+const agent = new AutoRAGAgent({
+  searchPaths: ["/path/to/documents"],
+  datasourceSkills: [kakao],
+  datasourceAccess: {
+    allowedTags: ["kakaotalk"],
+    allowedScopes: ["/kakao/personal/**"],
+  },
+});
+
+await agent.refresh(); // refreshes parsed mirrors, BM25/MinSync, and datasource indexes
+const results = await agent.searchDatasourceDocuments("meeting with Mina", { topK: 5 });
+```
+
+A datasource skill should provide polling/cron metadata for routine indexing, source descriptions for the agent prompt, slash-hierarchical opaque source paths such as `/kakao/personal/chunks/<chunk-id>`, and permission tags that match your server-side access policy.
+
 ### Primary target: document collections
 
 AutoRAG is built for **non-code document retrieval**: manuals, legal docs, internal wikis, meeting notes, research literature, knowledge bases, PDFs.

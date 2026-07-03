@@ -6,6 +6,12 @@ export type {
 	AutoRAGResultsDetails,
 } from "./emit-results-tool.ts";
 export { createEmitResultsTool, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "./emit-results-tool.ts";
+export {
+	createSearchDatasourceDocumentsTool,
+	type DatasourceSearchProvider,
+	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+	type SearchDatasourceDocumentsDetails,
+} from "./search-datasource-tool.ts";
 export type {
 	SearchDocumentDiagnostic,
 	SearchDocumentDiagnosticCode,
