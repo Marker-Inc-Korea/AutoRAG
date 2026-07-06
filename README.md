@@ -85,14 +85,16 @@ The same `.autorag/jikji.json` shape configures Jikji when present:
   "maxBufferBytes": 1048576,
   "includeHidden": false,
   "includeSensitive": false,
-  "parseTimeout": 5,
   "maxFiles": 0,
-  "staleAfterSeconds": 86400,
+  "noAgentRules": false,
+  "enableMediaIndex": false,
   "exclude": []
 }
 ```
 
-Call `agent.prepareJikji()` (or `agent.refresh()`) to prepare configured source roots. Hidden, sensitive, and media indexing are disabled by default; media OCR/ASR flags are not passed. AutoRAG searches and reads through the Pi agent loop and its registered retrieval methods; Jikji does not answer queries directly.
+Call `agent.prepareJikji()` (or `agent.refresh()`) to prepare configured source roots. Hidden files, sensitive files, and media indexing are disabled by default; AutoRAG does not pass `--include-hidden`, `--include-sensitive`, or `--enable-media-index` unless the corresponding option is `true`. Upstream Jikji agent-rule loading remains enabled by default; AutoRAG passes `--no-agent-rules` only when `noAgentRules: true`. AutoRAG passes `--enable-media-index` only when `enableMediaIndex: true`.
+
+The upstream Rust `PrepareArgs` defines reference defaults that AutoRAG does not override unless explicitly configured: parse timeout `5.0`, max hash bytes `512 MiB`, doc text max chars `2,000,000`, doc text chunk chars `1,000,000`, and media index max MB `25.0`. AutoRAG emits `--parse-timeout`, `--max-hash-bytes`, `--doc-text-max-chars`, `--doc-text-chunk-chars`, and `--media-index-max-mb` only when the matching option is set, so the upstream defaults apply otherwise. AutoRAG searches and reads through the Pi agent loop and its registered retrieval methods; Jikji is prepare-only and does not answer queries directly.
 
 ### Datasource skills
 

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
+import type { JikjiOptions } from "../../src/jikji/index.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
-	readonly envMedia: string | null;
 };
 
 let root: string;
@@ -35,10 +35,7 @@ function writeFakeJikji(body: string, exitCode = 0): void {
 import { appendFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
-  args,
-  envMedia: process.env.JIKJI_ENABLE_MEDIA_INDEX ?? null
-}) + "\\n");
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
 ${body}
 process.exit(${exitCode});
 `,
@@ -82,38 +79,36 @@ function parseLoggedCall(line: string): LoggedCall {
 
 function isLoggedCall(value: unknown): value is LoggedCall {
 	if (!isRecord(value)) return false;
-	return (
-		Array.isArray(value.args) &&
-		value.args.every((arg) => typeof arg === "string") &&
-		isNullableString(value.envMedia)
-	);
-}
-
-function isNullableString(value: unknown): value is string | null {
-	return value === null || typeof value === "string";
+	return Array.isArray(value.args) && value.args.every((arg) => typeof arg === "string");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
+function pathEnv(): { readonly PATH: string } {
+	return { PATH: `${binDir}:${process.env.PATH ?? ""}` };
+}
+
 function clientWithPath(): JikjiClient {
-	return new JikjiClient({
-		env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, JIKJI_ENABLE_MEDIA_INDEX: "1" },
-	});
+	return new JikjiClient({ env: pathEnv() });
+}
+
+function argsOfFirstCall(): readonly string[] {
+	return loggedCalls()[0]?.args ?? [];
 }
 
 describe("JikjiClient", () => {
-	it("publishes bounded prepare defaults without retrieval options", () => {
+	it("publishes bounded prepare defaults without retrieval or stale options", () => {
 		const expectedDefaults = {
 			binaryPath: "jikji",
 			timeoutMs: 10_000,
 			maxBufferBytes: 1_048_576,
 			includeHidden: false,
 			includeSensitive: false,
-			parseTimeout: 5,
 			maxFiles: 0,
-			staleAfterSeconds: 86_400,
+			noAgentRules: false,
+			enableMediaIndex: false,
 			exclude: [],
 		};
 
@@ -121,86 +116,166 @@ describe("JikjiClient", () => {
 
 		expect(defaults).toEqual(expectedDefaults);
 		expect(JSON.stringify(defaults)).not.toContain("topK");
+		expect(JSON.stringify(defaults)).not.toContain("parseTimeout");
 	});
 
-	it("runs jikji prepare with bounded json output", async () => {
+	it("emits a clean wire format for the bare default client", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = clientWithPath();
 
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: true });
-		expect(loggedCalls()).toEqual([
-			{
-				args: ["prepare", corpusRoot, "--json"],
-				envMedia: null,
-			},
-		]);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
 	});
 
-	it("uses configured binaryPath for jikji prepare", async () => {
+	it("emits a clean wire format for new JikjiClient(DEFAULT_JIKJI_OPTIONS)", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
-		const client = new JikjiClient({ binaryPath, env: { JIKJI_ENABLE_MEDIA_INDEX: "1" } });
+		const client = new JikjiClient({ ...DEFAULT_JIKJI_OPTIONS, env: pathEnv() });
 
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: true });
-		expect(loggedCalls()).toEqual([
-			{
-				args: ["prepare", corpusRoot, "--json"],
-				envMedia: null,
-			},
-		]);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
 	});
 
-	it("does not pass hidden sensitive or media flags by default", async () => {
+	it("emits a clean wire format for the README default-shaped config", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const readmeConfig: JikjiOptions = {
+			binaryPath: "jikji",
+			timeoutMs: 10_000,
+			maxBufferBytes: 1_048_576,
+			includeHidden: false,
+			includeSensitive: false,
+			noAgentRules: false,
+			enableMediaIndex: false,
+			maxFiles: 0,
+			exclude: [],
+			env: pathEnv(),
+		};
+		const client = new JikjiClient(readmeConfig);
+
+		const result = await client.prepare(corpusRoot);
+
+		expect(result).toMatchObject({ ok: true });
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
+	});
+
+	it("suppresses --max-files when maxFiles is 0", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ ...DEFAULT_JIKJI_OPTIONS, env: pathEnv() });
+
+		await client.prepare(corpusRoot);
+
+		const args = argsOfFirstCall();
+		expect(args).not.toContain("--max-files");
+	});
+
+
+	it("uses configured binaryPath for jikji prepare", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ binaryPath, env: pathEnv() });
+
+		const result = await client.prepare(corpusRoot);
+
+		expect(result).toMatchObject({ ok: true });
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
+	});
+
+	it("does not pass hidden sensitive no-agent-rules or media flags by default", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = clientWithPath();
 
 		await client.prepare(corpusRoot);
 
-		const call = loggedCalls()[0];
-		expect(call?.args).not.toContain("--include-hidden");
-		expect(call?.args).not.toContain("--include-sensitive");
-		expect(call?.args).not.toContain("--enable-media-index");
+		const args = argsOfFirstCall();
+		expect(args).not.toContain("--include-hidden");
+		expect(args).not.toContain("--include-sensitive");
+		expect(args).not.toContain("--no-agent-rules");
+		expect(args).not.toContain("--enable-media-index");
+		expect(args).not.toContain("--media-index-max-mb");
 	});
 
-	it("passes explicit prepare flags", async () => {
+	it("passes explicit caller and upstream Rust prepare flags", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = new JikjiClient({
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+			env: pathEnv(),
 			includeHidden: true,
 			includeSensitive: true,
 			parseTimeout: 5,
 			maxFiles: 10,
-			staleAfterSeconds: 60,
 			exclude: ["private/**"],
+			maxHashBytes: 1024,
+			docTextMaxChars: 2_000_000,
+			docTextChunkChars: 1_000_000,
+			noAgentRules: true,
+			enableMediaIndex: true,
+			mediaIndexMaxMb: 25,
 		});
 
 		await client.prepare(corpusRoot);
 
-		expect(loggedCalls()[0]?.args).toEqual([
+		expect(argsOfFirstCall()).toEqual([
 			"prepare",
 			corpusRoot,
 			"--json",
 			"--include-hidden",
 			"--include-sensitive",
+			"--no-agent-rules",
+			"--enable-media-index",
 			"--parse-timeout",
 			"5",
+			"--max-hash-bytes",
+			"1024",
+			"--doc-text-max-chars",
+			"2000000",
+			"--doc-text-chunk-chars",
+			"1000000",
 			"--max-files",
 			"10",
-			"--stale-after-seconds",
-			"60",
+			"--media-index-max-mb",
+			"25",
 			"--exclude",
 			"private/**",
 		]);
-		expect(loggedCalls()[0]?.envMedia).toBeNull();
 	});
+
+	it("gates media-index-max-mb behind enableMediaIndex", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({
+			env: pathEnv(),
+			enableMediaIndex: false,
+			mediaIndexMaxMb: 25,
+		});
+
+		await client.prepare(corpusRoot);
+
+		const args = argsOfFirstCall();
+		expect(args).not.toContain("--enable-media-index");
+		expect(args).not.toContain("--media-index-max-mb");
+	});
+
+	it("emits --media-index-max-mb only when media indexing is enabled", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({
+			env: pathEnv(),
+			enableMediaIndex: true,
+			mediaIndexMaxMb: 25,
+		});
+
+		await client.prepare(corpusRoot);
+
+		const args = argsOfFirstCall();
+		expect(args).toContain("--enable-media-index");
+		expect(args).toContain("--media-index-max-mb");
+		expect(args).toContain("25");
+	});
+
 
 	it("returns failure for timeout without throwing", async () => {
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
 		const client = new JikjiClient({
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+			env: pathEnv(),
 			timeoutMs: 50,
 		});
 
@@ -213,7 +288,7 @@ describe("JikjiClient", () => {
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
 		const controller = new AbortController();
 		const client = new JikjiClient({
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+			env: pathEnv(),
 			timeoutMs: 5000,
 		});
 
@@ -229,7 +304,7 @@ describe("JikjiClient", () => {
 	it("returns failure for oversized stdout without throwing", async () => {
 		writeFakeJikji('process.stdout.write("x".repeat(64));');
 		const client = new JikjiClient({
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+			env: pathEnv(),
 			maxBufferBytes: 8,
 		});
 

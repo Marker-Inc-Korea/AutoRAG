@@ -5,7 +5,6 @@ import type { JikjiFailureReason, JikjiOptions, JikjiPrepareOptions, JikjiPrepar
 const DEFAULT_BINARY = "jikji";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
-const MEDIA_ENV_KEY = "JIKJI_ENABLE_MEDIA_INDEX";
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -120,9 +119,16 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 	const args = ["prepare", root, "--json"];
 	if (options.includeHidden === true) args.push("--include-hidden");
 	if (options.includeSensitive === true) args.push("--include-sensitive");
+	if (options.noAgentRules === true) args.push("--no-agent-rules");
+	if (options.enableMediaIndex === true) args.push("--enable-media-index");
 	if (options.parseTimeout !== undefined) args.push("--parse-timeout", String(options.parseTimeout));
-	if (options.maxFiles !== undefined) args.push("--max-files", String(options.maxFiles));
-	if (options.staleAfterSeconds !== undefined) args.push("--stale-after-seconds", String(options.staleAfterSeconds));
+	if (options.maxHashBytes !== undefined) args.push("--max-hash-bytes", String(options.maxHashBytes));
+	if (options.docTextMaxChars !== undefined) args.push("--doc-text-max-chars", String(options.docTextMaxChars));
+	if (options.docTextChunkChars !== undefined) args.push("--doc-text-chunk-chars", String(options.docTextChunkChars));
+	if (options.maxFiles !== undefined && options.maxFiles > 0) args.push("--max-files", String(options.maxFiles));
+	if (options.enableMediaIndex === true && options.mediaIndexMaxMb !== undefined) {
+		args.push("--media-index-max-mb", String(options.mediaIndexMaxMb));
+	}
 	for (const pattern of options.exclude ?? []) {
 		args.push("--exclude", pattern);
 	}
@@ -130,14 +136,11 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 }
 
 function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = {};
-	for (const [key, value] of Object.entries(process.env)) {
-		if (key !== MEDIA_ENV_KEY && value !== undefined) env[key] = value;
-	}
+	const env: NodeJS.ProcessEnv = { ...process.env };
 	for (const [key, value] of Object.entries(configuredEnv ?? {})) {
-		if (key !== MEDIA_ENV_KEY && value !== undefined) env[key] = value;
+		if (value !== undefined) env[key] = value;
+		else delete env[key];
 	}
-	delete env[MEDIA_ENV_KEY];
 	return env;
 }
 

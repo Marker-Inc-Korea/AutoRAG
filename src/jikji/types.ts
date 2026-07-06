@@ -6,9 +6,14 @@ export interface JikjiOptions {
 	readonly includeSensitive?: boolean;
 	readonly parseTimeout?: number;
 	readonly maxFiles?: number;
-	readonly staleAfterSeconds?: number;
 	readonly exclude?: readonly string[];
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly maxHashBytes?: number;
+	readonly docTextMaxChars?: number;
+	readonly docTextChunkChars?: number;
+	readonly noAgentRules?: boolean;
+	readonly enableMediaIndex?: boolean;
+	readonly mediaIndexMaxMb?: number;
 }
 
 export interface JikjiDefaultOptions {
@@ -17,9 +22,9 @@ export interface JikjiDefaultOptions {
 	readonly maxBufferBytes: number;
 	readonly includeHidden: boolean;
 	readonly includeSensitive: boolean;
-	readonly parseTimeout: number;
 	readonly maxFiles: number;
-	readonly staleAfterSeconds: number;
+	readonly noAgentRules: boolean;
+	readonly enableMediaIndex: boolean;
 	readonly exclude: readonly string[];
 }
 
@@ -29,9 +34,9 @@ export const DEFAULT_JIKJI_OPTIONS: JikjiDefaultOptions = {
 	maxBufferBytes: 1_048_576,
 	includeHidden: false,
 	includeSensitive: false,
-	parseTimeout: 5,
 	maxFiles: 0,
-	staleAfterSeconds: 86_400,
+	noAgentRules: false,
+	enableMediaIndex: false,
 	exclude: [],
 };
 
