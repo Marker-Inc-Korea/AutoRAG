@@ -2,8 +2,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wa
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
 import type { JikjiOptions } from "../../src/jikji/index.ts";
+import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
@@ -171,7 +171,6 @@ describe("JikjiClient", () => {
 		expect(args).not.toContain("--max-files");
 	});
 
-
 	it("uses configured binaryPath for jikji prepare", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = new JikjiClient({ binaryPath, env: pathEnv() });
@@ -270,7 +269,6 @@ describe("JikjiClient", () => {
 		expect(args).toContain("--media-index-max-mb");
 		expect(args).toContain("25");
 	});
-
 
 	it("returns failure for timeout without throwing", async () => {
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
