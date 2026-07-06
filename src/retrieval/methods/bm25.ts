@@ -54,7 +54,7 @@ type FallbackIndex = {
 	readonly chunks: readonly IndexedChunk[];
 };
 
-const BM25_SUBDIR = join(".autorag", "bm25");
+export const BM25_SUBDIR = join(".autorag", "bm25");
 const TANTIVY_SUBDIR = "tantivy";
 const FALLBACK_INDEX_FILE = "fallback-index.json";
 const DEFAULT_TOP_K = 20;
