@@ -7,6 +7,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "bin": {
+    "autorag": "./src/cli/index.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "check": "biome check --write .",
