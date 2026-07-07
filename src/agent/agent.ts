@@ -9,7 +9,17 @@ import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceDiagnostic, DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
-import { JikjiClient, type JikjiDiagnostic, type JikjiOptions, type JikjiPrepareResult } from "../jikji/index.ts";
+import {
+	JikjiClient,
+	type JikjiDiagnostic,
+	type JikjiFailureReason,
+	type JikjiFileMapSummary,
+	type JikjiOptions,
+	type JikjiPrepareResult,
+	planJikjiSourceRoots,
+	renderJikjiFileMapContext,
+	summarizeJikjiFileMapsBySource,
+} from "../jikji/index.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
@@ -28,12 +38,18 @@ import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retr
 import { PosixMethod } from "../retrieval/methods/posix.ts";
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
-import { createLoadDatasourceSkillTool, toDatasourceAgentSkill } from "./datasource-skill.ts";
+import { createBuiltinSearchTools } from "./builtin-search-tools.ts";
+import {
+	createLoadDatasourceSkillTool,
+	LOAD_DATASOURCE_SKILL_TOOL_NAME,
+	toDatasourceAgentSkill,
+} from "./datasource-skill.ts";
 import {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
+import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
 	createSearchDatasourceDocumentsTool,
@@ -46,7 +62,9 @@ import {
 	type SearchDocumentDiagnostic,
 	type SearchDocumentsResponse,
 } from "./search-documents.ts";
-import { buildSystemPrompt } from "./system-prompt.ts";
+import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
+import { createSearchPosixDocumentsTool, SEARCH_POSIX_DOCUMENTS_TOOL_NAME } from "./search-posix-tool.ts";
+import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
 	type WatcherFactory,
@@ -54,7 +72,22 @@ import {
 	type WatchWatcher,
 } from "./watch-refresh.ts";
 
-const SEARCH_TOOLS = ["grep", "find", SEARCH_BM25_DOCUMENTS_TOOL_NAME, SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME] as const;
+const SEARCH_TOOLS = [
+	"grep",
+	"find",
+	SEARCH_POSIX_DOCUMENTS_TOOL_NAME,
+	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+	SEARCH_BM25_DOCUMENTS_TOOL_NAME,
+	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+] as const;
+
+/**
+ * Caller tool names that are always dropped from {@link AutoRAGAgentOptions.tools}.
+ * `bash` would expose real filesystem paths; `read_file` collides with the
+ * AutoRAG-owned `read` built-in.
+ */
+const DROPPED_CALLER_TOOL_NAMES = new Set<string>(["bash", "read_file"]);
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
@@ -133,6 +166,23 @@ export interface AutoRAGAgentOptions {
 	datasourceAccess?: DatasourceAccessContextOptions;
 }
 
+export type AutoRAGJikjiPrepareResult =
+	| {
+			readonly ok: true;
+			readonly code: number;
+			readonly fileMapEntryCount: number;
+			readonly fileMapTruncated: boolean;
+			readonly diagnostics: readonly string[];
+	  }
+	| {
+			readonly ok: false;
+			readonly reason: JikjiFailureReason;
+			readonly code: number | null;
+			readonly fileMapEntryCount: 0;
+			readonly fileMapTruncated: false;
+			readonly diagnostics: readonly string[];
+	  };
+
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly memory: RetrievalMemory;
@@ -159,6 +209,7 @@ export class AutoRAGAgent {
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
 	private readonly datasourceFilter = new DatasourceResultFilter();
+	private readonly posixMethod: PosixMethod;
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly bm25Method: BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
@@ -166,6 +217,9 @@ export class AutoRAGAgent {
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
+	private readonly baseSystemPromptConfig: SystemPromptConfig;
+	private jikjiFileMapSummary: JikjiFileMapSummary = { entries: [], truncated: false, diagnostics: [] };
+	private readonly droppedCallerToolNames: readonly string[] = [];
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -177,7 +231,8 @@ export class AutoRAGAgent {
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
 		this.parserOptions = options.parserOptions;
-		this.methodRegistry.register(new PosixMethod({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths }));
+		this.posixMethod = new PosixMethod({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths });
+		this.methodRegistry.register(this.posixMethod);
 		if (options.minSync) {
 			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
@@ -200,24 +255,74 @@ export class AutoRAGAgent {
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
+		const searchPosixTool = createSearchPosixDocumentsTool(() => this.posixMethod);
+		const searchMinSyncTool = createSearchMinSyncDocumentsTool(() => this.minSyncMethod);
+		const searchAllTool = createSearchAllDocumentsTool(this);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
-		const tools = [
-			...(options.tools ?? []),
+
+		// AutoRAG-owned read-only, path-opaque built-ins. Always present and cannot
+		// be disabled or shadowed by caller-provided tools.
+		const builtinTools = createBuiltinSearchTools({
+			root: this.workspaceProjectRoot,
+			searchPaths: this.searchPaths,
+		});
+		const builtinNames = new Set(builtinTools.map((tool) => tool.name));
+
+		// Reserved AutoRAG tool names: built-ins plus internal tools the agent
+		// always owns. Caller tools with these names are dropped (reserved wins),
+		// never rejected. `bash`/`read_file` are always dropped regardless.
+		const reservedNames = new Set<string>([
+			...builtinNames,
+			"check_memory",
+			SEARCH_BM25_DOCUMENTS_TOOL_NAME,
+			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+			LOAD_DATASOURCE_SKILL_TOOL_NAME,
+			EMIT_AUTORAG_RESULTS_TOOL_NAME,
+			SEARCH_POSIX_DOCUMENTS_TOOL_NAME,
+			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+		]);
+		const droppedCallerToolNames: string[] = [];
+		const callerTools = (options.tools ?? []).filter((tool) => {
+			if (DROPPED_CALLER_TOOL_NAMES.has(tool.name) || reservedNames.has(tool.name)) {
+				droppedCallerToolNames.push(tool.name);
+				return false;
+			}
+			return true;
+		});
+		this.droppedCallerToolNames = [...new Set(droppedCallerToolNames)];
+
+		// Deterministic, duplicate-free ordering: built-ins first, then surviving
+		// caller tools, then AutoRAG-internal tools. Uniqueness is guaranteed
+		// before the Agent is constructed and before the prompt is built.
+		const orderedTools: AgentTool[] = [
+			...builtinTools,
+			...callerTools,
 			checkMemoryTool,
 			searchBM25Tool,
+			searchPosixTool,
+			searchMinSyncTool,
+			searchAllTool,
 			searchDatasourceTool,
 			loadDatasourceSkillTool,
 			emitResultsTool,
 		];
+		const seenToolNames = new Set<string>();
+		const tools = orderedTools.filter((tool) => {
+			if (seenToolNames.has(tool.name)) return false;
+			seenToolNames.add(tool.name);
+			return true;
+		});
 		const toolNames = tools.map((tool) => tool.name);
-		const systemPrompt = buildSystemPrompt({
+		this.baseSystemPromptConfig = {
 			toolNames,
 			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== undefined,
-		});
+		};
+		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
 		this.innerAgent = new Agent({
 			initialState: {
@@ -228,16 +333,35 @@ export class AutoRAGAgent {
 			convertToLlm: (messages) =>
 				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
 			transformContext: async (messages) => {
+				const contextMessages: Array<{
+					role: "user";
+					content: Array<{ type: "text"; text: string }>;
+					timestamp: number;
+				}> = [];
+				const jikjiFileMapContext = renderJikjiFileMapContext(this.jikjiFileMapSummary);
+				if (this.shouldInjectJikjiFileMapFallback(jikjiFileMapContext)) {
+					contextMessages.push({
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: `<jikji_file_map_context>\n${jikjiFileMapContext}\n</jikji_file_map_context>`,
+							},
+						],
+						timestamp: Date.now(),
+					});
+				}
 				const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
 				const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
-				if (hints.length === 0 && insights.length === 0) return messages;
-				const summary = renderMemoryContext(hints, { insights });
-				const memoryMessage = {
-					role: "user" as const,
-					content: [{ type: "text" as const, text: `<memory_context>\n${summary}\n</memory_context>` }],
-					timestamp: Date.now(),
-				};
-				return [memoryMessage, ...messages];
+				if (hints.length > 0 || insights.length > 0) {
+					const summary = renderMemoryContext(hints, { insights });
+					contextMessages.push({
+						role: "user",
+						content: [{ type: "text", text: `<memory_context>\n${summary}\n</memory_context>` }],
+						timestamp: Date.now(),
+					});
+				}
+				return contextMessages.length === 0 ? messages : [...contextMessages, ...messages];
 			},
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
@@ -256,6 +380,28 @@ export class AutoRAGAgent {
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
 		}
+	}
+
+	private currentSystemPromptConfig(): SystemPromptConfig {
+		return {
+			...this.baseSystemPromptConfig,
+			memorySignalCount: this.memory.getSignalCount(),
+			...(this.baseSystemPromptConfig.jikjiIndexingEnabled === true
+				? { jikjiFileMapContext: renderJikjiFileMapContext(this.jikjiFileMapSummary) }
+				: {}),
+		};
+	}
+
+	private refreshInnerSystemPrompt(): void {
+		this.innerAgent.state.systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
+	}
+
+	private shouldInjectJikjiFileMapFallback(context: string): boolean {
+		return (
+			this.baseSystemPromptConfig.jikjiIndexingEnabled === true &&
+			this.jikjiFileMapSummary.entries.length > 0 &&
+			!this.innerAgent.state.systemPrompt.includes(context)
+		);
 	}
 
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
@@ -429,6 +575,15 @@ export class AutoRAGAgent {
 	/** Path-opaque component diagnostics (e.g. BM25 readiness) for the search response. */
 	private collectComponentDiagnostics(): SearchDocumentDiagnostic[] {
 		const diagnostics: SearchDocumentDiagnostic[] = [];
+		if (this.droppedCallerToolNames.length > 0) {
+			diagnostics.push({
+				code: "caller-tool-dropped",
+				severity: "info",
+				message:
+					"One or more caller-provided tools were ignored because AutoRAG reserves read-only search tool names.",
+				source: "tools",
+			});
+		}
 		const bm25 = this.bm25Method?.getStatus();
 		if (bm25 !== undefined) {
 			if (bm25.readiness === "degraded_fallback") {
@@ -486,7 +641,7 @@ export class AutoRAGAgent {
 			const bm25 = await this.syncBM25();
 			const minsync = await this.syncMinSync();
 			const datasources = await this.indexDatasources();
-			const jikji = await this.prepareJikji();
+			const jikji = await this.executeJikjiPrepare();
 			const jikjiDiagnostics = (jikji ?? [])
 				.map((result) => jikjiPrepareDiagnostic(result))
 				.filter((diag): diag is JikjiDiagnostic => diag !== undefined);
@@ -661,13 +816,47 @@ export class AutoRAGAgent {
 		return this.minSyncMethod?.sync();
 	}
 
-	async prepareJikji(): Promise<readonly JikjiPrepareResult[] | undefined> {
+	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
+		const results = await this.executeJikjiPrepare();
+		return results?.map((result) => this.sanitizeJikjiPrepareResult(result));
+	}
+
+	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
 		if (this.jikjiClient === undefined) return undefined;
 		const results: JikjiPrepareResult[] = [];
+		const roots = planJikjiSourceRoots(this.searchPaths);
+		const rootByPath = new Map(roots.map((root) => [root.rootPath, root]));
 		for (const sourcePath of this.searchPaths) {
 			results.push(await this.jikjiClient.prepare(sourcePath));
 		}
+		this.jikjiFileMapSummary = summarizeJikjiFileMapsBySource(
+			results.map((result, index) => {
+				const sourceRoot = rootByPath.get(resolve(this.searchPaths[index] ?? ""));
+				return { result, sourceRoots: sourceRoot === undefined ? [] : [sourceRoot] };
+			}),
+		);
+		if (results.some((result) => result.ok)) this.refreshInnerSystemPrompt();
 		return results;
+	}
+
+	private sanitizeJikjiPrepareResult(result: JikjiPrepareResult): AutoRAGJikjiPrepareResult {
+		if (result.ok) {
+			return {
+				ok: true,
+				code: result.code,
+				fileMapEntryCount: this.jikjiFileMapSummary.entries.length,
+				fileMapTruncated: this.jikjiFileMapSummary.truncated,
+				diagnostics: this.jikjiFileMapSummary.diagnostics,
+			};
+		}
+		return {
+			ok: false,
+			reason: result.reason,
+			code: result.code,
+			fileMapEntryCount: 0,
+			fileMapTruncated: false,
+			diagnostics: this.jikjiFileMapSummary.diagnostics,
+		};
 	}
 
 	/**
@@ -709,6 +898,13 @@ export class AutoRAGAgent {
 			results: this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
 			diagnostics,
 		};
+	}
+
+	async searchAllDocuments(
+		query: string,
+		options: { readonly topK?: number; readonly scope?: string } = {},
+	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		return this.retrieveWithDiagnostics(query, { topK: options.topK, scope: options.scope });
 	}
 
 	async searchDatasourceDocuments(

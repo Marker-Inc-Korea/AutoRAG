@@ -54,14 +54,27 @@ describe("AutoRAGAgent", () => {
 		expect(agent).toBeDefined();
 	});
 
-	it("defaults to check_memory for library mode", () => {
+	it("defaults to check_memory and built-in search tools for library mode", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("check_memory");
-		expect(prompt).not.toContain("search_posix");
+		for (const name of [
+			"grep",
+			"find",
+			"read",
+			"ls",
+			"stat",
+			"search_posix_documents",
+			"search_minsync_documents",
+			"search_all_documents",
+		]) {
+			expect(prompt).toContain(name);
+		}
+		expect(prompt).not.toContain("bash");
+		expect(prompt).not.toContain("read_file");
 	});
 
 	it("includes caller-provided search tools in system prompt", () => {
@@ -93,6 +106,16 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("grep");
 		expect(prompt).toContain("find");
 		expect(prompt).toContain("read");
+		expect(prompt).not.toContain("read_file");
+	});
+
+	it("system prompt never falls back to read_file when read is absent", () => {
+		const prompt = buildSystemPrompt({
+			toolNames: ["check_memory"],
+			memoryEntries: [],
+			manifests: [],
+		});
+		expect(prompt).toContain("`read`");
 		expect(prompt).not.toContain("read_file");
 	});
 

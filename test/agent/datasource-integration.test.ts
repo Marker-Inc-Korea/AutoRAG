@@ -263,4 +263,26 @@ describe("AutoRAGAgent datasource integration", () => {
 		});
 		expect(unknownResponse.details).toEqual({ skill: "datasource-slack", loaded: false });
 	});
+	it("searchAllDocuments preserves datasource default-deny and authorized scope filtering", async () => {
+		const rows = [result("a", "/kakao/acct-1/chunks/a"), result("b", "/kakao/acct-2/chunks/b")];
+		const denied = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			datasourceSkills: [makeSkill(rows)],
+		});
+		const deniedResult = await denied.searchAllDocuments("message", { topK: 10 });
+		expect(deniedResult.results.map((r) => r.source)).not.toContain("/kakao/acct-1/chunks/a");
+		expect(JSON.stringify(deniedResult)).not.toContain(tmpDir);
+
+		const authorized = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			datasourceSkills: [makeSkill(rows)],
+			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
+		});
+		const authorizedResult = await authorized.searchAllDocuments("message", { topK: 10 });
+		expect(authorizedResult.results.map((r) => r.source)).toContain("/kakao/acct-1/chunks/a");
+		expect(authorizedResult.results.map((r) => r.source)).not.toContain("/kakao/acct-2/chunks/b");
+		expect(JSON.stringify(authorizedResult)).not.toContain(tmpDir);
+	});
 });

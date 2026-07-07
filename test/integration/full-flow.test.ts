@@ -93,13 +93,14 @@ describe("Full flow integration", () => {
 		expect(priority[0].score).toBe(3);
 	});
 
-	it("agent runs without built-in retrieval methods", () => {
+	it("agent runs with mandatory retrieval tools", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent.getSystemPrompt()).toContain("check_memory");
-		expect(agent.getSystemPrompt()).not.toContain("search_posix");
+		expect(agent.getSystemPrompt()).toContain("search_posix_documents");
+		expect(agent.getSystemPrompt()).toContain("search_all_documents");
 	});
 
 	it("submitFeedback resolves pending entries across all methods", () => {

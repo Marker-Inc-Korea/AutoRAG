@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
@@ -9,6 +10,7 @@ import {
 	fauxToolCall,
 	registerFauxProvider,
 } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
@@ -56,6 +58,18 @@ interface EmitArgs {
 
 function emitResults(args: EmitArgs): FauxResponseStep {
 	return fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, args)], { stopReason: "toolUse" });
+}
+
+function callerTool(name: string): AgentTool {
+	return {
+		name,
+		label: name,
+		description: `${name} caller tool`,
+		parameters: Type.Object({ query: Type.String() }),
+		async execute() {
+			return { content: [{ type: "text", text: "caller" }], details: { method: name, resultCount: 1, sources: [] } };
+		},
+	};
 }
 
 function makeAgent(model: ReturnType<typeof fauxModel>, memoryPath = join(tmpDir, "memory.json")) {
@@ -109,6 +123,29 @@ describe("AutoRAGAgent searchDocuments", () => {
 		// Source paths live only in the internal registry, never in the public response.
 		expect(JSON.stringify(response)).not.toContain("/data/notes.txt");
 		expect(JSON.stringify(response)).not.toContain("/Users/");
+	});
+
+	it("surfaces a path-free diagnostic when caller tools are dropped", async () => {
+		const model = fauxModel(
+			emitResults({
+				answer: "answer",
+				results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 0.5 }],
+				mapping: [{ number: 1, source: "/data/a.txt", method: "grep", content: "a" }],
+			}),
+		);
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			tools: [callerTool("bash"), callerTool("grep"), callerTool("search_all_documents")],
+		});
+
+		const response = await agent.searchDocuments("Meeting");
+		const diagnostic = response.diagnostics?.find((item) => item.code === "caller-tool-dropped");
+		expect(diagnostic).toMatchObject({ severity: "info", source: "tools" });
+		expect(JSON.stringify(diagnostic)).not.toContain(tmpDir);
+		expect(JSON.stringify(diagnostic)).not.toContain("bash");
 	});
 
 	it("populates the session registry from the structured tool mapping", async () => {

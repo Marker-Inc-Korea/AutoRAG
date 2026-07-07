@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
-import { jikjiPrepareDiagnostic } from "../../src/jikji/diagnostics.ts";
 
 let root: string;
 let docs: string;
@@ -159,8 +158,11 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 
 		const results = await agent.prepareJikji();
 		const first = results?.[0];
-		expect(first?.ok).toBe(false);
-		const diag = first ? jikjiPrepareDiagnostic(first) : undefined;
+		expect(first).toMatchObject({ ok: false, reason: "spawn-error" });
+		expect(JSON.stringify(first)).not.toContain(missingBinary);
+		expect(JSON.stringify(first)).not.toContain(root);
+		await agent.refresh(true);
+		const diag = (await agent.getRefreshStatus()).diagnostics.find((item) => item.source === "jikji");
 		expect(diag?.code).toBe("jikji-unavailable");
 		expect(diag?.message).not.toContain(missingBinary);
 		expect(diag?.message).not.toContain(root);

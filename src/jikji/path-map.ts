@@ -6,9 +6,9 @@ export interface JikjiSourceRoot extends SourceRoot {
 }
 
 export function planJikjiSourceRoots(searchPaths: readonly string[]): readonly JikjiSourceRoot[] {
-	return planSourceRoots(searchPaths).map((sourceRoot, index) => ({
+	return planSourceRoots(searchPaths).map((sourceRoot) => ({
 		...sourceRoot,
-		searchPath: searchPaths[index] ?? sourceRoot.rootPath,
+		searchPath: sourceRoot.rootPath,
 	}));
 }
 

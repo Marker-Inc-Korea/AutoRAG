@@ -16,6 +16,7 @@ export type SearchDocumentDiagnosticSeverity = "info" | "warning" | "error";
 export type SearchDocumentDiagnosticCode =
 	| "empty-query"
 	| "unknown-warning"
+	| "caller-tool-dropped"
 	| "path-redacted"
 	| "bm25-unavailable"
 	| "bm25-degraded-fallback"

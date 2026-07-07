@@ -14,7 +14,7 @@ import {
 	registerFauxProvider,
 } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AutoRAGAgent, EMIT_AUTORAG_RESULTS_TOOL_NAME, jikjiPrepareDiagnostic } from "../../src/index.ts";
+import { AutoRAGAgent, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/index.ts";
 
 let root: string;
 let docs: string;
@@ -65,7 +65,11 @@ describe("exported API — #19 Jikji optional non-retrieval boundary", () => {
 		});
 
 		const prepared = await agent.prepareJikji();
-		const diag = prepared?.[0] ? jikjiPrepareDiagnostic(prepared[0]) : undefined;
+		expect(prepared?.[0]).toMatchObject({ ok: false, reason: "spawn-error" });
+		expect(JSON.stringify(prepared)).not.toContain(missingBinary);
+		expect(JSON.stringify(prepared)).not.toContain(root);
+		await agent.refresh(true);
+		const diag = (await agent.getRefreshStatus()).diagnostics.find((item) => item.source === "jikji");
 		expect(diag?.code).toBe("jikji-unavailable");
 		expect(diag?.source).toBe("jikji");
 		expect(diag?.message).not.toContain(missingBinary);

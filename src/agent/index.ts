@@ -17,6 +17,13 @@ export type {
 } from "./emit-results-tool.ts";
 export { createEmitResultsTool, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "./emit-results-tool.ts";
 export {
+	createSearchAllDocumentsTool,
+	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+	type SearchAllDocumentsDetails,
+	type SearchAllDocumentsProvider,
+	type SearchAllDocumentsResult,
+} from "./search-all-tool.ts";
+export {
 	createSearchDatasourceDocumentsTool,
 	type DatasourceSearchProvider,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
@@ -31,4 +38,14 @@ export type {
 	SearchDocumentsResponse,
 	SearchDocumentWarning,
 } from "./search-documents.ts";
+export {
+	createSearchMinSyncDocumentsTool,
+	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
+	type SearchMinSyncDocumentsDetails,
+} from "./search-minsync-tool.ts";
+export {
+	createSearchPosixDocumentsTool,
+	SEARCH_POSIX_DOCUMENTS_TOOL_NAME,
+	type SearchPosixDocumentsDetails,
+} from "./search-posix-tool.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";

@@ -8,6 +8,7 @@ export interface SystemPromptConfig {
 	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
+	jikjiFileMapContext?: string;
 	datasourceSkills?: readonly Skill[];
 }
 
@@ -21,8 +22,8 @@ function searchToolNames(config: SystemPromptConfig): string[] {
 	return [...builtins, ...caller];
 }
 
-function readToolName(config: SystemPromptConfig): string {
-	return config.toolNames.includes("read") ? "read" : "read_file";
+function readToolName(_config: SystemPromptConfig): string {
+	return "read";
 }
 
 function searchToolGuidance(config: SystemPromptConfig): string {
@@ -34,7 +35,19 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 	if (toolAvailable(config, "ls")) lines.push("- **ls**: inspect directory structure when scope is unclear");
 	if (toolAvailable(config, "stat")) lines.push("- **stat**: inspect a file's size/type");
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
-		if (name === "search_bm25_documents") {
+		if (name === "search_all_documents") {
+			lines.push(
+				"- **search_all_documents**: default multi-method fan-out across every configured retrieval method (posix, BM25, MinSync, authorized datasources), returning merged path-opaque evidence and diagnostics",
+			);
+		} else if (name === "search_posix_documents") {
+			lines.push(
+				"- **search_posix_documents**: real-directory content retrieval over configured source directories; best for exact substrings, regex-like terms, and source-scoped evidence",
+			);
+		} else if (name === "search_minsync_documents") {
+			lines.push(
+				"- **search_minsync_documents**: MinSync semantic/vector retrieval over parsed document mirrors; best for conceptual and meaning-based evidence when configured",
+			);
+		} else if (name === "search_bm25_documents") {
 			lines.push(
 				"- **search_bm25_documents**: lexical BM25 search over parsed document mirrors; best for exact terms, headings, repeated terms, identifiers, and folder-scoped document text",
 			);
@@ -45,11 +58,6 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 		} else {
 			lines.push(`- **${name}**: caller-provided retrieval tool`);
 		}
-	}
-	if (toolAvailable(config, "bash")) {
-		lines.push(
-			"- **bash**: real-path search/navigation fallback (grep, cat, ls, cd, etc.) when the focused tools cannot satisfy the need.",
-		);
 	}
 	if (lines.length === 0) {
 		return "No search tools were provided. Use caller-provided tools when available, and always use check_memory for strategy.";
@@ -78,7 +86,9 @@ You are invoked by a parent agent or user who needs specific information found. 
 
 	const methodsSection = `## Active Retrieval Tools
 
-Use these tools to fulfill search requests over real source directories and parsed document mirrors. Start with the most specific path: grep/find for raw filesystem exact search, search_bm25_documents for parsed-document lexical BM25 search, semantic/vector tools when available for conceptual evidence, then read before curating.
+Use \`search_all_documents\` as the default first retrieval pass when it is available: it fans out across every configured retrieval method and returns merged path-opaque evidence. Then use grep/find/search_posix_documents/search_bm25_documents/search_minsync_documents/search_datasource_documents for targeted follow-up, and read before curating.
+
+The built-in tools (grep, find, read, ls, stat) are AutoRAG-owned: always available, read-only, and path-opaque — they never expose real filesystem paths in their results and cannot be disabled or shadowed by caller-provided tools.
 
 ${searchToolGuidance(config)}`;
 
@@ -149,7 +159,9 @@ ${config.memorySignalCount ?? config.memoryEntries?.length ?? 0} retrieval feedb
 		config.jikjiIndexingEnabled === true
 			? `## Jikji Indexing Context
 
-Jikji is enabled only as an indexing and file-map preparation layer for the configured source directories. Do not treat Jikji as an answer-producing retrieval backend, do not call \`jikji find\`, and do not expose Jikji method names in results. Use the prepared file map as context for choosing where to search, then search and read through the active AutoRAG/Pi tools listed above.`
+Jikji is enabled only as an indexing and file-map preparation layer for the configured source directories. Do not treat Jikji as an answer-producing retrieval backend, do not call \`jikji find\`, and do not expose Jikji method names in results. Use the prepared file map as context for choosing where to search, then search and read through the active AutoRAG/Pi tools listed above.
+
+${config.jikjiFileMapContext ?? "No sanitized Jikji file map is available yet. Continue using the active retrieval tools."}`
 			: "";
 
 	const outputSection = `## Output Format
