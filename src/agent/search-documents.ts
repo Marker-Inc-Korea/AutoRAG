@@ -27,6 +27,7 @@ export type SearchDocumentDiagnosticCode =
 	| "retrieval-method-failed"
 	| "jikji-unavailable"
 	| "jikji-prepare-failed"
+	| "jikji-find-failed"
 	| "refresh-failed"
 	| "watch-failed"
 	| "watch-limited";

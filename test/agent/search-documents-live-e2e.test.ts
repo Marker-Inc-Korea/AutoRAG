@@ -13,6 +13,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
+import { JIKJI_FIND_TOOL_NAME } from "../../src/agent/jikji-find-tool.ts";
 import type {
 	DatasourceIndexResult,
 	DatasourceSkill,
@@ -201,7 +202,20 @@ function writeFakeJikji(): void {
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
-console.log(JSON.stringify({ files: [{ path: "q3.txt", label: "Q3 refund policy" }] }));
+const args = process.argv.slice(2);
+if (args[0] === "find") {
+	console.log(JSON.stringify({
+		answer_paths: ["q3.txt"],
+		paths: ["q3.txt"],
+		candidates: [{ path: "q3.txt", next_read: "original", label: "Q3 refund policy" }],
+		evidence_pack: [{ path: "q3.txt", next_read: "original" }],
+		handoff_action: "raw_fallback_after_retry",
+		tool_call_policy: { stop_after_find: false, forbidden_tools: [], allowed_followups: [] },
+		agent_should_not_rerank: false,
+	}));
+} else {
+	console.log(JSON.stringify({ prepared: true }));
+}
 `,
 	);
 	chmodSync(binaryPath, 0o755);
@@ -214,7 +228,7 @@ function toolNames(agent: AutoRAGAgent): string[] {
 }
 
 describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
-	it("uses mandatory built-ins, retrieval tools, datasource fan-out, Jikji map, and verbatim real paths", async () => {
+	it("uses mandatory built-ins, retrieval tools, datasource fan-out, Jikji find, and verbatim real paths", async () => {
 		writeFakeJikji();
 		const datasourceRows: RetrievalResult[] = [
 			{
@@ -228,6 +242,7 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 		const model = fauxModel(
 			fauxAssistantMessage(
 				[
+					fauxToolCall(JIKJI_FIND_TOOL_NAME, { query: "refund director approval" }),
 					fauxToolCall("bash", { command: "grep -rn 'director approval' docs/q3.txt" }),
 					fauxToolCall("search_minsync_documents", { query: "refund exception semantics", topK: 2 }),
 					fauxToolCall("search_bm25_documents", { query: "refund director approval", topK: 3 }),
@@ -256,6 +271,7 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 			"search_bm25_documents",
 			"search_all_documents",
 			"search_datasource_documents",
+			"jikji_find",
 			"emit_autorag_results",
 		]) {
 			expect(toolNames(agent)).toContain(name);
@@ -264,8 +280,8 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 		const refresh = await agent.refresh(true);
 		expect(["ready", "degraded_fallback"]).toContain(refresh.bm25?.readiness);
 		expect(refresh.datasources?.[0]).toMatchObject({ ok: true, skill: "kakao" });
-		expect(agent.getSystemPrompt()).toContain("<jikji_file_map>");
-		expect(agent.getSystemPrompt()).toContain("/docs/q3.txt");
+		expect(agent.getSystemPrompt()).toContain("## Jikji Local Discovery");
+		expect(agent.getSystemPrompt()).toContain("jikji_find");
 		expect(agent.getSystemPrompt()).not.toContain(root);
 
 		const all = await agent.searchAllDocuments("refund director approval finance kakao", { topK: 8 });

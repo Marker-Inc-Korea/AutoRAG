@@ -8,17 +8,21 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
-import { jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
+import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
+	type JikjiAnswerPack,
+	type JikjiCandidate,
 	JikjiClient,
 	type JikjiDiagnostic,
+	type JikjiEvidence,
 	type JikjiFailureReason,
-	type JikjiFileMapSummary,
+	type JikjiFindOptions,
+	type JikjiFindResult,
+	type JikjiHandoffAction,
 	type JikjiOptions,
 	type JikjiPrepareResult,
+	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
-	renderJikjiFileMapContext,
-	summarizeJikjiFileMapsBySource,
 } from "../jikji/index.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
@@ -49,6 +53,13 @@ import {
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
+import {
+	createJikjiFindTool,
+	JIKJI_FIND_TOOL_NAME,
+	type JikjiFindPerRootPolicy,
+	type JikjiFindProviderResult,
+	type MergedJikjiPolicy,
+} from "./jikji-find-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
@@ -78,6 +89,7 @@ const SEARCH_TOOLS = [
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
+	JIKJI_FIND_TOOL_NAME,
 ] as const;
 
 export interface AutoRefreshOptions {
@@ -161,16 +173,12 @@ export type AutoRAGJikjiPrepareResult =
 	| {
 			readonly ok: true;
 			readonly code: number;
-			readonly fileMapEntryCount: number;
-			readonly fileMapTruncated: boolean;
 			readonly diagnostics: readonly string[];
 	  }
 	| {
 			readonly ok: false;
 			readonly reason: JikjiFailureReason;
 			readonly code: number | null;
-			readonly fileMapEntryCount: 0;
-			readonly fileMapTruncated: false;
 			readonly diagnostics: readonly string[];
 	  };
 
@@ -209,8 +217,11 @@ export class AutoRAGAgent {
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
-	private jikjiFileMapSummary: JikjiFileMapSummary = { entries: [], truncated: false, diagnostics: [] };
-	private readonly droppedCallerToolNames: readonly string[] = [];
+	/** Run-scoped merged Jikji policy, set during searchDocuments; cleared after. */
+	private activeJikjiPolicy: MergedJikjiPolicy | undefined;
+	/** Run-scoped jikji_find call count for the two-phase raw-fallback gate. */
+	private jikjiFindCallCount = 0;
+	private readonly droppedCallerToolNames: readonly string[];
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -251,7 +262,9 @@ export class AutoRAGAgent {
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 
-		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot });
+		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot, gate: () => this.bashGate() });
+
+		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
@@ -264,6 +277,7 @@ export class AutoRAGAgent {
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
+			JIKJI_FIND_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -287,6 +301,7 @@ export class AutoRAGAgent {
 			searchDatasourceTool,
 			loadDatasourceSkillTool,
 			emitResultsTool,
+			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 		];
 		const seenToolNames = new Set<string>();
 		const tools = orderedTools.filter((tool) => {
@@ -318,19 +333,6 @@ export class AutoRAGAgent {
 					content: Array<{ type: "text"; text: string }>;
 					timestamp: number;
 				}> = [];
-				const jikjiFileMapContext = renderJikjiFileMapContext(this.jikjiFileMapSummary);
-				if (this.shouldInjectJikjiFileMapFallback(jikjiFileMapContext)) {
-					contextMessages.push({
-						role: "user",
-						content: [
-							{
-								type: "text",
-								text: `<jikji_file_map_context>\n${jikjiFileMapContext}\n</jikji_file_map_context>`,
-							},
-						],
-						timestamp: Date.now(),
-					});
-				}
 				const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
 				const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
 				if (hints.length > 0 || insights.length > 0) {
@@ -366,22 +368,7 @@ export class AutoRAGAgent {
 		return {
 			...this.baseSystemPromptConfig,
 			memorySignalCount: this.memory.getSignalCount(),
-			...(this.baseSystemPromptConfig.jikjiIndexingEnabled === true
-				? { jikjiFileMapContext: renderJikjiFileMapContext(this.jikjiFileMapSummary) }
-				: {}),
 		};
-	}
-
-	private refreshInnerSystemPrompt(): void {
-		this.innerAgent.state.systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
-	}
-
-	private shouldInjectJikjiFileMapFallback(context: string): boolean {
-		return (
-			this.baseSystemPromptConfig.jikjiIndexingEnabled === true &&
-			this.jikjiFileMapSummary.entries.length > 0 &&
-			!this.innerAgent.state.systemPrompt.includes(context)
-		);
 	}
 
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
@@ -464,6 +451,8 @@ export class AutoRAGAgent {
 		}
 
 		this.activeRun = true;
+		this.activeJikjiPolicy = undefined;
+		this.jikjiFindCallCount = 0;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
@@ -475,6 +464,8 @@ export class AutoRAGAgent {
 		} finally {
 			this.resultCapture = undefined;
 			this.activeRun = false;
+			this.activeJikjiPolicy = undefined;
+			this.jikjiFindCallCount = 0;
 		}
 
 		if (captured === undefined) {
@@ -803,18 +794,9 @@ export class AutoRAGAgent {
 	private async executeJikjiPrepare(): Promise<readonly JikjiPrepareResult[] | undefined> {
 		if (this.jikjiClient === undefined) return undefined;
 		const results: JikjiPrepareResult[] = [];
-		const roots = planJikjiSourceRoots(this.searchPaths);
-		const rootByPath = new Map(roots.map((root) => [root.rootPath, root]));
 		for (const sourcePath of this.searchPaths) {
 			results.push(await this.jikjiClient.prepare(sourcePath));
 		}
-		this.jikjiFileMapSummary = summarizeJikjiFileMapsBySource(
-			results.map((result, index) => {
-				const sourceRoot = rootByPath.get(resolve(this.searchPaths[index] ?? ""));
-				return { result, sourceRoots: sourceRoot === undefined ? [] : [sourceRoot] };
-			}),
-		);
-		if (results.some((result) => result.ok)) this.refreshInnerSystemPrompt();
 		return results;
 	}
 
@@ -823,18 +805,262 @@ export class AutoRAGAgent {
 			return {
 				ok: true,
 				code: result.code,
-				fileMapEntryCount: this.jikjiFileMapSummary.entries.length,
-				fileMapTruncated: this.jikjiFileMapSummary.truncated,
-				diagnostics: this.jikjiFileMapSummary.diagnostics,
+				diagnostics: [],
 			};
 		}
 		return {
 			ok: false,
 			reason: result.reason,
 			code: result.code,
-			fileMapEntryCount: 0,
-			fileMapTruncated: false,
-			diagnostics: this.jikjiFileMapSummary.diagnostics,
+			diagnostics: [],
+		};
+	}
+
+	/**
+	 * Provider method for the jikji_find tool. Runs JikjiClient.find over all
+	 * configured search roots, normalizes answer paths against planned source
+	 * roots, merges per-root answer packs using least-privilege (restrictive-
+	 * wins) semantics, and sets the run-scoped activeJikjiPolicy. Only mutates
+	 * run state (activeJikjiPolicy / jikjiFindCallCount) when a searchDocuments
+	 * run is active; direct out-of-run calls compute and return the result
+	 * without persisting. When jikji is unavailable or all roots fail, returns
+	 * an unavailable result and leaves the policy undefined (bash is allowed).
+	 */
+	async findJikji(
+		query: string,
+		opts?: { readonly topK?: number; readonly first?: boolean },
+	): Promise<JikjiFindProviderResult> {
+		if (this.jikjiClient === undefined) {
+			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
+		}
+		// Run-scoped state: only persist policy/count when a searchDocuments run
+		// is active. Direct (out-of-run) calls compute and return the result
+		// without mutating run state. The call count is incremented on EVERY
+		// find attempt (success or failure) under an active run, so the
+		// find-first bash gate releases after the first jikji_find — even when
+		// all roots fail (policy stays undefined → bash allowed as fallback).
+		const runScoped = this.activeRun === true;
+		if (runScoped) {
+			this.jikjiFindCallCount += 1;
+		}
+		const effectiveCount = this.jikjiFindCallCount;
+		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
+		const findOpts: JikjiFindOptions = {
+			topK: opts?.topK,
+			first: opts?.first,
+		};
+		const diagnostics: JikjiDiagnostic[] = [];
+		const okPacks: { pack: JikjiAnswerPack; root: string }[] = [];
+		for (const sourcePath of this.searchPaths) {
+			const result: JikjiFindResult = await this.jikjiClient.find(sourcePath, query, findOpts);
+			if (result.ok) {
+				okPacks.push({ pack: result.answerPack, root: sourcePath });
+			} else {
+				const diag = jikjiFindDiagnostic(result);
+				if (diag !== undefined) diagnostics.push(diag);
+			}
+		}
+		if (okPacks.length === 0) {
+			return { answerPack: undefined, policy: undefined, diagnostics, roots: this.searchPaths, perRoot: [] };
+		}
+
+		// Per-root policy summaries, captured BEFORE the least-privilege merge.
+		const perRoot: JikjiFindPerRootPolicy[] = okPacks.map((entry) => ({
+			root: entry.root,
+			handoffAction: entry.pack.handoffAction,
+			stopAfterFind: entry.pack.toolCallPolicy.stopAfterFind,
+			forbiddenTools: [...entry.pack.toolCallPolicy.forbiddenTools],
+			allowedFollowups: [...entry.pack.toolCallPolicy.allowedFollowups],
+			agentShouldNotRerank: entry.pack.agentShouldNotRerank,
+		}));
+
+		const policy = this.mergePolicy(
+			okPacks.map((entry) => entry.pack),
+			effectiveCount,
+		);
+		const merged = this.mergeAnswerPacks(okPacks, sourceRoots, policy);
+		if (runScoped) {
+			this.activeJikjiPolicy = policy;
+		}
+		return { answerPack: merged, policy, diagnostics, roots: this.searchPaths, perRoot };
+	}
+
+	/**
+	 * Merge per-root answer packs into one. Concatenates answer_paths/candidates
+	 * preserving per-root order; dedupes by normalized path. Does NOT cross-root
+	 * rerank when any root has agentShouldNotRerank=true.
+	 */
+	private mergeAnswerPacks(
+		entries: readonly { pack: JikjiAnswerPack; root: string }[],
+		sourceRoots: ReturnType<typeof planJikjiSourceRoots>,
+		policy: MergedJikjiPolicy,
+	): JikjiAnswerPack {
+		const seenPaths = new Set<string>();
+		const answerPaths: string[] = [];
+		const candidates: JikjiCandidate[] = [];
+		const evidencePack: JikjiEvidence[] = [];
+		const allPaths: string[] = [];
+
+		for (const entry of entries) {
+			// Root-provenance: normalize each entry's paths ONLY against that
+			// entry's ORIGIN root, so a relative path from root B never resolves
+			// against root A. If the origin root can't be resolved, skip the
+			// entry's paths entirely. Global dedupe by normalized path remains.
+			const originRoot = sourceRoots.find((sr) => sr.rootPath === resolve(entry.root));
+			if (originRoot === undefined) continue;
+			const originRoots = [originRoot];
+			for (const rawPath of entry.pack.answerPaths) {
+				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
+				if (norm !== undefined && !seenPaths.has(norm)) {
+					seenPaths.add(norm);
+					answerPaths.push(norm);
+				}
+			}
+			for (const rawPath of entry.pack.paths) {
+				const norm = normalizeJikjiAnswerPath(rawPath, originRoots);
+				if (norm !== undefined && !allPaths.includes(norm)) {
+					allPaths.push(norm);
+				}
+			}
+			for (const cand of entry.pack.candidates) {
+				const norm = normalizeJikjiAnswerPath(cand.path, originRoots);
+				if (norm !== undefined && !candidates.some((c) => c.path === norm)) {
+					candidates.push({
+						path: norm,
+						nextRead: cand.nextRead,
+						...(cand.label !== undefined ? { label: cand.label } : {}),
+						...(cand.score !== undefined ? { score: cand.score } : {}),
+					});
+				}
+			}
+			for (const ev of entry.pack.evidencePack) {
+				const norm = normalizeJikjiAnswerPath(ev.path, originRoots);
+				if (norm !== undefined && !evidencePack.some((e) => e.path === norm)) {
+					evidencePack.push({ path: norm, nextRead: ev.nextRead });
+				}
+			}
+		}
+
+		// Concatenation preserves per-root candidate order; no cross-root rerank.
+		return {
+			answerPaths,
+			paths: allPaths,
+			candidates,
+			evidencePack,
+			handoffAction: policy.handoffAction,
+			toolCallPolicy: {
+				stopAfterFind: policy.stopAfterFind,
+				forbiddenTools: policy.forbiddenTools,
+				allowedFollowups: policy.allowedFollowups,
+			},
+			agentShouldNotRerank: policy.agentShouldNotRerank,
+		};
+	}
+
+	/**
+	 * Least-privilege (restrictive-wins) merge of per-root policies.
+	 * - forbiddenTools: UNION
+	 * - allowedFollowups: INTERSECTION
+	 * - stopAfterFind: OR
+	 * - agentShouldNotRerank: OR
+	 * - handoffAction: MOST RESTRICTIVE (direct_use < jikji_retry < raw_fallback_after_retry)
+	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry AND callCount>=2
+	 */
+	private mergePolicy(packs: readonly JikjiAnswerPack[], callCount: number): MergedJikjiPolicy {
+		const HANDOFF_RANK: Record<JikjiHandoffAction, number> = {
+			direct_use: 0,
+			jikji_retry: 1,
+			raw_fallback_after_retry: 2,
+		};
+		let handoff: JikjiHandoffAction = "raw_fallback_after_retry";
+		let stopAfterFind = false;
+		let agentShouldNotRerank = false;
+		const forbidden = new Set<string>();
+		let allowedFollowups: Set<string> | undefined;
+		for (const pack of packs) {
+			if (HANDOFF_RANK[pack.handoffAction] < HANDOFF_RANK[handoff]) {
+				handoff = pack.handoffAction;
+			}
+			stopAfterFind = stopAfterFind || pack.toolCallPolicy.stopAfterFind;
+			agentShouldNotRerank = agentShouldNotRerank || pack.agentShouldNotRerank;
+			for (const tool of pack.toolCallPolicy.forbiddenTools) forbidden.add(tool);
+			if (allowedFollowups === undefined) {
+				allowedFollowups = new Set(pack.toolCallPolicy.allowedFollowups);
+			} else {
+				const next = new Set<string>();
+				for (const f of pack.toolCallPolicy.allowedFollowups) {
+					if (allowedFollowups.has(f)) next.add(f);
+				}
+				allowedFollowups = next;
+			}
+		}
+		const rawFallbackAllowed = handoff === "raw_fallback_after_retry" && callCount >= 2;
+		return {
+			handoffAction: handoff,
+			stopAfterFind,
+			forbiddenTools: [...forbidden],
+			allowedFollowups: allowedFollowups ? [...allowedFollowups] : [],
+			agentShouldNotRerank,
+			rawFallbackAllowed,
+		};
+	}
+
+	/**
+	 * Deny-by-default bash gate. When jikji is configured but no jikji_find has
+	 * run yet this run (count===0), bash is blocked so the agent discovers local
+	 * files via jikji_find first. After a find, the run-scoped activeJikjiPolicy
+	 * applies: when no policy is active, bash behaves exactly as before
+	 * (allowed). Under an active policy, bash is denied unless handoffAction is
+	 * raw_fallback_after_retry AND rawFallbackAllowed is true (after a second
+	 * jikji_find). When jikji is not configured, the find-first branch is
+	 * skipped entirely (bash unchanged).
+	 */
+	private bashGate(): { allowed: boolean; message: string } {
+		// Find-first: when jikji is configured but no jikji_find has run this run,
+		// bash is blocked so the agent uses jikji_find for local discovery first.
+		// After a jikji_find (success or failure), count>0 and the policy checks
+		// below apply. If jikji was unavailable/all-failed, policy stays undefined
+		// and the "no policy → allowed" path lets bash run (fallback). When jikji
+		// is not configured, this branch is skipped (bash unchanged).
+		if (this.jikjiClient !== undefined && this.jikjiFindCallCount === 0) {
+			return {
+				allowed: false,
+				message:
+					"Call jikji_find first for local file discovery (jikji is configured). Use bash only after jikji_find, per its policy.",
+			};
+		}
+		const policy = this.activeJikjiPolicy;
+		if (policy === undefined) return { allowed: true, message: "" };
+		if (policy.forbiddenTools.includes("bash")) {
+			return {
+				allowed: false,
+				message:
+					"Bash is forbidden by the active Jikji policy (forbidden_tools includes bash). Use jikji_find answer_paths to answer directly.",
+			};
+		}
+		if (policy.stopAfterFind) {
+			return {
+				allowed: false,
+				message: "stop_after_find is active — answer from the jikji_find answer_paths. Raw shell is disallowed.",
+			};
+		}
+		if (policy.handoffAction === "direct_use") {
+			return {
+				allowed: false,
+				message: "Jikji policy is direct_use — use the jikji_find answer_paths directly. Raw shell is disallowed.",
+			};
+		}
+		if (policy.handoffAction === "jikji_retry") {
+			return {
+				allowed: false,
+				message: "Jikji policy is jikji_retry — retry jikji_find with a refined query. Raw shell is disallowed.",
+			};
+		}
+		// handoffAction === "raw_fallback_after_retry"
+		if (policy.rawFallbackAllowed) return { allowed: true, message: "" };
+		return {
+			allowed: false,
+			message: "Raw fallback is allowed only after a second jikji_find. Retry jikji_find first before using bash.",
 		};
 	}
 

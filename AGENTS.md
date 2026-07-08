@@ -25,6 +25,7 @@ The librarian runs with a real shell plus the retrieval and memory tools:
 | Tool | What it does | When to use |
 |------|-------------|-------------|
 | `bash` | Run shell commands (`ls`, `find`, `grep`, `rg`, `cat`, `head`, `sed`). Returns combined stdout/stderr, including real file paths. | Navigate the collection, search file contents, and read files directly |
+| `jikji_find` | Run `jikji find ROOT "query" --json` and enforce the returned answer-pack policy (`handoff_action`, `tool_call_policy`, `agent_should_not_rerank`) | First local-discovery action when Jikji is configured; `bash` is the fallback only when the pack permits raw fallback or Jikji is unavailable |
 | `search_all_documents` | Fan out across every configured retrieval method and merge/rank results | Fast multi-method first pass |
 | `search_bm25_documents` | Lexical BM25 ranking over parsed document mirrors | Exact terms, headings, identifiers |
 | `search_minsync_documents` | MinSync semantic/vector retrieval over parsed mirrors | Conceptual, meaning-based evidence |
@@ -63,7 +64,7 @@ AutoRAG is designed for **multi-method retrieval** — different methods for dif
 
 The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods are registered and routed through `ParallelRetriever` + `ResultMerger`. New methods implement the `RetrievalMethod` interface and plug into the same pipeline. Plain-directory content search is no longer a registered retrieval method — the agent does that directly with `bash`.
 
-Jikji is intentionally not a retrieval method. It is an optional file-map and indexing preparation layer (`jikji prepare`) that is surfaced to the agent as a **navigation hint** in the system prompt; query answering flows through `bash` and the registered retrieval methods.
+Jikji is intentionally not a retrieval method. It is an optional **find-first local-discovery** layer: when configured, AutoRAG calls `jikji find ROOT "query" --json` via a policy-aware `jikji_find` tool as the first local-discovery action. The tool parses and validates the upstream answer-pack and honors its `handoff_action` (`direct_use` / `jikji_retry` / `raw_fallback_after_retry`), `tool_call_policy` (`stop_after_find`, `forbidden_tools`, `allowed_followups`), and `agent_should_not_rerank`. `bash` is the fallback only when the answer-pack permits raw fallback (`raw_fallback_after_retry`, after the required retry) or when Jikji is unavailable/unconfigured. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
 Datasource skills are retrieval-method factories plus indexing hooks for external, server-configured data sources. They remain inside the same pipeline — `RetrievalMethodRegistry` → `ParallelRetriever` → `DatasourceResultFilter` → `ResultMerger`. Datasource access is default-deny and server-bound: LLM tool arguments cannot grant `allowedTags` or `allowedScopes`, and `search_datasource_documents` exposes only `{ query, topK?, scope? }` where `scope` can only narrow trusted access.
 
@@ -73,9 +74,9 @@ The first concrete datasource is KakaoTalk through the external `katok` CLI. Aut
 
 AutoRAG navigates document collections directly through `bash`, scoped to the configured `searchPaths` / workspace root. The Pi agent loop uses `bash` plus `check_memory` and the retrieval tools, and finalizes through the `emit_autorag_results` structured tool. Real file paths are visible to the agent and may appear in curated results and their source mapping.
 
-- **Tool surface** — the agent runs with `bash`, `check_memory`, the `search_*` retrieval tools, `load_datasource_skill`, and `emit_autorag_results`, plus any non-reserved caller-provided tools.
+- **Tool surface** — the agent runs with `bash`, `jikji_find` (when Jikji is configured), `check_memory`, the `search_*` retrieval tools, `load_datasource_skill`, and `emit_autorag_results`, plus any non-reserved caller-provided tools.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
-- **Jikji preparation** — `AutoRAGAgent.prepareJikji()` runs `jikji prepare` over configured source directories only. AutoRAG does not call `jikji find` or merge Jikji answers as retrieval results.
+- **Jikji find-first** — when Jikji is configured, `jikji_find` runs `jikji find ROOT "query" --json` as the first local-discovery action and enforces the returned `handoff_action` / `tool_call_policy` / `agent_should_not_rerank`; `bash` is the fallback only when the pack permits raw fallback or Jikji is unavailable. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by trusted datasource access, and indexed during `refresh()`.
 
 ## Usage

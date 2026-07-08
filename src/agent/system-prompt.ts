@@ -8,7 +8,6 @@ export interface SystemPromptConfig {
 	memoryEntries?: readonly unknown[];
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
-	jikjiFileMapContext?: string;
 	datasourceSkills?: readonly Skill[];
 }
 
@@ -21,6 +20,11 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 	if (toolAvailable(config, "bash")) {
 		lines.push(
 			"- **bash**: run shell commands to explore and read the collection directly (ls, find, grep, rg, cat, head, sed). This is your primary way to navigate and inspect files.",
+		);
+	}
+	if (toolAvailable(config, "jikji_find")) {
+		lines.push(
+			"- **jikji_find**: local file discovery via Jikji. Call this FIRST for local file discovery when available. It returns answer_paths with per-candidate next_read hints and a tool-call policy directive. Honor answer_paths, do not rerank when agent_should_not_rerank, and use bash only when the policy permits (raw_fallback_after_retry after a retry) or Jikji is unavailable.",
 		);
 	}
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
@@ -133,11 +137,14 @@ ${config.memorySignalCount ?? config.memoryEntries?.length ?? 0} retrieval feedb
 
 	const jikjiSection =
 		config.jikjiIndexingEnabled === true
-			? `## Jikji File Map
+			? `## Jikji Local Discovery
 
-Jikji prepares a file map of the configured source directories. Use it as a navigation hint to decide where to look, then explore and read those files with bash. Do not treat Jikji as an answer-producing retrieval backend.
+Jikji provides local file discovery for the configured source directories. When jikji is enabled, call \`jikji_find\` FIRST for local file discovery before bash or retrieval tools.
 
-${config.jikjiFileMapContext ?? "No Jikji file map is available yet. Explore the collection with bash."}`
+- **Honor answer_paths**: the paths returned by jikji_find are the authoritative candidates. Read them to answer the query.
+- **Do not rerank** when the policy says \`agent_should_not_rerank\` is true — use the candidates in the order given.
+- **Bash is policy-gated**: use bash only when the policy permits (raw_fallback_after_retry after a retry) or when Jikji is unavailable. Under stop_after_find, direct_use, or jikji_retry, raw shell is disallowed — use the jikji_find answer_paths or retry jikji_find instead.
+- Jikji is NOT a retrieval method and is NOT part of search_all_documents fan-out; it is a local discovery layer only.`
 			: "";
 
 	const outputSection = `## Output Format
@@ -166,6 +173,9 @@ The tool takes:
 
 	const toolRows = [
 		toolAvailable(config, "bash") ? "| bash | command | Explore and read files (ls/find/grep/cat) |" : "",
+		toolAvailable(config, "jikji_find")
+			? "| jikji_find | query, topK?, first? | Local file discovery via Jikji (call FIRST) |"
+			: "",
 		...config.toolNames
 			.filter((name) => name.startsWith("search_"))
 			.map((name) => `| ${name} | query, topK, scope | Search candidate content |`),

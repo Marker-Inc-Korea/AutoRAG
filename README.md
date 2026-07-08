@@ -61,9 +61,11 @@ AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25**
 
 AutoRAG reads configured source directories directly through the Pi agent loop with a real `bash` shell, scoped to the `searchPaths` you provide. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
 
-### Optional Jikji indexing
+### Optional Jikji discovery and indexing
 
-AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed file-map and indexing preparation layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
+AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
+
+When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via a policy-aware `jikji_find` tool as the first local-discovery action. The tool parses and validates the upstream answer-pack and honors its `handoff_action` (`direct_use` / `jikji_retry` / `raw_fallback_after_retry`), `tool_call_policy` (`stop_after_find`, `forbidden_tools`, `allowed_followups`), and `agent_should_not_rerank`. `bash` is the fallback only when the answer-pack permits raw fallback (`raw_fallback_after_retry`, after the required retry) or when Jikji is unavailable/unconfigured. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
 Programmatic use:
 
@@ -86,15 +88,15 @@ The same `.autorag/jikji.json` shape configures Jikji when present:
   "includeHidden": false,
   "includeSensitive": false,
   "maxFiles": 0,
-  "noAgentRules": false,
+  "writeAgentRules": false,
   "enableMediaIndex": false,
   "exclude": []
 }
 ```
 
-Call `agent.prepareJikji()` (or `agent.refresh()`) to prepare configured source roots. Hidden files, sensitive files, and media indexing are disabled by default; AutoRAG does not pass `--include-hidden`, `--include-sensitive`, or `--enable-media-index` unless the corresponding option is `true`. Upstream Jikji agent-rule loading remains enabled by default; AutoRAG passes `--no-agent-rules` only when `noAgentRules: true`. AutoRAG passes `--enable-media-index` only when `enableMediaIndex: true`.
+Call `agent.prepareJikji()` (or `agent.refresh()`) to prepare configured source roots. Hidden files, sensitive files, and media indexing are disabled by default; AutoRAG does not pass `--include-hidden`, `--include-sensitive`, or `--enable-media-index` unless the corresponding option is `true`. AutoRAG-managed prepare runs with `--no-agent-rules` by default, so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`; an explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection. AutoRAG passes `--enable-media-index` only when `enableMediaIndex: true`.
 
-The upstream Rust `PrepareArgs` defines reference defaults that AutoRAG does not override unless explicitly configured: parse timeout `5.0`, max hash bytes `512 MiB`, doc text max chars `2,000,000`, doc text chunk chars `1,000,000`, and media index max MB `25.0`. AutoRAG emits `--parse-timeout`, `--max-hash-bytes`, `--doc-text-max-chars`, `--doc-text-chunk-chars`, and `--media-index-max-mb` only when the matching option is set, so the upstream defaults apply otherwise. AutoRAG searches and reads through the Pi agent loop and its registered retrieval methods; Jikji is prepare-only and does not answer queries directly.
+The upstream Rust `PrepareArgs` defines reference defaults that AutoRAG does not override unless explicitly configured: parse timeout `5.0`, max hash bytes `512 MiB`, doc text max chars `2,000,000`, doc text chunk chars `1,000,000`, and media index max MB `25.0`. AutoRAG emits `--parse-timeout`, `--max-hash-bytes`, `--doc-text-max-chars`, `--doc-text-chunk-chars`, and `--media-index-max-mb` only when the matching option is set, so the upstream defaults apply otherwise. AutoRAG answers queries through `jikji find` (find-first) plus the Pi agent loop and its registered retrieval methods; `prepare`/`refresh` are indexing-only.
 
 ### Datasource skills
 

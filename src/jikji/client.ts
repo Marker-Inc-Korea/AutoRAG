@@ -1,6 +1,14 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import type { JikjiFailureReason, JikjiOptions, JikjiPrepareOptions, JikjiPrepareResult } from "./types.ts";
+import { parseJikjiAnswerPack } from "./answer-pack.ts";
+import type {
+	JikjiFailureReason,
+	JikjiFindOptions,
+	JikjiFindResult,
+	JikjiOptions,
+	JikjiPrepareOptions,
+	JikjiPrepareResult,
+} from "./types.ts";
 
 const DEFAULT_BINARY = "jikji";
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -22,8 +30,8 @@ type BufferState = {
 
 type SpawnJikjiRequest = {
 	readonly options: JikjiOptions;
-	readonly root: string;
-	readonly prepareOptions: JikjiPrepareOptions;
+	readonly args: readonly string[];
+	readonly signal?: AbortSignal;
 };
 
 export class JikjiClient {
@@ -34,7 +42,11 @@ export class JikjiClient {
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
-		const result = await spawnJikjiPrepare({ options: this.options, root, prepareOptions: options });
+		const result = await spawnJikji({
+			options: this.options,
+			args: buildPrepareArgs(this.options, root),
+			signal: options.signal,
+		});
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -51,12 +63,52 @@ export class JikjiClient {
 			code: result.code ?? 0,
 		};
 	}
+
+	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
+		const result = await spawnJikji({
+			options: this.options,
+			args: buildFindArgs(root, query, options),
+			signal: options.signal,
+		});
+		if (!result.ok) {
+			return {
+				ok: false,
+				reason: result.reason ?? "nonzero-exit",
+				stdout: result.stdout,
+				stderr: result.stderr,
+				code: result.code,
+			};
+		}
+		const answerPack = parseJikjiAnswerPack(result.stdout);
+		if (answerPack === undefined) {
+			return {
+				ok: false,
+				reason: "bad-answer-pack",
+				stdout: result.stdout,
+				stderr: result.stderr,
+				code: result.code ?? 0,
+			};
+		}
+		return {
+			ok: true,
+			answerPack,
+			stdout: result.stdout,
+			stderr: result.stderr,
+			code: result.code ?? 0,
+		};
+	}
 }
 
-function spawnJikjiPrepare(request: SpawnJikjiRequest): Promise<ProcessResult> {
+/**
+ * Shared spawn/buffer/abort/timeout helper used by both `prepare` and `find`.
+ * Resolves a {@link ProcessResult} capturing stdout/stderr, exit code, and a
+ * failure reason when the run is degraded (timeout, abort, buffer overflow,
+ * spawn error, nonzero exit).
+ */
+function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const options = request.options;
-		const child = spawn(commandFor(options.binaryPath), buildPrepareArgs(options, request.root), {
+		const child = spawn(commandFor(options.binaryPath), request.args, {
 			env: controlledEnv(options.env),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -72,8 +124,8 @@ function spawnJikjiPrepare(request: SpawnJikjiRequest): Promise<ProcessResult> {
 			finalReason = "aborted";
 			terminate(child);
 		};
-		if (request.prepareOptions.signal?.aborted) abortHandler();
-		request.prepareOptions.signal?.addEventListener("abort", abortHandler, { once: true });
+		if (request.signal?.aborted) abortHandler();
+		request.signal?.addEventListener("abort", abortHandler, { once: true });
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => {
@@ -94,14 +146,14 @@ function spawnJikjiPrepare(request: SpawnJikjiRequest): Promise<ProcessResult> {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			request.prepareOptions.signal?.removeEventListener("abort", abortHandler);
+			request.signal?.removeEventListener("abort", abortHandler);
 			resolve({ ok: false, reason: "spawn-error", stdout: stdout.text, stderr: error.message, code: null });
 		});
 		child.on("close", (code) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
-			request.prepareOptions.signal?.removeEventListener("abort", abortHandler);
+			request.signal?.removeEventListener("abort", abortHandler);
 			if (finalReason !== undefined) {
 				resolve({ ok: false, reason: finalReason, stdout: stdout.text, stderr: stderr.text, code });
 				return;
@@ -119,7 +171,10 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 	const args = ["prepare", root, "--json"];
 	if (options.includeHidden === true) args.push("--include-hidden");
 	if (options.includeSensitive === true) args.push("--include-sensitive");
-	if (options.noAgentRules === true) args.push("--no-agent-rules");
+	// SAFE DEFAULT: never rewrite AGENTS.md/CLAUDE.md/.cursorrules.
+	// Emit --no-agent-rules unless the caller explicitly opts in via writeAgentRules.
+	// (noAgentRules is kept for back-compat but no longer controls the flag.)
+	if (options.writeAgentRules !== true) args.push("--no-agent-rules");
 	if (options.enableMediaIndex === true) args.push("--enable-media-index");
 	if (options.parseTimeout !== undefined) args.push("--parse-timeout", String(options.parseTimeout));
 	if (options.maxHashBytes !== undefined) args.push("--max-hash-bytes", String(options.maxHashBytes));
@@ -131,6 +186,18 @@ function buildPrepareArgs(options: JikjiOptions, root: string): readonly string[
 	}
 	for (const pattern of options.exclude ?? []) {
 		args.push("--exclude", pattern);
+	}
+	return args;
+}
+
+function buildFindArgs(root: string, query: string, options: JikjiFindOptions): readonly string[] {
+	const args = ["find", root, query, "--json"];
+	if (options.topK !== undefined) args.push("--top-k", String(options.topK));
+	if (options.first === true) args.push("--first");
+	if (options.fresh === true) args.push("--fresh");
+	if (options.autoPrepare === true) args.push("--auto-prepare");
+	if (options.staleAfterSeconds !== undefined) {
+		args.push("--stale-after-seconds", String(options.staleAfterSeconds));
 	}
 	return args;
 }

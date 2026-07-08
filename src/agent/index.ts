@@ -17,6 +17,15 @@ export type {
 } from "./emit-results-tool.ts";
 export { createEmitResultsTool, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "./emit-results-tool.ts";
 export {
+	createJikjiFindTool,
+	JIKJI_FIND_TOOL_NAME,
+	type JikjiFindDetails,
+	type JikjiFindPerRootPolicy,
+	type JikjiFindProvider,
+	type JikjiFindProviderResult,
+	type MergedJikjiPolicy,
+} from "./jikji-find-tool.ts";
+export {
 	createSearchAllDocumentsTool,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	type SearchAllDocumentsDetails,

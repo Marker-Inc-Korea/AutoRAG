@@ -24,6 +24,13 @@ export interface BashToolOptions {
 	readonly timeoutMs?: number;
 	/** Maximum captured output bytes before truncation. */
 	readonly maxOutputBytes?: number;
+	/**
+	 * Optional deny-by-default gate. When present and returns
+	 * `{ allowed: false }`, the command is NOT spawned; the tool returns the
+	 * gate message with `blockedByJikjiPolicy: true`. Used by the Jikji policy
+	 * to enforce stop_after_find / direct_use / forbidden bash restrictions.
+	 */
+	readonly gate?: () => { allowed: boolean; message: string };
 }
 
 export interface BashToolDetails {
@@ -32,6 +39,7 @@ export interface BashToolDetails {
 	readonly exitCode: number | undefined;
 	readonly timedOut: boolean;
 	readonly truncated: boolean;
+	readonly blockedByJikjiPolicy?: boolean;
 }
 
 interface RunResult {
@@ -120,6 +128,22 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 					content: [{ type: "text", text: "Command was empty; nothing was run." }],
 					details: { method: "bash", command: "", exitCode: undefined, timedOut: false, truncated: false },
 				};
+			}
+			if (options.gate !== undefined) {
+				const gateResult = options.gate();
+				if (!gateResult.allowed) {
+					return {
+						content: [{ type: "text", text: gateResult.message }],
+						details: {
+							method: "bash",
+							command,
+							exitCode: undefined,
+							timedOut: false,
+							truncated: false,
+							blockedByJikjiPolicy: true,
+						},
+					};
+				}
 			}
 			const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : options.cwd;
 			const timeoutMs =

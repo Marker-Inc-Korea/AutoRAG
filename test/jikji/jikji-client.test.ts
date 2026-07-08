@@ -107,7 +107,7 @@ describe("JikjiClient", () => {
 			includeHidden: false,
 			includeSensitive: false,
 			maxFiles: 0,
-			noAgentRules: false,
+			writeAgentRules: false,
 			enableMediaIndex: false,
 			exclude: [],
 		};
@@ -126,7 +126,7 @@ describe("JikjiClient", () => {
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: true });
-		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json", "--no-agent-rules"]);
 	});
 
 	it("emits a clean wire format for new JikjiClient(DEFAULT_JIKJI_OPTIONS)", async () => {
@@ -136,7 +136,7 @@ describe("JikjiClient", () => {
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: true });
-		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json", "--no-agent-rules"]);
 	});
 
 	it("emits a clean wire format for the README default-shaped config", async () => {
@@ -158,7 +158,7 @@ describe("JikjiClient", () => {
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: true });
-		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json", "--no-agent-rules"]);
 	});
 
 	it("suppresses --max-files when maxFiles is 0", async () => {
@@ -178,19 +178,19 @@ describe("JikjiClient", () => {
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: true });
-		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json"]);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json", "--no-agent-rules"]);
 	});
 
-	it("does not pass hidden sensitive no-agent-rules or media flags by default", async () => {
+	it("emits --no-agent-rules by default and suppresses hidden/sensitive/media flags", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = clientWithPath();
 
 		await client.prepare(corpusRoot);
 
 		const args = argsOfFirstCall();
+		expect(args).toContain("--no-agent-rules");
 		expect(args).not.toContain("--include-hidden");
 		expect(args).not.toContain("--include-sensitive");
-		expect(args).not.toContain("--no-agent-rules");
 		expect(args).not.toContain("--enable-media-index");
 		expect(args).not.toContain("--media-index-max-mb");
 	});
@@ -309,5 +309,228 @@ describe("JikjiClient", () => {
 		const result = await client.prepare(corpusRoot);
 
 		expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
+	});
+
+	it("writeAgentRules:true omits --no-agent-rules", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ env: pathEnv(), writeAgentRules: true });
+
+		await client.prepare(corpusRoot);
+
+		const args = argsOfFirstCall();
+		expect(args).not.toContain("--no-agent-rules");
+		expect(args).toEqual(["prepare", corpusRoot, "--json"]);
+	});
+
+	it("writeAgentRules:false still emits --no-agent-rules", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ env: pathEnv(), writeAgentRules: false });
+
+		await client.prepare(corpusRoot);
+
+		const args = argsOfFirstCall();
+		expect(args).toContain("--no-agent-rules");
+	});
+});
+
+const ANSWER_PACK = {
+	answer_paths: ["/repo/src/a.ts"],
+	paths: ["/repo/src/a.ts", "/repo/src/b.ts"],
+	candidates: [
+		{ path: "/repo/src/a.ts", next_read: "cache", label: "A", score: 0.9 },
+		{ path: "/repo/src/b.ts", next_read: "wiki" },
+	],
+	evidence_pack: [{ path: "/repo/src/a.ts", next_read: "cache" }],
+	handoff_action: "direct_use",
+	tool_call_policy: {
+		stop_after_find: true,
+		forbidden_tools: ["bash"],
+		allowed_followups: ["jikji_find"],
+	},
+	agent_should_not_rerank: true,
+};
+
+describe("JikjiClient.find", () => {
+	it("emits exactly ['find', root, query, '--json'] with no flags by default", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "how does X work");
+
+		expect(argsOfFirstCall()).toEqual(["find", corpusRoot, "how does X work", "--json"]);
+	});
+
+	it("emits --top-k only when set", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q", { topK: 5 });
+
+		const args = argsOfFirstCall();
+		expect(args).toContain("--top-k");
+		expect(args).toContain("5");
+	});
+
+	it("does not emit --top-k when unset", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q");
+
+		expect(argsOfFirstCall()).not.toContain("--top-k");
+	});
+
+	it("emits --first only when set", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q", { first: true });
+
+		expect(argsOfFirstCall()).toContain("--first");
+	});
+
+	it("emits --fresh only when set", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q", { fresh: true });
+
+		expect(argsOfFirstCall()).toContain("--fresh");
+	});
+
+	it("emits --auto-prepare only when set", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q", { autoPrepare: true });
+
+		expect(argsOfFirstCall()).toContain("--auto-prepare");
+	});
+
+	it("does not emit --auto-prepare by default", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q");
+
+		expect(argsOfFirstCall()).not.toContain("--auto-prepare");
+	});
+
+	it("emits --stale-after-seconds only when set", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "q", { staleAfterSeconds: 60 });
+
+		const args = argsOfFirstCall();
+		expect(args).toContain("--stale-after-seconds");
+		expect(args).toContain("60");
+	});
+
+	it("emits all find flags together in the right order", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		await client.find(corpusRoot, "query", {
+			topK: 3,
+			first: true,
+			fresh: true,
+			autoPrepare: true,
+			staleAfterSeconds: 30,
+		});
+
+		expect(argsOfFirstCall()).toEqual([
+			"find",
+			corpusRoot,
+			"query",
+			"--json",
+			"--top-k",
+			"3",
+			"--first",
+			"--fresh",
+			"--auto-prepare",
+			"--stale-after-seconds",
+			"30",
+		]);
+	});
+
+	it("parses a valid answer-pack into ok:true with right answerPaths", async () => {
+		writeFakeJikji(`console.log(${JSON.stringify(JSON.stringify(ANSWER_PACK))});`);
+		const client = clientWithPath();
+
+		const result = await client.find(corpusRoot, "q");
+
+		expect(result).toMatchObject({ ok: true });
+		if (result.ok) {
+			expect(result.answerPack.answerPaths).toEqual(["/repo/src/a.ts"]);
+			expect(result.answerPack.candidates).toHaveLength(2);
+			expect(result.answerPack.candidates[0]?.nextRead).toBe("cache");
+			expect(result.answerPack.handoffAction).toBe("direct_use");
+			expect(result.answerPack.toolCallPolicy.stopAfterFind).toBe(true);
+			expect(result.answerPack.toolCallPolicy.forbiddenTools).toEqual(["bash"]);
+			expect(result.answerPack.agentShouldNotRerank).toBe(true);
+			expect(result.code).toBe(0);
+		}
+	});
+
+	it("returns ok:false reason 'bad-answer-pack' on malformed stdout", async () => {
+		writeFakeJikji('process.stdout.write("this is not json");');
+		const client = clientWithPath();
+
+		const result = await client.find(corpusRoot, "q");
+
+		expect(result).toMatchObject({ ok: false, reason: "bad-answer-pack" });
+	});
+
+	it("returns ok:false reason 'bad-answer-pack' on JSON missing required fields", async () => {
+		writeFakeJikji('console.log(JSON.stringify({ hello: "world" }));');
+		const client = clientWithPath();
+
+		const result = await client.find(corpusRoot, "q");
+
+		expect(result).toMatchObject({ ok: false, reason: "bad-answer-pack" });
+	});
+
+	it("returns ok:false reason 'nonzero-exit' on nonzero exit", async () => {
+		writeFakeJikji("console.error('index not prepared');", 2);
+		const client = clientWithPath();
+
+		const result = await client.find(corpusRoot, "q");
+
+		expect(result).toMatchObject({ ok: false, reason: "nonzero-exit" });
+		if (!result.ok) {
+			expect(result.code).toBe(2);
+		}
+	});
+
+	it("returns ok:false reason 'spawn-error' when binary is missing", async () => {
+		const client = new JikjiClient({ binaryPath: join(root, "does-not-exist"), env: pathEnv() });
+
+		const result = await client.find(corpusRoot, "q");
+
+		expect(result).toMatchObject({ ok: false, reason: "spawn-error" });
+	});
+
+	it("returns ok:false reason 'timeout' without throwing", async () => {
+		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
+		const client = new JikjiClient({ env: pathEnv(), timeoutMs: 50 });
+
+		const result = await client.find(corpusRoot, "q");
+
+		expect(result).toMatchObject({ ok: false, reason: "timeout" });
+	});
+
+	it("terminates the child when AbortController aborts", async () => {
+		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
+		const controller = new AbortController();
+		const client = new JikjiClient({ env: pathEnv(), timeoutMs: 5000 });
+
+		const pending = client.find(corpusRoot, "q", { signal: controller.signal });
+		await waitForLogFile();
+		controller.abort();
+		const result = await pending;
+
+		expect(result).toMatchObject({ ok: false, reason: "aborted" });
+		expect(loggedCalls()).toHaveLength(1);
 	});
 });
