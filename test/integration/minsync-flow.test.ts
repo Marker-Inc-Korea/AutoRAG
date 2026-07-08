@@ -166,7 +166,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 
 		const { results, diagnostics } = await agent.retrieveWithDiagnostics("manager", { topK: 5 });
 
-		expect(results.some((r) => r.metadata.method === "posix")).toBe(true);
+		expect(results).toEqual([]);
 		const minsync = diagnostics.find((d) => d.source === "minsync");
 		expect(minsync?.code).toBe("minsync-unavailable");
 		expect(minsync?.message).not.toContain(missingBinary);

@@ -32,7 +32,7 @@ export interface SearchAllDocumentsDetails {
 }
 
 /**
- * LLM-facing, path-opaque wrapper around multi-method merged retrieval. The
+ * LLM-facing wrapper around multi-method merged retrieval. The
  * schema accepts only `{ query, topK?, scope? }`; datasource trust fields such
  * as `allowedTags`/`allowedScopes` are not part of the schema and are never
  * forwarded to the provider — only `query`, `topK`, and `scope` are passed

@@ -59,7 +59,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			workspacePath: root,
 		});
 
-		expect(methodNames(agent)).toEqual(["posix"]);
+		expect(methodNames(agent)).toEqual([]);
 	});
 
 	it("keeps Jikji out of the retrieval registry when configured", () => {
@@ -70,7 +70,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			jikji: { binaryPath },
 		});
 
-		expect(methodNames(agent)).toEqual(["posix"]);
+		expect(methodNames(agent)).toEqual([]);
 		expect(agent.getMethodRegistry().get("jikji")).toBeUndefined();
 	});
 
@@ -83,7 +83,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			jikji: { binaryPath },
 		});
 
-		expect(methodNames(agent)).toEqual(["posix", "minsync"]);
+		expect(methodNames(agent)).toEqual(["minsync"]);
 	});
 
 	it("prepares Jikji maps without contributing retrieval results", async () => {
@@ -100,7 +100,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 
 		expect(prepareResults?.[0]).toMatchObject({ ok: true });
 		expect(loggedArgs()).toEqual([["prepare", docs, "--json"]]);
-		expect(retrievalResults[0]?.metadata.method).toBe("posix");
+		expect(retrievalResults).toEqual([]);
 	});
 
 	it("adds prompt guidance that Jikji is indexing context, not a retrieval backend", () => {
@@ -113,8 +113,9 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 
 		const prompt = agent.getSystemPrompt();
 
-		expect(prompt).toContain("Jikji is enabled only as an indexing and file-map preparation layer");
-		expect(prompt).toContain("do not call `jikji find`");
+		expect(prompt).toContain("## Jikji File Map");
+		expect(prompt).toContain("navigation hint");
+		expect(prompt).toContain("Do not treat Jikji as an answer-producing retrieval backend");
 	});
 	it("only ever invokes `jikji prepare ... --json`, never `jikji find`", async () => {
 		writeFakeJikji();
@@ -144,7 +145,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 
 		await expect(agent.prepareJikji()).resolves.toBeUndefined();
 		const results = await agent.retrieve("document", { topK: 1 });
-		expect(results[0]?.metadata.method).toBe("posix");
+		expect(results).toEqual([]);
 	});
 
 	it("surfaces a path-free degraded diagnostic when the configured Jikji binary is missing", async () => {

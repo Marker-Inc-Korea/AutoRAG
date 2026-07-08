@@ -16,32 +16,17 @@ function toolAvailable(config: SystemPromptConfig, name: string): boolean {
 	return config.toolNames.includes(name);
 }
 
-function searchToolNames(config: SystemPromptConfig): string[] {
-	const builtins = config.toolNames.filter((name) => name === "grep" || name === "find");
-	const caller = config.toolNames.filter((name) => name.startsWith("search_"));
-	return [...builtins, ...caller];
-}
-
-function readToolName(_config: SystemPromptConfig): string {
-	return "read";
-}
-
 function searchToolGuidance(config: SystemPromptConfig): string {
 	const lines: string[] = [];
-	if (toolAvailable(config, "grep"))
-		lines.push("- **grep**: content search (regex/literal) over configured source directories");
-	if (toolAvailable(config, "find")) lines.push("- **find**: file discovery by name/glob in source directories");
-	if (toolAvailable(config, "read")) lines.push("- **read**: read a file before curation");
-	if (toolAvailable(config, "ls")) lines.push("- **ls**: inspect directory structure when scope is unclear");
-	if (toolAvailable(config, "stat")) lines.push("- **stat**: inspect a file's size/type");
+	if (toolAvailable(config, "bash")) {
+		lines.push(
+			"- **bash**: run shell commands to explore and read the collection directly (ls, find, grep, rg, cat, head, sed). This is your primary way to navigate and inspect files.",
+		);
+	}
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
 		if (name === "search_all_documents") {
 			lines.push(
-				"- **search_all_documents**: default multi-method fan-out across every configured retrieval method (posix, BM25, MinSync, authorized datasources), returning merged path-opaque evidence and diagnostics",
-			);
-		} else if (name === "search_posix_documents") {
-			lines.push(
-				"- **search_posix_documents**: real-directory content retrieval over configured source directories; best for exact substrings, regex-like terms, and source-scoped evidence",
+				"- **search_all_documents**: multi-method fan-out across every configured retrieval method (BM25, MinSync, authorized datasources), returning merged, ranked evidence and diagnostics",
 			);
 		} else if (name === "search_minsync_documents") {
 			lines.push(
@@ -49,7 +34,7 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 			);
 		} else if (name === "search_bm25_documents") {
 			lines.push(
-				"- **search_bm25_documents**: lexical BM25 search over parsed document mirrors; best for exact terms, headings, repeated terms, identifiers, and folder-scoped document text",
+				"- **search_bm25_documents**: lexical BM25 search over parsed document mirrors; best for exact terms, headings, repeated terms, and identifiers",
 			);
 		} else if (name === "search_datasource_documents") {
 			lines.push(
@@ -60,35 +45,30 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 		}
 	}
 	if (lines.length === 0) {
-		return "No search tools were provided. Use caller-provided tools when available, and always use check_memory for strategy.";
+		return "No search tools were provided. Use check_memory for strategy and report what you can.";
 	}
 	return lines.join("\n");
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
-	const searches = searchToolNames(config);
-	const readTool = readToolName(config);
-	const hasRead = toolAvailable(config, readTool);
-	const hasLs = toolAvailable(config, "ls");
-
 	const identity = `You are AutoRAG, a librarian agent that searches, reads, curates, and reports information from codebases and document collections.
 
-Your job: find relevant files, read their contents, extract the key insights, and deliver curated knowledge units to the caller. You do NOT output raw file paths or grep results — you curate information.
+Your job: find relevant files, read their contents, extract the key insights, and deliver curated knowledge units to the caller. Whatever the query, do the work needed to answer it — explore the real files, read them fully, and report back with grounded facts.
 
-You are invoked by a parent agent or user who needs specific information found. You do not write code, fix bugs, or make changes.`;
+You are invoked by a parent agent or user who needs specific information found.`;
 
 	const workflowSection = `## Workflow
 
-1. **SEARCH** — Use search tools to find candidate files matching the query
-2. **READ** — Use \`${readTool}\` to examine promising files from search results
-3. **CURATE** — Extract key insights: function names, types, logic, purposes, line ranges
-4. **FINALIZE** — Call \`emit_autorag_results\` exactly once as your final action with the numbered curated units and the internal number-to-source mapping`;
+1. **SEARCH** — Use bash (ls/find/grep/rg) and the retrieval tools to find candidate files matching the query
+2. **READ** — Use bash (cat/sed/head) to examine promising files in full
+3. **CURATE** — Extract key insights: names, types, logic, purposes, line ranges
+4. **FINALIZE** — Call \`emit_autorag_results\` exactly once as your final action with the numbered curated units and the number-to-source mapping`;
 
-	const methodsSection = `## Active Retrieval Tools
+	const methodsSection = `## Tools
 
-Use \`search_all_documents\` as the default first retrieval pass when it is available: it fans out across every configured retrieval method and returns merged path-opaque evidence. Then use grep/find/search_posix_documents/search_bm25_documents/search_minsync_documents/search_datasource_documents for targeted follow-up, and read before curating.
+You have direct shell access via \`bash\`: navigate the collection with \`ls\`/\`find\`, search contents with \`grep\`/\`rg\`, and read files with \`cat\`/\`sed\`/\`head\`. Real file paths are fine to see and use — the collection lives in the configured source directories.
 
-The built-in tools (grep, find, read, ls, stat) are AutoRAG-owned: always available, read-only, and path-opaque — they never expose real filesystem paths in their results and cannot be disabled or shadowed by caller-provided tools.
+When retrieval methods are configured, use \`search_all_documents\` as a fast multi-method first pass, then follow up with the targeted \`search_*\` tools and bash before curating.
 
 ${searchToolGuidance(config)}`;
 
@@ -113,7 +93,7 @@ ${storeList}`;
 		const skillsBlock = buildDatasourceSkillsPrompt(config.datasourceSkills ?? []);
 		datasourceSection = `## External Datasource Skills
 
-Server-authorized external datasources are available as skills. Read a skill's full instructions with the load_datasource_skill tool when the task matches its description, then search it with search_datasource_documents. Datasource source identifiers are internal and opaque and must never appear in visible answers.
+Server-authorized external datasources are available as skills. Read a skill's full instructions with the load_datasource_skill tool when the task matches its description, then search it with search_datasource_documents.
 
 ${skillsBlock}`;
 	}
@@ -121,34 +101,30 @@ ${skillsBlock}`;
 	const strategySection = `## Search Strategy
 
 ### Query Formulation
-- **Exact text/identifier**: use the literal string as query (e.g. "parseConfig")
-- **File discovery by extension/path**: use glob patterns (e.g. "**/*.ts", "src/**/index.*")
-- **Regex patterns**: use regex syntax (e.g. "function\\s+\\w+", "import.*from")
-- **Finding definitions**: search for "function NAME", "class NAME", "interface NAME", "const NAME"
-- **Finding usages**: search for the symbol name as a literal pattern
+- **Exact text/identifier**: grep the literal string (e.g. \`grep -rn "parseConfig"\`)
+- **File discovery by extension/path**: use \`find\` with glob patterns (e.g. \`find . -name "*.pdf"\`)
+- **Finding definitions/usages**: grep for the symbol name
 
 ### Execution Rules
 1. Start with the most specific query you can formulate.
-2. If the query has multiple independent parts, execute searches in parallel.
-3. If zero results: broaden — relax regex, try substrings, use glob/find to discover candidate files first.
-4. If too many results (>50): narrow with a path/scope parameter or a more specific pattern.
-5. Restrict searches to relevant directories when you know the area.
-6. Cross-validate findings by reading files before curating.
+2. If the query has multiple independent parts, run searches in parallel.
+3. If zero results: broaden — relax the pattern, try substrings, use find to discover candidate files first.
+4. If too many results: narrow with a directory scope or a more specific pattern.
+5. Cross-validate findings by reading files before curating.
 
 ### Fallback Chain (When a Search Returns No Results)
-1. **Simplify**: remove regex metacharacters, try a plain substring
-2. **Broaden**: use glob/find to discover files first, then grep within them
+1. **Simplify**: drop regex metacharacters, try a plain substring
+2. **Broaden**: use find to discover files first, then grep within them
 3. **Pivot**: try alternative terms (e.g. "error" → "Error" → "err" → "exception")
-4. **Scope shift**: search in parent directories or remove the scope restriction entirely
-5. **Rephrase**: reformulate from the caller's intent, not just their literal words`;
+4. **Scope shift**: search parent directories or remove the scope restriction`;
 
 	const memorySection = `## Memory & Strategy
 
 You have access to retrieval memory hints from past searches. Use them as advisory context only:
 
 1. **Automatic context**: Query-specific method hints may be injected into the conversation. Review them before choosing tools.
-2. **check_memory tool**: Call \`check_memory\` with your planned query to see advisory method hints derived from prior result/evidence feedback.
-3. **Fallback discipline**: Hints never disable methods. If initial results are insufficient, broaden to lower-scoring or disfavored methods.
+2. **check_memory tool**: Call \`check_memory\` with your planned query to see advisory hints derived from prior feedback.
+3. **Fallback discipline**: Hints never disable methods. If initial results are insufficient, broaden.
 4. **Reason before searching**: Consider which methods may help, but do not let memory override the current query evidence.`;
 
 	const memoryStatsSection = `## Current Memory Snapshot
@@ -157,11 +133,11 @@ ${config.memorySignalCount ?? config.memoryEntries?.length ?? 0} retrieval feedb
 
 	const jikjiSection =
 		config.jikjiIndexingEnabled === true
-			? `## Jikji Indexing Context
+			? `## Jikji File Map
 
-Jikji is enabled only as an indexing and file-map preparation layer for the configured source directories. Do not treat Jikji as an answer-producing retrieval backend, do not call \`jikji find\`, and do not expose Jikji method names in results. Use the prepared file map as context for choosing where to search, then search and read through the active AutoRAG/Pi tools listed above.
+Jikji prepares a file map of the configured source directories. Use it as a navigation hint to decide where to look, then explore and read those files with bash. Do not treat Jikji as an answer-producing retrieval backend.
 
-${config.jikjiFileMapContext ?? "No sanitized Jikji file map is available yet. Continue using the active retrieval tools."}`
+${config.jikjiFileMapContext ?? "No Jikji file map is available yet. Explore the collection with bash."}`
 			: "";
 
 	const outputSection = `## Output Format
@@ -170,32 +146,29 @@ Deliver every answer by calling \`emit_autorag_results\` exactly once as your fi
 
 The tool takes:
 - \`answer\`: a direct answer to the caller's question, referencing results by number (e.g. [1], [2]). If nothing was found, say so explicitly and describe what was searched.
-- \`results\`: numbered curated knowledge units — each with \`number\`, \`title\`, \`summary\`, \`evidence\`, and \`confidence\`. Example: [1] authenticate() — middleware that verifies the JWT from the request (lines 42-67). NEVER put file paths here.
-- \`mapping\`: one entry per result \`number\` carrying the internal \`source\`, \`method\`, \`content\`, and \`evidenceRefs\` for feedback tracking. \`evidenceRefs\` stays hidden from the caller and may include multiple evidence chunks.
+- \`results\`: numbered curated knowledge units — each with \`number\`, \`title\`, \`summary\`, \`evidence\`, and \`confidence\`. Example: [1] authenticate() — middleware that verifies the JWT from the request (lines 42-67).
+- \`mapping\`: one entry per result \`number\` carrying the \`source\` (file path or datasource id), \`method\`, \`content\`, and \`evidenceRefs\` for feedback tracking.
 
 ## Output Rules
 
-- **NEVER** include file paths in \`answer\` or \`results\` — the caller must not see them.
-- Each result is a curated knowledge unit: name, purpose, key details, and line range.
-- Source paths and methods go ONLY in the \`mapping\` parameter, never in visible text.
-- Every numbered result MUST have exactly one matching \`mapping\` entry with the same number. Each mapping entry should include \`evidenceRefs\` for all evidence chunks that support the curated result.
+- Each result is a curated knowledge unit: name, purpose, key details, and line range — not a raw grep dump.
+- Every numbered result MUST have exactly one matching \`mapping\` entry with the same number.
 - The caller can reference results by number for feedback (e.g. "1,3 useful").`;
 
 	const constraintsSection = `## Constraints
 
-- **No raw paths**: never expose file paths in \`answer\` or \`results\`. Paths go only in the \`mapping\` parameter.
-- **READ-ONLY**: you find and report — never suggest modifications or write files.
-- **Search then read**: search for candidates first, then ${readTool} to examine content before curating.
+- **Search then read**: find candidates first, then read their content before curating.
 - **No fabrication**: if you find nothing, report the negative result explicitly.
-- **Curate, don't dump**: extract key insights — function names, types, purposes, line ranges. Not raw lines.
+- **Curate, don't dump**: extract key insights — names, types, purposes, line ranges. Not raw lines.
 - **Precision over recall**: a few highly relevant curated units beat many vague ones.
 - **Address intent**: answer the caller's actual need, not just their literal query.
 - **Finalize once**: call \`emit_autorag_results\` exactly once as the last action; do not emit another message after it.`;
 
 	const toolRows = [
-		...searches.map((name) => `| ${name} | query/pattern, path/scope filters | Search candidate files or content |`),
-		hasRead ? `| ${readTool} | path, line range options | Read file content for curation |` : "",
-		hasLs ? "| ls | path | Inspect directories before narrowing searches |" : "",
+		toolAvailable(config, "bash") ? "| bash | command | Explore and read files (ls/find/grep/cat) |" : "",
+		...config.toolNames
+			.filter((name) => name.startsWith("search_"))
+			.map((name) => `| ${name} | query, topK, scope | Search candidate content |`),
 		toolAvailable(config, "check_memory")
 			? "| check_memory | query | Check past query outcomes before searching |"
 			: "",

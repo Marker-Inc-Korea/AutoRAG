@@ -31,12 +31,12 @@ const emitResultsSchema = Type.Object({
 			),
 			confidence: Type.Number({ description: "Confidence in this result, 0..1" }),
 		}),
-		{ description: "Numbered curated knowledge units. NEVER include file paths here." },
+		{ description: "Numbered curated knowledge units." },
 	),
 	mapping: Type.Array(
 		Type.Object({
 			number: Type.Integer({ description: "Matches the result number this entry maps" }),
-			source: Type.String({ description: "Internal source identifier (opaque root-relative path)" }),
+			source: Type.String({ description: "Source identifier — a real file path or a datasource id" }),
 			method: Type.String({ description: "Retrieval method or tool that produced the source" }),
 			content: Type.String({ description: "Raw content snippet for feedback tracking" }),
 			evidenceRefs: Type.Optional(
@@ -102,7 +102,7 @@ export function createEmitResultsTool(
 		name: EMIT_AUTORAG_RESULTS_TOOL_NAME,
 		label: "Emit AutoRAG Results",
 		description:
-			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Source paths go only in the mapping parameter, never in the answer or results.",
+			"Return the final structured AutoRAG answer. Call this exactly once as your last action after searching, reading, and curating. Put each result's source (file path or datasource id) in the mapping parameter.",
 		parameters: emitResultsSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<AutoRAGResultsDetails>> {
 			const details: AutoRAGResultsDetails = {

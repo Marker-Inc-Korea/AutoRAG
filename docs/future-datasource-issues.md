@@ -26,6 +26,6 @@ Use `.github/ISSUE_TEMPLATE/datasource-skill.md` and labels `datasource-skill`, 
 
 - Access is default-deny and server-bound.
 - Tool arguments cannot grant `allowedTags` or `allowedScopes`.
-- Results are filtered before merge and use opaque slash-hierarchical source IDs.
-- Diagnostics are path/PII opaque and non-throwing for expected auth/API failures.
+- Results are filtered before merge and use slash-hierarchical source IDs.
+- Diagnostics are non-throwing for expected auth/API failures.
 - README/docs/manual QA are updated for the datasource.

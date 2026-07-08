@@ -54,27 +54,28 @@ describe("AutoRAGAgent", () => {
 		expect(agent).toBeDefined();
 	});
 
-	it("defaults to check_memory and built-in search tools for library mode", () => {
+	it("defaults to bash, check_memory, and search_* retrieval tools for library mode", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
+		expect(prompt).toContain("bash");
+		expect(prompt).toContain("librarian");
 		expect(prompt).toContain("check_memory");
 		for (const name of [
-			"grep",
-			"find",
-			"read",
-			"ls",
-			"stat",
-			"search_posix_documents",
+			"search_bm25_documents",
 			"search_minsync_documents",
 			"search_all_documents",
+			"search_datasource_documents",
 		]) {
 			expect(prompt).toContain(name);
 		}
-		expect(prompt).not.toContain("bash");
+		// deleted builtin/posix surface is gone
+		expect(prompt).not.toContain("search_posix_documents");
 		expect(prompt).not.toContain("read_file");
+		expect(prompt).not.toContain("READ-ONLY");
+		expect(prompt).not.toContain("No raw paths");
 	});
 
 	it("includes caller-provided search tools in system prompt", () => {
@@ -109,13 +110,13 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).not.toContain("read_file");
 	});
 
-	it("system prompt never falls back to read_file when read is absent", () => {
+	it("system prompt references bash and never falls back to read_file", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["check_memory"],
 			memoryEntries: [],
 			manifests: [],
 		});
-		expect(prompt).toContain("`read`");
+		expect(prompt).toContain("bash");
 		expect(prompt).not.toContain("read_file");
 	});
 
@@ -177,8 +178,10 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("READ-ONLY");
-		expect(prompt).toContain("No raw paths");
+		expect(prompt).toContain("Constraints");
+		expect(prompt).toContain("No fabrication");
+		expect(prompt).not.toContain("READ-ONLY");
+		expect(prompt).not.toContain("No raw paths");
 		expect(prompt).not.toContain("internal_mapping");
 	});
 

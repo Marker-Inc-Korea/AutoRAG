@@ -319,7 +319,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			0,
 		);
 	});
-	it("redacts configured paths from answer, title, summary, and evidence (#6)", async () => {
+	it("preserves real paths verbatim in answer, title, summary, and evidence (#6)", async () => {
 		const home = homedir();
 		const dotAutorag = join(tmpDir, ".autorag", "parsed", "x.md");
 		const model = fauxModel(
@@ -342,14 +342,12 @@ describe("AutoRAGAgent searchDocuments", () => {
 		const response = await agent.searchDocuments("Meeting");
 		const blob = JSON.stringify(response);
 
-		expect(blob).not.toContain(tmpDir);
-		expect(blob).not.toContain(home);
-		expect(blob).not.toContain("/data/notes.txt");
-		// Hidden registry keeps the original opaque source untouched for feedback.
+		// Real paths flow through verbatim — path opacity is removed.
+		expect(blob).toContain(tmpDir);
+		expect(blob).toContain(home);
+		expect(blob).toContain("/data/notes.txt");
+		// Hidden registry keeps the original source untouched for feedback.
 		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/data/notes.txt");
-		// A path-redacted diagnostic is emitted.
-		expect(response.diagnostics?.some((d) => d.code === "path-redacted")).toBe(true);
-		expect(JSON.stringify(response.diagnostics)).not.toContain(tmpDir);
 	});
 
 	it("does not redact benign path-like text (#6 negative cases)", async () => {
@@ -378,7 +376,6 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(response.results[0]?.title).toBe("docs/policy overview");
 		expect(response.results[0]?.summary).toBe("Visit https://example.com/a/b for details");
 		expect(response.results[0]?.evidence[0]?.excerpt).toBe("cat docs/policy");
-		expect(response.diagnostics?.some((d) => d.code === "path-redacted")).toBe(false);
 	});
 
 	it("always populates diagnostics at runtime even with nothing to redact (#6/#21)", async () => {
@@ -445,7 +442,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(JSON.stringify(response.diagnostics)).not.toContain(tmpDir);
 	});
 
-	it("[red-team] scrubs every leak vector while preserving benign lookalikes (#6)", async () => {
+	it("[red-team] preserves every real path verbatim alongside benign lookalikes (#6)", async () => {
 		const home = homedir();
 		const dot = join(tmpDir, ".autorag");
 		const model = fauxModel(
@@ -467,15 +464,16 @@ describe("AutoRAGAgent searchDocuments", () => {
 		const response = await agent.searchDocuments("Meeting");
 		const blob = JSON.stringify(response);
 
-		expect(blob).not.toContain(tmpDir);
-		expect(blob).not.toContain(home);
-		expect(blob).not.toContain("/data/secret.txt");
+		// Real paths are preserved verbatim — path opacity is removed.
+		expect(blob).toContain(tmpDir);
+		expect(blob).toContain(home);
+		expect(blob).toContain("/data/secret.txt");
+		// Benign lookalikes are still preserved.
 		expect(response.answer).toContain("docs/policy");
 		expect(response.answer).toContain("https://ex.com/a");
 		expect(response.results[0]?.title).toContain("product Report.txt");
 		expect(response.results[0]?.summary).toContain("[2]");
 		expect(response.results[0]?.evidence[0]?.excerpt).toContain("cat docs/policy");
-		expect(response.diagnostics?.filter((d) => d.code === "path-redacted")).toHaveLength(1);
 	});
 	it("does not parse or index in the query path (no refresh/syncParsedMirrors during searchDocuments) (#22)", async () => {
 		const model = fauxModel(

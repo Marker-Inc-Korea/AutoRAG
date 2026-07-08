@@ -7,7 +7,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
-import type { DatasourceDiagnostic, DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	JikjiClient,
@@ -35,10 +35,10 @@ import {
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
-import { PosixMethod } from "../retrieval/methods/posix.ts";
+
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
-import { createBuiltinSearchTools } from "./builtin-search-tools.ts";
+import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -63,7 +63,7 @@ import {
 	type SearchDocumentsResponse,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
-import { createSearchPosixDocumentsTool, SEARCH_POSIX_DOCUMENTS_TOOL_NAME } from "./search-posix-tool.ts";
+
 import { buildSystemPrompt, type SystemPromptConfig } from "./system-prompt.ts";
 import {
 	createWatchRefresh,
@@ -73,21 +73,12 @@ import {
 } from "./watch-refresh.ts";
 
 const SEARCH_TOOLS = [
-	"grep",
-	"find",
-	SEARCH_POSIX_DOCUMENTS_TOOL_NAME,
+	BASH_TOOL_NAME,
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 	SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 ] as const;
-
-/**
- * Caller tool names that are always dropped from {@link AutoRAGAgentOptions.tools}.
- * `bash` would expose real filesystem paths; `read_file` collides with the
- * AutoRAG-owned `read` built-in.
- */
-const DROPPED_CALLER_TOOL_NAMES = new Set<string>(["bash", "read_file"]);
 
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
@@ -209,7 +200,7 @@ export class AutoRAGAgent {
 	private readonly retriever = new ParallelRetriever();
 	private readonly merger = new ResultMerger();
 	private readonly datasourceFilter = new DatasourceResultFilter();
-	private readonly posixMethod: PosixMethod;
+
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
 	private readonly bm25Method: BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
@@ -231,8 +222,7 @@ export class AutoRAGAgent {
 		this.searchPaths = options.searchPaths;
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
 		this.parserOptions = options.parserOptions;
-		this.posixMethod = new PosixMethod({ root: this.workspaceProjectRoot, searchPaths: this.searchPaths });
-		this.methodRegistry.register(this.posixMethod);
+
 		if (options.minSync) {
 			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
@@ -255,37 +245,29 @@ export class AutoRAGAgent {
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
-		const searchPosixTool = createSearchPosixDocumentsTool(() => this.posixMethod);
+
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(() => this.minSyncMethod);
 		const searchAllTool = createSearchAllDocumentsTool(this);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 
-		// AutoRAG-owned read-only, path-opaque built-ins. Always present and cannot
-		// be disabled or shadowed by caller-provided tools.
-		const builtinTools = createBuiltinSearchTools({
-			root: this.workspaceProjectRoot,
-			searchPaths: this.searchPaths,
-		});
-		const builtinNames = new Set(builtinTools.map((tool) => tool.name));
+		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot });
 
-		// Reserved AutoRAG tool names: built-ins plus internal tools the agent
-		// always owns. Caller tools with these names are dropped (reserved wins),
-		// never rejected. `bash`/`read_file` are always dropped regardless.
+		// Reserved AutoRAG tool names the agent always owns. Caller tools with
+		// these names are dropped (reserved wins), never rejected.
 		const reservedNames = new Set<string>([
-			...builtinNames,
+			BASH_TOOL_NAME,
 			"check_memory",
 			SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
-			SEARCH_POSIX_DOCUMENTS_TOOL_NAME,
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
-			if (DROPPED_CALLER_TOOL_NAMES.has(tool.name) || reservedNames.has(tool.name)) {
+			if (reservedNames.has(tool.name)) {
 				droppedCallerToolNames.push(tool.name);
 				return false;
 			}
@@ -293,15 +275,13 @@ export class AutoRAGAgent {
 		});
 		this.droppedCallerToolNames = [...new Set(droppedCallerToolNames)];
 
-		// Deterministic, duplicate-free ordering: built-ins first, then surviving
-		// caller tools, then AutoRAG-internal tools. Uniqueness is guaranteed
-		// before the Agent is constructed and before the prompt is built.
+		// Deterministic, duplicate-free ordering: bash first, then surviving
+		// caller tools, then AutoRAG-internal tools.
 		const orderedTools: AgentTool[] = [
-			...builtinTools,
+			bashTool,
 			...callerTools,
 			checkMemoryTool,
 			searchBM25Tool,
-			searchPosixTool,
 			searchMinSyncTool,
 			searchAllTool,
 			searchDatasourceTool,
@@ -506,7 +486,6 @@ export class AutoRAGAgent {
 			captured,
 			this.sessions,
 			this.memory,
-			{ workspaceRoot: this.workspaceProjectRoot, searchPaths: this.searchPaths },
 			this.collectComponentDiagnostics(),
 		);
 	}
@@ -546,8 +525,8 @@ export class AutoRAGAgent {
 		const results: DatasourceIndexResult[] = [];
 		for (const skill of this.datasourceSkills) {
 			try {
-				results.push(sanitizeDatasourceIndexResult(await skill.index()));
-			} catch {
+				results.push(await skill.index());
+			} catch (error) {
 				const descriptor = skill.describe();
 				results.push({
 					ok: false,
@@ -558,14 +537,14 @@ export class AutoRAGAgent {
 						{
 							code: "datasource-index-failed",
 							severity: "error",
-							message: "Datasource indexing failed; details suppressed for datasource privacy.",
+							message: error instanceof Error ? error.message : "Datasource indexing failed.",
 							source: descriptor.name,
 							instanceId: descriptor.instanceId,
 						},
 					],
 					error: "datasource-index-failed",
 					code: "datasource-index-failed",
-					message: "Datasource indexing failed; details suppressed for datasource privacy.",
+					message: error instanceof Error ? error.message : "Datasource indexing failed.",
 				});
 			}
 		}
@@ -870,7 +849,7 @@ export class AutoRAGAgent {
 	}
 
 	/**
-	 * Programmatic retrieval that also returns path-opaque diagnostics for any
+	 * Programmatic retrieval that also returns diagnostics for any
 	 * retrieval method that failed (e.g. MinSync binary missing). Healthy method
 	 * results are preserved. The legacy {@link retrieve} return shape is unchanged.
 	 */
@@ -938,39 +917,6 @@ export class AutoRAGAgent {
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
 	}
-}
-
-function sanitizeDatasourceIndexResult(result: DatasourceIndexResult): DatasourceIndexResult {
-	if (result.ok) {
-		return { ...result, diagnostics: result.diagnostics.map(sanitizeDatasourceDiagnostic) };
-	}
-	return {
-		...result,
-		diagnostics: result.diagnostics.map(sanitizeDatasourceDiagnostic),
-		...(result.message !== undefined ? { message: sanitizeDatasourceText(result.message) } : {}),
-		...(result.error !== undefined ? { error: sanitizeDatasourceText(result.error) } : {}),
-	};
-}
-
-function sanitizeDatasourceDiagnostic(diagnostic: DatasourceDiagnostic): DatasourceDiagnostic {
-	return {
-		...diagnostic,
-		message: sanitizeDatasourceText(diagnostic.message),
-		source: sanitizeDatasourceSource(diagnostic.source),
-	};
-}
-
-function sanitizeDatasourceText(value: string): string {
-	if (value.includes("/") || value.includes("\\") || /^[a-zA-Z]:[\\/]/u.test(value)) {
-		return "Datasource operation failed; details suppressed for datasource privacy.";
-	}
-	return value;
-}
-
-function sanitizeDatasourceSource(value: string | undefined): string | undefined {
-	if (value === undefined) return undefined;
-	if (value.includes("/") || value.includes("\\") || /^[a-zA-Z]:[\\/]/u.test(value)) return "datasource";
-	return value;
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

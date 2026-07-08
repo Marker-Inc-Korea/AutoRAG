@@ -1,6 +1,6 @@
 # KakaoTalk / katok manual QA
 
-This checklist validates the KakaoTalk datasource without exposing local KakaoTalk storage paths or personal identifiers.
+This checklist validates the KakaoTalk datasource skill and its default-deny access controls.
 
 ## Preconditions
 
@@ -24,16 +24,16 @@ new AutoRAGAgent({
 1. **Default deny**
    - Remove `datasourceAccess`.
    - Run `searchDatasourceDocuments("hello")`.
-   - Expected: zero datasource results; no error; no path/PII in output.
+   - Expected: zero datasource results; no error.
 
 2. **Trusted allow**
    - Restore `allowedTags: ["kakaotalk"]` and an instance scope such as `/kakao/personal/**`.
    - Run `agent.refresh()`.
-   - Expected: `components.datasources` is `configured` or `degraded`; any diagnostic is path-opaque.
+   - Expected: `components.datasources` is `configured` or `degraded`.
 
 3. **Scope narrowing**
    - Search with a narrower scope inside the trusted instance.
-   - Expected: only matching opaque `/kakao/personal/...` results survive.
+   - Expected: only matching `/kakao/personal/...` results survive.
    - Search with a scope outside trusted access, e.g. `/kakao/other/**`.
    - Expected: zero results.
 
@@ -43,12 +43,12 @@ new AutoRAGAgent({
 
 5. **Missing binary / permission failure**
    - Point `KatokClient` at a nonexistent binary or run without required OS permissions.
-   - Expected: no throw; diagnostic is warning/error and does not contain `/Users`, `Library/Containers`, `com.kakao`, account IDs, or phone numbers.
+   - Expected: no throw; the failure surfaces as a warning/error diagnostic.
 
-6. **Public response opacity**
+6. **Public response curation**
    - Run `searchDocuments()` and let the librarian curate a KakaoTalk-supported answer.
-   - Expected: visible `answer` and `results` contain curated facts only. Internal opaque sources may appear only in hidden mapping/session state, never in visible text.
+   - Expected: visible `answer` and `results` contain curated facts grounded in the datasource evidence.
 
 ## Environment limitation note
 
-CI and most development containers do not have a real KakaoTalk profile or macOS app-container permissions. In those environments, perform checks 1, 4, 5, and path-opacity assertions with the test/fake katok client; record real-data checks as manually blocked by missing local KakaoTalk credentials rather than bypassing the safety requirements.
+CI and most development containers do not have a real KakaoTalk profile or macOS app-container permissions. In those environments, perform checks 1, 4, and 5 with the test/fake katok client; record real-data checks as manually blocked by missing local KakaoTalk credentials rather than bypassing the safety requirements.

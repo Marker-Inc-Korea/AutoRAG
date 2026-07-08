@@ -214,7 +214,7 @@ function toolNames(agent: AutoRAGAgent): string[] {
 }
 
 describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
-	it("uses mandatory built-ins, retrieval tools, datasource fan-out, Jikji map, and path-opaque output", async () => {
+	it("uses mandatory built-ins, retrieval tools, datasource fan-out, Jikji map, and verbatim real paths", async () => {
 		writeFakeJikji();
 		const datasourceRows: RetrievalResult[] = [
 			{
@@ -228,10 +228,7 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 		const model = fauxModel(
 			fauxAssistantMessage(
 				[
-					fauxToolCall("find", { query: "q3" }),
-					fauxToolCall("grep", { pattern: "director approval", isRegex: false, maxResults: 5 }),
-					fauxToolCall("read", { source: "/docs/q3.txt", start: 1, end: 3 }),
-					fauxToolCall("search_posix_documents", { query: "director approval", topK: 3 }),
+					fauxToolCall("bash", { command: "grep -rn 'director approval' docs/q3.txt" }),
 					fauxToolCall("search_minsync_documents", { query: "refund exception semantics", topK: 2 }),
 					fauxToolCall("search_bm25_documents", { query: "refund director approval", topK: 3 }),
 					fauxToolCall("search_all_documents", { query: "refund director approval finance kakao", topK: 6 }),
@@ -253,10 +250,8 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 		});
 
 		for (const name of [
-			"grep",
-			"find",
-			"read",
-			"search_posix_documents",
+			"bash",
+			"check_memory",
 			"search_minsync_documents",
 			"search_bm25_documents",
 			"search_all_documents",
@@ -287,10 +282,8 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 		expect(response.answer).toContain("[2]");
 		expect((response.diagnostics ?? []).some((diagnostic) => diagnostic.message.includes("MinSync"))).toBe(true);
 		expect(serialized).toContain("Refund exceptions now require director approval");
-		expect(serialized).not.toContain(root);
-		expect(serialized).not.toContain(docs);
-		expect(serialized).not.toContain("missing-minsync");
-		expect(serialized).not.toMatch(/[A-Z]:[\\/]/u);
+		// path opacity is gone: the curated source path is retained verbatim in
+		// the internal registry (below); the public response is not scrubbed.
 
 		const registry = agent.getResultRegistry(response.sessionId);
 		expect(registry.get(1)?.source).toBe("/docs/q3.txt");

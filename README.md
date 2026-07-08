@@ -2,9 +2,9 @@
 
 **A self-evolving librarian agent for document collections.**
 
-AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No file paths. No raw grep dumps. Just answers.
+AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No raw grep dumps. Just answers.
 
-AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a read-only librarian. There is one agent and one usage model.
+AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. There is one agent and one usage model.
 
 ## Why AutoRAG
 
@@ -55,11 +55,11 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with a real-directory `posix` method wired through the `RetrievalMethodRegistry`, and the architecture is ready for vector, BM25, and hybrid backends. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
+AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The agent also explores the collection directly with a `bash` shell tool (`ls`/`find`/`grep`/`cat`). The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
 
 ### Real directory access
 
-AutoRAG reads configured source directories directly through the Pi agent loop, scoped to the `searchPaths` you provide. Curated answers are returned as a structured `SearchDocumentsResponse`; source identifiers stay internal (opaque root-relative paths) for feedback and curation and are never placed in the visible answer. MinSync continues to index parsed markdown mirrors under `.autorag`.
+AutoRAG reads configured source directories directly through the Pi agent loop with a real `bash` shell, scoped to the `searchPaths` you provide. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
 
 ### Optional Jikji indexing
 
@@ -104,8 +104,7 @@ Security defaults are intentionally strict:
 
 - datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags` and `datasourceAccess.allowedScopes`;
 - model/tool arguments never grant datasource tags or scopes;
-- `search_datasource_documents` accepts only `{ query, topK?, scope? }`, and `scope` can only narrow trusted access;
-- public `SearchDocumentsResponse` output remains path/PII opaque.
+- `search_datasource_documents` accepts only `{ query, topK?, scope? }`, and `scope` can only narrow trusted access.
 
 KakaoTalk is the first datasource skill. It uses the external [`katok`](https://github.com/NomaDamas/katok) CLI only — AutoRAG never reads KakaoTalk databases directly. `katok` failures return diagnostics instead of throwing, and remote embedding egress configuration is rejected before the CLI is spawned.
 
@@ -173,7 +172,7 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
     └──────┬──────┘
            ▼
     ┌─────────────┐
-    │   Search     │ ← grep, find, vector, BM25 (pluggable)
+    │   Search     │ ← bash (ls/find/grep), BM25, MinSync (pluggable)
     └──────┬──────┘
            ▼
     ┌─────────────┐

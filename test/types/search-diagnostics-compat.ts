@@ -26,7 +26,7 @@ export const responseWithoutDiagnostics: SearchDocumentsResponse = {
 };
 
 const severity: SearchDocumentDiagnosticSeverity = "warning";
-const code: SearchDocumentDiagnosticCode = "path-redacted";
+const code: SearchDocumentDiagnosticCode = "unknown-warning";
 const diagnostic: SearchDocumentDiagnostic = { code, severity, message: "m", source: "sanitizer" };
 
 // Runtime-shaped response WITH diagnostics populated.

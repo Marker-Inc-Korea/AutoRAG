@@ -1,5 +1,5 @@
 export { DatasourceAccessContext, type DatasourceAccessContextOptions } from "./access-context.ts";
-export { mapDatasourceDiagnostic, mapDatasourceDiagnostics, opaqueSourceLabel } from "./diagnostics.ts";
+export { mapDatasourceDiagnostic, mapDatasourceDiagnostics } from "./diagnostics.ts";
 export { type CronParseResult, isDue, parseCronExpr } from "./polling.ts";
 export { DatasourceSkillRegistry, type RegisteredDatasourceSkill } from "./registry.ts";
 export { DatasourceResultFilter, type ResultsByMethod } from "./result-filter.ts";

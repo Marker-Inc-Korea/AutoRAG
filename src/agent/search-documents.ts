@@ -1,14 +1,13 @@
 import { normalizeSessionEvidenceRef, type RetrievalMemory, type SessionEvidenceRef } from "../memory/memory.ts";
 import type { CuratedResult } from "../retrieval/types.ts";
 import type { AutoRAGMappingEntry, AutoRAGResultsDetails } from "./emit-results-tool.ts";
-import { createPathSanitizer, type PathSanitizer } from "./public-output-sanitizer.ts";
 
 export type SearchDocumentWarning = "empty-query";
 
 export type SearchDocumentDiagnosticSeverity = "info" | "warning" | "error";
 
 /**
- * Stable, path-opaque diagnostic codes surfaced through the public search
+ * Stable diagnostic codes surfaced through the public search
  * response. The union is intentionally broad so later degraded-mode wiring
  * (#21/#22) does not require another source-breaking type change; codes not yet
  * emitted are still valid members.
@@ -17,7 +16,6 @@ export type SearchDocumentDiagnosticCode =
 	| "empty-query"
 	| "unknown-warning"
 	| "caller-tool-dropped"
-	| "path-redacted"
 	| "bm25-unavailable"
 	| "bm25-degraded-fallback"
 	| "minsync-unavailable"
@@ -39,12 +37,6 @@ export interface SearchDocumentDiagnostic {
 	readonly message: string;
 	/** Component label (e.g. "sanitizer", "bm25") or opaque virtual path — never a real filesystem path. */
 	readonly source?: string;
-}
-
-/** Redaction context for the public-output sanitizer, supplied by the agent. */
-export interface RedactionContext {
-	readonly workspaceRoot: string;
-	readonly searchPaths: readonly string[];
 }
 
 export interface SearchDocumentEvidence {
@@ -132,7 +124,6 @@ export function recordStructuredResultsSession(
 	details: AutoRAGResultsDetails,
 	sessions: SearchSessions,
 	memory: RetrievalMemory,
-	redactionContext?: RedactionContext,
 	componentDiagnostics: readonly SearchDocumentDiagnostic[] = [],
 ): SearchDocumentsResponse {
 	const resultNumbers = details.results.map((result) => result.number).sort((a, b) => a - b);
@@ -170,44 +161,28 @@ export function recordStructuredResultsSession(
 	sessions.set(sessionId, { query, registry });
 	memory.save();
 
-	const sanitizer = buildSanitizer(details, redactionContext);
-	let redacted = false;
-	const scrub = (text: string): string => {
-		const outcome = sanitizer.sanitize(text);
-		if (outcome.redacted) redacted = true;
-		return outcome.text;
-	};
-
 	const results: SearchDocumentResult[] = details.results.map((result) => ({
 		number: result.number,
-		title: scrub(result.title),
-		summary: scrub(result.summary),
+		title: result.title,
+		summary: result.summary,
 		evidence: result.evidence.map((evidence) =>
 			evidence.lineNumber !== undefined
-				? { excerpt: scrub(evidence.excerpt), lineNumber: evidence.lineNumber }
-				: { excerpt: scrub(evidence.excerpt) },
+				? { excerpt: evidence.excerpt, lineNumber: evidence.lineNumber }
+				: { excerpt: evidence.excerpt },
 		),
 		confidence: confidenceFrom(result.confidence),
 		feedbackId: `${sessionId}:${result.number}`,
 	}));
-	const answer = scrub(details.answer);
+	const answer = details.answer;
 
 	const diagnostics: SearchDocumentDiagnostic[] = [];
-	if (redacted) {
-		diagnostics.push({
-			code: "path-redacted",
-			severity: "warning",
-			message: "Removed internal source paths from the public answer/results before returning them.",
-			source: "sanitizer",
-		});
-	}
 	// Never silently drop unknown emitted warnings — route them to diagnostics.
 	for (const warning of details.warnings) {
 		if (warning === "empty-query") continue;
 		diagnostics.push({
 			code: "unknown-warning",
 			severity: "info",
-			message: `Unrecognized warning from the search agent: ${scrub(warning)}`,
+			message: `Unrecognized warning from the search agent: ${warning}`,
 			source: "agent",
 		});
 	}
@@ -222,24 +197,6 @@ export function recordStructuredResultsSession(
 		warnings: normalizeWarnings(details.warnings),
 		diagnostics,
 	};
-}
-
-function buildSanitizer(details: AutoRAGResultsDetails, redactionContext?: RedactionContext): PathSanitizer {
-	if (redactionContext === undefined) {
-		return { sanitize: (text) => ({ text, redacted: false }) };
-	}
-	const sources = new Set<string>();
-	for (const entry of details.mapping) {
-		if (entry.source) sources.add(entry.source);
-		for (const ref of entry.evidenceRefs) {
-			if (ref.source) sources.add(ref.source);
-		}
-	}
-	return createPathSanitizer({
-		workspaceRoot: redactionContext.workspaceRoot,
-		searchPaths: redactionContext.searchPaths,
-		sources,
-	});
 }
 
 export function recordNumberedFeedback(

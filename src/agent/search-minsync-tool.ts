@@ -21,7 +21,7 @@ export interface SearchMinSyncDocumentsDetails {
 }
 
 /**
- * LLM-facing, path-opaque wrapper around the {@link MinSyncVectorMethod} vector
+ * LLM-facing wrapper around the {@link MinSyncVectorMethod} vector
  * retrieval. The model can only supply `query`, `topK`, and an opaque `scope`.
  * When the method is missing, the binary is missing, or retrieval errors, the
  * tool returns a path-free unavailable message with `available: false` and a

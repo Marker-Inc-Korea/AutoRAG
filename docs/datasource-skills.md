@@ -19,7 +19,7 @@ RetrievalMethodRegistry
   -> memory / curation
 ```
 
-A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists without exposing real storage paths.
+A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
 
 ## Access model
 
@@ -34,7 +34,7 @@ Model-controlled tool arguments cannot grant access. The LLM-visible `search_dat
 { query: string; topK?: number; scope?: string }
 ```
 
-`scope` is only a user-requested narrowing filter. A result must match both the trusted allow-scopes and the requested scope to survive. Datasource paths are slash-hierarchical opaque IDs such as `/kakao/personal/chunks/abc123`; fragment-style paths with `#` are denied.
+`scope` is only a user-requested narrowing filter. A result must match both the trusted allow-scopes and the requested scope to survive. Datasource paths are slash-hierarchical IDs such as `/kakao/personal/chunks/abc123`; fragment-style paths with `#` are denied.
 
 ## Indexing metadata
 
@@ -55,7 +55,7 @@ A skill can publish `instances`, for example:
 - KakaoTalk account -> chat corpus
 - Notion workspace -> database/page tree
 
-Every instance must map to an opaque datasource root like `/kakao/personal` or `/slack/workspace/channel`. Real account IDs, filesystem paths, local app container paths, and phone numbers must not appear in public output.
+Every instance maps to a datasource root like `/kakao/personal` or `/slack/workspace/channel`.
 
 ## KakaoTalk via katok
 
@@ -66,7 +66,7 @@ Rules:
 - AutoRAG never reads KakaoTalk databases directly.
 - Missing binary, permission, sync, or indexing failures return diagnostics instead of throwing.
 - Remote embedding egress configuration is rejected before spawning `katok`.
-- Katok stdout/stderr and thrown error text are sanitized before becoming datasource diagnostics.
+- Katok stdout/stderr and thrown error text surface as datasource diagnostics.
 
 Example:
 
@@ -90,9 +90,9 @@ const hits = await agent.searchDatasourceDocuments("contract renewal", { topK: 5
 
 - Implement `DatasourceSkill`.
 - Return retrieval methods whose descriptors set `datasourceId` and authorization `tags`.
-- Emit only opaque slash-hierarchical `source` values.
+- Emit slash-hierarchical `source` values.
 - Include polling/cron metadata.
-- Provide source descriptions that explain the data content without exposing paths.
-- Add default-deny, multi-scope, user-scope intersection, and path-opacity tests.
+- Provide source descriptions that explain the data content.
+- Add default-deny, multi-scope, and user-scope intersection tests.
 - Add no-throw diagnostics for missing credentials/binaries/permissions.
 - Add issue labels `datasource-skill`, `integration`, and a source-specific label.

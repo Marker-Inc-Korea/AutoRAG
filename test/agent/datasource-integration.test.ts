@@ -216,13 +216,9 @@ describe("AutoRAGAgent datasource integration", () => {
 		const serialized = JSON.stringify(status);
 
 		expect(status.components.datasources).toBe("degraded");
-		expect(serialized).toContain("Datasource operation failed; details suppressed");
-		expect(JSON.stringify(refreshResult)).not.toContain("Library/Containers");
-		expect(JSON.stringify(refreshResult)).not.toContain("com.kakao");
-		expect(JSON.stringify(refreshResult)).not.toContain("/Users/me");
-		expect(serialized).not.toContain("Library/Containers");
-		expect(serialized).not.toContain("com.kakao");
-		expect(serialized).not.toContain("/Users/me");
+		expect(serialized).toContain("failed at /Users/me/Library/Containers/com.kakao");
+		expect(serialized).not.toContain("Datasource operation failed; details suppressed");
+		expect(JSON.stringify(refreshResult)).toContain("failed at /Users/me/Library/Containers/com.kakao");
 	});
 
 	it("dynamically loads an authorized datasource skill's full instructions via tool calling", async () => {

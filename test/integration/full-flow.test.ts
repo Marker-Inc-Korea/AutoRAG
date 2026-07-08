@@ -99,7 +99,7 @@ describe("Full flow integration", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent.getSystemPrompt()).toContain("check_memory");
-		expect(agent.getSystemPrompt()).toContain("search_posix_documents");
+		expect(agent.getSystemPrompt()).toContain("search_bm25_documents");
 		expect(agent.getSystemPrompt()).toContain("search_all_documents");
 	});
 
