@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { runSearch, type SearchDeps } from "../../src/cli/commands/search.ts";
@@ -84,14 +85,31 @@ describe("runSearch", () => {
 		expect(stderr.join("\n")).toContain("Usage");
 	});
 
-	it("returns exit 2 naming --model-provider/--model-id when no model is configured", async () => {
-		// No agentFactory: runSearch must resolve a model. With no model flags,
-		// no config file, and the standard process env, resolveModel throws.
-		const { ctx, stderr } = makeCtx({ positionals: ["anything"], cwd: tmpDir });
-		const code = await runSearch(ctx);
-		expect(code).toBe(2);
-		const text = stderr.join("\n");
-		expect(text).toMatch(/--model-provider|--model-id/);
+	it("passes the default Sol model and API key into the production agent factory", async () => {
+		const model: Model<"openai-responses"> = {
+			id: "gpt-5.6-sol",
+			name: "GPT-5.6 Sol",
+			api: "openai-responses",
+			provider: "myproxy",
+			baseUrl: "https://proxy.example/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400_000,
+			maxTokens: 128_000,
+		};
+		let received: { modelId?: string; apiKey?: string } | undefined;
+		const { ctx } = makeCtx({ positionals: ["anything"], cwd: tmpDir });
+		const code = await runSearch(ctx, {
+			modelResolver: () => ({ model, apiKey: "secret" }),
+			agentFactory: (options) => {
+				received = { modelId: options.model?.id, apiKey: options.apiKey };
+				return { searchDocuments: async () => cannedResponse() };
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(received).toEqual({ modelId: "gpt-5.6-sol", apiKey: "secret" });
 	});
 
 	it("renders the documented search envelope as --json via an injected agentFactory", async () => {

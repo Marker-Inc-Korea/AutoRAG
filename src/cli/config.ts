@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getModel } from "@earendil-works/pi-ai";
+import { type Api, getModel, type Model } from "@earendil-works/pi-ai";
 import type { AutoRAGAgentOptions } from "../agent/agent.ts";
+import { type LoadLocalAutoRAGModelsOptions, loadLocalAutoRAGModels } from "../subagents/local-models.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "autorag.config.json";
 
@@ -176,6 +177,20 @@ export function resolveModel(config: CliConfig): ReturnType<typeof getModel> {
 		);
 	}
 	return getModel(config.model.provider as never, config.model.id as never);
+}
+
+export interface ResolvedAgentModel {
+	readonly model: Model<Api>;
+	readonly apiKey?: string;
+}
+
+export function resolveAgentModel(
+	config: CliConfig,
+	localOptions: LoadLocalAutoRAGModelsOptions = {},
+): ResolvedAgentModel {
+	if (config.model !== undefined) return { model: resolveModel(config) };
+	const local = loadLocalAutoRAGModels(localOptions);
+	return { model: local.orchestrator, apiKey: local.apiKey };
 }
 
 export function writeDefaultConfig(path: string, partial: Partial<CliConfig>, opts?: { force?: boolean }): void {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { AutoRAGAgent, type AutoRAGSessionFactory } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
 
@@ -32,7 +32,19 @@ afterEach(() => {
 
 function fauxModel(...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
-	reg.setResponses(responses);
+	reg.setResponses([
+		fauxAssistantMessage(
+			[
+				fauxToolCall("subagent", {
+					agent: "autorag-explorer",
+					model: "faux/gpt-5.6-luna",
+					task: "Explore the assigned documents",
+				}),
+			],
+			{ stopReason: "toolUse" },
+		),
+		...responses,
+	]);
 	registrations.push(reg);
 	return reg.getModel();
 }
@@ -72,11 +84,100 @@ function callerTool(name: string): AgentTool {
 	};
 }
 
+function fauxSessionFactory(): AutoRAGSessionFactory {
+	return async (options) => {
+		const subagentTool: AgentTool = {
+			name: "subagent",
+			label: "Subagent",
+			description: "Test explorer",
+			parameters: Type.Object({
+				agent: Type.String(),
+				model: Type.String(),
+				task: Type.String(),
+			}),
+			execute: async () => ({ content: [{ type: "text", text: "explored" }], details: {} }),
+		};
+		const agent = new Agent({
+			initialState: {
+				systemPrompt: options.systemPrompt,
+				model: options.model,
+				tools: [subagentTool, ...options.tools],
+			},
+			convertToLlm: (messages) =>
+				messages.filter(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				),
+		});
+		return {
+			agent,
+			prompt: async (prompt: string) => agent.prompt(prompt),
+			abort: async () => agent.abort(),
+			dispose: () => {},
+		};
+	};
+}
+
 function makeAgent(model: ReturnType<typeof fauxModel>, memoryPath = join(tmpDir, "memory.json")) {
-	return new AutoRAGAgent({ model, searchPaths: [FIXTURE_DIR], memoryPath, workspacePath: tmpDir });
+	return new AutoRAGAgent({
+		model,
+		searchPaths: [FIXTURE_DIR],
+		memoryPath,
+		workspacePath: tmpDir,
+		sessionFactory: fauxSessionFactory(),
+	});
 }
 
 describe("AutoRAGAgent searchDocuments", () => {
+	it("routes search through the mandatory session factory with the Luna explorer contract", async () => {
+		let sessionPrompt = "";
+		let sessionSystemPrompt = "";
+		let sessionToolNames: readonly string[] = [];
+		const model = fauxModel(
+			emitResults({
+				answer: "[1] Mandatory session result",
+				results: [
+					{ number: 1, title: "Mandatory", summary: "session", evidence: [{ excerpt: "session" }], confidence: 1 },
+				],
+				mapping: [{ number: 1, source: "/data/session.txt", method: "bash", content: "session" }],
+			}),
+			fauxAssistantMessage("done", { stopReason: "stop" }),
+		);
+		const baseFactory = fauxSessionFactory();
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			sessionFactory: async (options) => {
+				sessionSystemPrompt = options.systemPrompt;
+				sessionToolNames = options.tools.map((tool) => tool.name);
+				const session = await baseFactory(options);
+				return {
+					...session,
+					prompt: async (prompt) => {
+						sessionPrompt = prompt;
+						await session.prompt(prompt);
+					},
+				};
+			},
+		});
+
+		const response = await agent.searchDocuments("What changed in the renewal policy?");
+
+		expect(response.answer).toContain("Mandatory session result");
+		expect(sessionToolNames).toContain(EMIT_AUTORAG_RESULTS_TOOL_NAME);
+		expect(sessionSystemPrompt).toContain("pi-subagents");
+		expect(sessionPrompt).toContain("faux/gpt-5.6-luna");
+		expect(sessionPrompt).toMatch(/must use.*subagent/i);
+		expect(sessionPrompt).toMatch(/original query/i);
+		expect(sessionPrompt).toMatch(/retrieval method/i);
+		expect(sessionPrompt).toMatch(/query variants/i);
+		expect(sessionPrompt).toMatch(/weak.*candidate/i);
+		expect(sessionPrompt).toContain("retrievedAt");
+		expect(sessionPrompt).toMatch(/temporal metadata/i);
+		expect(sessionPrompt).toMatch(/orchestrator.*final/i);
+	});
+
 	it("includes virtual path scope in the agent search prompt", () => {
 		const agent = makeAgent(fauxModel());
 		const prompt = agent.buildSearchPrompt("refund policy", { topK: 3, scope: "/docs/policies" });
@@ -139,6 +240,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
 			tools: [callerTool("bash"), callerTool("grep"), callerTool("search_all_documents")],
+			sessionFactory: fauxSessionFactory(),
 		});
 
 		const response = await agent.searchDocuments("Meeting");
@@ -433,6 +535,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
 			bm25: { forceEngine: "typescript-fallback" },
+			sessionFactory: fauxSessionFactory(),
 		});
 		await agent.refresh(true);
 

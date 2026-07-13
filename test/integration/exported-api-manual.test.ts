@@ -7,12 +7,14 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
 	fauxAssistantMessage,
 	fauxToolCall,
 	registerFauxProvider,
 } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/index.ts";
 import { parsedOutputPath } from "../../src/mirror/paths.ts";
@@ -37,10 +39,43 @@ afterEach(() => {
 function fauxEmitModel(args: Record<string, unknown>) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
 	reg.setResponses([
+		fauxAssistantMessage(
+			[fauxToolCall("subagent", { agent: "autorag-explorer", model: "faux/gpt-5.6-luna", task: "explore" })],
+			{ stopReason: "toolUse" },
+		),
 		fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, args)], { stopReason: "toolUse" }),
 	]);
 	registrations.push(reg);
 	return reg.getModel();
+}
+
+function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGAgent>[0]["sessionFactory"]> {
+	return async (options) => {
+		const subagentTool: AgentTool = {
+			name: "subagent",
+			label: "Subagent",
+			description: "Test explorer",
+			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
+			execute: async () => ({ content: [{ type: "text", text: "explored" }], details: {} }),
+		};
+		const agent = new Agent({
+			initialState: {
+				systemPrompt: options.systemPrompt,
+				model: options.model,
+				tools: [subagentTool, ...options.tools],
+			},
+			convertToLlm: (messages) =>
+				messages.filter(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				),
+		});
+		return {
+			agent,
+			prompt: async (prompt) => agent.prompt(prompt),
+			abort: async () => agent.abort(),
+			dispose: () => {},
+		};
+	};
 }
 
 describe("exported API — #19 Jikji optional non-retrieval boundary", () => {
@@ -99,6 +134,7 @@ describe("exported API — #6 curated output path opacity", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			sessionFactory: fauxSessionFactory(),
 		});
 
 		const response = await agent.searchDocuments("report");
@@ -142,6 +178,7 @@ describe("exported API — #21 structured degraded-mode diagnostics", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			bm25: { forceEngine: "typescript-fallback" },
+			sessionFactory: fauxSessionFactory(),
 		});
 		await agent.refresh(true);
 

@@ -7,6 +7,7 @@ import {
 	type CliConfig,
 	ConfigError,
 	DEFAULT_CONFIG_FILENAME,
+	resolveAgentModel,
 	resolveConfig,
 	resolveModel,
 	writeDefaultConfig,
@@ -240,6 +241,31 @@ describe("resolveModel", () => {
 		expect(() => resolveModel(config)).toThrow(ConfigError);
 		expect(() => resolveModel(config)).toThrow(/--model-provider/);
 		expect(() => resolveModel(config)).toThrow(/model/);
+	});
+});
+
+describe("resolveAgentModel", () => {
+	it("loads Sol and its API key from Codex myproxy config when CLI model is omitted", () => {
+		const codexConfigPath = join(root, "config.toml");
+		writeFileSync(
+			codexConfigPath,
+			'model_provider = "myproxy"\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
+			"utf8",
+		);
+		const config: CliConfig = {
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+		};
+
+		const resolved = resolveAgentModel(config, {
+			configPath: codexConfigPath,
+			env: { TEST_PROXY_KEY: "secret" },
+		});
+
+		expect(resolved.model.id).toBe("gpt-5.6-sol");
+		expect(resolved.model.provider).toBe("myproxy");
+		expect(resolved.apiKey).toBe("secret");
 	});
 });
 

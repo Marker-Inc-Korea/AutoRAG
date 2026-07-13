@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { watch as fsWatch } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { Agent, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -42,6 +42,9 @@ import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retr
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { loadLocalAutoRAGModels } from "../subagents/local-models.ts";
+import { EXPLORER_MODEL_ID, ORCHESTRATOR_MODEL_ID } from "../subagents/model-policy.ts";
+import { createMandatorySubagentSession, type MandatorySubagentSessionOptions } from "../subagents/runtime.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -155,6 +158,7 @@ interface RefreshState {
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
+	apiKey?: string;
 	searchPaths: string[];
 	manifestDir?: string;
 	memoryPath?: string;
@@ -167,7 +171,17 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	sessionFactory?: AutoRAGSessionFactory;
 }
+
+export interface AutoRAGSearchSession {
+	readonly agent: Agent;
+	prompt(text: string): Promise<void>;
+	abort(): Promise<void> | void;
+	dispose(): void;
+}
+
+export type AutoRAGSessionFactory = (options: MandatorySubagentSessionOptions) => Promise<AutoRAGSearchSession>;
 
 export type AutoRAGJikjiPrepareResult =
 	| {
@@ -184,6 +198,15 @@ export type AutoRAGJikjiPrepareResult =
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
+	private readonly tools: readonly AgentTool[];
+	private readonly configuredModel: Model<Api> | undefined;
+	private readonly apiKey: string | undefined;
+	private readonly sessionFactory: AutoRAGSessionFactory;
+	private readonly usesDefaultSessionFactory: boolean;
+	private readonly listeners = new Set<Parameters<Agent["subscribe"]>[0]>();
+	private activeSession: AutoRAGSearchSession | undefined;
+	private readonly pendingSubagentCalls = new Map<string, unknown>();
+	private successfulExplorerCalls = 0;
 	private readonly memory: RetrievalMemory;
 	private lastQuery: string | undefined;
 	private lastSessionId: string | undefined;
@@ -225,6 +248,12 @@ export class AutoRAGAgent {
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
+		this.configuredModel = options.model;
+		this.apiKey = options.apiKey;
+		this.usesDefaultSessionFactory = options.sessionFactory === undefined;
+		this.sessionFactory =
+			options.sessionFactory ??
+			(async (sessionOptions) => (await createMandatorySubagentSession(sessionOptions)).session);
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
@@ -309,6 +338,7 @@ export class AutoRAGAgent {
 			seenToolNames.add(tool.name);
 			return true;
 		});
+		this.tools = tools;
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
 			toolNames,
@@ -327,24 +357,7 @@ export class AutoRAGAgent {
 			},
 			convertToLlm: (messages) =>
 				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
-			transformContext: async (messages) => {
-				const contextMessages: Array<{
-					role: "user";
-					content: Array<{ type: "text"; text: string }>;
-					timestamp: number;
-				}> = [];
-				const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
-				const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
-				if (hints.length > 0 || insights.length > 0) {
-					const summary = renderMemoryContext(hints, { insights });
-					contextMessages.push({
-						role: "user",
-						content: [{ type: "text", text: `<memory_context>\n${summary}\n</memory_context>` }],
-						timestamp: Date.now(),
-					});
-				}
-				return contextMessages.length === 0 ? messages : [...contextMessages, ...messages];
-			},
+			transformContext: async (messages) => this.withMemoryContext(messages),
 			afterToolCall: async (context) => {
 				const toolName = context.toolCall.name;
 				if (!this.lastQuery || !(SEARCH_TOOLS as readonly string[]).includes(toolName)) return undefined;
@@ -364,6 +377,79 @@ export class AutoRAGAgent {
 		}
 	}
 
+	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
+		const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
+		const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
+		if (hints.length === 0 && insights.length === 0) return messages;
+		const summary = renderMemoryContext(hints, { insights });
+		return [
+			{
+				role: "user",
+				content: [{ type: "text", text: `<memory_context>\n${summary}\n</memory_context>` }],
+				timestamp: Date.now(),
+			},
+			...messages,
+		];
+	}
+
+	private resolveSessionModel(): {
+		readonly model: Model<Api>;
+		readonly explorerModel: string;
+		readonly apiKey?: string;
+	} {
+		if (this.configuredModel !== undefined) {
+			if (this.usesDefaultSessionFactory && this.configuredModel.id !== ORCHESTRATOR_MODEL_ID) {
+				throw new Error(
+					`AutoRAG orchestrator must use ${ORCHESTRATOR_MODEL_ID}; received ${this.configuredModel.id}`,
+				);
+			}
+			return {
+				model: this.configuredModel,
+				explorerModel: `${this.configuredModel.provider}/${EXPLORER_MODEL_ID}`,
+				...(this.apiKey !== undefined ? { apiKey: this.apiKey } : {}),
+			};
+		}
+		const local = loadLocalAutoRAGModels();
+		return {
+			model: local.orchestrator,
+			explorerModel: `${local.provider}/${local.explorer.id}`,
+			apiKey: local.apiKey,
+		};
+	}
+
+	private configureSearchSession(session: AutoRAGSearchSession): readonly (() => void)[] {
+		const extensionTransform = session.agent.transformContext;
+		session.agent.transformContext = async (messages, signal) => {
+			const transformed = extensionTransform === undefined ? messages : await extensionTransform(messages, signal);
+			return this.withMemoryContext(transformed);
+		};
+		const unsubscribers = [...this.listeners].map((listener) => session.agent.subscribe(listener));
+		unsubscribers.push(
+			session.agent.subscribe((event) => {
+				this.recordSearchToolEvent(event);
+			}),
+		);
+		return unsubscribers;
+	}
+
+	private recordSearchToolEvent(event: AgentEvent): void {
+		if (event.type === "tool_execution_start" && event.toolName === "subagent") {
+			this.pendingSubagentCalls.set(event.toolCallId, event.args);
+			return;
+		}
+		if (event.type === "tool_execution_end" && event.toolName === "subagent") {
+			const args = this.pendingSubagentCalls.get(event.toolCallId);
+			this.pendingSubagentCalls.delete(event.toolCallId);
+			if (!event.isError && isRequiredExplorerInvocation(args)) this.successfulExplorerCalls += 1;
+			return;
+		}
+		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
+		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
+		const details = event.result.details as { method?: string } | undefined;
+		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
+		this.memory.save();
+	}
+
 	private currentSystemPromptConfig(): SystemPromptConfig {
 		return {
 			...this.baseSystemPromptConfig,
@@ -372,11 +458,14 @@ export class AutoRAGAgent {
 	}
 
 	subscribe(listener: Parameters<Agent["subscribe"]>[0]): () => void {
-		return this.innerAgent.subscribe(listener);
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
 	}
 
 	abort(): void {
-		this.innerAgent.abort();
+		void this.activeSession?.abort();
 	}
 
 	/**
@@ -453,15 +542,32 @@ export class AutoRAGAgent {
 		this.activeRun = true;
 		this.activeJikjiPolicy = undefined;
 		this.jikjiFindCallCount = 0;
+		this.pendingSubagentCalls.clear();
+		this.successfulExplorerCalls = 0;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
+		let session: AutoRAGSearchSession | undefined;
+		let unsubscribers: readonly (() => void)[] = [];
 		this.resultCapture = (details) => {
 			captured = details;
 		};
 		try {
-			await this.innerAgent.prompt(this.buildSearchPrompt(trimmedQuery, options));
+			const resolved = this.resolveSessionModel();
+			session = await this.sessionFactory({
+				cwd: this.workspaceProjectRoot,
+				model: resolved.model,
+				systemPrompt: buildSystemPrompt(this.currentSystemPromptConfig()),
+				tools: this.tools,
+				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+			});
+			this.activeSession = session;
+			unsubscribers = this.configureSearchSession(session);
+			await session.prompt(this.buildSearchPrompt(trimmedQuery, options, resolved.explorerModel));
 		} finally {
+			for (const unsubscribe of unsubscribers) unsubscribe();
+			session?.dispose();
+			this.activeSession = undefined;
 			this.resultCapture = undefined;
 			this.activeRun = false;
 			this.activeJikjiPolicy = undefined;
@@ -470,6 +576,11 @@ export class AutoRAGAgent {
 
 		if (captured === undefined) {
 			throw new Error("AutoRAG agent completed without emitting structured results");
+		}
+		if (this.successfulExplorerCalls === 0) {
+			throw new Error(
+				`AutoRAG requires a successful autorag-explorer subagent call using ${EXPLORER_MODEL_ID} before final curation`,
+			);
 		}
 		return recordStructuredResultsSession(
 			sessionId,
@@ -590,11 +701,20 @@ export class AutoRAGAgent {
 		return diagnostics;
 	}
 
-	buildSearchPrompt(query: string, options: RetrievalOptions): string {
+	buildSearchPrompt(query: string, options: RetrievalOptions, explorerModel?: string): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		const resolvedExplorerModel =
+			explorerModel ?? `${this.configuredModel?.provider ?? "provider"}/${EXPLORER_MODEL_ID}`;
 		return (
-			`Find and curate information for this query: ${query}${limit}${scope}\n\n` +
+			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
+			`You must use the subagent tool before judging or emitting results; there is no single-agent fallback. ` +
+			`For process-bound BM25, MinSync, Jikji, or datasource methods, call the matching AutoRAG tool only to create a bounded seed pack, then give that pack to an explorer for document reading; POSIX/bash discovery runs in the explorer. ` +
+			`Dispatch one or more explorer tasks with agent autorag-explorer and model ${resolvedExplorerModel}. Each task must repeat the original query verbatim, ` +
+			`name at least one selected retrieval method, provide multiple query variants, and request broad evidence coverage including weakly relevant candidates. ` +
+			`Each explorer must return source-level evidence, location context, retrievedAt, source temporal metadata (or explicit unknown), and uncertainty. ` +
+			`Explorers must not decide sufficiency, resolve conflicts, assign follow-ups, curate the final answer, or call ${EMIT_AUTORAG_RESULTS_TOOL_NAME}. ` +
+			`The orchestrator alone performs final judgment, freshness checks, follow-up decisions, and final curation.\n\n` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);
@@ -1152,4 +1272,22 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		message: diagnostic.message,
 		source: diagnostic.source,
 	};
+}
+
+function isRequiredExplorerInvocation(value: unknown): boolean {
+	if (typeof value !== "object" || value === null) return false;
+	const args = value as Record<string, unknown>;
+	const matches = (task: unknown): boolean => {
+		if (typeof task !== "object" || task === null) return false;
+		const record = task as Record<string, unknown>;
+		return (
+			record.agent === "autorag-explorer" &&
+			typeof record.model === "string" &&
+			record.model.split(":", 1)[0]?.endsWith(`/${EXPLORER_MODEL_ID}`) === true
+		);
+	};
+	if (matches(args)) return true;
+	if (Array.isArray(args.tasks) && args.tasks.some(matches)) return true;
+	if (Array.isArray(args.chain) && args.chain.some(matches)) return true;
+	return false;
 }

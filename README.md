@@ -144,10 +144,8 @@ Code repositories work too (Pi's grep is ripgrep — already the best), but Auto
 
 ```typescript
 import { AutoRAGAgent } from "@autorag/librarian";
-import { getModel } from "@earendil-works/pi-ai";
 
 const agent = new AutoRAGAgent({
-  model: getModel("anthropic", "claude-sonnet-4-20250514"),
   searchPaths: ["/path/to/documents"],
 });
 

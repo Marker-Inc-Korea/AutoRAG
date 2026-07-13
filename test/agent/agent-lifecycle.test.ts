@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
@@ -9,6 +10,7 @@ import {
 	fauxToolCall,
 	registerFauxProvider,
 } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
@@ -29,7 +31,13 @@ afterEach(() => {
 
 function fauxModel(...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
-	reg.setResponses(responses);
+	reg.setResponses([
+		fauxAssistantMessage(
+			[fauxToolCall("subagent", { agent: "autorag-explorer", model: "faux/gpt-5.6-luna", task: "explore" })],
+			{ stopReason: "toolUse" },
+		),
+		...responses,
+	]);
 	registrations.push(reg);
 	return reg.getModel();
 }
@@ -47,6 +55,35 @@ function emitOne(): FauxResponseStep {
 	);
 }
 
+function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGAgent>[0]["sessionFactory"]> {
+	return async (options) => {
+		const subagentTool: AgentTool = {
+			name: "subagent",
+			label: "Subagent",
+			description: "Test explorer",
+			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
+			execute: async () => ({ content: [{ type: "text", text: "explored" }], details: {} }),
+		};
+		const agent = new Agent({
+			initialState: {
+				systemPrompt: options.systemPrompt,
+				model: options.model,
+				tools: [subagentTool, ...options.tools],
+			},
+			convertToLlm: (messages) =>
+				messages.filter(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				),
+		});
+		return {
+			agent,
+			prompt: async (prompt) => agent.prompt(prompt),
+			abort: async () => agent.abort(),
+			dispose: () => {},
+		};
+	};
+}
+
 describe("AutoRAGAgent lifecycle", () => {
 	it("subscribe observes events from the in-flight agent run", async () => {
 		const agent = new AutoRAGAgent({
@@ -54,6 +91,7 @@ describe("AutoRAGAgent lifecycle", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
+			sessionFactory: fauxSessionFactory(),
 		});
 
 		const eventTypes: string[] = [];
@@ -73,16 +111,25 @@ describe("AutoRAGAgent lifecycle", () => {
 				options?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
 			});
 		const agent = new AutoRAGAgent({
-			model: fauxModel(abortAware, emitOne()),
+			model: fauxModel(
+				abortAware,
+				fauxAssistantMessage(
+					[fauxToolCall("subagent", { agent: "autorag-explorer", model: "faux/gpt-5.6-luna", task: "explore" })],
+					{ stopReason: "toolUse" },
+				),
+				emitOne(),
+			),
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
+			sessionFactory: fauxSessionFactory(),
 		});
 
 		const inFlight = agent.searchDocuments("first");
+		const rejected = expect(inFlight).rejects.toThrow();
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		agent.abort();
-		await expect(inFlight).rejects.toThrow();
+		await rejected;
 
 		// The busy guard is cleared, so a subsequent search runs normally.
 		const response = await agent.searchDocuments("second");

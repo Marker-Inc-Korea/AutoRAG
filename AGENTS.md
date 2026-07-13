@@ -11,29 +11,29 @@ Code repositories work too. AutoRAG's value is in the exploration + retrieval me
 
 Raw search tools return file paths and matching lines. A human still has to open each file, read the context, decide what's relevant, and synthesize an answer. AutoRAG eliminates that entire workflow:
 
-1. **Explore** the collection directly with a shell (bash)
+1. **Delegate exploration** to gpt-5.6-luna explorers through `pi-subagents`
 2. **Search** across multiple retrieval methods (BM25, vector/MinSync, datasource skills — pluggable)
-3. **Read** the promising files itself
-4. **Curate** — extract key insights, not raw lines
+3. **Read** the promising files through explorer tasks
+4. **Judge and curate** — extract key insights, resolve conflicts, and assess freshness
 5. **Deliver** numbered knowledge units grounded in the sources
 6. **Learn** — remember which methods worked and adapt strategy over time
 
 ## Agent Tools
 
-The librarian runs with a real shell plus the retrieval and memory tools:
+Explorer agents run with a real shell plus the retrieval tools; the sol orchestrator uses `pi-subagents` to assign those tasks and retains `check_memory` for strategy:
 
 | Tool | What it does | When to use |
 |------|-------------|-------------|
-| `bash` | Run shell commands (`ls`, `find`, `grep`, `rg`, `cat`, `head`, `sed`). Returns combined stdout/stderr, including real file paths. | Navigate the collection, search file contents, and read files directly |
-| `jikji_find` | Run `jikji find ROOT "query" --json` and enforce the returned answer-pack policy (`handoff_action`, `tool_call_policy`, `agent_should_not_rerank`) | First local-discovery action when Jikji is configured; `bash` is the fallback only when the pack permits raw fallback or Jikji is unavailable |
-| `search_all_documents` | Fan out across every configured retrieval method and merge/rank results | Fast multi-method first pass |
-| `search_bm25_documents` | Lexical BM25 ranking over parsed document mirrors | Exact terms, headings, identifiers |
-| `search_minsync_documents` | MinSync semantic/vector retrieval over parsed mirrors | Conceptual, meaning-based evidence |
-| `search_datasource_documents` | Search authorized external datasource skills | KakaoTalk chats, etc. (server-bound access) |
+| `bash` | Explorer task shell for `ls`, `find`, `grep`, `rg`, `cat`, `head`, and `sed`. Returns combined stdout/stderr, including real file paths. | Navigate and read the collection inside an assigned explorer task |
+| `jikji_find` | Explorer task running `jikji find ROOT "query"` and enforcing the returned answer-pack policy (`handoff_action`, `tool_call_policy`, `agent_should_not_rerank`) | First local-discovery action when Jikji is configured; `bash` is the fallback only when the pack permits raw fallback or Jikji is unavailable |
+| `search_all_documents` | Explorer task fan-out across every configured retrieval method and merge/rank results | Fast multi-method first pass |
+| `search_bm25_documents` | Explorer task lexical BM25 ranking over parsed document mirrors | Exact terms, headings, identifiers |
+| `search_minsync_documents` | Explorer task MinSync semantic/vector retrieval over parsed mirrors | Conceptual, meaning-based evidence |
+| `search_datasource_documents` | Explorer task search of authorized external datasource skills | KakaoTalk chats, etc. (server-bound access) |
 | `check_memory` | Query past search outcomes | See which methods/queries succeeded before |
 | `emit_autorag_results` | Terminating tool that returns curated results | Final action of every run |
 
-AutoRAG explores the collection with `bash` and consults the retrieval methods; there is no separate builtin `grep`/`find`/`read`/`ls` tool and no `posix` retrieval method.
+Explorer agents explore the collection with `bash` and consult the retrieval methods; the sol orchestrator delegates those tasks through `pi-subagents`. There is no separate builtin `grep`/`find`/`read`/`ls` tool and no `posix` retrieval method.
 
 ## Architecture
 
@@ -62,7 +62,7 @@ AutoRAG is designed for **multi-method retrieval** — different methods for dif
 | Vector (other backends) | Planned | Other dense-document backends, "find similar to X" |
 | Hybrid (vector+BM25) | Planned | Best-of-both fusion with score normalization |
 
-The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods are registered and routed through `ParallelRetriever` + `ResultMerger`. New methods implement the `RetrievalMethod` interface and plug into the same pipeline. Plain-directory content search is no longer a registered retrieval method — the agent does that directly with `bash`.
+The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods are registered and routed through `ParallelRetriever` + `ResultMerger`. New methods implement the `RetrievalMethod` interface and plug into the same pipeline. Plain-directory content search is no longer a registered retrieval method — explorer tasks do that directly with `bash`.
 
 Jikji is intentionally not a retrieval method. It is an optional **find-first local-discovery** layer: when configured, AutoRAG calls `jikji find ROOT "query" --json` via a policy-aware `jikji_find` tool as the first local-discovery action. The tool parses and validates the upstream answer-pack and honors its `handoff_action` (`direct_use` / `jikji_retry` / `raw_fallback_after_retry`), `tool_call_policy` (`stop_after_find`, `forbidden_tools`, `allowed_followups`), and `agent_should_not_rerank`. `bash` is the fallback only when the answer-pack permits raw fallback (`raw_fallback_after_retry`, after the required retry) or when Jikji is unavailable/unconfigured. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
@@ -72,9 +72,11 @@ The first concrete datasource is KakaoTalk through the external `katok` CLI. Aut
 
 ## Directory Access
 
-AutoRAG navigates document collections directly through `bash`, scoped to the configured `searchPaths` / workspace root. The Pi agent loop uses `bash` plus `check_memory` and the retrieval tools, and finalizes through the `emit_autorag_results` structured tool. Real file paths are visible to the agent and may appear in curated results and their source mapping.
+gpt-5.6-luna explorers navigate document collections through `bash` and the configured retrieval tools, scoped to `searchPaths` / workspace root. The gpt-5.6-sol orchestrator delegates that work, judges the returned evidence, and finalizes through the `emit_autorag_results` structured tool. Real file paths are visible to explorers and may appear in curated results and their source mapping; the orchestrator must not bypass the required delegation with direct search.
 
-- **Tool surface** — the agent runs with `bash`, `jikji_find` (when Jikji is configured), `check_memory`, the `search_*` retrieval tools, `load_datasource_skill`, and `emit_autorag_results`, plus any non-reserved caller-provided tools.
+Subagent role separation, dispatch inputs, explorer handoff metadata, and the mandatory `pi-subagents` workflow are defined in [docs/subagent-orchestration.md](docs/subagent-orchestration.md). The `gpt-5.6-sol` orchestrator owns judgment, sufficiency, conflicts, freshness, timing, follow-up assignments, and final curation; `gpt-5.6-luna` explorers provide broad retrieval/read evidence, including weak candidates and temporal metadata. A single-agent fallback is forbidden.
+
+- **Tool surface** — explorer tasks run with `bash`, `jikji_find` (when Jikji is configured), `check_memory`, the `search_*` retrieval tools, `load_datasource_skill`, and `emit_autorag_results`, plus any non-reserved caller-provided tools; the orchestrator uses `pi-subagents` to assign those tasks.
 - **Parsed mirrors** — `AutoRAGAgent.refresh()` parses supported files from configured source directories into `.autorag/parsed`; BM25 and MinSync index those parsed mirrors.
 - **Jikji find-first** — when Jikji is configured, `jikji_find` runs `jikji find ROOT "query" --json` as the first local-discovery action and enforces the returned `handoff_action` / `tool_call_policy` / `agent_should_not_rerank`; `bash` is the fallback only when the pack permits raw fallback or Jikji is unavailable. `prepare`/`refresh` remain for indexing only; AutoRAG-managed prepare runs with `--no-agent-rules` by default so it never rewrites the consumer repo's `AGENTS.md`/`CLAUDE.md`/`.cursorrules`. An explicit `writeAgentRules: true` opt-in re-enables upstream routing-block injection.
 - **Datasource skills** — `AutoRAGAgent` can register `datasourceSkills`; their retrieval methods are merged with the normal retrieval pipeline, filtered before merging by trusted datasource access, and indexed during `refresh()`.
@@ -83,10 +85,8 @@ AutoRAG navigates document collections directly through `bash`, scoped to the co
 
 ```typescript
 import { AutoRAGAgent } from "@autorag/librarian";
-import { getModel } from "@earendil-works/pi-ai";
 
 const agent = new AutoRAGAgent({
-  model: getModel("anthropic", "claude-sonnet-4-20250514"),
   searchPaths: ["/path/to/documents"],
 });
 const response = await agent.searchDocuments("summarize the Q3 financial report");

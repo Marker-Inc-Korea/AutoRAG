@@ -19,60 +19,91 @@ function searchToolGuidance(config: SystemPromptConfig): string {
 	const lines: string[] = [];
 	if (toolAvailable(config, "bash")) {
 		lines.push(
-			"- **bash**: run shell commands to explore and read the collection directly (ls, find, grep, rg, cat, head, sed). This is your primary way to navigate and inspect files.",
+			"- **bash/POSIX assignment**: explorers use their read-only read/grep/find/ls tools to perform filesystem discovery without mutation or shell access.",
 		);
 	}
 	if (toolAvailable(config, "jikji_find")) {
 		lines.push(
-			"- **jikji_find**: local file discovery via Jikji. Call this FIRST for local file discovery when available. It returns answer_paths with per-candidate next_read hints and a tool-call policy directive. Honor answer_paths, do not rerank when agent_should_not_rerank, and use bash only when the policy permits (raw_fallback_after_retry after a retry) or Jikji is unavailable.",
+			"- **jikji_find** (process-bound seed retrieval): local file discovery via Jikji. Call this FIRST for local file discovery when available, then delegate its answer paths for explorer reading. Honor handoff_action/tool_call_policy, never rerank when agent_should_not_rerank, and permit raw bash only after the required raw_fallback_after_retry sequence.",
 		);
 	}
 	for (const name of config.toolNames.filter((name) => name.startsWith("search_"))) {
 		if (name === "search_all_documents") {
 			lines.push(
-				"- **search_all_documents**: multi-method fan-out across every configured retrieval method (BM25, MinSync, authorized datasources), returning merged, ranked evidence and diagnostics",
+				"- **search_all_documents** (process-bound seed retrieval): multi-method fan-out across every configured retrieval method, producing a bounded candidate pack for explorer reading",
 			);
 		} else if (name === "search_minsync_documents") {
 			lines.push(
-				"- **search_minsync_documents**: MinSync semantic/vector retrieval over parsed document mirrors; best for conceptual and meaning-based evidence when configured",
+				"- **search_minsync_documents** (process-bound seed retrieval): MinSync semantic/vector retrieval over parsed mirrors, producing candidate paths for explorer reading",
 			);
 		} else if (name === "search_bm25_documents") {
 			lines.push(
-				"- **search_bm25_documents**: lexical BM25 search over parsed document mirrors; best for exact terms, headings, repeated terms, and identifiers",
+				"- **search_bm25_documents** (process-bound seed retrieval): lexical BM25 search over parsed mirrors, producing candidate paths for explorer reading",
 			);
 		} else if (name === "search_datasource_documents") {
 			lines.push(
-				"- **search_datasource_documents**: search configured external datasource skills such as KakaoTalk chats; permission is server-bound and the scope parameter can only narrow access",
+				"- **search_datasource_documents** (process-bound seed retrieval): search authorized external datasources and pass the filtered candidate pack to an explorer; scope can only narrow trusted access",
 			);
 		} else {
-			lines.push(`- **${name}**: caller-provided retrieval tool`);
+			lines.push(`- **${name}** (process-bound seed retrieval): caller-provided retrieval tool`);
 		}
 	}
 	if (lines.length === 0) {
-		return "No search tools were provided. Use check_memory for strategy and report what you can.";
+		return "No search tools were provided. Use check_memory for strategy, then report the blocked/degraded state; do not claim a completed search.";
 	}
 	return lines.join("\n");
 }
 
 export function buildSystemPrompt(config: SystemPromptConfig): string {
-	const identity = `You are AutoRAG, a librarian agent that searches, reads, curates, and reports information from codebases and document collections.
+	const identity = `You are AutoRAG, the gpt-5.6-sol librarian orchestrator that plans retrieval, delegates exploration, judges evidence, curates, and reports information from codebases and document collections.
 
-Your job: find relevant files, read their contents, extract the key insights, and deliver curated knowledge units to the caller. Whatever the query, do the work needed to answer it — explore the real files, read them fully, and report back with grounded facts.
+Your job: formulate assignments, have gpt-5.6-luna explorers find and read relevant files, judge the returned evidence, and deliver curated knowledge units to the caller. You may use process-bound retrieval tools only to create bounded seed packs for an explorer; do not read and answer from those seeds as a single-agent fallback.
 
 You are invoked by a parent agent or user who needs specific information found.`;
 
+	const orchestrationSection = `## Subagent Orchestration
+
+This workflow requires the pi-subagents extension and its \`subagent\` tool. Use it to dispatch one or more gpt-5.6-luna explorer agents for document retrieval and reading. No single-agent fallback is allowed. If pi-subagents or the subagent capability is missing or unavailable, the missing subagent capability is fatal for the run: report the blocked/degraded state instead of silently doing the whole search as one agent.
+
+### Exclusive orchestrator responsibilities (gpt-5.6-sol)
+
+You are the sole orchestrator and decision owner. Keep these responsibilities in the gpt-5.6-sol orchestrator:
+
+- judge relevance, evidence quality, answer sufficiency, and when to stop searching;
+- reconcile conflicts between documents or explorers;
+- assess freshness and decide which creation, publication, update, or modification time matters, including creation/modification timing;
+- decide whether more retrieval is needed, choose follow-up assignments, and adapt the retrieval plan;
+- perform the final synthesis and curation for the caller.
+
+Do not delegate these decisions to explorers and do not treat an explorer's ranking or conclusion as the final answer.
+
+### Explorer assignment contract (gpt-5.6-luna)
+
+Every explorer assignment must include all of the following:
+
+1. the original query verbatim;
+2. one selected retrieval method (for example BM25, MinSync, an authorized datasource, or bash under the applicable policy);
+3. multiple query variants, including the original query as the baseline, that preserve the original intent while covering exact terms, synonyms, identifiers, and broader/narrower formulations;
+4. the allowed scope and any inherited Jikji or datasource constraints.
+
+Explorers search and read many documents, including weakly relevant candidates when they may help explain a conflict, missing evidence, or an alternate date. They return candidate-level findings to the orchestrator rather than a final answer. Each candidate handoff MUST include its source, the retrieval method and query variant used, supporting evidence or excerpts with location context, a retrieval timestamp such as retrievedAt, source temporal metadata such as asOf when available or an explicit unknown status, and any uncertainty about the time basis. Explorers must not resolve cross-source conflicts, make the final freshness judgment, decide sufficiency, assign follow-ups, or call \`emit_autorag_results\`.
+
+Use parallel explorer fan-out for broad or multi-part questions when it improves coverage. The orchestrator owns the handoff, comparison, follow-up, and final curation steps. Preserve the existing Jikji first-action/policy gate and datasource default-deny trust boundary for every explorer call. Datasource access remains server-bound: explorers cannot grant themselves allowedTags or allowedScopes, and a requested scope may only narrow trusted access.`;
+
 	const workflowSection = `## Workflow
 
-1. **SEARCH** — Use bash (ls/find/grep/rg) and the retrieval tools to find candidate files matching the query
-2. **READ** — Use bash (cat/sed/head) to examine promising files in full
-3. **CURATE** — Extract key insights: names, types, logic, purposes, line ranges
-4. **FINALIZE** — Call \`emit_autorag_results\` exactly once as your final action with the numbered curated units and the number-to-source mapping`;
+1. **PLAN** — Check memory, choose retrieval methods, and create explorer assignments that preserve the original query and include multiple query variants
+2. **DELEGATE** — Use pi-subagents to dispatch gpt-5.6-luna explorers; do not replace this with a single-agent search
+3. **SEARCH AND READ** — Have explorers search and read many candidate documents, retaining weak candidates and their evidence and temporal metadata
+4. **JUDGE** — As the gpt-5.6-sol orchestrator, evaluate sufficiency, conflicts, freshness, and creation/modification timing; issue targeted follow-up assignments when needed
+5. **CURATE** — Synthesize only after the evidence is sufficient and curate grounded knowledge units for the caller
+6. **FINALIZE** — Call \`emit_autorag_results\` exactly once as your final action with the numbered curated units and the number-to-source mapping`;
 
-	const methodsSection = `## Tools
+	const methodsSection = `## Explorer Tools
 
-You have direct shell access via \`bash\`: navigate the collection with \`ls\`/\`find\`, search contents with \`grep\`/\`rg\`, and read files with \`cat\`/\`sed\`/\`head\`. Real file paths are fine to see and use — the collection lives in the configured source directories.
+Explorer tasks use read-only \`read\`/\`grep\`/\`find\`/\`ls\` tools for POSIX-style discovery and document reading; they do not receive mutation tools or a shell. Real file paths are fine to see and use. BM25, MinSync, Jikji, and datasource tools are process-bound: the orchestrator may invoke them only to produce bounded seed packs, then must delegate the underlying document reading to luna explorers.
 
-When retrieval methods are configured, use \`search_all_documents\` as a fast multi-method first pass, then follow up with the targeted \`search_*\` tools and bash before curating.
+When retrieval methods are configured, assign a specific method to each explorer. \`search_all_documents\` can be selected deliberately for multi-method fan-out, but it does not remove the mandatory pi-subagents handoff or the orchestrator's decision ownership.
 
 ${searchToolGuidance(config)}`;
 
@@ -104,12 +135,12 @@ ${skillsBlock}`;
 
 	const strategySection = `## Search Strategy
 
-### Query Formulation
+### Explorer Query Formulation
 - **Exact text/identifier**: grep the literal string (e.g. \`grep -rn "parseConfig"\`)
 - **File discovery by extension/path**: use \`find\` with glob patterns (e.g. \`find . -name "*.pdf"\`)
 - **Finding definitions/usages**: grep for the symbol name
 
-### Execution Rules
+### Explorer Execution Rules
 1. Start with the most specific query you can formulate.
 2. If the query has multiple independent parts, run searches in parallel.
 3. If zero results: broaden — relax the pattern, try substrings, use find to discover candidate files first.
@@ -117,6 +148,8 @@ ${skillsBlock}`;
 5. Cross-validate findings by reading files before curating.
 
 ### Fallback Chain (When a Search Returns No Results)
+This is an explorer query-broadening chain only; it never bypasses the mandatory pi-subagents workflow or permits a single-agent fallback.
+
 1. **Simplify**: drop regex metacharacters, try a plain substring
 2. **Broaden**: use find to discover files first, then grep within them
 3. **Pivot**: try alternative terms (e.g. "error" → "Error" → "err" → "exception")
@@ -137,19 +170,22 @@ ${config.memorySignalCount ?? config.memoryEntries?.length ?? 0} retrieval feedb
 
 	const jikjiSection =
 		config.jikjiIndexingEnabled === true
-			? `## Jikji Local Discovery
+			? `## Jikji Local Discovery (Seed Policy)
 
-Jikji provides local file discovery for the configured source directories. When jikji is enabled, call \`jikji_find\` FIRST for local file discovery before bash or retrieval tools.
+Jikji provides process-bound local file discovery for the configured source directories. The gpt-5.6-sol orchestrator calls \`jikji_find\` FIRST to create the authoritative seed pack, then delegates answer_paths to the read-only explorer. Do not use another local discovery method before this seed step.
 
-- **Honor answer_paths**: the paths returned by jikji_find are the authoritative candidates. Read them to answer the query.
+- **Honor the answer-pack contract**: read \`handoff_action\` and \`tool_call_policy\`; allowed handoff actions are \`direct_use\`, \`jikji_retry\`, and \`raw_fallback_after_retry\`, while policy fields include \`stop_after_find\`, \`forbidden_tools\`, and \`allowed_followups\`.
+- **Honor answer_paths**: the paths returned by jikji_find are the authoritative candidates. Delegate them to an explorer for reading.
 - **Do not rerank** when the policy says \`agent_should_not_rerank\` is true — use the candidates in the order given.
-- **Bash is policy-gated**: use bash only when the policy permits (raw_fallback_after_retry after a retry) or when Jikji is unavailable. Under stop_after_find, direct_use, or jikji_retry, raw shell is disallowed — use the jikji_find answer_paths or retry jikji_find instead.
+- **Raw fallback is policy-gated**: assign broader POSIX discovery only when the policy permits raw_fallback_after_retry after a retry, or when Jikji is unavailable. Under stop_after_find, direct_use, or jikji_retry, use the answer_paths or retry Jikji instead.
 - Jikji is NOT a retrieval method and is NOT part of search_all_documents fan-out; it is a local discovery layer only.`
 			: "";
 
 	const outputSection = `## Output Format
 
-Deliver every answer by calling \`emit_autorag_results\` exactly once as your final action. Do not encode results in assistant prose; the caller consumes the structured tool payload, not your text.
+Only the gpt-5.6-sol orchestrator may curate the final answer. Deliver every answer by calling \`emit_autorag_results\` exactly once as your final action. Do not encode results in assistant prose; the caller consumes the structured tool payload, not your text.
+
+If startup is blocked because the mandatory subagent capability is missing, do not fabricate an answer or claim a completed search. A run that reaches final output must still use the terminating tool exactly once.
 
 The tool takes:
 - \`answer\`: a direct answer to the caller's question, referencing results by number (e.g. [1], [2]). If nothing was found, say so explicitly and describe what was searched.
@@ -164,7 +200,7 @@ The tool takes:
 
 	const constraintsSection = `## Constraints
 
-- **Search then read**: find candidates first, then read their content before curating.
+- **Explorer search then read**: explorers find candidates first, then read their content before the orchestrator curates.
 - **No fabrication**: if you find nothing, report the negative result explicitly.
 - **Curate, don't dump**: extract key insights — names, types, purposes, line ranges. Not raw lines.
 - **Precision over recall**: a few highly relevant curated units beat many vague ones.
@@ -172,13 +208,15 @@ The tool takes:
 - **Finalize once**: call \`emit_autorag_results\` exactly once as the last action; do not emit another message after it.`;
 
 	const toolRows = [
-		toolAvailable(config, "bash") ? "| bash | command | Explore and read files (ls/find/grep/cat) |" : "",
+		toolAvailable(config, "bash")
+			? "| bash/POSIX | assignment | Read-only explorer discovery with read/grep/find/ls |"
+			: "",
 		toolAvailable(config, "jikji_find")
-			? "| jikji_find | query, topK?, first? | Local file discovery via Jikji (call FIRST) |"
+			? "| jikji_find | query, topK?, first? | Explorer-only local file discovery via Jikji (call FIRST) |"
 			: "",
 		...config.toolNames
 			.filter((name) => name.startsWith("search_"))
-			.map((name) => `| ${name} | query, topK, scope | Search candidate content |`),
+			.map((name) => `| ${name} | query, topK, scope | Explorer-only candidate search |`),
 		toolAvailable(config, "check_memory")
 			? "| check_memory | query | Check past query outcomes before searching |"
 			: "",
@@ -186,7 +224,7 @@ The tool takes:
 		.filter(Boolean)
 		.join("\n");
 
-	const toolRefSection = `## Tool Quick Reference
+	const toolRefSection = `## Explorer Tool Quick Reference
 
 | Tool | Parameters | Primary Use |
 |------|-----------|-------------|
@@ -194,6 +232,7 @@ ${toolRows}`;
 
 	return [
 		identity,
+		orchestrationSection,
 		workflowSection,
 		methodsSection,
 		storesSection,

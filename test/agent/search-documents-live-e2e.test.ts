@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
@@ -10,6 +10,7 @@ import {
 	fauxToolCall,
 	registerFauxProvider,
 } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
@@ -55,9 +56,44 @@ afterEach(() => {
 
 function fauxModel(...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
-	reg.setResponses(responses);
+	reg.setResponses([
+		fauxAssistantMessage(
+			[fauxToolCall("subagent", { agent: "autorag-explorer", model: "faux/gpt-5.6-luna", task: "explore" })],
+			{ stopReason: "toolUse" },
+		),
+		...responses,
+	]);
 	registrations.push(reg);
 	return reg.getModel();
+}
+
+function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGAgent>[0]["sessionFactory"]> {
+	return async (options) => {
+		const subagentTool: AgentTool = {
+			name: "subagent",
+			label: "Subagent",
+			description: "Test explorer",
+			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
+			execute: async () => ({ content: [{ type: "text", text: "explored" }], details: {} }),
+		};
+		const agent = new Agent({
+			initialState: {
+				systemPrompt: options.systemPrompt,
+				model: options.model,
+				tools: [subagentTool, ...options.tools],
+			},
+			convertToLlm: (messages) =>
+				messages.filter(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				),
+		});
+		return {
+			agent,
+			prompt: async (prompt) => agent.prompt(prompt),
+			abort: async () => agent.abort(),
+			dispose: () => {},
+		};
+	};
 }
 
 function emitResults(): FauxResponseStep {
@@ -262,6 +298,7 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 			jikji: { binaryPath },
 			datasourceSkills: [kakaoSkill(datasourceRows)],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
+			sessionFactory: fauxSessionFactory(),
 		});
 
 		for (const name of [

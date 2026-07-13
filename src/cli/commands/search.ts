@@ -1,6 +1,12 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
 import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
-import { buildAgentOptions, type CliConfig, resolveConfig, resolveModel } from "../config.ts";
+import {
+	buildAgentOptions,
+	type CliConfig,
+	type ResolvedAgentModel,
+	resolveAgentModel,
+	resolveConfig,
+} from "../config.ts";
 import { renderError, renderSearch } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -11,6 +17,7 @@ import type { CommandContext } from "./types.ts";
  */
 export interface SearchDeps {
 	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocuments">;
+	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 }
 
 interface SearchOptions {
@@ -70,17 +77,22 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	}
 
 	let agent: Pick<AutoRAGAgent, "searchDocuments">;
-	if (deps.agentFactory) {
+	if (deps.agentFactory && deps.modelResolver === undefined) {
 		agent = deps.agentFactory({ ...buildAgentOptions(config) });
 	} else {
-		let model: ReturnType<typeof resolveModel> | undefined;
+		let resolvedModel: ResolvedAgentModel;
 		try {
-			model = resolveModel(config);
+			resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
 		} catch (error) {
 			ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 			return 2;
 		}
-		agent = new AutoRAGAgent({ ...buildAgentOptions(config), model });
+		const agentOptions: AutoRAGAgentOptions = {
+			...buildAgentOptions(config),
+			model: resolvedModel.model,
+			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
+		};
+		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);
 	}
 
 	const options = buildSearchOptions(ctx.flags);
