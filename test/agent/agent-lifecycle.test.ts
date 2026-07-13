@@ -33,7 +33,13 @@ function fauxModel(...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
 	reg.setResponses([
 		fauxAssistantMessage(
-			[fauxToolCall("subagent", { agent: "autorag-explorer", model: "faux/gpt-5.6-luna", task: "explore" })],
+			[
+				fauxToolCall("subagent", {
+					agent: "autorag-explorer",
+					model: "faux/gpt-5.6-luna",
+					task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
+				}),
+			],
 			{ stopReason: "toolUse" },
 		),
 		...responses,
@@ -62,7 +68,15 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 			label: "Subagent",
 			description: "Test explorer",
 			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
-			execute: async () => ({ content: [{ type: "text", text: "explored" }], details: {} }),
+			execute: async () => ({
+				content: [
+					{
+						type: "text",
+						text: "source: /docs/a evidence: grounded retrievedAt: 2026-07-13 temporal metadata: unknown",
+					},
+				],
+				details: {},
+			}),
 		};
 		const agent = new Agent({
 			initialState: {
@@ -114,7 +128,13 @@ describe("AutoRAGAgent lifecycle", () => {
 			model: fauxModel(
 				abortAware,
 				fauxAssistantMessage(
-					[fauxToolCall("subagent", { agent: "autorag-explorer", model: "faux/gpt-5.6-luna", task: "explore" })],
+					[
+						fauxToolCall("subagent", {
+							agent: "autorag-explorer",
+							model: "faux/gpt-5.6-luna",
+							task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
+						}),
+					],
 					{ stopReason: "toolUse" },
 				),
 				emitOne(),

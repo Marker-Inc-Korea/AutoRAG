@@ -38,7 +38,7 @@ function fauxModel(...responses: FauxResponseStep[]) {
 				fauxToolCall("subagent", {
 					agent: "autorag-explorer",
 					model: "faux/gpt-5.6-luna",
-					task: "Explore the assigned documents",
+					task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
 				}),
 			],
 			{ stopReason: "toolUse" },
@@ -95,7 +95,15 @@ function fauxSessionFactory(): AutoRAGSessionFactory {
 				model: Type.String(),
 				task: Type.String(),
 			}),
-			execute: async () => ({ content: [{ type: "text", text: "explored" }], details: {} }),
+			execute: async () => ({
+				content: [
+					{
+						type: "text",
+						text: "source: /docs/a evidence: grounded retrievedAt: 2026-07-13 temporal metadata: unknown",
+					},
+				],
+				details: {},
+			}),
 		};
 		const agent = new Agent({
 			initialState: {

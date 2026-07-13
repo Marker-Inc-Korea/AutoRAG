@@ -440,7 +440,9 @@ export class AutoRAGAgent {
 		if (event.type === "tool_execution_end" && event.toolName === "subagent") {
 			const args = this.pendingSubagentCalls.get(event.toolCallId);
 			this.pendingSubagentCalls.delete(event.toolCallId);
-			if (!event.isError && isRequiredExplorerInvocation(args)) this.successfulExplorerCalls += 1;
+			if (!event.isError && isRequiredExplorerInvocation(args) && isGroundedExplorerResult(event.result)) {
+				this.successfulExplorerCalls += 1;
+			}
 			return;
 		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
@@ -558,7 +560,7 @@ export class AutoRAGAgent {
 				cwd: this.workspaceProjectRoot,
 				model: resolved.model,
 				systemPrompt: buildSystemPrompt(this.currentSystemPromptConfig()),
-				tools: this.tools,
+				tools: this.tools.filter((tool) => tool.name !== BASH_TOOL_NAME),
 				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
 			});
 			this.activeSession = session;
@@ -1280,14 +1282,30 @@ function isRequiredExplorerInvocation(value: unknown): boolean {
 	const matches = (task: unknown): boolean => {
 		if (typeof task !== "object" || task === null) return false;
 		const record = task as Record<string, unknown>;
+		const assignment = typeof record.task === "string" ? record.task.toLowerCase() : "";
 		return (
 			record.agent === "autorag-explorer" &&
 			typeof record.model === "string" &&
-			record.model.split(":", 1)[0]?.endsWith(`/${EXPLORER_MODEL_ID}`) === true
+			record.model.split(":", 1)[0]?.endsWith(`/${EXPLORER_MODEL_ID}`) === true &&
+			assignment.includes("original query") &&
+			assignment.includes("selected retrieval method") &&
+			assignment.includes("query variant") &&
+			assignment.includes("retrievedat") &&
+			assignment.includes("temporal metadata")
 		);
 	};
 	if (matches(args)) return true;
 	if (Array.isArray(args.tasks) && args.tasks.some(matches)) return true;
 	if (Array.isArray(args.chain) && args.chain.some(matches)) return true;
 	return false;
+}
+
+function isGroundedExplorerResult(value: unknown): boolean {
+	const result = JSON.stringify(value).toLowerCase();
+	return (
+		result.includes("source") &&
+		result.includes("evidence") &&
+		result.includes("retrievedat") &&
+		(result.includes("temporal") || result.includes("asof"))
+	);
 }
