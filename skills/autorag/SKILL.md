@@ -13,18 +13,22 @@ use the `autorag-setup` skill instead.
 
 AutoRAG is invoked through the `autorag` CLI. It is non-destructive: it reads
 source files and writes indexes under the configured workspace's `.autorag/`
-directory and, when enabled, Jikji's `.jikji/` caches. Never move, rename, or
-delete source files.
+directory and, when enabled, Jikji's per-source `.jikji/` caches. Never move,
+rename, or delete source files.
 
 ## Preflight
 
-Confirm that `~/.autorag/config.json` exists and has usable search paths. Run:
+Confirm that `~/.autorag/config.json` exists (or an explicit `--config` /
+`AUTORAG_CONFIG` path). Inspect that non-secret config for usable
+`searchPaths`/`agents` without printing credentials. Then run:
 
 ```bash
 autorag status
 ```
 
-If configuration, authentication, role models, or indexes are missing, stop this
+`status` is model-free and path-opaque: it reports corpus freshness and index
+health, not absolute filesystem paths or role-model auth. If configuration,
+authentication, role models, or indexes are missing or unhealthy, stop this
 workflow and use `autorag-setup`; do not guess private providers or model IDs.
 
 ## Searching
@@ -33,16 +37,27 @@ workflow and use `autorag-setup`; do not guess private providers or model IDs.
 autorag search "what were the key findings in the Q3 report" --top-k 5
 ```
 
-AutoRAG returns curated, numbered knowledge units grounded in sources. Use
-`--scope` to narrow to a configured virtual sub-path, `--json` for structured
-output, and `--debug` only when diagnostics are needed. Do not bypass AutoRAG
-with ad hoc raw search when the user explicitly requested the librarian agent.
+AutoRAG returns curated, numbered knowledge units grounded in sources plus a
+`sessionId` needed for feedback. Use:
+
+- `--scope` to narrow to a configured virtual sub-path
+- `--tags tag1,tag2` only when trusted datasource access is already configured
+  server-side; tags narrow already-allowed results and never grant new access
+- `--json` for structured output (`sessionId`, numbered `results`, `answer`)
+- `--debug` only when diagnostics are needed
+
+Do not bypass AutoRAG with ad hoc raw search when the user explicitly requested
+the librarian agent. Search requires a resolvable orchestrator/explorer model
+pair from config, flags, env, or the authenticated local runtime.
 
 Record feedback so retrieval memory learns which results were useful:
 
 ```bash
 autorag feedback <sessionId> --useful 1,3 --not-useful 2
 ```
+
+Supply at least one of `--useful` or `--not-useful`. Numbers refer to the
+numbered knowledge units from that session's search output.
 
 ## Maintenance
 
@@ -54,8 +69,16 @@ autorag index rebuild --yes
 autorag memory inspect
 ```
 
-Use `refresh` after source documents change. Use destructive index-reset commands
-only for generated AutoRAG indexes, never for source documents.
+Use `refresh` after source documents change (parses sources and resyncs BM25 /
+MinSync / datasources / optional Jikji prepare). Prefer bounded refresh over
+reset. Destructive index commands:
+
+- `autorag index reset --yes` removes parsed, BM25, and MinSync directories under
+  workspace `.autorag` only
+- `autorag index rebuild --yes` resets those indexes then forced-refreshes
+
+Never run reset/rebuild against source documents. `memory inspect` is
+read-only and path-opaque.
 
 ## Rules
 
@@ -64,3 +87,4 @@ only for generated AutoRAG indexes, never for source documents.
 - Never invent or reveal private provider names or model IDs.
 - Never treat a consumer subscription as API access without runtime evidence.
 - Preserve real source mapping and numbered feedback identifiers.
+- Prefer `--json` when another agent must consume the result programmatically.
