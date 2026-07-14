@@ -4,7 +4,7 @@
 
 AutoRAG is an **over-powered librarian agent** for **document collections** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a librarian, used through one library/programmatic API (and a thin CLI).
 
-Searches use a mandatory two-tier workflow: the `gpt-5.6-sol` parent orchestrator delegates document exploration to `gpt-5.6-luna` explorers. The roles are independently configurable; the default pair is `myproxy/gpt-5.6-sol` and `myproxy/gpt-5.6-luna`.
+Searches use a mandatory two-tier workflow: a parent orchestrator delegates document exploration to explorer agents. The roles and providers are independently configurable from the user's authenticated runtime; the distributed package does not assume a private provider.
 
 **Primary target**: non-code document retrieval (manuals, legal docs, internal wikis, meeting notes, research literature).
 Code repositories work too. AutoRAG's value is in the exploration + retrieval methods + curation layer that sit *on top* of raw search.

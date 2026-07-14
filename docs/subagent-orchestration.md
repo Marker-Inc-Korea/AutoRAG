@@ -1,20 +1,20 @@
 # Subagent orchestration
 
 AutoRAG uses a mandatory two-tier `pi-subagents` workflow for document
-retrieval. The parent `gpt-5.6-sol` agent is the orchestrator. Child
-`gpt-5.6-luna` agents are explorers. There is no single-agent fallback.
+retrieval. A configured parent model is the orchestrator and configured child
+models are explorers. There is no single-agent fallback.
 
 ## Contract
 
 | Role | Model | Owns |
 |------|-------|------|
-| Orchestrator | `myproxy/gpt-5.6-sol` by default | judgment, sufficiency, conflicts, freshness, timing, follow-ups, and final curation |
-| Explorer | `myproxy/gpt-5.6-luna` by default | high-recall search/read work and candidate evidence handoff |
+| Orchestrator | user-configured reasoning/high-context model | judgment, sufficiency, conflicts, freshness, timing, follow-ups, and final curation |
+| Explorer | user-configured fast, high-recall model | high-recall search/read work and candidate evidence handoff |
 
 The roles are configured independently with `agents.orchestrator` and
 `agents.explorer`; each value is a `{ "provider": "...", "id": "..." }`
-object. The default model pair is `myproxy/gpt-5.6-sol` and
-`myproxy/gpt-5.6-luna`.
+object. AutoRAG does not ship a private provider default. Setup selects models
+from the user's authenticated runtime or requires explicit role configuration.
 
 The `pi-subagents` extension and its `subagent` capability are required. A
 missing capability is fatal for the run; do not silently complete the request

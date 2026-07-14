@@ -4,7 +4,7 @@
 
 AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No raw grep dumps. Just answers.
 
-AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. Searches use a two-tier workflow: a `gpt-5.6-sol` parent orchestrator delegates exploration to `gpt-5.6-luna` explorers. The roles are independently configurable; the default pair is `myproxy/gpt-5.6-sol` and `myproxy/gpt-5.6-luna`.
+AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. Searches use a two-tier workflow: a parent orchestrator delegates exploration to explorer agents. The roles and providers are independently configured from the models available in the user's authenticated runtime; AutoRAG does not ship a private provider default.
 
 ## Why AutoRAG
 
@@ -157,7 +157,7 @@ The default home state is kept outside the workspace:
     └── sessions/
 ```
 
-`config.json` selects sources, the workspace, memory path, retrieval settings, and the two agent models. Configure the roles independently with `agents.orchestrator` and `agents.explorer`:
+`config.json` selects sources, the workspace, memory path, retrieval settings, and the two agent models. Configure the roles independently with `agents.orchestrator` and `agents.explorer`. Provider and model IDs must refer to models available in the user's authenticated runtime:
 
 ```json
 {
@@ -165,11 +165,13 @@ The default home state is kept outside the workspace:
   "workspacePath": "/path/to/workspace",
   "memoryPath": "/Users/you/.autorag/memory.json",
   "agents": {
-    "orchestrator": { "provider": "myproxy", "id": "gpt-5.6-sol" },
-    "explorer": { "provider": "myproxy", "id": "gpt-5.6-luna" }
+    "orchestrator": { "provider": "provider-name", "id": "reasoning-model" },
+    "explorer": { "provider": "provider-name", "id": "exploration-model" }
   }
 }
 ```
+
+`autorag init` leaves `agents` unset when no role-model flags are supplied. At search time AutoRAG resolves an authenticated local provider when possible; otherwise configure both roles explicitly.
 
 Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.json`. When the home config is absent and `<cwd>/autorag.config.json` exists, AutoRAG copies the legacy file to `~/.autorag/config.json` without deleting or modifying the legacy file. The legacy cwd file is a migration source, not the default location.
 

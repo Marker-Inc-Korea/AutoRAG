@@ -43,9 +43,9 @@ describe("runInit", () => {
 		const code = await runInit(
 			makeCtx({
 				flags: {
-					"orchestrator-model-provider": "myproxy",
+					"orchestrator-model-provider": "test-provider",
 					"orchestrator-model-id": "gpt-5.6-sol-custom",
-					"explorer-model-provider": "myproxy",
+					"explorer-model-provider": "test-provider",
 					"explorer-model-id": "gpt-5.6-luna-custom",
 				},
 			}),
@@ -53,20 +53,17 @@ describe("runInit", () => {
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.agents).toEqual({
-			orchestrator: { provider: "myproxy", id: "gpt-5.6-sol-custom" },
-			explorer: { provider: "myproxy", id: "gpt-5.6-luna-custom" },
+			orchestrator: { provider: "test-provider", id: "gpt-5.6-sol-custom" },
+			explorer: { provider: "test-provider", id: "gpt-5.6-luna-custom" },
 		});
 	});
 
-	it("writes default role models for a fresh home config without model flags", async () => {
+	it("does not write private role-model defaults without model flags", async () => {
 		const code = await runInit(makeCtx());
 
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
-		expect(config.agents).toEqual({
-			orchestrator: { provider: "myproxy", id: "gpt-5.6-sol" },
-			explorer: { provider: "myproxy", id: "gpt-5.6-luna" },
-		});
+		expect(config.agents).toBeUndefined();
 	});
 
 	it("preserves migrated legacy roles while applying explicit role overrides", async () => {

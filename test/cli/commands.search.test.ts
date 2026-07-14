@@ -91,7 +91,7 @@ describe("runSearch", () => {
 			id: "gpt-5.6-sol",
 			name: "GPT-5.6 Sol",
 			api: "openai-responses",
-			provider: "myproxy",
+			provider: "test-proxy",
 			baseUrl: "https://proxy.example/v1",
 			reasoning: true,
 			input: ["text", "image"],
@@ -138,7 +138,7 @@ describe("runSearch", () => {
 			contextWindow: 400_000,
 			maxTokens: 128_000,
 		};
-		const explorerModel = { ...model, id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "myproxy" };
+		const explorerModel = { ...model, id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "test-proxy" };
 		let received: { apiKey?: string; providerApiKeys?: Readonly<Record<string, string>> } | undefined;
 		const { ctx } = makeCtx({ positionals: ["anything"], cwd: tmpDir });
 
@@ -146,7 +146,7 @@ describe("runSearch", () => {
 			modelResolver: () => ({
 				model,
 				explorerModel,
-				providerApiKeys: { myproxy: "explorer-secret" },
+				providerApiKeys: { "test-proxy": "explorer-secret" },
 			}),
 			agentFactory: (options) => {
 				received = { apiKey: options.apiKey, providerApiKeys: options.providerApiKeys };
@@ -156,7 +156,7 @@ describe("runSearch", () => {
 
 		expect(code).toBe(0);
 		expect(received?.apiKey).toBeUndefined();
-		expect(received?.providerApiKeys).toEqual({ myproxy: "explorer-secret" });
+		expect(received?.providerApiKeys).toEqual({ "test-proxy": "explorer-secret" });
 	});
 
 	it("rejects an unknown configured model before constructing the agent", async () => {

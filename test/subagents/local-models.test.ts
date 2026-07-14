@@ -5,12 +5,12 @@ import { describe, expect, it } from "vitest";
 import { loadLocalAutoRAGModels } from "../../src/subagents/local-models.ts";
 
 describe("local AutoRAG model configuration", () => {
-	it("builds sol and luna models from Codex myproxy configuration", () => {
+	it("builds sol and luna models from a Codex provider configuration", () => {
 		const dir = mkdtempSync(join(tmpdir(), "autorag-models-"));
 		const configPath = join(dir, "config.toml");
 		writeFileSync(
 			configPath,
-			'model = "gpt-5.6-sol"\nmodel_provider = "myproxy"\n\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
+			'model = "gpt-5.6-sol"\nmodel_provider = "test-proxy"\n\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
 		);
 		const models = loadLocalAutoRAGModels({ configPath, env: { TEST_PROXY_KEY: "secret" } });
 		expect(models.orchestrator.id).toBe("gpt-5.6-sol");
@@ -18,7 +18,7 @@ describe("local AutoRAG model configuration", () => {
 		expect(models.explorer.id).toBe("gpt-5.6-luna");
 		expect(models.explorer.name).toBe("GPT-5.6 Luna");
 		expect(models.orchestrator.baseUrl).toBe("https://proxy.example/v1");
-		expect(models.provider).toBe("myproxy");
+		expect(models.provider).toBe("test-proxy");
 		expect(models.apiKey).toBe("secret");
 	});
 
@@ -27,7 +27,7 @@ describe("local AutoRAG model configuration", () => {
 		const configPath = join(dir, "config.toml");
 		writeFileSync(
 			configPath,
-			'model_provider = "myproxy"\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
+			'model_provider = "test-proxy"\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
 		);
 		const models = loadLocalAutoRAGModels({
 			configPath,
@@ -45,7 +45,7 @@ describe("local AutoRAG model configuration", () => {
 		const configPath = join(dir, "config.toml");
 		writeFileSync(
 			configPath,
-			'model_provider = "myproxy"\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "chat"\nenv_key = "TEST_PROXY_KEY"\n',
+			'model_provider = "test-proxy"\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "chat"\nenv_key = "TEST_PROXY_KEY"\n',
 		);
 		expect(() => loadLocalAutoRAGModels({ configPath, env: { TEST_PROXY_KEY: "secret" } })).toThrow(/responses/i);
 	});

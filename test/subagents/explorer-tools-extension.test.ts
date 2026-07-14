@@ -28,7 +28,7 @@ const model: Model<"openai-responses"> = {
 	id: "gpt-5.6-sol",
 	name: "GPT-5.6 Sol",
 	api: "openai-responses",
-	provider: "myproxy",
+	provider: "test-proxy",
 	baseUrl: "https://example.invalid/v1",
 	reasoning: true,
 	input: ["text", "image"],

@@ -62,7 +62,7 @@ const model: Model<"openai-responses"> = {
 	id: "gpt-5.6-sol",
 	name: "GPT-5.6 Sol",
 	api: "openai-responses",
-	provider: "myproxy",
+	provider: "test-proxy",
 	baseUrl: "https://example.invalid/v1",
 	reasoning: true,
 	input: ["text", "image"],
@@ -459,11 +459,11 @@ describe("mandatory pi-subagents runtime", () => {
 			modelsPath,
 			JSON.stringify({
 				providers: {
-					myproxy: {
+					"test-proxy": {
 						name: "Pinned Existing Provider",
 						baseUrl: "https://existing-provider.example.invalid/v1",
 						api: "openai-responses",
-						apiKey: "MYPROXY_API_KEY",
+						apiKey: "TEST_PROXY_API_KEY",
 						authHeader: true,
 						models: [
 							{
@@ -499,7 +499,7 @@ describe("mandatory pi-subagents runtime", () => {
 					}
 				>;
 			};
-			const provider = config.providers.myproxy;
+			const provider = config.providers["test-proxy"];
 			expect(provider?.name).toBe("Pinned Existing Provider");
 			expect(provider?.baseUrl).toBe("https://existing-provider.example.invalid/v1");
 			expect(provider?.authHeader).toBe(true);
@@ -594,7 +594,7 @@ describe("mandatory pi-subagents runtime", () => {
 		const config = JSON.parse(readFileSync(modelsPath, "utf8")) as {
 			providers: Record<string, { models?: Array<{ id: string }> }>;
 		};
-		expect(config.providers.myproxy?.models?.map((entry) => entry.id)).toEqual([model.id, explorerModel.id]);
+		expect(config.providers["test-proxy"]?.models?.map((entry) => entry.id)).toEqual([model.id, explorerModel.id]);
 	});
 
 	it("preserves a fresh models.json owner update during stale-lock turnover", async () => {
@@ -701,7 +701,7 @@ describe("mandatory pi-subagents runtime", () => {
 			providers: Record<string, { models?: Array<{ id: string }> }>;
 		};
 		expect(config.providers[freshProvider]?.models?.map((entry) => entry.id)).toEqual([freshModelId]);
-		expect(config.providers.myproxy?.models?.map((entry) => entry.id)).toEqual([model.id, explorerModel.id]);
+		expect(config.providers["test-proxy"]?.models?.map((entry) => entry.id)).toEqual([model.id, explorerModel.id]);
 		expect(
 			readdirSync(agentDir).filter(
 				(name) => name === "models.json.lock" || name.includes(".quarantine") || name.endsWith(".tmp"),
@@ -747,7 +747,7 @@ describe("mandatory pi-subagents runtime", () => {
 		const agentDir = join(root, "agent");
 		const modelsPath = join(agentDir, "models.json");
 		const sentinel = "AUTORAG_TEST_SENTINEL_SECRET";
-		const previousApiKey = process.env.MYPROXY_API_KEY;
+		const previousApiKey = process.env.TEST_PROXY_API_KEY;
 		const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
 		mkdirSync(agentDir, { recursive: true });
 		writeFileSync(
@@ -783,16 +783,16 @@ describe("mandatory pi-subagents runtime", () => {
 				const config = JSON.parse(modelsJson) as {
 					providers: Record<string, { apiKey?: string; models?: Array<{ id: string }> }>;
 				};
-				expect(config.providers.myproxy?.models?.map((entry) => entry.id)).toEqual(
+				expect(config.providers["test-proxy"]?.models?.map((entry) => entry.id)).toEqual(
 					expect.arrayContaining([model.id, explorerModel.id]),
 				);
 				expect(config.providers["custom-role-provider"]?.models?.map((entry) => entry.id)).toContain(
 					"custom-role-model",
 				);
-				expect(config.providers.myproxy?.apiKey).toBe("MYPROXY_API_KEY");
+				expect(config.providers["test-proxy"]?.apiKey).toBe("TEST_PROXY_API_KEY");
 				expect(modelsJson).not.toContain(sentinel);
 				expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
-				expect(process.env.MYPROXY_API_KEY).toBe(previousApiKey);
+				expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
 
 				const piBinary = join(
 					process.cwd(),
@@ -812,16 +812,16 @@ describe("mandatory pi-subagents runtime", () => {
 				});
 				expect(child.status).toBe(0);
 				const childOutput = `${child.stdout}\n${child.stderr}`;
-				expect(childOutput).toContain("myproxy");
+				expect(childOutput).toContain("test-proxy");
 				expect(childOutput).toContain("gpt-5.6-luna");
 			} finally {
 				runtime.session.dispose();
 			}
 			expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
-			expect(process.env.MYPROXY_API_KEY).toBe(previousApiKey);
+			expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
 		} finally {
-			if (previousApiKey === undefined) delete process.env.MYPROXY_API_KEY;
-			else process.env.MYPROXY_API_KEY = previousApiKey;
+			if (previousApiKey === undefined) delete process.env.TEST_PROXY_API_KEY;
+			else process.env.TEST_PROXY_API_KEY = previousApiKey;
 			if (previousPiAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
 		}
@@ -1245,7 +1245,7 @@ describe("mandatory pi-subagents runtime", () => {
 		const secondUnrelatedSecret = "AUTORAG_SECOND_UNRELATED_SECRET";
 		const previousFirstKey = process.env.FIRST_UNRELATED_PROVIDER_API_KEY;
 		const previousSecondKey = process.env.SECOND_UNRELATED_PROVIDER_API_KEY;
-		const previousMyproxyKey = process.env.MYPROXY_API_KEY;
+		const previousProviderKey = process.env.TEST_PROXY_API_KEY;
 		process.env.FIRST_UNRELATED_PROVIDER_API_KEY = firstUnrelatedSecret;
 		process.env.SECOND_UNRELATED_PROVIDER_API_KEY = secondUnrelatedSecret;
 		let activeRuntime: Awaited<ReturnType<typeof createMandatorySubagentSession>> | undefined;
@@ -1258,7 +1258,7 @@ describe("mandatory pi-subagents runtime", () => {
 				model,
 				explorerModel,
 				providerApiKeys: {
-					myproxy: sharedCredential,
+					"test-proxy": sharedCredential,
 					"first-unrelated-provider": firstUnrelatedSecret,
 				},
 				systemPrompt: "test prompt",
@@ -1270,7 +1270,7 @@ describe("mandatory pi-subagents runtime", () => {
 				model,
 				explorerModel,
 				providerApiKeys: {
-					myproxy: sharedCredential,
+					"test-proxy": sharedCredential,
 					"second-unrelated-provider": secondUnrelatedSecret,
 				},
 				systemPrompt: "test prompt",
@@ -1279,7 +1279,7 @@ describe("mandatory pi-subagents runtime", () => {
 
 			expect(process.env.FIRST_UNRELATED_PROVIDER_API_KEY).toBe(firstUnrelatedSecret);
 			expect(process.env.SECOND_UNRELATED_PROVIDER_API_KEY).toBe(secondUnrelatedSecret);
-			expect(process.env.MYPROXY_API_KEY).toBe(previousMyproxyKey);
+			expect(process.env.TEST_PROXY_API_KEY).toBe(previousProviderKey);
 		} finally {
 			secondRuntime?.session.dispose();
 			activeRuntime?.session.dispose();
@@ -1296,7 +1296,7 @@ describe("mandatory pi-subagents runtime", () => {
 		const agentDir = join(root, "agent");
 		const runtimeCredential = "AUTORAG_COMPATIBLE_RUNTIME_SECRET";
 		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-		const previousApiKey = process.env.MYPROXY_API_KEY;
+		const previousApiKey = process.env.TEST_PROXY_API_KEY;
 		let firstRuntime: Awaited<ReturnType<typeof createMandatorySubagentSession>> | undefined;
 		let secondRuntime: Awaited<ReturnType<typeof createMandatorySubagentSession>> | undefined;
 
@@ -1323,19 +1323,19 @@ describe("mandatory pi-subagents runtime", () => {
 			firstRuntime.session.dispose();
 			firstRuntime = undefined;
 			expect(process.env.PI_CODING_AGENT_DIR).toBe(previousAgentDir);
-			expect(process.env.MYPROXY_API_KEY).toBe(previousApiKey);
+			expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
 
 			secondRuntime.session.dispose();
 			secondRuntime = undefined;
 			expect(process.env.PI_CODING_AGENT_DIR).toBe(previousAgentDir);
-			expect(process.env.MYPROXY_API_KEY).toBe(previousApiKey);
+			expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
 		} finally {
 			firstRuntime?.session.dispose();
 			secondRuntime?.session.dispose();
 			if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-			if (previousApiKey === undefined) delete process.env.MYPROXY_API_KEY;
-			else process.env.MYPROXY_API_KEY = previousApiKey;
+			if (previousApiKey === undefined) delete process.env.TEST_PROXY_API_KEY;
+			else process.env.TEST_PROXY_API_KEY = previousApiKey;
 		}
 	});
 
@@ -1362,7 +1362,7 @@ describe("mandatory pi-subagents runtime", () => {
 		tempDirs.push(root);
 		const agentDir = join(root, "agent");
 		const modelsPath = join(agentDir, "models.json");
-		const original = JSON.stringify({ providers: { myproxy: { models: "invalid" } } });
+		const original = JSON.stringify({ providers: { "test-proxy": { models: "invalid" } } });
 		mkdirSync(agentDir, { recursive: true });
 		writeFileSync(modelsPath, original);
 
@@ -1374,7 +1374,7 @@ describe("mandatory pi-subagents runtime", () => {
 				systemPrompt: "test prompt",
 				tools: [customTool],
 			}),
-		).rejects.toThrow(/provider "myproxy" has invalid "models" metadata/);
+		).rejects.toThrow(/provider "test-proxy" has invalid "models" metadata/);
 		expect(readFileSync(modelsPath, "utf8")).toBe(original);
 	});
 
@@ -1729,7 +1729,7 @@ Project override body.
 
 			const task = {
 				agent: "autorag-explorer",
-				model: "myproxy/gpt-5.6-luna",
+				model: "test-proxy/gpt-5.6-luna",
 				task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
 				cwd: root,
 			};

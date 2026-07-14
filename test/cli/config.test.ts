@@ -859,7 +859,7 @@ describe("resolveAgentModel", () => {
 		const codexConfigPath = join(root, "config.toml");
 		writeFileSync(
 			codexConfigPath,
-			'model_provider = "myproxy"\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
+			'model_provider = "test-proxy"\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
 			"utf8",
 		);
 		writeConfigFile(root, {
@@ -867,15 +867,15 @@ describe("resolveAgentModel", () => {
 			workspacePath: root,
 			memoryPath: join(process.env.HOME as string, ".autorag", "memory.json"),
 			agents: {
-				orchestrator: { provider: "myproxy", id: "gpt-5.6-sol-custom" },
-				explorer: { provider: "myproxy", id: "gpt-5.6-luna-custom" },
+				orchestrator: { provider: "test-proxy", id: "gpt-5.6-sol-custom" },
+				explorer: { provider: "test-proxy", id: "gpt-5.6-luna-custom" },
 			},
 		} as Partial<CliConfig>);
 		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
 		expect(config).toMatchObject({
 			agents: {
-				orchestrator: { provider: "myproxy", id: "gpt-5.6-sol-custom" },
-				explorer: { provider: "myproxy", id: "gpt-5.6-luna-custom" },
+				orchestrator: { provider: "test-proxy", id: "gpt-5.6-sol-custom" },
+				explorer: { provider: "test-proxy", id: "gpt-5.6-luna-custom" },
 			},
 		});
 		const resolved = resolveAgentModel(config, {
@@ -888,11 +888,11 @@ describe("resolveAgentModel", () => {
 		);
 	});
 
-	it("loads Sol and its API key from Codex myproxy config when CLI model is omitted", () => {
+	it("loads Sol and its API key from the active Codex provider when CLI model is omitted", () => {
 		const codexConfigPath = join(root, "config.toml");
 		writeFileSync(
 			codexConfigPath,
-			'model_provider = "myproxy"\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
+			'model_provider = "test-proxy"\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
 			"utf8",
 		);
 		const config: CliConfig = {
@@ -907,16 +907,16 @@ describe("resolveAgentModel", () => {
 		});
 
 		expect(resolved.model.id).toBe("gpt-5.6-sol");
-		expect(resolved.model.provider).toBe("myproxy");
+		expect(resolved.model.provider).toBe("test-proxy");
 		expect(resolved.apiKey).toBe("secret");
-		expect(resolved.providerApiKeys).toEqual({ myproxy: "secret" });
+		expect(resolved.providerApiKeys).toEqual({ "test-proxy": "secret" });
 	});
 
 	it("returns a provider-scoped explorer credential without setting the orchestrator apiKey", () => {
 		const codexConfigPath = join(root, "config.toml");
 		writeFileSync(
 			codexConfigPath,
-			' model_provider = "myproxy"\n[model_providers.myproxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n'.trimStart(),
+			' model_provider = "test-proxy"\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n'.trimStart(),
 			"utf8",
 		);
 		const config: CliConfig = {
@@ -925,7 +925,7 @@ describe("resolveAgentModel", () => {
 			memoryPath: join(root, "memory.json"),
 			agents: {
 				orchestrator: { provider: "openai", id: "gpt-4o" },
-				explorer: { provider: "myproxy", id: "gpt-5.6-luna" },
+				explorer: { provider: "test-proxy", id: "gpt-5.6-luna" },
 			},
 		};
 
@@ -935,9 +935,9 @@ describe("resolveAgentModel", () => {
 		});
 
 		expect(resolved.model.provider).toBe("openai");
-		expect(resolved.explorerModel.provider).toBe("myproxy");
+		expect(resolved.explorerModel.provider).toBe("test-proxy");
 		expect(resolved.apiKey).toBeUndefined();
-		expect(resolved.providerApiKeys).toEqual({ myproxy: "secret" });
+		expect(resolved.providerApiKeys).toEqual({ "test-proxy": "secret" });
 	});
 });
 
@@ -950,6 +950,7 @@ describe("writeDefaultConfig", () => {
 		expect(written.searchPaths).toEqual([process.cwd()]);
 		expect(typeof written.workspacePath).toBe("string");
 		expect(typeof written.memoryPath).toBe("string");
+		expect(written.agents).toBeUndefined();
 	});
 
 	it("throws ConfigError when the file already exists and force is not set", () => {

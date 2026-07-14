@@ -1933,7 +1933,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			(_provider, originalQuery) => ({
 				agent: "autorag-explorer",
 				agentScope: "user",
-				model: "myproxy/gpt-5.6-luna",
+				model: "test-proxy/gpt-5.6-luna",
 				task: explorerAssignment(originalQuery),
 				cwd: resolve(FIXTURE_DIR),
 				artifacts: false,
@@ -1955,8 +1955,8 @@ describe("AutoRAGAgent searchDocuments", () => {
 		const baseFactory = fauxSessionFactory();
 		const agent = new AutoRAGAgent({
 			model,
-			explorerModel: { ...model, provider: "myproxy", id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
-			providerApiKeys: { myproxy: "explorer-secret" },
+			explorerModel: { ...model, provider: "test-proxy", id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
+			providerApiKeys: { "test-proxy": "explorer-secret" },
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
@@ -1971,7 +1971,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		expect(response.answer).toContain("provider-scoped credential");
 		expect(sessionApiKey).toBeUndefined();
-		expect(sessionProviderApiKeys).toEqual({ myproxy: "explorer-secret" });
+		expect(sessionProviderApiKeys).toEqual({ "test-proxy": "explorer-secret" });
 	});
 
 	it.each([

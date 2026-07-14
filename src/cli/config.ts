@@ -11,10 +11,6 @@ export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
 export { AUTORAG_HOME_ENV, resolveAutoRAGHome } from "../config/home.ts";
 
-const DEFAULT_ROLE_MODELS = {
-	orchestrator: { provider: "myproxy", id: "gpt-5.6-sol" },
-	explorer: { provider: "myproxy", id: "gpt-5.6-luna" },
-} as const;
 const CONFIG_LOCK_RETRY_MS = 10;
 const CONFIG_LOCK_TIMEOUT_MS = 10_000;
 const CONFIG_LOCK_STALE_MS = 30_000;
@@ -428,11 +424,15 @@ export function writeDefaultConfig(
 		searchPaths: resolveSearchPaths(partial.searchPaths ?? ["."], cwd),
 		workspacePath,
 		memoryPath,
-		agents: {
-			orchestrator: partial.agents?.orchestrator ?? partial.model ?? DEFAULT_ROLE_MODELS.orchestrator,
-			explorer: partial.agents?.explorer ?? DEFAULT_ROLE_MODELS.explorer,
-		},
 	};
+	const orchestrator = partial.agents?.orchestrator ?? partial.model;
+	const explorer = partial.agents?.explorer;
+	if (orchestrator !== undefined || explorer !== undefined) {
+		full.agents = {
+			...(orchestrator !== undefined ? { orchestrator } : {}),
+			...(explorer !== undefined ? { explorer } : {}),
+		};
+	}
 	if (partial.model) full.model = partial.model;
 	if (partial.minSync) full.minSync = partial.minSync;
 	if (partial.bm25) full.bm25 = partial.bm25;
