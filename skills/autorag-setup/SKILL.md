@@ -317,10 +317,22 @@ refreshes share the same set.
 ```bash
 autorag status                 # corpus freshness / index health
 autorag refresh                # resync after documents change
+autorag watch --once           # preferred single tick for cron / Task Scheduler / systemd timer
+autorag watch                  # long-running fs watch for interactive sessions
 autorag refresh --force        # force a full re-sync when needed
 autorag index rebuild --yes    # wipe parsed/BM25/MinSync under .autorag, then forced refresh
 autorag memory inspect         # read-only retrieval memory snapshot
 ```
+
+After setup, install an **OS-appropriate periodic job** so indexes stay fresh without a permanent daemon. Agents MUST create or verify this schedule before claiming continuous indexing works.
+
+| OS | Scheduler | Suggested tick (every 30 min) |
+|---|---|---|
+| macOS | `cron` or LaunchAgent in `~/Library/LaunchAgents` | `*/30 * * * * PATH=... NODE_OPTIONS=--max-old-space-size=16384 autorag watch --once` |
+| Linux | `cron` or `systemd --user` timer | same crontab pattern, or a oneshot unit + timer |
+| Windows | Task Scheduler | repeating task every 30 minutes running `autorag watch --once` |
+
+Prefer `watch --once`/`refresh` for scheduled ticks. Reserve long-running `watch` for interactive foreground use. Log under `~/.autorag/` (or user temp), never into source document trees. Avoid overlapping concurrent refreshes.
 
 Never run reset/rebuild against source document trees. Indexes live under the
 configured workspace's `.autorag/`; Jikji prepare caches live under

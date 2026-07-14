@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 
-const BOOLEAN_FLAGS = new Set(["json", "debug", "help", "force", "yes"]);
+const BOOLEAN_FLAGS = new Set(["json", "debug", "help", "force", "yes", "once", "immediate"]);
 const VALUE_FLAGS = new Set([
 	"config",
 	"search-paths",
@@ -22,9 +22,10 @@ const VALUE_FLAGS = new Set([
 	"tags",
 	"useful",
 	"not-useful",
+	"debounce-ms",
 ]);
 
-const COMMANDS = ["init", "refresh", "status", "search", "feedback", "memory", "index"] as const;
+const COMMANDS = ["init", "refresh", "status", "search", "feedback", "memory", "index", "watch"] as const;
 type CommandName = (typeof COMMANDS)[number];
 
 interface ParsedArgs {
@@ -42,6 +43,7 @@ Commands:
 	                        --orchestrator-model-provider P  --orchestrator-model-id ID
 	                        --explorer-model-provider P  --explorer-model-id ID  --force)
   refresh              Parse sources and refresh indexes (BM25/MinSync/datasources)
+  watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
   search <query>       Search and curate documents (requires a configured model)
   feedback <session>   Record numbered feedback (--useful 1,3 --not-useful 2)
@@ -52,6 +54,7 @@ Commands:
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
   autorag refresh                                            # parse + index (+ jikji prepare)
+  autorag watch --once                                       # single index refresh tick (cron)
   autorag search "your question"                             # curated answer
 
 Global flags:
@@ -63,6 +66,9 @@ Global flags:
   --orchestrator-model-id <id>          Override the orchestrator model
   --explorer-model-provider <name>      Override the explorer provider
   --explorer-model-id <id>              Override the explorer model
+  --once               For watch: run one refresh tick and exit (for cron)
+  --immediate          For watch: refresh once before reading fs events (default true)
+  --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
   --help, -h           Show this help
 `;
 
@@ -142,6 +148,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "index": {
 			const { runIndex } = await import("./commands/index.ts");
 			return runIndex(ctx);
+		}
+		case "watch": {
+			const { runWatch } = await import("./commands/watch.ts");
+			return runWatch(ctx);
 		}
 	}
 }

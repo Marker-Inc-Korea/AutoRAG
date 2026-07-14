@@ -64,6 +64,8 @@ numbered knowledge units from that session's search output.
 ```bash
 autorag status
 autorag refresh
+autorag watch --once
+autorag watch
 autorag refresh --force
 autorag index rebuild --yes
 autorag memory inspect
@@ -71,7 +73,47 @@ autorag memory inspect
 
 Use `refresh` after source documents change (parses sources and resyncs BM25 /
 MinSync / datasources / optional Jikji prepare). Prefer bounded refresh over
-reset. Destructive index commands:
+reset. `watch --once` is the preferred single tick for scheduled jobs; long-running
+`watch` keeps an fs event loop open for interactive sessions.
+
+### Keep indexes fresh on a schedule (agent responsibility)
+
+There is **no always-on network service** in the CLI. Agents and operators must
+install an OS-appropriate periodic job that runs a model-free index tick:
+
+```bash
+# Preferred scheduled command (single non-daemon refresh)
+NODE_OPTIONS=--max-old-space-size=16384 autorag watch --once
+# Equivalent one-shot refresh
+NODE_OPTIONS=--max-old-space-size=16384 autorag refresh
+```
+
+Schedule guidance by OS (typical interval: every 15–30 minutes; never more often
+than the corpus can finish refreshing):
+
+| OS | Preferred scheduler | Pattern |
+|---|---|---|
+| macOS | `cron` or `launchd` (`~/Library/LaunchAgents`) | `*/30 * * * * ... autorag watch --once` or a KeepAlive=false StartInterval plist |
+| Linux | `cron` / `systemd --user` timer | crontab `*/30 * * * *` or a oneshot service + timer |
+| Windows | Task Scheduler | repeating task every 30 minutes running `autorag watch --once` under the user profile |
+
+Rules for scheduled watch:
+
+1. Prefer `autorag watch --once` (or `autorag refresh`) over a permanent
+   long-running `autorag watch` daemon in user agents — daemons die on reboot
+   and are harder to supervise from skill workflows.
+2. Use the same config the search path uses (`~/.autorag/config.json` or an
+   explicit `--config` / `AUTORAG_CONFIG`).
+3. Raise Node heap for large home trees: `NODE_OPTIONS=--max-old-space-size=16384`.
+4. Redirect logs somewhere under the home/user temp tree, never into source
+   document folders.
+5. After install/setup, **create or verify** the scheduled job before claiming
+   ongoing indexing is covered. Re-check with `crontab -l`, `systemctl --user list-timers`,
+   or Task Scheduler inspection when the user asks about freshness.
+6. Do not schedule concurrent overlapping ticks; if a prior refresh is still
+   running, skip or wait (lock/log rather than stampeding MiniSync/BM25 writers).
+
+Destructive index commands:
 
 - `autorag index reset --yes` removes parsed, BM25, and MinSync directories under
   workspace `.autorag` only
