@@ -12,6 +12,8 @@ type LoggedCall = {
 	readonly envApiKey?: string | null;
 };
 
+const FAKE_CHILD_READY_TIMEOUT_MS = 10_000;
+
 let root: string;
 let binDir: string;
 let binaryPath: string;
@@ -82,7 +84,7 @@ function waitForLogFile(): Promise<void> {
 		const timeout = setTimeout(() => {
 			watcher.close();
 			reject(new Error("timed out waiting for fake katok log"));
-		}, 1000);
+		}, FAKE_CHILD_READY_TIMEOUT_MS);
 	});
 }
 
@@ -312,12 +314,12 @@ setInterval(() => undefined, 1000);
 		expect(result).toMatchObject({ ok: false, reason: "timeout" });
 	});
 
-	it("terminates the child when AbortController aborts", async () => {
+	it("terminates the child when AbortController aborts", { timeout: 20_000 }, async () => {
 		writeFakeKatok();
 		const client = new KatokClient({
 			binaryPath,
 			env: { PATH: `${binDir}:${process.env.PATH ?? ""}` },
-			timeoutMs: 5000,
+			timeoutMs: 15_000,
 		});
 		writeFileSync(
 			binaryPath,

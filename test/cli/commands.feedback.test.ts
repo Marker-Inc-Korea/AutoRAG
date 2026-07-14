@@ -7,12 +7,17 @@ import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
 
 let tmpDir: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), "autorag-cli-feedback-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(tmpDir, "home");
 });
 
 afterEach(() => {
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -46,9 +51,9 @@ function makeCtx(opts: {
 	return { stdout, stderr, ctx };
 }
 
-// resolveConfig defaults memoryPath to <cwd>/.autorag/memory.json; seed there.
+// resolveConfig defaults memoryPath to ~/.autorag/memory.json; seed there.
 function defaultMemoryPath(): string {
-	return join(tmpDir, ".autorag", "memory.json");
+	return join(process.env.HOME as string, ".autorag", "memory.json");
 }
 
 function seedMemory(memoryPath: string, sessionId: string, query: string): void {

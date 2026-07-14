@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { runSearch, type SearchDeps } from "../../src/cli/commands/search.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
+import { resolveAgentModel } from "../../src/cli/config.ts";
 
 let tmpDir: string;
 
@@ -98,18 +99,99 @@ describe("runSearch", () => {
 			contextWindow: 400_000,
 			maxTokens: 128_000,
 		};
-		let received: { modelId?: string; apiKey?: string } | undefined;
+		let received: { modelId?: string; explorerModelId?: string; apiKey?: string } | undefined;
 		const { ctx } = makeCtx({ positionals: ["anything"], cwd: tmpDir });
 		const code = await runSearch(ctx, {
-			modelResolver: () => ({ model, apiKey: "secret" }),
+			modelResolver: () => ({
+				model,
+				explorerModel: { ...model, id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
+				apiKey: "secret",
+			}),
 			agentFactory: (options) => {
-				received = { modelId: options.model?.id, apiKey: options.apiKey };
+				received = {
+					modelId: options.model?.id,
+					explorerModelId: options.explorerModel?.id,
+					apiKey: options.apiKey,
+				};
 				return { searchDocuments: async () => cannedResponse() };
 			},
 		});
 
 		expect(code).toBe(0);
-		expect(received).toEqual({ modelId: "gpt-5.6-sol", apiKey: "secret" });
+		expect(received).toEqual({
+			modelId: "gpt-5.6-sol",
+			explorerModelId: "gpt-5.6-luna",
+			apiKey: "secret",
+		});
+	});
+
+	it("forwards provider-scoped credentials without assigning the explorer key to apiKey", async () => {
+		const model: Model<"openai-responses"> = {
+			id: "gpt-5.6-sol",
+			name: "GPT-5.6 Sol",
+			api: "openai-responses",
+			provider: "openai",
+			baseUrl: "https://api.openai.com/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400_000,
+			maxTokens: 128_000,
+		};
+		const explorerModel = { ...model, id: "gpt-5.6-luna", name: "GPT-5.6 Luna", provider: "myproxy" };
+		let received: { apiKey?: string; providerApiKeys?: Readonly<Record<string, string>> } | undefined;
+		const { ctx } = makeCtx({ positionals: ["anything"], cwd: tmpDir });
+
+		const code = await runSearch(ctx, {
+			modelResolver: () => ({
+				model,
+				explorerModel,
+				providerApiKeys: { myproxy: "explorer-secret" },
+			}),
+			agentFactory: (options) => {
+				received = { apiKey: options.apiKey, providerApiKeys: options.providerApiKeys };
+				return { searchDocuments: async () => cannedResponse() };
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(received?.apiKey).toBeUndefined();
+		expect(received?.providerApiKeys).toEqual({ myproxy: "explorer-secret" });
+	});
+
+	it("rejects an unknown configured model before constructing the agent", async () => {
+		const configPath = join(tmpDir, "unknown-model.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [tmpDir],
+				workspacePath: tmpDir,
+				memoryPath: join(tmpDir, "memory.json"),
+				agents: {
+					orchestrator: { provider: "openai", id: "missing-before-construction" },
+					explorer: { provider: "openai", id: "gpt-4o" },
+				},
+			}),
+			"utf8",
+		);
+		let constructed = false;
+		const { ctx, stderr } = makeCtx({
+			positionals: ["anything"],
+			flags: { config: configPath },
+			cwd: tmpDir,
+		});
+
+		const code = await runSearch(ctx, {
+			modelResolver: resolveAgentModel,
+			agentFactory: () => {
+				constructed = true;
+				return { searchDocuments: async () => cannedResponse() };
+			},
+		});
+
+		expect(code).toBe(2);
+		expect(constructed).toBe(false);
+		expect(stderr.join("\n")).toContain("openai/missing-before-construction");
 	});
 
 	it("renders the documented search envelope as --json via an injected agentFactory", async () => {

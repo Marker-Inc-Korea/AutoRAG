@@ -90,7 +90,9 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		const agentOptions: AutoRAGAgentOptions = {
 			...buildAgentOptions(config),
 			model: resolvedModel.model,
+			explorerModel: resolvedModel.explorerModel,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
+			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 		};
 		agent = deps.agentFactory ? deps.agentFactory(agentOptions) : new AutoRAGAgent(agentOptions);
 	}

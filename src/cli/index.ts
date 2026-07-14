@@ -13,6 +13,10 @@ const VALUE_FLAGS = new Set([
 	"memory-path",
 	"model-provider",
 	"model-id",
+	"orchestrator-model-provider",
+	"orchestrator-model-id",
+	"explorer-model-provider",
+	"explorer-model-id",
 	"top-k",
 	"scope",
 	"tags",
@@ -33,7 +37,10 @@ const USAGE = `autorag - self-evolving librarian CLI
 Usage: autorag <command> [args] [flags]
 
 Commands:
-  init                 Write autorag.config.json for a local collection
+  init                 Write ~/.autorag/config.json for a local collection
+	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
+	                        --orchestrator-model-provider P  --orchestrator-model-id ID
+	                        --explorer-model-provider P  --explorer-model-id ID  --force)
   refresh              Parse sources and refresh indexes (BM25/MinSync/datasources)
   status               Show corpus freshness and index health
   search <query>       Search and curate documents (requires a configured model)
@@ -42,10 +49,20 @@ Commands:
   index reset          Remove parsed/bm25/minsync indexes under .autorag
   index rebuild        Reset then re-run a full refresh
 
+Setup:
+  autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
+  autorag refresh                                            # parse + index (+ jikji prepare)
+  autorag search "your question"                             # curated answer
+
 Global flags:
   --json               Emit machine-readable JSON
   --debug              Reveal opaque internal diagnostics (never filesystem paths)
   --config <path>      Use a specific config file
+  --search-paths <csv> Folders to index/search (also AUTORAG_SEARCH_PATHS)
+  --orchestrator-model-provider <name>  Override the orchestrator provider
+  --orchestrator-model-id <id>          Override the orchestrator model
+  --explorer-model-provider <name>      Override the explorer provider
+  --explorer-model-id <id>              Override the explorer model
   --help, -h           Show this help
 `;
 

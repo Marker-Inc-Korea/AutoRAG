@@ -6,12 +6,17 @@ import { runIndex } from "../../src/cli/commands/index.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 
 let tmpDir: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	tmpDir = mkdtempSync(join(tmpdir(), "autorag-cli-index-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(tmpDir, "home");
 });
 
 afterEach(() => {
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 

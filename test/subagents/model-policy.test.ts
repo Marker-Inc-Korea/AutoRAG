@@ -17,24 +17,25 @@ describe("subagent model policy", () => {
 		expect(policy.explorer.id).toBe("gpt-5.6-luna");
 	});
 
-	it("rejects swapped role models", () => {
-		expect(() => validateModelPolicy({ orchestrator: explorer, explorer: orchestrator })).toThrowError(
-			expect.objectContaining<Partial<ModelPolicyError>>({ code: "MODEL_ROLE_MISMATCH" }),
-		);
+	it("accepts configurable model references for both roles", () => {
+		const policy = validateModelPolicy({
+			orchestrator: { provider: "custom-orchestrator-provider", id: "custom-orchestrator" },
+			explorer: { provider: "custom-explorer-provider", id: "custom-explorer" },
+		});
+
+		expect(policy.orchestrator).toEqual({
+			provider: "custom-orchestrator-provider",
+			id: "custom-orchestrator",
+		});
+		expect(policy.explorer).toEqual({ provider: "custom-explorer-provider", id: "custom-explorer" });
 	});
 
-	it("fails closed for other and missing model ids", () => {
-		expect(() => validateModelPolicy({ orchestrator: { id: "gpt-5.6-luna" }, explorer })).toThrowError(
-			expect.objectContaining({ code: "MODEL_ROLE_MISMATCH" }),
-		);
-		expect(() => validateModelPolicy({ orchestrator, explorer: { id: "gpt-5.5" } })).toThrowError(
-			expect.objectContaining({ code: "MODEL_ROLE_MISMATCH" }),
-		);
+	it("fails closed for missing role references", () => {
 		expect(() => validateModelPolicy({ orchestrator })).toThrowError(
-			expect.objectContaining({ code: "MISSING_REQUIRED_MODEL" }),
+			expect.objectContaining<Partial<ModelPolicyError>>({ code: "MISSING_REQUIRED_MODEL" }),
 		);
 		expect(() => validateModelPolicy({ orchestrator: undefined, explorer })).toThrowError(
-			expect.objectContaining({ code: "MISSING_REQUIRED_MODEL" }),
+			expect.objectContaining<Partial<ModelPolicyError>>({ code: "MISSING_REQUIRED_MODEL" }),
 		);
 	});
 

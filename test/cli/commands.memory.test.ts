@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,13 +8,18 @@ import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/m
 
 let root: string;
 let memoryPath: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-memory-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(root, "home");
 	memoryPath = join(root, "memory.json");
 });
 
 afterEach(() => {
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -37,7 +42,9 @@ function writeConfig(): void {
 		workspacePath: root,
 		memoryPath,
 	};
-	writeFileSync(join(root, "autorag.config.json"), `${JSON.stringify(config, null, 2)}\n`);
+	const configDir = join(process.env.HOME as string, ".autorag");
+	mkdirSync(configDir, { recursive: true });
+	writeFileSync(join(configDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 }
 
 const SESSION_ID = "sess-001";

@@ -23,12 +23,20 @@ export interface LocalAutoRAGModels {
 export interface LoadLocalAutoRAGModelsOptions {
 	readonly configPath?: string;
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	readonly orchestratorModelId?: string;
+	readonly explorerModelId?: string;
 }
 
-function createModel(provider: string, baseUrl: string, id: string): Model<"openai-responses"> {
+function createModel(
+	provider: string,
+	baseUrl: string,
+	id: string,
+	defaultId: string,
+	defaultName: string,
+): Model<"openai-responses"> {
 	return {
 		id,
-		name: id === ORCHESTRATOR_MODEL_ID ? "GPT-5.6 Sol" : "GPT-5.6 Luna",
+		name: id === defaultId ? defaultName : id,
 		api: "openai-responses",
 		provider,
 		baseUrl,
@@ -69,7 +77,19 @@ export function loadLocalAutoRAGModels(options: LoadLocalAutoRAGModelsOptions = 
 	return {
 		provider,
 		apiKey,
-		orchestrator: createModel(provider, providerConfig.base_url, ORCHESTRATOR_MODEL_ID),
-		explorer: createModel(provider, providerConfig.base_url, EXPLORER_MODEL_ID),
+		orchestrator: createModel(
+			provider,
+			providerConfig.base_url,
+			options.orchestratorModelId ?? ORCHESTRATOR_MODEL_ID,
+			ORCHESTRATOR_MODEL_ID,
+			"GPT-5.6 Sol",
+		),
+		explorer: createModel(
+			provider,
+			providerConfig.base_url,
+			options.explorerModelId ?? EXPLORER_MODEL_ID,
+			EXPLORER_MODEL_ID,
+			"GPT-5.6 Luna",
+		),
 	};
 }

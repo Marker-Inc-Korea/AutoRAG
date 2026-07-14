@@ -28,7 +28,10 @@ beforeEach(() => {
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
 	registrations = [];
-	writeFileSync(join(docs, "report.txt"), "Quarterly report content for retrieval.\n");
+	writeFileSync(
+		join(docs, "report.txt"),
+		"Q2 2026 revenue increased 23% year over year to $4.2M, driven by enterprise contracts.\n",
+	);
 });
 
 afterEach(() => {
@@ -36,15 +39,27 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function fauxEmitModel(args: Record<string, unknown>) {
+function explorerAssignment(originalQuery: string): string {
+	return [
+		`Original query: ${originalQuery}`,
+		"Selected retrieval method: POSIX",
+		`Query variants: ${originalQuery}; ${originalQuery} evidence`,
+		"Required handoff fields: Retrieved at and Temporal metadata.",
+	].join("\n");
+}
+
+function fauxEmitModel(originalQuery: string, args: Record<string, unknown>) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
 	reg.setResponses([
 		fauxAssistantMessage(
 			[
 				fauxToolCall("subagent", {
 					agent: "autorag-explorer",
+					agentScope: "user",
 					model: "faux/gpt-5.6-luna",
-					task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
+					task: explorerAssignment(originalQuery),
+					cwd: docs,
+					artifacts: false,
 				}),
 			],
 			{ stopReason: "toolUse" },
@@ -61,15 +76,50 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 			name: "subagent",
 			label: "Subagent",
 			description: "Test explorer",
-			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
+			parameters: Type.Object({
+				agent: Type.String(),
+				agentScope: Type.Literal("user"),
+				model: Type.String(),
+				task: Type.String(),
+				cwd: Type.Optional(Type.String()),
+				artifacts: Type.Optional(Type.Boolean()),
+			}),
 			execute: async () => ({
-				content: [
-					{
-						type: "text",
-						text: "source: /docs/a evidence: grounded retrievedAt: 2026-07-13 temporal metadata: unknown",
-					},
-				],
-				details: {},
+				content: [{ type: "text", text: "Explorer run completed successfully." }],
+				details: {
+					mode: "single",
+					runId: "run-exported-api",
+					results: [
+						{
+							agent: "autorag-explorer",
+							task: explorerAssignment("report"),
+							exitCode: 0,
+							usage: { input: 120, output: 90, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 },
+							model: "faux/gpt-5.6-luna",
+							structuredOutput: {
+								assignment: {
+									originalQuery: "report",
+									method: "posix",
+									queryVariant: "quarterly report revenue",
+									queryVariants: ["test", "quarterly report revenue", "financial report"],
+								},
+								evidenceCandidates: [
+									{
+										source: join(docs, "report.txt"),
+										method: "posix",
+										evidence:
+											"Q2 2026 revenue increased 23% year over year to $4.2M, driven by enterprise contracts.",
+										retrievedAt: "2026-07-14T05:30:00.000Z",
+										sourceTemporal: { status: "asOf", asOf: "2026-06-30T00:00:00.000Z" },
+										locator: "report.txt:1",
+									},
+								],
+								summary:
+									"The quarterly report attributes year-over-year revenue growth to enterprise contracts.",
+							},
+						},
+					],
+				},
 			}),
 		};
 		const agent = new Agent({
@@ -130,7 +180,7 @@ describe("exported API — #19 Jikji optional non-retrieval boundary", () => {
 
 describe("exported API — #6 curated output path opacity", () => {
 	it("preserves real paths in the root-exported searchDocuments response and keeps the registry intact", async () => {
-		const model = fauxEmitModel({
+		const model = fauxEmitModel("report", {
 			answer: `Found in ${root}/docs/report.txt (source /docs/report.txt)`,
 			results: [
 				{
@@ -180,7 +230,7 @@ describe("exported API — #21 structured degraded-mode diagnostics", () => {
 	});
 
 	it("surfaces bm25-degraded-fallback and unknown-warning via root-exported searchDocuments", async () => {
-		const model = fauxEmitModel({
+		const model = fauxEmitModel("report", {
 			answer: "answer",
 			results: [{ number: 1, title: "A", summary: "a", evidence: [{ excerpt: "a" }], confidence: 1 }],
 			mapping: [{ number: 1, source: "/docs/report.txt", method: "grep", content: "a" }],

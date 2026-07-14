@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -192,7 +192,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(calls.length).toBeGreaterThanOrEqual(1);
 		const findCall = calls.find((args) => args[0] === "find");
 		expect(findCall).toBeDefined();
-		expect(findCall?.[1]).toBe(docs);
+		expect(findCall?.[1]).toBe(realpathSync(docs));
 		expect(findCall?.[2]).toBe("Q3 report");
 		expect(findCall).toContain("--json");
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
@@ -29,15 +29,27 @@ afterEach(() => {
 	rmSync(tmpDir, { recursive: true, force: true });
 });
 
-function fauxModel(...responses: FauxResponseStep[]) {
+function explorerAssignment(originalQuery: string): string {
+	return [
+		`Original query: ${originalQuery}`,
+		"Selected retrieval method: POSIX",
+		`Query variants: ${originalQuery}; ${originalQuery} evidence`,
+		"Required handoff fields: Retrieved at and Temporal metadata.",
+	].join("\n");
+}
+
+function fauxModel(originalQuery: string, ...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
 	reg.setResponses([
 		fauxAssistantMessage(
 			[
 				fauxToolCall("subagent", {
 					agent: "autorag-explorer",
+					agentScope: "user",
 					model: "faux/gpt-5.6-luna",
-					task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
+					task: explorerAssignment(originalQuery),
+					cwd: resolve(FIXTURE_DIR),
+					artifacts: false,
 				}),
 			],
 			{ stopReason: "toolUse" },
@@ -61,21 +73,57 @@ function emitOne(): FauxResponseStep {
 	);
 }
 
-function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGAgent>[0]["sessionFactory"]> {
+function fauxSessionFactory(
+	originalQuery: string,
+): NonNullable<ConstructorParameters<typeof AutoRAGAgent>[0]["sessionFactory"]> {
 	return async (options) => {
 		const subagentTool: AgentTool = {
 			name: "subagent",
 			label: "Subagent",
 			description: "Test explorer",
-			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
+			parameters: Type.Object({
+				agent: Type.String(),
+				agentScope: Type.Literal("user"),
+				model: Type.String(),
+				task: Type.String(),
+				cwd: Type.Optional(Type.String()),
+				artifacts: Type.Optional(Type.Boolean()),
+			}),
 			execute: async () => ({
-				content: [
-					{
-						type: "text",
-						text: "source: /docs/a evidence: grounded retrievedAt: 2026-07-13 temporal metadata: unknown",
-					},
-				],
-				details: {},
+				content: [{ type: "text", text: "Explorer run completed successfully." }],
+				details: {
+					mode: "single",
+					runId: "run-lifecycle",
+					results: [
+						{
+							agent: "autorag-explorer",
+							task: explorerAssignment(originalQuery),
+							exitCode: 0,
+							usage: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 },
+							model: "faux/gpt-5.6-luna",
+							structuredOutput: {
+								assignment: {
+									originalQuery,
+									method: "posix",
+									queryVariant: "Meeting notes",
+									queryVariants: ["Meeting", "Meeting notes"],
+								},
+								evidenceCandidates: [
+									{
+										source: resolve(FIXTURE_DIR, "data/notes.txt"),
+										method: "posix",
+										evidence:
+											"Meeting notes from 2024-01-15 list action items to review the PR and update docs.",
+										retrievedAt: "2026-07-14T05:30:00.000Z",
+										sourceTemporal: { status: "asOf", asOf: "2024-01-15T00:00:00.000Z" },
+										locator: "line 1-2",
+									},
+								],
+								summary: "The meeting notes contain two concrete follow-up action items.",
+							},
+						},
+					],
+				},
 			}),
 		};
 		const agent = new Agent({
@@ -101,11 +149,11 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 describe("AutoRAGAgent lifecycle", () => {
 	it("subscribe observes events from the in-flight agent run", async () => {
 		const agent = new AutoRAGAgent({
-			model: fauxModel(emitOne()),
+			model: fauxModel("Meeting", emitOne()),
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
-			sessionFactory: fauxSessionFactory(),
+			sessionFactory: fauxSessionFactory("Meeting"),
 		});
 
 		const eventTypes: string[] = [];
@@ -126,13 +174,17 @@ describe("AutoRAGAgent lifecycle", () => {
 			});
 		const agent = new AutoRAGAgent({
 			model: fauxModel(
+				"first",
 				abortAware,
 				fauxAssistantMessage(
 					[
 						fauxToolCall("subagent", {
 							agent: "autorag-explorer",
+							agentScope: "user",
 							model: "faux/gpt-5.6-luna",
-							task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
+							task: explorerAssignment("second"),
+							cwd: resolve(FIXTURE_DIR),
+							artifacts: false,
 						}),
 					],
 					{ stopReason: "toolUse" },
@@ -142,7 +194,7 @@ describe("AutoRAGAgent lifecycle", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			workspacePath: tmpDir,
-			sessionFactory: fauxSessionFactory(),
+			sessionFactory: fauxSessionFactory("second"),
 		});
 
 		const inFlight = agent.searchDocuments("first");

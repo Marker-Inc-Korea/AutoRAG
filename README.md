@@ -4,7 +4,7 @@
 
 AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No raw grep dumps. Just answers.
 
-AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. There is one agent and one usage model.
+AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. Searches use a two-tier workflow: a `gpt-5.6-sol` parent orchestrator delegates exploration to `gpt-5.6-luna` explorers. The roles are independently configurable; the default pair is `myproxy/gpt-5.6-sol` and `myproxy/gpt-5.6-luna`.
 
 ## Why AutoRAG
 
@@ -55,17 +55,17 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The agent also explores the collection directly with a `bash` shell tool (`ls`/`find`/`grep`/`cat`). The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
+AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The parent orchestrator owns process-bound retrieval tools and gives bounded seed packs to explorers; explorers use read-only `read`/`grep`/`find`/`ls` tools to inspect the underlying documents. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
 
 ### Real directory access
 
-AutoRAG reads configured source directories directly through the Pi agent loop with a real `bash` shell, scoped to the `searchPaths` you provide. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
+AutoRAG reads configured source directories through delegated explorer tasks. Each explorer is assigned exactly one normalized configured search root as its `cwd`; the top-level `subagent` invocation sets `artifacts: false` exactly once for single, `tasks`, `chain`, or `parallel` dispatch, and nested explorer task items omit `artifacts`. Project-local `.pi-subagents` debug artifacts are disabled. Explorers use read-only `read`/`grep`/`find`/`ls`; the parent orchestrator owns retrieval seed tools and must delegate document reading before curating. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
 
 ### Optional Jikji discovery and indexing
 
 AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
 
-When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via a policy-aware `jikji_find` tool as the first local-discovery action. The tool parses and validates the upstream answer-pack and honors its `handoff_action` (`direct_use` / `jikji_retry` / `raw_fallback_after_retry`), `tool_call_policy` (`stop_after_find`, `forbidden_tools`, `allowed_followups`), and `agent_should_not_rerank`. `bash` is the fallback only when the answer-pack permits raw fallback (`raw_fallback_after_retry`, after the required retry) or when Jikji is unavailable/unconfigured. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
+When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via a policy-aware `jikji_find` tool as the first local-discovery action. The tool parses and validates the upstream answer-pack and honors its `handoff_action` (`direct_use` / `jikji_retry` / `raw_fallback_after_retry`), `tool_call_policy` (`stop_after_find`, `forbidden_tools`, `allowed_followups`), and `agent_should_not_rerank`. Explorer `read`/`grep`/`find`/`ls` discovery is the fallback only when the answer-pack permits raw fallback (`raw_fallback_after_retry`, after the required retry) or when Jikji is unavailable/unconfigured. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
 Programmatic use:
 
@@ -138,7 +138,42 @@ A datasource skill should provide polling/cron metadata for routine indexing, so
 
 AutoRAG is built for **non-code document retrieval**: manuals, legal docs, internal wikis, meeting notes, research literature, knowledge bases, PDFs.
 
-Code repositories work too (Pi's grep is ripgrep — already the best), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
+Code repositories work too (the explorer's `grep` is useful), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
+
+## Configuration and state
+
+The default home state is kept outside the workspace:
+
+```text
+~/.autorag/
+├── config.json
+├── memory.json
+├── logs/
+│   └── runs.jsonl
+└── pi-agent/
+    ├── auth.json
+    ├── models.json
+    ├── settings.json
+    └── sessions/
+```
+
+`config.json` selects sources, the workspace, memory path, retrieval settings, and the two agent models. Configure the roles independently with `agents.orchestrator` and `agents.explorer`:
+
+```json
+{
+  "searchPaths": ["/path/to/documents"],
+  "workspacePath": "/path/to/workspace",
+  "memoryPath": "/Users/you/.autorag/memory.json",
+  "agents": {
+    "orchestrator": { "provider": "myproxy", "id": "gpt-5.6-sol" },
+    "explorer": { "provider": "myproxy", "id": "gpt-5.6-luna" }
+  }
+}
+```
+
+Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.json`. When the home config is absent and `<cwd>/autorag.config.json` exists, AutoRAG copies the legacy file to `~/.autorag/config.json` without deleting or modifying the legacy file. The legacy cwd file is a migration source, not the default location.
+
+`memory.json` stores retrieval memory, `logs/runs.jsonl` records run events, and durable Pi models, settings, and sessions stay under `~/.autorag/pi-agent`. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
 
 ## Quick Start
 
@@ -167,16 +202,16 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
     You ask a question
            │
            ▼
-    ┌─────────────┐
-    │  check_memory │ ← "Have I seen similar queries before?"
-    └──────┬──────┘
+    ┌──────────────┐
+    │ Plan + seed  │ ← parent check_memory, Jikji, and retrieval tools
+    └──────┬───────┘
            ▼
-    ┌─────────────┐
-    │   Search     │ ← bash (ls/find/grep), BM25, MinSync (pluggable)
-    └──────┬──────┘
+    ┌──────────────┐
+    │ Delegate     │ ← pi-subagents → gpt-5.6-luna explorer
+    └──────┬───────┘
            ▼
-    ┌─────────────┐
-    │   Read       │ ← Read promising files in full
+    ┌──────────────┐
+    │ Search + read│ ← explorer read/grep/find/ls
     └──────┬──────┘
            ▼
     ┌─────────────┐

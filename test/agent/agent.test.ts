@@ -54,14 +54,15 @@ describe("AutoRAGAgent", () => {
 		expect(agent).toBeDefined();
 	});
 
-	it("defaults to bash, check_memory, and search_* retrieval tools for library mode", () => {
+	it("defaults to parent-owned retrieval and explorer tools for library mode", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		expect(prompt).toContain("bash");
 		expect(prompt).toContain("librarian");
+		expect(prompt).toContain("The parent orchestrator owns `check_memory`, Jikji, datasource, and `search_*` tools.");
+		expect(prompt).toContain("Explorer tasks use only read-only `read`/`grep`/`find`/`ls` tools");
 		expect(prompt).toContain("check_memory");
 		for (const name of [
 			"search_bm25_documents",
@@ -110,14 +111,20 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).not.toContain("read_file");
 	});
 
-	it("system prompt references bash and never falls back to read_file", () => {
+	it("system prompt exposes contained explorer tools and rejects bash/read_file", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["check_memory"],
 			memoryEntries: [],
 			manifests: [],
 		});
-		expect(prompt).toContain("bash");
+		expect(prompt).not.toContain("bash");
 		expect(prompt).not.toContain("read_file");
+		expect(prompt).toContain(
+			"contained discovery and document reading within exactly one normalized assigned search root",
+		);
+		for (const name of ["read", "grep", "find", "ls"]) {
+			expect(prompt).toContain(`\`${name}\``);
+		}
 	});
 
 	it("submitFeedback resolves pending entries and saves to disk", () => {
@@ -191,7 +198,7 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		const toolRefSection = prompt.split("Tool Quick Reference")[1];
+		const toolRefSection = prompt.split("Tool Ownership Quick Reference")[1];
 		expect(toolRefSection).toContain("check_memory");
 	});
 

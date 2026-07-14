@@ -8,12 +8,41 @@ retrieval. The parent `gpt-5.6-sol` agent is the orchestrator. Child
 
 | Role | Model | Owns |
 |------|-------|------|
-| Orchestrator | `gpt-5.6-sol` | judgment, sufficiency, conflicts, freshness, timing, follow-ups, and final curation |
-| Explorer | `gpt-5.6-luna` | high-recall search/read work and candidate evidence handoff |
+| Orchestrator | `myproxy/gpt-5.6-sol` by default | judgment, sufficiency, conflicts, freshness, timing, follow-ups, and final curation |
+| Explorer | `myproxy/gpt-5.6-luna` by default | high-recall search/read work and candidate evidence handoff |
+
+The roles are configured independently with `agents.orchestrator` and
+`agents.explorer`; each value is a `{ "provider": "...", "id": "..." }`
+object. The default model pair is `myproxy/gpt-5.6-sol` and
+`myproxy/gpt-5.6-luna`.
 
 The `pi-subagents` extension and its `subagent` capability are required. A
 missing capability is fatal for the run; do not silently complete the request
 with one agent.
+
+## Home State and Configuration
+
+The default home state is separate from workspace indexes:
+
+```text
+~/.autorag/
+├── config.json
+├── memory.json
+├── logs/
+│   └── runs.jsonl
+└── pi-agent/
+    ├── auth.json
+    ├── models.json
+    ├── settings.json
+    └── sessions/
+```
+
+Config path precedence is `--config` > `AUTORAG_CONFIG` >
+`~/.autorag/config.json`. If the home config is absent and
+`<cwd>/autorag.config.json` exists, AutoRAG copies the legacy file to the home
+path without deleting or modifying it. Workspace parsed mirrors and indexes
+remain under `<workspace>/.autorag`. Durable Pi models, settings, and sessions
+stay under `~/.autorag/pi-agent`.
 
 ## Roles
 
@@ -44,6 +73,12 @@ assignment containing:
    broader or narrower forms;
 4. the allowed scope and inherited policy constraints.
 
+Each explorer is assigned exactly one normalized configured search root as its
+`cwd`. The top-level `subagent` invocation sets `artifacts: false` exactly once
+for single, `tasks`, `chain`, or `parallel` dispatch. Nested explorer task
+items omit `artifacts`; project-local `.pi-subagents` debug artifacts are
+disabled.
+
 They search and read a large set of candidate documents. They should return
 weakly relevant candidates when those candidates may illuminate a conflict,
 missing evidence, or an alternate time interpretation. They do not decide
@@ -52,15 +87,15 @@ freshness judgment, assign more work, or produce the caller-facing answer.
 
 ### Retrieval execution boundary
 
-`bash`/POSIX exploration runs inside the luna child process. BM25, MinSync,
-Jikji, and datasource methods are AutoRAG process-bound tools because they
-close over the live indexes, policy gates, and trusted datasource context. For
-those methods, the sol orchestrator invokes the selected retrieval tool only
-to build a bounded seed pack, then delegates the seed paths/results, unchanged
-original query, and query variants to a luna explorer. The explorer reads the
-underlying documents broadly and returns the evidence handoff. Seed retrieval
-does not permit the orchestrator to skip delegation, read the documents, or
-make a final answer without explorer evidence.
+Read-only `read`/`grep`/`find`/`ls` exploration runs inside the luna child
+process. BM25, MinSync, Jikji, and datasource methods are AutoRAG
+process-bound tools because they close over the live indexes, policy gates, and
+trusted datasource context. The sol orchestrator invokes those retrieval tools
+only to build a bounded seed pack, then delegates the seed paths/results,
+unchanged original query, and query variants to a luna explorer. The explorer
+reads the underlying documents broadly and returns the evidence handoff. Seed
+retrieval does not permit the orchestrator to skip delegation, read the
+documents, or make a final answer without explorer evidence.
 
 ## Explorer handoff
 
@@ -99,7 +134,8 @@ timing and freshness interpretation is relevant to the caller.
 
 1. The orchestrator checks memory and chooses one or more retrieval methods.
 2. For process-bound methods, it creates a bounded seed pack with the selected
-   AutoRAG retrieval tool; for POSIX/bash it delegates discovery directly.
+   AutoRAG retrieval tool; for read/grep/find/ls it delegates discovery
+   directly.
 3. It dispatches `gpt-5.6-luna` explorers through `pi-subagents`, passing the
    original query, selected method, multiple query variants, and any seed pack.
 4. Explorers search and read broadly, then return strong, moderate, and weak
@@ -126,9 +162,10 @@ The subagent workflow does not change retrieval policy:
 
 - When Jikji is configured, `jikji_find` remains the first local-discovery
   action. Explorers must honor `answer_paths`,
-  `agent_should_not_rerank`, `handoff_action`, and `tool_call_policy`. `bash`
-  is permitted only when the answer-pack allows the raw fallback after the
-  required retry, or when Jikji is unavailable/unconfigured.
+  `agent_should_not_rerank`, `handoff_action`, and `tool_call_policy`. Raw
+  `read`/`grep`/`find`/`ls` discovery is permitted only when the answer-pack
+  allows the fallback after the required retry, or when Jikji is
+  unavailable/unconfigured.
 - Datasource access remains default-deny and server-bound. Explorers cannot
   grant themselves `allowedTags` or `allowedScopes`; `scope` may only narrow
   trusted access. Datasource results are filtered before merge.

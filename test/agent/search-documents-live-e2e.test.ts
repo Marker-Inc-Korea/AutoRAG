@@ -54,15 +54,27 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function fauxModel(...responses: FauxResponseStep[]) {
+function explorerAssignment(originalQuery: string): string {
+	return [
+		`Original query: ${originalQuery}`,
+		"Selected retrieval method: POSIX",
+		`Query variants: ${originalQuery}; ${originalQuery} evidence`,
+		"Required handoff fields: Retrieved at and Temporal metadata.",
+	].join("\n");
+}
+
+function fauxModel(originalQuery: string, ...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
 	reg.setResponses([
 		fauxAssistantMessage(
 			[
 				fauxToolCall("subagent", {
 					agent: "autorag-explorer",
+					agentScope: "user",
 					model: "faux/gpt-5.6-luna",
-					task: "Original query: test Selected retrieval method: POSIX query variants: test retrievedAt temporal metadata",
+					task: explorerAssignment(originalQuery),
+					cwd: docs,
+					artifacts: false,
 				}),
 			],
 			{ stopReason: "toolUse" },
@@ -79,15 +91,53 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 			name: "subagent",
 			label: "Subagent",
 			description: "Test explorer",
-			parameters: Type.Object({ agent: Type.String(), model: Type.String(), task: Type.String() }),
+			parameters: Type.Object({
+				agent: Type.String(),
+				agentScope: Type.Literal("user"),
+				model: Type.String(),
+				task: Type.String(),
+				cwd: Type.Optional(Type.String()),
+				artifacts: Type.Optional(Type.Boolean()),
+			}),
 			execute: async () => ({
 				content: [
 					{
 						type: "text",
-						text: "source: /docs/a evidence: grounded retrievedAt: 2026-07-13 temporal metadata: unknown",
+						text: "Explorer run completed successfully.",
 					},
 				],
-				details: {},
+				details: {
+					mode: "single",
+					runId: "run-live",
+					results: [
+						{
+							agent: "autorag-explorer",
+							task: explorerAssignment("What is the refund approval policy and was it acknowledged?"),
+							exitCode: 0,
+							usage: { input: 120, output: 90, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 },
+							model: "faux/gpt-5.6-luna",
+							structuredOutput: {
+								assignment: {
+									originalQuery: "What is the refund approval policy and was it acknowledged?",
+									method: "posix",
+									queryVariant: "refund director approval",
+									queryVariants: ["refund director approval", "refund exception approval"],
+								},
+								evidenceCandidates: [
+									{
+										source: join(docs, "q3.txt"),
+										method: "posix",
+										evidence: "Refund exceptions now require director approval before payout.",
+										retrievedAt: "2026-07-14T05:30:00.000Z",
+										sourceTemporal: { status: "updatedAt", updatedAt: "2026-07-01T00:00:00.000Z" },
+										locator: "q3.txt:2",
+									},
+								],
+								summary: "The Q3 policy note requires director approval for refund exceptions.",
+							},
+						},
+					],
+				},
 			}),
 		};
 		const agent = new Agent({
@@ -290,6 +340,7 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 			},
 		];
 		const model = fauxModel(
+			"What is the refund approval policy and was it acknowledged?",
 			fauxAssistantMessage(
 				[
 					fauxToolCall(JIKJI_FIND_TOOL_NAME, { query: "refund director approval" }),

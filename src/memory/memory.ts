@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import {
 	isPathOpaqueIdentifier,
 	type NormalizedEvidenceRef,
@@ -167,6 +168,16 @@ const MIN_INSIGHT_SUPPORT = 5;
 const MIN_INSIGHT_SCORE = 3;
 const INSIGHT_WARNING = "[AutoRAG] Retrieval memory insight extraction failed; continuing without insights";
 const RESET_WARNING = "[AutoRAG] Retrieval memory is not v4-compatible; starting fresh";
+const LOCK_WAIT_TIMEOUT_MS = 5_000;
+const LOCK_STALE_MS = 30_000;
+const LOCK_RETRY_MS = 10;
+
+class RetrievalMemoryLockTimeoutError extends Error {
+	constructor() {
+		super("Timed out waiting for retrieval memory lock");
+		this.name = "RetrievalMemoryLockTimeoutError";
+	}
+}
 
 function emptyMemoryV4(): MemorySchemaV4 {
 	return {
@@ -183,6 +194,28 @@ function emptyMemoryV4(): MemorySchemaV4 {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
+}
+
+function cloneMemory(data: MemorySchemaV4): MemorySchemaV4 {
+	return structuredClone(data);
+}
+
+function recordsEqual(left: unknown, right: unknown): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function feedbackTargetKey(target: FeedbackSignal["target"]): string {
+	if (target.type === "curated_result") return `curated_result:${target.resultId}`;
+	if (target.type === "evidence_chunk") return `evidence_chunk:${target.stableEvidenceId}`;
+	return `method:${target.method}`;
+}
+
+function feedbackSignalKey(signal: FeedbackSignal): string {
+	return `${signal.eventId}\0${feedbackTargetKey(signal.target)}`;
+}
+
+function warningKey(warning: MemoryWarning): string {
+	return `${warning.timestamp}\0${warning.code}\0${warning.message}`;
 }
 
 function isV4(data: unknown): data is Omit<MemorySchemaV4, "insights" | "pendingInsightSignals"> & {
@@ -360,6 +393,7 @@ export class RetrievalMemory {
 	private readonly storagePath: string;
 	private readonly insightExtractor: InsightExtractor;
 	private data: MemorySchemaV4 = emptyMemoryV4();
+	private persistedData: MemorySchemaV4 = emptyMemoryV4();
 	private legacyEntries = new Map<string, MemoryEntry>();
 	private legacySourceToAttemptId = new Map<string, string>();
 
@@ -371,31 +405,34 @@ export class RetrievalMemory {
 	load(): void {
 		this.legacyEntries = new Map();
 		this.legacySourceToAttemptId = new Map();
-		if (!existsSync(this.storagePath)) {
-			this.data = emptyMemoryV4();
-			return;
-		}
-		try {
-			const parsed: unknown = JSON.parse(readFileSync(this.storagePath, "utf-8"));
-			if (isV4(parsed)) {
-				this.data = normalizeV4(parsed);
-				return;
-			}
-			this.resetIncompatible();
-		} catch {
-			this.resetIncompatible();
-		}
+		this.data = this.readPersistedData();
+		this.persistedData = cloneMemory(this.data);
 	}
 
 	save(): void {
 		const dir = dirname(this.storagePath);
-		if (!existsSync(dir)) {
-			throw new Error(`Memory storage directory does not exist: ${dir}`);
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		const lock = this.acquireLock();
+		const localData = this.data;
+		let tmpPath: string | undefined;
+		try {
+			this.data = this.mergeWithPersisted(this.readPersistedData());
+			this.capData();
+			tmpPath = `${this.storagePath}.${randomUUID()}.tmp`;
+			writeFileSync(tmpPath, `${JSON.stringify(this.data, null, 2)}\n`, "utf-8");
+			lock.assertOwned();
+			renameSync(tmpPath, this.storagePath);
+			this.persistedData = cloneMemory(this.data);
+		} catch (error) {
+			this.data = localData;
+			throw error;
+		} finally {
+			try {
+				if (tmpPath && existsSync(tmpPath)) unlinkSync(tmpPath);
+			} finally {
+				lock.release();
+			}
 		}
-		this.capData();
-		const tmpPath = `${this.storagePath}.tmp`;
-		writeFileSync(tmpPath, `${JSON.stringify(this.data, null, 2)}\n`, "utf-8");
-		renameSync(tmpPath, this.storagePath);
 	}
 
 	getSchema(): MemorySchemaV4 {
@@ -615,14 +652,139 @@ export class RetrievalMemory {
 		});
 	}
 
-	private resetIncompatible(): void {
+	private readPersistedData(): MemorySchemaV4 {
+		if (!existsSync(this.storagePath)) return emptyMemoryV4();
+		try {
+			const parsed: unknown = JSON.parse(readFileSync(this.storagePath, "utf-8"));
+			if (isV4(parsed)) return normalizeV4(parsed);
+		} catch (error) {
+			if (!(error instanceof Error)) throw error;
+		}
+		return this.incompatibleMemory();
+	}
+
+	private incompatibleMemory(): MemorySchemaV4 {
 		console.warn(RESET_WARNING);
-		this.data = emptyMemoryV4();
-		this.data.warnings.push({
+		const data = emptyMemoryV4();
+		data.warnings.push({
 			code: "memory-reset",
 			message: "Retrieval memory was reset because it was not v4-compatible",
 			timestamp: Date.now(),
 		});
+		return data;
+	}
+
+	private acquireLock(): FileLockHandle {
+		return acquireFileLock(`${this.storagePath}.lock`, {
+			timeoutMs: LOCK_WAIT_TIMEOUT_MS,
+			staleMs: LOCK_STALE_MS,
+			retryMs: LOCK_RETRY_MS,
+			timeoutError: () => new RetrievalMemoryLockTimeoutError(),
+		});
+	}
+
+	private mergeWithPersisted(persisted: MemorySchemaV4): MemorySchemaV4 {
+		const merged = cloneMemory(persisted);
+		const baselineResults = new Map(this.persistedData.curatedResults.map((record) => [record.resultId, record]));
+		for (const record of this.data.curatedResults) {
+			const baseline = baselineResults.get(record.resultId);
+			if (baseline && recordsEqual(record, baseline)) continue;
+			const existingIndex = merged.curatedResults.findIndex((item) => item.resultId === record.resultId);
+			if (existingIndex < 0) merged.curatedResults.push(record);
+			else if (record.createdAt >= merged.curatedResults[existingIndex].createdAt) {
+				merged.curatedResults[existingIndex] = record;
+			}
+		}
+
+		const baselineEvidence = new Map(
+			this.persistedData.evidenceChunks.map((record) => [record.stableEvidenceId, record]),
+		);
+		for (const record of this.data.evidenceChunks) {
+			const baseline = baselineEvidence.get(record.stableEvidenceId);
+			if (baseline && recordsEqual(record, baseline)) continue;
+			const existingIndex = merged.evidenceChunks.findIndex(
+				(item) => item.stableEvidenceId === record.stableEvidenceId,
+			);
+			if (existingIndex < 0) {
+				merged.evidenceChunks.push(record);
+				continue;
+			}
+			const existing = merged.evidenceChunks[existingIndex];
+			const latest = record.lastSeenAt >= existing.lastSeenAt ? record : existing;
+			merged.evidenceChunks[existingIndex] = {
+				...latest,
+				firstSeenAt: Math.min(existing.firstSeenAt, record.firstSeenAt),
+				lastSeenAt: Math.max(existing.lastSeenAt, record.lastSeenAt),
+			};
+		}
+
+		const baselineSignalIds = new Set(this.persistedData.feedbackSignals.map((signal) => signal.id));
+		const signalKeys = new Set<string>();
+		merged.feedbackSignals = merged.feedbackSignals.filter((signal) => {
+			const key = feedbackSignalKey(signal);
+			if (signalKeys.has(key)) return false;
+			signalKeys.add(key);
+			return true;
+		});
+		for (const signal of this.data.feedbackSignals) {
+			if (baselineSignalIds.has(signal.id)) continue;
+			const key = feedbackSignalKey(signal);
+			if (signalKeys.has(key)) continue;
+			signalKeys.add(key);
+			merged.feedbackSignals.push(signal);
+		}
+
+		const baselineWarningKeys = new Set(this.persistedData.warnings.map(warningKey));
+		const warningKeys = new Set(merged.warnings.map(warningKey));
+		for (const warning of this.data.warnings) {
+			const key = warningKey(warning);
+			if (baselineWarningKeys.has(key) || warningKeys.has(key)) continue;
+			warningKeys.add(key);
+			merged.warnings.push(warning);
+		}
+
+		const baselinePendingKeys = new Set(
+			this.persistedData.pendingInsightSignals.map((item) => feedbackSignalKey(item.signal)),
+		);
+		const pendingKeys = new Set(merged.pendingInsightSignals.map((item) => feedbackSignalKey(item.signal)));
+		for (const item of this.data.pendingInsightSignals) {
+			const key = feedbackSignalKey(item.signal);
+			if (baselinePendingKeys.has(key) || pendingKeys.has(key)) continue;
+			pendingKeys.add(key);
+			merged.pendingInsightSignals.push(item);
+		}
+
+		const baselineInsights = new Map(this.persistedData.insights.map((insight) => [insight.clusterKey, insight]));
+		for (const insight of this.data.insights) {
+			const baseline = baselineInsights.get(insight.clusterKey);
+			if (baseline && recordsEqual(insight, baseline)) continue;
+			const existingIndex = merged.insights.findIndex((item) => item.clusterKey === insight.clusterKey);
+			if (existingIndex < 0) {
+				merged.insights.push(insight);
+				continue;
+			}
+			const existing = merged.insights[existingIndex];
+			const supportDelta = baseline
+				? Math.max(0, insight.supportingSignalCount - baseline.supportingSignalCount)
+				: insight.supportingSignalCount;
+			const support = existing.supportingSignalCount + supportDelta;
+			merged.insights[existingIndex] = {
+				...existing,
+				recommendedSources: Array.from(
+					new Set([...existing.recommendedSources, ...insight.recommendedSources]),
+				).slice(0, 3),
+				recommendedMethods: Array.from(
+					new Set([...existing.recommendedMethods, ...insight.recommendedMethods]),
+				).slice(0, 3),
+				rationale: insight.updatedAt >= existing.updatedAt ? insight.rationale : existing.rationale,
+				supportingSignalCount: support,
+				confidence: Math.max(existing.confidence, insight.confidence, Math.min(1, support / 100)),
+				createdAt: Math.min(existing.createdAt, insight.createdAt),
+				updatedAt: Math.max(existing.updatedAt, insight.updatedAt),
+			};
+		}
+
+		return merged;
 	}
 
 	private capData(): void {

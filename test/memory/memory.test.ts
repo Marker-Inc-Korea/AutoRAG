@@ -1,11 +1,135 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, fork } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { acquireFileLock } from "../../src/filesystem/file-lock.ts";
 import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
+
+const MEMORY_PROCESS_FIXTURE = fileURLToPath(new URL("./memory-process-fixture.ts", import.meta.url));
+
+const fsMock = vi.hoisted(() => ({
+	realRenameSync: undefined as typeof import("node:fs").renameSync | undefined,
+	realRmdirSync: undefined as typeof import("node:fs").rmdirSync | undefined,
+	renameSyncHook: undefined as
+		| ((...args: Parameters<typeof import("node:fs").renameSync>) => ReturnType<typeof import("node:fs").renameSync>)
+		| undefined,
+	rmdirSyncHook: undefined as
+		| ((...args: Parameters<typeof import("node:fs").rmdirSync>) => ReturnType<typeof import("node:fs").rmdirSync>)
+		| undefined,
+}));
+
+vi.mock("node:fs", async () => {
+	const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+	fsMock.realRenameSync = actual.renameSync;
+	fsMock.realRmdirSync = actual.rmdirSync;
+	return {
+		...actual,
+		renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+			if (fsMock.renameSyncHook) return fsMock.renameSyncHook(...args);
+			return actual.renameSync(...args);
+		},
+		rmdirSync: (...args: Parameters<typeof actual.rmdirSync>) => {
+			if (fsMock.rmdirSyncHook) return fsMock.rmdirSyncHook(...args);
+			return actual.rmdirSync(...args);
+		},
+	};
+});
 
 let tmpDir: string;
 let memoryPath: string;
+
+interface WorkerMessage {
+	readonly type: "ready" | "saved";
+	readonly workerId: string;
+}
+
+interface MemoryWorker {
+	readonly child: ChildProcess;
+	readonly ready: Promise<void>;
+	readonly saved: Promise<void>;
+	readonly exited: Promise<void>;
+}
+
+function isWorkerMessage(value: unknown): value is WorkerMessage {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"type" in value &&
+		(value.type === "ready" || value.type === "saved") &&
+		"workerId" in value &&
+		typeof value.workerId === "string"
+	);
+}
+
+function waitForWorkerMessage(
+	child: ChildProcess,
+	expectedType: WorkerMessage["type"],
+	readStderr: () => string,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const timeout = setTimeout(() => {
+			cleanup();
+			reject(new Error(`Timed out waiting for child message ${expectedType}: ${readStderr()}`));
+		}, 5_000);
+		const onMessage = (message: unknown): void => {
+			if (!isWorkerMessage(message) || message.type !== expectedType) return;
+			cleanup();
+			resolve();
+		};
+		const onError = (error: Error): void => {
+			cleanup();
+			reject(error);
+		};
+		const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+			cleanup();
+			reject(new Error(`Child exited before ${expectedType}: code=${code} signal=${signal} ${readStderr()}`));
+		};
+		const cleanup = (): void => {
+			clearTimeout(timeout);
+			child.off("message", onMessage);
+			child.off("error", onError);
+			child.off("exit", onExit);
+		};
+		child.on("message", onMessage);
+		child.once("error", onError);
+		child.once("exit", onExit);
+	});
+}
+
+function spawnMemoryWorker(workerId: string): MemoryWorker {
+	const child = fork(MEMORY_PROCESS_FIXTURE, [memoryPath, workerId], {
+		execArgv: ["--experimental-strip-types", "--disable-warning=ExperimentalWarning"],
+		silent: true,
+	});
+	let stderr = "";
+	child.stderr?.on("data", (chunk: Buffer | string) => {
+		stderr += String(chunk);
+	});
+	const readStderr = (): string => stderr;
+	const exited = new Promise<void>((resolve, reject) => {
+		child.once("error", reject);
+		child.once("exit", (code, signal) => {
+			if (code === 0) resolve();
+			else reject(new Error(`Child failed: code=${code} signal=${signal} ${stderr}`));
+		});
+	});
+	return {
+		child,
+		ready: waitForWorkerMessage(child, "ready", readStderr),
+		saved: waitForWorkerMessage(child, "saved", readStderr),
+		exited,
+	};
+}
+
+async function stopMemoryWorker(worker: MemoryWorker): Promise<void> {
+	if (worker.child.exitCode !== null || worker.child.signalCode !== null) return;
+	await new Promise<void>((resolve) => {
+		worker.child.once("exit", () => resolve());
+		worker.child.kill();
+	});
+}
 
 beforeEach(() => {
 	tmpDir = join(tmpdir(), `autorag-memory-test-${Date.now()}`);
@@ -14,6 +138,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	fsMock.renameSyncHook = undefined;
+	fsMock.rmdirSyncHook = undefined;
 	vi.restoreAllMocks();
 	rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -73,6 +199,195 @@ describe("RetrievalMemory", () => {
 		const raw = JSON.parse(readFileSync(memoryPath, "utf-8"));
 		expect(raw.version).toBe(4);
 		expect(raw.feedbackSignals).toHaveLength(1);
+	});
+
+	it("merges feedback and session results saved by independent processes", { timeout: 10_000 }, async () => {
+		const workers = [spawnMemoryWorker("alpha"), spawnMemoryWorker("beta")];
+		try {
+			await Promise.all(workers.map((worker) => worker.ready));
+			for (const worker of workers) worker.child.send("save");
+			await Promise.all(workers.map((worker) => worker.saved));
+			await Promise.all(workers.map((worker) => worker.exited));
+
+			const raw = JSON.parse(readFileSync(memoryPath, "utf-8"));
+			expect(raw.feedbackSignals).toHaveLength(2);
+			expect(raw.feedbackSignals.map((signal: { query: string }) => signal.query).sort()).toEqual([
+				"feedback-alpha",
+				"feedback-beta",
+			]);
+			expect(raw.curatedResults).toHaveLength(2);
+			expect(raw.curatedResults.map((result: { sessionId: string }) => result.sessionId).sort()).toEqual([
+				"session-alpha",
+				"session-beta",
+			]);
+			expect(raw.evidenceChunks).toHaveLength(2);
+			expect(readdirSync(tmpDir).filter((name) => name.includes(".tmp") || name.includes(".lock"))).toEqual([]);
+		} finally {
+			await Promise.all(workers.map(stopMemoryWorker));
+		}
+	});
+
+	it("uses a unique temporary path for each save attempt", () => {
+		const tempPaths: string[] = [];
+		fsMock.renameSyncHook = (...args) => {
+			if (String(args[1]) === memoryPath) tempPaths.push(String(args[0]));
+			return fsMock.realRenameSync?.(...args);
+		};
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordFeedback("first save", "posix", true);
+		memory.save();
+		memory.recordFeedback("second save", "posix", true);
+		memory.save();
+
+		expect(tempPaths).toHaveLength(2);
+		expect(new Set(tempPaths).size).toBe(2);
+		expect(tempPaths.every((path) => path.startsWith(`${memoryPath}.`))).toBe(true);
+		expect(tempPaths.every((path) => path.endsWith(".tmp"))).toBe(true);
+	});
+
+	it("cleans a unique temporary file after a failed rename without replacing existing memory", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordFeedback("existing memory", "posix", true);
+		memory.save();
+		const existingMemory = readFileSync(memoryPath, "utf-8");
+		fsMock.renameSyncHook = (...args) => {
+			if (String(args[1]) === memoryPath) throw new Error("rename failed");
+			return fsMock.realRenameSync?.(...args);
+		};
+
+		memory.recordFeedback("new memory", "posix", true);
+		expect(() => memory.save()).toThrow("rename failed");
+		expect(readFileSync(memoryPath, "utf-8")).toBe(existingMemory);
+		expect(readdirSync(tmpDir).filter((name) => name.endsWith(".tmp") || name.includes(".lock"))).toEqual([]);
+	});
+
+	it("reclaims an abandoned stale lock and removes its cleanup artifacts", () => {
+		const lockPath = `${memoryPath}.lock`;
+		writeFileSync(lockPath, JSON.stringify({ token: "abandoned", pid: 999_999, createdAt: 0 }), "utf-8");
+		const staleTime = new Date(Date.now() - 60_000);
+		utimesSync(lockPath, staleTime, staleTime);
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordFeedback("after stale lock", "posix", true);
+
+		expect(() => memory.save()).not.toThrow();
+		expect(JSON.parse(readFileSync(memoryPath, "utf-8")).feedbackSignals).toHaveLength(1);
+		expect(readdirSync(tmpDir).filter((name) => name.includes(".lock") || name.endsWith(".tmp"))).toEqual([]);
+	});
+
+	it("keeps a fresh owner valid while merging its update during stale-lock turnover", () => {
+		const ownerPath = join(tmpDir, "turnover-owner.json");
+		const ownerMemory = new RetrievalMemory({ storagePath: ownerPath });
+		ownerMemory.load();
+		ownerMemory.recordFeedback("fresh owner update", "posix", true);
+		ownerMemory.save();
+		const ownerBytes = readFileSync(ownerPath);
+		rmSync(ownerPath, { force: true });
+
+		const lockPath = `${memoryPath}.lock`;
+		const staleContents = `${JSON.stringify({ token: "stale-owner", pid: 999_999, createdAt: 0 })}\n`;
+		mkdirSync(lockPath, { mode: 0o700 });
+		const staleMarkerPath = join(lockPath, "owner-stale-owner.json");
+		writeFileSync(staleMarkerPath, staleContents, "utf-8");
+		const staleTime = new Date(Date.now() - 60_000);
+		utimesSync(staleMarkerPath, staleTime, staleTime);
+		let turnoverInjected = false;
+		let freshOwnerAssertions = 0;
+		let freshOwnerCommitted = false;
+		let staleReaperBlocked = false;
+		let competingOwnerRejected = false;
+		fsMock.rmdirSyncHook = (...args) => {
+			if (!turnoverInjected && String(args[0]) === lockPath) {
+				turnoverInjected = true;
+				if (!fsMock.realRmdirSync) throw new Error("real rmdirSync is unavailable");
+				fsMock.realRmdirSync(...args);
+				const freshOwner = acquireFileLock(lockPath, {
+					timeoutMs: 1_000,
+					staleMs: 30_000,
+					retryMs: 1,
+					timeoutError: () => new Error("fresh turnover owner could not acquire the memory lock"),
+				});
+				let delayedReaperError: unknown;
+				try {
+					freshOwner.assertOwned();
+					freshOwnerAssertions++;
+					try {
+						fsMock.realRmdirSync(lockPath);
+					} catch (error) {
+						if (
+							!(
+								error instanceof Error &&
+								"code" in error &&
+								(error.code === "ENOTEMPTY" || error.code === "EEXIST")
+							)
+						) {
+							throw error;
+						}
+						staleReaperBlocked = true;
+						delayedReaperError = error;
+					}
+					freshOwner.assertOwned();
+					freshOwnerAssertions++;
+					expect(() =>
+						acquireFileLock(lockPath, {
+							timeoutMs: 0,
+							staleMs: 30_000,
+							retryMs: 1,
+							timeoutError: () => {
+								competingOwnerRejected = true;
+								return new Error("turnover competitor could not acquire the memory lock");
+							},
+						}),
+					).toThrow("turnover competitor could not acquire the memory lock");
+					writeFileSync(memoryPath, ownerBytes);
+					freshOwnerCommitted = true;
+				} finally {
+					freshOwner.release();
+				}
+				if (delayedReaperError !== undefined) throw delayedReaperError;
+				throw new Error("delayed stale reaper unexpectedly removed the fresh memory lock");
+			}
+			return fsMock.realRmdirSync?.(...args);
+		};
+
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordFeedback("contending update", "minsync", true);
+		memory.save();
+
+		expect(turnoverInjected).toBe(true);
+		expect(freshOwnerAssertions).toBe(2);
+		expect(freshOwnerCommitted).toBe(true);
+		expect(staleReaperBlocked).toBe(true);
+		expect(competingOwnerRejected).toBe(true);
+		const persisted = JSON.parse(readFileSync(memoryPath, "utf-8")) as {
+			feedbackSignals: Array<{ query: string }>;
+		};
+		expect(persisted.feedbackSignals.map((signal) => signal.query).sort()).toEqual([
+			"contending update",
+			"fresh owner update",
+		]);
+		expect(readdirSync(tmpDir).filter((name) => name.includes(".lock") || name.includes(".quarantine"))).toEqual([]);
+	});
+
+	it("bounds waiting for a live lock without deleting another process's lock", () => {
+		const lockPath = `${memoryPath}.lock`;
+		const realNow = Date.now();
+		writeFileSync(lockPath, JSON.stringify({ token: "live", pid: process.pid, createdAt: realNow }), "utf-8");
+		let clock = realNow;
+		vi.spyOn(Date, "now").mockImplementation(() => {
+			clock += 20_000;
+			return clock;
+		});
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordFeedback("blocked save", "posix", true);
+
+		expect(() => memory.save()).toThrow("Timed out waiting for retrieval memory lock");
+		expect(existsSync(lockPath)).toBe(true);
+		expect(readdirSync(tmpDir).filter((name) => name.endsWith(".tmp") || name.includes(".stale"))).toEqual([]);
 	});
 
 	it("loads persisted v4 data after restart", () => {

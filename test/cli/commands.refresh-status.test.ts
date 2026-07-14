@@ -8,15 +8,20 @@ import type { CommandContext } from "../../src/cli/commands/types.ts";
 
 let root: string;
 let docs: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-refresh-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(root, "home");
 	docs = join(root, "docs");
 	mkdirSync(docs, { recursive: true });
 	writeFileSync(join(docs, "alpha.md"), "# Alpha\n\nAlpha document body content.\n");
 });
 
 afterEach(() => {
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -41,7 +46,9 @@ function writeConfig(bm25: unknown, minSync?: unknown): void {
 		bm25,
 	};
 	if (minSync !== undefined) config.minSync = minSync;
-	writeFileSync(join(root, "autorag.config.json"), `${JSON.stringify(config, null, 2)}\n`);
+	const configDir = join(process.env.HOME as string, ".autorag");
+	mkdirSync(configDir, { recursive: true });
+	writeFileSync(join(configDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 }
 
 describe("runRefresh + runStatus (cli)", () => {

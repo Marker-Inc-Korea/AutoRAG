@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 
-function buildPrompt(options: { jikjiIndexingEnabled?: boolean; toolNames?: string[] } = {}): string {
+function buildPrompt(
+	options: {
+		jikjiIndexingEnabled?: boolean;
+		toolNames?: string[];
+		orchestratorModelId?: string;
+		explorerModelId?: string;
+	} = {},
+): string {
 	return buildSystemPrompt({
 		toolNames: options.toolNames ?? [
 			"bash",
@@ -14,6 +21,8 @@ function buildPrompt(options: { jikjiIndexingEnabled?: boolean; toolNames?: stri
 		],
 		manifests: [],
 		jikjiIndexingEnabled: options.jikjiIndexingEnabled,
+		orchestratorModelId: options.orchestratorModelId,
+		explorerModelId: options.explorerModelId,
 	});
 }
 
@@ -33,14 +42,32 @@ describe("buildSystemPrompt subagent orchestration contract", () => {
 		expect(prompt).toMatch(/final curation|curation/i);
 		expect(prompt).toContain("bounded seed packs for an explorer");
 		expect(prompt).toContain("Each candidate handoff MUST include");
+		expect(prompt).toMatch(/top-level.*subagent.*agentScope.*user/i);
+		expect(prompt).toMatch(/nested.*omit.*agentScope/i);
+		expect(prompt).toMatch(/top-level.*subagent.*artifacts.*false/i);
+		expect(prompt).toMatch(/single.*tasks.*chain.*parallel/i);
+		expect(prompt).toMatch(/nested.*autorag-explorer.*task.*omit.*artifacts/i);
+		expect(prompt).not.toMatch(/every.*autorag-explorer.*task.*artifacts.*false/i);
 		expect(prompt).not.toContain("Your job: find relevant files, read their contents");
+	});
+
+	it("uses configured role model ids without retaining default identity claims", () => {
+		const prompt = buildPrompt({
+			orchestratorModelId: "custom-orchestrator",
+			explorerModelId: "custom-explorer",
+		});
+
+		expect(prompt).toContain("custom-orchestrator");
+		expect(prompt).toContain("custom-explorer");
+		expect(prompt).not.toContain("gpt-5.6-sol");
+		expect(prompt).not.toContain("gpt-5.6-luna");
 	});
 
 	it("specifies the explorer request and evidence handoff contract", () => {
 		const prompt = buildPrompt();
 
 		expect(prompt).toMatch(/original query/i);
-		expect(prompt).toMatch(/selected retrieval method/i);
+		expect(prompt).toMatch(/selected retrieval or discovery path/i);
 		expect(prompt).toMatch(/query variants/i);
 		expect(prompt).toMatch(/weak(?:ly)? relevant/i);
 		expect(prompt).toMatch(/search and read many documents/i);
@@ -103,18 +130,45 @@ describe("buildSystemPrompt subagent orchestration contract", () => {
 		expect(workflow).toBeGreaterThan(assignment);
 	});
 
-	it("scopes retrieval instructions to explorer sections", () => {
+	it("separates parent seed retrieval from contained explorer tools", () => {
 		const prompt = buildPrompt({ jikjiIndexingEnabled: true });
+		const retrievalStart = prompt.indexOf("## Parent-Owned Seed Retrieval");
 		const toolsStart = prompt.indexOf("## Explorer Tools");
 		const strategyStart = prompt.indexOf("## Search Strategy");
+		const quickReferenceStart = prompt.indexOf("## Tool Ownership Quick Reference");
+		const retrievalSection = prompt.slice(retrievalStart, toolsStart);
 		const toolsSection = prompt.slice(toolsStart, strategyStart);
 		const jikjiStart = prompt.indexOf("## Jikji Local Discovery (Seed Policy)");
 		const outputStart = prompt.indexOf("## Output Format");
 		const jikjiSection = prompt.slice(jikjiStart, outputStart);
 
-		expect(toolsSection).toContain("process-bound seed retrieval");
-		expect(toolsSection).toContain("must delegate the underlying document reading");
+		expect(retrievalStart).toBeGreaterThan(-1);
+		expect(toolsStart).toBeGreaterThan(retrievalStart);
+		expect(strategyStart).toBeGreaterThan(toolsStart);
+		expect(quickReferenceStart).toBeGreaterThan(strategyStart);
+		expect(retrievalSection).toContain("parent orchestrator owns");
+		expect(retrievalSection).toContain("parent-owned process-bound seed retrieval");
+		expect(retrievalSection).toMatch(/delegate/);
+		expect(toolsSection).toContain("read-only `read`/`grep`/`find`/`ls`");
+		expect(toolsSection).toContain("exactly one normalized assigned search root");
+		expect(toolsSection).toContain("preserve every inherited scope restriction");
 		expect(jikjiSection).toContain("Seed Policy");
 		expect(jikjiSection).toContain("read-only explorer");
+		expect(prompt.slice(quickReferenceStart)).toContain("Parent-owned process-bound seed retrieval");
+		expect(prompt.slice(quickReferenceStart)).not.toContain("Explorer-only");
+	});
+
+	it("does not grant forbidden shell or scope escape capabilities", () => {
+		const prompt = buildPrompt({ jikjiIndexingEnabled: true });
+
+		for (const forbidden of [
+			/\bbash\b/i,
+			/\bshell\b/i,
+			/search parent directories/i,
+			/remove (?:the )?scope restriction/i,
+			/explorer-only/i,
+		]) {
+			expect(prompt).not.toMatch(forbidden);
+		}
 	});
 });

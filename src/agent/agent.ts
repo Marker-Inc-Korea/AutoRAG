@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { watch as fsWatch, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
@@ -36,14 +36,16 @@ import {
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
+import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
+import { safeParseExplorerReport } from "../subagents/contracts.ts";
 import { loadLocalAutoRAGModels } from "../subagents/local-models.ts";
-import { EXPLORER_MODEL_ID, ORCHESTRATOR_MODEL_ID } from "../subagents/model-policy.ts";
+import { EXPLORER_MODEL_ID } from "../subagents/model-policy.ts";
 import { createMandatorySubagentSession, type MandatorySubagentSessionOptions } from "../subagents/runtime.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
@@ -158,7 +160,9 @@ interface RefreshState {
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
+	explorerModel?: Model<Api>;
 	apiKey?: string;
+	providerApiKeys?: Readonly<Record<string, string>>;
 	searchPaths: string[];
 	manifestDir?: string;
 	memoryPath?: string;
@@ -200,14 +204,16 @@ export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly tools: readonly AgentTool[];
 	private readonly configuredModel: Model<Api> | undefined;
+	private readonly configuredExplorerModel: Model<Api> | undefined;
 	private readonly apiKey: string | undefined;
+	private readonly providerApiKeys: Readonly<Record<string, string>> | undefined;
 	private readonly sessionFactory: AutoRAGSessionFactory;
-	private readonly usesDefaultSessionFactory: boolean;
 	private readonly listeners = new Set<Parameters<Agent["subscribe"]>[0]>();
 	private activeSession: AutoRAGSearchSession | undefined;
 	private readonly pendingSubagentCalls = new Map<string, unknown>();
 	private successfulExplorerCalls = 0;
 	private readonly memory: RetrievalMemory;
+	private readonly runLogger: AutoRAGRunLogger;
 	private lastQuery: string | undefined;
 	private lastSessionId: string | undefined;
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
@@ -226,6 +232,7 @@ export class AutoRAGAgent {
 	};
 
 	private readonly searchPaths: string[];
+	private readonly allowedExplorerRoots: readonly string[];
 	private readonly workspaceProjectRoot: string;
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
@@ -242,6 +249,7 @@ export class AutoRAGAgent {
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	/** Run-scoped merged Jikji policy, set during searchDocuments; cleared after. */
 	private activeJikjiPolicy: MergedJikjiPolicy | undefined;
+	private activeExplorerModel: string | undefined;
 	/** Run-scoped jikji_find call count for the two-phase raw-fallback gate. */
 	private jikjiFindCallCount = 0;
 	private readonly droppedCallerToolNames: readonly string[];
@@ -249,8 +257,9 @@ export class AutoRAGAgent {
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
+		this.configuredExplorerModel = options.explorerModel;
 		this.apiKey = options.apiKey;
-		this.usesDefaultSessionFactory = options.sessionFactory === undefined;
+		this.providerApiKeys = options.providerApiKeys;
 		this.sessionFactory =
 			options.sessionFactory ??
 			(async (sessionOptions) => (await createMandatorySubagentSession(sessionOptions)).session);
@@ -259,8 +268,9 @@ export class AutoRAGAgent {
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
 
-		this.searchPaths = options.searchPaths;
+		this.searchPaths = options.searchPaths.map(pinSearchRoot);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
+		this.allowedExplorerRoots = [...new Set(this.searchPaths)].sort();
 		this.parserOptions = options.parserOptions;
 
 		if (options.minSync) {
@@ -278,9 +288,10 @@ export class AutoRAGAgent {
 			this.jikjiClient = new JikjiClient(options.jikji);
 		}
 
-		const memPath = memoryPath ?? join(homedir(), ".autorag", "memory.json");
+		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
 		this.memory = new RetrievalMemory({ storagePath: memPath });
 		this.memory.load();
+		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
@@ -342,6 +353,8 @@ export class AutoRAGAgent {
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
 			toolNames,
+			orchestratorModelId: options.model?.id,
+			explorerModelId: options.explorerModel?.id,
 			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
@@ -394,26 +407,27 @@ export class AutoRAGAgent {
 
 	private resolveSessionModel(): {
 		readonly model: Model<Api>;
-		readonly explorerModel: string;
+		readonly explorerModel: Model<Api>;
 		readonly apiKey?: string;
+		readonly providerApiKeys?: Readonly<Record<string, string>>;
 	} {
 		if (this.configuredModel !== undefined) {
-			if (this.usesDefaultSessionFactory && this.configuredModel.id !== ORCHESTRATOR_MODEL_ID) {
-				throw new Error(
-					`AutoRAG orchestrator must use ${ORCHESTRATOR_MODEL_ID}; received ${this.configuredModel.id}`,
-				);
-			}
+			const explorerModel =
+				this.configuredExplorerModel ??
+				({ ...this.configuredModel, id: EXPLORER_MODEL_ID, name: "GPT-5.6 Luna" } satisfies Model<Api>);
 			return {
 				model: this.configuredModel,
-				explorerModel: `${this.configuredModel.provider}/${EXPLORER_MODEL_ID}`,
+				explorerModel,
 				...(this.apiKey !== undefined ? { apiKey: this.apiKey } : {}),
+				...(this.providerApiKeys !== undefined ? { providerApiKeys: this.providerApiKeys } : {}),
 			};
 		}
 		const local = loadLocalAutoRAGModels();
 		return {
 			model: local.orchestrator,
-			explorerModel: `${local.provider}/${local.explorer.id}`,
+			explorerModel: local.explorer,
 			apiKey: local.apiKey,
+			providerApiKeys: { [local.provider]: local.apiKey },
 		};
 	}
 
@@ -422,6 +436,20 @@ export class AutoRAGAgent {
 		session.agent.transformContext = async (messages, signal) => {
 			const transformed = extensionTransform === undefined ? messages : await extensionTransform(messages, signal);
 			return this.withMemoryContext(transformed);
+		};
+		const extensionBeforeToolCall = session.agent.beforeToolCall;
+		session.agent.beforeToolCall = async (context, signal) => {
+			if (context.toolCall.name === "subagent") {
+				const rejection = validateExplorerInvocation(
+					context.args,
+					this.activeExplorerModel,
+					this.lastQuery,
+					this.allowedExplorerRoots,
+					this.workspaceProjectRoot,
+				);
+				if (rejection !== undefined) return { block: true, reason: rejection };
+			}
+			return extensionBeforeToolCall?.(context, signal);
 		};
 		const unsubscribers = [...this.listeners].map((listener) => session.agent.subscribe(listener));
 		unsubscribers.push(
@@ -440,7 +468,21 @@ export class AutoRAGAgent {
 		if (event.type === "tool_execution_end" && event.toolName === "subagent") {
 			const args = this.pendingSubagentCalls.get(event.toolCallId);
 			this.pendingSubagentCalls.delete(event.toolCallId);
-			if (!event.isError && isRequiredExplorerInvocation(args) && isGroundedExplorerResult(event.result)) {
+			const invocationRejection = event.isError
+				? "subagent execution failed"
+				: validateExplorerInvocation(
+						args,
+						this.activeExplorerModel,
+						this.lastQuery,
+						this.allowedExplorerRoots,
+						this.workspaceProjectRoot,
+					);
+			if (
+				!event.isError &&
+				invocationRejection === undefined &&
+				this.lastQuery !== undefined &&
+				isGroundedExplorerResult(event.result, args, this.lastQuery)
+			) {
 				this.successfulExplorerCalls += 1;
 			}
 			return;
@@ -452,10 +494,11 @@ export class AutoRAGAgent {
 		this.memory.save();
 	}
 
-	private currentSystemPromptConfig(): SystemPromptConfig {
+	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
 		return {
 			...this.baseSystemPromptConfig,
 			memorySignalCount: this.memory.getSignalCount(),
+			...models,
 		};
 	}
 
@@ -546,6 +589,7 @@ export class AutoRAGAgent {
 		this.jikjiFindCallCount = 0;
 		this.pendingSubagentCalls.clear();
 		this.successfulExplorerCalls = 0;
+		this.activeExplorerModel = undefined;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
@@ -554,44 +598,103 @@ export class AutoRAGAgent {
 		this.resultCapture = (details) => {
 			captured = details;
 		};
+		let searchStarted = false;
 		try {
 			const resolved = this.resolveSessionModel();
+			this.activeExplorerModel = modelReference(resolved.explorerModel);
+			this.runLogger.write({
+				event: "search_started",
+				timestamp: new Date().toISOString(),
+				sessionId,
+				queryLength: trimmedQuery.length,
+				orchestratorModel: resolved.model.id,
+				explorerModel: resolved.explorerModel.id,
+			});
+			searchStarted = true;
 			session = await this.sessionFactory({
 				cwd: this.workspaceProjectRoot,
 				model: resolved.model,
-				systemPrompt: buildSystemPrompt(this.currentSystemPromptConfig()),
+				systemPrompt: buildSystemPrompt(
+					this.currentSystemPromptConfig({
+						orchestratorModelId: resolved.model.id,
+						explorerModelId: resolved.explorerModel.id,
+					}),
+				),
 				tools: this.tools.filter((tool) => tool.name !== BASH_TOOL_NAME),
 				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
+				...(resolved.providerApiKeys !== undefined ? { providerApiKeys: resolved.providerApiKeys } : {}),
+				explorerModel: resolved.explorerModel,
 			});
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
-			await session.prompt(this.buildSearchPrompt(trimmedQuery, options, resolved.explorerModel));
+			await session.prompt(this.buildSearchPrompt(trimmedQuery, options, modelReference(resolved.explorerModel)));
+
+			if (captured === undefined) {
+				throw new Error("AutoRAG agent completed without emitting structured results");
+			}
+			if (this.successfulExplorerCalls === 0) {
+				throw new Error(
+					`AutoRAG requires a successful autorag-explorer subagent call using ${modelReference(resolved.explorerModel)} before final curation`,
+				);
+			}
+			const response = recordStructuredResultsSession(
+				sessionId,
+				trimmedQuery,
+				captured,
+				this.sessions,
+				this.memory,
+				this.collectComponentDiagnostics(),
+			);
+			this.runLogger.write({
+				event: "search_completed",
+				timestamp: new Date().toISOString(),
+				sessionId,
+				resultCount: response.results.length,
+			});
+			return response;
+		} catch (error) {
+			if (searchStarted) {
+				this.runLogger.write({
+					event: "search_failed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					errorType: error instanceof Error ? error.name : "UnknownError",
+				});
+			}
+			throw error;
 		} finally {
-			for (const unsubscribe of unsubscribers) unsubscribe();
-			session?.dispose();
+			const cleanupActions: readonly (() => void)[] = [
+				...unsubscribers,
+				() => {
+					session?.dispose();
+				},
+			];
+			const cleanupResults = await Promise.allSettled(
+				cleanupActions.map((cleanup) => Promise.resolve().then(cleanup)),
+			);
+			const cleanupFailures = cleanupResults.filter(
+				(result): result is PromiseRejectedResult => result.status === "rejected",
+			);
+			if (cleanupFailures.length > 0) {
+				this.runLogger.write({
+					event: "cleanup_failed",
+					timestamp: new Date().toISOString(),
+					sessionId,
+					failureCount: cleanupFailures.length,
+					errorTypes: [
+						...new Set(
+							cleanupFailures.map(({ reason }) => (reason instanceof Error ? reason.name : "UnknownError")),
+						),
+					],
+				});
+			}
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
 			this.activeRun = false;
 			this.activeJikjiPolicy = undefined;
 			this.jikjiFindCallCount = 0;
+			this.activeExplorerModel = undefined;
 		}
-
-		if (captured === undefined) {
-			throw new Error("AutoRAG agent completed without emitting structured results");
-		}
-		if (this.successfulExplorerCalls === 0) {
-			throw new Error(
-				`AutoRAG requires a successful autorag-explorer subagent call using ${EXPLORER_MODEL_ID} before final curation`,
-			);
-		}
-		return recordStructuredResultsSession(
-			sessionId,
-			trimmedQuery,
-			captured,
-			this.sessions,
-			this.memory,
-			this.collectComponentDiagnostics(),
-		);
 	}
 
 	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
@@ -708,12 +811,22 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		const resolvedExplorerModel =
 			explorerModel ?? `${this.configuredModel?.provider ?? "provider"}/${EXPLORER_MODEL_ID}`;
+		const allowedRoots =
+			this.allowedExplorerRoots.length > 0
+				? this.allowedExplorerRoots.map((root) => `- ${root}`).join("\n")
+				: "- (none configured)";
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
 			`You must use the subagent tool before judging or emitting results; there is no single-agent fallback. ` +
 			`For process-bound BM25, MinSync, Jikji, or datasource methods, call the matching AutoRAG tool only to create a bounded seed pack, then give that pack to an explorer for document reading; POSIX/bash discovery runs in the explorer. ` +
 			`Dispatch one or more explorer tasks with agent autorag-explorer and model ${resolvedExplorerModel}. Each task must repeat the original query verbatim, ` +
 			`name at least one selected retrieval method, provide multiple query variants, and request broad evidence coverage including weakly relevant candidates. ` +
+			`Use one canonical labeled assignment block per task with exactly one Original query:, Selected retrieval method:, and Query variants: field in that order; the Original query value must equal the caller query exactly. ` +
+			`Set agentScope to exactly user on the top-level subagent invocation so project agent overrides cannot replace the canonical persistent explorer; omit agentScope from nested task items. ` +
+			`Set artifacts to exactly false once on the top-level subagent invocation, whether dispatching a single explorer or using tasks, chain, or parallel fan-out; omit artifacts from every nested autorag-explorer task item. Never omit the top-level field or set it true. ` +
+			`Allowed explorer roots (normalized):\n${allowedRoots}\n` +
+			`Every autorag-explorer task must set an explicit cwd to exactly one allowed root above. If multiple roots are needed, dispatch one task per root and set each task's cwd to that root. ` +
+			`Never use the workspace root or any path outside these roots for discovery unless that workspace root is explicitly listed above. ` +
 			`Each explorer must return source-level evidence, location context, retrievedAt, source temporal metadata (or explicit unknown), and uncertainty. ` +
 			`Explorers must not decide sufficiency, resolve conflicts, assign follow-ups, curate the final answer, or call ${EMIT_AUTORAG_RESULTS_TOOL_NAME}. ` +
 			`The orchestrator alone performs final judgment, freshness checks, follow-up decisions, and final curation.\n\n` +
@@ -1276,36 +1389,557 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 	};
 }
 
-function isRequiredExplorerInvocation(value: unknown): boolean {
-	if (typeof value !== "object" || value === null) return false;
-	const args = value as Record<string, unknown>;
-	const matches = (task: unknown): boolean => {
-		if (typeof task !== "object" || task === null) return false;
-		const record = task as Record<string, unknown>;
-		const assignment = typeof record.task === "string" ? record.task.toLowerCase() : "";
-		return (
-			record.agent === "autorag-explorer" &&
-			typeof record.model === "string" &&
-			record.model.split(":", 1)[0]?.endsWith(`/${EXPLORER_MODEL_ID}`) === true &&
-			assignment.includes("original query") &&
-			assignment.includes("selected retrieval method") &&
-			assignment.includes("query variant") &&
-			assignment.includes("retrievedat") &&
-			assignment.includes("temporal metadata")
-		);
+function pinSearchRoot(searchPath: string): string {
+	const resolvedPath = resolve(searchPath);
+	let canonicalPath: string;
+	try {
+		canonicalPath = realpathSync(resolvedPath);
+	} catch (error) {
+		if (hasFileSystemErrorCode(error, "ENOENT")) {
+			throw new Error(`AutoRAG search root does not exist: ${resolvedPath}`, { cause: error });
+		}
+		if (hasFileSystemErrorCode(error, "ENOTDIR")) {
+			throw new Error(`AutoRAG search root is not a directory: ${resolvedPath}`, { cause: error });
+		}
+		throw new Error(`AutoRAG search root could not be resolved: ${resolvedPath}`, { cause: error });
+	}
+	let isDirectory: boolean;
+	try {
+		isDirectory = statSync(canonicalPath).isDirectory();
+	} catch (error) {
+		if (hasFileSystemErrorCode(error, "ENOENT")) {
+			throw new Error(`AutoRAG search root does not exist: ${resolvedPath}`, { cause: error });
+		}
+		throw new Error(`AutoRAG search root could not be inspected: ${resolvedPath}`, { cause: error });
+	}
+	if (!isDirectory) {
+		throw new Error(`AutoRAG search root is not a directory: ${resolvedPath}`);
+	}
+	return canonicalPath;
+}
+
+function hasFileSystemErrorCode(error: unknown, code: string): boolean {
+	return error instanceof Error && "code" in error && error.code === code;
+}
+
+function collectSubagentTasks(value: unknown): {
+	readonly tasks: Record<string, unknown>[];
+	readonly malformed: boolean;
+} {
+	const tasks: Record<string, unknown>[] = [];
+	let malformed = false;
+	const collectTasks = (valueToInspect: unknown, isInvocationRoot = false): void => {
+		if (typeof valueToInspect !== "object" || valueToInspect === null || Array.isArray(valueToInspect)) {
+			malformed = true;
+			return;
+		}
+		const record = valueToInspect as Record<string, unknown>;
+		const hasAgent = Object.hasOwn(record, "agent");
+		const nestedValues = ["tasks", "chain", "parallel"]
+			.map((key) => record[key])
+			.filter((nested) => nested !== undefined);
+		if (hasAgent) tasks.push(record);
+		for (const nested of nestedValues) {
+			if (Array.isArray(nested)) {
+				if (nested.length === 0) malformed = true;
+				for (const task of nested) collectTasks(task);
+				continue;
+			}
+			if (typeof nested === "object" && nested !== null) {
+				collectTasks(nested);
+				continue;
+			}
+			malformed = true;
+		}
+		if (!hasAgent && nestedValues.length === 0) {
+			if (isInvocationRoot) malformed = true;
+			else tasks.push(record);
+		}
 	};
-	if (matches(args)) return true;
-	if (Array.isArray(args.tasks) && args.tasks.some(matches)) return true;
-	if (Array.isArray(args.chain) && args.chain.some(matches)) return true;
+	collectTasks(value, true);
+	return { tasks, malformed };
+}
+
+function validateExplorerInvocation(
+	value: unknown,
+	expectedModel: string | undefined,
+	currentQuery: string | undefined,
+	allowedRoots: readonly string[],
+	workspaceRoot: string,
+): string | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return "AutoRAG blocked malformed subagent dispatch";
+	}
+	const args = value as Record<string, unknown>;
+	if (args.artifacts !== false) {
+		return "AutoRAG blocked subagent dispatch without top-level artifacts set to false";
+	}
+	if (args.agentScope !== "user") {
+		return "AutoRAG blocked subagent dispatch without top-level agentScope set to user";
+	}
+	const childSet = collectSubagentTasks(args);
+	if (childSet.malformed || childSet.tasks.length === 0) {
+		return "AutoRAG blocked malformed subagent child task dispatch";
+	}
+	if (childSet.tasks.some((task) => task.agent !== "autorag-explorer")) {
+		return "AutoRAG blocked subagent dispatch containing a non-autorag-explorer child";
+	}
+	if (expectedModel === undefined) {
+		return "AutoRAG blocked subagent dispatch without a configured explorer model";
+	}
+	if (currentQuery === undefined) {
+		return "AutoRAG blocked subagent dispatch without an active search query";
+	}
+	const expectedModelId = expectedModel.split(":", 1)[0];
+	const canonicalCwds: string[] = [];
+	for (const task of childSet.tasks) {
+		if (typeof task.model !== "string" || task.model.split(":", 1)[0] !== expectedModelId) {
+			return "AutoRAG blocked autorag-explorer dispatch using a non-configured model";
+		}
+		const assignment = parseExplorerTaskAssignment(task.task);
+		const normalizedTask = typeof task.task === "string" ? task.task.toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
+		if (
+			assignment === undefined ||
+			!normalizedTask.includes("retrievedat") ||
+			!normalizedTask.includes("temporalmetadata")
+		) {
+			return "AutoRAG blocked autorag-explorer dispatch without required explorer role metadata";
+		}
+		if (isPlaceholderOriginalQuery(assignment.originalQuery)) {
+			return "AutoRAG blocked autorag-explorer dispatch with an empty or placeholder original query";
+		}
+		if (assignment.originalQuery !== currentQuery) {
+			return "AutoRAG blocked autorag-explorer dispatch whose original query does not match the active search query";
+		}
+		if (typeof task.cwd !== "string" || task.cwd.trim().length === 0) {
+			return "AutoRAG blocked autorag-explorer dispatch without an explicit configured cwd";
+		}
+		const requestedCwd = resolve(workspaceRoot, task.cwd);
+		let canonicalCwd: string;
+		let isDirectory: boolean;
+		try {
+			canonicalCwd = realpathSync(requestedCwd);
+			isDirectory = statSync(canonicalCwd).isDirectory();
+		} catch {
+			return `AutoRAG blocked autorag-explorer cwd that could not be resolved: ${requestedCwd}`;
+		}
+		if (!isDirectory || !allowedRoots.includes(canonicalCwd)) {
+			return `AutoRAG blocked autorag-explorer cwd outside configured search roots: ${requestedCwd}`;
+		}
+		canonicalCwds.push(canonicalCwd);
+	}
+	for (const [index, task] of childSet.tasks.entries()) task.cwd = canonicalCwds[index];
+	return undefined;
+}
+
+interface ExplorerTaskAssignment {
+	readonly originalQuery: string;
+}
+
+const EXPLORER_TASK_ASSIGNMENT_LABEL_PATTERN =
+	/^\s*(?:[-+*]\s+)?(original\s+query|selected\s+retrieval\s+method|query\s+variants?)\s*:\s*(.*?)\s*$/gim;
+
+function parseExplorerTaskAssignment(value: unknown): ExplorerTaskAssignment | undefined {
+	if (typeof value !== "string") return undefined;
+	const matches = [...value.matchAll(EXPLORER_TASK_ASSIGNMENT_LABEL_PATTERN)];
+	if (matches.length !== 3) return undefined;
+	const labels = matches.map((match) => match[1]?.toLowerCase().replace(/\s+/g, " "));
+	if (
+		labels[0] !== "original query" ||
+		labels[1] !== "selected retrieval method" ||
+		!labels[2]?.startsWith("query variant")
+	) {
+		return undefined;
+	}
+	const values = matches.map((match) => match[2]?.trim() ?? "");
+	if (!isSubstantiveTextValue(values[1]) || !isSubstantiveTextValue(values[2])) return undefined;
+	return { originalQuery: values[0] ?? "" };
+}
+
+function isPlaceholderOriginalQuery(value: string): boolean {
+	const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+	if (!isSubstantiveTextValue(normalized)) return true;
+	return (
+		/^(?:<|\[|\{)?(?:the )?(?:(?:original|user|active|current|caller|search) )?query(?: here)?(?:>|\]|\})?$/.test(
+			normalized,
+		) ||
+		/^(?:the )?(?:(?:original|user|active|current|caller|search) )?query(?:\s+(?:goes?\s+(?:here|below)|placeholder|template|value|text|pending|missing|to be (?:provided|filled(?: in)?|inserted|added|included|supplied)))?$/.test(
+			normalized,
+		) ||
+		/^(?:placeholder|tbd|todo|same query|same as above|not provided|omitted)$/.test(normalized)
+	);
+}
+
+function modelReference(model: Model<Api>): string {
+	return `${model.provider}/${model.id}`;
+}
+
+function isGroundedExplorerResult(value: unknown, invocation: unknown, currentQuery: string): boolean {
+	if (!isRecord(value) || !isRecord(value.details) || !Array.isArray(value.details.results)) return false;
+	const childSet = collectSubagentTasks(invocation);
+	if (childSet.malformed || childSet.tasks.length === 0) return false;
+	return value.details.results.some(
+		(child, index) => childSet.tasks[index] !== undefined && isGroundedExplorerChild(child, currentQuery),
+	);
+}
+
+function isGroundedExplorerChild(value: unknown, currentQuery: string): boolean {
+	if (!isRecord(value) || value.agent !== "autorag-explorer" || value.exitCode !== 0) return false;
+	const structuredReport = classifyExplorerReportGrounding(value.structuredOutput, currentQuery);
+	if (structuredReport !== "absent") return structuredReport === "grounded";
+	return typeof value.finalOutput === "string" && hasGroundedFinalOutput(value.finalOutput, currentQuery);
+}
+
+type ExplorerReportGrounding = "absent" | "grounded" | "rejected";
+
+function classifyExplorerReportGrounding(value: unknown, currentQuery: string): ExplorerReportGrounding {
+	const parsedValue = typeof value === "string" ? parseJsonValue(value) : value;
+	if (!isRecord(parsedValue)) return "absent";
+	if (
+		!Object.hasOwn(parsedValue, "assignment") &&
+		!Object.hasOwn(parsedValue, "evidenceCandidates") &&
+		!Object.hasOwn(parsedValue, "candidates")
+	) {
+		return "absent";
+	}
+	const report = safeParseExplorerReport(parsedValue);
+	if (report === undefined) return "rejected";
+	const grounded =
+		report.assignment.originalQuery === currentQuery &&
+		isSubstantiveTextValue(report.assignment.method) &&
+		isSubstantiveTextValue(report.assignment.queryVariant) &&
+		report.evidenceCandidates.some(
+			(candidate) =>
+				isSubstantiveTextValue(candidate.source) &&
+				isSubstantiveTextValue(candidate.method) &&
+				isSubstantiveTextValue(candidate.evidence) &&
+				isTimestampTextValue(candidate.retrievedAt),
+		);
+	return grounded ? "grounded" : "rejected";
+}
+
+function parseJsonValue(value: string): unknown | undefined {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		return parsed;
+	} catch (error) {
+		if (error instanceof SyntaxError) return undefined;
+		throw error;
+	}
+}
+
+function hasGroundedFinalOutput(value: string, currentQuery: string): boolean {
+	const directReport = classifyExplorerReportGrounding(value, currentQuery);
+	if (directReport !== "absent") return directReport === "grounded";
+	let rejectedCanonicalReport = false;
+	let start = value.indexOf("{");
+	while (start >= 0) {
+		const end = findJsonObjectEnd(value, start);
+		if (end === undefined) {
+			start = value.indexOf("{", start + 1);
+			continue;
+		}
+		const embeddedReport = classifyExplorerReportGrounding(value.slice(start, end + 1), currentQuery);
+		if (embeddedReport === "grounded") return true;
+		if (embeddedReport === "rejected") rejectedCanonicalReport = true;
+		start = value.indexOf("{", end + 1);
+	}
+	return !rejectedCanonicalReport && hasGroundedTextHandoff(value, currentQuery);
+}
+
+function findJsonObjectEnd(value: string, start: number): number | undefined {
+	if (value[start] !== "{") return undefined;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let index = start; index < value.length; index += 1) {
+		const character = value[index];
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+			} else if (character === "\\") {
+				escaped = true;
+			} else if (character === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (character === '"') {
+			inString = true;
+		} else if (character === "{") {
+			depth += 1;
+		} else if (character === "}") {
+			depth -= 1;
+			if (depth === 0) return index;
+			if (depth < 0) return undefined;
+		}
+	}
+	return undefined;
+}
+
+type GroundingTextField = "source" | "evidence" | "retrievedAt" | "temporalMetadata";
+
+const GROUNDING_TEXT_FIELD_PATTERN =
+	/(?:^|[|\n]|\s)(source\s*temporal\s*metadata|temporal\s*metadata|retrieval\s*timestamp|retrieved\s*at|exact\s+source\s+path|exact\s+supporting\s+excerpt|verbatim\s+evidence|evidence\s*(?:excerpt|items?)?|sources?(?:\s*(?:path|id))?|as\s*of)\s*(?::|=|-|\|)\s*(.*?)(?=\s+(?:source\s*temporal\s*metadata|temporal\s*metadata|retrieval\s*timestamp|retrieved\s*at|exact\s+source\s+path|exact\s+supporting\s+excerpt|verbatim\s+evidence|evidence\s*(?:excerpt|items?)?|sources?(?:\s*(?:path|id))?|as\s*of)\s*(?::|=|-|\|)|\s*[|\n]|$)/gim;
+
+function hasGroundedTextHandoff(value: string, currentQuery: string): boolean {
+	const handoffBody = textBeforeDiagnosticsSection(value);
+	if (handoffBody.trim().length === 0 || hasExplicitNoHandoffContext(handoffBody)) return false;
+	// Real Luna prose handoffs may omit Original query; the invocation-bound currentQuery is the governing binding.
+	if (hasInvalidDeclaredOriginalQuery(handoffBody, currentQuery)) return false;
+	if (hasGroundedMarkdownTable(handoffBody)) return true;
+
+	let fields = createGroundingTextFields();
+	for (const line of handoffBody.split(/\r?\n/)) {
+		const lineFields = collectGroundingTextFields(line);
+		if (lineFields === undefined) {
+			if (isDocumentedHandoffMetadataLine(line)) continue;
+			fields = createGroundingTextFields();
+			continue;
+		}
+		for (const field of Object.keys(lineFields) as GroundingTextField[]) {
+			fields[field].push(...lineFields[field]);
+		}
+		if (hasSubstantiveGroundingTextFields(fields)) return true;
+	}
 	return false;
 }
 
-function isGroundedExplorerResult(value: unknown): boolean {
-	const result = JSON.stringify(value).toLowerCase();
-	return (
-		result.includes("source") &&
-		result.includes("evidence") &&
-		result.includes("retrievedat") &&
-		(result.includes("temporal") || result.includes("asof"))
+function textBeforeDiagnosticsSection(value: string): string {
+	const lines: string[] = [];
+	for (const line of value.split(/\r?\n/)) {
+		if (/^\s*(?:#{1,6}\s*)?diagnostics?\b/i.test(normalizeGroundingTextLine(line))) break;
+		lines.push(line);
+	}
+	return lines.join("\n");
+}
+
+function hasInvalidDeclaredOriginalQuery(value: string, currentQuery: string): boolean {
+	for (const line of value.split(/\r?\n/)) {
+		const declaredQuery = parseDeclaredOriginalQuery(line);
+		if (declaredQuery === undefined) continue;
+		if (isPlaceholderOriginalQuery(declaredQuery) || declaredQuery !== currentQuery) return true;
+	}
+	return false;
+}
+
+function parseDeclaredOriginalQuery(line: string): string | undefined {
+	const normalizedLine = normalizeGroundingTextLine(line);
+	const markdownRow =
+		/^\s*\|\s*(?:\*\*|__)?original[\s_]query(?:\*\*|__)?\s*:?\s*(?:\*\*|__)?\s*\|\s*(.*?)\s*\|?\s*$/i.exec(
+			normalizedLine,
+		);
+	if (markdownRow !== null) return markdownRow[1]?.trim() ?? "";
+	const proseDeclaration = /^\s*(?:\*\*|__)?original[\s_]query(?:\*\*|__)?\s*(?::|=|-|\|)\s*(.*?)\s*$/i.exec(
+		normalizedLine,
 	);
+	return proseDeclaration?.[1]?.trim();
+}
+
+function isDocumentedHandoffMetadataLine(value: string): boolean {
+	return /^\s*(?:original[\s_]query|(?:selected[\s_]+)?(?:retrieval[\s_]+)?method|query[\s_]+variants?(?:[\s_]+used)?|relevance|location[\s_]context|locator|temporal[\s_]basis|uncertainty|discovery[\s_]result)\s*(?::|=|-|\|)\s*\S.*$/i.test(
+		normalizeGroundingTextLine(value),
+	);
+}
+
+function createGroundingTextFields(): Record<GroundingTextField, string[]> {
+	return { source: [], evidence: [], retrievedAt: [], temporalMetadata: [] };
+}
+
+function collectGroundingTextFields(value: string): Record<GroundingTextField, string[]> | undefined {
+	const fields = createGroundingTextFields();
+	let matched = false;
+	for (const match of normalizeGroundingTextLine(value).matchAll(GROUNDING_TEXT_FIELD_PATTERN)) {
+		const label = match[1];
+		const fieldValue = match[2];
+		if (typeof label !== "string" || typeof fieldValue !== "string") continue;
+		const field = classifyGroundingTextLabel(label);
+		if (field === undefined) continue;
+		fields[field].push(fieldValue);
+		matched = true;
+	}
+	return matched ? fields : undefined;
+}
+
+function hasSubstantiveGroundingTextFields(fields: Record<GroundingTextField, string[]>): boolean {
+	return (
+		fields.source.some((fieldValue) => isSubstantiveTextValue(fieldValue)) &&
+		fields.evidence.some((fieldValue) => isSubstantiveTextValue(fieldValue)) &&
+		fields.retrievedAt.some(isTimestampTextValue) &&
+		fields.temporalMetadata.some((fieldValue) => isSubstantiveTextValue(fieldValue, true))
+	);
+}
+
+function hasExplicitNoHandoffContext(value: string): boolean {
+	const normalizedValue = value.split(/\r?\n/).map(normalizeGroundingTextLine).join("\n");
+	return (
+		/^\s*diagnostics?\b/im.test(normalizedValue) ||
+		/\b(?:no|without)\s+(?:(?:an?|the)\s+)?(?:(?:explorer|source|evidence)\s+)?handoff\b/i.test(normalizedValue) ||
+		/\bhandoff\s+(?:was\s+)?(?:not|never)\s+(?:returned|provided)\b/i.test(normalizedValue)
+	);
+}
+
+function hasGroundedMarkdownTable(value: string): boolean {
+	const lines = value.split(/\r?\n/);
+	for (let headerIndex = 0; headerIndex < lines.length; headerIndex += 1) {
+		const headers = splitMarkdownRow(lines[headerIndex]);
+		if (headers.length === 0) continue;
+		const indexes = {
+			source: headers.findIndex((header) => classifyGroundingTextLabel(header) === "source"),
+			evidence: headers.findIndex((header) => classifyGroundingTextLabel(header) === "evidence"),
+			retrievedAt: headers.findIndex((header) => classifyGroundingTextLabel(header) === "retrievedAt"),
+			temporalMetadata: headers.findIndex((header) => classifyGroundingTextLabel(header) === "temporalMetadata"),
+		};
+		if (Object.values(indexes).some((index) => index < 0)) continue;
+		const requiredColumn = Math.max(...Object.values(indexes));
+		const delimiter = splitMarkdownRow(lines[headerIndex + 1] ?? "");
+		if (delimiter.length !== headers.length || !delimiter.every(isMarkdownSeparatorCell)) continue;
+		const cells = splitMarkdownRow(lines[headerIndex + 2] ?? "");
+		if (cells.length !== headers.length || cells.length <= requiredColumn) continue;
+		if (
+			isSubstantiveTextValue(cells[indexes.source], false) &&
+			isSubstantiveTextValue(cells[indexes.evidence], false) &&
+			isTimestampTextValue(cells[indexes.retrievedAt]) &&
+			isSubstantiveTextValue(cells[indexes.temporalMetadata], true)
+		) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function splitMarkdownRow(value: string): string[] {
+	if (!value.includes("|")) return [];
+	const row = value.trim().replace(/^\|/, "").replace(/\|$/, "");
+	return row.split("|").map((cell) => cell.trim());
+}
+
+function isMarkdownSeparatorCell(value: string): boolean {
+	return /^:?-{3,}:?$/.test(value.trim());
+}
+
+function classifyGroundingTextLabel(label: string): GroundingTextField | undefined {
+	const normalized = label.toLowerCase().replace(/\s+/g, " ").trim();
+	if (
+		["source", "sources", "source path", "source id", "sourcepath", "sourceid", "exact source path"].includes(
+			normalized,
+		)
+	) {
+		return "source";
+	}
+	if (
+		[
+			"evidence",
+			"evidence excerpt",
+			"evidence item",
+			"evidence items",
+			"exact supporting excerpt",
+			"verbatim evidence",
+		].includes(normalized)
+	) {
+		return "evidence";
+	}
+	if (["retrieved at", "retrievedat", "retrieval timestamp", "retrievaltimestamp"].includes(normalized)) {
+		return "retrievedAt";
+	}
+	if (
+		[
+			"source temporal metadata",
+			"source temporalmetadata",
+			"sourcetemporalmetadata",
+			"temporal metadata",
+			"temporalmetadata",
+			"as of",
+			"asof",
+		].includes(normalized)
+	) {
+		return "temporalMetadata";
+	}
+	return undefined;
+}
+
+function normalizeGroundingTextLine(value: string): string {
+	return value
+		.replace(/^\s*[-+*]\s+/, "")
+		.replace(/^(\s*(?:#{1,6}\s+)?)(?:\*\*|__)([^*_|\n]+?)(?:\*\*|__)\s*:\s*/, "$1$2: ")
+		.replace(/^(\s*(?:#{1,6}\s+)?)(?:\*\*|__)([^*_|\n]+?)\s*:\s*(?:\*\*|__)\s*/, "$1$2: ")
+		.replace(/^(\s*(?:#{1,6}\s+)?)(?:\*\*|__)([^*_|\n]+?)(?:\*\*|__)\s*$/, "$1$2")
+		.trim();
+}
+
+function cleanTextValue(value: string): string {
+	return value
+		.trim()
+		.replace(/^[|`*_"' ]+|[|`*_"'.,; ]+$/g, "")
+		.trim();
+}
+
+function isSubstantiveTextValue(value: string | undefined, allowUnknown = false): boolean {
+	if (value === undefined) return false;
+	const cleaned = cleanTextValue(value);
+	if (cleaned.length === 0) return false;
+	if (cleaned.toLowerCase() === "unknown") return allowUnknown;
+	if (/^(?:none|n\/a|na|null|undefined|true|false|-|—|\?)$/i.test(cleaned)) return false;
+	const normalized = cleaned.toLowerCase().replace(/\s+/g, " ");
+	if (
+		(/^(?:<[^>]+>|\[[^\]]+\]|\{[^}]+\})$/.test(normalized) &&
+			/\b(?:source|evidence|excerpt|path|id)\b/.test(normalized)) ||
+		/^(?:the )?(?:source|evidence|exact supporting excerpt)(?:\s+(?:path|id|excerpt|here|placeholder|goes here|goes below))?$/.test(
+			normalized,
+		) ||
+		/^(?:(?:source|evidence)(?:\s+(?:path|id|excerpt))?|(?:path|excerpt)|exact supporting excerpt|verbatim evidence)\s+(?:here|below)$/i.test(
+			normalized,
+		) ||
+		GROUNDING_TEXT_PLACEHOLDER_PATTERN.test(normalized)
+	) {
+		return false;
+	}
+	return !/^-?\d+(?:\.\d+)?$/.test(cleaned);
+}
+
+const GROUNDING_TEXT_PLACEHOLDER_SUBJECT =
+	"(?:the )?(?:source(?: (?:path|id))?|evidence(?: (?:excerpt|item(?:s)?))?|exact supporting excerpt|verbatim evidence|excerpt)";
+const GROUNDING_TEXT_PLACEHOLDER_LOCATION =
+	"(?:here|below|above|provided|filled(?: in)?|inserted|added|included|supplied|quoted|located)(?: (?:here|below|above))?";
+const GROUNDING_TEXT_PLACEHOLDER_PATTERN = new RegExp(
+	`^(?:${GROUNDING_TEXT_PLACEHOLDER_SUBJECT}\\s+(?:(?:goes?|belongs|is|will be|should be|must be|needs to be|to be)\\s+${GROUNDING_TEXT_PLACEHOLDER_LOCATION}|(?:should|must|needs to) go\\s+${GROUNDING_TEXT_PLACEHOLDER_LOCATION}|(?:placeholder|template|value|text|pending|missing)|to\\s+(?:provide|fill(?: in)?|insert|add|include|supply|quote))|(?:provide|insert|add|include|quote|supply)\\s+${GROUNDING_TEXT_PLACEHOLDER_SUBJECT}(?:\\s+${GROUNDING_TEXT_PLACEHOLDER_LOCATION})?)$`,
+	"i",
+);
+
+const TIMESTAMP_TEXT_PATTERN =
+	/^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)(?:\s*;\s*.+)?$/;
+
+function isTimestampTextValue(value: string | undefined): boolean {
+	if (value === undefined) return false;
+	const cleaned = cleanTextValue(value);
+	const match = TIMESTAMP_TEXT_PATTERN.exec(cleaned);
+	const timestamp = match?.[1];
+	if (timestamp === undefined) return false;
+	const dateMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(timestamp);
+	if (dateMatch === null) return false;
+	const year = Number(dateMatch[1]);
+	const month = Number(dateMatch[2]);
+	const day = Number(dateMatch[3]);
+	const calendarDate = new Date(Date.UTC(year, month - 1, day));
+	if (
+		calendarDate.getUTCFullYear() !== year ||
+		calendarDate.getUTCMonth() !== month - 1 ||
+		calendarDate.getUTCDate() !== day
+	) {
+		return false;
+	}
+	const timeMatch = /[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?/.exec(timestamp);
+	if (timeMatch !== null) {
+		const hours = Number(timeMatch[1]);
+		const minutes = Number(timeMatch[2]);
+		const seconds = timeMatch[3] === undefined ? 0 : Number(timeMatch[3]);
+		if (hours > 23 || minutes > 59 || seconds > 59) return false;
+	}
+	const timezoneMatch = /([+-])(\d{2}):?(\d{2})$/.exec(timestamp);
+	if (timezoneMatch !== null && (Number(timezoneMatch[2]) > 23 || Number(timezoneMatch[3]) > 59)) return false;
+	return Number.isFinite(Date.parse(timestamp));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

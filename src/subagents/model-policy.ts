@@ -18,11 +18,7 @@ export interface ValidatedModelPolicy {
 	readonly explorer: ModelReference;
 }
 
-export type ModelPolicyErrorCode =
-	| "INVALID_POLICY_OBJECT"
-	| "MISSING_REQUIRED_MODEL"
-	| "INVALID_MODEL_REFERENCE"
-	| "MODEL_ROLE_MISMATCH";
+export type ModelPolicyErrorCode = "INVALID_POLICY_OBJECT" | "MISSING_REQUIRED_MODEL" | "INVALID_MODEL_REFERENCE";
 
 export class ModelPolicyError extends Error {
 	readonly code: ModelPolicyErrorCode;
@@ -51,8 +47,6 @@ export function validateModelPolicy(value: unknown): ValidatedModelPolicy {
 
 	const orchestrator = readRequiredModel(value, "orchestrator");
 	const explorer = readRequiredModel(value, "explorer");
-	validateRoleModel("orchestrator", orchestrator);
-	validateRoleModel("explorer", explorer);
 	return { orchestrator, explorer };
 }
 
@@ -84,17 +78,6 @@ function readRequiredModel(record: Record<string, unknown>, role: ModelRole): Mo
 		});
 	}
 	return value;
-}
-
-function validateRoleModel(role: ModelRole, model: ModelReference): void {
-	const expected = REQUIRED_MODEL_IDS[role];
-	if (model.id !== expected) {
-		throw new ModelPolicyError("MODEL_ROLE_MISMATCH", `${role} must use model ${expected}; received ${model.id}.`, {
-			role,
-			expected,
-			actual: model.id,
-		});
-	}
 }
 
 function isModelReference(value: unknown): value is ModelReference {

@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -300,7 +300,7 @@ describe("Jikji bash gate enforcement", () => {
 const args = process.argv.slice(2);
 if (args[0] === "find") {
 	const rootArg = args[1];
-	if (rootArg === ${JSON.stringify(docs)}) {
+		if (rootArg === ${JSON.stringify(realpathSync(docs))}) {
 		console.log(JSON.stringify(${JSON.stringify(pack1)}));
 	} else {
 		console.log(JSON.stringify(${JSON.stringify(pack2)}));
@@ -422,7 +422,7 @@ if (args[0] === "find") {
 const args = process.argv.slice(2);
 if (args[0] === "find") {
 	const rootArg = args[1];
-	if (rootArg === ${JSON.stringify(docs)}) {
+		if (rootArg === ${JSON.stringify(realpathSync(docs))}) {
 		console.log(JSON.stringify(${JSON.stringify(packA)}));
 	} else {
 		console.log(JSON.stringify(${JSON.stringify(packB)}));
@@ -497,7 +497,7 @@ if (args[0] === "find") {
 			agentShouldNotRerank: boolean;
 		}[];
 		expect(perRoot).toHaveLength(1);
-		expect(perRoot[0]?.root).toBe(docs);
+		expect(perRoot[0]?.root).toBe(realpathSync(docs));
 		expect(perRoot[0]?.handoffAction).toBe("direct_use");
 		expect(perRoot[0]?.stopAfterFind).toBe(true);
 		expect(perRoot[0]?.forbiddenTools).toContain("bash");

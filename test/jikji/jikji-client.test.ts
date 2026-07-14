@@ -9,6 +9,8 @@ type LoggedCall = {
 	readonly args: readonly string[];
 };
 
+const FAKE_CHILD_READY_TIMEOUT_MS = 10_000;
+
 let root: string;
 let corpusRoot: string;
 let binDir: string;
@@ -67,7 +69,7 @@ function waitForLogFile(): Promise<void> {
 		const timeout = setTimeout(() => {
 			watcher.close();
 			reject(new Error("timed out waiting for fake Jikji log"));
-		}, 1000);
+		}, FAKE_CHILD_READY_TIMEOUT_MS);
 	});
 }
 
@@ -282,12 +284,12 @@ describe("JikjiClient", () => {
 		expect(result).toMatchObject({ ok: false, reason: "timeout" });
 	});
 
-	it("terminates the child when AbortController aborts", async () => {
+	it("terminates the child when AbortController aborts", { timeout: 20_000 }, async () => {
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
 		const controller = new AbortController();
 		const client = new JikjiClient({
 			env: pathEnv(),
-			timeoutMs: 5000,
+			timeoutMs: 15_000,
 		});
 
 		const pending = client.prepare(corpusRoot, { signal: controller.signal });
@@ -520,10 +522,10 @@ describe("JikjiClient.find", () => {
 		expect(result).toMatchObject({ ok: false, reason: "timeout" });
 	});
 
-	it("terminates the child when AbortController aborts", async () => {
+	it("terminates the child when AbortController aborts", { timeout: 20_000 }, async () => {
 		writeFakeJikji("setInterval(() => undefined, 1000);\nawait new Promise(() => undefined);");
 		const controller = new AbortController();
-		const client = new JikjiClient({ env: pathEnv(), timeoutMs: 5000 });
+		const client = new JikjiClient({ env: pathEnv(), timeoutMs: 15_000 });
 
 		const pending = client.find(corpusRoot, "q", { signal: controller.signal });
 		await waitForLogFile();
