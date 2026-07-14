@@ -1,15 +1,16 @@
 import { existsSync, lstatSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { AutoRAGAgent, type AutoRAGRefreshResult } from "../../agent/agent.ts";
+import { AutoRAGAgent, type AutoRAGRefreshResult, type RefreshMethod } from "../../agent/agent.ts";
 import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
 import { PARSED_MIRROR_SUBDIR } from "../../mirror/paths.ts";
 import { BM25_SUBDIR } from "../../retrieval/methods/bm25.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
 import type { CommandContext } from "./types.ts";
+import { parseMethodFlag } from "./refresh.ts";
 
-const RESET_TARGETS = [PARSED_MIRROR_SUBDIR, BM25_SUBDIR, MINSYNC_SUBDIR] as const;
-const RESET_TARGET_NAMES = ["parsed", "bm25", "minsync"] as const;
+const ALL_RESET_TARGETS = [PARSED_MIRROR_SUBDIR, BM25_SUBDIR, MINSYNC_SUBDIR] as const;
+const ALL_RESET_TARGET_NAMES = ["parsed", "bm25", "minsync"] as const;
 
 /**
  * Run the `autorag index` command. `reset` removes the parsed mirror, BM25,
@@ -21,7 +22,7 @@ const RESET_TARGET_NAMES = ["parsed", "bm25", "minsync"] as const;
 export async function runIndex(ctx: CommandContext): Promise<number> {
 	const sub = ctx.positionals[0];
 	if (sub !== "reset" && sub !== "rebuild") {
-		ctx.stderr(renderError(new Error("Usage: autorag index <reset|rebuild> [--yes]"), { json: ctx.json }));
+		ctx.stderr(renderError(new Error("Usage: autorag index <reset|rebuild> [--yes] [--method]"), { json: ctx.json }));
 		return 2;
 	}
 
@@ -33,8 +34,12 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 		return 2;
 	}
 
+	// Determine scoped reset targets from --method. Default: all three.
+	const methods = parseMethodFlag(ctx.flags["method"]);
+	const { targetNames, targetSubdirs, refreshMethods } = resolveResetScope(methods);
+
 	const autoragDir = resolve(config.workspacePath, ".autorag");
-	const targets = RESET_TARGETS.map((subdir) => resolve(config.workspacePath, subdir));
+	const targets = targetSubdirs.map((subdir) => resolve(config.workspacePath, subdir));
 
 	// Guard 1: `.autorag` and each index dir must be real directories owned by
 	// autorag. A symlink here could redirect rmSync outside the workspace, so
@@ -63,7 +68,7 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	if (!ctx.flags.yes) {
 		if (ctx.promptYesNo) {
 			const ok = await ctx.promptYesNo(
-				`Reset the ${RESET_TARGET_NAMES.join(", ")} indexes under ${join(config.workspacePath, ".autorag")}?`,
+				`Reset the ${targetNames.join(", ")} indexes under ${join(config.workspacePath, ".autorag")}?`,
 			);
 			if (!ok) {
 				ctx.stderr(renderError(new Error("Reset declined."), { json: ctx.json }));
@@ -83,22 +88,70 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	}
 
 	if (sub === "reset") {
-		ctx.stdout(renderIndex({ action: "reset", removed: [...RESET_TARGET_NAMES] }, { json: ctx.json }));
+		ctx.stdout(renderIndex({ action: "reset", removed: [...targetNames] }, { json: ctx.json }));
 		return 0;
 	}
 
-	// rebuild: re-run a forced refresh with a model-free agent.
+	// rebuild: re-run a forced refresh with a model-free agent, scoped to methods.
 	let rebuilt: AutoRAGRefreshResult;
 	try {
 		const agent = new AutoRAGAgent(buildAgentOptions(config));
-		rebuilt = await agent.refresh(true);
+		rebuilt = await agent.refresh(true, refreshMethods ? { methods: refreshMethods } : undefined);
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json }));
 		return 1;
 	}
 
-	ctx.stdout(renderIndex({ action: "rebuild", removed: [...RESET_TARGET_NAMES], rebuilt }, { json: ctx.json }));
+	ctx.stdout(renderIndex({ action: "rebuild", removed: [...targetNames], rebuilt }, { json: ctx.json }));
 	return 0;
+}
+
+/**
+ * Resolve which index directories to reset and which refresh methods to run,
+ * based on the parsed `--method` flag. When `methods` is undefined (no flag),
+ * all three index dirs are reset and a full refresh runs.
+ *
+ * Mapping:
+ * - `bm25` → reset BM25_SUBDIR, refresh with bm25 (+ parsed, since bm25 needs it)
+ * - `minsync` → reset MINSYNC_SUBDIR, refresh with minsync (+ parsed)
+ * - `parsed` → reset PARSED_MIRROR_SUBDIR, refresh with parsed only
+ * - `all` or undefined → all three dirs + full refresh
+ * - `datasources`/`jikji` → no dirs to reset, but included in refresh methods
+ */
+function resolveResetScope(methods: readonly RefreshMethod[] | undefined): {
+	targetNames: readonly string[];
+	targetSubdirs: readonly string[];
+	refreshMethods: readonly RefreshMethod[] | undefined;
+} {
+	if (methods === undefined) {
+		return {
+			targetNames: ALL_RESET_TARGET_NAMES,
+			targetSubdirs: ALL_RESET_TARGETS,
+			refreshMethods: undefined,
+		};
+	}
+	const subdirs: string[] = [];
+	const names: string[] = [];
+	const refresh: RefreshMethod[] = [];
+	for (const m of methods) {
+		refresh.push(m);
+		if (m === "parsed") {
+			subdirs.push(PARSED_MIRROR_SUBDIR);
+			names.push("parsed");
+		} else if (m === "bm25") {
+			subdirs.push(BM25_SUBDIR);
+			names.push("bm25");
+		} else if (m === "minsync") {
+			subdirs.push(MINSYNC_SUBDIR);
+			names.push("minsync");
+		}
+		// datasources/jikji have no reset dir but are valid refresh methods.
+	}
+	return {
+		targetNames: names.length > 0 ? names : ALL_RESET_TARGET_NAMES,
+		targetSubdirs: subdirs.length > 0 ? subdirs : ALL_RESET_TARGETS,
+		refreshMethods: refresh,
+	};
 }
 
 function isWithin(target: string, base: string): boolean {

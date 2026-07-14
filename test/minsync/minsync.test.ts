@@ -2,9 +2,15 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureMinSyncBinary, MinSyncVectorMethod } from "../../src/minsync/index.ts";
+import {
+	ensureMinSyncBinary,
+	MinSyncClient,
+	MinSyncVectorMethod,
+	minSyncConfigPath,
+	rewriteEmbedderConfig,
+} from "../../src/minsync/index.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
-
+import { parse } from "smol-toml";
 let root: string;
 let source: string;
 let parsedOutput: string;
@@ -288,5 +294,229 @@ describe("MinSyncVectorMethod", () => {
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
+	});
+});
+
+describe("MinSyncVectorMethod embedder plumbing", () => {
+	it("passes --embedder <id> to init when embedder.id is set", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			embedder: { id: "openai:text-embedding-3-large" },
+		});
+
+		const result = await method.sync();
+
+		expect(result).toMatchObject({ synced: 1 });
+		const initCall = loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[]; cwd: string })
+			.find((call) => call.args[0] === "init");
+		expect(initCall?.args).toContain("--embedder");
+		const embedderIdx = initCall?.args.indexOf("--embedder");
+		expect(initCall?.args[embedderIdx! + 1]).toBe("openai:text-embedding-3-large");
+	});
+
+	it("does not pass --embedder when no embedder.id is set", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		await method.sync();
+
+		const initCall = loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[]; cwd: string })
+			.find((call) => call.args[0] === "init");
+		expect(initCall?.args).not.toContain("--embedder");
+	});
+
+	it("degrades with missing-binary when no binary is available and autoInstall is false", async () => {
+		const savedPath = process.env.PATH;
+		process.env.PATH = "/nonexistent";
+		try {
+			const method = new MinSyncVectorMethod({
+				binaryPath: join(root, "nonexistent-binary"),
+				root,
+				workspacePath: minsyncWorkspace,
+				autoInstall: false,
+			});
+
+			const result = await method.sync();
+
+			expect(result).toMatchObject({ ok: false, synced: 0, reason: "missing-binary" });
+		} finally {
+			process.env.PATH = savedPath;
+		}
+	});
+
+	it("degrades with missing-api-key-env when apiKeyEnv is set but env var is empty", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			embedder: { apiKeyEnv: "MINSYNC_TEST_MISSING_KEY" },
+		});
+
+		const result = await method.sync();
+
+		expect(result).toMatchObject({ ok: false, synced: 0 });
+		expect(result.reason).toContain("missing-api-key-env");
+		expect(result.reason).toContain("MINSYNC_TEST_MISSING_KEY");
+	});
+
+	it("proceeds with sync when apiKeyEnv is set and env var has a value", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		process.env.MINSYNC_TEST_PRESENT_KEY = "test-key-value";
+		try {
+			const method = new MinSyncVectorMethod({
+				binaryPath: minsyncBinary,
+				root,
+				workspacePath: minsyncWorkspace,
+				embedder: { apiKeyEnv: "MINSYNC_TEST_PRESENT_KEY" },
+			});
+
+			const result = await method.sync();
+
+			expect(result).toMatchObject({ ok: true, synced: 1 });
+		} finally {
+			delete process.env.MINSYNC_TEST_PRESENT_KEY;
+		}
+	});
+
+	it("strips sk- patterns from reason strings", async () => {
+		// Fake binary that emits a secret-looking string on stderr for init
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === "init") {
+  console.error("auth failed for key sk-abc123def456 in region us-east-1");
+  process.exit(1);
+}
+process.exit(2);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+
+		const client = new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+		});
+
+		const result = await client.sync();
+
+		expect(result.ok).toBe(false);
+		expect(result.reason).not.toContain("sk-abc123def456");
+		expect(result.reason).toContain("[redacted]");
+	});
+
+	it("rewrites allowlisted embedder fields into .minsync/config.toml after init", async () => {
+		// Create a minimal config.toml that init would have produced
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[embedder]
+id = "openai:text-embedding-3-small"
+base_url = "https://api.openai.com/v1"
+
+[vectorstore]
+[vectorstore.options]
+dimension = 1536
+`,
+		);
+
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			embedder: {
+				id: "openai:text-embedding-3-large",
+				baseUrl: "https://embed.example.com/v1",
+				dimension: 3072,
+				queryPrefix: "query:",
+				passagePrefix: "passage:",
+				batchSize: 64,
+				maxRetries: 5,
+				maxConcurrent: 4,
+				timeoutMs: 30_000,
+			},
+		});
+
+		const result = await method.sync();
+
+		expect(result).toMatchObject({ ok: true, synced: 1 });
+
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(rewritten.embedder?.id).toBe("openai:text-embedding-3-large");
+		expect(rewritten.embedder?.base_url).toBe("https://embed.example.com/v1");
+		expect(rewritten.embedder?.query_prefix).toBe("query:");
+		expect(rewritten.embedder?.passage_prefix).toBe("passage:");
+		expect(rewritten.embedder?.batch_size).toBe(64);
+		expect(rewritten.embedder?.max_retries).toBe(5);
+		expect(rewritten.embedder?.max_concurrent).toBe(4);
+		expect(rewritten.embedder?.timeout_seconds).toBe(30);
+		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(3072);
+	});
+
+	it("does not throw on missing binary during sync; returns ok:false degrade result", async () => {
+		const savedPath = process.env.PATH;
+		process.env.PATH = "/nonexistent";
+		try {
+			const method = new MinSyncVectorMethod({
+				binaryPath: join(root, "nonexistent"),
+				root,
+				workspacePath: minsyncWorkspace,
+			});
+
+			const result = await method.sync();
+
+			expect(result.ok).toBe(false);
+			expect(result.reason).toBe("missing-binary");
+		} finally {
+			process.env.PATH = savedPath;
+		}
+	});
+});
+
+describe("rewriteEmbedderConfig", () => {
+	it("returns false when config.toml does not exist", () => {
+		expect(rewriteEmbedderConfig(minsyncWorkspace, { id: "test-embedder" })).toBe(false);
+	});
+
+	it("only writes fields present on the embedder config", () => {
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[embedder]
+id = "old-id"
+base_url = "https://old.example.com"
+
+[vectorstore]
+[vectorstore.options]
+dimension = 1536
+`,
+		);
+
+		rewriteEmbedderConfig(minsyncWorkspace, { id: "new-id" });
+
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect(rewritten.embedder?.id).toBe("new-id");
+		expect(rewritten.embedder?.base_url).toBe("https://old.example.com");
+		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(1536);
 	});
 });

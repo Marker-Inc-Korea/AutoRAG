@@ -7,4 +7,4 @@ export type {
 	ParsedMirrorSyncOptions,
 	ParsedMirrorSyncResult,
 } from "./sync.ts";
-export { detectMirrorStaleness, syncParsedMirrors } from "./sync.ts";
+export { DEFAULT_MAX_SOURCE_BYTES, detectMirrorStaleness, syncParsedMirrors } from "./sync.ts";

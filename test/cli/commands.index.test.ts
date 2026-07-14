@@ -252,3 +252,114 @@ describe("runIndex", () => {
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });
+
+describe("runIndex --method scoped reset", () => {
+	it("reset --method bm25 removes only the bm25 index", async () => {
+		const fx = seedWorkspace();
+		const { ctx, stdout } = makeCtx({
+			positionals: ["reset"],
+			flags: { yes: true, method: "bm25" },
+			cwd: fx.workspace,
+			json: true,
+		});
+
+		const code = await runIndex(ctx);
+		expect(code).toBe(0);
+
+		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.parsed)).toBe(true);
+		expect(existsSync(fx.minsync)).toBe(true);
+
+		const parsed = JSON.parse(stdout[0]);
+		expect(parsed.action).toBe("reset");
+		expect(parsed.removed).toEqual(["bm25"]);
+	});
+
+	it("reset --method minsync removes only the minsync index", async () => {
+		const fx = seedWorkspace();
+		const { ctx, stdout } = makeCtx({
+			positionals: ["reset"],
+			flags: { yes: true, method: "minsync" },
+			cwd: fx.workspace,
+			json: true,
+		});
+
+		const code = await runIndex(ctx);
+		expect(code).toBe(0);
+
+		expect(existsSync(fx.minsync)).toBe(false);
+		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.parsed)).toBe(true);
+
+		const parsed = JSON.parse(stdout[0]);
+		expect(parsed.removed).toEqual(["minsync"]);
+	});
+
+	it("reset --method bm25,minsync removes both but not parsed", async () => {
+		const fx = seedWorkspace();
+		const { ctx, stdout } = makeCtx({
+			positionals: ["reset"],
+			flags: { yes: true, method: "bm25,minsync" },
+			cwd: fx.workspace,
+			json: true,
+		});
+
+		const code = await runIndex(ctx);
+		expect(code).toBe(0);
+
+		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.minsync)).toBe(false);
+		expect(existsSync(fx.parsed)).toBe(true);
+
+		const parsed = JSON.parse(stdout[0]);
+		expect(parsed.removed).toEqual(["bm25", "minsync"]);
+	});
+
+	it("reset --method all removes all three targets", async () => {
+		const fx = seedWorkspace();
+		const { ctx, stdout } = makeCtx({
+			positionals: ["reset"],
+			flags: { yes: true, method: "all" },
+			cwd: fx.workspace,
+			json: true,
+		});
+
+		const code = await runIndex(ctx);
+		expect(code).toBe(0);
+
+		expect(existsSync(fx.parsed)).toBe(false);
+		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.minsync)).toBe(false);
+
+		const parsed = JSON.parse(stdout[0]);
+		expect(parsed.removed).toEqual(["parsed", "bm25", "minsync"]);
+	});
+
+	it("rebuild --method bm25 removes and rebuilds only bm25", async () => {
+		const fx = seedWorkspace();
+		const docs = join(fx.workspace, "docs");
+		mkdirSync(docs, { recursive: true });
+		writeFileSync(join(docs, "note.txt"), "Scoped rebuild content\n");
+
+		const { ctx, stdout } = makeCtx({
+			positionals: ["rebuild"],
+			flags: { yes: true, method: "bm25", "search-paths": docs },
+			cwd: fx.workspace,
+			json: true,
+		});
+
+		const code = await runIndex(ctx);
+		expect(code).toBe(0);
+
+		// Only bm25 was reset; refresh re-creates the bm25 index dir.
+		// Parsed and minsync were not reset and survive from seed.
+		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.parsed)).toBe(true);
+		expect(existsSync(fx.minsync)).toBe(true);
+
+		const parsed = JSON.parse(stdout[0]);
+		expect(parsed.action).toBe("rebuild");
+		expect(parsed.removed).toEqual(["bm25"]);
+		expect(parsed.rebuilt).toBeDefined();
+	});
+});

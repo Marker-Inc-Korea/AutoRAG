@@ -284,3 +284,92 @@ describe("runInit", () => {
 		expect(stdout[0]).not.toContain("{");
 	});
 });
+
+describe("runInit embedder flags", () => {
+	it("writes embedder fields into minSync.embedder from flags", async () => {
+		const code = await runInit(
+			makeCtx({
+				flags: {
+					"search-paths": "docs",
+					"embedder-id": "text-embedding-3-small",
+					"embedder-base-url": "https://api.openai.com/v1",
+					"embedder-api-key-env": "OPENAI_API_KEY",
+					"embedder-dimension": "1536",
+					"embedder-query-prefix": "",
+					"embedder-passage-prefix": "passage: ",
+					"embedder-timeout-ms": "30000",
+					"embedder-batch-size": "64",
+				},
+			}),
+		);
+		expect(code).toBe(0);
+		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
+		expect(config.minSync).toBeDefined();
+		expect(config.minSync.enabled).toBe(true);
+		expect(config.minSync.autoInstall).toBe(false);
+		expect(config.minSync.embedder).toEqual({
+			id: "text-embedding-3-small",
+			baseUrl: "https://api.openai.com/v1",
+			apiKeyEnv: "OPENAI_API_KEY",
+			dimension: 1536,
+			queryPrefix: "",
+			passagePrefix: "passage: ",
+			timeoutMs: 30000,
+			batchSize: 64,
+		});
+	});
+
+	it("writes only provided embedder fields", async () => {
+		const code = await runInit(
+			makeCtx({
+				flags: {
+					"search-paths": "docs",
+					"embedder-id": "bge-m3",
+					"embedder-dimension": "1024",
+				},
+			}),
+		);
+		expect(code).toBe(0);
+		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
+		expect(config.minSync.embedder).toEqual({
+			id: "bge-m3",
+			dimension: 1024,
+		});
+	});
+
+	it("does not write minSync.embedder when no embedder flags are given", async () => {
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "docs" },
+			}),
+		);
+		expect(code).toBe(0);
+		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
+		// minSync is present (default ON) but no embedder key.
+		expect(config.minSync).toBeDefined();
+		expect(config.minSync.embedder).toBeUndefined();
+	});
+
+	it("rejects a non-positive embedder dimension", async () => {
+		const stderr: string[] = [];
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "docs", "embedder-dimension": "0" },
+				stderr: (line) => stderr.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toContain("positive integer");
+	});
+
+	it("defaults bm25 and minSync enabled when no method flags are given", async () => {
+		const code = await runInit(makeCtx({ flags: { "search-paths": "docs" } }));
+		expect(code).toBe(0);
+		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
+		expect(config.bm25).toBeDefined();
+		expect(config.bm25.enabled).toBe(true);
+		expect(config.minSync).toBeDefined();
+		expect(config.minSync.enabled).toBe(true);
+		expect(config.minSync.autoInstall).toBe(false);
+	});
+});

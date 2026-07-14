@@ -113,6 +113,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			bm25: false,
 			minSync: {
 				binaryPath: minsyncBinary,
 				workspacePath: minsyncWorkspace,
@@ -141,6 +142,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			bm25: false,
 			minSync: {
 				binaryPath: minsyncBinary,
 				workspacePath: minsyncWorkspace,
@@ -161,6 +163,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			bm25: false,
 			minSync: { binaryPath: missingBinary, workspacePath: minsyncWorkspace },
 		});
 

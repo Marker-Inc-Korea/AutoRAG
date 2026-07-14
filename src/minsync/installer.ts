@@ -170,7 +170,7 @@ function targetTriple(platform: NodeJS.Platform, arch: NodeJS.Architecture): str
 	throw new MinSyncReleaseError(`Unsupported MinSync platform: ${platform}/${arch}`);
 }
 
-function executableName(platform: NodeJS.Platform): string {
+export function executableName(platform: NodeJS.Platform): string {
 	return platform === "win32" ? "minsync.exe" : "minsync";
 }
 

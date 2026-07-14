@@ -64,10 +64,12 @@ numbered knowledge units from that session's search output.
 ```bash
 autorag status
 autorag refresh
+autorag refresh --method bm25,minsync
 autorag watch --once
 autorag watch
 autorag refresh --force
 autorag index rebuild --yes
+autorag index reset --method bm25 --yes
 autorag memory inspect
 ```
 
@@ -75,6 +77,11 @@ Use `refresh` after source documents change (parses sources and resyncs BM25 /
 MinSync / datasources / optional Jikji prepare). Prefer bounded refresh over
 reset. `watch --once` is the preferred single tick for scheduled jobs; long-running
 `watch` keeps an fs event loop open for interactive sessions.
+`--method <csv>` (e.g. `--method bm25,minsync,parsed`) restricts which methods
+refresh/index run; when omitted all methods run. BM25 and MinSync are enabled
+by default — no explicit configuration is needed for standard lexical + semantic
+retrieval. MinSync uses a pre-installed binary (`autoInstall: false`); configure
+`minSync.embedder` via `autorag init --embedder-*` flags for remote embedding.
 
 ### Keep indexes fresh on a schedule (agent responsibility)
 
@@ -116,8 +123,10 @@ Rules for scheduled watch:
 Destructive index commands:
 
 - `autorag index reset --yes` removes parsed, BM25, and MinSync directories under
-  workspace `.autorag` only
-- `autorag index rebuild --yes` resets those indexes then forced-refreshes
+  workspace `.autorag` only. Add `--method bm25|minsync|parsed` to scope which
+  indexes are removed (e.g. `--method bm25` removes only the BM25 index).
+- `autorag index rebuild --yes` resets those indexes then forced-refreshes.
+  `--method` scopes both the reset and the rebuild refresh.
 
 Never run reset/rebuild against source documents. `memory inspect` is
 read-only and path-opaque.

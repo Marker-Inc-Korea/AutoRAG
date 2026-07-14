@@ -2,11 +2,13 @@ export {
 	AutoRAGAgent,
 	type AutoRAGAgentOptions,
 	type AutoRAGRefreshComponentStatus,
+	type AutoRAGRefreshOptions,
 	type AutoRAGRefreshResult,
 	type AutoRAGRefreshStatus,
 	type AutoRAGWatchRefreshHandle,
 	type AutoRAGWatchRefreshOptions,
 	type AutoRefreshOptions,
+	type RefreshMethod,
 } from "./agent/agent.ts";
 export {
 	type AutoRAGResultsDetails,

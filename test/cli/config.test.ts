@@ -15,9 +15,13 @@ import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	buildAgentOptions,
+	type Bm25MethodConfig,
 	type CliConfig,
 	ConfigError,
 	DEFAULT_CONFIG_FILENAME,
+	type MinSyncMethodConfig,
+	normalizeEmbedder,
+	normalizeIndexingConfig,
 	normalizeLegacyConfigPaths,
 	resolveAgentModel,
 	resolveAutoRAGHome,
@@ -711,27 +715,51 @@ describe("buildAgentOptions", () => {
 		expect(minimal.searchPaths).toEqual(["."]);
 		expect(minimal.workspacePath).toBe(root);
 		expect(minimal.memoryPath).toBe(join(root, "memory.json"));
-		expect("minSync" in minimal).toBe(false);
-		expect("bm25" in minimal).toBe(false);
+		expect(minimal.minSync).toBe(false);
+		expect(minimal.bm25).toBe(false);
 		expect("jikji" in minimal).toBe(false);
 		expect("parserOptions" in minimal).toBe(false);
 		expect("model" in minimal).toBe(false);
 	});
 
-	it("includes optional keys when present", () => {
+	it("includes optional keys when present and enabled, stripping the enabled flag", () => {
 		const opts = buildAgentOptions({
 			searchPaths: ["."],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			minSync: { foo: 1 },
-			bm25: { bar: 2 },
+			minSync: { enabled: true, autoInstall: false, binaryPath: "/bin/minsync" },
+			bm25: { enabled: true, forceEngine: "typescript-fallback" },
 			jikji: { baz: 3 },
 			parserOptions: { qux: 4 },
 		});
-		expect(opts.minSync).toEqual({ foo: 1 });
-		expect(opts.bm25).toEqual({ bar: 2 });
+		expect(opts.minSync).toEqual({ autoInstall: false, binaryPath: "/bin/minsync" });
+		expect(opts.bm25).toEqual({ forceEngine: "typescript-fallback" });
+		expect("enabled" in (opts.minSync as object)).toBe(false);
+		expect("enabled" in (opts.bm25 as object)).toBe(false);
 		expect(opts.jikji).toEqual({ baz: 3 });
 		expect(opts.parserOptions).toEqual({ qux: 4 });
+	});
+
+	it("passes false for minSync and bm25 when enabled is false", () => {
+		const opts = buildAgentOptions({
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: { enabled: false },
+			bm25: { enabled: false },
+		});
+		expect(opts.minSync).toBe(false);
+		expect(opts.bm25).toBe(false);
+	});
+
+	it("passes false for minSync and bm25 when absent from config", () => {
+		const opts = buildAgentOptions({
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+		});
+		expect(opts.minSync).toBe(false);
+		expect(opts.bm25).toBe(false);
 	});
 });
 
@@ -1086,5 +1114,208 @@ describe("writeDefaultConfig", () => {
 		expect(written.workspacePath).toBe(expectedWorkspace);
 		expect(written.memoryPath).toBe(resolve(expectedWorkspace, "memory.json"));
 		expect(written.searchPaths).toEqual([resolve(cwd, "docs")]);
+	});
+});
+
+describe("normalizeIndexingConfig", () => {
+	it("resolves missing keys to enabled defaults with minSync autoInstall false", () => {
+		const result = normalizeIndexingConfig({});
+		expect(result.bm25).toEqual({ enabled: true });
+		expect(result.minSync).toEqual({ enabled: true, autoInstall: false });
+	});
+
+	it("resolves false to disabled markers", () => {
+		const result = normalizeIndexingConfig({ bm25: false, minSync: false });
+		expect(result.bm25).toEqual({ enabled: false });
+		expect(result.minSync).toEqual({ enabled: false });
+	});
+
+	it("merges an object with enabled:true default", () => {
+		const result = normalizeIndexingConfig({
+			bm25: { forceEngine: "typescript-fallback" },
+			minSync: { autoInstall: true, binaryPath: "/bin/minsync" },
+		});
+		expect(result.bm25).toEqual({ enabled: true, forceEngine: "typescript-fallback" });
+		expect(result.minSync).toEqual({ enabled: true, autoInstall: true, binaryPath: "/bin/minsync" });
+	});
+
+	it("preserves explicit enabled:false on an object", () => {
+		const result = normalizeIndexingConfig({
+			bm25: { enabled: false, forceEngine: "typescript-fallback" },
+			minSync: { enabled: false, autoInstall: true },
+		});
+		expect(result.bm25.enabled).toBe(false);
+		expect(result.minSync.enabled).toBe(false);
+	});
+
+	it("rejects unknown bm25 fields", () => {
+		expect(() => normalizeIndexingConfig({ bm25: { unknownField: 1 } as unknown as Bm25MethodConfig })).toThrow(
+			ConfigError,
+		);
+		expect(() => normalizeIndexingConfig({ bm25: { unknownField: 1 } as unknown as Bm25MethodConfig })).toThrow(
+			/bm25\.unknownField/,
+		);
+	});
+
+	it("rejects unknown minSync fields", () => {
+		expect(() =>
+			normalizeIndexingConfig({ minSync: { unknownField: 1 } as unknown as MinSyncMethodConfig }),
+		).toThrow(ConfigError);
+		expect(() =>
+			normalizeIndexingConfig({ minSync: { unknownField: 1 } as unknown as MinSyncMethodConfig }),
+		).toThrow(/minSync\.unknownField/);
+	});
+
+	it("drops invalid fallback enum values silently", () => {
+		const result = normalizeIndexingConfig({
+			bm25: { fallback: "invalid" as unknown as Bm25MethodConfig["fallback"] },
+		});
+		expect(result.bm25.fallback).toBeUndefined();
+	});
+});
+
+describe("normalizeEmbedder", () => {
+	it("returns empty object for undefined", () => {
+		expect(normalizeEmbedder(undefined, "minSync.embedder")).toEqual({});
+	});
+
+	it("validates apiKeyEnv regex", () => {
+		expect(() => normalizeEmbedder({ apiKeyEnv: "1invalid" }, "minSync.embedder")).toThrow(ConfigError);
+		expect(() => normalizeEmbedder({ apiKeyEnv: "1invalid" }, "minSync.embedder")).toThrow(/apiKeyEnv/);
+		expect(() => normalizeEmbedder({ apiKeyEnv: "OPENAI_API_KEY" }, "minSync.embedder")).not.toThrow();
+	});
+
+	it("rejects extraArgs as an unknown field", () => {
+		expect(() =>
+			normalizeEmbedder({ extraArgs: ["--foo"] } as unknown as Record<string, unknown>, "minSync.embedder"),
+		).toThrow(ConfigError);
+		expect(() =>
+			normalizeEmbedder({ extraArgs: ["--foo"] } as unknown as Record<string, unknown>, "minSync.embedder"),
+		).toThrow(/extraArgs/);
+	});
+
+	it("rejects non-positive dimension", () => {
+		expect(() => normalizeEmbedder({ dimension: 0 }, "minSync.embedder")).toThrow(ConfigError);
+		expect(() => normalizeEmbedder({ dimension: -1 }, "minSync.embedder")).toThrow(ConfigError);
+		expect(() => normalizeEmbedder({ dimension: 1.5 }, "minSync.embedder")).toThrow(ConfigError);
+	});
+
+	it("rejects non-positive timeoutMs", () => {
+		expect(() => normalizeEmbedder({ timeoutMs: 0 }, "minSync.embedder")).toThrow(ConfigError);
+	});
+
+	it("accepts a valid embedder config", () => {
+		const result = normalizeEmbedder(
+			{ id: "openai:text-embedding-3-small", apiKeyEnv: "OPENAI_API_KEY", dimension: 1536, batchSize: 64 },
+			"minSync.embedder",
+		);
+		expect(result).toEqual({
+			id: "openai:text-embedding-3-small",
+			apiKeyEnv: "OPENAI_API_KEY",
+			dimension: 1536,
+			batchSize: 64,
+		});
+	});
+
+	it("validates embedder inside minSync via normalizeIndexingConfig", () => {
+		expect(() =>
+			normalizeIndexingConfig({
+				minSync: { embedder: { apiKeyEnv: "1bad" } } as unknown as MinSyncMethodConfig,
+			}),
+		).toThrow(ConfigError);
+		expect(() =>
+			normalizeIndexingConfig({
+				minSync: { embedder: { extraArgs: [] } } as unknown as MinSyncMethodConfig,
+			}),
+		).toThrow(/extraArgs/);
+	});
+});
+
+describe("resolveConfig indexing defaults", () => {
+	it("resolves missing minSync and bm25 to enabled defaults", () => {
+		const config = resolveConfig({ flags: {}, cwd: root });
+		expect(config.bm25).toEqual({ enabled: true });
+		expect(config.minSync).toEqual({ enabled: true, autoInstall: false });
+	});
+
+	it("resolves minSync:false to a disabled marker", () => {
+		writeConfigFile(root, { minSync: false as unknown as MinSyncMethodConfig });
+		const config = resolveConfig({ flags: {}, cwd: root });
+		expect(config.minSync).toEqual({ enabled: false });
+	});
+
+	it("resolves bm25:false to a disabled marker", () => {
+		writeConfigFile(root, { bm25: false as unknown as Bm25MethodConfig });
+		const config = resolveConfig({ flags: {}, cwd: root });
+		expect(config.bm25).toEqual({ enabled: false });
+	});
+
+	it("normalizes a file with typed method config and preserves fields", () => {
+		writeConfigFile(root, {
+			bm25: { forceEngine: "typescript-fallback" } as unknown as Bm25MethodConfig,
+			minSync: { autoInstall: true, binaryPath: "/bin/minsync" } as unknown as MinSyncMethodConfig,
+		});
+		const config = resolveConfig({ flags: {}, cwd: root });
+		expect(config.bm25).toEqual({ enabled: true, forceEngine: "typescript-fallback" });
+		expect(config.minSync).toEqual({ enabled: true, autoInstall: true, binaryPath: "/bin/minsync" });
+	});
+
+	it("throws ConfigError for invalid apiKeyEnv in file minSync.embedder", () => {
+		writeConfigFile(root, {
+			minSync: { embedder: { apiKeyEnv: "1invalid" } } as unknown as MinSyncMethodConfig,
+		});
+		expect(() => resolveConfig({ flags: {}, cwd: root })).toThrow(ConfigError);
+		expect(() => resolveConfig({ flags: {}, cwd: root })).toThrow(/apiKeyEnv/);
+	});
+
+	it("throws ConfigError for unknown embedder field in file minSync.embedder", () => {
+		writeConfigFile(root, {
+			minSync: { embedder: { extraArgs: ["--foo"] } } as unknown as MinSyncMethodConfig,
+		});
+		expect(() => resolveConfig({ flags: {}, cwd: root })).toThrow(ConfigError);
+		expect(() => resolveConfig({ flags: {}, cwd: root })).toThrow(/extraArgs/);
+	});
+});
+
+describe("writeDefaultConfig indexing defaults", () => {
+	it("writes bm25 and minSync enabled defaults when not explicitly provided", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		writeDefaultConfig(path, {});
+		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
+		expect(written.bm25).toEqual({ enabled: true });
+		expect(written.minSync).toEqual({ enabled: true, autoInstall: false });
+	});
+
+	it("never injects an embedder id default", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		writeDefaultConfig(path, {});
+		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
+		expect(written.minSync?.embedder).toBeUndefined();
+	});
+
+	it("preserves a partial minSync embedder config without injecting id", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		writeDefaultConfig(path, {
+			minSync: { embedder: { apiKeyEnv: "OPENAI_API_KEY", dimension: 1536 } } as MinSyncMethodConfig,
+		});
+		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
+		expect(written.minSync?.enabled).toBe(true);
+		expect(written.minSync?.autoInstall).toBe(false);
+		expect(written.minSync?.embedder).toEqual({ apiKeyEnv: "OPENAI_API_KEY", dimension: 1536 });
+		expect(written.minSync?.embedder?.id).toBeUndefined();
+	});
+
+	it("preserves explicit bm25 disabled", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		writeDefaultConfig(path, { bm25: false as unknown as Bm25MethodConfig });
+		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
+		expect(written.bm25).toEqual({ enabled: false });
+	});
+
+	it("preserves explicit minSync disabled", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		writeDefaultConfig(path, { minSync: false as unknown as MinSyncMethodConfig });
+		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
+		expect(written.minSync).toEqual({ enabled: false });
 	});
 });

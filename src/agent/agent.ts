@@ -36,6 +36,7 @@ import {
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
+import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -100,6 +101,15 @@ const SEARCH_TOOLS = [
 export interface AutoRefreshOptions {
 	readonly intervalMs: number;
 	readonly immediate?: boolean;
+}
+
+
+/** Methods that `refresh` can selectively run. Defaults to all when omitted. */
+export type RefreshMethod = "parsed" | "bm25" | "minsync" | "datasources" | "jikji";
+
+export interface AutoRAGRefreshOptions {
+	/** Restrict refresh to specific methods. Defaults to all when undefined. */
+	readonly methods?: readonly RefreshMethod[];
 }
 
 export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
@@ -168,8 +178,8 @@ export interface AutoRAGAgentOptions {
 	memoryPath?: string;
 	workspacePath?: string;
 	tools?: AgentTool[];
-	minSync?: Omit<MinSyncVectorMethodOptions, "root">;
-	bm25?: Omit<BM25MethodOptions, "root">;
+	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
+	bm25?: Omit<BM25MethodOptions, "root"> | false;
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
@@ -273,12 +283,14 @@ export class AutoRAGAgent {
 		this.allowedExplorerRoots = [...new Set(this.searchPaths)].sort();
 		this.parserOptions = options.parserOptions;
 
-		if (options.minSync) {
-			this.minSyncMethod = new MinSyncVectorMethod({ ...options.minSync, root: this.workspaceProjectRoot });
+		if (options.minSync !== false) {
+			const minSyncOpts = options.minSync ?? { autoInstall: false };
+			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
 		}
-		if (options.bm25) {
-			this.bm25Method = new BM25Method({ ...options.bm25, root: this.workspaceProjectRoot });
+		if (options.bm25 !== false) {
+			const bm25Opts = options.bm25 ?? {};
+			this.bm25Method = new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.bm25Method);
 		}
 		for (const skill of this.datasourceSkills) {
@@ -835,18 +847,25 @@ export class AutoRAGAgent {
 		);
 	}
 
-	async refresh(force = false): Promise<AutoRAGRefreshResult> {
+	async refresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
+		const methods = opts?.methods;
+		const allMethods = methods === undefined;
+		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
+		// Parsed mirror is required when any indexing method (bm25/minsync) runs,
+		// since they index over the parsed mirrors. Also run it when explicitly
+		// requested or when all methods are selected.
+		const needsParsed = allMethods || wants("parsed") || wants("bm25") || wants("minsync");
 		this.refreshState = {
 			...this.refreshState,
 			inFlight: true,
 			lastStartedAt: new Date().toISOString(),
 		};
 		try {
-			const summary = await this.syncParsedMirrors(force);
-			const bm25 = await this.syncBM25();
-			const minsync = await this.syncMinSync();
-			const datasources = await this.indexDatasources();
-			const jikji = await this.executeJikjiPrepare();
+			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
+			const bm25 = wants("bm25") ? await this.syncBM25() : undefined;
+			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
+			const datasources = wants("datasources") ? await this.indexDatasources() : [];
+			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
 			const jikjiDiagnostics = (jikji ?? [])
 				.map((result) => jikjiPrepareDiagnostic(result))
 				.filter((diag): diag is JikjiDiagnostic => diag !== undefined);
@@ -1011,6 +1030,28 @@ export class AutoRAGAgent {
 			force,
 			parserOptions: this.parserOptions,
 		});
+	}
+
+	/**
+	 * Lightweight stat-only staleness scan used when `refresh` is called with
+	 * methods that exclude parsed mirrors (e.g. only `datasources` or `jikji`).
+	 * Returns a zero-count `ParsedMirrorSyncResult` carrying fresh diagnostics
+	 * so the refresh result and status remain consistent.
+	 */
+	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
+		const diagnostics = await detectMirrorStaleness({
+			root: this.workspaceProjectRoot,
+			searchPaths: this.searchPaths,
+			parserOptions: this.parserOptions,
+		});
+		return {
+			scanned: 0,
+			written: 0,
+			deleted: 0,
+			skipped: 0,
+			indexPath: join(this.workspaceProjectRoot, PARSED_MIRROR_SUBDIR),
+			diagnostics,
+		};
 	}
 
 	async syncBM25(): Promise<BM25SyncResult | undefined> {

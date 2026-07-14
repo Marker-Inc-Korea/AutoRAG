@@ -84,10 +84,22 @@ export class BM25Method implements RetrievalMethod {
 		this.fallback = options.fallback ?? "typescript";
 		this.forceEngine = options.forceEngine;
 		this.importBinding = options.importBinding ?? (() => import("@pngwasi/node-tantivy-binding"));
-		this.status =
-			options.enabled === false
-				? { readiness: "disabled", engine: "none", message: "BM25 is disabled" }
-				: { readiness: "index_missing", engine: "none", message: "BM25 index has not been built" };
+		if (options.enabled === false) {
+			this.status = { readiness: "disabled", engine: "none", message: "BM25 is disabled" };
+		} else {
+			// Reflect an on-disk index immediately so fresh processes/status after refresh
+			// do not report index_missing until the next in-process sync().
+			const tantivyDir = join(this.indexPath, TANTIVY_SUBDIR);
+			const hasTantivy = existsSync(join(tantivyDir, "meta.json"));
+			const hasFallback = existsSync(join(this.indexPath, FALLBACK_INDEX_FILE));
+			if (hasTantivy) {
+				this.status = { readiness: "ready", engine: "tantivy" };
+			} else if (hasFallback && this.fallback !== "disabled") {
+				this.status = { readiness: "degraded_fallback", engine: "typescript-fallback" };
+			} else {
+				this.status = { readiness: "index_missing", engine: "none", message: "BM25 index has not been built" };
+			}
+		}
 	}
 
 	describe(): RetrievalMethodDescriptor {

@@ -34,6 +34,8 @@ function makeTool(name: string): AgentTool {
 interface AgentInternals {
 	lastQuery: string | undefined;
 	memory: RetrievalMemory;
+	bm25Method: { describe(): { name: string } } | undefined;
+	minSyncMethod: { describe(): { name: string } } | undefined;
 	innerAgent: {
 		transformContext?: (
 			messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }>; timestamp: number }>,
@@ -284,5 +286,55 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent.getResultRegistry().size).toBe(0);
+	});
+});
+
+describe("AutoRAGAgent default method registration", () => {
+	it("registers BM25 and MinSync by default when options omit them", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		const internal = internals(agent);
+		expect(internal.bm25Method).toBeDefined();
+		expect(internal.bm25Method?.describe().name).toBe("bm25");
+		expect(internal.minSyncMethod).toBeDefined();
+		expect(internal.minSyncMethod?.describe().name).toBe("minsync");
+	});
+
+	it("does not register BM25 when bm25: false is passed", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			bm25: false,
+		});
+		expect(internals(agent).bm25Method).toBeUndefined();
+	});
+
+	it("does not register MinSync when minSync: false is passed", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: false,
+		});
+		expect(internals(agent).minSyncMethod).toBeUndefined();
+	});
+
+	it("registers BM25 with provided options when an object is passed", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			bm25: { forceEngine: "typescript-fallback" },
+		});
+		expect(internals(agent).bm25Method).toBeDefined();
+		expect(internals(agent).bm25Method?.describe().name).toBe("bm25");
+	});
+
+	it("defaults MinSync autoInstall to false when undefined", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(internals(agent).minSyncMethod).toBeDefined();
 	});
 });

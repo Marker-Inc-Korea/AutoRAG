@@ -1,32 +1,72 @@
 import { existsSync } from "node:fs";
 import { spawnProcess } from "./process.ts";
-import type { MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+import { rewriteEmbedderConfig } from "./embedder-config.ts";
 
 export interface MinSyncClientOptions {
 	readonly binaryPath: string;
 	readonly workspacePath: string;
+	readonly embedder?: MinSyncEmbedderConfig;
 }
+
+const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SECRET_PATTERN = /sk-[A-Za-z0-9_\-]+/g;
 
 export class MinSyncClient {
 	private readonly binaryPath: string;
 	private readonly workspacePath: string;
+	private readonly embedder: MinSyncEmbedderConfig | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
+		this.embedder = options.embedder;
 	}
 
 	async sync(): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "missing-binary" };
 		}
-		const init = await spawnProcess(this.binaryPath, ["init", "--format", "json"], this.workspacePath);
-		if (!init.ok) {
-			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: init.stderr || "init-failed" };
+		if (this.embedder?.apiKeyEnv) {
+			const envName = this.embedder.apiKeyEnv;
+			if (!API_KEY_ENV_PATTERN.test(envName)) {
+				return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "invalid-api-key-env" };
+			}
+			const envValue = process.env[envName];
+			if (typeof envValue !== "string" || envValue.length === 0) {
+				return {
+					ok: false,
+					synced: 0,
+					workspacePath: this.workspacePath,
+					reason: `missing-api-key-env:${envName}`,
+				};
+			}
 		}
-		const result = await spawnProcess(this.binaryPath, ["sync", "--format", "json"], this.workspacePath);
+		const initArgs = ["init", "--format", "json"];
+		if (this.embedder?.id) {
+			initArgs.push("--embedder", this.embedder.id);
+		}
+		const spawnOpts = this.embedder?.timeoutMs !== undefined ? { timeoutMs: this.embedder.timeoutMs } : {};
+		const init = await spawnProcess(this.binaryPath, initArgs, this.workspacePath, spawnOpts);
+		if (!init.ok) {
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: sanitizeReason(init.stderr || "init-failed"),
+			};
+		}
+		if (this.embedder) {
+			rewriteEmbedderConfig(this.workspacePath, this.embedder);
+		}
+		const result = await spawnProcess(this.binaryPath, ["sync", "--format", "json"], this.workspacePath, spawnOpts);
 		if (!result.ok) {
-			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: result.stderr || "sync-failed" };
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: sanitizeReason(result.stderr || "sync-failed"),
+			};
 		}
 		return { ok: true, synced: readSyncedCount(result.stdout), workspacePath: this.workspacePath };
 	}
@@ -41,6 +81,10 @@ export class MinSyncClient {
 		if (!result.ok) return [];
 		return parseQueryHits(result.stdout);
 	}
+}
+
+function sanitizeReason(reason: string): string {
+	return reason.replace(SECRET_PATTERN, "[redacted]");
 }
 
 function readSyncedCount(stdout: string): number {

@@ -57,6 +57,8 @@ Different documents need different search strategies:
 
 AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The parent orchestrator owns process-bound retrieval tools and gives bounded seed packs to explorers; explorers use read-only `read`/`grep`/`find`/`ls` tools to inspect the underlying documents. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
 
+BM25 and MinSync are **enabled by default** — no explicit configuration is needed for standard lexical + semantic retrieval. Both can be disabled by setting `"bm25": false` or `"minSync": false` in the config file. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
+
 ### Real directory access
 
 AutoRAG reads configured source directories through delegated explorer tasks. Each explorer is assigned exactly one normalized configured search root as its `cwd`; the top-level `subagent` invocation sets `artifacts: false` exactly once for single, `tasks`, `chain`, or `parallel` dispatch, and nested explorer task items omit `artifacts`. Project-local `.pi-subagents` debug artifacts are disabled. Explorers use read-only `read`/`grep`/`find`/`ls`; the parent orchestrator owns retrieval seed tools and must delegate document reading before curating. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
@@ -176,6 +178,8 @@ The default home state is kept outside the workspace:
 Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.json`. When the home config is absent and `<cwd>/autorag.config.json` exists, AutoRAG copies the legacy file to `~/.autorag/config.json` without deleting or modifying the legacy file. The legacy cwd file is a migration source, not the default location.
 
 `memory.json` stores retrieval memory, `logs/runs.jsonl` records run events, and durable Pi models, settings, and sessions stay under `~/.autorag/pi-agent`. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
+
+`autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method bm25,minsync,parsed`) to scope which indexing methods run or which index directories are removed. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
 ## Quick Start
 

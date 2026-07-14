@@ -38,6 +38,28 @@ describe("parseArgs", () => {
 		const parsed = parseArgs(["search", "--scope"]);
 		expect("error" in parsed).toBe(true);
 	});
+
+	it("accepts --method as a value flag", () => {
+		const parsed = parseArgs(["refresh", "--method", "bm25,minsync"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["method"]).toBe("bm25,minsync");
+	});
+
+	it("accepts embedder-* value flags", () => {
+		const parsed = parseArgs([
+			"init",
+			"--embedder-id",
+			"text-embedding-3-small",
+			"--embedder-dimension",
+			"1536",
+			"--embedder-api-key-env",
+			"OPENAI_API_KEY",
+		]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["embedder-id"]).toBe("text-embedding-3-small");
+		expect(parsed.flags["embedder-dimension"]).toBe("1536");
+		expect(parsed.flags["embedder-api-key-env"]).toBe("OPENAI_API_KEY");
+	});
 });
 
 describe("main routing", () => {

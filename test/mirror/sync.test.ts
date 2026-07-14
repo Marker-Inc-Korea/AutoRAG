@@ -51,7 +51,7 @@ describe("syncParsedMirrors", () => {
 		const index = loadMirrorIndex(root);
 		const paths = outputPaths(index);
 
-		expect(result).toMatchObject({ scanned: 2, written: 1, deleted: 0 });
+		expect(result).toMatchObject({ scanned: 1, written: 1, deleted: 0 });
 		expect(paths).toHaveLength(1);
 		const outputPath = requireValue(paths[0], "output path");
 		expect(outputPath).toContain(parsedMirrorRoot(root));
@@ -179,7 +179,8 @@ describe("syncParsedMirrors", () => {
 		expect(index.entries["/docs/missing.txt"]).toBeUndefined();
 	});
 
-	it("ignores poisoned index output paths when dropping unsupported current files", async () => {
+	it("drops stale unsupported index entries without following poisoned output paths", async () => {
+		// Unsupported extensions are not re-scanned; residual index rows are swept on refresh.
 		const unsupported = join(source, "skip.bin");
 		const outside = join(root, "outside-unsupported.md");
 		writeFileSync(unsupported, Buffer.from([0, 1]));
@@ -203,19 +204,21 @@ describe("syncParsedMirrors", () => {
 		const index = loadMirrorIndex(root);
 
 		expect(result.deleted).toBe(1);
-		expect(result.skipped).toBe(1);
+		expect(result.skipped).toBe(0);
 		expect(readFileSync(outside, "utf8")).toBe("do not delete unsupported\n");
 		expect(index.entries["/docs/skip.bin"]).toBeUndefined();
 	});
-	it("returns a path-opaque unsupported-file diagnostic for files without a parser", async () => {
+	it("ignores unknown extensions instead of emitting unsupported-file diagnostics", async () => {
+		// Scans only registered parser extensions, so bare binaries never enter the worklist.
 		writeFileSync(join(source, "note.txt"), "Alpha\n");
 		writeFileSync(join(source, "skip.bin"), Buffer.from([0, 1]));
 
 		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		const diag = result.diagnostics.find((d) => d.code === "unsupported-file");
 
-		expect(diag?.source).toBe("/docs/skip.bin");
-		expect(diag?.severity).toBe("info");
+		expect(result.scanned).toBe(1);
+		expect(result.written).toBe(1);
+		expect(diag).toBeUndefined();
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
 	});
 
@@ -247,4 +250,20 @@ describe("syncParsedMirrors", () => {
 		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
 		expect(result.diagnostics).toEqual([]);
 	});
+	it("skips sources larger than maxSourceBytes without writing a mirror", async () => {
+		const file = join(source, "huge.txt");
+		writeFileSync(file, "x".repeat(1024));
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: createDefaultParserRegistry(),
+			maxSourceBytes: 10,
+		});
+		const index = loadMirrorIndex(root);
+		expect(result.written).toBe(0);
+		expect(result.skipped).toBe(1);
+		expect(index.entries["/docs/huge.txt"]).toBeUndefined();
+		expect(result.diagnostics.some((d) => d.code === "parser-skipped")).toBe(true);
+	});
+
 });

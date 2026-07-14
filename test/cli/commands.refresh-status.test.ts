@@ -133,3 +133,46 @@ describe("runRefresh + runStatus (cli)", () => {
 		expect(status.counts).toBeUndefined();
 	});
 });
+
+describe("runRefresh --method", () => {
+	it("refreshes only bm25 when --method bm25 is given", async () => {
+		writeConfig({ forceEngine: "typescript-fallback" });
+
+		const out: string[] = [];
+		const code = await runRefresh(
+			makeCtx({ flags: { method: "bm25" }, stdout: (line) => out.push(line) }),
+		);
+		expect(code).toBe(0);
+		expect(out).toHaveLength(1);
+		const blob = out[0];
+		// BM25 ran, so the result should carry bm25 readiness info.
+		expect(blob).not.toContain("indexPath");
+		expect(blob).not.toContain(root);
+		const parsed = JSON.parse(blob);
+		expect(parsed.bm25).toBeDefined();
+		expect(parsed.bm25.readiness).toBeDefined();
+	});
+
+	it("refreshes with all methods when --method all is given", async () => {
+		writeConfig({ forceEngine: "typescript-fallback" });
+
+		const out: string[] = [];
+		const code = await runRefresh(
+			makeCtx({ flags: { method: "all" }, stdout: (line) => out.push(line) }),
+		);
+		expect(code).toBe(0);
+		const parsed = JSON.parse(out[0]);
+		expect(parsed.bm25).toBeDefined();
+	});
+
+	it("rejects an unknown --method value", async () => {
+		writeConfig({ forceEngine: "typescript-fallback" });
+
+		const err: string[] = [];
+		const code = await runRefresh(
+			makeCtx({ flags: { method: "bogus" }, stderr: (line) => err.push(line) }),
+		);
+		expect(code).toBe(1);
+		expect(err.join("\n")).toContain("Unknown --method value");
+	});
+});

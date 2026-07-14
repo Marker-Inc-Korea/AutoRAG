@@ -189,6 +189,37 @@ This writes `~/.autorag/config.json` by default. Use `--config PATH` (or
 - `--memory-path FILE` for retrieval-memory storage
 - `--force` only when intentionally replacing an existing config
 
+### Indexing method defaults
+
+BM25 and MinSync are **enabled by default**. `autorag init` writes
+`bm25: { enabled: true }` and `minSync: { enabled: true, autoInstall: false }`
+into the config even when no method flags are supplied. To disable a method,
+set it to `false` in the config file (`"bm25": false` or `"minSync": false`).
+
+MinSync auto-install is off by default (`autoInstall: false`); the binary must
+be pre-installed or available on `PATH`. AutoRAG never forces TEI or any
+external embedding service.
+
+### MinSync embedder flags
+
+`autorag init` accepts non-secret embedder configuration flags that are written
+into `minSync.embedder` in the config:
+
+```bash
+autorag init \
+  --search-paths "/path/to/docs" \
+  --embedder-id "text-embedding-3-small" \
+  --embedder-base-url "https://api.openai.com/v1" \
+  --embedder-api-key-env "OPENAI_API_KEY" \
+  --embedder-dimension 1536 \
+  --embedder-batch-size 64
+```
+
+All fields are optional; only provided fields are written. `--embedder-api-key-env`
+accepts the **environment variable name** (e.g. `OPENAI_API_KEY`), never the key
+value itself. `--embedder-dimension` and `--embedder-batch-size` must be positive
+integers.
+
 If role models are intentionally omitted, `autorag init` must leave `agents`
 unset; it must never inject a private provider default. Legacy cwd
 `autorag.config.json` is a migration source only and is never deleted by init.
@@ -245,6 +276,10 @@ Interpret results:
   present). Re-run with `autorag refresh --force` only when a dirty/partial
   index needs a full rebuild path and a lighter incremental refresh is not
   enough.
+- `--method <csv>` restricts which methods refresh runs:
+  `bm25,minsync,parsed,datasources,jikji,all`. When omitted, all methods run.
+  Parsed mirrors are always synced when BM25 or MinSync is selected (they index
+  over the parsed mirrors). Example: `autorag refresh --method bm25,minsync`.
 - `status` is model-free and path-opaque: inspect freshness and component
   health only; do not expect absolute source paths in the output.
 - Separately confirm both role models resolve from the authenticated runtime or
@@ -254,6 +289,9 @@ Interpret results:
 - Prefer bounded `refresh` over destructive resets. Reserve
   `autorag index rebuild --yes` for a full wipe+reindex of workspace
   `.autorag` parsed/BM25/MinSync dirs only — never against source documents.
+  `index reset` and `index rebuild` also accept `--method` to scope which
+  indexes are removed/rebuilt (e.g. `autorag index reset --method bm25 --yes`
+  removes only the BM25 index).
 
 Large first-time corpora can take several minutes for parse + embed. Stay on
 the approximate status of the running refresh rather than starting concurrent

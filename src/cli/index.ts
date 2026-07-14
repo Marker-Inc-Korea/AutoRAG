@@ -23,6 +23,15 @@ const VALUE_FLAGS = new Set([
 	"useful",
 	"not-useful",
 	"debounce-ms",
+	"method",
+	"embedder-id",
+	"embedder-base-url",
+	"embedder-api-key-env",
+	"embedder-dimension",
+	"embedder-query-prefix",
+	"embedder-passage-prefix",
+	"embedder-timeout-ms",
+	"embedder-batch-size",
 ]);
 
 const COMMANDS = ["init", "refresh", "status", "search", "feedback", "memory", "index", "watch"] as const;
@@ -41,15 +50,17 @@ Commands:
   init                 Write ~/.autorag/config.json for a local collection
 	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
 	                        --orchestrator-model-provider P  --orchestrator-model-id ID
-	                        --explorer-model-provider P  --explorer-model-id ID  --force)
-  refresh              Parse sources and refresh indexes (BM25/MinSync/datasources)
+	                        --explorer-model-provider P  --explorer-model-id ID
+	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
+	                        --embedder-dimension N --embedder-batch-size N  --force)
+  refresh              Parse sources and refresh indexes (--method bm25,minsync,parsed)
   watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
   search <query>       Search and curate documents (requires a configured model)
   feedback <session>   Record numbered feedback (--useful 1,3 --not-useful 2)
   memory inspect       Inspect the retrieval memory snapshot
-  index reset          Remove parsed/bm25/minsync indexes under .autorag
-  index rebuild        Reset then re-run a full refresh
+  index reset          Remove parsed/bm25/minsync indexes under .autorag (--method)
+  index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -69,6 +80,7 @@ Global flags:
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
+  --method <csv>       For refresh/index: bm25,minsync,parsed,datasources,jikji,all
   --help, -h           Show this help
 `;
 
