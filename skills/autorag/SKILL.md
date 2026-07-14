@@ -1,6 +1,6 @@
 ---
 name: autorag
-description: Use AutoRAG (the librarian agent CLI) to search and curate answers from a local document collection. On first setup, discover file-dense folders, recommend them to the user, configure them as search paths, and build the indexes.
+description: Set up and use AutoRAG (the librarian agent CLI) for local document collections. On first setup, detect the current agent's usable model provider or subscription-backed runtime, select appropriate orchestrator and explorer models, configure approved search paths, and build the indexes.
 ---
 
 # AutoRAG Librarian Skill
@@ -15,15 +15,76 @@ non-destructive: it only reads source files and writes indexes under `.autorag/`
 (and, when jikji is enabled, jikji's own `.jikji/` caches). Never move, rename,
 or delete the user's source files.
 
-## First-time setup: discover and recommend folders
+## First-time setup
 
-If there is no `autorag.config.json` in the working directory (or the user has
-not told you which folders to index), do this before searching:
+Run this setup workflow when `~/.autorag/config.json` is absent, incomplete, or
+the user asks to configure AutoRAG. Setup has two independent decisions: which
+models AutoRAG can actually authenticate, and which folders it may index.
 
-1. **Ask or infer the target area.** If the user named a directory, use it. If
-   not, ask for a root to look under (default to the current project or a
-   document directory the user mentions). Do not scan the whole filesystem or
-   the home directory without explicit permission.
+### Detect and configure the agent models
+
+Do not begin by asking the user to manually name a provider. First inspect the
+available non-secret runtime metadata and configure the best usable pair.
+
+1. **Preserve explicit choices.** Prefer model/provider choices stated by the
+   user or already present in `~/.autorag/config.json`. Do not replace a working
+   explicit configuration merely because another provider is detectable.
+
+2. **Detect the current agent runtime.** Inspect the current agent's exposed
+   provider/model metadata, then check compatible local metadata such as
+   `~/.codex/config.toml` and `~/.autorag/pi-agent/models.json`. You may check
+   whether provider credential environment variables or Pi auth entries exist,
+   but never print, copy, persist, or compare credential values. Never read a
+   credential merely to show it to the user.
+
+3. **Distinguish subscriptions from API access.** A ChatGPT, Claude, Gemini, or
+   other consumer subscription is not automatically an API entitlement. Treat
+   a subscription-backed login as usable only when the current agent runtime
+   can delegate that authenticated provider to AutoRAG or compatible auth is
+   already available in `~/.autorag/pi-agent`. Otherwise prefer a detected,
+   Responses-compatible API provider with an available credential. Do not claim
+   that a provider is usable based only on an installed CLI or config filename.
+
+4. **Select models by role from models the provider actually exposes.** Use the
+   strongest reliable reasoning/high-context model for `agents.orchestrator`.
+   Use a faster and cheaper high-recall model with sufficient context for
+   `agents.explorer`. When only one usable model exists, configure it for both
+   roles rather than inventing a model ID. For the standard `myproxy` catalog,
+   prefer `gpt-5.6-sol` for the orchestrator and `gpt-5.6-luna` for explorers.
+   Never hard-code those IDs for a provider that does not advertise them.
+
+5. **Resolve ambiguity without leaking secrets.** If several authenticated
+   providers are equally suitable, prefer the provider already used by the
+   current agent, then the existing AutoRAG/Pi provider. Ask one concise choice
+   only when no evidence distinguishes them. If no compatible authenticated
+   provider exists, report the exact missing provider/auth requirement instead
+   of writing a configuration that cannot run.
+
+6. **Write both role settings.** Configure the selected pair with role-specific
+   flags; provider and ID must always be supplied together:
+
+   ```bash
+   autorag init \
+     --search-paths "/path/to/docs,/path/to/notes" \
+     --orchestrator-model-provider PROVIDER \
+     --orchestrator-model-id ORCHESTRATOR_MODEL \
+     --explorer-model-provider PROVIDER \
+     --explorer-model-id EXPLORER_MODEL
+   ```
+
+   This writes `~/.autorag/config.json`. For a different config location, use
+   `--config PATH`. Use `--force` only when intentionally replacing an existing
+   config. Per-run overrides are also available through the same role-specific
+   flags or `AUTORAG_ORCHESTRATOR_MODEL_PROVIDER`,
+   `AUTORAG_ORCHESTRATOR_MODEL_ID`, `AUTORAG_EXPLORER_MODEL_PROVIDER`, and
+   `AUTORAG_EXPLORER_MODEL_ID`.
+
+### Discover and approve search folders
+
+1. **Infer the target area.** If the user named a directory, use it. Otherwise
+   use the current project or a document directory already established by the
+   conversation. Ask for a root only when no safe target can be inferred. Do
+   not scan the whole filesystem or home directory without explicit permission.
 
 2. **Discover candidate folders.** Explore the target area and find folders that
    contain many document-like files. Prefer document extensions —
@@ -32,33 +93,23 @@ not told you which folders to index), do this before searching:
    `dist`, `build`, `target`, `.cache`, `.autorag`, `.jikji`, and other
    generated/vendor directories.
 
-3. **Recommend the densest folders.** Present the top folders by document count
-   (path + approximate file count) and let the user confirm or edit the
-   selection. Recommend the folders with the most relevant documents; do not
-   silently index everything.
+3. **Recommend the densest relevant folders.** Present path and approximate file
+   count. Do not silently index a large or sensitive tree. Use folders already
+   explicitly approved by the user without asking again.
 
-4. **Configure the chosen folders as search paths:**
-
-   ```bash
-   autorag init --search-paths "/path/to/docs,/path/to/notes"
-   ```
-
-   This writes `autorag.config.json`. You can also set `--workspace`,
-   `--memory-path`, `--model-provider`, and `--model-id`. Multiple folders are
-   comma-separated. To change the selection later, edit `searchPaths` in
-   `autorag.config.json` or re-run `autorag init --force`.
-
-5. **Build the indexes:**
+4. **Initialize and verify.** Run `autorag init` once with the approved paths and
+   detected role models, inspect the resulting non-secret configuration, then
+   build the indexes:
 
    ```bash
    autorag refresh
+   autorag status
    ```
 
    `refresh` parses the configured folders into `.autorag/parsed`, builds the
-   BM25 and MinSync indexes, indexes any configured datasource skills, and —
-   when jikji is enabled in the config — runs `jikji prepare` per folder to
-   build each folder's local file map/caches. Re-run `autorag refresh` after the
-   documents change (or use it periodically).
+   BM25 and MinSync indexes, indexes configured datasource skills, and runs
+   `jikji prepare` per folder when Jikji is enabled. Re-run it after documents
+   change.
 
 ## Searching
 
@@ -69,9 +120,11 @@ autorag search "what were the key findings in the Q3 report" --top-k 5
 ```
 
 `autorag search` returns curated, numbered knowledge units grounded in the
-sources (requires a configured model via `--model-provider`/`--model-id` or the
-config `model` key). Use `--scope` to narrow to a sub-path, `--json` for
-machine-readable output, and `--debug` to reveal diagnostics.
+sources. The persistent role models are configured under `agents.orchestrator`
+and `agents.explorer` in `~/.autorag/config.json`; the role-specific CLI flags
+or environment variables may override them for one run. Use `--scope` to narrow
+to a sub-path, `--json` for machine-readable output, and `--debug` to reveal
+diagnostics.
 
 Record feedback so AutoRAG learns which results were useful:
 
@@ -95,3 +148,7 @@ autorag memory inspect    # inspect the retrieval memory snapshot
   explicit root before scanning.
 - Prefer recommending a few file-dense, relevant folders over indexing large or
   sensitive trees; ask before indexing anything large or private.
+- Detect providers from non-secret metadata and authentication availability;
+  never expose, migrate, or persist credential values.
+- Never equate a consumer subscription with API access unless the active runtime
+  demonstrably supports reusing that authenticated subscription for AutoRAG.
