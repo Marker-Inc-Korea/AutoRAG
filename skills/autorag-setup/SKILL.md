@@ -1,6 +1,6 @@
 ---
 name: autorag-setup
-description: Configure AutoRAG for first use or repair its setup. Detect the current agent's usable subscription-backed runtime or API provider without exposing private provider identities, select orchestrator and explorer models, approve document folders, initialize configuration, and build indexes.
+description: Configure AutoRAG for first use or repair its setup. Detect the current agent's usable subscription-backed runtime or API provider without exposing private provider identities, select orchestrator and explorer models, propose OS-aware document folders for approval, initialize configuration, and build indexes (parsed mirrors, BM25, MinSync vectors, optional Jikji maps).
 ---
 
 # AutoRAG Setup Skill
@@ -18,6 +18,8 @@ normal searches and feedback.
   configuration, logs, or user-facing explanations.
 - Do not scan the whole filesystem or home directory without explicit approval.
 - Never move, rename, edit, or delete source documents.
+- Recommend document-dense folders only. Do not index system trees, app bundles,
+  caches, or credential stores.
 
 ## Detect an authenticated model runtime
 
@@ -62,23 +64,110 @@ resolution can still pick up an authenticated local runtime when available.
 
 ## Discover and approve document folders
 
-1. Use a directory explicitly named by the user. Otherwise infer a safe root
-   from the current project or conversation; ask only when no safe root exists.
-2. Prefer folders dense with formats AutoRAG's parsers can index into
-   `.autorag/parsed` for BM25/MinSync:
-   - text notes: `md`, `markdown`, `txt`, `text`
-   - documents: `pdf`, `docx`, `pptx`, `xlsx`, `hwpx`, `eml`
-   - optional OCR images only when enabled: `jpg`, `jpeg`, `png`, `bmp`, `tiff`
-3. Do not present legacy binary shells that currently fail pure-JS parsing as
-   fully supported: bare `doc`, `xls`, and legacy `hwp` (use `docx` / `xlsx` /
-   `hwpx` instead). Explorers can still open any readable text under approved
-   paths with `read`/`grep`/`find`/`ls`, but those files will not contribute to
-   BM25/MinSync indexes.
-4. Skip generated/vendor directories including `node_modules`, `.git`, `dist`,
-   `build`, `target`, `.cache`, `.autorag`, and `.jikji`.
-5. Recommend a small set of dense, relevant folders with approximate counts.
-   Do not silently index large or sensitive trees. Reuse paths already approved
-   by the user without asking again.
+Propose a **short list of recommended folders** tailored to the user's OS, then
+let the user accept, drop, or replace entries before any indexing. Explicit user
+paths always win. Reuse previously approved folders without re-asking.
+
+### 1. Detect OS and home roots
+
+Resolve the user home once:
+
+| OS | User home |
+|---|---|
+| macOS | `$HOME` (e.g. `/Users/<name>`) |
+| Linux | `$HOME` (e.g. `/home/<name>`; honor `XDG_*` when set) |
+| Windows | `%USERPROFILE%` / `$HOME` under Git Bash (e.g. `C:\Users\<name>`) |
+
+Do not walk the entire home tree. Check only the recommended candidates below
+for existence and approximate document density (counts of supported extensions),
+then present the findings.
+
+### 2. Recommend document-dense anchors per OS
+
+Offer candidates that commonly hold PDFs, Office docs, notes, and downloads.
+Mark each as **recommended** or **optional**, and never enable a path that does
+not exist.
+
+**macOS**
+
+| Priority | Path | Why |
+|---|---|---|
+| Recommended | `~/Documents` | Default document library |
+| Recommended | `~/Downloads` | Fresh PDFs, reports, attachments |
+| Recommended | `~/Desktop` | Dropped working files |
+| Optional | `~/Notes`, `~/Obsidian`, `~/iCloud Drive/Documents` when present | Personal knowledge bases |
+| Optional | Current project docs roots the user already named | Repo/wiki collections |
+
+Prefer user-visible folders over iCloud container UUIDs or Library internals.
+Skip `~/Library`, `~/Applications`, and Time Machine volumes unless the user
+explicitly points there.
+
+**Linux**
+
+| Priority | Path | Why |
+|---|---|---|
+| Recommended | `~/Documents` or `$XDG_DOCUMENTS_DIR` | Document library |
+| Recommended | `~/Downloads` or `$XDG_DOWNLOAD_DIR` | Incoming files |
+| Recommended | `~/Desktop` or `$XDG_DESKTOP_DIR` | Working files |
+| Optional | `~/Notes`, `~/Sync`, Nextcloud/Syncthing folders when present | Synced knowledge |
+| Optional | Current project docs roots the user already named | Repo/wiki collections |
+
+When XDG user-dirs are configured, prefer those resolved paths over bare
+`~/Documents`-style guesses.
+
+**Windows**
+
+| Priority | Path | Why |
+|---|---|---|
+| Recommended | `%USERPROFILE%\Documents` | Document library (also OneDrive Documents if that is the real shell folder) |
+| Recommended | `%USERPROFILE%\Downloads` | Incoming PDFs and exports |
+| Recommended | `%USERPROFILE%\Desktop` | Working files |
+| Optional | OneDrive `Documents` / `Desktop` when they differ from the local shell folders | Cloud-backed corp libraries |
+| Optional | Current project docs roots the user already named | Repo/wiki collections |
+
+Prefer the shell-known special folders. Do not crawl `AppData`, `Program Files`,
+or system roots.
+
+### 3. Density and format filter
+
+Prefer folders dense with formats AutoRAG parses into `.autorag/parsed` for
+BM25/MinSync:
+
+- text notes: `md`, `markdown`, `txt`, `text`
+- documents: `pdf`, `docx`, `pptx`, `xlsx`, `hwpx`, `eml`
+- optional OCR images only when enabled: `jpg`, `jpeg`, `png`, `bmp`, `tiff`
+
+Do not present legacy binary shells that currently fail pure-JS parsing as fully
+supported: bare `doc`, `xls`, and legacy `hwp` (use `docx` / `xlsx` / `hwpx`
+instead). Explorers can still open any readable text under approved paths with
+`read`/`grep`/`find`/`ls`, but those files will not contribute to BM25/MinSync
+indexes.
+
+Skip generated/vendor directories including `node_modules`, `.git`, `dist`,
+`build`, `target`, `.cache`, `.autorag`, and `.jikji`.
+
+### 4. Present a proposal, then require approval
+
+Summarize a concrete proposal, for example:
+
+```text
+Recommended index roots (macOS):
+  [R] ~/Documents      (~120 pdf/md/docx)
+  [R] ~/Downloads      (~45 pdf/pptx)
+  [R] ~/Desktop        (~12 md/pdf)
+  [O] ~/Notes          (~80 md) — optional personal vault
+
+Reply with: accept all / keep only Documents+Downloads / custom list
+```
+
+Rules:
+
+1. Prefer an explicit directory already named by the user over any suggestion.
+2. Do not silently index large or sensitive trees.
+3. Keep the first-run set small (typically 1–3 approved roots). Users can add
+   more after the initial index build.
+4. Wallpaper/background folders are rarely useful; only suggest Desktop itself
+   (where people leave docs), not OS wallpaper asset caches.
 
 ## Initialize
 
@@ -112,20 +201,139 @@ via the role-specific flags or:
 - legacy single-model aliases: `AUTORAG_MODEL_PROVIDER` / `AUTORAG_MODEL_ID`
 - `AUTORAG_SEARCH_PATHS`, `AUTORAG_WORKSPACE`, `AUTORAG_MEMORY_PATH`
 
-## Build and verify
+## Build indexes after install
+
+Installation + `init` alone does **not** make search useful. Immediately after
+the approved config is written, build the local indexes before handing off to
+the `autorag` skill.
+
+### What `autorag refresh` builds
+
+`autorag refresh` is the post-setup indexing step. It is model-free and:
+
+1. **Parses** approved source files into workspace-local `.autorag/parsed`
+   markdown mirrors.
+2. **Prepares BM25** lexical indexes over those mirrors.
+3. **Embeds into the MinSync vector DB** (semantic index) over the same mirrors
+   when MinSync is configured/available.
+4. **Prepares Jikji maps/caches** under each approved source's `.jikji/` when
+   Jikji is configured (indexing only — find answers come later via
+   `jikji_find` at search time).
+5. **Indexes authorized datasources** when datasource skills are configured.
+
+Order of operations for first-time setup:
+
+```bash
+# 1) write approved folders + role models
+autorag init \
+  --search-paths "$HOME/Documents,$HOME/Downloads,$HOME/Desktop" \
+  --orchestrator-model-provider PROVIDER \
+  --orchestrator-model-id ORCHESTRATOR_MODEL \
+  --explorer-model-provider PROVIDER \
+  --explorer-model-id EXPLORER_MODEL
+
+# 2) parse sources, build BM25, embed MinSync, prepare Jikji maps
+autorag refresh
+
+# 3) verify corpus freshness / index health (path-opaque)
+autorag status
+```
+
+Interpret results:
+
+- `refresh` prints parse counts and BM25 readiness (and datasource rows when
+  present). Re-run with `autorag refresh --force` only when a dirty/partial
+  index needs a full rebuild path and a lighter incremental refresh is not
+  enough.
+- `status` is model-free and path-opaque: inspect freshness and component
+  health only; do not expect absolute source paths in the output.
+- Separately confirm both role models resolve from the authenticated runtime or
+  written config without displaying credentials or private provider details.
+- Do not claim setup succeeded when authentication, indexes, or role-model
+  resolution remain unverified.
+- Prefer bounded `refresh` over destructive resets. Reserve
+  `autorag index rebuild --yes` for a full wipe+reindex of workspace
+  `.autorag` parsed/BM25/MinSync dirs only — never against source documents.
+
+Large first-time corpora can take several minutes for parse + embed. Stay on
+the approximate status of the running refresh rather than starting concurrent
+index jobs.
+
+## Customize and extend indexed folders
+
+Users can change the indexed set after the initial install. Always get explicit
+approval before adding paths, then re-init (or rewrite config) and refresh.
+
+### Add or replace folders
+
+1. Collect the desired absolute paths (user paste, or another short recommended
+   proposal using the OS tables above).
+2. Prefer merging with the existing approved list rather than silently dropping
+   working roots, unless the user asks to replace everything.
+3. Write the new list:
+
+```bash
+# Replace/extend the configured search roots, preserve role models already set
+autorag init \
+  --force \
+  --search-paths "/existing/docs,/new/research,/path/to/notes"
+```
+
+If role models must be preserved and you are rewriting via `init --force`, pass
+the same orchestrator/explorer provider+id pair already in
+`~/.autorag/config.json`. Alternatively edit `searchPaths` in that config when
+the agent can safely update JSON without touching credentials/private fields.
+
+4. Rebuild indexes for the new roots:
 
 ```bash
 autorag refresh
 autorag status
 ```
 
-`refresh` parses approved sources and resyncs active indexes (parsed mirror,
-BM25, MinSync, datasources, optional Jikji prepare). `status` is model-free and
-path-opaque: inspect its freshness/index health only; do not expect absolute
-paths. Separately confirm both role models can be resolved from the
-authenticated runtime or written config without displaying credentials or
-private provider details. Do not claim setup succeeded when authentication,
-indexes, or role-model resolution remain unverified.
+### Narrow temporarily without re-init
 
-After setup succeeds, hand normal queries to the `autorag` skill (`autorag
-search`, then `autorag feedback` with the returned `sessionId`).
+For a one-off search scope, prefer `autorag search "…" --scope <virtual-subpath>`
+through the `autorag` skill after setup. Scope narrows retrieval; it does not
+add new roots to the permanent index set.
+
+### Env/flag overrides for automation
+
+Machine-driven agents may point at a custom list without rewriting the default
+home config:
+
+```bash
+AUTORAG_SEARCH_PATHS="/docs,/notes" autorag refresh
+# or
+autorag refresh --search-paths "/docs,/notes"
+```
+
+Remember that CLI flags / env vars take precedence for that invocation only;
+persist planned long-term folders with `autorag init` so later searches and
+refreshes share the same set.
+
+### Ongoing maintenance
+
+```bash
+autorag status                 # corpus freshness / index health
+autorag refresh                # resync after documents change
+autorag refresh --force        # force a full re-sync when needed
+autorag index rebuild --yes    # wipe parsed/BM25/MinSync under .autorag, then forced refresh
+autorag memory inspect         # read-only retrieval memory snapshot
+```
+
+Never run reset/rebuild against source document trees. Indexes live under the
+configured workspace's `.autorag/`; Jikji prepare caches live under
+per-source `.jikji/` when enabled.
+
+## Hand off
+
+After models authenticate, folders are approved, `init` has written the config,
+`refresh` has built parsed + BM25 + MinSync (+ optional Jikji/datasource)
+indexes, and `status` looks healthy:
+
+- stop the setup skill
+- use the `autorag` skill for normal queries (`autorag search`, then
+  `autorag feedback` with the returned `sessionId`)
+- return to this skill when the user adds folders, fixes providers/models, or
+  needs a deliberate reindex
