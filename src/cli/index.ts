@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 
-const BOOLEAN_FLAGS = new Set(["json", "debug", "help", "force", "yes", "once", "immediate"]);
+const BOOLEAN_FLAGS = new Set(["json", "debug", "help", "force", "yes", "once", "immediate", "skip-probes"]);
 const VALUE_FLAGS = new Set([
 	"config",
 	"search-paths",
@@ -32,9 +32,10 @@ const VALUE_FLAGS = new Set([
 	"embedder-passage-prefix",
 	"embedder-timeout-ms",
 	"embedder-batch-size",
+	"timeout-ms",
 ]);
 
-const COMMANDS = ["init", "refresh", "status", "search", "feedback", "memory", "index", "watch"] as const;
+const COMMANDS = ["init", "refresh", "status", "search", "feedback", "memory", "index", "watch", "health"] as const;
 type CommandName = (typeof COMMANDS)[number];
 
 interface ParsedArgs {
@@ -61,6 +62,7 @@ Commands:
   memory inspect       Inspect the retrieval memory snapshot
   index reset          Remove parsed/bm25/minsync indexes under .autorag (--method)
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
+  health               Check model/provider auth and subagent preflight (no index check)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -81,6 +83,8 @@ Global flags:
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
   --method <csv>       For refresh/index: bm25,minsync,parsed,datasources,jikji,all
+  --skip-probes        For health: skip network/subagent probes (auth checks still run)
+  --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --help, -h           Show this help
 `;
 
@@ -164,6 +168,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "watch": {
 			const { runWatch } = await import("./commands/watch.ts");
 			return runWatch(ctx);
+		}
+		case "health": {
+			const { runHealth } = await import("./commands/health.ts");
+			return runHealth(ctx);
 		}
 	}
 }

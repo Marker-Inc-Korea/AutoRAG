@@ -19,13 +19,16 @@ import {
 	type CliConfig,
 	ConfigError,
 	DEFAULT_CONFIG_FILENAME,
+	LEGACY_CONFIG_FILENAME,
 	type MinSyncMethodConfig,
 	normalizeEmbedder,
 	normalizeIndexingConfig,
 	normalizeLegacyConfigPaths,
 	resolveAgentModel,
+	resolveAgentModelDetailed,
 	resolveAutoRAGHome,
 	resolveConfig,
+	resolveConfigReadOnly,
 	resolveModel,
 	writeDefaultConfig,
 } from "../../src/cli/config.ts";
@@ -1317,5 +1320,191 @@ describe("writeDefaultConfig indexing defaults", () => {
 		writeDefaultConfig(path, { minSync: false as unknown as MinSyncMethodConfig });
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
 		expect(written.minSync).toEqual({ enabled: false });
+	});
+});
+
+describe("resolveConfigReadOnly", () => {
+	it("reads a legacy cwd config in memory without creating the home config or locks", () => {
+		const home = join(root, "home");
+		const homeConfigDir = join(home, ".autorag");
+		const legacyPath = join(root, LEGACY_CONFIG_FILENAME);
+		writeFileSync(
+			legacyPath,
+			JSON.stringify({ searchPaths: ["legacy-docs"], workspacePath: root }),
+			"utf8",
+		);
+
+		const config = resolveConfigReadOnly({ flags: {}, env: { HOME: home }, cwd: root });
+
+		expect(config.searchPaths).toEqual([join(root, "legacy-docs")]);
+		expect(config.workspacePath).toBe(root);
+		// No migration write, no home config dir, and the legacy source is untouched.
+		expect(existsSync(join(homeConfigDir, DEFAULT_CONFIG_FILENAME))).toBe(false);
+		expect(existsSync(homeConfigDir)).toBe(false);
+		expect(existsSync(legacyPath)).toBe(true);
+	});
+
+	it("still loads an explicit home config read-only without writing", () => {
+		const home = join(root, "home");
+		const homeConfigDir = join(home, ".autorag");
+		mkdirSync(homeConfigDir, { recursive: true });
+		writeFileSync(
+			join(homeConfigDir, DEFAULT_CONFIG_FILENAME),
+			JSON.stringify({ searchPaths: ["/home/docs"], workspacePath: "/home/workspace" }),
+			"utf8",
+		);
+
+		const config = resolveConfigReadOnly({ flags: {}, env: { HOME: home }, cwd: root });
+
+		expect(config.searchPaths).toEqual(["/home/docs"]);
+		expect(config.workspacePath).toBe("/home/workspace");
+		expect(pendingConfigArtifacts(join(homeConfigDir, DEFAULT_CONFIG_FILENAME))).toEqual([]);
+	});
+
+	it("falls back to defaults when neither home nor legacy config exists", () => {
+		const home = join(root, "home");
+
+		const config = resolveConfigReadOnly({ flags: {}, env: { HOME: home }, cwd: root });
+
+		expect(config.searchPaths).toEqual(["."]);
+		expect(config.workspacePath).toBe(root);
+		expect(existsSync(join(home, ".autorag"))).toBe(false);
+	});
+});
+
+describe("resolveAgentModelDetailed", () => {
+	it("rewrites configured openrouter and fireworks aliases to their wire model ids", () => {
+		const config: CliConfig = {
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			agents: {
+				orchestrator: { provider: "openrouter", id: "grok-4.5" },
+				explorer: { provider: "fireworks", id: "glm-5.2-fast" },
+			},
+		};
+
+		const detailed = resolveAgentModelDetailed(config, {
+			env: { OPENROUTER_API_KEY: "test-or", FIREWORKS_API_KEY: "test-fw" },
+		});
+
+		expect(detailed.model.id).toBe("x-ai/grok-4.5");
+		expect(detailed.explorerModel.id).toBe("accounts/fireworks/routers/glm-5p2-fast");
+		expect(detailed.roles.orchestrator.modelId).toBe("x-ai/grok-4.5");
+		expect(detailed.roles.explorer.modelId).toBe("accounts/fireworks/routers/glm-5p2-fast");
+		expect(detailed.roles.orchestrator.provider).toBe("openrouter");
+		expect(detailed.roles.explorer.provider).toBe("fireworks");
+		expect(detailed.roles.orchestrator.api).toBe("openai-completions");
+		expect(detailed.roles.orchestrator.baseUrl).toBe("https://openrouter.ai/api/v1");
+		expect(detailed.roles.explorer.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
+		expect(detailed.roles.orchestrator.capabilities).toEqual({ input: ["text", "image"], reasoning: true });
+		expect(detailed.roles.explorer.capabilities).toEqual({ input: ["text"], reasoning: false });
+		expect(detailed.roles.orchestrator.contextWindow).toBe(256_000);
+		expect(detailed.roles.explorer.contextWindow).toBe(202_752);
+		// Auth is env-backed via the *_API_KEY vars supplied to the resolver.
+		expect(detailed.roles.orchestrator.auth).toEqual({
+			present: true,
+			source: "env",
+			envName: "OPENROUTER_API_KEY",
+		});
+		expect(detailed.roles.explorer.auth).toEqual({
+			present: true,
+			source: "env",
+			envName: "FIREWORKS_API_KEY",
+		});
+		expect(detailed.providerApiKeys).toEqual({ openrouter: "test-or", fireworks: "test-fw" });
+	});
+
+	it("reports missing auth as present:false with the expected env var name", () => {
+		const config: CliConfig = {
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			agents: {
+				orchestrator: { provider: "openrouter", id: "grok-4.5" },
+				explorer: { provider: "fireworks", id: "glm-5.2-fast" },
+			},
+		};
+		const previousOpenRouter = process.env.OPENROUTER_API_KEY;
+		const previousFireworks = process.env.FIREWORKS_API_KEY;
+		delete process.env.OPENROUTER_API_KEY;
+		delete process.env.FIREWORKS_API_KEY;
+		try {
+			const detailed = resolveAgentModelDetailed(config, { env: {} });
+
+			expect(detailed.roles.orchestrator.auth.present).toBe(false);
+			expect(detailed.roles.orchestrator.auth.source).toBe("none");
+			expect(detailed.roles.orchestrator.auth.envName).toBe("OPENROUTER_API_KEY");
+			expect(detailed.roles.explorer.auth.present).toBe(false);
+			expect(detailed.roles.explorer.auth.source).toBe("none");
+			expect(detailed.roles.explorer.auth.envName).toBe("FIREWORKS_API_KEY");
+			expect(detailed.apiKey).toBeUndefined();
+			expect(detailed.providerApiKeys).toBeUndefined();
+		} finally {
+			if (previousOpenRouter !== undefined) process.env.OPENROUTER_API_KEY = previousOpenRouter;
+			if (previousFireworks !== undefined) process.env.FIREWORKS_API_KEY = previousFireworks;
+		}
+	});
+
+	it("mirrors resolveAgentModel for built-in catalog models and exposes local_runtime auth", () => {
+		const codexConfigPath = join(root, "config.toml");
+		writeFileSync(
+			codexConfigPath,
+			'model_provider = "test-proxy"\n[model_providers.test-proxy]\nbase_url = "https://proxy.example/v1"\nwire_api = "responses"\nenv_key = "TEST_PROXY_KEY"\n',
+			"utf8",
+		);
+		const config: CliConfig = {
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			agents: {
+				orchestrator: { provider: "openai", id: "gpt-4o" },
+				explorer: { provider: "test-proxy", id: "gpt-5.6-luna" },
+			},
+		};
+		const localOptions = { configPath: codexConfigPath, env: { TEST_PROXY_KEY: "secret" } } as const;
+		const previousOpenAi = process.env.OPENAI_API_KEY;
+		process.env.OPENAI_API_KEY = "catalog-openai-key";
+		try {
+			const plain = resolveAgentModel(config, localOptions);
+			const detailed = resolveAgentModelDetailed(config, localOptions);
+
+			expect(detailed.model).toEqual(plain.model);
+			expect(detailed.explorerModel).toEqual(plain.explorerModel);
+			expect(detailed.apiKey).toBe(plain.apiKey);
+			expect(detailed.providerApiKeys).toEqual(plain.providerApiKeys);
+			expect(detailed.roles.orchestrator.modelId).toBe("gpt-4o");
+			expect(detailed.roles.explorer.modelId).toBe("gpt-5.6-luna");
+			expect(detailed.roles.explorer.auth).toEqual({ present: true, source: "local_runtime" });
+			expect(detailed.roles.orchestrator.auth).toEqual({
+				present: true,
+				source: "catalog",
+				envName: "OPENAI_API_KEY",
+			});
+		} finally {
+			if (previousOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+			else process.env.OPENAI_API_KEY = previousOpenAi;
+		}
+	});
+
+	it("never includes credential values in role metadata", () => {
+		const config: CliConfig = {
+			searchPaths: ["."],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			agents: {
+				orchestrator: { provider: "openrouter", id: "grok-4.5" },
+				explorer: { provider: "fireworks", id: "glm-5.2-fast" },
+			},
+		};
+
+		const detailed = resolveAgentModelDetailed(config, {
+			env: { OPENROUTER_API_KEY: "super-secret-value-do-not-leak", FIREWORKS_API_KEY: "another-secret" },
+		});
+		const serialized = JSON.stringify(detailed.roles);
+
+		expect(serialized).not.toContain("super-secret-value-do-not-leak");
+		expect(serialized).not.toContain("another-secret");
+		expect(detailed.roles.orchestrator.auth.envName).toBe("OPENROUTER_API_KEY");
 	});
 });

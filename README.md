@@ -181,6 +181,8 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 
 `autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method bm25,minsync,parsed`) to scope which indexing methods run or which index directories are removed. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
+`autorag health` checks model/provider auth and explorer subagent setup before a search — it resolves both role models, verifies credential presence, and optionally probes a completion call per role. Use it to diagnose model, provider, auth, timeout, or subagent dispatch failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness); it does not check models or subagent dispatch. When `autorag search` fails for a model/provider/subagent reason, the error output includes a hint pointing to `autorag health`.
+
 ## Quick Start
 
 ```typescript

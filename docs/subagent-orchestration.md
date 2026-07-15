@@ -20,6 +20,31 @@ The `pi-subagents` extension and its `subagent` capability are required. A
 missing capability is fatal for the run; do not silently complete the request
 with one agent.
 
+## Preflight diagnostics
+
+`autorag health` checks model/provider auth and explorer subagent setup without
+touching indexes. It resolves both role models, verifies credential presence,
+and (unless `--skip-probes` is set) runs a lightweight completion probe per
+role. Use it before a search to confirm that the mandatory two-tier workflow
+can dispatch:
+
+```bash
+autorag health
+autorag health --skip-probes   # auth + model resolution only, no network probes
+```
+
+When `autorag search` fails for a model, provider, auth, timeout, or subagent
+reason, the error output includes a hint pointing to `autorag health`:
+
+```
+error: Mandatory pi-subagents extension failed to load
+Run autorag health to diagnose model/provider and explorer subagent setup.
+```
+
+`autorag status` remains the model-free index-health command (corpus freshness,
+BM25/MinSync readiness). It does not check models or subagent dispatch — use
+`autorag health` for that.
+
 ## Home State and Configuration
 
 The default home state is separate from workspace indexes:

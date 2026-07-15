@@ -263,10 +263,13 @@ autorag init \
   --explorer-model-provider PROVIDER \
   --explorer-model-id EXPLORER_MODEL
 
-# 2) parse sources, build BM25, embed MinSync, prepare Jikji maps
+# 2) verify model/provider auth and explorer subagent preflight
+autorag health
+
+# 3) parse sources, build BM25, embed MinSync, prepare Jikji maps
 autorag refresh
 
-# 3) verify corpus freshness / index health (path-opaque)
+# 4) verify corpus freshness / index health (path-opaque)
 autorag status
 ```
 
@@ -282,10 +285,13 @@ Interpret results:
   over the parsed mirrors). Example: `autorag refresh --method bm25,minsync`.
 - `status` is model-free and path-opaque: inspect freshness and component
   health only; do not expect absolute source paths in the output.
-- Separately confirm both role models resolve from the authenticated runtime or
-  written config without displaying credentials or private provider details.
-- Do not claim setup succeeded when authentication, indexes, or role-model
-  resolution remain unverified.
+- `health` checks model/provider auth and explorer subagent setup: it resolves
+  both role models, verifies credential presence, and (unless `--skip-probes`)
+  probes a completion call per role. Use it to confirm both role models resolve
+  from the authenticated runtime or written config without displaying
+  credentials or private provider details.
+- Do not claim setup succeeded when authentication, indexes, role-model
+  resolution, or subagent dispatch remain unverified.
 - Prefer bounded `refresh` over destructive resets. Reserve
   `autorag index rebuild --yes` for a full wipe+reindex of workspace
   `.autorag` parsed/BM25/MinSync dirs only — never against source documents.
@@ -378,7 +384,8 @@ per-source `.jikji/` when enabled.
 
 ## Hand off
 
-After models authenticate, folders are approved, `init` has written the config,
+After models authenticate, `autorag health` confirms model/provider auth and
+explorer subagent dispatch, folders are approved, `init` has written the config,
 `refresh` has built parsed + BM25 + MinSync (+ optional Jikji/datasource)
 indexes, and `status` looks healthy:
 
