@@ -1,3 +1,5 @@
+import type { HealthReportV1 } from "./commands/health.ts";
+import type { SearchHealthHint } from "./commands/search.ts";
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
 import type { SearchDocumentDiagnostic, SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchemaV4 } from "../memory/memory.ts";
@@ -5,6 +7,7 @@ import type { MemorySchemaV4 } from "../memory/memory.ts";
 export interface RenderOptions {
 	json?: boolean;
 	debug?: boolean;
+	hint?: SearchHealthHint;
 }
 
 function diagnosticProjection(d: SearchDocumentDiagnostic): {
@@ -274,8 +277,99 @@ export function renderError(err: unknown, opts: RenderOptions): string {
 	// which would violate the CLI path-opacity contract even under --debug. The
 	// error name/message from library errors is already path-opaque.
 	const message = error.message || error.name;
+	const hint = opts.hint;
 	if (opts.json) {
-		return JSON.stringify({ ok: false, error: message }, null, 2);
+		const envelope: Record<string, unknown> = { ok: false, error: message };
+		if (hint) {
+			envelope.hint = {
+				command: hint.command,
+				reason: hint.reason,
+				message: hint.message,
+			};
+		}
+		return JSON.stringify(envelope, null, 2);
 	}
-	return `error: ${message}`;
+	const lines = [`error: ${message}`];
+	if (hint) {
+		lines.push(hint.message);
+	}
+	return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Health report rendering (healthSchemaVersion: 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a {@link HealthReportV1} as stable JSON or safe human text.
+ *
+ * The JSON envelope is the full report object; the health command already
+ * sanitizes all messages, base URLs, and metadata, so nothing here re-parses
+ * for secrets/paths. Human output stays path/secret/stack-free.
+ */
+export function renderHealth(report: HealthReportV1, opts: RenderOptions): string {
+	if (opts.json) {
+		return JSON.stringify(report, null, 2);
+	}
+	return renderHealthHuman(report);
+}
+
+function renderHealthHuman(report: HealthReportV1): string {
+	const lines: string[] = [];
+	lines.push(`health: ${report.category}${report.ok ? " (ok)" : ""}`);
+	lines.push(`  schemaVersion: ${report.healthSchemaVersion}`);
+	lines.push(`  probesSkipped: ${report.probesSkipped}`);
+	lines.push(
+		`  coverage: modelProvider=${report.coverage.modelProvider} subagentDispatch=${report.coverage.subagentDispatch}`,
+	);
+	lines.push(
+		`    retrievalTools=${report.coverage.retrievalTools} searchCuration=${report.coverage.searchCuration} indexHealth=${report.coverage.indexHealth}`,
+	);
+	lines.push(`  config: ok=${report.config.ok} source=${report.config.source}`);
+	if (report.config.message) lines.push(`    message: ${report.config.message}`);
+
+	const orch = report.models.orchestrator;
+	const explorer = report.models.explorer;
+	if (orch) lines.push(renderRoleLine("orchestrator", orch));
+	if (explorer) lines.push(renderRoleLine("explorer", explorer));
+
+	const orchProbe = report.probes.orchestrator;
+	const explorerProbe = report.probes.explorer;
+	if (orchProbe) lines.push(renderProbeLine(orchProbe));
+	if (explorerProbe) lines.push(renderProbeLine(explorerProbe));
+
+	lines.push(
+		`  indexHealth: separate=${report.indexHealth.separate} command="${report.indexHealth.command}" included=${report.indexHealth.included}`,
+	);
+	return lines.join("\n");
+}
+
+function renderRoleLine(role: string, r: HealthReportV1["models"]["orchestrator"]): string {
+	if (r === undefined) return "";
+	const caps = r.capabilities;
+	const capParts = [`text=${caps.text}`, `image=${caps.image}`];
+	if (caps.reasoning !== undefined) capParts.push(`reasoning=${caps.reasoning}`);
+	const authParts = [`present=${r.auth.present}`, `source=${r.auth.source}`];
+	if (r.auth.envName !== undefined) authParts.push(`envName=${r.auth.envName}`);
+	return [
+		`  model ${role}: ${r.provider}/${r.modelId}`,
+		`    api=${r.api}${r.baseUrl !== undefined ? ` baseUrl=${r.baseUrl}` : ""}`,
+		`    capabilities: ${capParts.join(" ")}`,
+		`    auth: ${authParts.join(" ")}`,
+		`    resolutionSource: ${r.resolutionSource}`,
+	].join("\n");
+}
+
+function renderProbeLine(p: HealthReportV1["probes"]["orchestrator"]): string {
+	if (p === undefined) return "";
+	const parts = [
+		`  probe ${p.role}:`,
+		`skipped=${p.skipped}`,
+		`ok=${p.ok}`,
+		`category=${p.category}`,
+	];
+	if (p.durationMs !== undefined) parts.push(`durationMs=${p.durationMs}`);
+	let line = parts.join(" ");
+	if (p.message) line += `\n    message: ${p.message}`;
+	return line;
 }

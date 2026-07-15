@@ -91,4 +91,62 @@ describe("main routing", () => {
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		expect(await main(["refresh", "--bogus"])).toBe(2);
 	});
+
+});
+
+describe("parseArgs health flags", () => {
+	it("accepts health as a command", () => {
+		const parsed = parseArgs(["health"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.positionals).toEqual(["health"]);
+	});
+
+	it("accepts --skip-probes as a boolean flag", () => {
+		const parsed = parseArgs(["health", "--skip-probes"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["skip-probes"]).toBe(true);
+	});
+
+	it("accepts --timeout-ms as a value flag", () => {
+		const parsed = parseArgs(["health", "--timeout-ms", "5000"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["timeout-ms"]).toBe("5000");
+	});
+
+	it("accepts --timeout-ms=value form", () => {
+		const parsed = parseArgs(["health", "--timeout-ms=8000"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.flags["timeout-ms"]).toBe("8000");
+	});
+
+	it("rejects --doctor (no alias added)", () => {
+		const parsed = parseArgs(["doctor"]);
+		// doctor is not a command; it's an unknown positional but parseArgs
+		// does not reject unknown commands (only unknown flags). The main
+		// router rejects it. Verify doctor is not in COMMANDS by checking
+		// that main returns 2 for it.
+		expect("error" in parsed).toBe(false);
+	});
+});
+
+describe("main health routing", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it("rejects doctor as an unknown command (no alias)", async () => {
+		const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const code = await main(["doctor"]);
+		expect(code).toBe(2);
+		expect(String(err.mock.calls[0]?.[0])).toContain("Unknown command");
+	});
+
+	it("includes health in the usage text", async () => {
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		await main(["--help"]);
+		const usage = String(out.mock.calls[0]?.[0]);
+		expect(usage).toContain("health");
+		expect(usage).toContain("--skip-probes");
+		expect(usage).toContain("--timeout-ms");
+	});
 });

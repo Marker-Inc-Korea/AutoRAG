@@ -11,9 +11,11 @@ import {
 	renderMemory,
 	renderRefresh,
 	renderSearch,
+	renderHealth,
 	renderStatus,
 } from "../../src/cli/output.ts";
 import type { MemorySchemaV4 } from "../../src/memory/memory.ts";
+import type { HealthReportV1 } from "../../src/cli/commands/health.ts";
 
 let root: string;
 
@@ -296,5 +298,153 @@ describe("renderError", () => {
 		const json = JSON.parse(renderError(err, { json: true, debug: true })) as Record<string, unknown>;
 		expect(json.stack).toBeUndefined();
 		expect(json).toEqual({ ok: false, error: "boom" });
+	});
+});
+
+function cannedHealthReport(opts: Partial<HealthReportV1> = {}): HealthReportV1 {
+	return {
+		healthSchemaVersion: 1,
+		ok: true,
+		category: "ok",
+		command: "health",
+		probesSkipped: false,
+		coverage: {
+			modelProvider: true,
+			subagentDispatch: true,
+			retrievalTools: false,
+			searchCuration: false,
+			indexHealth: false,
+		},
+		config: { ok: true, source: "defaults" },
+		models: {
+			orchestrator: {
+				role: "orchestrator",
+				provider: "anthropic",
+				modelId: "claude-haiku-4-5",
+				displayName: "Claude Haiku 4.5 (latest)",
+				api: "anthropic-messages",
+				baseUrl: "https://api.anthropic.com",
+				contextWindow: 200_000,
+				maxTokens: 64_000,
+				capabilities: { text: true, image: true, reasoning: true },
+				auth: { present: true, source: "env", envName: "ANTHROPIC_API_KEY" },
+				resolutionSource: "catalog",
+			},
+			explorer: {
+				role: "explorer",
+				provider: "openai",
+				modelId: "gpt-5.6-luna",
+				api: "openai-responses",
+				capabilities: { text: true, image: true },
+				auth: { present: true, source: "env", envName: "OPENAI_API_KEY" },
+				resolutionSource: "catalog",
+			},
+		},
+		probes: {
+			orchestrator: { role: "orchestrator", skipped: false, ok: true, category: "ok", durationMs: 42 },
+			explorer: { role: "explorer", skipped: false, ok: true, category: "ok", durationMs: 88 },
+		},
+		indexHealth: { separate: true, command: "autorag status", included: false },
+		...opts,
+	};
+}
+
+describe("renderHealth", () => {
+	it("json output has healthSchemaVersion 1 and stable category", () => {
+		const out = renderHealth(cannedHealthReport(), { json: true });
+		const parsed = JSON.parse(out) as Record<string, unknown>;
+		expect(parsed.healthSchemaVersion).toBe(1);
+		expect(parsed.ok).toBe(true);
+		expect(parsed.category).toBe("ok");
+		expect(parsed.command).toBe("health");
+	});
+
+	it("json output includes coverage limitations and indexHealth separation", () => {
+		const out = renderHealth(cannedHealthReport(), { json: true });
+		const parsed = JSON.parse(out) as Record<string, unknown>;
+		const coverage = parsed.coverage as Record<string, unknown>;
+		expect(coverage.modelProvider).toBe(true);
+		expect(coverage.subagentDispatch).toBe(true);
+		expect(coverage.retrievalTools).toBe(false);
+		expect(coverage.searchCuration).toBe(false);
+		expect(coverage.indexHealth).toBe(false);
+		expect(parsed.indexHealth).toEqual({ separate: true, command: "autorag status", included: false });
+	});
+
+	it("json output includes model auth presence and envName but never credential values", () => {
+		const out = renderHealth(cannedHealthReport(), { json: true });
+		const parsed = JSON.parse(out) as Record<string, unknown>;
+		const orch = (parsed.models as Record<string, unknown>).orchestrator as Record<string, unknown>;
+		const auth = orch.auth as Record<string, unknown>;
+		expect(auth.present).toBe(true);
+		expect(auth.source).toBe("env");
+		expect(auth.envName).toBe("ANTHROPIC_API_KEY");
+		// No secret values leaked.
+		expect(out).not.toContain("sk-");
+		expect(out).not.toContain("API_KEY_VALUE");
+	});
+
+	it("json output never emits absolute paths or stacks even in probe messages", () => {
+		const report = cannedHealthReport({
+			ok: false,
+			category: "completion_failed",
+			probes: {
+				orchestrator: {
+					role: "orchestrator",
+					skipped: false,
+					ok: false,
+					category: "completion_failed",
+					message: "failed at <path> with <redacted>",
+				},
+			},
+		});
+		const out = renderHealth(report, { json: true });
+		expect(out).not.toContain("/Users/");
+		expect(out).not.toContain("    at ");
+	});
+
+	it("human output is path/secret/stack-free and contains key fields", () => {
+		const out = renderHealth(cannedHealthReport(), {});
+		expect(out).toContain("health: ok");
+		expect(out).toContain("schemaVersion: 1");
+		expect(out).toContain("model orchestrator: anthropic/claude-haiku-4-5");
+		expect(out).toContain("indexHealth: separate=true");
+		expect(out).not.toContain("sk-");
+		expect(out).not.toContain("/Users/");
+	});
+
+	it("human output shows probe outcomes and durations", () => {
+		const out = renderHealth(cannedHealthReport(), {});
+		expect(out).toContain("probe orchestrator:");
+		expect(out).toContain("ok=true");
+		expect(out).toContain("category=ok");
+		expect(out).toContain("durationMs=42");
+	});
+
+	it("json output for auth_missing shows probes skipped and modelProvider false", () => {
+		const report = cannedHealthReport({
+			ok: false,
+			category: "auth_missing",
+			probesSkipped: true,
+			coverage: {
+				modelProvider: false,
+				subagentDispatch: false,
+				retrievalTools: false,
+				searchCuration: false,
+				indexHealth: false,
+			},
+			probes: {
+				orchestrator: { role: "orchestrator", skipped: true, ok: false, category: "auth_missing" },
+			},
+		});
+		const out = renderHealth(report, { json: true });
+		const parsed = JSON.parse(out) as Record<string, unknown>;
+		expect(parsed.category).toBe("auth_missing");
+		expect(parsed.ok).toBe(false);
+		const coverage = parsed.coverage as Record<string, unknown>;
+		expect(coverage.modelProvider).toBe(false);
+		const orchProbe = (parsed.probes as Record<string, unknown>).orchestrator as Record<string, unknown>;
+		expect(orchProbe.skipped).toBe(true);
+		expect(orchProbe.category).toBe("auth_missing");
 	});
 });

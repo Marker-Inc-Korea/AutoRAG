@@ -20,9 +20,11 @@ import type { Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveAutoRAGHome } from "../../src/config/home.ts";
 import { acquireFileLock } from "../../src/filesystem/file-lock.ts";
 import {
 	AUTORAG_EXPLORER_AGENT_DEFINITION,
+	createHealthSubagentProbeSession,
 	createMandatorySubagentSession,
 	EXPLORER_TOOLS_EXTENSION_PATH,
 } from "../../src/subagents/runtime.ts";
@@ -1769,5 +1771,143 @@ Project override body.
 				extensionPath: "/definitely/missing/pi-subagents.ts",
 			}),
 		).rejects.toThrow(/mandatory pi-subagents extension/i);
+	});
+});
+describe("createHealthSubagentProbeSession", () => {
+	it("requires an absolute agentDir and sessionDir", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-health-probe-req-"));
+		tempDirs.push(root);
+		await expect(
+			createHealthSubagentProbeSession({
+				cwd: root,
+				model,
+				systemPrompt: "health probe",
+				tools: [],
+				agentDir: "relative/agent",
+				sessionDir: join(root, "sessions"),
+			}),
+		).rejects.toThrow(/absolute agentDir/);
+		await expect(
+			createHealthSubagentProbeSession({
+				cwd: root,
+				model,
+				systemPrompt: "health probe",
+				tools: [],
+				agentDir: join(root, "agent"),
+				sessionDir: "relative/sessions",
+			}),
+		).rejects.toThrow(/absolute sessionDir/);
+		await expect(
+			createHealthSubagentProbeSession({
+				cwd: root,
+				model,
+				systemPrompt: "health probe",
+				tools: [],
+				agentDir: "",
+				sessionDir: join(root, "sessions"),
+			}),
+		).rejects.toThrow(/absolute agentDir/);
+	});
+
+	it("exposes subagent and wait tools when the extension loads", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-health-probe-tools-"));
+		tempDirs.push(root);
+		const agentDir = join(root, "agent");
+		const sessionDir = join(root, "sessions");
+		const probe = await createHealthSubagentProbeSession({
+			cwd: root,
+			model,
+			systemPrompt: "health probe",
+			tools: [],
+			agentDir,
+			sessionDir,
+		});
+		try {
+			const toolNames = new Set(probe.session.getAllTools().map((tool) => tool.name));
+			expect(toolNames.has("subagent")).toBe(true);
+			expect(toolNames.has("wait")).toBe(true);
+			expect(probe.extensionPath).toContain("pi-subagents/src/extension/index.ts");
+		} finally {
+			probe.dispose();
+		}
+	});
+
+	it("maps a concurrent lease conflict to a busy message", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-health-probe-lease-"));
+		tempDirs.push(root);
+		const agentDir = join(root, "agent");
+		const sessionDir = join(root, "sessions");
+
+		// Hold an active session with one model, then try a health probe with
+		// an incompatible explorer model to trigger the lease conflict.
+		const active = await createMandatorySubagentSession({
+			cwd: root,
+			agentDir,
+			model,
+			explorerModel,
+			systemPrompt: "active session",
+			tools: [customTool],
+		});
+		try {
+			const incompatibleExplorer: Model<"openai-responses"> = {
+				...explorerModel,
+				id: "gpt-5.6-luna-incompatible",
+				name: "GPT-5.6 Luna Incompatible",
+			};
+			await expect(
+				createHealthSubagentProbeSession({
+					cwd: root,
+					model,
+					explorerModel: incompatibleExplorer,
+					systemPrompt: "health probe",
+					tools: [],
+					agentDir,
+					sessionDir,
+				}),
+			).rejects.toThrow("concurrent AutoRAG session busy with different child environment routing");
+		} finally {
+			active.session.dispose();
+		}
+	});
+
+	it("does not write under a durable home path when agentDir is temp", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-health-probe-nondestructive-"));
+		tempDirs.push(root);
+		const durableHome = resolveAutoRAGHome();
+		const durableAgentDir = join(durableHome, "pi-agent");
+		// Snapshot durable home state before the probe.
+		const durableExisted = existsSync(durableAgentDir);
+		const durableSnapshot = durableExisted
+			? readdirSync(durableAgentDir, { withFileTypes: true })
+					.map((entry) => `${entry.name}:${entry.isDirectory() ? "dir" : "file"}`)
+					.sort()
+			: [];
+
+		const agentDir = join(root, "agent");
+		const sessionDir = join(root, "sessions");
+		const probe = await createHealthSubagentProbeSession({
+			cwd: root,
+			model,
+			systemPrompt: "health probe",
+			tools: [],
+			agentDir,
+			sessionDir,
+		});
+		try {
+			expect(probe.session.sessionFile?.startsWith(sessionDir)).toBe(true);
+		} finally {
+			probe.dispose();
+		}
+
+		// The durable home path must be unchanged.
+		const durableAfter = existsSync(durableAgentDir)
+			? readdirSync(durableAgentDir, { withFileTypes: true })
+					.map((entry) => `${entry.name}:${entry.isDirectory() ? "dir" : "file"}`)
+					.sort()
+			: [];
+		expect(existsSync(durableAgentDir)).toBe(durableExisted);
+		expect(durableAfter).toEqual(durableSnapshot);
+		// The temp agentDir was used, not the durable one.
+		expect(existsSync(join(agentDir, "models.json"))).toBe(true);
 	});
 });

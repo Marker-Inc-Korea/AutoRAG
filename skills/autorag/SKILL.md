@@ -24,12 +24,17 @@ Confirm that `~/.autorag/config.json` exists (or an explicit `--config` /
 
 ```bash
 autorag status
+autorag health
 ```
 
 `status` is model-free and path-opaque: it reports corpus freshness and index
-health, not absolute filesystem paths or role-model auth. If configuration,
-authentication, role models, or indexes are missing or unhealthy, stop this
-workflow and use `autorag-setup`; do not guess private providers or model IDs.
+health, not absolute filesystem paths or role-model auth. `health` checks
+model/provider auth and explorer subagent setup: it resolves both role models,
+verifies credential presence, and (unless `--skip-probes`) probes a completion
+call per role. Use `health` to diagnose model, provider, auth, timeout, or
+subagent dispatch failures before searching. If configuration, authentication,
+role models, or indexes are missing or unhealthy, stop this workflow and use
+`autorag-setup`; do not guess private providers or model IDs.
 
 ## Searching
 
@@ -48,7 +53,9 @@ AutoRAG returns curated, numbered knowledge units grounded in sources plus a
 
 Do not bypass AutoRAG with ad hoc raw search when the user explicitly requested
 the librarian agent. Search requires a resolvable orchestrator/explorer model
-pair from config, flags, env, or the authenticated local runtime.
+pair from config, flags, env, or the authenticated local runtime. When `autorag
+search` fails for a model, provider, auth, timeout, or subagent reason, the
+error output includes a hint pointing to `autorag health` for diagnosis.
 
 Record feedback so retrieval memory learns which results were useful:
 
@@ -63,6 +70,7 @@ numbered knowledge units from that session's search output.
 
 ```bash
 autorag status
+autorag health
 autorag refresh
 autorag refresh --method bm25,minsync
 autorag watch --once

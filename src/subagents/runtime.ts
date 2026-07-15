@@ -216,6 +216,25 @@ export interface MandatorySubagentSession {
 	readonly extensionPath: string;
 }
 
+export interface HealthSubagentProbeSessionOptions {
+	readonly cwd: string;
+	readonly model: Model<Api>;
+	readonly explorerModel?: Model<Api>;
+	readonly systemPrompt: string;
+	readonly tools: readonly AgentTool[];
+	readonly extensionPath?: string;
+	readonly apiKey?: string;
+	readonly providerApiKeys?: Readonly<Record<string, string>>;
+	readonly agentDir: string;
+	readonly sessionDir: string;
+}
+
+export interface HealthSubagentProbeSession {
+	readonly session: AgentSession;
+	readonly extensionPath: string;
+	readonly dispose: () => void;
+}
+
 function resolvePiSubagentsPackageJson(): string {
 	const require = createRequire(import.meta.url);
 	return require.resolve("pi-subagents/package.json");
@@ -954,6 +973,59 @@ export async function createMandatorySubagentSession(
 		return { session, extensionPath };
 	} catch (error) {
 		releaseChildEnvironment();
+		throw error;
+	}
+}
+
+/**
+ * Create a short-lived subagent session for the `autorag health` explorer probe.
+ *
+ * Unlike {@link createMandatorySubagentSession}, this requires absolute
+ * `agentDir` and `sessionDir` (typically under a caller-created temp
+ * directory) so the probe never touches durable home state. On a lease
+ * conflict — i.e. when another live session holds a different child
+ * environment/registry routing — the error is rethrown with a stable
+ * "concurrent AutoRAG session busy" message so the health command can map
+ * it to `subagent_failed`.
+ */
+export async function createHealthSubagentProbeSession(
+	options: HealthSubagentProbeSessionOptions,
+): Promise<HealthSubagentProbeSession> {
+	if (typeof options.agentDir !== "string" || options.agentDir.trim().length === 0) {
+		throw new Error("AutoRAG health probe requires an absolute agentDir");
+	}
+	if (typeof options.sessionDir !== "string" || options.sessionDir.trim().length === 0) {
+		throw new Error("AutoRAG health probe requires an absolute sessionDir");
+	}
+	if (!isAbsolute(options.agentDir)) {
+		throw new Error("AutoRAG health probe requires an absolute agentDir");
+	}
+	if (!isAbsolute(options.sessionDir)) {
+		throw new Error("AutoRAG health probe requires an absolute sessionDir");
+	}
+	try {
+		const result = await createMandatorySubagentSession({
+			cwd: options.cwd,
+			model: options.model,
+			...(options.explorerModel !== undefined ? { explorerModel: options.explorerModel } : {}),
+			systemPrompt: options.systemPrompt,
+			tools: options.tools,
+			...(options.extensionPath !== undefined ? { extensionPath: options.extensionPath } : {}),
+			...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+			...(options.providerApiKeys !== undefined ? { providerApiKeys: options.providerApiKeys } : {}),
+			agentDir: options.agentDir,
+			sessionDir: options.sessionDir,
+		});
+		return {
+			session: result.session,
+			extensionPath: result.extensionPath,
+			dispose: () => result.session.dispose(),
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes("concurrent Pi sessions")) {
+			throw new Error("concurrent AutoRAG session busy with different child environment routing");
+		}
 		throw error;
 	}
 }

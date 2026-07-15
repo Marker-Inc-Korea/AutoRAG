@@ -3,11 +3,15 @@ import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsy
 import type { BM25Engine, BM25FallbackMode } from "../retrieval/methods/bm25.ts";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { type Api, getModel, getProviders, type Model } from "@earendil-works/pi-ai";
+import { type Api, findEnvKeys, getEnvApiKey, getModel, getProviders, type Model } from "@earendil-works/pi-ai";
 import type { AutoRAGAgentOptions } from "../agent/agent.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
-import { type LoadLocalAutoRAGModelsOptions, loadLocalAutoRAGModels } from "../subagents/local-models.ts";
+import {
+	type LoadLocalAutoRAGModelsOptions,
+	type LocalAutoRAGModels,
+	loadLocalAutoRAGModels,
+} from "../subagents/local-models.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
@@ -82,6 +86,7 @@ export interface ResolveConfigInput {
 	flags: Record<string, string | boolean | undefined>;
 	env?: NodeJS.ProcessEnv;
 	cwd?: string;
+	readOnly?: boolean;
 }
 
 export interface ResolvedConfigPath {
@@ -209,6 +214,23 @@ function migrateLegacyConfig(configPath: string, legacyPath: string): Partial<Cl
 		lock.release();
 	}
 	return migrated;
+}
+/**
+ * Read-only config loading for health: never migrate, write, or lock. When the
+ * implicit home config is missing but a legacy cwd config exists, read the
+ * legacy file and normalize its paths in memory only.
+ */
+function resolveConfigFileReadOnly(
+	configPath: string,
+	explicit: boolean,
+	legacyPath: string | undefined,
+): Partial<CliConfig> {
+	const home = readConfigFile(configPath, explicit);
+	if (home !== undefined) return home;
+	if (explicit || legacyPath === undefined) return {};
+	const legacy = readConfigFile(legacyPath, false);
+	if (legacy === undefined) return {};
+	return normalizeLegacyConfigPaths(legacy, dirname(legacyPath));
 }
 
 function resolveSearchPaths(searchPaths: readonly string[], origin: string): string[] {
@@ -440,8 +462,12 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const cwd = input.cwd ?? process.cwd();
 
 	const { configPath, explicit, legacyPath } = resolveConfigPath(input);
-	const migrated = !explicit && legacyPath ? migrateLegacyConfig(configPath, legacyPath) : undefined;
-	const file = migrated ?? readConfigFile(configPath, explicit) ?? {};
+	const readOnly = input.readOnly === true;
+	const file = readOnly
+		? resolveConfigFileReadOnly(configPath, explicit, legacyPath)
+		: (!explicit && legacyPath
+				? migrateLegacyConfig(configPath, legacyPath) ?? readConfigFile(configPath, explicit) ?? {}
+				: readConfigFile(configPath, explicit) ?? {});
 
 	const defaultSearchPaths = ["."];
 	const defaultWorkspacePath = cwd;
@@ -516,6 +542,15 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	if (file.jikji) config.jikji = file.jikji;
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	return config;
+}
+
+/**
+ * Resolve config without writing, migrating, or locking. Health and other
+ * non-destructive preflights use this so legacy cwd configs are read as search
+ * would resolve them but never copied into `~/.autorag/config.json`.
+ */
+export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
+	return resolveConfig({ ...input, readOnly: true });
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
@@ -648,10 +683,66 @@ export interface ResolvedAgentModel {
 	readonly providerApiKeys?: Readonly<Record<string, string>>;
 }
 
-export function resolveAgentModel(
+export type AgentModelResolutionSource =
+	| "config"
+	| "flags"
+	| "env"
+	| "local_runtime"
+	| "catalog"
+	| "configured_alias"
+	| "mixed";
+
+export interface AgentModelAuth {
+	readonly present: boolean;
+	readonly source: "env" | "local_runtime" | "catalog" | "none" | "unknown";
+	readonly envName?: string;
+}
+
+export interface ResolvedAgentModelRole {
+	readonly provider: string;
+	readonly modelId: string;
+	readonly displayName: string;
+	readonly api: Api;
+	readonly baseUrl: string | undefined;
+	readonly contextWindow: number | undefined;
+	readonly maxTokens: number | undefined;
+	readonly capabilities: { readonly input: readonly string[]; readonly reasoning: boolean };
+	readonly auth: AgentModelAuth;
+	readonly resolutionSource: AgentModelResolutionSource;
+}
+
+export interface ResolvedAgentModelDetailed {
+	readonly model: Model<Api>;
+	readonly explorerModel: Model<Api>;
+	readonly apiKey?: string;
+	readonly providerApiKeys?: Readonly<Record<string, string>>;
+	readonly roles: { readonly orchestrator: ResolvedAgentModelRole; readonly explorer: ResolvedAgentModelRole };
+}
+
+interface AgentModelCore {
+	readonly model: Model<Api>;
+	readonly explorerModel: Model<Api>;
+	readonly apiKey?: string;
+	readonly providerApiKeys?: Readonly<Record<string, string>>;
+	readonly orchestratorRef: { provider: string; id: string } | undefined;
+	readonly explorerRef: { provider: string; id: string } | undefined;
+	readonly orchestratorModel: Model<Api>;
+	readonly explorerModelResolved: Model<Api>;
+	readonly orchestratorFromLocal: boolean;
+	readonly explorerFromLocal: boolean;
+	readonly orchestratorConfiguredAlias: boolean;
+	readonly explorerConfiguredAlias: boolean;
+	readonly orchestratorCatalog: boolean;
+	readonly explorerCatalog: boolean;
+	readonly local: LocalAutoRAGModels | undefined;
+	readonly usesConfiguredOpenAICompatible: boolean;
+	readonly env: NodeJS.ProcessEnv;
+}
+
+function resolveAgentModelCore(
 	config: CliConfig,
 	localOptions: LoadLocalAutoRAGModelsOptions = {},
-): ResolvedAgentModel {
+): AgentModelCore {
 	const orchestratorRef = config.agents?.orchestrator ?? config.model;
 	const explorerRef = config.agents?.explorer;
 	const registeredOrchestrator = resolveBuiltInModel(orchestratorRef, "orchestrator");
@@ -679,10 +770,6 @@ export function resolveAgentModel(
 			? (local?.explorer as Model<Api>)
 			: resolveRegisteredModel(explorerRef, "explorer"));
 
-	// Built-in catalog models keep credentials environment-backed via pi-ai.
-	// Explicit providerApiKeys are only needed when:
-	//  - local Codex/proxy models supply a runtime key, or
-	//  - at least one role uses a non-catalog OpenAI-compatible model we inject.
 	const usesConfiguredOpenAICompatible =
 		(orchestratorRef !== undefined &&
 			resolveConfiguredOpenAICompatibleModel(orchestratorRef) !== undefined &&
@@ -691,14 +778,49 @@ export function resolveAgentModel(
 			resolveConfiguredOpenAICompatibleModel(explorerRef) !== undefined &&
 			getModel(explorerRef.provider as never, explorerRef.id as never) === undefined);
 
+	const env = localOptions.env ?? process.env;
+	const orchestratorFromLocal =
+		registeredOrchestrator === undefined &&
+		(orchestratorRef === undefined || orchestratorRef.provider === local?.provider);
+	const explorerFromLocal =
+		registeredExplorer === undefined &&
+		(explorerRef === undefined || explorerRef.provider === local?.provider);
+	const orchestratorConfiguredAlias =
+		registeredOrchestrator === undefined &&
+		orchestratorRef !== undefined &&
+		resolveConfiguredOpenAICompatibleModel(orchestratorRef) !== undefined &&
+		!orchestratorFromLocal;
+	const explorerConfiguredAlias =
+		registeredExplorer === undefined &&
+		explorerRef !== undefined &&
+		resolveConfiguredOpenAICompatibleModel(explorerRef) !== undefined &&
+		!explorerFromLocal;
+	const orchestratorCatalog = registeredOrchestrator !== undefined;
+	const explorerCatalog = registeredExplorer !== undefined;
+
 	if (local === undefined && !usesConfiguredOpenAICompatible) {
-		return { model, explorerModel };
+		return {
+			model,
+			explorerModel,
+			orchestratorRef,
+			explorerRef,
+			orchestratorModel: model,
+			explorerModelResolved: explorerModel,
+			orchestratorFromLocal,
+			explorerFromLocal,
+			orchestratorConfiguredAlias,
+			explorerConfiguredAlias,
+			orchestratorCatalog,
+			explorerCatalog,
+			local,
+			usesConfiguredOpenAICompatible,
+			env,
+		};
 	}
 
 	const providerApiKeys: Record<string, string> = {};
 	if (local !== undefined) providerApiKeys[local.provider] = local.apiKey;
 	if (usesConfiguredOpenAICompatible) {
-		const env = localOptions.env ?? process.env;
 		for (const provider of new Set([model.provider, explorerModel.provider])) {
 			const envName = `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 			const value = env[envName];
@@ -706,15 +828,160 @@ export function resolveAgentModel(
 		}
 	}
 	const orchestratorKey = providerApiKeys[model.provider];
+	const apiKey =
+		local !== undefined && (orchestratorRef === undefined || orchestratorRef.provider === local.provider)
+			? local.apiKey
+			: orchestratorKey !== undefined && usesConfiguredOpenAICompatible
+				? orchestratorKey
+				: undefined;
 	return {
 		model,
 		explorerModel,
-		...(local !== undefined && (orchestratorRef === undefined || orchestratorRef.provider === local.provider)
-			? { apiKey: local.apiKey }
-			: orchestratorKey !== undefined && usesConfiguredOpenAICompatible
-				? { apiKey: orchestratorKey }
-				: {}),
+		...(apiKey !== undefined ? { apiKey } : {}),
 		...(Object.keys(providerApiKeys).length > 0 ? { providerApiKeys } : {}),
+		orchestratorRef,
+		explorerRef,
+		orchestratorModel: model,
+		explorerModelResolved: explorerModel,
+		orchestratorFromLocal,
+		explorerFromLocal,
+		orchestratorConfiguredAlias,
+		explorerConfiguredAlias,
+		orchestratorCatalog,
+		explorerCatalog,
+		local,
+		usesConfiguredOpenAICompatible,
+		env,
+	};
+}
+
+export function resolveAgentModel(
+	config: CliConfig,
+	localOptions: LoadLocalAutoRAGModelsOptions = {},
+): ResolvedAgentModel {
+	const core = resolveAgentModelCore(config, localOptions);
+	return {
+		model: core.model,
+		explorerModel: core.explorerModel,
+		...(core.apiKey !== undefined ? { apiKey: core.apiKey } : {}),
+		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
+	};
+}
+
+function providerApiKeyEnvName(provider: string): string {
+	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
+}
+
+function resolveRoleAuth(
+	model: Model<Api>,
+	fromLocal: boolean,
+	local: LocalAutoRAGModels | undefined,
+	providerApiKeys: Readonly<Record<string, string>> | undefined,
+	usesConfiguredOpenAICompatible: boolean,
+	env: NodeJS.ProcessEnv,
+): AgentModelAuth {
+	if (fromLocal && local !== undefined && model.provider === local.provider) {
+		return { present: true, source: "local_runtime" };
+	}
+	const envName = providerApiKeyEnvName(model.provider);
+	if (usesConfiguredOpenAICompatible && providerApiKeys?.[model.provider] !== undefined) {
+		return { present: true, source: "env", envName };
+	}
+	const envKeys = findEnvKeys(model.provider);
+	if (envKeys !== undefined && envKeys.length > 0) {
+		for (const key of envKeys) {
+			const fromOptionEnv = env[key];
+			const fromProcessEnv = process.env[key];
+			if (typeof fromOptionEnv === "string" && fromOptionEnv.length > 0) {
+				return { present: true, source: "catalog", envName: key };
+			}
+			if (typeof fromProcessEnv === "string" && fromProcessEnv.length > 0) {
+				return { present: true, source: "catalog", envName: key };
+			}
+		}
+		return { present: false, source: "none", envName: envKeys[0] };
+	}
+	const catalogKey = getEnvApiKey(model.provider);
+	if (catalogKey !== undefined) {
+		return { present: true, source: "catalog" };
+	}
+	return { present: false, source: "none", envName };
+}
+
+function resolveRoleSource(
+	ref: { provider: string; id: string } | undefined,
+	fromLocal: boolean,
+	configuredAlias: boolean,
+	catalog: boolean,
+): AgentModelResolutionSource {
+	if (ref === undefined) return "local_runtime";
+	if (configuredAlias) return "configured_alias";
+	if (fromLocal) return "mixed";
+	if (catalog) return "catalog";
+	return "config";
+}
+
+function buildResolvedRole(
+	model: Model<Api>,
+	auth: AgentModelAuth,
+	resolutionSource: AgentModelResolutionSource,
+): ResolvedAgentModelRole {
+	return {
+		provider: model.provider,
+		modelId: model.id,
+		displayName: model.name,
+		api: model.api,
+		baseUrl: model.baseUrl,
+		contextWindow: model.contextWindow,
+		maxTokens: model.maxTokens,
+		capabilities: { input: model.input ?? [], reasoning: model.reasoning === true },
+		auth,
+		resolutionSource,
+	};
+}
+
+export function resolveAgentModelDetailed(
+	config: CliConfig,
+	localOptions: LoadLocalAutoRAGModelsOptions = {},
+): ResolvedAgentModelDetailed {
+	const core = resolveAgentModelCore(config, localOptions);
+	const orchestratorAuth = resolveRoleAuth(
+		core.orchestratorModel,
+		core.orchestratorFromLocal,
+		core.local,
+		core.providerApiKeys,
+		core.usesConfiguredOpenAICompatible,
+		core.env,
+	);
+	const explorerAuth = resolveRoleAuth(
+		core.explorerModelResolved,
+		core.explorerFromLocal,
+		core.local,
+		core.providerApiKeys,
+		core.usesConfiguredOpenAICompatible,
+		core.env,
+	);
+	const orchestratorSource = resolveRoleSource(
+		core.orchestratorRef,
+		core.orchestratorFromLocal,
+		core.orchestratorConfiguredAlias,
+		core.orchestratorCatalog,
+	);
+	const explorerSource = resolveRoleSource(
+		core.explorerRef,
+		core.explorerFromLocal,
+		core.explorerConfiguredAlias,
+		core.explorerCatalog,
+	);
+	return {
+		model: core.model,
+		explorerModel: core.explorerModel,
+		...(core.apiKey !== undefined ? { apiKey: core.apiKey } : {}),
+		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
+		roles: {
+			orchestrator: buildResolvedRole(core.orchestratorModel, orchestratorAuth, orchestratorSource),
+			explorer: buildResolvedRole(core.explorerModelResolved, explorerAuth, explorerSource),
+		},
 	};
 }
 
