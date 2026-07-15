@@ -1532,9 +1532,14 @@ function validateExplorerInvocation(
 		return "AutoRAG blocked subagent dispatch without an active search query";
 	}
 	const expectedModelId = expectedModel.split(":", 1)[0];
+	const topLevelModel = typeof args.model === "string" ? args.model.split(":", 1)[0] : undefined;
 	const canonicalCwds: string[] = [];
 	for (const task of childSet.tasks) {
-		if (typeof task.model !== "string" || task.model.split(":", 1)[0] !== expectedModelId) {
+		const taskModel =
+			typeof task.model === "string"
+				? task.model.split(":", 1)[0]
+				: topLevelModel;
+		if (taskModel === undefined || taskModel !== expectedModelId) {
 			return "AutoRAG blocked autorag-explorer dispatch using a non-configured model";
 		}
 		const assignment = parseExplorerTaskAssignment(task.task);
@@ -1728,7 +1733,13 @@ function hasGroundedTextHandoff(value: string, currentQuery: string): boolean {
 	if (handoffBody.trim().length === 0 || hasExplicitNoHandoffContext(handoffBody)) return false;
 	// Real Luna prose handoffs may omit Original query; the invocation-bound currentQuery is the governing binding.
 	if (hasInvalidDeclaredOriginalQuery(handoffBody, currentQuery)) return false;
-	if (hasGroundedMarkdownTable(handoffBody)) return true;
+	if (
+		hasGroundedMarkdownTable(handoffBody) ||
+		hasGroundedFieldValueTable(handoffBody) ||
+		hasGroundedProseCandidateHandoff(handoffBody)
+	) {
+		return true;
+	}
 
 	let fields = createGroundingTextFields();
 	for (const line of handoffBody.split(/\r?\n/)) {
@@ -1770,11 +1781,22 @@ function parseDeclaredOriginalQuery(line: string): string | undefined {
 		/^\s*\|\s*(?:\*\*|__)?original[\s_]query(?:\*\*|__)?\s*:?\s*(?:\*\*|__)?\s*\|\s*(.*?)\s*\|?\s*$/i.exec(
 			normalizedLine,
 		);
-	if (markdownRow !== null) return markdownRow[1]?.trim() ?? "";
+	if (markdownRow !== null) return unwrapDeclaredQuery(markdownRow[1] ?? "");
 	const proseDeclaration = /^\s*(?:\*\*|__)?original[\s_]query(?:\*\*|__)?\s*(?::|=|-|\|)\s*(.*?)\s*$/i.exec(
 		normalizedLine,
 	);
-	return proseDeclaration?.[1]?.trim();
+	if (proseDeclaration === null) return undefined;
+	return unwrapDeclaredQuery(proseDeclaration[1] ?? "");
+}
+
+function unwrapDeclaredQuery(value: string): string {
+	const trimmed = value.trim();
+	const unquoted = trimmed
+		.replace(/^`+|`+$/g, "")
+		.replace(/^"+|"+$/g, "")
+		.replace(/^'+|'+$/g, "")
+		.trim();
+	return unquoted;
 }
 
 function isDocumentedHandoffMetadataLine(value: string): boolean {
@@ -1848,6 +1870,101 @@ function hasGroundedMarkdownTable(value: string): boolean {
 	}
 	return false;
 }
+function hasGroundedFieldValueTable(value: string): boolean {
+	const lines = value.split(/\r?\n/);
+	// Document-level RetrievedAt / temporal lines can complete Field/Value tables that omit them.
+	const preamble = createGroundingTextFields();
+	for (const line of lines) {
+		const lineFields = collectGroundingTextFields(line);
+		if (lineFields === undefined) continue;
+		for (const field of Object.keys(lineFields) as GroundingTextField[]) {
+			preamble[field].push(...lineFields[field]);
+		}
+	}
+
+	let fields = createGroundingTextFields();
+	let inFieldValueTable = false;
+	for (let index = 0; index < lines.length; index += 1) {
+		const headers = splitMarkdownRow(lines[index] ?? "").map((header) =>
+			header.replace(/\*\*|__/g, "").toLowerCase().trim(),
+		);
+		if (headers.length >= 2 && headers[0] === "field" && headers[1] === "value") {
+			const delimiter = splitMarkdownRow(lines[index + 1] ?? "");
+			if (delimiter.length >= 2 && delimiter.every(isMarkdownSeparatorCell)) {
+				inFieldValueTable = true;
+				fields = createGroundingTextFields();
+				for (const field of Object.keys(preamble) as GroundingTextField[]) {
+					fields[field].push(...preamble[field]);
+				}
+				index += 1; // skip delimiter row
+				continue;
+			}
+		}
+		if (!inFieldValueTable) continue;
+		const cells = splitMarkdownRow(lines[index] ?? "").map((cell) => cell.replace(/\*\*|__/g, "").trim());
+		if (cells.length < 2) {
+			if (hasSubstantiveGroundingTextFields(fields)) return true;
+			inFieldValueTable = false;
+			continue;
+		}
+		const field = classifyGroundingTextLabel(cells[0] ?? "");
+		if (field === undefined) continue;
+		fields[field].push(cells.slice(1).join(" | "));
+		if (hasSubstantiveGroundingTextFields(fields)) return true;
+	}
+	return hasSubstantiveGroundingTextFields(fields);
+}
+function hasGroundedProseCandidateHandoff(value: string): boolean {
+	// Real explorers often emit bullet/prose candidate blocks rather than a single
+	// field-complete line or wide markdown table. Accept a handoff when it has a
+	// real source path, a retrieval timestamp, temporal status, and non-trivial evidence.
+	const body = value;
+	const sourceMatch =
+		/(?:^|\n)\s*(?:[-*+]\s+)?(?:\*\*|__|`)?source(?:\s*path)?(?:\*\*|__|`)?\s*(?::|=|-|\|)\s*`?(\/[^`\n|]+)`?/im.exec(
+			body,
+		) ??
+		/(?:^|\n)\s*(?:[-*+]\s+)?(?:\*\*|__)?(?:file|path|document)(?:\*\*|__)?\s*(?::|=|-|\|)\s*`?(\/[^`\n|]+)`?/im.exec(
+			body,
+		) ??
+		/`(\/(?:Users|home|docs)\/[^`\n]+)`/.exec(body) ??
+		/(?:^|\n)\s*[-*+]\s+(\/(?:Users|home|docs)\/[^\n]+)/.exec(body);
+	const source = sourceMatch?.[1]?.trim();
+	if (!isSubstantiveTextValue(source, false) || !source?.startsWith("/")) return false;
+
+	const retrievedMatch =
+		/(?:retrieved\s*at|retrievedat|retrieval\s*timestamp)(?:\s*\([^)]*\))?\s*(?::|=|-|\|)\s*`?\**([0-9]{4}-[0-9]{2}-[0-9]{2}[^`\n|]*)/im.exec(
+			body,
+		);
+	if (!isTimestampTextValue(retrievedMatch?.[1])) return false;
+
+	const temporalMatch =
+		/(?:source\s*temporal(?:\s*metadata)?|temporal\s*metadata|temporal\s*basis|as\s*of)\s*(?::|=|-|\|)\s*(.+)/im.exec(
+			body,
+		);
+	const temporal = temporalMatch?.[1]?.trim() ?? (/\bunknown\b/i.test(body) ? "unknown" : undefined);
+	if (!isSubstantiveTextValue(temporal, true)) return false;
+
+	const evidenceMatch =
+		/(?:evidence(?:\s*\/\s*location)?|evidence\s*excerpt|verbatim\s*evidence)\s*(?::|=|-|\|)\s*(.+)/im.exec(body);
+	const evidence = evidenceMatch?.[1]?.trim() ?? "";
+	const evidenceBlock =
+		evidence.length > 0
+			? evidence
+			: /(?:evidence(?:\s*\/\s*location)?)\s*(?::|=|-|\|)\s*\n([\s\S]{20,800})/im.exec(body)?.[1]?.trim() ?? "";
+	if (isSubstantiveTextValue(evidenceBlock, false)) return true;
+	// Multi-line evidence under the label (common explorer bullet handoffs).
+	const multiLineEvidence =
+		/(?:evidence(?:\s*\/\s*location)?)\s*(?::|=|-|\|)\s*\n([\s\S]{40,1200})/im.exec(body)?.[1]?.trim() ?? "";
+	if (isSubstantiveTextValue(multiLineEvidence, false)) return true;
+	// Last-resort prose: absolute source path + retrievedAt + temporal already validated,
+	// and the body itself carries non-placeholder document evidence language.
+	const nearSource =
+		body.includes(source) &&
+		/(?:pdf|docx|pptx|xlsx|html|filename|grep|read|invoice|receipt|청구서|영수증)/i.test(body) &&
+		body.length >= 200 &&
+		!GROUNDING_TEXT_PLACEHOLDER_PATTERN.test(evidenceBlock.toLowerCase().replace(/\s+/g, " "));
+	return nearSource;
+}
 
 function splitMarkdownRow(value: string): string[] {
 	if (!value.includes("|")) return [];
@@ -1860,11 +1977,21 @@ function isMarkdownSeparatorCell(value: string): boolean {
 }
 
 function classifyGroundingTextLabel(label: string): GroundingTextField | undefined {
-	const normalized = label.toLowerCase().replace(/\s+/g, " ").trim();
+	const normalized = label
+		.toLowerCase()
+		.replace(/[_/]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
 	if (
-		["source", "sources", "source path", "source id", "sourcepath", "sourceid", "exact source path"].includes(
-			normalized,
-		)
+		[
+			"source",
+			"sources",
+			"source path",
+			"source id",
+			"sourcepath",
+			"sourceid",
+			"exact source path",
+		].includes(normalized)
 	) {
 		return "source";
 	}
@@ -1874,13 +2001,22 @@ function classifyGroundingTextLabel(label: string): GroundingTextField | undefin
 			"evidence excerpt",
 			"evidence item",
 			"evidence items",
+			"evidence / location",
+			"evidence location",
 			"exact supporting excerpt",
 			"verbatim evidence",
 		].includes(normalized)
 	) {
 		return "evidence";
 	}
-	if (["retrieved at", "retrievedat", "retrieval timestamp", "retrievaltimestamp"].includes(normalized)) {
+	if (
+		[
+			"retrieved at",
+			"retrievedat",
+			"retrieval timestamp",
+			"retrievaltimestamp",
+		].includes(normalized)
+	) {
 		return "retrievedAt";
 	}
 	if (
@@ -1888,8 +2024,10 @@ function classifyGroundingTextLabel(label: string): GroundingTextField | undefin
 			"source temporal metadata",
 			"source temporalmetadata",
 			"sourcetemporalmetadata",
+			"source temporal",
 			"temporal metadata",
 			"temporalmetadata",
+			"temporal",
 			"as of",
 			"asof",
 		].includes(normalized)
@@ -1953,8 +2091,12 @@ const TIMESTAMP_TEXT_PATTERN =
 function isTimestampTextValue(value: string | undefined): boolean {
 	if (value === undefined) return false;
 	const cleaned = cleanTextValue(value);
+	// Explorers often append parenthetical notes: `2026-07-16 (session clock; ...)`.
+	const leading =
+		/^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)/.exec(cleaned)?.[1] ??
+		undefined;
 	const match = TIMESTAMP_TEXT_PATTERN.exec(cleaned);
-	const timestamp = match?.[1];
+	const timestamp = match?.[1] ?? leading;
 	if (timestamp === undefined) return false;
 	const dateMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(timestamp);
 	if (dateMatch === null) return false;
