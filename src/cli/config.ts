@@ -67,14 +67,43 @@ export interface NormalizedIndexingConfig {
 	minSync: MinSyncMethodConfig;
 }
 
+export interface AgentModelConfig {
+	/** Provider identity used for auth lookup and Model.provider (e.g. openrouter, fireworks, ollama). */
+	provider: string;
+	/** Wire model id sent to the provider API. */
+	id: string;
+	/** Optional display name; defaults to id when omitted. */
+	name?: string;
+	/**
+	 * API wire format. Required only when `baseUrl` is set and you need something
+	 * other than the default `openai-completions`.
+	 */
+	api?: Api;
+	/**
+	 * Endpoint base URL. When set, AutoRAG builds a Model from this config
+	 * instead of requiring a pi-ai catalog entry. Omit for catalog/local models.
+	 */
+	baseUrl?: string;
+	/**
+	 * Environment variable name holding the API key (never the secret itself).
+	 * Defaults to `${PROVIDER}_API_KEY` when `baseUrl` is set.
+	 */
+	apiKeyEnv?: string;
+	reasoning?: boolean;
+	input?: Array<"text" | "image">;
+	contextWindow?: number;
+	maxTokens?: number;
+}
+
 export interface CliConfig {
 	searchPaths: string[];
 	workspacePath: string;
 	memoryPath: string;
-	model?: { provider: string; id: string };
+	/** @deprecated Prefer agents.orchestrator. Kept for legacy single-model configs. */
+	model?: AgentModelConfig;
 	agents?: {
-		orchestrator?: { provider: string; id: string };
-		explorer?: { provider: string; id: string };
+		orchestrator?: AgentModelConfig;
+		explorer?: AgentModelConfig;
 	};
 	minSync?: MinSyncMethodConfig;
 	bm25?: Bm25MethodConfig;
@@ -277,19 +306,126 @@ function envString(env: NodeJS.ProcessEnv, key: string): string | undefined {
 	return undefined;
 }
 
-function modelReference(value: unknown, path: string): { provider: string; id: string } | undefined {
+const AGENT_MODEL_APIS = new Set<Api>([
+	"openai-completions",
+	"openai-responses",
+	"anthropic-messages",
+	"openai-codex-responses",
+	"azure-openai-responses",
+]);
+
+const AGENT_MODEL_INPUTS = new Set(["text", "image"]);
+
+function modelReference(value: unknown, path: string): AgentModelConfig | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
 		throw new ConfigError(`${path} must be an object with provider and id`);
 	}
 	const record = value as Record<string, unknown>;
+	const allowed = new Set([
+		"provider",
+		"id",
+		"name",
+		"api",
+		"baseUrl",
+		"apiKeyEnv",
+		"reasoning",
+		"input",
+		"contextWindow",
+		"maxTokens",
+	]);
+	for (const key of Object.keys(record)) {
+		if (!allowed.has(key)) {
+			throw new ConfigError(`${path}.${key} is not a recognized agent model field`);
+		}
+	}
 	if (typeof record.provider !== "string" || record.provider.trim() === "") {
 		throw new ConfigError(`${path}.provider must be a non-empty string`);
 	}
 	if (typeof record.id !== "string" || record.id.trim() === "") {
 		throw new ConfigError(`${path}.id must be a non-empty string`);
 	}
-	return { provider: record.provider, id: record.id };
+	const out: AgentModelConfig = {
+		provider: record.provider.trim(),
+		id: record.id.trim(),
+	};
+	if (record.name !== undefined) {
+		if (typeof record.name !== "string" || record.name.trim() === "") {
+			throw new ConfigError(`${path}.name must be a non-empty string`);
+		}
+		out.name = record.name.trim();
+	}
+	if (record.api !== undefined) {
+		if (typeof record.api !== "string" || !AGENT_MODEL_APIS.has(record.api as Api)) {
+			throw new ConfigError(`${path}.api must be one of: ${[...AGENT_MODEL_APIS].join(", ")}`);
+		}
+		out.api = record.api as Api;
+	}
+	if (record.baseUrl !== undefined) {
+		if (typeof record.baseUrl !== "string" || record.baseUrl.trim() === "") {
+			throw new ConfigError(`${path}.baseUrl must be a non-empty string`);
+		}
+		out.baseUrl = record.baseUrl.trim();
+	}
+	if (record.apiKeyEnv !== undefined) {
+		if (typeof record.apiKeyEnv !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(record.apiKeyEnv)) {
+			throw new ConfigError(`${path}.apiKeyEnv must match /^[A-Za-z_][A-Za-z0-9_]*$/`);
+		}
+		out.apiKeyEnv = record.apiKeyEnv;
+	}
+	if (record.reasoning !== undefined) {
+		if (typeof record.reasoning !== "boolean") {
+			throw new ConfigError(`${path}.reasoning must be a boolean`);
+		}
+		out.reasoning = record.reasoning;
+	}
+	if (record.input !== undefined) {
+		if (!Array.isArray(record.input) || record.input.length === 0) {
+			throw new ConfigError(`${path}.input must be a non-empty array of "text" | "image"`);
+		}
+		const input: Array<"text" | "image"> = [];
+		for (const item of record.input) {
+			if (typeof item !== "string" || !AGENT_MODEL_INPUTS.has(item)) {
+				throw new ConfigError(`${path}.input must contain only "text" and/or "image"`);
+			}
+			input.push(item as "text" | "image");
+		}
+		out.input = input;
+	}
+	if (record.contextWindow !== undefined) {
+		if (
+			typeof record.contextWindow !== "number" ||
+			!Number.isInteger(record.contextWindow) ||
+			record.contextWindow <= 0
+		) {
+			throw new ConfigError(`${path}.contextWindow must be a positive integer`);
+		}
+		out.contextWindow = record.contextWindow;
+	}
+	if (record.maxTokens !== undefined) {
+		if (typeof record.maxTokens !== "number" || !Number.isInteger(record.maxTokens) || record.maxTokens <= 0) {
+			throw new ConfigError(`${path}.maxTokens must be a positive integer`);
+		}
+		out.maxTokens = record.maxTokens;
+	}
+	return out;
+}
+
+function applyRoleFlagOverrides(
+	fileRef: AgentModelConfig | undefined,
+	provider: string | undefined,
+	id: string | undefined,
+	path: string,
+): AgentModelConfig | undefined {
+	if (provider === undefined && id === undefined) return fileRef;
+	if (provider === undefined || id === undefined) {
+		throw new ConfigError(`${path} requires both provider and id`);
+	}
+	if (fileRef !== undefined && fileRef.provider === provider && fileRef.id === id) {
+		return fileRef;
+	}
+	// Flag overrides replace the role with a catalog-style provider/id pair.
+	return { provider, id };
 }
 
 function pickString(
@@ -494,43 +630,55 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		typeof file.memoryPath === "string" ? resolvePersistedPath(file.memoryPath, workspacePath) : undefined;
 	const memoryPath = flagMemoryPath ?? envMemoryPath ?? fileMemoryPath ?? defaultMemoryPath;
 
-	const fileModel = file.model;
-	const fileAgents = file.agents;
-	const fileOrchestrator = modelReference(fileAgents?.orchestrator ?? fileModel, "agents.orchestrator");
-	const fileExplorer = modelReference(fileAgents?.explorer, "agents.explorer");
-	const provider =
+	const fileOrchestrator = modelReference(
+		(file.agents as { orchestrator?: unknown } | undefined)?.orchestrator ?? file.model,
+		"agents.orchestrator",
+	);
+	const fileExplorer = modelReference(
+		(file.agents as { explorer?: unknown } | undefined)?.explorer,
+		"agents.explorer",
+	);
+	const flagOrchestratorProvider =
 		pickString(flags, env, "orchestrator-model-provider", "AUTORAG_ORCHESTRATOR_MODEL_PROVIDER", undefined) ??
-		pickString(flags, env, "model-provider", "AUTORAG_MODEL_PROVIDER", fileOrchestrator?.provider);
-	const id =
+		pickString(flags, env, "model-provider", "AUTORAG_MODEL_PROVIDER", undefined);
+	const flagOrchestratorId =
 		pickString(flags, env, "orchestrator-model-id", "AUTORAG_ORCHESTRATOR_MODEL_ID", undefined) ??
-		pickString(flags, env, "model-id", "AUTORAG_MODEL_ID", fileOrchestrator?.id);
-	const explorerProvider = pickString(
+		pickString(flags, env, "model-id", "AUTORAG_MODEL_ID", undefined);
+	const flagExplorerProvider = pickString(
 		flags,
 		env,
 		"explorer-model-provider",
 		"AUTORAG_EXPLORER_MODEL_PROVIDER",
-		fileExplorer?.provider,
+		undefined,
 	);
-	const explorerId = pickString(flags, env, "explorer-model-id", "AUTORAG_EXPLORER_MODEL_ID", fileExplorer?.id);
+	const flagExplorerId = pickString(flags, env, "explorer-model-id", "AUTORAG_EXPLORER_MODEL_ID", undefined);
+
+	const orchestrator = applyRoleFlagOverrides(
+		fileOrchestrator,
+		flagOrchestratorProvider,
+		flagOrchestratorId,
+		"agents.orchestrator",
+	);
+	const explorer = applyRoleFlagOverrides(
+		fileExplorer,
+		flagExplorerProvider,
+		flagExplorerId,
+		"agents.explorer",
+	);
 
 	const config: CliConfig = {
 		searchPaths,
 		workspacePath,
 		memoryPath,
 	};
-	if (provider && id) {
-		config.model = { provider, id };
+	if (orchestrator) {
+		// Legacy single-model field remains provider+id only.
+		config.model = { provider: orchestrator.provider, id: orchestrator.id };
 	}
-	if (provider || id || explorerProvider || explorerId) {
-		if ((provider && !id) || (!provider && id)) {
-			throw new ConfigError("agents.orchestrator requires both provider and id");
-		}
-		if ((explorerProvider && !explorerId) || (!explorerProvider && explorerId)) {
-			throw new ConfigError("agents.explorer requires both provider and id");
-		}
+	if (orchestrator || explorer) {
 		config.agents = {
-			...(provider && id ? { orchestrator: { provider, id } } : {}),
-			...(explorerProvider && explorerId ? { explorer: { provider: explorerProvider, id: explorerId } } : {}),
+			...(orchestrator ? { orchestrator } : {}),
+			...(explorer ? { explorer } : {}),
 		};
 	}
 	const normalized = normalizeIndexingConfig({
@@ -576,95 +724,77 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	return opts as Omit<AutoRAGAgentOptions, "model">;
 }
 
-/** OpenAI-compatible models declared in ~/.gjc/agent/models.yml but not always in pi-ai catalogs. */
-const CONFIGURED_OPENAI_COMPAT_MODELS: ReadonlyArray<Model<Api>> = [
-	{
-		id: "x-ai/grok-4.5",
-		name: "Grok 4.5 (OpenRouter)",
-		api: "openai-completions",
-		provider: "openrouter",
-		baseUrl: "https://openrouter.ai/api/v1",
-		reasoning: true,
-		input: ["text", "image"],
-		cost: { input: 2.0, output: 6.0, cacheRead: 0.5, cacheWrite: 0 },
-		contextWindow: 256_000,
-		maxTokens: 32_768,
-	},
-	{
-		// short alias used by ~/.gjc/agent/models.yml
-		id: "grok-4.5",
-		name: "Grok 4.5 (OpenRouter)",
-		api: "openai-completions",
-		provider: "openrouter",
-		baseUrl: "https://openrouter.ai/api/v1",
-		reasoning: true,
-		input: ["text", "image"],
-		cost: { input: 2.0, output: 6.0, cacheRead: 0.5, cacheWrite: 0 },
-		contextWindow: 256_000,
-		maxTokens: 32_768,
-	},
-	{
-		id: "accounts/fireworks/routers/glm-5p2-fast",
-		name: "GLM-5.2 Fast (Fireworks)",
-		api: "openai-completions",
-		provider: "fireworks",
-		baseUrl: "https://api.fireworks.ai/inference/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 202_752,
-		maxTokens: 131_072,
-	},
-	{
-		// short alias used by ~/.gjc/agent/models.yml
-		id: "glm-5.2-fast",
-		name: "GLM-5.2 Fast (Fireworks)",
-		api: "openai-completions",
-		provider: "fireworks",
-		baseUrl: "https://api.fireworks.ai/inference/v1",
-		reasoning: false,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 202_752,
-		maxTokens: 131_072,
-	},
-] as const as unknown as ReadonlyArray<Model<Api>>;
+/** True when the role config declares an explicit OpenAI-compatible endpoint. */
+function isConfiguredEndpoint(
+	reference: AgentModelConfig | undefined,
+): reference is AgentModelConfig & { baseUrl: string } {
+	return typeof reference?.baseUrl === "string" && reference.baseUrl.trim().length > 0;
+}
 
-function resolveConfiguredOpenAICompatibleModel(
-	reference: { provider: string; id: string },
-): Model<Api> | undefined {
-	const hit = CONFIGURED_OPENAI_COMPAT_MODELS.find(
-		(model) => model.provider === reference.provider && model.id === reference.id,
-	);
-	if (hit === undefined) return undefined;
-	// Map short aliases to the wire model ids expected by the remote API.
-	if (reference.provider === "openrouter" && reference.id === "grok-4.5") {
-		return { ...hit, id: "x-ai/grok-4.5" };
-	}
-	if (reference.provider === "fireworks" && reference.id === "glm-5.2-fast") {
-		return { ...hit, id: "accounts/fireworks/routers/glm-5p2-fast" };
-	}
-	return { ...hit };
+function configuredApiKeyEnv(reference: AgentModelConfig): string {
+	return reference.apiKeyEnv ?? providerApiKeyEnvName(reference.provider);
+}
+
+/**
+ * Build a pi-ai Model from a config-declared OpenAI-compatible endpoint.
+ * Any provider works: OpenRouter, Fireworks, Ollama, LiteLLM, corporate proxies, etc.
+ */
+function buildModelFromConfiguredEndpoint(reference: AgentModelConfig & { baseUrl: string }): Model<Api> {
+	const api = reference.api ?? "openai-completions";
+	return {
+		id: reference.id,
+		name: reference.name ?? reference.id,
+		api,
+		provider: reference.provider,
+		baseUrl: reference.baseUrl,
+		reasoning: reference.reasoning === true,
+		input: reference.input ?? ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: reference.contextWindow ?? 128_000,
+		maxTokens: reference.maxTokens ?? 16_384,
+	};
+}
+
+function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefined {
+	if (!(getProviders() as readonly string[]).includes(reference.provider)) return undefined;
+	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
 }
 
 function resolveRegisteredModel(
-	reference: { provider: string; id: string },
+	reference: AgentModelConfig,
 	role?: "orchestrator" | "explorer",
 ): Model<Api> {
-	const model = getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
-	if (model !== undefined) return model;
-	const configured = resolveConfiguredOpenAICompatibleModel(reference);
-	if (configured !== undefined) return configured;
+	if (isConfiguredEndpoint(reference)) {
+		return buildModelFromConfiguredEndpoint(reference);
+	}
+	const catalog = resolveCatalogModel(reference);
+	if (catalog !== undefined) return catalog;
 	const roleLabel = role === undefined ? "" : `${role} `;
-	throw new ConfigError(`Unknown configured ${roleLabel}model: ${reference.provider}/${reference.id}`);
+	throw new ConfigError(
+		`Unknown configured ${roleLabel}model: ${reference.provider}/${reference.id}. ` +
+			`Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.`,
+	);
 }
 
 function resolveBuiltInModel(
-	reference: { provider: string; id: string } | undefined,
+	reference: AgentModelConfig | undefined,
 	role: "orchestrator" | "explorer",
 ): Model<Api> | undefined {
-	if (reference === undefined || !(getProviders() as readonly string[]).includes(reference.provider)) return undefined;
-	return resolveRegisteredModel(reference, role);
+	if (reference === undefined) return undefined;
+	if (isConfiguredEndpoint(reference)) {
+		return buildModelFromConfiguredEndpoint(reference);
+	}
+	const catalog = resolveCatalogModel(reference);
+	if (catalog !== undefined) return catalog;
+	// Known catalog provider with an unknown model id is a hard config error.
+	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
+	if ((getProviders() as readonly string[]).includes(reference.provider)) {
+		throw new ConfigError(
+			`Unknown configured ${role} model: ${reference.provider}/${reference.id}. ` +
+				`Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.`,
+		);
+	}
+	return undefined;
 }
 
 export function resolveModel(config: CliConfig): Model<Api> {
@@ -724,18 +854,18 @@ interface AgentModelCore {
 	readonly explorerModel: Model<Api>;
 	readonly apiKey?: string;
 	readonly providerApiKeys?: Readonly<Record<string, string>>;
-	readonly orchestratorRef: { provider: string; id: string } | undefined;
-	readonly explorerRef: { provider: string; id: string } | undefined;
+	readonly orchestratorRef: AgentModelConfig | undefined;
+	readonly explorerRef: AgentModelConfig | undefined;
 	readonly orchestratorModel: Model<Api>;
 	readonly explorerModelResolved: Model<Api>;
 	readonly orchestratorFromLocal: boolean;
 	readonly explorerFromLocal: boolean;
-	readonly orchestratorConfiguredAlias: boolean;
-	readonly explorerConfiguredAlias: boolean;
+	readonly orchestratorConfiguredEndpoint: boolean;
+	readonly explorerConfiguredEndpoint: boolean;
 	readonly orchestratorCatalog: boolean;
 	readonly explorerCatalog: boolean;
 	readonly local: LocalAutoRAGModels | undefined;
-	readonly usesConfiguredOpenAICompatible: boolean;
+	readonly usesConfiguredEndpoint: boolean;
 	readonly env: NodeJS.ProcessEnv;
 }
 
@@ -770,13 +900,9 @@ function resolveAgentModelCore(
 			? (local?.explorer as Model<Api>)
 			: resolveRegisteredModel(explorerRef, "explorer"));
 
-	const usesConfiguredOpenAICompatible =
-		(orchestratorRef !== undefined &&
-			resolveConfiguredOpenAICompatibleModel(orchestratorRef) !== undefined &&
-			getModel(orchestratorRef.provider as never, orchestratorRef.id as never) === undefined) ||
-		(explorerRef !== undefined &&
-			resolveConfiguredOpenAICompatibleModel(explorerRef) !== undefined &&
-			getModel(explorerRef.provider as never, explorerRef.id as never) === undefined);
+	const orchestratorConfiguredEndpoint = isConfiguredEndpoint(orchestratorRef);
+	const explorerConfiguredEndpoint = isConfiguredEndpoint(explorerRef);
+	const usesConfiguredEndpoint = orchestratorConfiguredEndpoint || explorerConfiguredEndpoint;
 
 	const env = localOptions.env ?? process.env;
 	const orchestratorFromLocal =
@@ -785,20 +911,10 @@ function resolveAgentModelCore(
 	const explorerFromLocal =
 		registeredExplorer === undefined &&
 		(explorerRef === undefined || explorerRef.provider === local?.provider);
-	const orchestratorConfiguredAlias =
-		registeredOrchestrator === undefined &&
-		orchestratorRef !== undefined &&
-		resolveConfiguredOpenAICompatibleModel(orchestratorRef) !== undefined &&
-		!orchestratorFromLocal;
-	const explorerConfiguredAlias =
-		registeredExplorer === undefined &&
-		explorerRef !== undefined &&
-		resolveConfiguredOpenAICompatibleModel(explorerRef) !== undefined &&
-		!explorerFromLocal;
-	const orchestratorCatalog = registeredOrchestrator !== undefined;
-	const explorerCatalog = registeredExplorer !== undefined;
+	const orchestratorCatalog = registeredOrchestrator !== undefined && !orchestratorConfiguredEndpoint;
+	const explorerCatalog = registeredExplorer !== undefined && !explorerConfiguredEndpoint;
 
-	if (local === undefined && !usesConfiguredOpenAICompatible) {
+	if (local === undefined && !usesConfiguredEndpoint) {
 		return {
 			model,
 			explorerModel,
@@ -808,30 +924,31 @@ function resolveAgentModelCore(
 			explorerModelResolved: explorerModel,
 			orchestratorFromLocal,
 			explorerFromLocal,
-			orchestratorConfiguredAlias,
-			explorerConfiguredAlias,
+			orchestratorConfiguredEndpoint,
+			explorerConfiguredEndpoint,
 			orchestratorCatalog,
 			explorerCatalog,
 			local,
-			usesConfiguredOpenAICompatible,
+			usesConfiguredEndpoint,
 			env,
 		};
 	}
 
 	const providerApiKeys: Record<string, string> = {};
 	if (local !== undefined) providerApiKeys[local.provider] = local.apiKey;
-	if (usesConfiguredOpenAICompatible) {
-		for (const provider of new Set([model.provider, explorerModel.provider])) {
-			const envName = `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
-			const value = env[envName];
-			if (typeof value === "string" && value.length > 0) providerApiKeys[provider] = value;
+	for (const ref of [orchestratorRef, explorerRef]) {
+		if (!isConfiguredEndpoint(ref)) continue;
+		const envName = configuredApiKeyEnv(ref);
+		const value = env[envName];
+		if (typeof value === "string" && value.length > 0) {
+			providerApiKeys[ref.provider] = value;
 		}
 	}
 	const orchestratorKey = providerApiKeys[model.provider];
 	const apiKey =
 		local !== undefined && (orchestratorRef === undefined || orchestratorRef.provider === local.provider)
 			? local.apiKey
-			: orchestratorKey !== undefined && usesConfiguredOpenAICompatible
+			: orchestratorKey !== undefined && usesConfiguredEndpoint
 				? orchestratorKey
 				: undefined;
 	return {
@@ -845,12 +962,12 @@ function resolveAgentModelCore(
 		explorerModelResolved: explorerModel,
 		orchestratorFromLocal,
 		explorerFromLocal,
-		orchestratorConfiguredAlias,
-		explorerConfiguredAlias,
+		orchestratorConfiguredEndpoint,
+		explorerConfiguredEndpoint,
 		orchestratorCatalog,
 		explorerCatalog,
 		local,
-		usesConfiguredOpenAICompatible,
+		usesConfiguredEndpoint,
 		env,
 	};
 }
@@ -877,15 +994,23 @@ function resolveRoleAuth(
 	fromLocal: boolean,
 	local: LocalAutoRAGModels | undefined,
 	providerApiKeys: Readonly<Record<string, string>> | undefined,
-	usesConfiguredOpenAICompatible: boolean,
+	configuredEndpoint: boolean,
+	apiKeyEnv: string | undefined,
 	env: NodeJS.ProcessEnv,
 ): AgentModelAuth {
 	if (fromLocal && local !== undefined && model.provider === local.provider) {
 		return { present: true, source: "local_runtime" };
 	}
-	const envName = providerApiKeyEnvName(model.provider);
-	if (usesConfiguredOpenAICompatible && providerApiKeys?.[model.provider] !== undefined) {
-		return { present: true, source: "env", envName };
+	if (configuredEndpoint) {
+		const envName = apiKeyEnv ?? providerApiKeyEnvName(model.provider);
+		if (providerApiKeys?.[model.provider] !== undefined) {
+			return { present: true, source: "env", envName };
+		}
+		const fromEnv = env[envName] ?? process.env[envName];
+		if (typeof fromEnv === "string" && fromEnv.length > 0) {
+			return { present: true, source: "env", envName };
+		}
+		return { present: false, source: "none", envName };
 	}
 	const envKeys = findEnvKeys(model.provider);
 	if (envKeys !== undefined && envKeys.length > 0) {
@@ -905,17 +1030,17 @@ function resolveRoleAuth(
 	if (catalogKey !== undefined) {
 		return { present: true, source: "catalog" };
 	}
-	return { present: false, source: "none", envName };
+	return { present: false, source: "none", envName: providerApiKeyEnvName(model.provider) };
 }
 
 function resolveRoleSource(
-	ref: { provider: string; id: string } | undefined,
+	ref: AgentModelConfig | undefined,
 	fromLocal: boolean,
-	configuredAlias: boolean,
+	configuredEndpoint: boolean,
 	catalog: boolean,
 ): AgentModelResolutionSource {
 	if (ref === undefined) return "local_runtime";
-	if (configuredAlias) return "configured_alias";
+	if (configuredEndpoint) return "config";
 	if (fromLocal) return "mixed";
 	if (catalog) return "catalog";
 	return "config";
@@ -950,7 +1075,8 @@ export function resolveAgentModelDetailed(
 		core.orchestratorFromLocal,
 		core.local,
 		core.providerApiKeys,
-		core.usesConfiguredOpenAICompatible,
+		core.orchestratorConfiguredEndpoint,
+		core.orchestratorRef !== undefined ? configuredApiKeyEnv(core.orchestratorRef) : undefined,
 		core.env,
 	);
 	const explorerAuth = resolveRoleAuth(
@@ -958,19 +1084,20 @@ export function resolveAgentModelDetailed(
 		core.explorerFromLocal,
 		core.local,
 		core.providerApiKeys,
-		core.usesConfiguredOpenAICompatible,
+		core.explorerConfiguredEndpoint,
+		core.explorerRef !== undefined ? configuredApiKeyEnv(core.explorerRef) : undefined,
 		core.env,
 	);
 	const orchestratorSource = resolveRoleSource(
 		core.orchestratorRef,
 		core.orchestratorFromLocal,
-		core.orchestratorConfiguredAlias,
+		core.orchestratorConfiguredEndpoint,
 		core.orchestratorCatalog,
 	);
 	const explorerSource = resolveRoleSource(
 		core.explorerRef,
 		core.explorerFromLocal,
-		core.explorerConfiguredAlias,
+		core.explorerConfiguredEndpoint,
 		core.explorerCatalog,
 	);
 	return {

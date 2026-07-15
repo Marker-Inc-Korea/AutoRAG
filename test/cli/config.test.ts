@@ -1373,14 +1373,39 @@ describe("resolveConfigReadOnly", () => {
 });
 
 describe("resolveAgentModelDetailed", () => {
-	it("rewrites configured openrouter and fireworks aliases to their wire model ids", () => {
+	const openRouterEndpoint = {
+		provider: "openrouter",
+		id: "x-ai/grok-4.5",
+		name: "Grok 4.5 (OpenRouter)",
+		api: "openai-completions" as const,
+		baseUrl: "https://openrouter.ai/api/v1",
+		apiKeyEnv: "OPENROUTER_API_KEY",
+		reasoning: true,
+		input: ["text", "image"] as Array<"text" | "image">,
+		contextWindow: 256_000,
+		maxTokens: 32_768,
+	};
+	const fireworksEndpoint = {
+		provider: "fireworks",
+		id: "accounts/fireworks/routers/glm-5p2-fast",
+		name: "GLM-5.2 Fast (Fireworks)",
+		api: "openai-completions" as const,
+		baseUrl: "https://api.fireworks.ai/inference/v1",
+		apiKeyEnv: "FIREWORKS_API_KEY",
+		reasoning: false,
+		input: ["text"] as Array<"text" | "image">,
+		contextWindow: 202_752,
+		maxTokens: 131_072,
+	};
+
+	it("resolves config-declared OpenAI-compatible endpoints without catalog hardcoding", () => {
 		const config: CliConfig = {
 			searchPaths: ["."],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			agents: {
-				orchestrator: { provider: "openrouter", id: "grok-4.5" },
-				explorer: { provider: "fireworks", id: "glm-5.2-fast" },
+				orchestrator: openRouterEndpoint,
+				explorer: fireworksEndpoint,
 			},
 		};
 
@@ -1401,7 +1426,9 @@ describe("resolveAgentModelDetailed", () => {
 		expect(detailed.roles.explorer.capabilities).toEqual({ input: ["text"], reasoning: false });
 		expect(detailed.roles.orchestrator.contextWindow).toBe(256_000);
 		expect(detailed.roles.explorer.contextWindow).toBe(202_752);
-		// Auth is env-backed via the *_API_KEY vars supplied to the resolver.
+		expect(detailed.roles.orchestrator.resolutionSource).toBe("config");
+		expect(detailed.roles.explorer.resolutionSource).toBe("config");
+		// Auth is env-backed via the configured apiKeyEnv names.
 		expect(detailed.roles.orchestrator.auth).toEqual({
 			present: true,
 			source: "env",
@@ -1421,8 +1448,8 @@ describe("resolveAgentModelDetailed", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			agents: {
-				orchestrator: { provider: "openrouter", id: "grok-4.5" },
-				explorer: { provider: "fireworks", id: "glm-5.2-fast" },
+				orchestrator: openRouterEndpoint,
+				explorer: fireworksEndpoint,
 			},
 		};
 		const previousOpenRouter = process.env.OPENROUTER_API_KEY;
@@ -1493,8 +1520,8 @@ describe("resolveAgentModelDetailed", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			agents: {
-				orchestrator: { provider: "openrouter", id: "grok-4.5" },
-				explorer: { provider: "fireworks", id: "glm-5.2-fast" },
+				orchestrator: openRouterEndpoint,
+				explorer: fireworksEndpoint,
 			},
 		};
 
