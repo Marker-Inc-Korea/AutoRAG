@@ -1917,7 +1917,9 @@ function hasGroundedFieldValueTable(value: string): boolean {
 function hasGroundedProseCandidateHandoff(value: string): boolean {
 	// Real explorers often emit bullet/prose candidate blocks rather than a single
 	// field-complete line or wide markdown table. Accept a handoff when it has a
-	// real source path, a retrieval timestamp, temporal status, and non-trivial evidence.
+	// real source path, temporal status, and non-trivial evidence. retrievedAt is
+	// preferred but document-internal dates in temporal metadata are accepted when
+	// explorers omit an explicit retrieval timestamp.
 	const body = value;
 	const sourceMatch =
 		/(?:^|\n)\s*(?:[-*+]\s+)?(?:\*\*|__|`)?source(?:\s*path)?(?:\*\*|__|`)?\s*(?::|=|-|\|)\s*`?(\/[^`\n|]+)`?/im.exec(
@@ -1935,32 +1937,44 @@ function hasGroundedProseCandidateHandoff(value: string): boolean {
 		/(?:retrieved\s*at|retrievedat|retrieval\s*timestamp)(?:\s*\([^)]*\))?\s*(?::|=|-|\|)\s*`?\**([0-9]{4}-[0-9]{2}-[0-9]{2}[^`\n|]*)/im.exec(
 			body,
 		);
-	if (!isTimestampTextValue(retrievedMatch?.[1])) return false;
+	const temporalDateMatch =
+		/(?:source\s*temporal(?:\s*metadata)?|temporal\s*metadata|temporal\s*basis|as\s*of|사업기간|참여기간)\s*(?::|=|-|\|)\s*[^\n]*?(\d{4}[./-]\d{2}(?:[./-]\d{2})?)/im.exec(
+			body,
+		);
+	const retrievedCandidate =
+		retrievedMatch?.[1] ??
+		(temporalDateMatch?.[1] !== undefined
+			? temporalDateMatch[1].replace(/\./g, "-").replace(/(\d{4}-\d{2})$/, "$1-01")
+			: undefined);
+	if (!isTimestampTextValue(retrievedCandidate)) return false;
 
 	const temporalMatch =
-		/(?:source\s*temporal(?:\s*metadata)?|temporal\s*metadata|temporal\s*basis|as\s*of)\s*(?::|=|-|\|)\s*(.+)/im.exec(
+		/(?:source\s*temporal(?:\s*metadata)?|temporal\s*metadata|temporal\s*basis|as\s*of|사업기간|참여기간)\s*(?::|=|-|\|)\s*(.+)/im.exec(
 			body,
 		);
 	const temporal = temporalMatch?.[1]?.trim() ?? (/\bunknown\b/i.test(body) ? "unknown" : undefined);
 	if (!isSubstantiveTextValue(temporal, true)) return false;
 
 	const evidenceMatch =
-		/(?:evidence(?:\s*\/\s*location)?|evidence\s*excerpt|verbatim\s*evidence)\s*(?::|=|-|\|)\s*(.+)/im.exec(body);
+		/(?:evidence(?:\s*\/\s*location)?|evidence\s*excerpt|verbatim\s*evidence|excerpt)\s*(?::|=|-|\|)\s*(.+)/im.exec(
+			body,
+		);
 	const evidence = evidenceMatch?.[1]?.trim() ?? "";
 	const evidenceBlock =
 		evidence.length > 0
 			? evidence
-			: /(?:evidence(?:\s*\/\s*location)?)\s*(?::|=|-|\|)\s*\n([\s\S]{20,800})/im.exec(body)?.[1]?.trim() ?? "";
+			: /(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{20,800})/im.exec(body)?.[1]?.trim() ??
+				"";
 	if (isSubstantiveTextValue(evidenceBlock, false)) return true;
-	// Multi-line evidence under the label (common explorer bullet handoffs).
 	const multiLineEvidence =
-		/(?:evidence(?:\s*\/\s*location)?)\s*(?::|=|-|\|)\s*\n([\s\S]{40,1200})/im.exec(body)?.[1]?.trim() ?? "";
+		/(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{40,1200})/im.exec(body)?.[1]?.trim() ??
+		"";
 	if (isSubstantiveTextValue(multiLineEvidence, false)) return true;
-	// Last-resort prose: absolute source path + retrievedAt + temporal already validated,
-	// and the body itself carries non-placeholder document evidence language.
 	const nearSource =
 		body.includes(source) &&
-		/(?:pdf|docx|pptx|xlsx|html|filename|grep|read|invoice|receipt|청구서|영수증)/i.test(body) &&
+		/(?:pdf|docx|pptx|xlsx|html|md|hwp|filename|grep|read|invoice|receipt|청구서|영수증|채용|참여|인건비)/i.test(
+			body,
+		) &&
 		body.length >= 200 &&
 		!GROUNDING_TEXT_PLACEHOLDER_PATTERN.test(evidenceBlock.toLowerCase().replace(/\s+/g, " "));
 	return nearSource;
