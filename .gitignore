@@ -7,3 +7,8 @@ artifacts/
 .omo/
 .DS_Store
 decks/
+.autorag/
+evidence/
+*.local.json
+/tmp/autorag-*.json
+/tmp/autorag-*.err
