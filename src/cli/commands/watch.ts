@@ -46,7 +46,11 @@ export async function runWatch(ctx: CommandContext): Promise<number> {
 		};
 		ctx.stdout(
 			ctx.json
-				? JSON.stringify({ ok: true, ...started, message: "watching for source changes; send SIGINT/SIGTERM to stop" })
+				? JSON.stringify({
+						ok: true,
+						...started,
+						message: "watching for source changes; send SIGINT/SIGTERM to stop",
+					})
 				: `AutoRAG watch started (roots=${started.roots}, debounceMs=${debounceMs}). Ctrl-C to stop.`,
 		);
 

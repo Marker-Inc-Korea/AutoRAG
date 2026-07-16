@@ -14,8 +14,8 @@ import { dirname, join, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	buildAgentOptions,
 	type Bm25MethodConfig,
+	buildAgentOptions,
 	type CliConfig,
 	ConfigError,
 	DEFAULT_CONFIG_FILENAME,
@@ -1161,12 +1161,12 @@ describe("normalizeIndexingConfig", () => {
 	});
 
 	it("rejects unknown minSync fields", () => {
-		expect(() =>
-			normalizeIndexingConfig({ minSync: { unknownField: 1 } as unknown as MinSyncMethodConfig }),
-		).toThrow(ConfigError);
-		expect(() =>
-			normalizeIndexingConfig({ minSync: { unknownField: 1 } as unknown as MinSyncMethodConfig }),
-		).toThrow(/minSync\.unknownField/);
+		expect(() => normalizeIndexingConfig({ minSync: { unknownField: 1 } as unknown as MinSyncMethodConfig })).toThrow(
+			ConfigError,
+		);
+		expect(() => normalizeIndexingConfig({ minSync: { unknownField: 1 } as unknown as MinSyncMethodConfig })).toThrow(
+			/minSync\.unknownField/,
+		);
 	});
 
 	it("drops invalid fallback enum values silently", () => {
@@ -1328,11 +1328,7 @@ describe("resolveConfigReadOnly", () => {
 		const home = join(root, "home");
 		const homeConfigDir = join(home, ".autorag");
 		const legacyPath = join(root, LEGACY_CONFIG_FILENAME);
-		writeFileSync(
-			legacyPath,
-			JSON.stringify({ searchPaths: ["legacy-docs"], workspacePath: root }),
-			"utf8",
-		);
+		writeFileSync(legacyPath, JSON.stringify({ searchPaths: ["legacy-docs"], workspacePath: root }), "utf8");
 
 		const config = resolveConfigReadOnly({ flags: {}, env: { HOME: home }, cwd: root });
 

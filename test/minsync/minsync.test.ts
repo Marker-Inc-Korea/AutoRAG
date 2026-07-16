@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	ensureMinSyncBinary,
@@ -10,7 +11,7 @@ import {
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
-import { parse } from "smol-toml";
+
 let root: string;
 let source: string;
 let parsedOutput: string;

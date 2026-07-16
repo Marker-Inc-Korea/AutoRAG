@@ -37,8 +37,10 @@ export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEm
 	}
 
 	const parsed = parse(raw) as Record<string, Record<string, unknown>>;
-	const embedderSection = (parsed.embedder ??= {}) as Record<string, unknown>;
-	const vectorstore = (parsed.vectorstore ??= {}) as Record<string, unknown>;
+	parsed.embedder ??= {};
+	const embedderSection = parsed.embedder as Record<string, unknown>;
+	parsed.vectorstore ??= {};
+	const vectorstore = parsed.vectorstore as Record<string, unknown>;
 	const options =
 		typeof vectorstore.options === "object" && vectorstore.options !== null && !Array.isArray(vectorstore.options)
 			? (vectorstore.options as Record<string, unknown>)

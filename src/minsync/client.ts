@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
+import { rewriteEmbedderConfig } from "./embedder-config.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
-import { rewriteEmbedderConfig } from "./embedder-config.ts";
 
 export interface MinSyncClientOptions {
 	readonly binaryPath: string;
@@ -10,7 +10,7 @@ export interface MinSyncClientOptions {
 }
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const SECRET_PATTERN = /sk-[A-Za-z0-9_\-]+/g;
+const SECRET_PATTERN = /sk-[A-Za-z0-9_-]+/g;
 
 export class MinSyncClient {
 	private readonly binaryPath: string;

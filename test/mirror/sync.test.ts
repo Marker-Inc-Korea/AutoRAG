@@ -265,5 +265,4 @@ describe("syncParsedMirrors", () => {
 		expect(index.entries["/docs/huge.txt"]).toBeUndefined();
 		expect(result.diagnostics.some((d) => d.code === "parser-skipped")).toBe(true);
 	});
-
 });

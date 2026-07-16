@@ -30,13 +30,13 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
+import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	type ParsedMirrorDiagnostic,
 	type ParsedMirrorSyncResult,
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
-import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
@@ -102,7 +102,6 @@ export interface AutoRefreshOptions {
 	readonly intervalMs: number;
 	readonly immediate?: boolean;
 }
-
 
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
 export type RefreshMethod = "parsed" | "bm25" | "minsync" | "datasources" | "jikji";
@@ -1535,10 +1534,7 @@ function validateExplorerInvocation(
 	const topLevelModel = typeof args.model === "string" ? args.model.split(":", 1)[0] : undefined;
 	const canonicalCwds: string[] = [];
 	for (const task of childSet.tasks) {
-		const taskModel =
-			typeof task.model === "string"
-				? task.model.split(":", 1)[0]
-				: topLevelModel;
+		const taskModel = typeof task.model === "string" ? task.model.split(":", 1)[0] : topLevelModel;
 		if (taskModel === undefined || taskModel !== expectedModelId) {
 			return "AutoRAG blocked autorag-explorer dispatch using a non-configured model";
 		}
@@ -1886,7 +1882,10 @@ function hasGroundedFieldValueTable(value: string): boolean {
 	let inFieldValueTable = false;
 	for (let index = 0; index < lines.length; index += 1) {
 		const headers = splitMarkdownRow(lines[index] ?? "").map((header) =>
-			header.replace(/\*\*|__/g, "").toLowerCase().trim(),
+			header
+				.replace(/\*\*|__/g, "")
+				.toLowerCase()
+				.trim(),
 		);
 		if (headers.length >= 2 && headers[0] === "field" && headers[1] === "value") {
 			const delimiter = splitMarkdownRow(lines[index + 1] ?? "");
@@ -1963,12 +1962,11 @@ function hasGroundedProseCandidateHandoff(value: string): boolean {
 	const evidenceBlock =
 		evidence.length > 0
 			? evidence
-			: /(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{20,800})/im.exec(body)?.[1]?.trim() ??
-				"";
+			: (/(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{20,800})/im.exec(body)?.[1]?.trim() ??
+				"");
 	if (isSubstantiveTextValue(evidenceBlock, false)) return true;
 	const multiLineEvidence =
-		/(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{40,1200})/im.exec(body)?.[1]?.trim() ??
-		"";
+		/(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{40,1200})/im.exec(body)?.[1]?.trim() ?? "";
 	if (isSubstantiveTextValue(multiLineEvidence, false)) return true;
 	const nearSource =
 		body.includes(source) &&
@@ -1991,21 +1989,11 @@ function isMarkdownSeparatorCell(value: string): boolean {
 }
 
 function classifyGroundingTextLabel(label: string): GroundingTextField | undefined {
-	const normalized = label
-		.toLowerCase()
-		.replace(/[_/]+/g, " ")
-		.replace(/\s+/g, " ")
-		.trim();
+	const normalized = label.toLowerCase().replace(/[_/]+/g, " ").replace(/\s+/g, " ").trim();
 	if (
-		[
-			"source",
-			"sources",
-			"source path",
-			"source id",
-			"sourcepath",
-			"sourceid",
-			"exact source path",
-		].includes(normalized)
+		["source", "sources", "source path", "source id", "sourcepath", "sourceid", "exact source path"].includes(
+			normalized,
+		)
 	) {
 		return "source";
 	}
@@ -2023,14 +2011,7 @@ function classifyGroundingTextLabel(label: string): GroundingTextField | undefin
 	) {
 		return "evidence";
 	}
-	if (
-		[
-			"retrieved at",
-			"retrievedat",
-			"retrieval timestamp",
-			"retrievaltimestamp",
-		].includes(normalized)
-	) {
+	if (["retrieved at", "retrievedat", "retrieval timestamp", "retrievaltimestamp"].includes(normalized)) {
 		return "retrievedAt";
 	}
 	if (

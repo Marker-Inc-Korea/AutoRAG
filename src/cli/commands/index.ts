@@ -6,8 +6,8 @@ import { PARSED_MIRROR_SUBDIR } from "../../mirror/paths.ts";
 import { BM25_SUBDIR } from "../../retrieval/methods/bm25.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
-import type { CommandContext } from "./types.ts";
 import { parseMethodFlag } from "./refresh.ts";
+import type { CommandContext } from "./types.ts";
 
 const ALL_RESET_TARGETS = [PARSED_MIRROR_SUBDIR, BM25_SUBDIR, MINSYNC_SUBDIR] as const;
 const ALL_RESET_TARGET_NAMES = ["parsed", "bm25", "minsync"] as const;
@@ -35,7 +35,7 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	}
 
 	// Determine scoped reset targets from --method. Default: all three.
-	const methods = parseMethodFlag(ctx.flags["method"]);
+	const methods = parseMethodFlag(ctx.flags.method);
 	const { targetNames, targetSubdirs, refreshMethods } = resolveResetScope(methods);
 
 	const autoragDir = resolve(config.workspacePath, ".autorag");

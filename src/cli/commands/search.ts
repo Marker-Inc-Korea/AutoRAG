@@ -23,12 +23,7 @@ import type { CommandContext } from "./types.ts";
  */
 export interface SearchHealthHint {
 	command: "autorag health";
-	reason:
-		| "model_resolution"
-		| "subagent_failed"
-		| "auth_missing"
-		| "provider_unreachable"
-		| "timeout";
+	reason: "model_resolution" | "subagent_failed" | "auth_missing" | "provider_unreachable" | "timeout";
 	message: string;
 }
 
@@ -107,7 +102,12 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
 	}
 
 	// 5. AbortError / timeout → timeout.
-	if (name === "AbortError" || message.includes("abort") || message.includes("timeout") || message.includes("timed out")) {
+	if (
+		name === "AbortError" ||
+		message.includes("abort") ||
+		message.includes("timeout") ||
+		message.includes("timed out")
+	) {
 		return { command: "autorag health", reason: "timeout", message: HEALTH_HINT_MESSAGE };
 	}
 

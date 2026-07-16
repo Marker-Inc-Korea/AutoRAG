@@ -1,8 +1,8 @@
-import type { HealthReportV1 } from "./commands/health.ts";
-import type { SearchHealthHint } from "./commands/search.ts";
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
 import type { SearchDocumentDiagnostic, SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchemaV4 } from "../memory/memory.ts";
+import type { HealthReportV1 } from "./commands/health.ts";
+import type { SearchHealthHint } from "./commands/search.ts";
 
 export interface RenderOptions {
 	json?: boolean;
@@ -362,12 +362,7 @@ function renderRoleLine(role: string, r: HealthReportV1["models"]["orchestrator"
 
 function renderProbeLine(p: HealthReportV1["probes"]["orchestrator"]): string {
 	if (p === undefined) return "";
-	const parts = [
-		`  probe ${p.role}:`,
-		`skipped=${p.skipped}`,
-		`ok=${p.ok}`,
-		`category=${p.category}`,
-	];
+	const parts = [`  probe ${p.role}:`, `skipped=${p.skipped}`, `ok=${p.ok}`, `category=${p.category}`];
 	if (p.durationMs !== undefined) parts.push(`durationMs=${p.durationMs}`);
 	let line = parts.join(" ");
 	if (p.message) line += `\n    message: ${p.message}`;

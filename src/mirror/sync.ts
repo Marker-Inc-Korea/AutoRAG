@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { type Dir, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
 import { planSourceRoots, type SourceRoot, sourceIdentifier } from "../filesystem/source-paths.ts";
@@ -270,7 +270,7 @@ async function collectFiles(
 	entries: CurrentEntry[],
 	supportedExtensions: ReadonlySet<string>,
 ): Promise<void> {
-	let dir;
+	let dir: Dir;
 	try {
 		dir = await opendir(directory);
 	} catch {
@@ -286,7 +286,7 @@ async function collectFiles(
 		if (!entry.isFile()) continue;
 		const extension = normalizeExtension(extname(entry.name));
 		if (!supportedExtensions.has(extension)) continue;
-		let fileStat;
+		let fileStat: Awaited<ReturnType<typeof stat>>;
 		try {
 			fileStat = await stat(sourcePath, { bigint: true });
 		} catch {

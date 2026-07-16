@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
-import type { BM25Engine, BM25FallbackMode } from "../retrieval/methods/bm25.ts";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { type Api, findEnvKeys, getEnvApiKey, getModel, getProviders, type Model } from "@earendil-works/pi-ai";
 import type { AutoRAGAgentOptions } from "../agent/agent.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
+import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import type { BM25Engine, BM25FallbackMode } from "../retrieval/methods/bm25.ts";
 import {
 	type LoadLocalAutoRAGModelsOptions,
 	type LocalAutoRAGModels,
@@ -27,7 +27,6 @@ export class ConfigError extends Error {
 		this.name = "ConfigError";
 	}
 }
-
 
 /**
  * Typed BM25 method config persisted in `config.json`. Missing `enabled` means
@@ -469,7 +468,18 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 			throw new ConfigError(`${path}.${key} is not a recognized embedder field`);
 		}
 	}
-	const out: { id?: string; baseUrl?: string; apiKeyEnv?: string; dimension?: number; queryPrefix?: string; passagePrefix?: string; timeoutMs?: number; batchSize?: number; maxRetries?: number; maxConcurrent?: number } = {};
+	const out: {
+		id?: string;
+		baseUrl?: string;
+		apiKeyEnv?: string;
+		dimension?: number;
+		queryPrefix?: string;
+		passagePrefix?: string;
+		timeoutMs?: number;
+		batchSize?: number;
+		maxRetries?: number;
+		maxConcurrent?: number;
+	} = {};
 	if (record.id !== undefined) {
 		if (typeof record.id !== "string" || record.id.trim() === "") {
 			throw new ConfigError(`${path}.id must be a non-empty string`);
@@ -532,7 +542,7 @@ function normalizeBm25Method(raw: Bm25MethodConfig | false | undefined): Bm25Met
 			throw new ConfigError(`bm25.${key} is not a recognized field`);
 		}
 	}
-	const enabled = record.enabled === false ? false : true;
+	const enabled = record.enabled !== false;
 	const out: Bm25MethodConfig = { enabled };
 	if (typeof record.indexPath === "string" && record.indexPath.length > 0) out.indexPath = record.indexPath;
 	if (record.fallback === "typescript" || record.fallback === "disabled") out.fallback = record.fallback;
@@ -557,7 +567,7 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 			throw new ConfigError(`minSync.${key} is not a recognized field`);
 		}
 	}
-	const enabled = record.enabled === false ? false : true;
+	const enabled = record.enabled !== false;
 	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall === true };
 	if (typeof record.binaryPath === "string" && record.binaryPath.length > 0) out.binaryPath = record.binaryPath;
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
@@ -601,9 +611,9 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	const readOnly = input.readOnly === true;
 	const file = readOnly
 		? resolveConfigFileReadOnly(configPath, explicit, legacyPath)
-		: (!explicit && legacyPath
-				? migrateLegacyConfig(configPath, legacyPath) ?? readConfigFile(configPath, explicit) ?? {}
-				: readConfigFile(configPath, explicit) ?? {});
+		: !explicit && legacyPath
+			? (migrateLegacyConfig(configPath, legacyPath) ?? readConfigFile(configPath, explicit) ?? {})
+			: (readConfigFile(configPath, explicit) ?? {});
 
 	const defaultSearchPaths = ["."];
 	const defaultWorkspacePath = cwd;
@@ -659,12 +669,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		flagOrchestratorId,
 		"agents.orchestrator",
 	);
-	const explorer = applyRoleFlagOverrides(
-		fileExplorer,
-		flagExplorerProvider,
-		flagExplorerId,
-		"agents.explorer",
-	);
+	const explorer = applyRoleFlagOverrides(fileExplorer, flagExplorerProvider, flagExplorerId, "agents.explorer");
 
 	const config: CliConfig = {
 		searchPaths,
@@ -760,10 +765,7 @@ function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefine
 	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
 }
 
-function resolveRegisteredModel(
-	reference: AgentModelConfig,
-	role?: "orchestrator" | "explorer",
-): Model<Api> {
+function resolveRegisteredModel(reference: AgentModelConfig, role?: "orchestrator" | "explorer"): Model<Api> {
 	if (isConfiguredEndpoint(reference)) {
 		return buildModelFromConfiguredEndpoint(reference);
 	}
@@ -869,10 +871,7 @@ interface AgentModelCore {
 	readonly env: NodeJS.ProcessEnv;
 }
 
-function resolveAgentModelCore(
-	config: CliConfig,
-	localOptions: LoadLocalAutoRAGModelsOptions = {},
-): AgentModelCore {
+function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAGModelsOptions = {}): AgentModelCore {
 	const orchestratorRef = config.agents?.orchestrator ?? config.model;
 	const explorerRef = config.agents?.explorer;
 	const registeredOrchestrator = resolveBuiltInModel(orchestratorRef, "orchestrator");
@@ -909,8 +908,7 @@ function resolveAgentModelCore(
 		registeredOrchestrator === undefined &&
 		(orchestratorRef === undefined || orchestratorRef.provider === local?.provider);
 	const explorerFromLocal =
-		registeredExplorer === undefined &&
-		(explorerRef === undefined || explorerRef.provider === local?.provider);
+		registeredExplorer === undefined && (explorerRef === undefined || explorerRef.provider === local?.provider);
 	const orchestratorCatalog = registeredOrchestrator !== undefined && !orchestratorConfiguredEndpoint;
 	const explorerCatalog = registeredExplorer !== undefined && !explorerConfiguredEndpoint;
 

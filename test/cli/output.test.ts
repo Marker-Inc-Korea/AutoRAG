@@ -4,18 +4,18 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../../src/agent/agent.ts";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
+import type { HealthReportV1 } from "../../src/cli/commands/health.ts";
 import {
 	renderError,
 	renderFeedback,
+	renderHealth,
 	renderIndex,
 	renderMemory,
 	renderRefresh,
 	renderSearch,
-	renderHealth,
 	renderStatus,
 } from "../../src/cli/output.ts";
 import type { MemorySchemaV4 } from "../../src/memory/memory.ts";
-import type { HealthReportV1 } from "../../src/cli/commands/health.ts";
 
 let root: string;
 

@@ -139,9 +139,7 @@ describe("runRefresh --method", () => {
 		writeConfig({ forceEngine: "typescript-fallback" });
 
 		const out: string[] = [];
-		const code = await runRefresh(
-			makeCtx({ flags: { method: "bm25" }, stdout: (line) => out.push(line) }),
-		);
+		const code = await runRefresh(makeCtx({ flags: { method: "bm25" }, stdout: (line) => out.push(line) }));
 		expect(code).toBe(0);
 		expect(out).toHaveLength(1);
 		const blob = out[0];
@@ -157,9 +155,7 @@ describe("runRefresh --method", () => {
 		writeConfig({ forceEngine: "typescript-fallback" });
 
 		const out: string[] = [];
-		const code = await runRefresh(
-			makeCtx({ flags: { method: "all" }, stdout: (line) => out.push(line) }),
-		);
+		const code = await runRefresh(makeCtx({ flags: { method: "all" }, stdout: (line) => out.push(line) }));
 		expect(code).toBe(0);
 		const parsed = JSON.parse(out[0]);
 		expect(parsed.bm25).toBeDefined();
@@ -169,9 +165,7 @@ describe("runRefresh --method", () => {
 		writeConfig({ forceEngine: "typescript-fallback" });
 
 		const err: string[] = [];
-		const code = await runRefresh(
-			makeCtx({ flags: { method: "bogus" }, stderr: (line) => err.push(line) }),
-		);
+		const code = await runRefresh(makeCtx({ flags: { method: "bogus" }, stderr: (line) => err.push(line) }));
 		expect(code).toBe(1);
 		expect(err.join("\n")).toContain("Unknown --method value");
 	});

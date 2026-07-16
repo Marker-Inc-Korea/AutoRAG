@@ -1,15 +1,15 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { completeSimple, type Api, type Model } from "@earendil-works/pi-ai";
+import { type Api, completeSimple, type Model } from "@earendil-works/pi-ai";
+import type { LoadLocalAutoRAGModelsOptions } from "../../subagents/local-models.ts";
+import { createHealthSubagentProbeSession } from "../../subagents/runtime.ts";
 import {
 	type CliConfig,
 	type ResolvedAgentModelDetailed,
 	resolveAgentModelDetailed,
 	resolveConfigReadOnly,
 } from "../config.ts";
-import type { LoadLocalAutoRAGModelsOptions } from "../../subagents/local-models.ts";
-import { createHealthSubagentProbeSession } from "../../subagents/runtime.ts";
 import { renderHealth } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -55,14 +55,7 @@ export interface HealthRoleReport {
 	maxTokens?: number;
 	capabilities: { text: boolean; image: boolean; reasoning?: boolean };
 	auth: HealthRoleAuth;
-	resolutionSource:
-		| "config"
-		| "flags"
-		| "env"
-		| "local_runtime"
-		| "catalog"
-		| "configured_alias"
-		| "mixed";
+	resolutionSource: "config" | "flags" | "env" | "local_runtime" | "catalog" | "configured_alias" | "mixed";
 }
 
 export interface HealthProbeReport {
@@ -140,14 +133,7 @@ export interface ResolvedHealthRole {
 		source: "env" | "local_runtime" | "pi_auth" | "catalog" | "none" | "unknown";
 		envName?: string;
 	};
-	readonly resolutionSource:
-		| "config"
-		| "flags"
-		| "env"
-		| "local_runtime"
-		| "catalog"
-		| "configured_alias"
-		| "mixed";
+	readonly resolutionSource: "config" | "flags" | "env" | "local_runtime" | "catalog" | "configured_alias" | "mixed";
 }
 
 export interface ResolvedHealthModel {
@@ -182,10 +168,7 @@ function defaultResolveConfig(input: {
 	return resolveConfigReadOnly({ flags: input.flags, cwd: input.cwd, env: input.env });
 }
 
-function defaultResolveModel(
-	config: CliConfig,
-	localOptions: LoadLocalAutoRAGModelsOptions = {},
-): ResolvedHealthModel {
+function defaultResolveModel(config: CliConfig, localOptions: LoadLocalAutoRAGModelsOptions = {}): ResolvedHealthModel {
 	const resolved: ResolvedAgentModelDetailed = resolveAgentModelDetailed(config, localOptions);
 	return {
 		model: resolved.model,
@@ -398,12 +381,7 @@ const AUTH_ERROR_PATTERNS: readonly string[] = [
 	"authentication",
 ];
 
-const NETWORK_ERROR_CODES: readonly string[] = [
-	"ENOTFOUND",
-	"ECONNREFUSED",
-	"ECONNRESET",
-	"ETIMEDOUT",
-];
+const NETWORK_ERROR_CODES: readonly string[] = ["ENOTFOUND", "ECONNREFUSED", "ECONNRESET", "ETIMEDOUT"];
 
 const NETWORK_ERROR_PATTERNS: readonly string[] = [
 	"fetch failed",
@@ -767,9 +745,7 @@ export async function runHealth(ctx: CommandContext, deps: HealthDeps = {}): Pro
 			role: "orchestrator",
 			model: resolvedModel.model,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
-			...(resolvedModel.providerApiKeys !== undefined
-				? { providerApiKeys: resolvedModel.providerApiKeys }
-				: {}),
+			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 			timeoutMs,
 			cwd: ctx.cwd,
 		},
@@ -784,9 +760,7 @@ export async function runHealth(ctx: CommandContext, deps: HealthDeps = {}): Pro
 		{
 			role: "explorer",
 			model: resolvedModel.explorerModel,
-			...(resolvedModel.providerApiKeys !== undefined
-				? { providerApiKeys: resolvedModel.providerApiKeys }
-				: {}),
+			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 			timeoutMs,
 			cwd: probeCwd,
 		},

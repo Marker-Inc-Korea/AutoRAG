@@ -42,7 +42,7 @@ describe("parseArgs", () => {
 	it("accepts --method as a value flag", () => {
 		const parsed = parseArgs(["refresh", "--method", "bm25,minsync"]);
 		if ("error" in parsed) throw new Error(parsed.error);
-		expect(parsed.flags["method"]).toBe("bm25,minsync");
+		expect(parsed.flags.method).toBe("bm25,minsync");
 	});
 
 	it("accepts embedder-* value flags", () => {
@@ -91,7 +91,6 @@ describe("main routing", () => {
 		vi.spyOn(process.stderr, "write").mockReturnValue(true);
 		expect(await main(["refresh", "--bogus"])).toBe(2);
 	});
-
 });
 
 describe("parseArgs health flags", () => {

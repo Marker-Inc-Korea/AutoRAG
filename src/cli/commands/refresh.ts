@@ -17,7 +17,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 	try {
 		const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 		const agent = new AutoRAGAgent(buildAgentOptions(config));
-		const methods = parseMethodFlag(ctx.flags["method"]);
+		const methods = parseMethodFlag(ctx.flags.method);
 		const result = await agent.refresh(ctx.flags.force === true, methods ? { methods } : undefined);
 		ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
 		return 0;

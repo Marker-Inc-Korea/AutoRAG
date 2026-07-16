@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { describe, expect, it } from "vitest";
 import {
 	type HealthCategory,
 	type HealthDeps,
@@ -10,8 +10,8 @@ import {
 	type ResolvedHealthRole,
 	runHealth,
 } from "../../src/cli/commands/health.ts";
-import type { CliConfig } from "../../src/cli/config.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
+import type { CliConfig } from "../../src/cli/config.ts";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -59,10 +59,7 @@ function fakeRole(
 	};
 }
 
-function fakeResolvedModel(opts: {
-	orchAuth?: boolean;
-	explorerAuth?: boolean;
-}): ResolvedHealthModel {
+function fakeResolvedModel(opts: { orchAuth?: boolean; explorerAuth?: boolean }): ResolvedHealthModel {
 	const orchPresent = opts.orchAuth ?? true;
 	const explorerPresent = opts.explorerAuth ?? true;
 	return {
@@ -113,14 +110,14 @@ function makeDeps(opts: {
 }): HealthDeps {
 	return {
 		configResolver: opts.configResolverThrow
-			? (() => {
+			? () => {
 					throw opts.configResolverThrow as Error;
-				})
+				}
 			: () => fakeConfig(),
 		modelResolver: opts.modelResolverThrow
-			? (() => {
+			? () => {
 					throw opts.modelResolverThrow as Error;
-				})
+				}
 			: () => fakeResolvedModel({ orchAuth: opts.orchAuth, explorerAuth: opts.explorerAuth }),
 		...(opts.orchProbe ? { orchestratorProbe: opts.orchProbe } : {}),
 		...(opts.explorerProbe ? { explorerProbe: opts.explorerProbe } : {}),
@@ -219,9 +216,12 @@ describe("runHealth probe categories", () => {
 	it("orchestrator timeout maps to category timeout / exit 1", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(false, "timeout", "orchestrator probe timed out after 10000ms"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(false, "timeout", "orchestrator probe timed out after 10000ms"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("timeout");
@@ -232,10 +232,13 @@ describe("runHealth probe categories", () => {
 	it("explorer subagent_failed maps to category subagent_failed / exit 1", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(true, "ok"),
-			explorerProbe: () => probe(false, "subagent_failed", "concurrent AutoRAG session busy"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(true, "ok"),
+				explorerProbe: () => probe(false, "subagent_failed", "concurrent AutoRAG session busy"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("subagent_failed");
@@ -246,10 +249,13 @@ describe("runHealth probe categories", () => {
 	it("orchestrator completion_failed maps to category completion_failed / exit 1", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(false, "completion_failed", "non-timeout completion error"),
-			explorerProbe: () => probe(true, "ok"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(false, "completion_failed", "non-timeout completion error"),
+				explorerProbe: () => probe(true, "ok"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("completion_failed");
@@ -258,10 +264,13 @@ describe("runHealth probe categories", () => {
 	it("provider_unreachable maps correctly / exit 1", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(false, "provider_unreachable", "ENOTFOUND api.anthropic.com"),
-			explorerProbe: () => probe(true, "ok"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(false, "provider_unreachable", "ENOTFOUND api.anthropic.com"),
+				explorerProbe: () => probe(true, "ok"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("provider_unreachable");
@@ -270,10 +279,13 @@ describe("runHealth probe categories", () => {
 	it("all probes ok => category ok / exit 0, subagentDispatch true", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(true, "ok"),
-			explorerProbe: () => probe(true, "ok"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(true, "ok"),
+				explorerProbe: () => probe(true, "ok"),
+			}),
+		);
 		expect(code).toBe(0);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("ok");
@@ -287,10 +299,13 @@ describe("runHealth multi-failure precedence", () => {
 	it("timeout outranks completion_failed", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(false, "timeout", "timed out"),
-			explorerProbe: () => probe(false, "completion_failed", "completion error"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(false, "timeout", "timed out"),
+				explorerProbe: () => probe(false, "completion_failed", "completion error"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("timeout");
@@ -302,10 +317,13 @@ describe("runHealth multi-failure precedence", () => {
 	it("auth_missing outranks timeout (auth checked before probes)", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchAuth: false,
-			orchProbe: () => probe(false, "timeout", "timed out"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchAuth: false,
+				orchProbe: () => probe(false, "timeout", "timed out"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("auth_missing");
@@ -314,10 +332,13 @@ describe("runHealth multi-failure precedence", () => {
 	it("provider_unreachable outranks subagent_failed", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: () => probe(false, "provider_unreachable", "ENOTFOUND"),
-			explorerProbe: () => probe(false, "subagent_failed", "busy"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () => probe(false, "provider_unreachable", "ENOTFOUND"),
+				explorerProbe: () => probe(false, "subagent_failed", "busy"),
+			}),
+		);
 		expect(code).toBe(1);
 		const report = JSON.parse(out[0]) as HealthReportV1;
 		expect(report.category).toBe("provider_unreachable");
@@ -349,13 +370,16 @@ describe("runHealth --timeout-ms", () => {
 		let receivedTimeout = 0;
 		const out: string[] = [];
 		const ctx = makeCtx({ flags: { "timeout-ms": "5000" }, stdout: (l) => out.push(l) });
-		const code = await runHealth(ctx, makeDeps({
-			orchProbe: (input) => {
-				receivedTimeout = input.timeoutMs;
-				return probe(true, "ok");
-			},
-			explorerProbe: () => probe(true, "ok"),
-		}));
+		const code = await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: (input) => {
+					receivedTimeout = input.timeoutMs;
+					return probe(true, "ok");
+				},
+				explorerProbe: () => probe(true, "ok"),
+			}),
+		);
 		expect(code).toBe(0);
 		expect(receivedTimeout).toBe(5000);
 	});
@@ -376,11 +400,18 @@ describe("runHealth secret/path opacity", () => {
 	it("sanitizes probe messages containing secrets/paths/stacks", async () => {
 		const out: string[] = [];
 		const ctx = makeCtx({ stdout: (l) => out.push(l) });
-		await runHealth(ctx, makeDeps({
-			orchProbe: () =>
-				probe(false, "completion_failed", `error at /Users/secret/config.json\n    at Object.<anonymous> (sk-leaked-key-1234567890abcdef)`),
-			explorerProbe: () => probe(true, "ok"),
-		}));
+		await runHealth(
+			ctx,
+			makeDeps({
+				orchProbe: () =>
+					probe(
+						false,
+						"completion_failed",
+						`error at /Users/secret/config.json\n    at Object.<anonymous> (sk-leaked-key-1234567890abcdef)`,
+					),
+				explorerProbe: () => probe(true, "ok"),
+			}),
+		);
 		const blob = out[0];
 		expect(blob).not.toContain("/Users/secret/config.json");
 		expect(blob).not.toContain("sk-leaked-key");

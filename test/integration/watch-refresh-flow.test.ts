@@ -23,13 +23,13 @@ afterEach(() => {
 
 // Real recursive fs.watch delivery latency varies under load; poll generously
 // and retry so an occasional delayed/dropped OS event does not flake the suite.
-async function waitFor(predicate: () => boolean, timeoutMs = 10000): Promise<boolean> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 10000): Promise<boolean> {
 	const start = Date.now();
 	while (Date.now() - start < timeoutMs) {
-		if (predicate()) return true;
+		if (await predicate()) return true;
 		await new Promise((resolve) => setTimeout(resolve, 40));
 	}
-	return predicate();
+	return await predicate();
 }
 
 describe("AutoRAGAgent watch refresh (real fs)", () => {
@@ -54,8 +54,11 @@ describe("AutoRAGAgent watch refresh (real fs)", () => {
 
 			// Stop the watcher; further changes must NOT trigger a refresh.
 			handle.stop();
-			const statusAfterStop = await agent.getRefreshStatus();
-			const finishedAt = statusAfterStop.lastFinishedAt;
+
+			// An in-flight refresh may still be completing after stop(). Wait for it
+			// to finish before capturing the baseline timestamp.
+			await waitFor(async () => !(await agent.getRefreshStatus()).inFlight, 10000);
+			const finishedAt = (await agent.getRefreshStatus()).lastFinishedAt;
 
 			writeFileSync(join(docs, "after-stop.txt"), "Should not be indexed by the watcher.\n");
 			await new Promise((resolve) => setTimeout(resolve, 300));
