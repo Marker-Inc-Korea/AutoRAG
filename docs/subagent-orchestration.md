@@ -98,11 +98,28 @@ assignment containing:
    broader or narrower forms;
 4. the allowed scope and inherited policy constraints.
 
+The assignment is a sentinel-wrapped JSON block (Assignment V1):
+
+```text
+<<<AUTORAG_ASSIGNMENT_V1>>>
+{"originalQuery":"<caller query verbatim>","method":"<selected retrieval method>","queryVariants":["<variant 1>","<variant 2>"]}
+<<<END_AUTORAG_ASSIGNMENT_V1>>>
+Required handoff: include retrievedAt.
+Required handoff: include temporal metadata.
+```
+
+The JSON body has exactly three keys: `originalQuery` (the caller query
+verbatim), `method` (the selected retrieval or discovery path), and
+`queryVariants` (a nonempty array of query variant strings). A legacy labeled
+format (`Original query:`, `Selected retrieval method:`, `Query variants:`)
+is accepted for compatibility; the V1 sentinel format is preferred and
+required for multiline or special content.
+
 Each explorer is assigned exactly one normalized configured search root as its
-`cwd`. The top-level `subagent` invocation sets `artifacts: false` exactly once
-for single, `tasks`, `chain`, or `parallel` dispatch. Nested explorer task
-items omit `artifacts`; project-local `.pi-subagents` debug artifacts are
-disabled.
+`cwd`. The top-level `subagent` invocation sets `agentScope: "user"` and
+`artifacts: false` exactly once for single, `tasks`, `chain`, or `parallel`
+dispatch. Nested explorer task items omit `agentScope` and `artifacts`;
+project-local `.pi-subagents` debug artifacts are disabled.
 
 They search and read a large set of candidate documents. They should return
 weakly relevant candidates when those candidates may illuminate a conflict,
@@ -173,6 +190,69 @@ timing and freshness interpretation is relevant to the caller.
 If the extension cannot dispatch explorers, the run is blocked/degraded. Do
 not silently replace the two-tier workflow with a single-agent search.
 
+## Dispatch templates and safe defaults
+
+The canonical single-root and multi-root dispatch payloads set
+`agentScope: "user"` and `artifacts: false` exactly once at the top level.
+Each executable leaf carries `agent: "autorag-explorer"`, the configured
+explorer model, an explicit `cwd` set to one allowed root, and a `task`
+containing an Assignment V1 block.
+
+**Single-root dispatch:**
+
+```json
+{
+  "agentScope": "user",
+  "artifacts": false,
+  "agent": "autorag-explorer",
+  "model": "<configured-model>",
+  "cwd": "<allowed-root>",
+  "task": "<Assignment V1 block>"
+}
+```
+
+**Multi-root dispatch** (one task per configured root):
+
+```json
+{
+  "agentScope": "user",
+  "artifacts": false,
+  "tasks": [
+    {
+      "agent": "autorag-explorer",
+      "model": "<configured-model>",
+      "cwd": "<allowed-root>",
+      "task": "<Assignment V1 block>"
+    }
+  ]
+}
+```
+
+### Safe autofill
+
+Missing or null top-level `artifacts`, `agentScope`, and leaf `model` fields
+are autofilled before validation: `artifacts` to `false`, `agentScope` to
+`"user"`, and leaf `model` to the configured explorer model. This reduces
+retry cascades from safe envelope omissions. Explicit wrong values
+(`artifacts: true`, `agentScope: "project"`, a non-configured model) remain
+rejected. Diagnostics (`list`, `get`, `models`, `status`, `doctor`) are
+separate from launch dispatch and never receive these defaults. There is no
+single-agent fallback.
+
+### Anti-examples (rejected dispatches)
+
+- **Nested `artifacts`/`agentScope` on task items** — these fields are set
+  only once at the top level and are never injected into leaves; nested
+  presence is rejected as malformed.
+- **Wrong root (`cwd` outside configured roots)** — every executable leaf
+  `cwd` must be one of the configured search roots; paths outside the
+  allowed roots or with symlink escape are rejected.
+- **Wrong agent (not `autorag-explorer`)** — every executable leaf `agent`
+  must be exactly `"autorag-explorer"`.
+- **Explicit unsafe values** — `artifacts: true`, `agentScope: "project"`,
+  or a non-configured model are rejected even though their missing/null
+  counterparts are safely autofilled.
+
 ## Final curation and termination
 
 Only the `gpt-5.6-sol` orchestrator may turn explorer handoffs into the
@@ -196,6 +276,46 @@ The subagent workflow does not change retrieval policy:
   trusted access. Datasource results are filtered before merge.
 - `emit_autorag_results` remains the structured terminating tool. Explorers
   return evidence to the orchestrator and never call it.
+
+## Stable coded dispatch errors
+
+When a dispatch is rejected, AutoRAG emits a stable error code, the failing
+field path, and a one-line `exactFix` string. The error format is:
+
+```text
+[<CODE>] field=<field> fix=<exactFix>
+<selected skeleton>
+```
+
+`forceCorrectable` marks whether the caller can retry with the fix applied.
+Non-correctable codes (`ADMIN_MUTATION_FORBIDDEN`, `CONTROL_FORBIDDEN`,
+`SCHEDULE_FORBIDDEN`, `AGENT_IDENTITY`, `CWD_OUTSIDE_ROOTS`,
+`NO_ACTIVE_QUERY`) require a structurally different request or an active
+search context. Canonical role lines (retrievedAt, temporal metadata) are
+normalized idempotently by `ensureRoleLines` rather than rejected — no
+role-metadata rejection code exists in the catalog.
+
+| Code | exactFix | forceCorrectable |
+|------|----------|-----------------|
+| `DISPATCH_MALFORMED` | remove fields not owned by this action | yes |
+| `DISPATCH_ACTION_UNKNOWN` | use list\|get\|models\|status\|doctor or a supported launch shape | yes |
+| `DISPATCH_ADMIN_MUTATION_FORBIDDEN` | do not mutate subagent definitions during AutoRAG search | no |
+| `DISPATCH_CONTROL_FORBIDDEN` | launch a fresh autorag-explorer assignment instead of controlling an existing run | no |
+| `DISPATCH_SCHEDULE_FORBIDDEN` | dispatch autorag-explorer work immediately; scheduling is disabled | no |
+| `DISPATCH_ARTIFACTS_INVALID` | set args.artifacts = false | yes |
+| `DISPATCH_AGENT_SCOPE_INVALID` | set args.agentScope = "user" | yes |
+| `DISPATCH_AGENT_IDENTITY` | set every executable leaf agent = "autorag-explorer" | no |
+| `DISPATCH_MODEL_MISMATCH` | set the referenced model field to the configured explorer model | yes |
+| `DISPATCH_ASSIGNMENT_INVALID` | replace the task assignment with the canonical AUTORAG_ASSIGNMENT_V1 block | yes |
+| `DISPATCH_QUERY_MISMATCH` | set originalQuery to the active user query verbatim | yes |
+| `DISPATCH_CWD_MISSING` | set each executable leaf cwd to one configured search root | yes |
+| `DISPATCH_CWD_OUTSIDE_ROOTS` | use a configured search root without symlink escape | no |
+| `DISPATCH_NO_ACTIVE_QUERY` | dispatch only while an AutoRAG search query is active | no |
+
+Diagnostics (`list`, `get`, `models`, `status`, `doctor`) bypass the
+assignment, root, and model launch gates. They never receive artifacts,
+agentScope, or model defaults. Control, mutation, and scheduling actions are
+forbidden regardless of payload.
 
 ## Testing
 

@@ -61,7 +61,19 @@ BM25 and MinSync are **enabled by default** — no explicit configuration is nee
 
 ### Real directory access
 
-AutoRAG reads configured source directories through delegated explorer tasks. Each explorer is assigned exactly one normalized configured search root as its `cwd`; the top-level `subagent` invocation sets `artifacts: false` exactly once for single, `tasks`, `chain`, or `parallel` dispatch, and nested explorer task items omit `artifacts`. Project-local `.pi-subagents` debug artifacts are disabled. Explorers use read-only `read`/`grep`/`find`/`ls`; the parent orchestrator owns retrieval seed tools and must delegate document reading before curating. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
+AutoRAG reads configured source directories through delegated explorer tasks. Each explorer is assigned exactly one normalized configured search root as its `cwd`; the top-level `subagent` invocation sets `agentScope: "user"` and `artifacts: false` exactly once for single, `tasks`, `chain`, or `parallel` dispatch, and nested explorer task items omit both fields. Project-local `.pi-subagents` debug artifacts are disabled. Explorers use read-only `read`/`grep`/`find`/`ls`; the parent orchestrator owns retrieval seed tools and must delegate document reading before curating. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
+
+Each explorer `task` contains an Assignment V1 block — a sentinel-wrapped JSON body with `originalQuery` (the caller query verbatim), `method` (the selected retrieval path), and `queryVariants` (a nonempty array), followed by canonical role lines requiring `retrievedAt` and temporal metadata:
+
+```text
+<<<AUTORAG_ASSIGNMENT_V1>>>
+{"originalQuery":"<caller query verbatim>","method":"<selected retrieval method>","queryVariants":["<variant 1>","<variant 2>"]}
+<<<END_AUTORAG_ASSIGNMENT_V1>>>
+Required handoff: include retrievedAt.
+Required handoff: include temporal metadata.
+```
+
+A legacy labeled format (`Original query:`, `Selected retrieval method:`, `Query variants:`) is accepted for compatibility. Missing or null top-level `artifacts`, `agentScope`, and leaf `model` fields are safely autofilled before validation; explicit wrong values (`artifacts: true`, `agentScope: "project"`, a non-configured model) remain rejected. There is no single-agent fallback. See [docs/subagent-orchestration.md](docs/subagent-orchestration.md) for the full dispatch contract, templates, anti-examples, and stable coded dispatch errors.
 
 ### Optional Jikji discovery and indexing
 

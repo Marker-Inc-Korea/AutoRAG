@@ -45,6 +45,17 @@ import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retr
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { safeParseExplorerReport } from "../subagents/contracts.ts";
+import { buildDispatchTemplatesPromptSection } from "../subagents/dispatch-templates.ts";
+import {
+	autoragPrepare,
+	classifyDispatch,
+	createDispatchRejectionError,
+	DispatchRejectionError,
+	FORCE_CORRECTABLE_MAP,
+	type PrepareContext,
+	readAutofilled,
+	validateLaunchPostSchema,
+} from "../subagents/dispatch-validation.ts";
 import { loadLocalAutoRAGModels } from "../subagents/local-models.ts";
 import { EXPLORER_MODEL_ID } from "../subagents/model-policy.ts";
 import { createMandatorySubagentSession, type MandatorySubagentSessionOptions } from "../subagents/runtime.ts";
@@ -219,7 +230,10 @@ export class AutoRAGAgent {
 	private readonly sessionFactory: AutoRAGSessionFactory;
 	private readonly listeners = new Set<Parameters<Agent["subscribe"]>[0]>();
 	private activeSession: AutoRAGSearchSession | undefined;
-	private readonly pendingSubagentCalls = new Map<string, unknown>();
+	private readonly pendingSubagentCalls = new Map<string, { readonly invocation: unknown; readonly query: string }>();
+	private readonly dispatchSequenceBySession = new Map<string, number>();
+	private readonly dispatchArgsTracker = new WeakMap<object, { toolCallId: string; rejected: boolean }>();
+	private dispatchSyntheticCounter = 0;
 	private successfulExplorerCalls = 0;
 	private readonly memory: RetrievalMemory;
 	private readonly runLogger: AutoRAGRunLogger;
@@ -448,17 +462,118 @@ export class AutoRAGAgent {
 			const transformed = extensionTransform === undefined ? messages : await extensionTransform(messages, signal);
 			return this.withMemoryContext(transformed);
 		};
+
+		// Shallow-clone the subagent AgentTool with a composed prepareArguments.
+		// The clone has the same name/schema/execute but adds our pre-schema
+		// validation (classify → launch-only defaults → error catalog).
+		// We replace the entry in agent.state.tools so the agent loop calls
+		// our composed prepare before schema validation.
+		const subagentIndex = session.agent.state.tools.findIndex((tool) => tool.name === "subagent");
+		if (subagentIndex !== -1) {
+			const originalTool = session.agent.state.tools[subagentIndex];
+			const prepareCtx: PrepareContext = {
+				configuredModel: this.activeExplorerModel,
+			};
+			const clonedTool: AgentTool = {
+				...originalTool,
+				prepareArguments: (rawArgs: unknown) => {
+					// Track raw args by object identity for correlation.
+					// The tracker keys on the original rawArgs object so that
+					// beforeToolCall and tool_execution_start can resolve the
+					// same correlation entry.
+					if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+						const existing = this.dispatchArgsTracker.get(rawArgs as object);
+						if (existing === undefined) {
+							const syntheticId = `synthetic-${++this.dispatchSyntheticCounter}`;
+							this.dispatchArgsTracker.set(rawArgs as object, {
+								toolCallId: syntheticId,
+								rejected: false,
+							});
+						}
+					}
+
+					// Compose the original tool's prepareArguments first (if it
+					// exists), then pass its returned args into autoragPrepare.
+					// This preserves any upstream argument preparation while
+					// layering our dispatch validation on top. When the original
+					// has no prepareArguments, fall back to the raw args.
+					const baseArgs =
+						originalTool.prepareArguments !== undefined ? originalTool.prepareArguments(rawArgs) : rawArgs;
+
+					try {
+						const prepared = autoragPrepare(baseArgs, prepareCtx);
+						// Emit dispatch_autofilled if fields changed
+						const autofilled = readAutofilled(prepared);
+						if (autofilled !== undefined) {
+							const changed = autofilled.artifacts || autofilled.agentScope || autofilled.leafModelFillCount > 0;
+							if (changed) {
+								this.emitDispatchAutofilled(rawArgs, autofilled);
+							}
+						}
+						return prepared;
+					} catch (error) {
+						if (error instanceof DispatchRejectionError) {
+							// Mark tracker as rejected so beforeToolCall doesn't duplicate
+							if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+								const tracker = this.dispatchArgsTracker.get(rawArgs as object);
+								if (tracker !== undefined) {
+									tracker.rejected = true;
+								}
+							}
+							this.emitDispatchRejected(error, rawArgs);
+						}
+						throw error;
+					}
+				},
+			};
+			const newTools = [...session.agent.state.tools];
+			newTools[subagentIndex] = clonedTool;
+			session.agent.state.tools = newTools;
+		}
+
 		const extensionBeforeToolCall = session.agent.beforeToolCall;
 		session.agent.beforeToolCall = async (context, signal) => {
 			if (context.toolCall.name === "subagent") {
-				const rejection = validateExplorerInvocation(
-					context.args,
-					this.activeExplorerModel,
-					this.lastQuery,
-					this.allowedExplorerRoots,
-					this.workspaceProjectRoot,
-				);
-				if (rejection !== undefined) return { block: true, reason: rejection };
+				// Check if prepare already rejected (avoid duplicate reject)
+				const rawArgs = context.toolCall.arguments;
+				let alreadyRejected = false;
+				if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+					const tracker = this.dispatchArgsTracker.get(rawArgs as object);
+					if (tracker?.rejected) alreadyRejected = true;
+				}
+
+				if (!alreadyRejected) {
+					const args = context.args;
+					if (
+						typeof args === "object" &&
+						args !== null &&
+						!Array.isArray(args) &&
+						classifyDispatch(args as Record<string, unknown>) === "launch"
+					) {
+						const rejection = validateLaunchPostSchema(args as Record<string, unknown>, {
+							configuredModel: this.activeExplorerModel,
+							currentQuery: this.lastQuery,
+							allowedRoots: this.allowedExplorerRoots,
+							workspaceRoot: this.workspaceProjectRoot,
+						});
+						if (rejection !== undefined) {
+							const error = createDispatchRejectionError(rejection, args as Record<string, unknown>);
+							this.emitDispatchRejectedFromRejection(rejection, rawArgs);
+							return { block: true, reason: error.message };
+						}
+
+						// Store normalized pending for success credit (structuredClone + deep-freeze).
+						// Capture the query bound at dispatch time, never a later mutable value.
+						const activeQuery = this.lastQuery;
+						if (activeQuery !== undefined) {
+							const normalizedSnapshot = deepFreeze(structuredClone(args));
+							this.pendingSubagentCalls.set(context.toolCall.id, {
+								invocation: normalizedSnapshot,
+								query: activeQuery,
+							});
+						}
+					}
+				}
 			}
 			return extensionBeforeToolCall?.(context, signal);
 		};
@@ -473,26 +588,33 @@ export class AutoRAGAgent {
 
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type === "tool_execution_start" && event.toolName === "subagent") {
-			this.pendingSubagentCalls.set(event.toolCallId, event.args);
+			// Set the tracker with the real toolCallId from the start event.
+			// This runs before prepareArguments (which looks up the tracker for telemetry).
+			// If the tracker was already set in prepareArguments with a synthetic id,
+			// update it with the real id.
+			const rawArgs = event.args;
+			if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+				const existing = this.dispatchArgsTracker.get(rawArgs as object);
+				if (existing === undefined) {
+					this.dispatchArgsTracker.set(rawArgs as object, {
+						toolCallId: event.toolCallId,
+						rejected: false,
+					});
+				} else if (existing.toolCallId.startsWith("synthetic-")) {
+					existing.toolCallId = event.toolCallId;
+				}
+			}
 			return;
 		}
 		if (event.type === "tool_execution_end" && event.toolName === "subagent") {
-			const args = this.pendingSubagentCalls.get(event.toolCallId);
+			const pending = this.pendingSubagentCalls.get(event.toolCallId);
 			this.pendingSubagentCalls.delete(event.toolCallId);
-			const invocationRejection = event.isError
-				? "subagent execution failed"
-				: validateExplorerInvocation(
-						args,
-						this.activeExplorerModel,
-						this.lastQuery,
-						this.allowedExplorerRoots,
-						this.workspaceProjectRoot,
-					);
+			// Success credit uses only the frozen normalized snapshot and the
+			// query captured at beforeToolCall, never the mutable `this.lastQuery`.
 			if (
 				!event.isError &&
-				invocationRejection === undefined &&
-				this.lastQuery !== undefined &&
-				isGroundedExplorerResult(event.result, args, this.lastQuery)
+				pending !== undefined &&
+				isGroundedExplorerResult(event.result, pending.invocation, pending.query)
 			) {
 				this.successfulExplorerCalls += 1;
 			}
@@ -503,6 +625,95 @@ export class AutoRAGAgent {
 		const details = event.result.details as { method?: string } | undefined;
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
+	}
+
+	private nextDispatchSequence(): number {
+		const sid = this.lastSessionId ?? "unknown";
+		const next = (this.dispatchSequenceBySession.get(sid) ?? 0) + 1;
+		this.dispatchSequenceBySession.set(sid, next);
+		return next;
+	}
+
+	private resolveToolCallId(rawArgs: unknown): string | null {
+		if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+			const tracker = this.dispatchArgsTracker.get(rawArgs as object);
+			if (tracker?.toolCallId.startsWith("synthetic-")) return null;
+			return tracker?.toolCallId ?? null;
+		}
+		return null;
+	}
+
+	private emitDispatchAutofilled(
+		rawArgs: unknown,
+		autofilled: { readonly artifacts: boolean; readonly agentScope: boolean; readonly leafModelFillCount: number },
+	): void {
+		try {
+			this.runLogger.write({
+				event: "dispatch_autofilled",
+				schemaVersion: 1,
+				sessionId: this.lastSessionId ?? "unknown",
+				toolCallId: this.resolveToolCallId(rawArgs),
+				sequence: this.nextDispatchSequence(),
+				timestamp: new Date().toISOString(),
+				dispatchKind: "launch",
+				fields: {
+					artifacts: autofilled.artifacts,
+					agentScope: autofilled.agentScope,
+					leafModelFillCount: autofilled.leafModelFillCount,
+				},
+			});
+		} catch {
+			// Logger failures are nonfatal.
+		}
+	}
+
+	private emitDispatchRejected(error: DispatchRejectionError, rawArgs: unknown): void {
+		try {
+			this.runLogger.write({
+				event: "dispatch_rejected",
+				schemaVersion: 1,
+				sessionId: this.lastSessionId ?? "unknown",
+				toolCallId: this.resolveToolCallId(rawArgs),
+				sequence: this.nextDispatchSequence(),
+				timestamp: new Date().toISOString(),
+				dispatchKind: error.dispatchKind,
+				code: error.code,
+				field: error.field,
+				forceCorrectable: error.forceCorrectable,
+			});
+		} catch {
+			// Logger failures are nonfatal.
+		}
+	}
+
+	private emitDispatchRejectedFromRejection(
+		rejection: { readonly code: string; readonly field: string; readonly dispatchKind: string },
+		rawArgs: unknown,
+	): void {
+		const code = rejection.code as keyof typeof FORCE_CORRECTABLE_MAP;
+		try {
+			this.runLogger.write({
+				event: "dispatch_rejected",
+				schemaVersion: 1,
+				sessionId: this.lastSessionId ?? "unknown",
+				toolCallId: this.resolveToolCallId(rawArgs),
+				sequence: this.nextDispatchSequence(),
+				timestamp: new Date().toISOString(),
+				dispatchKind: rejection.dispatchKind as
+					| "launch"
+					| "admin"
+					| "control"
+					| "mutation"
+					| "schedule"
+					| "hybrid"
+					| "unknown",
+				code: rejection.code,
+				field: rejection.field,
+				forceCorrectable: FORCE_CORRECTABLE_MAP[code] ?? false,
+			});
+		} catch {
+			// Logger failures are nonfatal.
+		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
@@ -600,6 +811,7 @@ export class AutoRAGAgent {
 		this.jikjiFindCallCount = 0;
 		this.pendingSubagentCalls.clear();
 		this.successfulExplorerCalls = 0;
+		this.dispatchSequenceBySession.delete(sessionId);
 		this.activeExplorerModel = undefined;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
@@ -826,15 +1038,14 @@ export class AutoRAGAgent {
 			this.allowedExplorerRoots.length > 0
 				? this.allowedExplorerRoots.map((root) => `- ${root}`).join("\n")
 				: "- (none configured)";
+		const dispatchTemplates = buildDispatchTemplatesPromptSection(resolvedExplorerModel);
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
+			`${dispatchTemplates}\n\n` +
 			`You must use the subagent tool before judging or emitting results; there is no single-agent fallback. ` +
 			`For process-bound BM25, MinSync, Jikji, or datasource methods, call the matching AutoRAG tool only to create a bounded seed pack, then give that pack to an explorer for document reading; POSIX/bash discovery runs in the explorer. ` +
-			`Dispatch one or more explorer tasks with agent autorag-explorer and model ${resolvedExplorerModel}. Each task must repeat the original query verbatim, ` +
-			`name at least one selected retrieval method, provide multiple query variants, and request broad evidence coverage including weakly relevant candidates. ` +
-			`Use one canonical labeled assignment block per task with exactly one Original query:, Selected retrieval method:, and Query variants: field in that order; the Original query value must equal the caller query exactly. ` +
-			`Set agentScope to exactly user on the top-level subagent invocation so project agent overrides cannot replace the canonical persistent explorer; omit agentScope from nested task items. ` +
-			`Set artifacts to exactly false once on the top-level subagent invocation, whether dispatching a single explorer or using tasks, chain, or parallel fan-out; omit artifacts from every nested autorag-explorer task item. Never omit the top-level field or set it true. ` +
+			`Dispatch one or more explorer tasks with agent autorag-explorer and model ${resolvedExplorerModel}. Prefer the canonical AUTORAG_ASSIGNMENT_V1 block shown above; the legacy three-label assignment remains compatible. The structured originalQuery must equal the caller query exactly, query variants must cover the intent, and explorers must retain weakly relevant candidates that may explain conflicts or gaps. ` +
+			`Missing or null top-level artifacts, agentScope, and missing explorer models are safely autofilled for launch dispatches only. Explicit wrong values remain rejected. Set artifacts and agentScope only at the top level; nested task items must omit them. Read-only diagnostic actions are validated separately from explorer launches. ` +
 			`Allowed explorer roots (normalized):\n${allowedRoots}\n` +
 			`Every autorag-explorer task must set an explicit cwd to exactly one allowed root above. If multiple roots are needed, dispatch one task per root and set each task's cwd to that root. ` +
 			`Never use the workspace root or any path outside these roots for discovery unless that workspace root is explicitly listed above. ` +
@@ -1500,104 +1711,6 @@ function collectSubagentTasks(value: unknown): {
 	return { tasks, malformed };
 }
 
-function validateExplorerInvocation(
-	value: unknown,
-	expectedModel: string | undefined,
-	currentQuery: string | undefined,
-	allowedRoots: readonly string[],
-	workspaceRoot: string,
-): string | undefined {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		return "AutoRAG blocked malformed subagent dispatch";
-	}
-	const args = value as Record<string, unknown>;
-	if (args.artifacts !== false) {
-		return "AutoRAG blocked subagent dispatch without top-level artifacts set to false";
-	}
-	if (args.agentScope !== "user") {
-		return "AutoRAG blocked subagent dispatch without top-level agentScope set to user";
-	}
-	const childSet = collectSubagentTasks(args);
-	if (childSet.malformed || childSet.tasks.length === 0) {
-		return "AutoRAG blocked malformed subagent child task dispatch";
-	}
-	if (childSet.tasks.some((task) => task.agent !== "autorag-explorer")) {
-		return "AutoRAG blocked subagent dispatch containing a non-autorag-explorer child";
-	}
-	if (expectedModel === undefined) {
-		return "AutoRAG blocked subagent dispatch without a configured explorer model";
-	}
-	if (currentQuery === undefined) {
-		return "AutoRAG blocked subagent dispatch without an active search query";
-	}
-	const expectedModelId = expectedModel.split(":", 1)[0];
-	const topLevelModel = typeof args.model === "string" ? args.model.split(":", 1)[0] : undefined;
-	const canonicalCwds: string[] = [];
-	for (const task of childSet.tasks) {
-		const taskModel = typeof task.model === "string" ? task.model.split(":", 1)[0] : topLevelModel;
-		if (taskModel === undefined || taskModel !== expectedModelId) {
-			return "AutoRAG blocked autorag-explorer dispatch using a non-configured model";
-		}
-		const assignment = parseExplorerTaskAssignment(task.task);
-		const normalizedTask = typeof task.task === "string" ? task.task.toLowerCase().replace(/[^a-z0-9]+/g, "") : "";
-		if (
-			assignment === undefined ||
-			!normalizedTask.includes("retrievedat") ||
-			!normalizedTask.includes("temporalmetadata")
-		) {
-			return "AutoRAG blocked autorag-explorer dispatch without required explorer role metadata";
-		}
-		if (isPlaceholderOriginalQuery(assignment.originalQuery)) {
-			return "AutoRAG blocked autorag-explorer dispatch with an empty or placeholder original query";
-		}
-		if (assignment.originalQuery !== currentQuery) {
-			return "AutoRAG blocked autorag-explorer dispatch whose original query does not match the active search query";
-		}
-		if (typeof task.cwd !== "string" || task.cwd.trim().length === 0) {
-			return "AutoRAG blocked autorag-explorer dispatch without an explicit configured cwd";
-		}
-		const requestedCwd = resolve(workspaceRoot, task.cwd);
-		let canonicalCwd: string;
-		let isDirectory: boolean;
-		try {
-			canonicalCwd = realpathSync(requestedCwd);
-			isDirectory = statSync(canonicalCwd).isDirectory();
-		} catch {
-			return `AutoRAG blocked autorag-explorer cwd that could not be resolved: ${requestedCwd}`;
-		}
-		if (!isDirectory || !allowedRoots.includes(canonicalCwd)) {
-			return `AutoRAG blocked autorag-explorer cwd outside configured search roots: ${requestedCwd}`;
-		}
-		canonicalCwds.push(canonicalCwd);
-	}
-	for (const [index, task] of childSet.tasks.entries()) task.cwd = canonicalCwds[index];
-	return undefined;
-}
-
-interface ExplorerTaskAssignment {
-	readonly originalQuery: string;
-}
-
-const EXPLORER_TASK_ASSIGNMENT_LABEL_PATTERN =
-	/^\s*(?:[-+*]\s+)?(original\s+query|selected\s+retrieval\s+method|query\s+variants?)\s*:\s*(.*?)\s*$/gim;
-
-function parseExplorerTaskAssignment(value: unknown): ExplorerTaskAssignment | undefined {
-	if (typeof value !== "string") return undefined;
-	const matches = [...value.matchAll(EXPLORER_TASK_ASSIGNMENT_LABEL_PATTERN)];
-	if (matches.length !== 3) return undefined;
-	const labels = matches.map((match) => match[1]?.toLowerCase().replace(/\s+/g, " "));
-	if (
-		labels[0] !== "original query" ||
-		labels[1] !== "selected retrieval method" ||
-		!labels[2]?.startsWith("query variant")
-	) {
-		return undefined;
-	}
-	const values = matches.map((match) => match[2]?.trim() ?? "");
-	if (!isSubstantiveTextValue(values[1]) || !isSubstantiveTextValue(values[2])) return undefined;
-	return { originalQuery: values[0] ?? "" };
-}
-
 function isPlaceholderOriginalQuery(value: string): boolean {
 	const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
 	if (!isSubstantiveTextValue(normalized)) return true;
@@ -1991,9 +2104,18 @@ function isMarkdownSeparatorCell(value: string): boolean {
 function classifyGroundingTextLabel(label: string): GroundingTextField | undefined {
 	const normalized = label.toLowerCase().replace(/[_/]+/g, " ").replace(/\s+/g, " ").trim();
 	if (
-		["source", "sources", "source path", "source id", "sourcepath", "sourceid", "exact source path"].includes(
-			normalized,
-		)
+		[
+			"source",
+			"sources",
+			"source path",
+			"source id",
+			"sourcepath",
+			"sourceid",
+			"exact source path",
+			"path",
+			"file",
+			"document",
+		].includes(normalized)
 	) {
 		return "source";
 	}
@@ -2120,4 +2242,18 @@ function isTimestampTextValue(value: string | undefined): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deepFreeze<T>(value: T): T {
+	if (value !== null && typeof value === "object") {
+		if (Array.isArray(value)) {
+			for (const item of value) deepFreeze(item);
+		} else {
+			for (const key of Object.keys(value)) {
+				deepFreeze((value as Record<string, unknown>)[key]);
+			}
+		}
+		Object.freeze(value);
+	}
+	return value;
 }

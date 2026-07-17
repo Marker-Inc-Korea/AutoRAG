@@ -102,7 +102,7 @@ export const EXPLORER_TOOLS_EXTENSION_PATH = realpathSync(
 	join(dirname(runtimePath), `explorer-tools-extension${extname(runtimePath)}`),
 );
 
-export const AUTORAG_EXPLORER_AGENT_MANAGED_VERSION = 1;
+export const AUTORAG_EXPLORER_AGENT_MANAGED_VERSION = 2;
 
 export const AUTORAG_EXPLORER_AGENT_DEFINITION = `---
 name: autorag-explorer
@@ -140,6 +140,9 @@ Return candidate findings with source, method, query variant, relevance
 (strong/moderate/weak), exact evidence and location context, retrievedAt,
 source temporal metadata or explicit unknown status, temporal basis, and
 uncertainty. Include weak candidates that could explain a conflict or gap.
+
+Required handoff: include retrievedAt.
+Required handoff: include temporal metadata.
 `;
 
 const INSTALLED_LEGACY_EXPLORER_DEFINITION = `---

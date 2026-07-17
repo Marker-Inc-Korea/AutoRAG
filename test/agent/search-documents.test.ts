@@ -806,14 +806,43 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(sessionSystemPrompt).not.toContain("gpt-5.6-luna");
 	});
 
-	it.each([
-		["artifacts omitted", undefined],
-		["artifacts true", true],
-	] as const)("rejects a required explorer task with %s", async (_label, artifacts) => {
+	it("credits a required explorer task when artifacts is omitted (autofilled to false)", async () => {
+		let capturedArgs: Record<string, unknown> | undefined;
 		const model = fauxModelWithExplorerArtifacts(
 			"gpt-5.6-luna",
 			resolve(FIXTURE_DIR),
-			artifacts,
+			undefined,
+			emitResults({
+				answer: "[1] omitted artifacts autofill",
+				results: [
+					{ number: 1, title: "Omitted", summary: "artifacts", evidence: [{ excerpt: "ok" }], confidence: 1 },
+				],
+				mapping: [{ number: 1, source: "/data/omitted-artifacts.txt", method: "posix", content: "ok" }],
+			}),
+		);
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			sessionFactory: fauxSessionFactory((args) => {
+				capturedArgs = args as Record<string, unknown>;
+			}),
+		});
+
+		await expect(agent.searchDocuments("omitted artifacts autofill")).resolves.toMatchObject({
+			answer: "[1] omitted artifacts autofill",
+		});
+		// The normalized args that reached execution must carry the autofilled artifacts=false.
+		expect(capturedArgs).toMatchObject({ artifacts: false });
+	});
+
+	it("rejects a required explorer task with artifacts true", async () => {
+		let explorerExecutions = 0;
+		const model = fauxModelWithExplorerArtifacts(
+			"gpt-5.6-luna",
+			resolve(FIXTURE_DIR),
+			true,
 			emitResults({
 				answer: "[1] invalid artifacts",
 				results: [
@@ -822,21 +851,62 @@ describe("AutoRAGAgent searchDocuments", () => {
 				mapping: [{ number: 1, source: "/data/invalid-artifacts.txt", method: "posix", content: "ok" }],
 			}),
 		);
-		const agent = makeAgent(model);
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			sessionFactory: fauxSessionFactory(() => {
+				explorerExecutions += 1;
+			}),
+		});
 
 		await expect(agent.searchDocuments("invalid artifacts")).rejects.toThrow(
 			"requires a successful autorag-explorer subagent call",
 		);
+		expect(explorerExecutions).toBe(0);
 	});
 
-	it.each([
-		["omitted", undefined],
-		["project", "project"],
-	] as const)("rejects a required explorer task with agentScope %s", async (_label, agentScope) => {
+	it("credits a required explorer task when agentScope is omitted (autofilled to user)", async () => {
+		let capturedArgs: Record<string, unknown> | undefined;
 		const model = fauxModelFromSubagentArgs(
 			(provider, originalQuery) => ({
 				agent: "autorag-explorer",
-				...(agentScope !== undefined ? { agentScope } : {}),
+				model: `${provider}/gpt-5.6-luna`,
+				task: explorerAssignment(originalQuery),
+				cwd: resolve(FIXTURE_DIR),
+			}),
+			emitResults({
+				answer: "[1] omitted agentScope autofill",
+				results: [
+					{ number: 1, title: "Omitted", summary: "agentScope", evidence: [{ excerpt: "ok" }], confidence: 1 },
+				],
+				mapping: [{ number: 1, source: "/data/omitted-agentScope.txt", method: "posix", content: "ok" }],
+			}),
+		);
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			sessionFactory: fauxSessionFactory((args) => {
+				capturedArgs = args as Record<string, unknown>;
+			}),
+		});
+
+		await expect(agent.searchDocuments("omitted agentScope autofill")).resolves.toMatchObject({
+			answer: "[1] omitted agentScope autofill",
+		});
+		// The normalized args that reached execution must carry the autofilled agentScope=user.
+		expect(capturedArgs).toMatchObject({ agentScope: "user" });
+	});
+
+	it("rejects a required explorer task with agentScope project", async () => {
+		let explorerExecutions = 0;
+		const model = fauxModelFromSubagentArgs(
+			(provider, originalQuery) => ({
+				agent: "autorag-explorer",
+				agentScope: "project",
 				model: `${provider}/gpt-5.6-luna`,
 				task: explorerAssignment(originalQuery),
 				cwd: resolve(FIXTURE_DIR),
@@ -850,11 +920,20 @@ describe("AutoRAGAgent searchDocuments", () => {
 				mapping: [{ number: 1, source: "/data/invalid-agent-scope.txt", method: "posix", content: "ok" }],
 			}),
 		);
-		const agent = makeAgent(model);
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			sessionFactory: fauxSessionFactory(() => {
+				explorerExecutions += 1;
+			}),
+		});
 
 		await expect(agent.searchDocuments("invalid agent scope")).rejects.toThrow(
 			"requires a successful autorag-explorer subagent call",
 		);
+		expect(explorerExecutions).toBe(0);
 	});
 
 	it("credits nested explorer tasks when artifacts is only set on the top-level invocation", async () => {
@@ -1028,6 +1107,70 @@ describe("AutoRAGAgent searchDocuments", () => {
 		);
 		expect(explorerExecutions).toBe(0);
 	});
+
+	it.each([
+		[
+			"tasks",
+			(task: Record<string, unknown>) => ({
+				agentScope: "user",
+				artifacts: false,
+				tasks: [task, { task: task.task, model: task.model, cwd: task.cwd }],
+			}),
+		],
+		[
+			"chain",
+			(task: Record<string, unknown>) => ({
+				agentScope: "user",
+				artifacts: false,
+				chain: [task, { task: task.task, model: task.model, cwd: task.cwd }],
+			}),
+		],
+		[
+			"parallel",
+			(task: Record<string, unknown>) => ({
+				agentScope: "user",
+				artifacts: false,
+				parallel: [task, { task: task.task, model: task.model, cwd: task.cwd }],
+			}),
+		],
+	] as const)(
+		"blocks a %s leaf with task/model/cwd but no agent before any child executes",
+		async (_label, createDispatch) => {
+			let explorerExecutions = 0;
+			const model = fauxModelFromSubagentArgs(
+				(provider, originalQuery) => {
+					const explorerTask = {
+						agent: "autorag-explorer",
+						model: `${provider}/gpt-5.6-luna`,
+						task: explorerAssignment(originalQuery),
+						cwd: resolve(FIXTURE_DIR),
+					};
+					return createDispatch(explorerTask);
+				},
+				emitResults({
+					answer: "[1] no-agent leaf",
+					results: [
+						{ number: 1, title: "NoAgent", summary: "leaf", evidence: [{ excerpt: "bad" }], confidence: 1 },
+					],
+					mapping: [{ number: 1, source: "/data/no-agent-leaf.txt", method: "posix", content: "bad" }],
+				}),
+			);
+			const agent = new AutoRAGAgent({
+				model,
+				searchPaths: [FIXTURE_DIR],
+				memoryPath: join(tmpDir, "memory.json"),
+				workspacePath: tmpDir,
+				sessionFactory: fauxSessionFactory(() => {
+					explorerExecutions += 1;
+				}),
+			});
+
+			await expect(agent.searchDocuments("no-agent leaf")).rejects.toThrow(
+				"requires a successful autorag-explorer subagent call",
+			);
+			expect(explorerExecutions).toBe(0);
+		},
+	);
 
 	it.each([
 		["a mismatched", "unrelated prior search"],
@@ -1589,6 +1732,16 @@ describe("AutoRAGAgent searchDocuments", () => {
 			},
 		],
 		[
+			"grounded Markdown table handoff using Path as the source column",
+			{
+				finalOutput: [
+					"| Path | Relevance | Evidence | retrievedAt | Temporal metadata |",
+					"| --- | --- | --- | --- | --- |",
+					"| /docs/a.md | strong | QZ-ORCHID appears in the validation note. | 2026-07-14 | unknown |",
+				].join("\n"),
+			},
+		],
+		[
 			"complete documented prose handoff with intervening metadata",
 			{
 				finalOutput: [
@@ -1917,9 +2070,9 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(sessionPrompt).toMatch(/original query/i);
 		expect(sessionPrompt).toMatch(/retrieval method/i);
 		expect(sessionPrompt).toMatch(/query variants/i);
-		expect(sessionPrompt).toContain("Original query:");
-		expect(sessionPrompt).toContain("Selected retrieval method:");
-		expect(sessionPrompt).toContain("Query variants:");
+		expect(sessionPrompt).toContain("<<<AUTORAG_ASSIGNMENT_V1>>>");
+		expect(sessionPrompt).toContain('"originalQuery"');
+		expect(sessionPrompt).toContain('"queryVariants"');
 		expect(sessionPrompt).toMatch(/weak.*candidate/i);
 		expect(sessionPrompt).toContain("retrievedAt");
 		expect(sessionPrompt).toMatch(/temporal metadata/i);
@@ -2187,7 +2340,8 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(prompt).toContain("Restrict search to virtual path scope /docs/policies");
 		expect(prompt).toContain(`Allowed explorer roots (normalized):\n- ${realpathSync(FIXTURE_DIR)}`);
 		expect(prompt).toMatch(/every autorag-explorer task must set an explicit cwd/i);
-		expect(prompt).toMatch(/artifacts.*exactly false/i);
+		expect(prompt).toMatch(/missing or null top-level artifacts.*safely autofilled/i);
+		expect(prompt).toMatch(/explicit wrong values remain rejected/i);
 		expect(prompt).toMatch(/one task per root/i);
 		expect(prompt).toMatch(/never use the workspace root.*outside these roots/i);
 	});
@@ -2611,5 +2765,113 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		expect(refreshSpy).not.toHaveBeenCalled();
 		expect(syncSpy).not.toHaveBeenCalled();
+	});
+
+	it("composes an existing subagent prepareArguments before AutoRAG preparation", async () => {
+		// The AutoRAG clone must call the original tool's prepareArguments first
+		// (if it exists), then pass its result into autoragPrepare. This test
+		// proves the composition order: the original prepare sets a harmless
+		// marker field, and AutoRAG preparation still normalizes the launch
+		// envelope (artifacts=false, agentScope=user) without losing the marker.
+		let capturedArgs: Record<string, unknown> | undefined;
+		let prepareMarkerSeen = false;
+
+		const model = fauxModelFromSubagentArgs(
+			(provider, originalQuery) => ({
+				agent: "autorag-explorer",
+				model: `${provider}/gpt-5.6-luna`,
+				task: explorerAssignment(originalQuery),
+				cwd: resolve(FIXTURE_DIR),
+				// Intentionally omit artifacts and agentScope so AutoRAG autofill runs.
+			}),
+			emitResults({
+				answer: "[1] composed prepare",
+				results: [
+					{ number: 1, title: "Composed", summary: "prepare", evidence: [{ excerpt: "ok" }], confidence: 1 },
+				],
+				mapping: [{ number: 1, source: "/data/composed.txt", method: "posix", content: "ok" }],
+			}),
+		);
+
+		// Session factory that adds a prepareArguments to the subagent tool.
+		// The marker proves the original prepare ran before AutoRAG preparation.
+		const composedSessionFactory: AutoRAGSessionFactory = async (options) => {
+			const explorerModel = options.explorerModel;
+			if (explorerModel === undefined) throw new Error("Test session requires an explorer model");
+			const subagentTool: AgentTool = {
+				name: "subagent",
+				label: "Subagent",
+				description: "Test explorer with prepareArguments",
+				parameters: Type.Object({
+					agent: Type.Optional(Type.String()),
+					agentScope: Type.Optional(Type.String()),
+					model: Type.Optional(Type.String()),
+					task: Type.Optional(Type.String()),
+					cwd: Type.Optional(Type.String()),
+					artifacts: Type.Optional(Type.Boolean()),
+					tasks: Type.Optional(Type.Array(Type.Unknown())),
+					chain: Type.Optional(Type.Array(Type.Unknown())),
+					parallel: Type.Optional(Type.Array(Type.Unknown())),
+				}),
+				prepareArguments: (rawArgs: unknown) => {
+					if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
+						const args = rawArgs as Record<string, unknown>;
+						// Harmless marker: supply a safe field the upstream tool would set.
+						if (!("artifacts" in args)) {
+							args.__prepareMarker = "upstream-prepare-ran";
+						}
+					}
+					return rawArgs as Record<string, unknown>;
+				},
+				execute: async (_toolCallId, params) => {
+					capturedArgs = params as Record<string, unknown>;
+					if (
+						typeof capturedArgs === "object" &&
+						capturedArgs !== null &&
+						capturedArgs.__prepareMarker === "upstream-prepare-ran"
+					) {
+						prepareMarkerSeen = true;
+					}
+					return piSubagentsExplorerResult(explorerModel.provider, {
+						finalOutput:
+							"source: /docs/a evidence: grounded retrievedAt: 2026-07-13T00:00:00.000Z temporal metadata: unknown",
+					});
+				},
+			};
+			const agent = new Agent({
+				initialState: {
+					systemPrompt: options.systemPrompt,
+					model: options.model,
+					tools: [subagentTool, ...options.tools],
+				},
+				convertToLlm: (messages) =>
+					messages.filter(
+						(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+					),
+			});
+			return {
+				agent,
+				prompt: async (prompt: string) => agent.prompt(prompt),
+				abort: async () => agent.abort(),
+				dispose: () => {},
+			};
+		};
+
+		const agent = new AutoRAGAgent({
+			model,
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			workspacePath: tmpDir,
+			sessionFactory: composedSessionFactory,
+		});
+
+		await expect(agent.searchDocuments("composed prepare")).resolves.toMatchObject({
+			answer: "[1] composed prepare",
+		});
+
+		// The original prepareArguments ran (marker survived composition).
+		expect(prepareMarkerSeen).toBe(true);
+		// AutoRAG preparation normalized the launch envelope.
+		expect(capturedArgs).toMatchObject({ artifacts: false, agentScope: "user" });
 	});
 });

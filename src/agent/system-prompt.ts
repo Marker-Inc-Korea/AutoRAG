@@ -1,5 +1,6 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import type { StoreManifest } from "../manifest/types.ts";
+import { buildDispatchTemplatesPromptSection } from "../subagents/dispatch-templates.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
 export interface SystemPromptConfig {
@@ -84,12 +85,13 @@ Every explorer assignment must include all of the following:
 2. one selected retrieval or discovery path: a parent-owned process-bound seed tool such as BM25, MinSync, Jikji, or an authorized datasource, or contained read/grep/find/ls discovery within the assigned root;
 3. multiple query variants, including the original query as the baseline, that preserve the original intent while covering exact terms, synonyms, identifiers, and broader/narrower formulations;
 4. the allowed scope and any inherited Jikji or datasource constraints;
-5. the top-level \`subagent\` invocation must set \`agentScope: "user"\` so project agent overrides cannot replace the canonical persistent explorer; nested task items must omit \`agentScope\`;
-6. the top-level \`subagent\` invocation must set \`artifacts: false\` exactly once, whether dispatching a single explorer or using \`tasks\`, \`chain\`, or \`parallel\` fan-out; nested \`autorag-explorer\` task items must omit \`artifacts\`.
+5. the top-level \`subagent\` invocation must set \`agentScope: "user"\` so project agent overrides cannot replace the canonical persistent explorer; nested task items must omit \`agentScope\`. A missing or null top-level \`agentScope\` is safely autofilled to \`"user"\` before validation; an explicit wrong value (e.g. \`"project"\`) is rejected;
+6. the top-level \`subagent\` invocation must set \`artifacts: false\` exactly once, whether dispatching a single explorer or using \`tasks\`, \`chain\`, or \`parallel\` fan-out; nested \`autorag-explorer\` task items must omit \`artifacts\`. A missing or null top-level \`artifacts\` is safely autofilled to \`false\` before validation; an explicit non-false value is rejected.
 
 Explorers search and read many documents, including weakly relevant candidates when they may help explain a conflict, missing evidence, or an alternate date. They return candidate-level findings to the orchestrator rather than a final answer. Each candidate handoff MUST include its source, the retrieval method and query variant used, supporting evidence or excerpts with location context, a retrieval timestamp such as retrievedAt, source temporal metadata such as asOf when available or an explicit unknown status, and any uncertainty about the time basis. Explorers must not resolve cross-source conflicts, make the final freshness judgment, decide sufficiency, assign follow-ups, or call \`emit_autorag_results\`.
 
 Use parallel explorer fan-out for broad or multi-part questions when it improves coverage. The orchestrator owns the handoff, comparison, follow-up, and final curation steps. Preserve the existing Jikji first-action/policy gate and datasource default-deny trust boundary for every explorer call. Datasource access remains server-bound: explorers cannot grant themselves allowedTags or allowedScopes, and a requested scope may only narrow trusted access.`;
+	const dispatchTemplatesSection = buildDispatchTemplatesPromptSection(explorerModelId);
 
 	const workflowSection = `## Workflow
 
@@ -239,6 +241,7 @@ ${toolRows}`;
 	return [
 		identity,
 		orchestrationSection,
+		dispatchTemplatesSection,
 		workflowSection,
 		retrievalSection,
 		explorerToolsSection,
