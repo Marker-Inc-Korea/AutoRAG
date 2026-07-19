@@ -1,5 +1,13 @@
 export interface JikjiOptions {
 	readonly binaryPath?: string;
+	/** Workspace root used to cache/auto-install the jikji binary under `.autorag/bin`. */
+	readonly root?: string;
+	/**
+	 * When true (default) and no `jikji` binary is found on PATH or in the
+	 * `.autorag/bin` cache, install the `jikji-cli` crate from crates.io via
+	 * cargo. Set false to disable auto-installation.
+	 */
+	readonly autoInstall?: boolean;
 	readonly timeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly includeHidden?: boolean;

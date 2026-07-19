@@ -1,6 +1,8 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
+import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
 import type {
 	JikjiFailureReason,
 	JikjiFindOptions,
@@ -29,6 +31,7 @@ type BufferState = {
 };
 
 type SpawnJikjiRequest = {
+	readonly command: string;
 	readonly options: JikjiOptions;
 	readonly args: readonly string[];
 	readonly signal?: AbortSignal;
@@ -36,13 +39,49 @@ type SpawnJikjiRequest = {
 
 export class JikjiClient {
 	private readonly options: JikjiOptions;
+	private resolvedCommand: string | undefined;
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
 	}
 
+	/**
+	 * Resolve the jikji command following the priority chain:
+	 * 1. explicit binaryPath
+	 * 2. PATH lookup for `jikji`
+	 * 3. cached `<root>/.autorag/bin/jikji`
+	 * 4. autoInstall (default true) via `cargo install jikji-cli` into the cache
+	 * 5. bare `jikji` (spawn-error degrade preserves the previous behavior)
+	 * The result is cached per client so a failed install is not retried.
+	 */
+	private async resolveCommand(): Promise<string> {
+		if (this.options.binaryPath !== undefined) return commandFor(this.options.binaryPath);
+		if (this.resolvedCommand !== undefined) return this.resolvedCommand;
+		if (lookupExecutableInPath(DEFAULT_BINARY, process.env) !== undefined) {
+			this.resolvedCommand = DEFAULT_BINARY;
+			return this.resolvedCommand;
+		}
+		if (this.options.root !== undefined) {
+			const cached = cachedJikjiBinaryPath(this.options.root);
+			if (existsSync(cached)) {
+				this.resolvedCommand = cached;
+				return this.resolvedCommand;
+			}
+			if (this.options.autoInstall !== false) {
+				const installed = await ensureJikjiBinary({ root: this.options.root });
+				if (installed.ok) {
+					this.resolvedCommand = installed.binaryPath;
+					return this.resolvedCommand;
+				}
+			}
+		}
+		this.resolvedCommand = DEFAULT_BINARY;
+		return this.resolvedCommand;
+	}
+
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
 		const result = await spawnJikji({
+			command: await this.resolveCommand(),
 			options: this.options,
 			args: buildPrepareArgs(this.options, root),
 			signal: options.signal,
@@ -66,6 +105,7 @@ export class JikjiClient {
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
 		const result = await spawnJikji({
+			command: await this.resolveCommand(),
 			options: this.options,
 			args: buildFindArgs(root, query, options),
 			signal: options.signal,
@@ -108,7 +148,7 @@ export class JikjiClient {
 function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const options = request.options;
-		const child = spawn(commandFor(options.binaryPath), request.args, {
+		const child = spawn(request.command, request.args, {
 			env: controlledEnv(options.env),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
