@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tgz
+.sisyphus/
+artifacts/
+.gjc/
+.omo/
+.DS_Store
+decks/
+.autorag/
+.pptx-venv/
+evidence/
+*.local.json
+/tmp/autorag-*.json
+/tmp/autorag-*.err
