@@ -3,14 +3,29 @@
   "version": "0.1.0",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "bin": {
-    "autorag": "./src/cli/index.ts"
+    "autorag": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "bun build src/index.ts src/cli/index.ts src/subagents/explorer-tools-extension.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "prepublishOnly": "bun run typecheck && bun run build",
+    "prepare": "bun run build",
     "test": "vitest run",
     "check": "biome check --write .",
     "typecheck": "tsc --noEmit"
