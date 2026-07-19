@@ -98,9 +98,23 @@ const EXPLORER_PI_ENV_KEYS = new Set([
 	"PI_SUBAGENT_WAIT_TOOL_ENABLED",
 ]);
 
-export const EXPLORER_TOOLS_EXTENSION_PATH = realpathSync(
-	join(dirname(runtimePath), `explorer-tools-extension${extname(runtimePath)}`),
-);
+function resolveExplorerToolsExtensionPath(): string {
+	const dir = dirname(runtimePath);
+	const candidates = [
+		// Source layout: src/subagents/explorer-tools-extension.ts next to runtime.ts
+		join(dir, `explorer-tools-extension${extname(runtimePath)}`),
+		// Bundled library entry (dist/index.js): dist/subagents/explorer-tools-extension.js
+		join(dir, "subagents", "explorer-tools-extension.js"),
+		// Bundled CLI entry (dist/cli/index.js): dist/subagents/explorer-tools-extension.js
+		join(dir, "..", "subagents", "explorer-tools-extension.js"),
+	];
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return realpathSync(candidate);
+	}
+	throw new Error(`AutoRAG explorer tools extension not found; looked in: ${candidates.join(", ")}`);
+}
+
+export const EXPLORER_TOOLS_EXTENSION_PATH = resolveExplorerToolsExtensionPath();
 
 export const AUTORAG_EXPLORER_AGENT_MANAGED_VERSION = 2;
 
