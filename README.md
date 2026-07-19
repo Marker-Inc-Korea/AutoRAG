@@ -195,6 +195,20 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 
 `autorag health` checks model/provider auth and explorer subagent setup before a search — it resolves both role models, verifies credential presence, and optionally probes a completion call per role. Use it to diagnose model, provider, auth, timeout, or subagent dispatch failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness); it does not check models or subagent dispatch. When `autorag search` fails for a model/provider/subagent reason, the error output includes a hint pointing to `autorag health`.
 
+## Installation
+
+Published as `@autorag/librarian` (dist bundled with Bun, runtime Node ≥ 24 or Bun):
+
+```bash
+bun add @autorag/librarian          # library
+bun install -g @autorag/librarian   # autorag CLI
+# or run directly from the repo:
+bun add github:NomaDamas/AutoRAG-2.0
+```
+
+Git-based installs build `dist/` via the `prepare` script and require Bun on the installing machine.
+External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** downloads a verified GitHub release asset (on by default; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) stays a manual, optional install. All of them degrade gracefully when missing — core BM25 search works without any of them.
+
 ## Quick Start
 
 ```typescript
