@@ -297,7 +297,7 @@ export class AutoRAGAgent {
 		this.parserOptions = options.parserOptions;
 
 		if (options.minSync !== false) {
-			const minSyncOpts = options.minSync ?? { autoInstall: false };
+			const minSyncOpts = options.minSync ?? { autoInstall: true };
 			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
 		}
@@ -310,7 +310,7 @@ export class AutoRAGAgent {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
 		if (options.jikji) {
-			this.jikjiClient = new JikjiClient(options.jikji);
+			this.jikjiClient = new JikjiClient({ ...options.jikji, root: this.workspaceProjectRoot });
 		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");

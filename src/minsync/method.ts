@@ -58,7 +58,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(options.root);
 		this.installer = options.installer;
-		this.autoInstall = options.autoInstall ?? false;
+		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
 	}
 

@@ -478,6 +478,7 @@ dimension = 1536
 				binaryPath: join(root, "nonexistent"),
 				root,
 				workspacePath: minsyncWorkspace,
+				autoInstall: false,
 			});
 
 			const result = await method.sync();

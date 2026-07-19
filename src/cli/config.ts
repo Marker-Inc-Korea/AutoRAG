@@ -1143,7 +1143,9 @@ export function writeDefaultConfig(
 	});
 	full.bm25 = normalizedMethods.bm25;
 	full.minSync = normalizedMethods.minSync;
-	if (partial.jikji) full.jikji = partial.jikji;
+	// Jikji find-first discovery is enabled by default for new configs; the CLI
+	// auto-installs the jikji binary on first use when cargo is available.
+	full.jikji = partial.jikji ?? {};
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
