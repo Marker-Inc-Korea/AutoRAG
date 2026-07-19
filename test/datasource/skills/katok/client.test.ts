@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -68,24 +68,15 @@ function loggedCalls(): readonly LoggedCall[] {
 		.map(parseLoggedCall);
 }
 
-function waitForLogFile(): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (existsSync(logPath)) {
-			resolve();
-			return;
-		}
-		const watcher = watch(root, (eventType, filename) => {
-			if (eventType === "rename" && filename === "katok-calls.jsonl") {
-				clearTimeout(timeout);
-				watcher.close();
-				resolve();
-			}
-		});
-		const timeout = setTimeout(() => {
-			watcher.close();
-			reject(new Error("timed out waiting for fake katok log"));
-		}, FAKE_CHILD_READY_TIMEOUT_MS);
-	});
+async function waitForLogFile(): Promise<void> {
+	// Poll for a non-empty log: watching for file creation alone races the
+	// child's write, so an early abort can kill the child before it flushes.
+	const deadline = Date.now() + FAKE_CHILD_READY_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		if (existsSync(logPath) && statSync(logPath).size > 0) return;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
+	throw new Error("timed out waiting for fake katok log");
 }
 
 function parseLoggedCall(line: string): LoggedCall {
