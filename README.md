@@ -2,6 +2,12 @@
 
 **A self-evolving librarian agent for document collections.**
 
+> [!IMPORTANT]
+> **Looking for the original AutoRAG (RAG AutoML / pipeline optimization tool)?**
+> This repository now hosts **AutoRAG 2.0**, a complete reimagining of AutoRAG as a self-evolving librarian agent. The original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data — now lives in the [`legacy/`](legacy/) directory of this repository.
+>
+> **The legacy AutoRAG is NOT abandoned.** It continues to be maintained (bug fixes, dependency updates, and PyPI releases via `pip install AutoRAG`) in maintenance mode. Existing users can keep using it exactly as before — see the [legacy README](legacy/README.md) for its documentation, and file issues in this repository as usual. New feature development is focused on AutoRAG 2.0.
+
 AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No raw grep dumps. Just answers.
 
 AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. Searches use a two-tier workflow: a parent orchestrator delegates exploration to explorer agents. The roles and providers are independently configured from the models available in the user's authenticated runtime; AutoRAG does not ship a private provider default.

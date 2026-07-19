@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # Named "build" to satisfy the repository's required status check.
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

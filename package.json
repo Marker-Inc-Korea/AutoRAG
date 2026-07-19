@@ -2,6 +2,11 @@
   "name": "@autorag/librarian",
   "version": "0.1.0",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Marker-Inc-Korea/AutoRAG.git"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

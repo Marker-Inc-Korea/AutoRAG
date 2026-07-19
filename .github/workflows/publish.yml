@@ -1,10 +1,12 @@
-name: Publish Python 🐍 distributions 📦 to PyPI
+name: Publish Legacy Python 🐍 distributions 📦 to PyPI
 permissions:
   contents: read
 
+# Legacy AutoRAG (Python) releases are tagged as legacy-v* (e.g. legacy-v0.3.10).
+# The v* tags are reserved for AutoRAG 2.0 npm releases (see release.yml).
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["legacy-v*"]
 
 jobs:
   set-version:
@@ -14,21 +16,19 @@ jobs:
 
       - name: Export tag
         id: vars
-        run: echo tag=${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
-        if: ${{ github.event_name == 'release' }}
+        run: echo tag=${GITHUB_REF#refs/tags/legacy-} >> $GITHUB_OUTPUT
 
       - name: Update project version
         run: |
-          sed -i "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" pyproject.toml
+          sed -i "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" legacy/pyproject.toml
         env:
           RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
-        if: ${{ github.event_name == 'release' }}
 
       - name: Upload updated pyproject.toml
         uses: actions/upload-artifact@v4
         with:
           name: pyproject-toml
-          path: pyproject.toml
+          path: legacy/pyproject.toml
 
   publish:
     runs-on: ubuntu-latest
@@ -50,14 +50,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pyproject-toml
+          path: legacy
       - name: Install Python dependencies
         run: uv sync --frozen --all-extras
+        working-directory: legacy
         shell: bash
 
       - name: Build package
         run: uv build
+        working-directory: legacy
 
       - name: Publish package
         run: uv publish
+        working-directory: legacy
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}

@@ -1,4 +1,7 @@
-# AutoRAG
+# AutoRAG (Legacy)
+
+> [!NOTE]
+> This is the original Python-based AutoRAG — the RAG AutoML tool for automatically finding an optimal RAG pipeline for your data. It now lives in the `legacy/` directory of the AutoRAG monorepo and is in **maintenance mode**: it continues to receive bug fixes, dependency updates, and PyPI releases (`pip install AutoRAG`), but new feature development happens in [AutoRAG 2.0](../README.md) at the repository root.
 
 RAG AutoML tool for automatically finding an optimal RAG pipeline for your data.
 

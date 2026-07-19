@@ -1,13 +1,19 @@
-name: Sphinx build
+name: Legacy Sphinx build
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "legacy/docs/**"
+      - ".github/workflows/sphinx.yml"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
     - uses: actions/checkout@v4
     - name: Install gcc
@@ -32,10 +38,10 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: html-docs
-        path: docs/build/html/
+        path: legacy/docs/build/html/
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v4
       if: github.ref == 'refs/heads/main'
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: docs/build/html
+        publish_dir: legacy/docs/build/html

@@ -1,19 +1,28 @@
-name: Unit Test
+name: Legacy Unit Test
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "legacy/**"
+      - ".github/workflows/test.yml"
   pull_request:
     branches:
       - main
+    paths:
+      - "legacy/**"
+      - ".github/workflows/test.yml"
 
 env:
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
 jobs:
-  build:
+  legacy-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: legacy
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
