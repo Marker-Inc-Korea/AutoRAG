@@ -14,9 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify legacy tag format
+        run: |
+          if ! echo "$GITHUB_REF_NAME" | grep -Eq '^legacy-v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$'; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a valid legacy release tag (expected legacy-vX.Y.Z)."
+            echo "::error::AutoRAG 2.0 npm releases use plain v* tags instead (see .github/workflows/release.yml)."
+            exit 1
+          fi
+
       - name: Export tag
         id: vars
-        run: echo tag=${GITHUB_REF#refs/tags/legacy-} >> $GITHUB_OUTPUT
+        run: echo tag=${GITHUB_REF#refs/tags/legacy-v} >> $GITHUB_OUTPUT
 
       - name: Update project version
         run: |
@@ -65,3 +73,23 @@ jobs:
         working-directory: legacy
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [publish]
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release (never marked as latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AutoRAG Legacy ${{ github.ref_name }}"
+          generate_release_notes: true
+          # Keep the repository's "Latest release" pointing at AutoRAG 2.0 (v* tags).
+          make_latest: "false"
+          body: |
+            Legacy Python AutoRAG maintenance release (`legacy/` directory).
+            Install from PyPI: `pip install AutoRAG`
+
+            > This is a maintenance release of the original RAG AutoML tool.
+            > For AutoRAG 2.0 (the librarian agent at the repository root), see the latest `v*` release.

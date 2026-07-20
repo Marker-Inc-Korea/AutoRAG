@@ -1,5 +1,8 @@
 name: Release
 
+# AutoRAG 2.0 npm releases only. Tags must be v<version> and match package.json
+# exactly (guard below). Legacy Python releases use legacy-v* tags (publish.yml)
+# and can never trigger this workflow.
 on:
   push:
     tags: ["v*"]
@@ -13,6 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$PKG_VERSION" ]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' does not match package.json version 'v$PKG_VERSION'."
+            echo "::error::AutoRAG 2.0 npm releases require the tag to equal v<package.json version>."
+            echo "::error::If you meant to release the legacy Python AutoRAG, use a 'legacy-v*' tag instead (see .github/workflows/publish.yml)."
+            exit 1
+          fi
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -40,4 +53,6 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          name: "AutoRAG ${{ github.ref_name }}"
           generate_release_notes: true
+          make_latest: "true"
