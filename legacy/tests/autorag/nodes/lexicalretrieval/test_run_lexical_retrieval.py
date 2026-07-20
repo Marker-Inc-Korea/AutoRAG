@@ -122,8 +122,12 @@ def test_run_lexical_retrieval_node(node_line_dir):
     }
     assert len(summary_df) == 1
     assert summary_df["filename"][0] == "0.parquet"
-    assert summary_df["retrieval_f1"][0] == bm25_top_k_df["retrieval_f1"].mean()
-    assert summary_df["retrieval_recall"][0] == bm25_top_k_df["retrieval_recall"].mean()
+    assert summary_df["retrieval_f1"][0] == pytest.approx(
+        float(bm25_top_k_df["retrieval_f1"].mean())
+    )
+    assert summary_df["retrieval_recall"][0] == pytest.approx(
+        float(bm25_top_k_df["retrieval_recall"].mean())
+    )
     assert summary_df["module_name"][0] == "BM25"
     assert summary_df["module_params"][0] == {"top_k": 4, "bm25_tokenizer": "gpt2"}
     assert summary_df["execution_time"][0] > 0

@@ -1,4 +1,5 @@
 import os
+import sys
 import pathlib
 import subprocess
 import tempfile
@@ -12,13 +13,14 @@ from tests.delete_tests import is_github_action
 
 root_dir = pathlib.PurePath(os.path.dirname(os.path.realpath(__file__))).parent
 resource_dir = os.path.join(root_dir, "resources")
+AUTORAG_CLI = [sys.executable, "-m", "autorag.cli"]
 
 
 def test_evaluator_cli():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as project_dir:
         result = subprocess.run(
             [
-                "autorag",
+                *AUTORAG_CLI,
                 "evaluate",
                 "--config",
                 os.path.join(resource_dir, "simple_mock.yaml"),
@@ -52,7 +54,7 @@ def test_evaluator_cli():
 def test_validator_cli():
     result = subprocess.run(
         [
-            "autorag",
+            *AUTORAG_CLI,
             "validate",
             "--config",
             os.path.join(resource_dir, "simple_mock.yaml"),
@@ -93,7 +95,7 @@ def test_extract_best_config_cli():
         output_path = os.path.join(project_dir, "best.yaml")
         subprocess.run(
             [
-                "autorag",
+                *AUTORAG_CLI,
                 "extract_best_config",
                 "--trial_path",
                 trial_path,
@@ -109,7 +111,7 @@ def test_restart_evaluate():
         original_path = os.path.join(resource_dir, "result_project")
         copytree(original_path, project_dir, dirs_exist_ok=True)
         trial_path = os.path.join(project_dir, "1")
-        subprocess.run(["autorag", "restart_evaluate", "--trial_path", trial_path])
+        subprocess.run([*AUTORAG_CLI, "restart_evaluate", "--trial_path", trial_path])
         assert os.path.exists(os.path.join(trial_path, "summary.csv"))
 
 
@@ -121,5 +123,5 @@ def test_restart_evaluate_leads_start_evaluate():
         original_path = os.path.join(resource_dir, "result_project")
         copytree(original_path, project_dir, dirs_exist_ok=True)
         trial_path = os.path.join(project_dir, "3")
-        subprocess.run(["autorag", "restart_evaluate", "--trial_path", trial_path])
+        subprocess.run([*AUTORAG_CLI, "restart_evaluate", "--trial_path", trial_path])
         assert os.path.exists(os.path.join(project_dir, "4", "summary.csv"))

@@ -78,12 +78,11 @@ def test_run_passage_filter_node(node_line_dir):
     }
     assert len(summary_df) == 1
     assert summary_df["filename"][0] == "0.parquet"
-    assert (
-        summary_df["passage_filter_retrieval_f1"][0] == result_df["retrieval_f1"].mean()
+    assert summary_df["passage_filter_retrieval_f1"][0] == pytest.approx(
+        float(result_df["retrieval_f1"].mean())
     )
-    assert (
-        summary_df["passage_filter_retrieval_recall"][0]
-        == result_df["retrieval_recall"].mean()
+    assert summary_df["passage_filter_retrieval_recall"][0] == pytest.approx(
+        float(result_df["retrieval_recall"].mean())
     )
     assert summary_df["module_name"][0] == "SimilarityThresholdCutoff"
     assert summary_df["module_params"][0] == {"threshold": 0.87}

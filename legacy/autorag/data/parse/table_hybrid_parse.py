@@ -3,7 +3,7 @@ import tempfile
 from glob import glob
 from typing import List, Tuple, Dict
 
-from PyPDF2 import PdfFileReader, PdfFileWriter
+from PyPDF2 import PdfReader, PdfWriter
 import pdfplumber
 
 from autorag.support import get_support_modules
@@ -76,8 +76,8 @@ def save_page_by_table(data_path: str, text_dir: str, table_dir: str) -> Dict[st
 	file_name = os.path.basename(data_path).split(".pdf")[0]
 
 	with open(data_path, "rb") as input_data:
-		pdf_reader = PdfFileReader(input_data)
-		num_pages = pdf_reader.getNumPages()
+		pdf_reader = PdfReader(input_data)
+		num_pages = len(pdf_reader.pages)
 
 		path_map_dict = {}
 		for page_num in range(num_pages):
@@ -100,9 +100,9 @@ def _get_output_path(
 		return os.path.join(directory, f"{file_name}_page_{page_num + 1}.pdf")
 
 
-def _save_single_page(pdf_reader: PdfFileReader, page_num: int, output_pdf_path: str):
-	pdf_writer = PdfFileWriter()
-	pdf_writer.addPage(pdf_reader.getPage(page_num))
+def _save_single_page(pdf_reader: PdfReader, page_num: int, output_pdf_path: str):
+	pdf_writer = PdfWriter()
+	pdf_writer.add_page(pdf_reader.pages[page_num])
 
 	with open(output_pdf_path, "wb") as output_file:
 		pdf_writer.write(output_file)

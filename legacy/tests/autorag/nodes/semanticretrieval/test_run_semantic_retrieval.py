@@ -121,10 +121,11 @@ def test_run_semantic_retrieval_node(node_line_dir):
     }
     assert len(summary_df) == 1
     assert summary_df["filename"][0] == "0.parquet"
-    assert summary_df["retrieval_f1"][0] == vectordb_top_k_df["retrieval_f1"].mean()
-    assert (
-        summary_df["retrieval_recall"][0]
-        == vectordb_top_k_df["retrieval_recall"].mean()
+    assert summary_df["retrieval_f1"][0] == pytest.approx(
+        float(vectordb_top_k_df["retrieval_f1"].mean())
+    )
+    assert summary_df["retrieval_recall"][0] == pytest.approx(
+        float(vectordb_top_k_df["retrieval_recall"].mean())
     )
     assert summary_df["module_name"][0] == "VectorDB"
     assert summary_df["module_params"][0] == {"top_k": 4, "vectordb": "test_mock"}
