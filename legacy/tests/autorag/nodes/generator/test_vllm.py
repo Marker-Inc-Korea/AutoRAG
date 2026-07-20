@@ -1,10 +1,12 @@
 import pytest
 import pandas as pd
 
-vllm_mock = pytest.importorskip(
-	"vllm_mock", reason="vllm_mock not compatible with installed vllm"
-)
-LLM = vllm_mock.LLM
+pytest.importorskip("vllm", reason="vllm not installed")
+try:
+	import vllm_mock
+	from vllm_mock import LLM
+except Exception as exc:  # noqa: BLE001 - skip when mock is incompatible with installed vllm
+	pytest.skip(f"vllm_mock not compatible with installed vllm: {exc}", allow_module_level=True)
 
 from autorag.nodes.generator import Vllm  # noqa: E402
 from tests.autorag.nodes.generator.test_generator_base import (  # noqa: E402
@@ -17,7 +19,6 @@ from tests.autorag.nodes.generator.test_generator_base import (  # noqa: E402
 	check_generated_tokens_chat,
 	check_generated_log_probs_chat,
 )
-
 
 def test_vllm(mocker):
 	mock_class = mocker.patch("vllm.LLM")
