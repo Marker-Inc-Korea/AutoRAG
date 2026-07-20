@@ -27,6 +27,11 @@ jobs:
             exit 1
           fi
 
+      # pi-coding-agent's grep tool needs ripgrep; preinstall it so tests
+      # don't depend on its on-demand binary download.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
