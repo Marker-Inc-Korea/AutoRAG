@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Api, completeSimple, type Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { LoadLocalAutoRAGModelsOptions } from "../../subagents/local-models.ts";
 import { createHealthSubagentProbeSession } from "../../subagents/runtime.ts";
 import {

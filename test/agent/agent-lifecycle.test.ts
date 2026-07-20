@@ -8,8 +8,8 @@ import {
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxToolCall,
-	registerFauxProvider,
 } from "@earendil-works/pi-ai";
+import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";

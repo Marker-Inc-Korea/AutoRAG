@@ -97,9 +97,9 @@ process.on("message", async (message: unknown) => {
 			tools: [],
 		});
 		try {
-			const registry = runtime.session.modelRegistry;
+			const modelRuntime = runtime.session.modelRuntime;
 			const modelsJson = String(originalReadFileSync(modelsPath, "utf8"));
-			const resolvedCredential = await registry.getApiKeyForProvider(provider);
+			const resolvedCredential = (await modelRuntime.getAuth(provider))?.auth.apiKey;
 			process.send?.(
 				{
 					type: "complete",
@@ -107,8 +107,8 @@ process.on("message", async (message: unknown) => {
 					provider,
 					orchestratorId: orchestratorModel.id,
 					explorerId: explorerModel.id,
-					resolvedOrchestrator: registry.find(provider, orchestratorModel.id) !== undefined,
-					resolvedExplorer: registry.find(provider, explorerModel.id) !== undefined,
+					resolvedOrchestrator: modelRuntime.getModel(provider, orchestratorModel.id) !== undefined,
+					resolvedExplorer: modelRuntime.getModel(provider, explorerModel.id) !== undefined,
 					resolvedCredential: resolvedCredential === credential,
 					credentialPersisted: modelsJson.includes(credential),
 				},

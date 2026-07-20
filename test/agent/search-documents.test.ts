@@ -19,8 +19,8 @@ import {
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxToolCall,
-	registerFauxProvider,
 } from "@earendil-works/pi-ai";
+import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent, type AutoRAGSessionFactory } from "../../src/agent/agent.ts";
@@ -121,7 +121,7 @@ function fauxModelFromSubagentArgs(
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
 	const model = reg.getModel();
 	reg.setResponses([
-		(context) =>
+		(context: Context) =>
 			fauxAssistantMessage([fauxToolCall("subagent", createArgs(model.provider, searchQueryFromContext(context)))], {
 				stopReason: "toolUse",
 			}),

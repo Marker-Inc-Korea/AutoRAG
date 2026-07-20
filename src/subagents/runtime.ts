@@ -16,14 +16,14 @@ import { createRequire } from "node:module";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { type Api, InMemoryCredentialStore, InMemoryModelsStore, type Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	type ExtensionFactory,
-	ModelRegistry,
+	ModelRuntime,
+	readStoredCredential,
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
@@ -254,7 +254,9 @@ export interface HealthSubagentProbeSession {
 
 function resolvePiSubagentsPackageJson(): string {
 	const require = createRequire(import.meta.url);
-	return require.resolve("pi-subagents/package.json");
+	// pi-subagents >= 0.35 no longer exports "./package.json"; resolve the root
+	// entry (".": "./index.ts") and derive the package.json path from it.
+	return join(dirname(require.resolve("pi-subagents")), "package.json");
 }
 
 function resolvePiSubagentsExtension(): string {
@@ -722,7 +724,8 @@ function mergeRoleModel(config: PiModelsConfig, roleModel: ActiveRoleModel): voi
 		...providerConfig,
 		baseUrl: baseUrl ?? model.baseUrl,
 		api: api ?? model.api,
-		apiKey: reference.apiKeyReference,
+		// "$NAME" is a Pi env-var reference; bare names are treated as literal keys.
+		apiKey: `$${reference.apiKeyReference}`,
 		models,
 	};
 }
@@ -736,12 +739,33 @@ function acquirePiModelsLock(modelsPath: string): FileLockHandle {
 	});
 }
 
-function persistPiModels(
+async function validatePiModelsFile(
+	candidatePath: string,
+	roleModels: readonly ActiveRoleModel[],
+	stage: "generated" | "persisted",
+): Promise<void> {
+	const runtime = await ModelRuntime.create({
+		credentials: new InMemoryCredentialStore(),
+		modelsPath: candidatePath,
+		modelsStore: new InMemoryModelsStore(),
+		allowModelNetwork: false,
+	});
+	const registryError = runtime.getError();
+	if (registryError) {
+		throw new Error(`AutoRAG ${stage} invalid Pi models.json: ${registryError}`);
+	}
+	for (const { reference } of roleModels) {
+		if (!runtime.getModel(reference.provider, reference.id)) {
+			throw new Error(`AutoRAG ${stage} Pi models.json without ${reference.provider}/${reference.id}`);
+		}
+	}
+}
+
+async function persistPiModels(
 	modelsPath: string,
-	authStorage: AuthStorage,
 	roleModels: readonly ActiveRoleModel[],
 	providerCredentials: ReadonlyMap<string, string>,
-): ModelRegistry {
+): Promise<void> {
 	const lock = acquirePiModelsLock(modelsPath);
 	let temporaryPath: string | undefined;
 	try {
@@ -763,29 +787,9 @@ function persistPiModels(
 
 		temporaryPath = `${modelsPath}.${randomUUID()}.tmp`;
 		writeFileSync(temporaryPath, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
-		const candidateRegistry = ModelRegistry.create(authStorage, temporaryPath);
-		const registryError = candidateRegistry.getError();
-		if (registryError) {
-			throw new Error(`AutoRAG generated invalid Pi models.json: ${registryError}`);
-		}
-		for (const { reference } of roleModels) {
-			if (!candidateRegistry.find(reference.provider, reference.id)) {
-				throw new Error(`AutoRAG generated Pi models.json without ${reference.provider}/${reference.id}`);
-			}
-		}
+		await validatePiModelsFile(temporaryPath, roleModels, "generated");
 		lock.assertOwned();
 		renameSync(temporaryPath, modelsPath);
-		const modelRegistry = ModelRegistry.create(authStorage, modelsPath);
-		const persistedRegistryError = modelRegistry.getError();
-		if (persistedRegistryError) {
-			throw new Error(`AutoRAG persisted invalid Pi models.json: ${persistedRegistryError}`);
-		}
-		for (const { reference } of roleModels) {
-			if (!modelRegistry.find(reference.provider, reference.id)) {
-				throw new Error(`AutoRAG persisted Pi models.json without ${reference.provider}/${reference.id}`);
-			}
-		}
-		return modelRegistry;
 	} finally {
 		try {
 			if (temporaryPath && existsSync(temporaryPath)) unlinkSync(temporaryPath);
@@ -895,13 +899,12 @@ export async function createMandatorySubagentSession(
 	const explorerRoleModel = activeRoleModel(explorerModel, "explorer");
 	const roleModels: readonly ActiveRoleModel[] = [orchestratorRoleModel, explorerRoleModel];
 	validateProviderApiKeyEnvNames(roleModels);
-	const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-	for (const [provider, credential] of parentProviderCredentials) authStorage.setRuntimeApiKey(provider, credential);
+	const authPath = join(agentDir, "auth.json");
 	for (const { reference } of roleModels) {
-		const credential = await authStorage.getApiKey(reference.provider);
-		if (credential === undefined) continue;
-		authStorage.setRuntimeApiKey(reference.provider, credential);
-		parentProviderCredentials.set(reference.provider, credential);
+		if (parentProviderCredentials.has(reference.provider)) continue;
+		const stored = readStoredCredential(reference.provider, authPath);
+		if (stored?.type !== "api_key" || stored.key === undefined || stored.key.length === 0) continue;
+		parentProviderCredentials.set(reference.provider, stored.key);
 	}
 	const modelsPath = join(agentDir, "models.json");
 	const explorerCredential = parentProviderCredentials.get(explorerRoleModel.reference.provider);
@@ -947,7 +950,24 @@ export async function createMandatorySubagentSession(
 		environmentIdentity: explorerEnvironmentIdentity(explorerEnvironment),
 	});
 	try {
-		const modelRegistry = persistPiModels(modelsPath, authStorage, roleModels, parentProviderCredentials);
+		await persistPiModels(modelsPath, roleModels, parentProviderCredentials);
+		const modelRuntime = await ModelRuntime.create({
+			authPath,
+			modelsPath,
+			allowModelNetwork: false,
+		});
+		const persistedRegistryError = modelRuntime.getError();
+		if (persistedRegistryError) {
+			throw new Error(`AutoRAG persisted invalid Pi models.json: ${persistedRegistryError}`);
+		}
+		for (const { reference } of roleModels) {
+			if (!modelRuntime.getModel(reference.provider, reference.id)) {
+				throw new Error(`AutoRAG persisted Pi models.json without ${reference.provider}/${reference.id}`);
+			}
+		}
+		for (const [provider, credential] of parentProviderCredentials) {
+			await modelRuntime.setRuntimeApiKey(provider, credential);
+		}
 		ensurePiSettingsFile(agentDir);
 		const settingsManager = SettingsManager.create(options.cwd, agentDir);
 		const sessionManager = SessionManager.create(
@@ -959,8 +979,7 @@ export async function createMandatorySubagentSession(
 			cwd: options.cwd,
 			agentDir,
 			model: options.model,
-			authStorage,
-			modelRegistry,
+			modelRuntime,
 			settingsManager,
 			thinkingLevel: "high",
 			resourceLoader,
@@ -979,7 +998,8 @@ export async function createMandatorySubagentSession(
 				releaseChildEnvironment();
 			}
 		};
-		const requiredTools = ["subagent", "wait"];
+		// pi-subagents >= 0.35 registers the wait tool as "subagent_wait".
+		const requiredTools = ["subagent", "subagent_wait"];
 		const allToolNames = new Set(session.getAllTools().map((tool) => tool.name));
 		const missing = requiredTools.filter((name) => !allToolNames.has(name));
 		if (missing.length > 0) {

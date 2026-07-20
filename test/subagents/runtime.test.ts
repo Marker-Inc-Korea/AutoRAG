@@ -791,7 +791,7 @@ describe("mandatory pi-subagents runtime", () => {
 				expect(config.providers["custom-role-provider"]?.models?.map((entry) => entry.id)).toContain(
 					"custom-role-model",
 				);
-				expect(config.providers["test-proxy"]?.apiKey).toBe("TEST_PROXY_API_KEY");
+				expect(config.providers["test-proxy"]?.apiKey).toBe("$TEST_PROXY_API_KEY");
 				expect(modelsJson).not.toContain(sentinel);
 				expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
 				expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
@@ -810,6 +810,9 @@ describe("mandatory pi-subagents runtime", () => {
 						HOME: process.env.HOME ?? "",
 						PATH: process.env.PATH ?? "",
 						PI_CODING_AGENT_DIR: agentDir,
+						// Pi >= 0.80 hides models whose provider auth is unconfigured from
+						// --list-models; satisfy the $TEST_PROXY_API_KEY reference.
+						TEST_PROXY_API_KEY: "pi-child-visibility-check",
 					},
 				});
 				expect(child.status).toBe(0);
@@ -858,14 +861,8 @@ describe("mandatory pi-subagents runtime", () => {
 				tools: [customTool],
 			});
 			try {
-				expect(
-					(await runtime.session.modelRegistry.authStorage.getApiKey(orchestratorModel.provider)) ===
-						orchestratorSecret,
-				).toBe(true);
-				expect(
-					(await runtime.session.modelRegistry.getApiKeyForProvider(orchestratorModel.provider)) ===
-						orchestratorSecret,
-				).toBe(true);
+				const orchestratorAuth = await runtime.session.modelRuntime.getAuth(orchestratorModel.provider);
+				expect(orchestratorAuth?.auth.apiKey === orchestratorSecret).toBe(true);
 				const persisted = `${readFileSync(join(agentDir, "models.json"), "utf8")}\n${readFileSync(
 					join(agentDir, "auth.json"),
 					"utf8",
@@ -970,8 +967,8 @@ describe("mandatory pi-subagents runtime", () => {
 				const config = JSON.parse(modelsJson) as {
 					providers: Record<string, { apiKey?: string }>;
 				};
-				expect(config.providers[orchestratorModel.provider]?.apiKey).toBe("OPENAI_API_KEY");
-				expect(config.providers["other-provider"]?.apiKey).toBe("OTHER_PROVIDER_API_KEY");
+				expect(config.providers[orchestratorModel.provider]?.apiKey).toBe("$OPENAI_API_KEY");
+				expect(config.providers["other-provider"]?.apiKey).toBe("$OTHER_PROVIDER_API_KEY");
 				for (const secret of [orchestratorSecret, explorerSecret, unlistedParentSecret]) {
 					expect(modelsJson).not.toContain(secret);
 					expect(authJson).not.toContain(secret);
@@ -1090,10 +1087,10 @@ describe("mandatory pi-subagents runtime", () => {
 			try {
 				const modelsJson = readFileSync(join(agentDir, "models.json"), "utf8");
 				const config = JSON.parse(modelsJson) as { providers: Record<string, { apiKey?: string }> };
-				expect(config.providers[roleModel.provider]?.apiKey).toBe(apiKeyEnvName);
+				expect(config.providers[roleModel.provider]?.apiKey).toBe(`$${apiKeyEnvName}`);
 				expect(modelsJson).not.toContain(existingCredential);
 				expect(modelsJson).not.toContain(runtimeCredential);
-				expect(await runtime.session.modelRegistry.getApiKeyForProvider(roleModel.provider)).toBe(
+				expect((await runtime.session.modelRuntime.getAuth(roleModel.provider))?.auth.apiKey).toBe(
 					runtimeCredential,
 				);
 				expect(process.env[apiKeyEnvName]).toBe(previousApiKey);
@@ -1445,7 +1442,7 @@ describe("mandatory pi-subagents runtime", () => {
 		});
 		try {
 			expect(runtime.session.getActiveToolNames()).toEqual(
-				expect.arrayContaining(["custom_search", "subagent", "wait"]),
+				expect.arrayContaining(["custom_search", "subagent", "subagent_wait"]),
 			);
 			expect(runtime.extensionPath).toContain("pi-subagents/src/extension/index.ts");
 		} finally {
@@ -1825,7 +1822,7 @@ describe("createHealthSubagentProbeSession", () => {
 		try {
 			const toolNames = new Set(probe.session.getAllTools().map((tool) => tool.name));
 			expect(toolNames.has("subagent")).toBe(true);
-			expect(toolNames.has("wait")).toBe(true);
+			expect(toolNames.has("subagent_wait")).toBe(true);
 			expect(probe.extensionPath).toContain("pi-subagents/src/extension/index.ts");
 		} finally {
 			probe.dispose();

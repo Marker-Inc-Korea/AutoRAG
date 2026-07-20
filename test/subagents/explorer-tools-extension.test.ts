@@ -14,10 +14,10 @@ import { basename, isAbsolute, join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
-	AuthStorage,
 	createAgentSession,
 	DefaultResourceLoader,
 	type ExtensionContext,
+	ModelRuntime,
 	SessionManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -113,7 +113,11 @@ beforeAll(async () => {
 		cwd: workspaceLink,
 		agentDir: extensionAgentDir,
 		model,
-		authStorage: AuthStorage.create(join(extensionAgentDir, "auth.json")),
+		modelRuntime: await ModelRuntime.create({
+			authPath: join(extensionAgentDir, "auth.json"),
+			modelsPath: join(extensionAgentDir, "models.json"),
+			allowModelNetwork: false,
+		}),
 		thinkingLevel: "high",
 		resourceLoader,
 		sessionManager: SessionManager.inMemory(workspaceLink),

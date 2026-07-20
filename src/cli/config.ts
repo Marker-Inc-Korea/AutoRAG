@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { type Api, findEnvKeys, getEnvApiKey, getModel, getProviders, type Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { findEnvKeys, getEnvApiKey, getModel, getProviders } from "@earendil-works/pi-ai/compat";
 import type { AutoRAGAgentOptions } from "../agent/agent.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
