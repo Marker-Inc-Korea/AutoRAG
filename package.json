@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.76.0",
-    "@earendil-works/pi-ai": "^0.76.0",
+    "@earendil-works/pi-ai": "^0.80.10",
     "@earendil-works/pi-coding-agent": "0.76.0",
     "@opendataloader/pdf": "^2.4.7",
     "@pngwasi/node-tantivy-binding": "^0.3.4",
