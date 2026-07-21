@@ -61,6 +61,17 @@ modules:
 GPT-5.6 models support reasoning efforts from `none` up to `max`
 (`none`, `low`, `medium`, `high`, `xhigh`, `max`).
 
+## Retired models
+
+Retired OpenAI models are intentionally not supported and raise a clear error
+at module initialization. This follows the official
+[OpenAI deprecations page](https://developers.openai.com/api/docs/deprecations).
+Notable removals: `gpt-5`, `gpt-5.1`, `gpt-5-mini`, `gpt-5-nano`,
+`gpt-5-chat-latest`, `chatgpt-4o-latest`, `o1-preview`, `o1-mini`, `gpt-4-32k`,
+the gpt-4 vision/turbo preview snapshots, and the `gpt-3.5-turbo-0613`/`16k`
+snapshots. Migrate to the gpt-5.4/5.5/5.6 family (e.g. `gpt-5.6-terra` as a
+drop-in for `gpt-5`/`gpt-5.1`, `gpt-5.4-mini` for `gpt-5-mini`).
+
 ## **Module Parameters**
 
 - **llm**: You can type your 'model name' at here. For example, `gpt-4-turbo-2024-04-09` or `gpt-3.5-turbo-16k`
