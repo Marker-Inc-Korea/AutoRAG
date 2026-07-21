@@ -1,5 +1,6 @@
 import logging
-from typing import List, Tuple, Union, Dict
+import re
+from typing import List, Optional, Tuple, Union, Dict
 
 import pandas as pd
 import tiktoken
@@ -16,7 +17,30 @@ from autorag.utils.util import (
 
 logger = logging.getLogger("AutoRAG")
 
+GPT_5_LONG_CONTEXT = (
+	1_050_000  # gpt-5.4 / gpt-5.5 / gpt-5.6 families share a 1.05M context window
+)
+GPT_5_BASE_CONTEXT = 272_000  # gpt-5 / gpt-5.1 baseline context window
+
+# gpt-5 family prefixes that support the 1.05M context window.
+# Used as a fallback for dated snapshots (e.g. gpt-5.6-sol-2026-07-09)
+# that are not listed explicitly in MAX_TOKEN_DICT.
+GPT_5_LONG_CONTEXT_PREFIXES = ("gpt-5.4", "gpt-5.5", "gpt-5.6")
+
 MAX_TOKEN_DICT = {  # model name : token limit
+	# gpt-5.6 family (July 2026) - 1.05M context window
+	"gpt-5.6": GPT_5_LONG_CONTEXT,  # alias routing to gpt-5.6-sol
+	"gpt-5.6-sol": GPT_5_LONG_CONTEXT,
+	"gpt-5.6-terra": GPT_5_LONG_CONTEXT,
+	"gpt-5.6-luna": GPT_5_LONG_CONTEXT,
+	"gpt-5.6-pro": GPT_5_LONG_CONTEXT,
+	# gpt-5.5 (April 2026)
+	"gpt-5.5": GPT_5_LONG_CONTEXT,
+	"gpt-5.5-pro": GPT_5_LONG_CONTEXT,
+	"gpt-5.5-chat-latest": GPT_5_LONG_CONTEXT,
+	# gpt-5.4
+	"gpt-5.4": GPT_5_LONG_CONTEXT,
+	"gpt-5.4-pro": GPT_5_LONG_CONTEXT,
 	"gpt-5.1-2025-11-13": 272_000,
 	"gpt-5.1": 272_000,
 	"gpt-5": 272_000,
@@ -71,6 +95,26 @@ MAX_TOKEN_DICT = {  # model name : token limit
 }
 
 
+def get_max_token_size(llm: str) -> Optional[int]:
+	"""Resolve the context window size for an OpenAI model name.
+
+	Exact matches in MAX_TOKEN_DICT win first. Dated snapshots
+	(e.g. ``gpt-5.6-sol-2026-07-09``) fall back to their base model entry,
+	and unknown gpt-5 family variants fall back to the family context window
+	so that newly released snapshots keep working without a code change.
+	"""
+	if llm in MAX_TOKEN_DICT:
+		return MAX_TOKEN_DICT[llm]
+	base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", llm)
+	if base in MAX_TOKEN_DICT:
+		return MAX_TOKEN_DICT[base]
+	if base.startswith(GPT_5_LONG_CONTEXT_PREFIXES):
+		return GPT_5_LONG_CONTEXT
+	if base.startswith("gpt-5"):
+		return GPT_5_BASE_CONTEXT
+	return None
+
+
 class OpenAILLM(BaseGenerator):
 	def __init__(self, project_dir, llm: str, batch: int = 16, *args, **kwargs):
 		super().__init__(project_dir, llm, *args, **kwargs)
@@ -84,14 +128,13 @@ class OpenAILLM(BaseGenerator):
 		except KeyError:
 			self.tokenizer = tiktoken.get_encoding("o200k_base")
 
-		self.max_token_size = (
-			MAX_TOKEN_DICT.get(self.llm) - 7
-		)  # because of chat token usage
-		if self.max_token_size is None:
+		max_tokens = get_max_token_size(self.llm)
+		if max_tokens is None:
 			raise ValueError(
 				f"Model {self.llm} does not supported. "
 				f"Please select the model between {list(MAX_TOKEN_DICT.keys())}"
 			)
+		self.max_token_size = max_tokens - 7  # because of chat token usage
 
 	@result_to_dataframe(["generated_texts", "generated_tokens", "generated_log_probs"])
 	def pure(self, previous_result: pd.DataFrame, *args, **kwargs):

@@ -25,16 +25,16 @@ async def make_gen_gt_openai(
 	passage_str = "\n".join(retrieval_gt_contents)
 	user_prompt = f"Text:\n<|text_start|>\n{passage_str}\n<|text_end|>\n\nQuestion:\n{query}\n\nAnswer:"
 
-	completion = await client.beta.chat.completions.parse(
+	completion = await client.responses.parse(
 		model=model_name,
-		messages=[
+		input=[
 			{"role": "system", "content": system_prompt},
 			{"role": "user", "content": user_prompt},
 		],
 		temperature=0.0,
-		response_format=Response,
+		text_format=Response,
 	)
-	response: Response = completion.choices[0].message.parsed
+	response: Response = completion.output_parsed
 	return add_gen_gt(row, response.answer)
 
 

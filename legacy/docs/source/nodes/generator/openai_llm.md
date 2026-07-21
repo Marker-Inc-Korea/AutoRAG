@@ -42,16 +42,24 @@ For using chat prompt, you have to use `chat_fstring` module for prompt maker.
 
 From v0.3.22, you can use GPT-5 models with `openai_llm` module.
 You can set reasoning efforts and verbosity level.
+The latest GPT-5 family models are supported, including the gpt-5.6 family
+(`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, and the `gpt-5.6` alias),
+`gpt-5.5`, and `gpt-5.4`, all with a 1.05M token context window.
+Dated snapshots (e.g. `gpt-5.6-sol-2026-07-09`) resolve to their base model's
+context window automatically.
 
 ```yaml
 modules:
   - module_type: openai_llm
-    llm: [ gpt-5.1 ]
+    llm: [ gpt-5.6-sol ]
     max_tokens: 512
     reasoning:
       effort: high
       verbosity: low
 ```
+
+GPT-5.6 models support reasoning efforts from `none` up to `max`
+(`none`, `low`, `medium`, `high`, `xhigh`, `max`).
 
 ## **Module Parameters**
 
