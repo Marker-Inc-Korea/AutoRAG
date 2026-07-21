@@ -425,16 +425,16 @@
 	<span class="n">passage_str</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">retrieval_gt_contents</span><span class="p">)</span>
 	<span class="n">user_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Text:</span><span class="se">\n</span><span class="s2">&lt;|text_start|&gt;</span><span class="se">\n</span><span class="si">{</span><span class="n">passage_str</span><span class="si">}</span><span class="se">\n</span><span class="s2">&lt;|text_end|&gt;</span><span class="se">\n\n</span><span class="s2">Question:</span><span class="se">\n</span><span class="si">{</span><span class="n">query</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">Answer:&quot;</span>
 
-	<span class="n">completion</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">beta</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
+	<span class="n">completion</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">responses</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
 		<span class="n">model</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span>
-		<span class="n">messages</span><span class="o">=</span><span class="p">[</span>
+		<span class="nb">input</span><span class="o">=</span><span class="p">[</span>
 			<span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;system&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">system_prompt</span><span class="p">},</span>
 			<span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="n">user_prompt</span><span class="p">},</span>
 		<span class="p">],</span>
 		<span class="n">temperature</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
-		<span class="n">response_format</span><span class="o">=</span><span class="n">Response</span><span class="p">,</span>
+		<span class="n">text_format</span><span class="o">=</span><span class="n">Response</span><span class="p">,</span>
 	<span class="p">)</span>
-	<span class="n">response</span><span class="p">:</span> <span class="n">Response</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">parsed</span>
+	<span class="n">response</span><span class="p">:</span> <span class="n">Response</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">output_parsed</span>
 	<span class="k">return</span> <span class="n">add_gen_gt</span><span class="p">(</span><span class="n">row</span><span class="p">,</span> <span class="n">response</span><span class="o">.</span><span class="n">answer</span><span class="p">)</span></div>
 
 

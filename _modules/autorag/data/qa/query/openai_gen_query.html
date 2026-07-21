@@ -427,12 +427,12 @@
 	<span class="n">user_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_str</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">Generated Question from the Text:</span><span class="se">\n</span><span class="s2">&quot;</span>
 	<span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ChatMessage</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">MessageRole</span><span class="o">.</span><span class="n">USER</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="n">user_prompt</span><span class="p">))</span>
 
-	<span class="n">completion</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">beta</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
+	<span class="n">completion</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">responses</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
 		<span class="n">model</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span>
-		<span class="n">messages</span><span class="o">=</span><span class="n">to_openai_message_dicts</span><span class="p">(</span><span class="n">messages</span><span class="p">),</span>
-		<span class="n">response_format</span><span class="o">=</span><span class="n">Response</span><span class="p">,</span>
+		<span class="nb">input</span><span class="o">=</span><span class="n">to_openai_message_dicts</span><span class="p">(</span><span class="n">messages</span><span class="p">),</span>
+		<span class="n">text_format</span><span class="o">=</span><span class="n">Response</span><span class="p">,</span>
 	<span class="p">)</span>
-	<span class="n">row</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">parsed</span><span class="o">.</span><span class="n">query</span>
+	<span class="n">row</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">output_parsed</span><span class="o">.</span><span class="n">query</span>
 	<span class="k">return</span> <span class="n">row</span></div>
 
 
@@ -498,12 +498,12 @@
 	<span class="n">user_prompt</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">context_str</span><span class="si">}</span><span class="se">\n\n</span><span class="s2">Generated two-hop Question from two Documents:</span><span class="se">\n</span><span class="s2">&quot;</span>
 	<span class="n">messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ChatMessage</span><span class="p">(</span><span class="n">role</span><span class="o">=</span><span class="n">MessageRole</span><span class="o">.</span><span class="n">USER</span><span class="p">,</span> <span class="n">content</span><span class="o">=</span><span class="n">user_prompt</span><span class="p">))</span>
 
-	<span class="n">completion</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">beta</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
+	<span class="n">completion</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">responses</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span>
 		<span class="n">model</span><span class="o">=</span><span class="n">model_name</span><span class="p">,</span>
-		<span class="n">messages</span><span class="o">=</span><span class="n">to_openai_message_dicts</span><span class="p">(</span><span class="n">messages</span><span class="p">),</span>
-		<span class="n">response_format</span><span class="o">=</span><span class="n">TwoHopIncrementalResponse</span><span class="p">,</span>
+		<span class="nb">input</span><span class="o">=</span><span class="n">to_openai_message_dicts</span><span class="p">(</span><span class="n">messages</span><span class="p">),</span>
+		<span class="n">text_format</span><span class="o">=</span><span class="n">TwoHopIncrementalResponse</span><span class="p">,</span>
 	<span class="p">)</span>
-	<span class="n">row</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">parsed</span><span class="o">.</span><span class="n">two_hop_question</span>
+	<span class="n">row</span><span class="p">[</span><span class="s2">&quot;query&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">output_parsed</span><span class="o">.</span><span class="n">two_hop_question</span>
 	<span class="k">return</span> <span class="n">row</span></div>
 
 </pre></div>

@@ -394,7 +394,8 @@
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.nodes.generator.openai_llm</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Dict</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">Dict</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">tiktoken</span>
@@ -411,16 +412,36 @@
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;AutoRAG&quot;</span><span class="p">)</span>
 
+<span class="n">GPT_5_LONG_CONTEXT</span> <span class="o">=</span> <span class="p">(</span>
+	<span class="mi">1_050_000</span>  <span class="c1"># gpt-5.4 / gpt-5.5 / gpt-5.6 families share a 1.05M context window</span>
+<span class="p">)</span>
+
+<span class="c1"># gpt-5 family prefixes that support the 1.05M context window.</span>
+<span class="c1"># Used as a fallback for dated snapshots (e.g. gpt-5.6-sol-2026-07-09)</span>
+<span class="c1"># that are not listed explicitly in MAX_TOKEN_DICT.</span>
+<span class="n">GPT_5_LONG_CONTEXT_PREFIXES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;gpt-5.4&quot;</span><span class="p">,</span> <span class="s2">&quot;gpt-5.5&quot;</span><span class="p">,</span> <span class="s2">&quot;gpt-5.6&quot;</span><span class="p">)</span>
+
+<span class="c1"># Only models still served by the OpenAI API are listed. Models retired per</span>
+<span class="c1"># https://developers.openai.com/api/docs/deprecations (gpt-5, gpt-5.1,</span>
+<span class="c1"># gpt-5-mini/nano, chatgpt-4o-latest, o1-preview, o1-mini, gpt-4-32k,</span>
+<span class="c1"># gpt-4 vision/turbo previews, gpt-3.5-turbo-0613/16k snapshots, ...)</span>
+<span class="c1"># are intentionally excluded so they fail fast with a clear error.</span>
 <span class="n">MAX_TOKEN_DICT</span> <span class="o">=</span> <span class="p">{</span>  <span class="c1"># model name : token limit</span>
-	<span class="s2">&quot;gpt-5.1-2025-11-13&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5.1&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5-pro&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5-2025-08-07&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5-chat-latest&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5-mini-2025-08-07&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5-mini&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-5-nano-2025-08-07&quot;</span><span class="p">:</span> <span class="mi">272_000</span><span class="p">,</span>
+	<span class="c1"># gpt-5.6 family (July 2026) - 1.05M context window</span>
+	<span class="s2">&quot;gpt-5.6&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>  <span class="c1"># alias routing to gpt-5.6-sol</span>
+	<span class="s2">&quot;gpt-5.6-sol&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.6-terra&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.6-luna&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.6-pro&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="c1"># gpt-5.5 (April 2026)</span>
+	<span class="s2">&quot;gpt-5.5&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.5-pro&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.5-chat-latest&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="c1"># gpt-5.4</span>
+	<span class="s2">&quot;gpt-5.4&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.4-pro&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.4-mini&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
+	<span class="s2">&quot;gpt-5.4-nano&quot;</span><span class="p">:</span> <span class="n">GPT_5_LONG_CONTEXT</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4.1&quot;</span><span class="p">:</span> <span class="mi">1_000_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4.1-2025-04-14&quot;</span><span class="p">:</span> <span class="mi">1_000_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4.1-mini&quot;</span><span class="p">:</span> <span class="mi">1_047_576</span><span class="p">,</span>
@@ -428,10 +449,6 @@
 	<span class="s2">&quot;gpt-4.1-nano&quot;</span><span class="p">:</span> <span class="mi">1_000_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4.1-nano-2025-04-14&quot;</span><span class="p">:</span> <span class="mi">1_000_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1&quot;</span><span class="p">:</span> <span class="mi">200_000</span><span class="p">,</span>
-	<span class="s2">&quot;o1-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;o1-preview-2024-09-12&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;o1-mini&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;o1-mini-2024-09-12&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1-pro&quot;</span><span class="p">:</span> <span class="mi">200_000</span><span class="p">,</span>
 	<span class="s2">&quot;o1-pro-2025-03-19&quot;</span><span class="p">:</span> <span class="mi">200_000</span><span class="p">,</span>
 	<span class="s2">&quot;o3&quot;</span><span class="p">:</span> <span class="mi">200_000</span><span class="p">,</span>
@@ -444,26 +461,36 @@
 	<span class="s2">&quot;gpt-4o&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4o-2024-08-06&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4o-2024-05-13&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;chatgpt-4o-latest&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4-turbo&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4-turbo-2024-04-09&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-turbo-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-0125-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-1106-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-vision-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-1106-vision-preview&quot;</span><span class="p">:</span> <span class="mi">128_000</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4&quot;</span><span class="p">:</span> <span class="mi">8_192</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-4-0613&quot;</span><span class="p">:</span> <span class="mi">8_192</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-32k&quot;</span><span class="p">:</span> <span class="mi">32_768</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-4-32k-0613&quot;</span><span class="p">:</span> <span class="mi">32_768</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-3.5-turbo-0125&quot;</span><span class="p">:</span> <span class="mi">16_385</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-3.5-turbo&quot;</span><span class="p">:</span> <span class="mi">16_385</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-3.5-turbo-1106&quot;</span><span class="p">:</span> <span class="mi">16_385</span><span class="p">,</span>
 	<span class="s2">&quot;gpt-3.5-turbo-instruct&quot;</span><span class="p">:</span> <span class="mi">4_096</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-3.5-turbo-16k&quot;</span><span class="p">:</span> <span class="mi">16_385</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-3.5-turbo-0613&quot;</span><span class="p">:</span> <span class="mi">4_096</span><span class="p">,</span>
-	<span class="s2">&quot;gpt-3.5-turbo-16k-0613&quot;</span><span class="p">:</span> <span class="mi">16_385</span><span class="p">,</span>
 <span class="p">}</span>
+
+
+<div class="viewcode-block" id="get_max_token_size">
+<a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.get_max_token_size">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_max_token_size</span><span class="p">(</span><span class="n">llm</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">	</span><span class="sd">&quot;&quot;&quot;Resolve the context window size for an OpenAI model name.</span>
+
+<span class="sd">	Exact matches in MAX_TOKEN_DICT win first. Dated snapshots</span>
+<span class="sd">	(e.g. ``gpt-5.6-sol-2026-07-09``) fall back to their base model entry,</span>
+<span class="sd">	and unknown gpt-5 family variants fall back to the family context window</span>
+<span class="sd">	so that newly released snapshots keep working without a code change.</span>
+<span class="sd">	&quot;&quot;&quot;</span>
+	<span class="k">if</span> <span class="n">llm</span> <span class="ow">in</span> <span class="n">MAX_TOKEN_DICT</span><span class="p">:</span>
+		<span class="k">return</span> <span class="n">MAX_TOKEN_DICT</span><span class="p">[</span><span class="n">llm</span><span class="p">]</span>
+	<span class="n">base</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;-\d</span><span class="si">{4}</span><span class="s2">-\d</span><span class="si">{2}</span><span class="s2">-\d</span><span class="si">{2}</span><span class="s2">$&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">llm</span><span class="p">)</span>
+	<span class="k">if</span> <span class="n">base</span> <span class="ow">in</span> <span class="n">MAX_TOKEN_DICT</span><span class="p">:</span>
+		<span class="k">return</span> <span class="n">MAX_TOKEN_DICT</span><span class="p">[</span><span class="n">base</span><span class="p">]</span>
+	<span class="k">if</span> <span class="n">base</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">GPT_5_LONG_CONTEXT_PREFIXES</span><span class="p">):</span>
+		<span class="k">return</span> <span class="n">GPT_5_LONG_CONTEXT</span>
+	<span class="k">return</span> <span class="kc">None</span></div>
+
 
 
 <div class="viewcode-block" id="OpenAILLM">
@@ -481,14 +508,13 @@
 		<span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
 			<span class="bp">self</span><span class="o">.</span><span class="n">tokenizer</span> <span class="o">=</span> <span class="n">tiktoken</span><span class="o">.</span><span class="n">get_encoding</span><span class="p">(</span><span class="s2">&quot;o200k_base&quot;</span><span class="p">)</span>
 
-		<span class="bp">self</span><span class="o">.</span><span class="n">max_token_size</span> <span class="o">=</span> <span class="p">(</span>
-			<span class="n">MAX_TOKEN_DICT</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="p">)</span> <span class="o">-</span> <span class="mi">7</span>
-		<span class="p">)</span>  <span class="c1"># because of chat token usage</span>
-		<span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_token_size</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+		<span class="n">max_tokens</span> <span class="o">=</span> <span class="n">get_max_token_size</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="p">)</span>
+		<span class="k">if</span> <span class="n">max_tokens</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
 			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
 				<span class="sa">f</span><span class="s2">&quot;Model </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">llm</span><span class="si">}</span><span class="s2"> does not supported. &quot;</span>
 				<span class="sa">f</span><span class="s2">&quot;Please select the model between </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">MAX_TOKEN_DICT</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">&quot;</span>
 			<span class="p">)</span>
+		<span class="bp">self</span><span class="o">.</span><span class="n">max_token_size</span> <span class="o">=</span> <span class="n">max_tokens</span> <span class="o">-</span> <span class="mi">7</span>  <span class="c1"># because of chat token usage</span>
 
 <div class="viewcode-block" id="OpenAILLM.pure">
 <a class="viewcode-back" href="../../../../api_spec/autorag.nodes.generator.html#autorag.nodes.generator.openai_llm.OpenAILLM.pure">[docs]</a>

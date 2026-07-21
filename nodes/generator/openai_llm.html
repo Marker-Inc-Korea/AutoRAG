@@ -435,16 +435,34 @@ For using chat prompt, you have to use <code class="docutils literal notranslate
 <section id="support-gpt-5-models">
 <h2>Support GPT-5 models<a class="headerlink" href="#support-gpt-5-models" title="Link to this heading">¶</a></h2>
 <p>From v0.3.22, you can use GPT-5 models with <code class="docutils literal notranslate"><span class="pre">openai_llm</span></code> module.
-You can set reasoning efforts and verbosity level.</p>
+You can set reasoning efforts and verbosity level.
+The latest GPT-5 family models are supported, including the gpt-5.6 family
+(<code class="docutils literal notranslate"><span class="pre">gpt-5.6-sol</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-5.6-terra</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-5.6-luna</span></code>, and the <code class="docutils literal notranslate"><span class="pre">gpt-5.6</span></code> alias),
+<code class="docutils literal notranslate"><span class="pre">gpt-5.5</span></code>, and <code class="docutils literal notranslate"><span class="pre">gpt-5.4</span></code>, all with a 1.05M token context window.
+Dated snapshots (e.g. <code class="docutils literal notranslate"><span class="pre">gpt-5.6-sol-2026-07-09</span></code>) resolve to their base model’s
+context window automatically.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">modules</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_llm</span>
-<span class="w">    </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">gpt-5.1</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">gpt-5.6-sol</span><span class="w"> </span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="nt">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
 <span class="w">    </span><span class="nt">reasoning</span><span class="p">:</span>
 <span class="w">      </span><span class="nt">effort</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">high</span>
 <span class="w">      </span><span class="nt">verbosity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">low</span>
 </pre></div>
 </div>
+<p>GPT-5.6 models support reasoning efforts from <code class="docutils literal notranslate"><span class="pre">none</span></code> up to <code class="docutils literal notranslate"><span class="pre">max</span></code>
+(<code class="docutils literal notranslate"><span class="pre">none</span></code>, <code class="docutils literal notranslate"><span class="pre">low</span></code>, <code class="docutils literal notranslate"><span class="pre">medium</span></code>, <code class="docutils literal notranslate"><span class="pre">high</span></code>, <code class="docutils literal notranslate"><span class="pre">xhigh</span></code>, <code class="docutils literal notranslate"><span class="pre">max</span></code>).</p>
+</section>
+<section id="retired-models">
+<h2>Retired models<a class="headerlink" href="#retired-models" title="Link to this heading">¶</a></h2>
+<p>Retired OpenAI models are intentionally not supported and raise a clear error
+at module initialization. This follows the official
+<a class="reference external" href="https://developers.openai.com/api/docs/deprecations">OpenAI deprecations page</a>.
+Notable removals: <code class="docutils literal notranslate"><span class="pre">gpt-5</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-5.1</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-5-mini</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-5-nano</span></code>,
+<code class="docutils literal notranslate"><span class="pre">gpt-5-chat-latest</span></code>, <code class="docutils literal notranslate"><span class="pre">chatgpt-4o-latest</span></code>, <code class="docutils literal notranslate"><span class="pre">o1-preview</span></code>, <code class="docutils literal notranslate"><span class="pre">o1-mini</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-4-32k</span></code>,
+the gpt-4 vision/turbo preview snapshots, and the <code class="docutils literal notranslate"><span class="pre">gpt-3.5-turbo-0613</span></code>/<code class="docutils literal notranslate"><span class="pre">16k</span></code>
+snapshots. Migrate to the gpt-5.4/5.5/5.6 family (e.g. <code class="docutils literal notranslate"><span class="pre">gpt-5.6-terra</span></code> as a
+drop-in for <code class="docutils literal notranslate"><span class="pre">gpt-5</span></code>/<code class="docutils literal notranslate"><span class="pre">gpt-5.1</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-5.4-mini</span></code> for <code class="docutils literal notranslate"><span class="pre">gpt-5-mini</span></code>).</p>
 </section>
 <section id="module-parameters">
 <h2><strong>Module Parameters</strong><a class="headerlink" href="#module-parameters" title="Link to this heading">¶</a></h2>
@@ -535,6 +553,7 @@ without <code class="docutils literal notranslate"><span class="pre">n</span></c
 </li>
 <li><a class="reference internal" href="#support-chat-prompt">Support chat prompt</a></li>
 <li><a class="reference internal" href="#support-gpt-5-models">Support GPT-5 models</a></li>
+<li><a class="reference internal" href="#retired-models">Retired models</a></li>
 <li><a class="reference internal" href="#module-parameters"><strong>Module Parameters</strong></a></li>
 <li><a class="reference internal" href="#example-config-yaml"><strong>Example config.yaml</strong></a></li>
 </ul>

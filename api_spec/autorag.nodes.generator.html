@@ -522,6 +522,16 @@
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="autorag.nodes.generator.openai_llm.get_max_token_size">
+<span class="sig-prename descclassname"><span class="pre">autorag.nodes.generator.openai_llm.</span></span><span class="sig-name descname"><span class="pre">get_max_token_size</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">llm</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span></span><a class="reference internal" href="../_modules/autorag/nodes/generator/openai_llm.html#get_max_token_size"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.generator.openai_llm.get_max_token_size" title="Link to this definition">¶</a></dt>
+<dd><p>Resolve the context window size for an OpenAI model name.</p>
+<p>Exact matches in MAX_TOKEN_DICT win first. Dated snapshots
+(e.g. <code class="docutils literal notranslate"><span class="pre">gpt-5.6-sol-2026-07-09</span></code>) fall back to their base model entry,
+and unknown gpt-5 family variants fall back to the family context window
+so that newly released snapshots keep working without a code change.</p>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="autorag.nodes.generator.openai_llm.parse_prompt">
 <span class="sig-prename descclassname"><span class="pre">autorag.nodes.generator.openai_llm.</span></span><span class="sig-name descname"><span class="pre">parse_prompt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prompt</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">Dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/autorag/nodes/generator/openai_llm.html#parse_prompt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#autorag.nodes.generator.openai_llm.parse_prompt" title="Link to this definition">¶</a></dt>
 <dd></dd></dl>
@@ -672,6 +682,7 @@ It contains previous result columns and generator node’s result columns.</p>
 <li><a class="reference internal" href="#autorag.nodes.generator.openai_llm.OpenAILLM.structured_output"><code class="docutils literal notranslate"><span class="pre">OpenAILLM.structured_output()</span></code></a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#autorag.nodes.generator.openai_llm.get_max_token_size"><code class="docutils literal notranslate"><span class="pre">get_max_token_size()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.generator.openai_llm.parse_prompt"><code class="docutils literal notranslate"><span class="pre">parse_prompt()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.generator.openai_llm.tiktoken_messages_to_string"><code class="docutils literal notranslate"><span class="pre">tiktoken_messages_to_string()</span></code></a></li>
 <li><a class="reference internal" href="#autorag.nodes.generator.openai_llm.truncate_by_token"><code class="docutils literal notranslate"><span class="pre">truncate_by_token()</span></code></a></li>
