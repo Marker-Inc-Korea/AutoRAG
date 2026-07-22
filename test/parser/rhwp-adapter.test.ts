@@ -1,5 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRhwpExtractor, type RhwpDocumentApi, type RhwpRuntime } from "../../src/parser/rhwp-adapter.ts";
+
+const defaultRuntimeMocks = vi.hoisted(() => ({
+	initialize: vi.fn<() => Promise<void>>(),
+	open: vi.fn(),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => ({
+	...(await importOriginal<typeof import("node:fs/promises")>()),
+	readFile: vi.fn(async () => new Uint8Array([0])),
+}));
+
+vi.mock("@rhwp/core", () => ({
+	default: defaultRuntimeMocks.initialize,
+	HwpDocument: function MockHwpDocument(bytes: Uint8Array) {
+		return defaultRuntimeMocks.open(bytes);
+	},
+}));
+
+import {
+	createRhwpExtractor,
+	extractHwpWithRhwp,
+	type RhwpDocumentApi,
+	type RhwpRuntime,
+} from "../../src/parser/rhwp-adapter.ts";
 
 function createFakeDocument(overrides: Partial<RhwpDocumentApi> = {}): RhwpDocumentApi {
 	return {
@@ -49,6 +72,31 @@ describe("createRhwpExtractor cleanup", () => {
 });
 
 describe("createRhwpExtractor initialization", () => {
+	it("shares fulfilled default initialization across convenience calls and retries rejection", async () => {
+		const documents = [createFakeDocument(), createFakeDocument()];
+		defaultRuntimeMocks.initialize
+			.mockRejectedValueOnce(new Error("default initialization failure"))
+			.mockResolvedValue(undefined);
+		defaultRuntimeMocks.open.mockImplementation(() => {
+			const document = documents.shift();
+			if (document === undefined) throw new Error("unexpected default runtime open");
+			return document;
+		});
+
+		await expect(extractHwpWithRhwp(new Uint8Array([1]))).rejects.toThrow("default initialization failure");
+		await expect(extractHwpWithRhwp(new Uint8Array([2]))).resolves.toMatchObject({
+			paragraphs: [{ text: "body" }],
+		});
+		await expect(extractHwpWithRhwp(new Uint8Array([3]), { maxCharacters: 3 })).rejects.toMatchObject({
+			code: "HWP_EXTRACTION_BUDGET_EXCEEDED",
+			limit: "maxCharacters",
+		});
+
+		expect(defaultRuntimeMocks.initialize).toHaveBeenCalledTimes(2);
+		expect(defaultRuntimeMocks.open).toHaveBeenCalledTimes(2);
+		expect(documents).toHaveLength(0);
+	});
+
 	it("initializes a runtime only once after initialization succeeds", async () => {
 		const document = createFakeDocument();
 		const runtime = createRuntime(document);
@@ -58,6 +106,15 @@ describe("createRhwpExtractor initialization", () => {
 		await extractor(new Uint8Array([2]));
 
 		expect(runtime.initialize).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps initialization caches isolated between injected-runtime extractors", async () => {
+		const runtime = createRuntime(createFakeDocument());
+
+		await createRhwpExtractor(runtime)(new Uint8Array([1]));
+		await createRhwpExtractor(runtime)(new Uint8Array([2]));
+
+		expect(runtime.initialize).toHaveBeenCalledTimes(2);
 	});
 
 	it("clears a rejected initialization so the next extraction can retry", async () => {
@@ -188,6 +245,16 @@ describe("createRhwpExtractor table traversal and validation", () => {
 		});
 
 		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(/cellCount/);
+	});
+
+	it("rejects JSON numeric overflow in table dimensions before cell traversal", async () => {
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => topLevelTableLayout),
+			getTableDimensions: vi.fn(() => '{"rowCount":1e309,"colCount":1,"cellCount":1}'),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(/rowCount/);
+		expect(document.getCellInfo).not.toHaveBeenCalled();
 	});
 
 	it("rejects a non-finite numeric count", async () => {

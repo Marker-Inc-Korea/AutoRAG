@@ -90,22 +90,17 @@ const defaultRhwpRuntime: RhwpRuntime = {
 	},
 };
 
+const initializeDefaultRhwpRuntime = createRuntimeInitializer(defaultRhwpRuntime);
+
 export function createRhwpExtractor(
 	runtime: RhwpRuntime = defaultRhwpRuntime,
 	overrides: HwpExtractionLimits = {},
 ): HwpExtractor {
 	const limits = resolveLimits(overrides);
-	let initialization: Promise<void> | undefined;
+	const initialize = runtime === defaultRhwpRuntime ? initializeDefaultRhwpRuntime : createRuntimeInitializer(runtime);
 
 	return async (bytes) => {
-		if (initialization === undefined) {
-			const attempt = runtime.initialize();
-			initialization = attempt.catch((error: unknown) => {
-				initialization = undefined;
-				throw error;
-			});
-		}
-		await initialization;
+		await initialize();
 
 		const document = runtime.open(bytes);
 		try {
@@ -118,6 +113,20 @@ export function createRhwpExtractor(
 
 export function extractHwpWithRhwp(bytes: Uint8Array, limits: HwpExtractionLimits = {}): Promise<HwpExtractedDocument> {
 	return createRhwpExtractor(defaultRhwpRuntime, limits)(bytes);
+}
+
+function createRuntimeInitializer(runtime: RhwpRuntime): () => Promise<void> {
+	let initialization: Promise<void> | undefined;
+	return () => {
+		if (initialization === undefined) {
+			const attempt = runtime.initialize();
+			initialization = attempt.catch((error: unknown) => {
+				initialization = undefined;
+				throw error;
+			});
+		}
+		return initialization;
+	};
 }
 
 function extractDocument(document: RhwpDocumentApi, limits: EffectiveHwpExtractionLimits): HwpExtractedDocument {
