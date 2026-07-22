@@ -415,6 +415,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.evaluation.metric.util</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 	<span class="n">autorag_metric_loop</span><span class="p">,</span>
 	<span class="n">calculate_cosine_similarity</span><span class="p">,</span>
+	<span class="n">remove_think_tags</span> <span class="k">as</span> <span class="n">_remove_think_tags</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.generator</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAILLM</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.nodes.generator.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseGenerator</span>
@@ -434,7 +435,11 @@
 <a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.generation.huggingface_evaluate">[docs]</a>
 <span class="nd">@convert_inputs_to_list</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">huggingface_evaluate</span><span class="p">(</span>
-	<span class="n">instance</span><span class="p">,</span> <span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span> <span class="o">**</span><span class="n">kwargs</span>
+	<span class="n">instance</span><span class="p">,</span>
+	<span class="n">key</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+	<span class="n">metric_inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">MetricInput</span><span class="p">],</span>
+	<span class="n">remove_think_tags</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+	<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Compute huggingface evaluate metric.</span>
@@ -447,6 +452,8 @@
 <span class="sd">	&quot;&quot;&quot;</span>
 
 	<span class="k">def</span><span class="w"> </span><span class="nf">compute_score</span><span class="p">(</span><span class="n">gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+		<span class="k">if</span> <span class="n">remove_think_tags</span><span class="p">:</span>
+			<span class="n">pred</span> <span class="o">=</span> <span class="n">_remove_think_tags</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span>
 		<span class="k">return</span> <span class="nb">max</span><span class="p">(</span>
 			<span class="nb">list</span><span class="p">(</span>
 				<span class="nb">map</span><span class="p">(</span>
@@ -596,6 +603,7 @@
 	<span class="n">max_ngram_order</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
 	<span class="n">trg_lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">,</span>
 	<span class="n">effective_order</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+	<span class="n">remove_think_tags</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 	<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
@@ -620,14 +628,15 @@
 		<span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
 	<span class="p">)</span>
 
-	<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span>
-		<span class="nb">map</span><span class="p">(</span>
-			<span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">bleu_instance</span><span class="o">.</span><span class="n">sentence_score</span><span class="p">(</span>
-				<span class="n">x</span><span class="o">.</span><span class="n">generated_texts</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">generation_gt</span>
-			<span class="p">)</span><span class="o">.</span><span class="n">score</span><span class="p">,</span>
-			<span class="n">metric_inputs</span><span class="p">,</span>
-		<span class="p">)</span>
-	<span class="p">)</span>
+	<span class="k">def</span><span class="w"> </span><span class="nf">compute_score</span><span class="p">(</span><span class="n">metric_input</span><span class="p">:</span> <span class="n">MetricInput</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+		<span class="n">prediction</span> <span class="o">=</span> <span class="n">metric_input</span><span class="o">.</span><span class="n">generated_texts</span>
+		<span class="k">if</span> <span class="n">remove_think_tags</span><span class="p">:</span>
+			<span class="n">prediction</span> <span class="o">=</span> <span class="n">_remove_think_tags</span><span class="p">(</span><span class="n">prediction</span><span class="p">)</span>
+		<span class="k">return</span> <span class="n">bleu_instance</span><span class="o">.</span><span class="n">sentence_score</span><span class="p">(</span>
+			<span class="n">prediction</span><span class="p">,</span> <span class="n">metric_input</span><span class="o">.</span><span class="n">generation_gt</span>
+		<span class="p">)</span><span class="o">.</span><span class="n">score</span>
+
+	<span class="n">result</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="n">compute_score</span><span class="p">,</span> <span class="n">metric_inputs</span><span class="p">))</span>
 	<span class="k">return</span> <span class="n">result</span></div>
 
 
@@ -640,6 +649,7 @@
 	<span class="n">alpha</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.9</span><span class="p">,</span>
 	<span class="n">beta</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
 	<span class="n">gamma</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.5</span><span class="p">,</span>
+	<span class="n">remove_think_tags</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Compute meteor score for generation.</span>
@@ -660,6 +670,7 @@
 		<span class="n">meteor_instance</span><span class="p">,</span>
 		<span class="s2">&quot;meteor&quot;</span><span class="p">,</span>
 		<span class="n">metric_inputs</span><span class="p">,</span>
+		<span class="n">remove_think_tags</span><span class="o">=</span><span class="n">remove_think_tags</span><span class="p">,</span>
 		<span class="n">alpha</span><span class="o">=</span><span class="n">alpha</span><span class="p">,</span>
 		<span class="n">beta</span><span class="o">=</span><span class="n">beta</span><span class="p">,</span>
 		<span class="n">gamma</span><span class="o">=</span><span class="n">gamma</span><span class="p">,</span>
@@ -678,6 +689,7 @@
 	<span class="n">use_stemmer</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 	<span class="n">split_summaries</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 	<span class="n">batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">(),</span>
+	<span class="n">remove_think_tags</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
 <span class="w">	</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">	Compute rouge score for generation.</span>
@@ -708,6 +720,8 @@
 	<span class="p">)</span>
 
 	<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">compute</span><span class="p">(</span><span class="n">gt</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">pred</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+		<span class="k">if</span> <span class="n">remove_think_tags</span><span class="p">:</span>
+			<span class="n">pred</span> <span class="o">=</span> <span class="n">_remove_think_tags</span><span class="p">(</span><span class="n">pred</span><span class="p">)</span>
 		<span class="k">return</span> <span class="n">rouge_instance</span><span class="o">.</span><span class="n">score_multi</span><span class="p">(</span><span class="n">targets</span><span class="o">=</span><span class="n">gt</span><span class="p">,</span> <span class="n">prediction</span><span class="o">=</span><span class="n">pred</span><span class="p">)[</span>
 			<span class="n">rouge_type</span>
 		<span class="p">]</span><span class="o">.</span><span class="n">fmeasure</span>
@@ -901,8 +915,11 @@
 	<span class="n">lang</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;en&quot;</span><span class="p">,</span>
 	<span class="n">batch</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">128</span><span class="p">,</span>
 	<span class="n">n_threads</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">(),</span>
+	<span class="n">remove_think_tags</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span>
 	<span class="n">generations</span> <span class="o">=</span> <span class="p">[</span><span class="n">metric_input</span><span class="o">.</span><span class="n">generated_texts</span> <span class="k">for</span> <span class="n">metric_input</span> <span class="ow">in</span> <span class="n">metric_inputs</span><span class="p">]</span>
+	<span class="k">if</span> <span class="n">remove_think_tags</span><span class="p">:</span>
+		<span class="n">generations</span> <span class="o">=</span> <span class="p">[</span><span class="n">_remove_think_tags</span><span class="p">(</span><span class="n">generation</span><span class="p">)</span> <span class="k">for</span> <span class="n">generation</span> <span class="ow">in</span> <span class="n">generations</span><span class="p">]</span>
 	<span class="n">generation_gt</span> <span class="o">=</span> <span class="p">[</span><span class="n">metric_input</span><span class="o">.</span><span class="n">generation_gt</span> <span class="k">for</span> <span class="n">metric_input</span> <span class="ow">in</span> <span class="n">metric_inputs</span><span class="p">]</span>
 	<span class="n">evaluator</span> <span class="o">=</span> <span class="n">evaluate</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;bertscore&quot;</span><span class="p">)</span>
 

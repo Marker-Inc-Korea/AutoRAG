@@ -395,12 +395,25 @@
         <article role="main" id="furo-main-content">
           <h1>Source code for autorag.evaluation.metric.util</h1><div class="highlight"><pre>
 <span></span><span class="kn">import</span><span class="w"> </span><span class="nn">functools</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.schema.metricinput</span><span class="w"> </span><span class="kn">import</span> <span class="n">MetricInput</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">autorag.utils.util</span><span class="w"> </span><span class="kn">import</span> <span class="n">convert_inputs_to_list</span>
+
+<span class="n">_THINK_TAG_PATTERN</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+	<span class="sa">r</span><span class="s2">&quot;&lt;think(?:ing)?&gt;[\s\S]*?&lt;/think(?:ing)?&gt;\s*&quot;</span><span class="p">,</span> <span class="n">re</span><span class="o">.</span><span class="n">IGNORECASE</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="remove_think_tags">
+<a class="viewcode-back" href="../../../../api_spec/autorag.evaluation.metric.html#autorag.evaluation.metric.util.remove_think_tags">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">remove_think_tags</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">	</span><span class="sd">&quot;&quot;&quot;Remove complete ``&lt;think&gt;`` or ``&lt;thinking&gt;`` reasoning blocks.&quot;&quot;&quot;</span>
+	<span class="k">return</span> <span class="n">_THINK_TAG_PATTERN</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span></div>
+
 
 
 <div class="viewcode-block" id="calculate_cosine_similarity">

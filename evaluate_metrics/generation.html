@@ -515,6 +515,18 @@ presented.</p></li>
 Cosine Similarity for each token-pair, and weight each token with IDF.</p>
 </section>
 </section>
+<section id="removing-reasoning-think-tags">
+<h2>Removing reasoning (<code class="docutils literal notranslate"><span class="pre">&lt;think&gt;</span></code>) tags<a class="headerlink" href="#removing-reasoning-think-tags" title="Link to this heading">¶</a></h2>
+<p>Reasoning models can include internal reasoning inside <code class="docutils literal notranslate"><span class="pre">&lt;think&gt;...&lt;/think&gt;</span></code> or
+<code class="docutils literal notranslate"><span class="pre">&lt;thinking&gt;...&lt;/thinking&gt;</span></code> blocks. BLEU, ROUGE, METEOR, and BERTScore remove
+complete reasoning blocks by default so they score the final answer rather than
+the hidden chain of thought.</p>
+<p>Set <code class="docutils literal notranslate"><span class="pre">remove_think_tags:</span> <span class="pre">false</span></code> on a metric to score the raw output instead:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">metric_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rouge</span>
+<span class="w">  </span><span class="nt">remove_think_tags</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</pre></div>
+</div>
+</section>
 </section>
 
         </article>
@@ -602,6 +614,7 @@ Cosine Similarity for each token-pair, and weight each token with IDF.</p>
 <li><a class="reference internal" href="#id5">📌Definition</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#removing-reasoning-think-tags">Removing reasoning (<code class="docutils literal notranslate"><span class="pre">&lt;think&gt;</span></code>) tags</a></li>
 </ul>
 </li>
 </ul>

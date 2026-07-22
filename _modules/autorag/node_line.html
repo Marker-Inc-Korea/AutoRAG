@@ -451,6 +451,10 @@
 			<span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">node_line_dir</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">node_type</span><span class="p">,</span> <span class="s2">&quot;summary.csv&quot;</span><span class="p">)</span>
 		<span class="p">)</span>
 		<span class="n">best_node_row</span> <span class="o">=</span> <span class="n">node_summary_df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">node_summary_df</span><span class="p">[</span><span class="s2">&quot;is_best&quot;</span><span class="p">]]</span>
+		<span class="k">if</span> <span class="n">best_node_row</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+			<span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+				<span class="sa">f</span><span class="s2">&quot;No best module found for node type </span><span class="si">{</span><span class="n">node</span><span class="o">.</span><span class="n">node_type</span><span class="si">}</span><span class="s2"> in summary file.&quot;</span>
+			<span class="p">)</span>
 		<span class="n">summary_lst</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
 			<span class="p">{</span>
 				<span class="s2">&quot;node_type&quot;</span><span class="p">:</span> <span class="n">node</span><span class="o">.</span><span class="n">node_type</span><span class="p">,</span>
