@@ -10,6 +10,7 @@
         "@earendil-works/pi-coding-agent": "0.80.10",
         "@opendataloader/pdf": "^2.4.7",
         "@pngwasi/node-tantivy-binding": "^0.3.4",
+        "@rhwp/core": "0.7.19",
         "chardet": "^2.2.0",
         "fast-xml-parser": "^5.9.3",
         "iconv-lite": "^0.7.2",
@@ -401,6 +402,8 @@
     "@radix-ui/react-visually-hidden": ["@radix-ui/react-visually-hidden@1.2.7", "", { "dependencies": { "@radix-ui/react-primitive": "2.1.7" }, "peerDependencies": { "@types/react": "*", "@types/react-dom": "*", "react": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc", "react-dom": "^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc" } }, "sha512-1wNZBggTDK3GRuuQ6nP4k2yi7a6l7I5qbMPbZcRsrGsGVead/f/d5FhEzUvqFs0bcrDLx7n1zKQ3JvLR6whaaw=="],
 
     "@radix-ui/rect": ["@radix-ui/rect@1.1.2", "", {}, "sha512-xnXE7wG13PI+cxieVssYXlQJuYVRhH9NBoxt3KNwzghDIA69GMm7d4wXRouHIYjE+KvS6U/MsMO73NdS2MH9ZA=="],
+
+    "@rhwp/core": ["@rhwp/core@0.7.19", "", {}, "sha512-rc0sRpYQowavYgteFXkqCkuiXTZJa2C8fl5toq01y20SVtiIRFKGVcATk6+jHOuCjK0l81fGLSZaEIBTwKXkAQ=="],
 
     "@rollup/rollup-android-arm-eabi": ["@rollup/rollup-android-arm-eabi@4.60.4", "", { "os": "android", "cpu": "arm" }, "sha512-F5QXMSiFebS9hKZj02XhWLLnRpJ3B3AROP0tWbFBSj+6kCbg5m9j5JoHKd4mmSVy5mS/IMQloYgYxCuJC0fxEQ=="],
 
