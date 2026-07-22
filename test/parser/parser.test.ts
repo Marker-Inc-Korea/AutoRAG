@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
 	createDefaultParserRegistry,
@@ -208,6 +209,22 @@ describe("ParserRegistry", () => {
 			markdown: expect.stringContaining("Registry HWP marker"),
 		});
 		expect(receivedBytes).toBe(bytes);
+	});
+
+	it("parses a real HWP5 body and table", async () => {
+		const bytes = await readFile(new URL("../fixtures/hwp5/minimal-body-table.hwp", import.meta.url));
+		const registry = createDefaultParserRegistry();
+		const parser = registry.getForVirtualPath("/docs/minimal-body-table.hwp");
+
+		expect(parser).toBeInstanceOf(HwpParser);
+		const parsed = await parser?.parse({ virtualPath: "/docs/minimal-body-table.hwp", bytes });
+
+		expect(parsed?.markdown).toContain("편집 탭 – 표");
+		expect(parsed?.markdown).toContain("Row 1: 제목 | 담당자 | 세부 내용");
+		expect(parsed?.markdown).toContain("제목");
+		expect(parsed?.markdown).toContain("담당자");
+		expect(parsed?.markdown).toContain("세부 내용");
+		expect(parsed?.metadata).toMatchObject({ format: "hwp5" });
 	});
 
 	it("rejects malformed legacy HWP bytes with a typed parser error", async () => {
