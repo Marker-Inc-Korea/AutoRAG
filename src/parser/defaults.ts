@@ -1,5 +1,5 @@
 import { EmlParser } from "./eml.ts";
-import { HwpParser } from "./hwp.ts";
+import { HwpParser, type HwpParserOptions } from "./hwp.ts";
 import { ImageOcrParser, type OcrParserOptions } from "./ocr.ts";
 import { DocxParser, PptxParser, XlsxParser } from "./office.ts";
 import { OpendataloaderPdfParser } from "./opendataloader-pdf.ts";
@@ -9,6 +9,7 @@ import type { Parser } from "./types.ts";
 
 export interface DefaultParserRegistryOptions {
 	readonly ocr?: OcrParserOptions;
+	readonly hwp?: HwpParserOptions;
 }
 
 export function createDefaultParserRegistry(options: DefaultParserRegistryOptions = {}): ParserRegistry {
@@ -18,7 +19,7 @@ export function createDefaultParserRegistry(options: DefaultParserRegistryOption
 		new DocxParser(),
 		new PptxParser(),
 		new XlsxParser(),
-		new HwpParser(),
+		new HwpParser(options.hwp),
 		new EmlParser(),
 	];
 	if (options.ocr?.enabled) parsers.push(new ImageOcrParser(options.ocr));

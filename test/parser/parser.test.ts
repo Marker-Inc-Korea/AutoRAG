@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	createDefaultParserRegistry,
+	HwpParser,
 	OpendataloaderPdfParser,
 	ParseError,
 	Parser,
@@ -171,17 +172,58 @@ describe("ParserRegistry", () => {
 		expect(calls).toEqual([{ hybrid: "docling-fast", hybridMode: "full", hybridTimeout: "4000" }]);
 	});
 
-	it("legacy binary HWP and XLS files are routed but rejected with typed parser errors", async () => {
-		// Given: legacy HWP5 and XLS bytes, which require separate binary parsers from HWPX/XLSX.
+	it("parses legacy binary HWP through an injected extractor", async () => {
+		const parser = new HwpParser({
+			extractor: async () => ({
+				paragraphs: [{ sectionIndex: 0, paragraphIndex: 0, text: "한글 HWP marker" }],
+				tables: [],
+			}),
+		});
+
+		await expect(
+			parser.parse({ virtualPath: "/docs/legacy.hwp", bytes: Buffer.from("injected HWP bytes") }),
+		).resolves.toEqual({
+			markdown: "한글 HWP marker",
+			metadata: { parser: "hwp", format: "hwp5" },
+		});
+	});
+
+	it("forwards HWP options through the default parser registry", async () => {
+		const bytes = Buffer.from("registry HWP bytes");
+		let receivedBytes: Uint8Array | undefined;
+		const registry = createDefaultParserRegistry({
+			hwp: {
+				extractor: async (inputBytes) => {
+					receivedBytes = inputBytes;
+					return {
+						paragraphs: [{ sectionIndex: 0, paragraphIndex: 0, text: "Registry HWP marker" }],
+						tables: [],
+					};
+				},
+			},
+		});
+		const parser = registry.getForVirtualPath("/docs/registry.hwp");
+
+		await expect(parser?.parse({ virtualPath: "/docs/registry.hwp", bytes })).resolves.toMatchObject({
+			markdown: expect.stringContaining("Registry HWP marker"),
+		});
+		expect(receivedBytes).toBe(bytes);
+	});
+
+	it("rejects malformed legacy HWP bytes with a typed parser error", async () => {
 		const registry = createDefaultParserRegistry();
 		const hwpParser = registry.getForVirtualPath("/docs/legacy.hwp");
-		const xlsParser = registry.getForVirtualPath("/docs/legacy.xls");
 
-		// When/Then: the default pipeline handles the extensions safely instead of crashing or emitting garbage.
 		expect(hwpParser).toBeDefined();
 		await expect(
 			hwpParser?.parse({ virtualPath: "/docs/legacy.hwp", bytes: Buffer.from("not hwp5") }),
 		).rejects.toBeInstanceOf(ParseError);
+	});
+
+	it("routes legacy XLS files but rejects them with typed parser errors", async () => {
+		const registry = createDefaultParserRegistry();
+		const xlsParser = registry.getForVirtualPath("/docs/legacy.xls");
+
 		expect(xlsParser).toBeDefined();
 		await expect(
 			xlsParser?.parse({ virtualPath: "/docs/legacy.xls", bytes: Buffer.from("not xls") }),
