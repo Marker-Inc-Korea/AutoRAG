@@ -42,6 +42,7 @@ We support most of the LLMs that LlamaIndex supports. You can use different type
 | LLM Model Type | llm parameter  | Description |
 |:--------------:|:--------------:|-------------|
 |     OpenAI     |     openai     | For OpenAI models (GPT-3.5, GPT-4) |
+|  Azure OpenAI  | azure_openai   | For Azure OpenAI Service (enterprise) |
 |   OpenAILike   |   openailike   | For models with OpenAI-compatible APIs (e.g., Mistral, Claude) |
 |     Ollama     |     ollama     | For locally running Ollama models |
 |    Bedrock     |    bedrock     | For AWS Bedrock models |

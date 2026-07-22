@@ -3,9 +3,9 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta content="AutoRAG - Run local model in AutoRAG" name="title" />
-<meta content="Learn how to run local model in AutoRAG" name="description" />
-<meta content="AutoRAG,RAG,RAG model,RAG LLM,embedding model,local model" name="keywords" />
+<meta content="AutoRAG - Azure OpenAI Integration" name="title" />
+<meta content="Learn how to use Azure OpenAI with AutoRAG for RAG pipeline optimization" name="description" />
+<meta content="AutoRAG,RAG,Azure,Azure OpenAI,GPT,LLM,Microsoft,enterprise" name="keywords" />
 
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-T8ZKQM6RT9"></script>
@@ -15,11 +15,11 @@
         gtag('js', new Date());
         gtag('config', 'G-T8ZKQM6RT9');
     </script>
-    <link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="Azure OpenAI Integration" href="azure_openai.html"><link rel="prev" title="TroubleShooting" href="troubleshooting.html">
-        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/local_model.html">
+    <link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="Migration Guide" href="migration.html"><link rel="prev" title="Configure LLM &amp; Embedding models" href="local_model.html">
+        <link rel="canonical" href="https://marker-inc-korea.github.io/AutoRAG/azure_openai.html">
 
     <!-- Generated with Sphinx 8.1.3 and Furo 2025.12.19 -->
-        <title>Configure LLM &amp; Embedding models - AutoRAG documentation</title>
+        <title>Azure OpenAI Integration - AutoRAG documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
@@ -212,8 +212,8 @@
 <li class="toctree-l1"><a class="reference internal" href="tutorial.html">Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="structure.html">Structure</a></li>
 <li class="toctree-l1"><a class="reference internal" href="troubleshooting.html">TroubleShooting</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Configure LLM &amp; Embedding models</a></li>
-<li class="toctree-l1"><a class="reference internal" href="azure_openai.html">Azure OpenAI Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="local_model.html">Configure LLM &amp; Embedding models</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Azure OpenAI Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="migration.html">Migration Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="test_your_rag.html">Evaluate your RAG</a></li>
 </ul>
@@ -385,7 +385,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="_sources/local_model.md.txt" title="View this page">
+  <a class="muted-link" href="_sources/azure_openai.md.txt" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -403,312 +403,223 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="configure-llm-embedding-models">
-<h1>Configure LLM &amp; Embedding models<a class="headerlink" href="#configure-llm-embedding-models" title="Link to this heading">¶</a></h1>
-<section id="index">
-<h2>Index<a class="headerlink" href="#index" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="#configure-the-llm-model"><span class="xref myst">Configure the LLM model</span></a></p>
-<ul>
-<li><p><a class="reference internal" href="#modules-that-use-llm-model"><span class="xref myst">Modules that use LLM model</span></a></p></li>
-<li><p><a class="reference internal" href="#supporting-llm-models"><span class="xref myst">Supporting LLM models</span></a></p></li>
-<li><p><a class="reference internal" href="#add-more-llm-models"><span class="xref myst">Add more LLM models</span></a></p></li>
-</ul>
-</li>
-<li><p><a class="reference internal" href="#configure-the-embedding-model"><span class="xref myst">Configure the Embedding model</span></a></p>
-<ul>
-<li><p><a class="reference internal" href="#modules-that-use-embedding-model"><span class="xref myst">Modules that use Embedding model</span></a></p></li>
-<li><p><a class="reference internal" href="#supporting-embedding-models"><span class="xref myst">Supporting Embedding models</span></a></p></li>
-<li><p><a class="reference internal" href="#add-your-embedding-models"><span class="xref myst">Add your embedding models</span></a></p></li>
-</ul>
-</li>
-</ul>
+          <section id="azure-openai-integration">
+<h1>Azure OpenAI Integration<a class="headerlink" href="#azure-openai-integration" title="Link to this heading">¶</a></h1>
+<p>This guide explains how to use <strong>Azure OpenAI</strong> with AutoRAG. Azure OpenAI is widely adopted in enterprise
+environments where organizations require Azure-only cloud services.</p>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
+<section id="install-dependencies">
+<h3>1. Install Dependencies<a class="headerlink" href="#install-dependencies" title="Link to this heading">¶</a></h3>
+<p>Install the required LlamaIndex Azure OpenAI package:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>AutoRAG<span class="w"> </span>llama-index-llms-azure-openai
+</pre></div>
+</div>
 </section>
-<section id="configure-the-llm-model">
-<h2>Configure the LLM model<a class="headerlink" href="#configure-the-llm-model" title="Link to this heading">¶</a></h2>
-<section id="modules-that-use-llm-model">
-<h3>Modules that use LLM model<a class="headerlink" href="#modules-that-use-llm-model" title="Link to this heading">¶</a></h3>
-<p>Most of the modules that using LLM model can take <code class="docutils literal notranslate"><span class="pre">llm</span></code> parameter to specify the LLM model.</p>
-<ul class="simple">
-<li><p><a class="reference internal" href="nodes/generator/llama_index_llm.html"><span class="std std-doc">llama_index_llm</span></a></p></li>
-</ul>
-<p>The following modules can use generator module, which including <code class="docutils literal notranslate"><span class="pre">llama_index_llm</span></code>.</p>
-<ul class="simple">
-<li><p><a class="reference internal" href="nodes/query_expansion/hyde.html"><span class="std std-doc">hyde</span></a></p></li>
-<li><p><a class="reference internal" href="nodes/query_expansion/query_decompose.html"><span class="std std-doc">query_decompose</span></a></p></li>
-<li><p><a class="reference internal" href="nodes/query_expansion/multi_query_expansion.html"><span class="std std-doc">multi_query_expansion</span></a></p></li>
-<li><p><a class="reference internal" href="nodes/passage_compressor/tree_summarize.html"><span class="std std-doc">tree_summarize</span></a></p></li>
-<li><p><a class="reference internal" href="nodes/passage_compressor/refine.html"><span class="std std-doc">refine</span></a></p></li>
-</ul>
+<section id="set-up-azure-openai-resource">
+<h3>2. Set Up Azure OpenAI Resource<a class="headerlink" href="#set-up-azure-openai-resource" title="Link to this heading">¶</a></h3>
+<p>Before using Azure OpenAI with AutoRAG, you need:</p>
+<ol class="arabic simple">
+<li><p>An <strong>Azure OpenAI resource</strong> in your Azure subscription</p></li>
+<li><p>A <strong>deployment</strong> for your chosen model (e.g., <code class="docutils literal notranslate"><span class="pre">gpt-4o-mini</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-4o</span></code>, <code class="docutils literal notranslate"><span class="pre">text-embedding-3-small</span></code>)</p></li>
+<li><p>The <strong>API key</strong> and <strong>endpoint</strong> from the Azure portal</p></li>
+</ol>
+<p>You can find these in the Azure Portal under your Azure OpenAI resource → <strong>Keys and Endpoint</strong>.</p>
 </section>
-<section id="supporting-llm-models">
-<h3>Supporting LLM Models<a class="headerlink" href="#supporting-llm-models" title="Link to this heading">¶</a></h3>
-<p>We support most of the LLMs that LlamaIndex supports. You can use different types of LLM interfaces by configuring the <code class="docutils literal notranslate"><span class="pre">llm</span></code> parameter:</p>
+<section id="set-environment-variables">
+<h3>3. Set Environment Variables<a class="headerlink" href="#set-environment-variables" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">AZURE_OPENAI_API_KEY</span><span class="o">=</span><span class="s2">&quot;your-azure-openai-api-key&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">AZURE_OPENAI_ENDPOINT</span><span class="o">=</span><span class="s2">&quot;https://your-resource-name.openai.azure.com/&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">AZURE_OPENAI_API_VERSION</span><span class="o">=</span><span class="s2">&quot;2024-02-01&quot;</span>
+</pre></div>
+</div>
+<p>On Windows:</p>
+<div class="highlight-powershell notranslate"><div class="highlight"><pre><span></span><span class="nv">$env:AZURE_OPENAI_API_KEY</span> <span class="p">=</span> <span class="s2">&quot;your-azure-openai-api-key&quot;</span>
+<span class="nv">$env:AZURE_OPENAI_ENDPOINT</span> <span class="p">=</span> <span class="s2">&quot;https://your-resource-name.openai.azure.com/&quot;</span>
+<span class="nv">$env:AZURE_OPENAI_API_VERSION</span> <span class="p">=</span> <span class="s2">&quot;2024-02-01&quot;</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="using-azure-openai-as-generator-llm">
+<h2>Using Azure OpenAI as Generator (LLM)<a class="headerlink" href="#using-azure-openai-as-generator-llm" title="Link to this heading">¶</a></h2>
+<p>AutoRAG supports Azure OpenAI through the <code class="docutils literal notranslate"><span class="pre">llama_index_llm</span></code> module with <code class="docutils literal notranslate"><span class="pre">llm:</span> <span class="pre">azure_openai</span></code>.</p>
+<section id="config-yaml-example">
+<h3>Config YAML Example<a class="headerlink" href="#config-yaml-example" title="Link to this heading">¶</a></h3>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">nodes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">post_retrieve_node_line</span>
+<span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generator</span>
+<span class="w">        </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">bleu</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rouge</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
+<span class="w">            </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure_openai</span>
+<span class="w">            </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o-mini</span>
+<span class="w">            </span><span class="nt">engine</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-deployment-name</span><span class="w">  </span><span class="c1"># Your Azure deployment name</span>
+<span class="w">            </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${AZURE_OPENAI_API_KEY}</span>
+<span class="w">            </span><span class="nt">azure_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${AZURE_OPENAI_ENDPOINT}</span>
+<span class="w">            </span><span class="nt">api_version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2024-02-01&quot;</span>
+</pre></div>
+</div>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">engine</span></code> parameter is the <strong>deployment name</strong> you set in the Azure Portal, not the model name.
+The <code class="docutils literal notranslate"><span class="pre">model</span></code> parameter is the actual model (e.g., <code class="docutils literal notranslate"><span class="pre">gpt-4o-mini</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-4o</span></code>).
+Both are required for Azure OpenAI.</p>
+</div>
+</section>
+<section id="parameters">
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head text-center"><p>LLM Model Type</p></th>
-<th class="head text-center"><p>llm parameter</p></th>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Required</p></th>
 <th class="head"><p>Description</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td class="text-center"><p>OpenAI</p></td>
-<td class="text-center"><p>openai</p></td>
-<td><p>For OpenAI models (GPT-3.5, GPT-4)</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">llm</span></code></p></td>
+<td><p>Yes</p></td>
+<td><p>Must be <code class="docutils literal notranslate"><span class="pre">azure_openai</span></code></p></td>
 </tr>
-<tr class="row-odd"><td class="text-center"><p>Azure OpenAI</p></td>
-<td class="text-center"><p>azure_openai</p></td>
-<td><p>For Azure OpenAI Service (enterprise)</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">model</span></code></p></td>
+<td><p>Yes</p></td>
+<td><p>The model name (e.g., <code class="docutils literal notranslate"><span class="pre">gpt-4o-mini</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-4o</span></code>)</p></td>
 </tr>
-<tr class="row-even"><td class="text-center"><p>OpenAILike</p></td>
-<td class="text-center"><p>openailike</p></td>
-<td><p>For models with OpenAI-compatible APIs (e.g., Mistral, Claude)</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">engine</span></code></p></td>
+<td><p>Yes</p></td>
+<td><p>Your Azure deployment name</p></td>
 </tr>
-<tr class="row-odd"><td class="text-center"><p>Ollama</p></td>
-<td class="text-center"><p>ollama</p></td>
-<td><p>For locally running Ollama models</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">api_key</span></code></p></td>
+<td><p>Yes</p></td>
+<td><p>Azure OpenAI API key (or set <code class="docutils literal notranslate"><span class="pre">AZURE_OPENAI_API_KEY</span></code> env var)</p></td>
 </tr>
-<tr class="row-even"><td class="text-center"><p>Bedrock</p></td>
-<td class="text-center"><p>bedrock</p></td>
-<td><p>For AWS Bedrock models</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">azure_endpoint</span></code></p></td>
+<td><p>Yes</p></td>
+<td><p>Azure OpenAI endpoint URL</p></td>
 </tr>
-</tbody>
-</table>
-</div>
-<p>For example, if you want to use <code class="docutils literal notranslate"><span class="pre">OpenAILike</span></code> model, you can set <code class="docutils literal notranslate"><span class="pre">llm</span></code> parameter to <code class="docutils literal notranslate"><span class="pre">openailike</span></code>.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node_line_1</span>
-<span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generator</span>
-<span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
-<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
-<span class="w">            </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openailike</span>
-<span class="w">            </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mistralai/Mistral-7B-Instruct-v0.2</span>
-<span class="w">            </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_api_base</span>
-<span class="w">            </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_api_key</span>
-</pre></div>
-</div>
-<p>At the above example, you can see <code class="docutils literal notranslate"><span class="pre">model</span></code> parameter.
-This is the parameter for the LLM model.
-You can set the model parameter for LlamaIndex LLM initialization.
-The most frequently used parameters are <code class="docutils literal notranslate"><span class="pre">model</span></code>, <code class="docutils literal notranslate"><span class="pre">max_token</span></code>, and <code class="docutils literal notranslate"><span class="pre">temperature</span></code>.
-Please check what you can set for the model parameter
-at <a class="reference external" href="https://docs.llamaindex.ai/en/stable/module_guides/models/llms/">LlamaIndex LLM</a>.</p>
-<section id="using-huggingface-models">
-<h4>Using HuggingFace Models<a class="headerlink" href="#using-huggingface-models" title="Link to this heading">¶</a></h4>
-<p>There are two main ways to use HuggingFace models:</p>
-<ol class="arabic simple">
-<li><p><strong>Through OpenAILike Interface</strong> (Recommended for hosted API endpoints):</p></li>
-</ol>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node_line_1</span>
-<span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generator</span>
-<span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
-<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
-<span class="w">            </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openailike</span>
-<span class="w">            </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mistralai/Mistral-7B-Instruct-v0.2</span>
-<span class="w">            </span><span class="nt">api_base</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_api_base</span>
-<span class="w">            </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your_api_key</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p><strong>Through Direct HuggingFace Integration</strong> (For local deployment):</p></li>
-</ol>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node_line_1</span>
-<span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generator</span>
-<span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
-<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
-<span class="w">            </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">huggingface</span>
-<span class="w">            </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mistralai/Mistral-7B-Instruct-v0.2</span>
-<span class="w">            </span><span class="nt">device_map</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;auto&quot;</span>
-<span class="w">            </span><span class="nt">model_kwargs</span><span class="p">:</span>
-<span class="w">              </span><span class="nt">torch_dtype</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;float16&quot;</span>
-</pre></div>
-</div>
-</section>
-<section id="common-parameters">
-<h4>Common Parameters<a class="headerlink" href="#common-parameters" title="Link to this heading">¶</a></h4>
-<p>The most frequently used parameters for LLM configuration are:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">model</span></code>: The model identifier or name</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">max_tokens</span></code>: Maximum number of tokens in the response</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code>: Controls randomness in the output (0.0 to 1.0)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">api_base</span></code>: API endpoint URL (for hosted models)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">api_key</span></code>: Authentication key (if required)</p></li>
-</ul>
-<p>For a complete list of available parameters, please refer to the
-<a class="reference external" href="https://docs.llamaindex.ai/en/stable/module_guides/models/llms/">LlamaIndex LLM documentation</a>.</p>
-</section>
-</section>
-</section>
-<section id="use-vllm">
-<h2>Use vllm<a class="headerlink" href="#use-vllm" title="Link to this heading">¶</a></h2>
-<p>You can use vllm to use local LLM. For more information, please check out <a class="reference internal" href="nodes/generator/vllm.html"><span class="std std-doc">vllm</span></a> generator
-module docs.</p>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>Install vLLM optional dependencies</p>
-<p>To use vLLM in AutoRAG (generator or the new vLLM embedding backend), install the vLLM extras:</p>
-<ul class="simple">
-<li><p>With pip: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;AutoRAG[vllm]&quot;</span></code></p></li>
-<li><p>With uv: <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;AutoRAG[vllm]&quot;</span></code></p></li>
-</ul>
-<p>If you want all GPU/local extras together: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">&quot;AutoRAG[gpu]&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">uv</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">-e</span> <span class="pre">.[all]</span></code> when working from source.</p>
-<p>The vLLM embedding leverages <code class="docutils literal notranslate"><span class="pre">llama-index-embeddings-vllm</span></code>; the generator uses <code class="docutils literal notranslate"><span class="pre">vllm</span></code>. Installing the <code class="docutils literal notranslate"><span class="pre">vllm</span></code> extra ensures both are available.</p>
-</div>
-<section id="add-more-llm-models">
-<h3>Add more LLM models<a class="headerlink" href="#add-more-llm-models" title="Link to this heading">¶</a></h3>
-<p>You can add more LLM models for AutoRAG.
-You can add it by simply calling <code class="docutils literal notranslate"><span class="pre">autorag.generator_models</span></code> and add new key and value.
-For example, if you want to add <code class="docutils literal notranslate"><span class="pre">MockLLM</span></code> model for testing, execute the following code.</p>
-<div class="admonition attention">
-<p class="admonition-title">Attention</p>
-<p>It was major update for LlamaIndex to v0.10.0.
-The integration of llms must be installed to different packages.
-So, before add your model, you should find and install the right package for your model.
-You can find the package at <a class="reference external" href="https://pretty-sodium-5e0.notion.site/ce81b247649a44e4b6b35dfb24af28a6?v=53b3c2ced7bb4c9996b81b83c9f01139">here</a>.</p>
-</div>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">autorag</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.core.llms.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">MockLLM</span>
-
-<span class="n">autorag</span><span class="o">.</span><span class="n">generator_models</span><span class="p">[</span><span class="s1">&#39;mockllm&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">MockLLM</span>
-</pre></div>
-</div>
-<p>Then you can use <code class="docutils literal notranslate"><span class="pre">mockllm</span></code> at config YAML file.</p>
-<div class="admonition caution">
-<p class="admonition-title">Caution</p>
-<p>When you add new LLM model, you should add class itself, not the instance.</p>
-<p>Plus, it must follow LlamaIndex LLM’s interface.</p>
-</div>
-</section>
-</section>
-<section id="configure-the-embedding-model">
-<h2>Configure the Embedding model<a class="headerlink" href="#configure-the-embedding-model" title="Link to this heading">¶</a></h2>
-<section id="modules-that-use-embedding-model">
-<h3>Modules that use Embedding model<a class="headerlink" href="#modules-that-use-embedding-model" title="Link to this heading">¶</a></h3>
-<p>Modules that using an embedding model can take <code class="docutils literal notranslate"><span class="pre">embedding_model</span></code> parameter to specify the LLM model.</p>
-<ul class="simple">
-<li><p><a class="reference internal" href="nodes/retrieval/vectordb.html"><span class="std std-doc">vectordb</span></a></p></li>
-</ul>
-</section>
-<section id="configure-the-model-name-in-the-yaml-file">
-<h3>Configure the model name in the YAML file<a class="headerlink" href="#configure-the-model-name-in-the-yaml-file" title="Link to this heading">¶</a></h3>
-<p>For easier use, since v0.3.13, we support configuring model name in the YAML file.</p>
-<p>We support this new configuration option, plus the legacy configuration option that is described below.
-So if you used before v0.3.13 version, it is okay to use the legacy configuration option.</p>
-<p>We support the following embedding model types:</p>
-<ul class="simple">
-<li><p>openai</p></li>
-<li><p>huggingface</p></li>
-<li><p>mock</p></li>
-<li><p>ollama</p></li>
-<li><p>openai_like</p></li>
-<li><p>vllm</p></li>
-</ul>
-<p>You can configure the embedding model option directly in the YAML file <code class="docutils literal notranslate"><span class="pre">vectordb</span></code> section.
-If you want to know how to configure vectordb in AutoRAG,
-please go <a class="reference external" href="https://marker-inc-korea.github.io/AutoRAG/integration/vectordb/vectordb.html">here</a>.</p>
-<p>For example,</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
-<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag_test</span>
-<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">milvus</span>
-<span class="w">  </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
-<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">huggingface</span>
-<span class="w">    </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">intfloat/multilingual-e5-large-instruct</span>
-<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
-</pre></div>
-</div>
-<p>or</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
-<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">autorag_test</span>
-<span class="w">  </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">milvus</span>
-<span class="w">  </span><span class="nt">embedding_batch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
-<span class="w">  </span><span class="nt">embedding_model</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai</span>
-<span class="w">    </span><span class="nt">model_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">text-embedding-3-small</span>
-<span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">...</span>
-</pre></div>
-</div>
-<p>If you want to use your own embedding model, simply change the model_name at huggingface(or ollama) type embedding model configuration.</p>
-</section>
-<section id="supporting-embedding-models-legacy">
-<h3>Supporting Embedding models (Legacy)<a class="headerlink" href="#supporting-embedding-models-legacy" title="Link to this heading">¶</a></h3>
-<p>As default, we support OpenAI embedding models and some of the local models.
-To change the embedding model, you can change the <code class="docutils literal notranslate"><span class="pre">embedding_model</span></code> parameter to the following values:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head text-center"><p>Embedding Model Type</p></th>
-<th class="head text-center"><p>embedding_model parameter</p></th>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">api_version</span></code></p></td>
+<td><p>No</p></td>
+<td><p>API version string (default: <code class="docutils literal notranslate"><span class="pre">2024-02-01</span></code>)</p></td>
 </tr>
-</thead>
-<tbody>
-<tr class="row-even"><td class="text-center"><p>Default openai embedding (text-embedding-ada-002)</p></td>
-<td class="text-center"><p>openai</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code></p></td>
+<td><p>No</p></td>
+<td><p>Controls randomness (0.0 to 2.0, default: 0.1)</p></td>
 </tr>
-<tr class="row-odd"><td class="text-center"><p>openai large embedding (text-embedding-3-large)</p></td>
-<td class="text-center"><p>openai_embed_3_large</p></td>
-</tr>
-<tr class="row-even"><td class="text-center"><p>openai small embedding (text-embedding-3-small)</p></td>
-<td class="text-center"><p>openai_embed_3_small</p></td>
-</tr>
-<tr class="row-odd"><td class="text-center"><p><a class="reference external" href="https://huggingface.co/BAAI/bge-small-en-v1.5">BAAI/bge-small-en-v1.5</a></p></td>
-<td class="text-center"><p>huggingface_baai_bge_small</p></td>
-</tr>
-<tr class="row-even"><td class="text-center"><p><a class="reference external" href="https://huggingface.co/cointegrated/rubert-tiny2">cointegrated/rubert-tiny2</a></p></td>
-<td class="text-center"><p>huggingface_cointegrated_rubert_tiny2</p></td>
-</tr>
-<tr class="row-odd"><td class="text-center"><p><a class="reference external" href="https://huggingface.co/sentence-transformers/all-mpnet-base-v2">sentence-transformers/all-mpnet-base-v2</a></p></td>
-<td class="text-center"><p>huggingface_all_mpnet_base_v2</p></td>
-</tr>
-<tr class="row-even"><td class="text-center"><p><a class="reference external" href="https://huggingface.co/BAAI/bge-m3">BAAI/bge-m3</a></p></td>
-<td class="text-center"><p>huggingface_bge_m3</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">max_tokens</span></code></p></td>
+<td><p>No</p></td>
+<td><p>Maximum tokens in response</p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>For example, if you want to use OpenAI text embedding large model, you can set <code class="docutils literal notranslate"><span class="pre">embedding_model</span></code> parameter
-to <code class="docutils literal notranslate"><span class="pre">openai_embed_3_large</span></code> when setting vectordb.</p>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">vectordb</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chroma_openai</span>
-<span class="w">    </span><span class="nt">db_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chroma</span>
-<span class="w">    </span><span class="nt">client_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">persistent</span>
-<span class="w">    </span><span class="nt">embedding_model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
-<span class="w">    </span><span class="nt">collection_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">openai_embed_3_large</span>
-<span class="nt">nodes</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">node_line_1</span>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This integration registers Azure OpenAI as a generator. Azure OpenAI embeddings
+are not registered by this feature; use a separately configured embedding model
+if your pipeline also requires semantic retrieval.</p>
+</div>
+</section>
+</section>
+<section id="full-example-config">
+<h2>Full Example Config<a class="headerlink" href="#full-example-config" title="Link to this heading">¶</a></h2>
+<p>A complete sample config file using Azure OpenAI is available at
+<a class="reference external" href="https://github.com/Marker-Inc-Korea/AutoRAG/blob/main/sample_config/rag/english/non_gpu/simple_azure_openai.yaml"><code class="docutils literal notranslate"><span class="pre">sample_config/rag/english/non_gpu/simple_azure_openai.yaml</span></code></a>.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">node_lines</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">retrieve_node_line</span>
 <span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">semantic_retrieval</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lexical_retrieval</span>
+<span class="w">        </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">retrieval_f1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_recall</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">retrieval_precision</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">top_k</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
 <span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
-<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vectordb</span>
-<span class="w">            </span><span class="nt">vectordb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">chroma_openai</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bm25</span>
+<span class="w">            </span><span class="nt">bm25_tokenizer</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">porter_stemmer</span>
+
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_line_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">post_retrieve_node_line</span>
+<span class="w">    </span><span class="nt">nodes</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt_maker</span>
+<span class="w">        </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">bleu</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">meteor</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rouge</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fstring</span>
+<span class="w">            </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Read</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">passages</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">answer</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">given</span><span class="nv"> </span><span class="s">question.</span><span class="nv"> </span><span class="s">\n</span><span class="nv"> </span><span class="s">Question:</span><span class="nv"> </span><span class="s">{query}</span><span class="nv"> </span><span class="s">\n</span><span class="nv"> </span><span class="s">Passage:</span><span class="nv"> </span><span class="s">{retrieved_contents}</span><span class="nv"> </span><span class="s">\n</span><span class="nv"> </span><span class="s">Answer</span><span class="nv"> </span><span class="s">:</span><span class="nv"> </span><span class="s">&quot;</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">generator</span>
+<span class="w">        </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">metrics</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">bleu</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rouge</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
+<span class="w">            </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure_openai</span>
+<span class="w">            </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o-mini</span>
+<span class="w">            </span><span class="nt">engine</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-gpt4o-mini-deployment</span>
+<span class="w">            </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${AZURE_OPENAI_API_KEY}</span>
+<span class="w">            </span><span class="nt">azure_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${AZURE_OPENAI_ENDPOINT}</span>
+<span class="w">            </span><span class="nt">api_version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2024-02-01&quot;</span>
+<span class="w">            </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.1</span>
 </pre></div>
 </div>
 </section>
-<section id="add-your-embedding-models-legacy">
-<h3>Add your embedding models (Legacy)<a class="headerlink" href="#add-your-embedding-models-legacy" title="Link to this heading">¶</a></h3>
-<p>You can add more embedding models for AutoRAG.
-You can add it by simply calling <code class="docutils literal notranslate"><span class="pre">autorag.embedding_models</span></code> and add new key and value.
-For example,
-if you want to add <code class="docutils literal notranslate"><span class="pre">[KoSimCSE](https://huggingface.co/BM-K/KoSimCSE-roberta-multitask)</span></code> model for Korean embedding,
-execute the following code.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">autorag</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">autorag</span><span class="w"> </span><span class="kn">import</span> <span class="n">LazyInit</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">llama_index.embeddings.huggingface</span><span class="w"> </span><span class="kn">import</span> <span class="n">HuggingFaceEmbedding</span>
-
-<span class="n">autorag</span><span class="o">.</span><span class="n">embedding_models</span><span class="p">[</span><span class="s1">&#39;kosimcse&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">LazyInit</span><span class="p">(</span><span class="n">HuggingFaceEmbedding</span><span class="p">,</span> <span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;BM-K/KoSimCSE-roberta-multitask&quot;</span><span class="p">)</span>
+<section id="using-azure-openai-with-query-expansion">
+<h2>Using Azure OpenAI with Query Expansion<a class="headerlink" href="#using-azure-openai-with-query-expansion" title="Link to this heading">¶</a></h2>
+<p>Azure OpenAI can also be used in query expansion modules like <code class="docutils literal notranslate"><span class="pre">hyde</span></code>, <code class="docutils literal notranslate"><span class="pre">query_decompose</span></code>, and <code class="docutils literal notranslate"><span class="pre">multi_query_expansion</span></code>:</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">node_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">query_expansion</span>
+<span class="w">  </span><span class="nt">modules</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">hyde</span>
+<span class="w">      </span><span class="nt">generator_module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llama_index_llm</span>
+<span class="w">      </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure_openai</span>
+<span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gpt-4o-mini</span>
+<span class="w">      </span><span class="nt">engine</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-deployment-name</span>
+<span class="w">      </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${AZURE_OPENAI_API_KEY}</span>
+<span class="w">      </span><span class="nt">azure_endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${AZURE_OPENAI_ENDPOINT}</span>
+<span class="w">      </span><span class="nt">api_version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;2024-02-01&quot;</span>
+<span class="w">      </span><span class="nt">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">64</span>
 </pre></div>
 </div>
-<p>Then you can use <code class="docutils literal notranslate"><span class="pre">kosimcse</span></code> at config YAML file.</p>
-<div class="admonition caution">
-<p class="admonition-title">Caution</p>
-<p>When you add new embedding model, you should use <code class="docutils literal notranslate"><span class="pre">LazyInit</span></code> class from autorag. The additional parameters have to be keyword parameter in the <code class="docutils literal notranslate"><span class="pre">LazyInit</span></code> initialization.</p>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">¶</a></h2>
+<section id="common-issues">
+<h3>Common Issues<a class="headerlink" href="#common-issues" title="Link to this heading">¶</a></h3>
+<ol class="arabic">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">ImportError:</span> <span class="pre">No</span> <span class="pre">module</span> <span class="pre">named</span> <span class="pre">'llama_index.llms.azure_openai'</span></code></strong></p>
+<p>Install the Azure OpenAI package:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>llama-index-llms-azure-openai
+</pre></div>
 </div>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">AuthenticationError</span></code> or <code class="docutils literal notranslate"><span class="pre">401</span> <span class="pre">Unauthorized</span></code></strong></p>
+<ul class="simple">
+<li><p>Verify your API key is correct</p></li>
+<li><p>Check that your Azure OpenAI resource is properly provisioned</p></li>
+<li><p>Ensure your deployment exists and is active</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">DeploymentNotFound</span></code> or <code class="docutils literal notranslate"><span class="pre">404</span></code></strong></p>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">engine</span></code> parameter must match your <strong>deployment name</strong> exactly (not the model name)</p></li>
+<li><p>Check your deployment in Azure Portal → Azure OpenAI → Model deployments</p></li>
+</ul>
+</li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">RateLimitError</span></code> or <code class="docutils literal notranslate"><span class="pre">429</span></code></strong></p>
+<ul class="simple">
+<li><p>Azure OpenAI has per-deployment rate limits (TPM/RPM)</p></li>
+<li><p>Reduce the <code class="docutils literal notranslate"><span class="pre">batch</span></code> parameter in your config</p></li>
+<li><p>Consider using a higher-tier deployment</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="tips-for-enterprise-users">
+<h3>Tips for Enterprise Users<a class="headerlink" href="#tips-for-enterprise-users" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Use <strong>Azure Managed Identity</strong> for authentication instead of API keys when running in Azure</p></li>
+<li><p>Configure <strong>Virtual Network</strong> integration for private endpoints</p></li>
+<li><p>Use the latest <code class="docutils literal notranslate"><span class="pre">api_version</span></code> for the best feature support</p></li>
+<li><p>Monitor usage through <strong>Azure Monitor</strong> and set up alerts for rate limits</p></li>
+</ul>
 </section>
 </section>
 </section>
@@ -718,23 +629,23 @@ execute the following code.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="azure_openai.html">
+          <a class="next-page" href="migration.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Azure OpenAI Integration</div>
+                <div class="title">Migration Guide</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="troubleshooting.html">
+          <a class="prev-page" href="local_model.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">TroubleShooting</div>
+                <div class="title">Configure LLM &amp; Embedding models</div>
                 
               </div>
             </a>
@@ -768,26 +679,23 @@ execute the following code.</p>
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">Configure LLM &amp; Embedding models</a><ul>
-<li><a class="reference internal" href="#index">Index</a></li>
-<li><a class="reference internal" href="#configure-the-llm-model">Configure the LLM model</a><ul>
-<li><a class="reference internal" href="#modules-that-use-llm-model">Modules that use LLM model</a></li>
-<li><a class="reference internal" href="#supporting-llm-models">Supporting LLM Models</a><ul>
-<li><a class="reference internal" href="#using-huggingface-models">Using HuggingFace Models</a></li>
-<li><a class="reference internal" href="#common-parameters">Common Parameters</a></li>
+<li><a class="reference internal" href="#">Azure OpenAI Integration</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
+<li><a class="reference internal" href="#install-dependencies">1. Install Dependencies</a></li>
+<li><a class="reference internal" href="#set-up-azure-openai-resource">2. Set Up Azure OpenAI Resource</a></li>
+<li><a class="reference internal" href="#set-environment-variables">3. Set Environment Variables</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#using-azure-openai-as-generator-llm">Using Azure OpenAI as Generator (LLM)</a><ul>
+<li><a class="reference internal" href="#config-yaml-example">Config YAML Example</a></li>
+<li><a class="reference internal" href="#parameters">Parameters</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#use-vllm">Use vllm</a><ul>
-<li><a class="reference internal" href="#add-more-llm-models">Add more LLM models</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#configure-the-embedding-model">Configure the Embedding model</a><ul>
-<li><a class="reference internal" href="#modules-that-use-embedding-model">Modules that use Embedding model</a></li>
-<li><a class="reference internal" href="#configure-the-model-name-in-the-yaml-file">Configure the model name in the YAML file</a></li>
-<li><a class="reference internal" href="#supporting-embedding-models-legacy">Supporting Embedding models (Legacy)</a></li>
-<li><a class="reference internal" href="#add-your-embedding-models-legacy">Add your embedding models (Legacy)</a></li>
+<li><a class="reference internal" href="#full-example-config">Full Example Config</a></li>
+<li><a class="reference internal" href="#using-azure-openai-with-query-expansion">Using Azure OpenAI with Query Expansion</a></li>
+<li><a class="reference internal" href="#troubleshooting">Troubleshooting</a><ul>
+<li><a class="reference internal" href="#common-issues">Common Issues</a></li>
+<li><a class="reference internal" href="#tips-for-enterprise-users">Tips for Enterprise Users</a></li>
 </ul>
 </li>
 </ul>
