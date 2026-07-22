@@ -198,6 +198,12 @@ AutoRAG is built for **non-code document retrieval**: manuals, legal docs, inter
 
 Code repositories work too (the explorer's `grep` is useful), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
 
+#### Legacy HWP5 parsing
+
+AutoRAG supports searchable Markdown extraction from legacy binary `.hwp` (HWP5) files for body paragraphs and top-level table cells. Extraction is powered by the MIT-licensed [`rhwp`](https://github.com/edwardkim/rhwp) WebAssembly parser.
+
+This is scoped text extraction, not full-fidelity document conversion. Headers, footers, notes, text boxes, nested tables, images, equations, and OCR are explicitly deferred and are not currently extracted from HWP5 files.
+
 ## Configuration and state
 
 The default home state is kept outside the workspace:

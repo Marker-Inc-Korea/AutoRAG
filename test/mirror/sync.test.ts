@@ -1,4 +1,5 @@
 import {
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -43,6 +44,24 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("syncParsedMirrors", () => {
+	it("writes legacy HWP5 body and table text to the parsed mirror", async () => {
+		copyFileSync(
+			new URL("../fixtures/hwp5/minimal-body-table.hwp", import.meta.url),
+			join(source, "minimal-body-table.hwp"),
+		);
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const outputPath = requireValue(
+			loadMirrorIndex(root).entries["/docs/minimal-body-table.hwp"]?.outputPath,
+			"HWP5 output path",
+		);
+		const markdown = readFileSync(outputPath, "utf8");
+
+		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0 });
+		expect(markdown).toContain("편집 탭 – 표");
+		expect(markdown).toContain("Row 1: 제목 | 담당자 | 세부 내용");
+	});
+
 	it("creates real markdown files and an index for supported virtual files", async () => {
 		writeFileSync(join(source, "note.txt"), "Alpha\n");
 		writeFileSync(join(source, "skip.bin"), Buffer.from([0, 1]));
