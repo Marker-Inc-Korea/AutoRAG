@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Named "build" to satisfy the repository's required status check.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pi-coding-agent's grep tool needs ripgrep; preinstall it so tests
+      # don't depend on its on-demand binary download.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: node_modules/.bin/biome check .
+
+      - name: Typecheck
+        run: node_modules/.bin/tsc --noEmit
+
+      - name: Test
+        run: node_modules/.bin/vitest run
+
+      - name: Build
+        run: bun run build

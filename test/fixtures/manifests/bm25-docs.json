@@ -1,0 +1,10 @@
+{
+	"name": "documentation-index",
+	"description": "BM25 index of API documentation",
+	"type": "bm25",
+	"dataDescription": "API documentation pages indexed with BM25 for keyword search",
+	"contentTypes": ["documentation", "api"],
+	"config": {
+		"indexPath": "/data/bm25/docs.index"
+	}
+}

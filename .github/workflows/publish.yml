@@ -1,10 +1,12 @@
-name: Publish Python 🐍 distributions 📦 to PyPI
+name: Publish Legacy Python 🐍 distributions 📦 to PyPI
 permissions:
   contents: read
 
+# Legacy AutoRAG (Python) releases are tagged as legacy-v* (e.g. legacy-v0.3.10).
+# The v* tags are reserved for AutoRAG 2.0 npm releases (see release.yml).
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["legacy-v*"]
 
 jobs:
   set-version:
@@ -12,23 +14,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify legacy tag format
+        run: |
+          if ! echo "$GITHUB_REF_NAME" | grep -Eq '^legacy-v[0-9]+\.[0-9]+\.[0-9]+([.-].+)?$'; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not a valid legacy release tag (expected legacy-vX.Y.Z)."
+            echo "::error::AutoRAG 2.0 npm releases use plain v* tags instead (see .github/workflows/release.yml)."
+            exit 1
+          fi
+
       - name: Export tag
         id: vars
-        run: echo tag=${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
-        if: ${{ github.event_name == 'release' }}
+        run: echo tag=${GITHUB_REF#refs/tags/legacy-v} >> $GITHUB_OUTPUT
 
       - name: Update project version
         run: |
-          sed -i "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" pyproject.toml
+          sed -i "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" legacy/pyproject.toml
         env:
           RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
-        if: ${{ github.event_name == 'release' }}
 
       - name: Upload updated pyproject.toml
         uses: actions/upload-artifact@v4
         with:
           name: pyproject-toml
-          path: pyproject.toml
+          path: legacy/pyproject.toml
 
   publish:
     runs-on: ubuntu-latest
@@ -50,14 +58,38 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pyproject-toml
+          path: legacy
       - name: Install Python dependencies
         run: uv sync --frozen --all-extras
+        working-directory: legacy
         shell: bash
 
       - name: Build package
         run: uv build
+        working-directory: legacy
 
       - name: Publish package
         run: uv publish
+        working-directory: legacy
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [publish]
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release (never marked as latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AutoRAG Legacy ${{ github.ref_name }}"
+          generate_release_notes: true
+          # Keep the repository's "Latest release" pointing at AutoRAG 2.0 (v* tags).
+          make_latest: "false"
+          body: |
+            Legacy Python AutoRAG maintenance release (`legacy/` directory).
+            Install from PyPI: `pip install AutoRAG`
+
+            > This is a maintenance release of the original RAG AutoML tool.
+            > For AutoRAG 2.0 (the librarian agent at the repository root), see the latest `v*` release.
