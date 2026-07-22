@@ -41,7 +41,7 @@ export function renderHwpMarkdown(document: HwpExtractedDocument): string {
 	const blocks: string[] = [];
 	for (const paragraph of document.paragraphs) {
 		const text = cleanText(paragraph.text);
-		if (text.length > 0) blocks.push(text);
+		if (hasRenderableText(text)) blocks.push(text);
 		for (const table of tables.get(`${paragraph.sectionIndex}:${paragraph.paragraphIndex}`) ?? []) {
 			const rendered = renderTable(table);
 			if (rendered.length > 0) blocks.push(rendered);
@@ -51,12 +51,16 @@ export function renderHwpMarkdown(document: HwpExtractedDocument): string {
 }
 
 function cleanText(text: string): string {
-	return text.replace(/[\u0000\uFFFC]/gu, "").trim();
+	return text.replace(/[\u0000\uFFFC]/gu, "");
+}
+
+function hasRenderableText(text: string): boolean {
+	return text.trim().length > 0;
 }
 
 function renderTable(table: HwpTable): string {
 	const cells = table.cells.map((cell) => ({ ...cell, text: renderCell(cell) }));
-	if (!cells.some((cell) => cell.text.length > 0)) return "";
+	if (!cells.some((cell) => hasRenderableText(cell.text))) return "";
 	if (cells.some((cell) => cell.rowSpan > 1 || cell.columnSpan > 1)) return renderMergedTable(cells);
 
 	const cellsByPosition = new Map(cells.map((cell) => [`${cell.row}:${cell.column}`, cell.text]));
@@ -74,10 +78,25 @@ function renderTable(table: HwpTable): string {
 
 function renderMergedTable(cells: readonly (HwpTableCell & { readonly text: string })[]): string {
 	const rows = new Map<number, (HwpTableCell & { readonly text: string })[]>();
-	for (const cell of cells) {
+	const coveredPositions = new Set<string>();
+	for (const cell of [...cells].sort((left, right) => left.row - right.row || left.column - right.column)) {
+		const position = `${cell.row}:${cell.column}`;
+		if (coveredPositions.has(position)) continue;
+
 		const row = rows.get(cell.row) ?? [];
 		row.push(cell);
 		rows.set(cell.row, row);
+
+		for (let rowIndex = cell.row; rowIndex < cell.row + Math.max(1, cell.rowSpan); rowIndex += 1) {
+			for (
+				let columnIndex = cell.column;
+				columnIndex < cell.column + Math.max(1, cell.columnSpan);
+				columnIndex += 1
+			) {
+				if (rowIndex !== cell.row || columnIndex !== cell.column)
+					coveredPositions.add(`${rowIndex}:${columnIndex}`);
+			}
+		}
 	}
 
 	const renderedRows = [...rows.entries()]
@@ -86,9 +105,9 @@ function renderMergedTable(cells: readonly (HwpTableCell & { readonly text: stri
 			const text = cellsInRow
 				.sort((left, right) => left.column - right.column)
 				.map((cell) => cell.text)
-				.filter((text) => text.length > 0)
+				.filter(hasRenderableText)
 				.join(" | ");
-			return text.length > 0 ? `Row ${row + 1}: ${text}` : "";
+			return hasRenderableText(text) ? `Row ${row + 1}: ${text}` : "";
 		})
 		.filter((row) => row.length > 0);
 
@@ -96,5 +115,11 @@ function renderMergedTable(cells: readonly (HwpTableCell & { readonly text: stri
 }
 
 function renderCell(cell: HwpTableCell): string {
-	return cell.paragraphs.map(cleanText).filter(Boolean).join("<br>").replaceAll("|", "\\|");
+	return cell.paragraphs
+		.map(cleanText)
+		.filter(hasRenderableText)
+		.join("<br>")
+		.replaceAll("\\", "\\\\")
+		.replace(/\r\n|\r|\n/gu, "<br>")
+		.replaceAll("|", "\\|");
 }
