@@ -2,8 +2,8 @@
 myst:
    html_meta:
       title: AutoRAG - MiniMax LLM
-      description: Use MiniMax LLM in AutoRAG. Generate answers using MiniMax M2.7 and M2.5 models.
-      keywords: AutoRAG,RAG,LLM,generator,MiniMax,M2.7,M2.5
+      description: Use MiniMax LLM in AutoRAG. Generate answers using MiniMax M3, M2.7, and legacy M2.5 models.
+      keywords: AutoRAG,RAG,LLM,generator,MiniMax,M3,M2.7,M2.5
 ---
 # MiniMax LLM
 
@@ -13,10 +13,14 @@ The `minimax_llm` module integrates [MiniMax](https://www.minimax.io/) models in
 
 | Model | Context Window |
 |-------|---------------|
-| MiniMax-M2.7 | 1,048,576 tokens |
-| MiniMax-M2.7-highspeed | 1,048,576 tokens |
-| MiniMax-M2.5 | 1,048,576 tokens |
-| MiniMax-M2.5-highspeed | 204,800 tokens |
+| MiniMax-M3 | 1,000,000 tokens |
+| MiniMax-M2.7 | 204,800 tokens |
+| MiniMax-M2.7-highspeed | 204,800 tokens |
+| MiniMax-M2.5 (legacy) | 204,800 tokens |
+| MiniMax-M2.5-highspeed (legacy) | 204,800 tokens |
+
+`MiniMax-M3` is the recommended default. M2.7 remains supported, and the
+legacy M2.5 names are retained so existing configurations do not break.
 
 ## Features
 
@@ -30,11 +34,11 @@ MiniMax models accept temperature values between 0 and 1. Values above 1.0 are a
 
 ### Think-tag stripping
 
-MiniMax M2.5+ models may include `<think>...</think>` reasoning tags in their output. These are automatically stripped from the generated text.
+MiniMax M2.7+ models may include `<think>...</think>` reasoning tags in their output. These are automatically stripped from the generated text.
 
 ## **Module Parameters**
 
-- **llm**: The MiniMax model name. For example, `MiniMax-M2.7` or `MiniMax-M2.5-highspeed`.
+- **llm**: The MiniMax model name. For example, `MiniMax-M3` or `MiniMax-M2.7-highspeed`.
 - **batch**: The batch size for API calls. Default is 16.
 - **truncate**: Whether to truncate input prompts to the model's max length. Default is True.
 - **api_key**: MiniMax API key. You can also set this to env variable `MINIMAX_API_KEY`.
@@ -45,7 +49,7 @@ MiniMax M2.5+ models may include `<think>...</think>` reasoning tags in their ou
 ```yaml
 modules:
   - module_type: minimax_llm
-    llm: [MiniMax-M2.7, MiniMax-M2.5-highspeed]
+    llm: [MiniMax-M3, MiniMax-M2.7]
     temperature: [0.1, 0.5]
     max_tokens: 512
     api_key: ${MINIMAX_API_KEY}

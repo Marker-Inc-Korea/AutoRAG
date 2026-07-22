@@ -4,8 +4,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta content="AutoRAG - MiniMax LLM" name="title" />
-<meta content="Use MiniMax LLM in AutoRAG. Generate answers using MiniMax M2.7 and M2.5 models." name="description" />
-<meta content="AutoRAG,RAG,LLM,generator,MiniMax,M2.7,M2.5" name="keywords" />
+<meta content="Use MiniMax LLM in AutoRAG. Generate answers using MiniMax M3, M2.7, and legacy M2.5 models." name="description" />
+<meta content="AutoRAG,RAG,LLM,generator,MiniMax,M3,M2.7,M2.5" name="keywords" />
 
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-T8ZKQM6RT9"></script>
@@ -416,21 +416,26 @@
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>MiniMax-M2.7</p></td>
-<td><p>1,048,576 tokens</p></td>
+<tr class="row-even"><td><p>MiniMax-M3</p></td>
+<td><p>1,000,000 tokens</p></td>
 </tr>
-<tr class="row-odd"><td><p>MiniMax-M2.7-highspeed</p></td>
-<td><p>1,048,576 tokens</p></td>
+<tr class="row-odd"><td><p>MiniMax-M2.7</p></td>
+<td><p>204,800 tokens</p></td>
 </tr>
-<tr class="row-even"><td><p>MiniMax-M2.5</p></td>
-<td><p>1,048,576 tokens</p></td>
+<tr class="row-even"><td><p>MiniMax-M2.7-highspeed</p></td>
+<td><p>204,800 tokens</p></td>
 </tr>
-<tr class="row-odd"><td><p>MiniMax-M2.5-highspeed</p></td>
+<tr class="row-odd"><td><p>MiniMax-M2.5 (legacy)</p></td>
+<td><p>204,800 tokens</p></td>
+</tr>
+<tr class="row-even"><td><p>MiniMax-M2.5-highspeed (legacy)</p></td>
 <td><p>204,800 tokens</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">MiniMax-M3</span></code> is the recommended default. M2.7 remains supported, and the
+legacy M2.5 names are retained so existing configurations do not break.</p>
 </section>
 <section id="features">
 <h2>Features<a class="headerlink" href="#features" title="Link to this heading">¶</a></h2>
@@ -444,13 +449,13 @@
 </section>
 <section id="think-tag-stripping">
 <h3>Think-tag stripping<a class="headerlink" href="#think-tag-stripping" title="Link to this heading">¶</a></h3>
-<p>MiniMax M2.5+ models may include <code class="docutils literal notranslate"><span class="pre">&lt;think&gt;...&lt;/think&gt;</span></code> reasoning tags in their output. These are automatically stripped from the generated text.</p>
+<p>MiniMax M2.7+ models may include <code class="docutils literal notranslate"><span class="pre">&lt;think&gt;...&lt;/think&gt;</span></code> reasoning tags in their output. These are automatically stripped from the generated text.</p>
 </section>
 </section>
 <section id="module-parameters">
 <h2><strong>Module Parameters</strong><a class="headerlink" href="#module-parameters" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>llm</strong>: The MiniMax model name. For example, <code class="docutils literal notranslate"><span class="pre">MiniMax-M2.7</span></code> or <code class="docutils literal notranslate"><span class="pre">MiniMax-M2.5-highspeed</span></code>.</p></li>
+<li><p><strong>llm</strong>: The MiniMax model name. For example, <code class="docutils literal notranslate"><span class="pre">MiniMax-M3</span></code> or <code class="docutils literal notranslate"><span class="pre">MiniMax-M2.7-highspeed</span></code>.</p></li>
 <li><p><strong>batch</strong>: The batch size for API calls. Default is 16.</p></li>
 <li><p><strong>truncate</strong>: Whether to truncate input prompts to the model’s max length. Default is True.</p></li>
 <li><p><strong>api_key</strong>: MiniMax API key. You can also set this to env variable <code class="docutils literal notranslate"><span class="pre">MINIMAX_API_KEY</span></code>.</p></li>
@@ -461,7 +466,7 @@
 <h2><strong>Example config.yaml</strong><a class="headerlink" href="#example-config-yaml" title="Link to this heading">¶</a></h2>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nt">modules</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">module_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">minimax_llm</span>
-<span class="w">    </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">MiniMax-M2.7</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">MiniMax-M2.5-highspeed</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">llm</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">MiniMax-M3</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">MiniMax-M2.7</span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="nt">temperature</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">0.1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">0.5</span><span class="p p-Indicator">]</span>
 <span class="w">    </span><span class="nt">max_tokens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">512</span>
 <span class="w">    </span><span class="nt">api_key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MINIMAX_API_KEY}</span>
