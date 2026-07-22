@@ -22,9 +22,11 @@ THINK_OPEN_TAG = "<think>"
 THINK_CLOSE_TAG = "</think>"
 
 MAX_TOKEN_DICT = {
-	"MiniMax-M3": 524_288,
-	"MiniMax-M2.7": 1_048_576,
-	"MiniMax-M2.7-highspeed": 1_048_576,
+	"MiniMax-M3": 1_000_000,
+	"MiniMax-M2.7": 204_800,
+	"MiniMax-M2.7-highspeed": 204_800,
+	"MiniMax-M2.5": 204_800,
+	"MiniMax-M2.5-highspeed": 204_800,
 }
 
 

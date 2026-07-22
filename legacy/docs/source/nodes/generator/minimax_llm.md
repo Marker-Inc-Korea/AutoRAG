@@ -2,8 +2,8 @@
 myst:
    html_meta:
       title: AutoRAG - MiniMax LLM
-      description: Use MiniMax LLM in AutoRAG. Generate answers using MiniMax M3 and M2.7 models.
-      keywords: AutoRAG,RAG,LLM,generator,MiniMax,M3,M2.7
+      description: Use MiniMax LLM in AutoRAG. Generate answers using MiniMax M3, M2.7, and legacy M2.5 models.
+      keywords: AutoRAG,RAG,LLM,generator,MiniMax,M3,M2.7,M2.5
 ---
 # MiniMax LLM
 
@@ -13,11 +13,14 @@ The `minimax_llm` module integrates [MiniMax](https://www.minimax.io/) models in
 
 | Model | Context Window |
 |-------|---------------|
-| MiniMax-M3 | 524,288 tokens |
-| MiniMax-M2.7 | 1,048,576 tokens |
-| MiniMax-M2.7-highspeed | 1,048,576 tokens |
+| MiniMax-M3 | 1,000,000 tokens |
+| MiniMax-M2.7 | 204,800 tokens |
+| MiniMax-M2.7-highspeed | 204,800 tokens |
+| MiniMax-M2.5 (legacy) | 204,800 tokens |
+| MiniMax-M2.5-highspeed (legacy) | 204,800 tokens |
 
-`MiniMax-M3` is the recommended default; M2.7 variants remain available for compatibility.
+`MiniMax-M3` is the recommended default. M2.7 remains supported, and the
+legacy M2.5 names are retained so existing configurations do not break.
 
 ## Features
 

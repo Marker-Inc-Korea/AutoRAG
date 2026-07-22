@@ -442,19 +442,21 @@ class TestMaxTokenDict:
 		assert "MiniMax-M3" in MAX_TOKEN_DICT
 		assert "MiniMax-M2.7" in MAX_TOKEN_DICT
 		assert "MiniMax-M2.7-highspeed" in MAX_TOKEN_DICT
-
-	def test_legacy_models_removed(self):
-		assert "MiniMax-M2.5" not in MAX_TOKEN_DICT
-		assert "MiniMax-M2.5-highspeed" not in MAX_TOKEN_DICT
+		assert "MiniMax-M2.5" in MAX_TOKEN_DICT
+		assert "MiniMax-M2.5-highspeed" in MAX_TOKEN_DICT
 
 	def test_m3_context(self):
-		assert MAX_TOKEN_DICT["MiniMax-M3"] == 524_288
+		assert MAX_TOKEN_DICT["MiniMax-M3"] == 1_000_000
 
 	def test_m27_context(self):
-		assert MAX_TOKEN_DICT["MiniMax-M2.7"] == 1_048_576
+		assert MAX_TOKEN_DICT["MiniMax-M2.7"] == 204_800
 
 	def test_m27_highspeed_context(self):
-		assert MAX_TOKEN_DICT["MiniMax-M2.7-highspeed"] == 1_048_576
+		assert MAX_TOKEN_DICT["MiniMax-M2.7-highspeed"] == 204_800
+
+	def test_legacy_contexts(self):
+		assert MAX_TOKEN_DICT["MiniMax-M2.5"] == 204_800
+		assert MAX_TOKEN_DICT["MiniMax-M2.5-highspeed"] == 204_800
 
 
 class TestMiniMaxAPIBase:
