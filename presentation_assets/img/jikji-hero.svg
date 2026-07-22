@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Jikji — map-first local file discovery for AI agents</title>
+  <desc id="desc">A sober terminal-style comparison: raw agents crawl blindly, while Jikji returns ranked paths and evidence from a local map.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#16202b" stroke-width="1" opacity="0.55"/>
+    </pattern>
+    <style>
+      .bg{fill:#080c10}.grid{fill:url(#grid)}.sans{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",Arial,sans-serif}.mono{font-family:"SFMono-Regular","JetBrains Mono",Consolas,"Liberation Mono",Menlo,monospace}.title{fill:#eef4f8}.muted{fill:#8d9aa7}.dim{fill:#5f6b78}.green{fill:#65f2ad}.amber{fill:#ffd166}.red{fill:#ff7b72}.cyan{fill:#7dd9ff}.panel{fill:#0d131a;stroke:#24313d;stroke-width:1.2}.panel2{fill:#0a1118;stroke:#2a3a46;stroke-width:1}.bar{fill:#111923;stroke:#263442;stroke-width:1}.line{fill:none;stroke:#273746;stroke-width:1}.cmd{fill:#d6dee6}.comment{fill:#6f7d8a}.good{fill:#65f2ad}.warn{fill:#ffd166}.bad{fill:#ff7b72}.chip{fill:#111923;stroke:#2a3845;stroke-width:1}.arrow{stroke:#65f2ad;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;fill:none}.arrowDim{stroke:#445465;stroke-width:2;stroke-linecap:round;stroke-dasharray:6 8;fill:none}
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="620"/>
+  <rect class="grid" width="1200" height="620" opacity="0.45"/>
+
+  <g class="sans">
+    <g transform="translate(64 44)">
+      <rect width="40" height="40" rx="10" fill="#0f1a22" stroke="#2f4150"/>
+      <text x="20" y="27" text-anchor="middle" font-size="21" font-weight="900" class="green">직</text>
+      <text x="58" y="28" font-size="28" font-weight="850" class="title">Jikji</text>
+      <text x="1128" y="25" text-anchor="end" font-size="14" font-weight="650" class="muted">local-first · non-destructive · no embeddings required</text>
+    </g>
+
+    <text x="64" y="132" font-size="44" font-weight="860" letter-spacing="-1.5" class="title">Agent file discovery without blind crawling.</text>
+    <text x="64" y="168" font-size="20" font-weight="620" class="muted">Give the agent a local map first. Search less, open less, verify faster.</text>
+
+    <g transform="translate(64 202)">
+      <rect class="panel" width="500" height="300" rx="18"/>
+      <rect class="bar" x="0" y="0" width="500" height="42" rx="18"/>
+      <path d="M0 24H500" stroke="#263442"/>
+      <circle cx="24" cy="21" r="5" fill="#ff7b72"/>
+      <circle cx="42" cy="21" r="5" fill="#ffd166"/>
+      <circle cx="60" cy="21" r="5" fill="#65f2ad"/>
+      <text x="82" y="26" font-size="13" font-weight="760" class="muted">raw-agent.log</text>
+      <text x="26" y="76" font-size="15" font-weight="780" class="bad">WITHOUT JIKJI</text>
+      <text x="26" y="106" font-size="24" font-weight="820" class="title">Blind filesystem crawl</text>
+
+      <g class="mono" font-size="15" transform="translate(26 138)">
+        <text y="0" class="cmd">$ find ~/Documents -type f</text>
+        <text y="27" class="comment"># 20,481 paths returned</text>
+        <text y="54" class="cmd">$ grep -R "contract last spring" ...</text>
+        <text y="81" class="bad">open → miss</text>
+        <text y="108" class="bad">open → miss</text>
+        <text y="135" class="warn">guess → list → grep → open → repeat</text>
+      </g>
+
+      <g transform="translate(24 258)">
+        <rect class="chip" width="138" height="26" rx="13"/>
+        <text x="69" y="18" text-anchor="middle" font-size="12" font-weight="760" class="muted">many tool calls</text>
+        <rect class="chip" x="150" width="118" height="26" rx="13"/>
+        <text x="209" y="18" text-anchor="middle" font-size="12" font-weight="760" class="muted">noisy context</text>
+        <rect class="chip" x="280" width="134" height="26" rx="13"/>
+        <text x="347" y="18" text-anchor="middle" font-size="12" font-weight="760" class="muted">uncertain result</text>
+      </g>
+    </g>
+
+    <g transform="translate(636 202)">
+      <rect class="panel" width="500" height="300" rx="18"/>
+      <rect class="bar" x="0" y="0" width="500" height="42" rx="18"/>
+      <path d="M0 24H500" stroke="#263442"/>
+      <circle cx="24" cy="21" r="5" fill="#ff7b72"/>
+      <circle cx="42" cy="21" r="5" fill="#ffd166"/>
+      <circle cx="60" cy="21" r="5" fill="#65f2ad"/>
+      <text x="82" y="26" font-size="13" font-weight="760" class="muted">jikji-find.json</text>
+      <text x="26" y="76" font-size="15" font-weight="780" class="good">WITH JIKJI</text>
+      <text x="26" y="106" font-size="24" font-weight="820" class="title">Jikji find</text>
+
+      <g class="mono" font-size="15" transform="translate(26 138)">
+        <text y="0" class="cmd">$ jikji find ~/Documents "contract last spring" --json</text>
+        <text y="27" class="comment">{</text>
+        <text y="54" class="good">  "rank": 1,</text>
+        <text y="81" class="cmd">  "path": "Contracts/2025/vendor-renewal.pdf",</text>
+        <text y="108" class="cmd">  "evidence": "spring renewal agreement"</text>
+        <text y="135" class="comment">}</text>
+      </g>
+
+      <g transform="translate(24 258)">
+        <rect class="chip" width="104" height="26" rx="13"/>
+        <text x="52" y="18" text-anchor="middle" font-size="12" font-weight="760" class="green">ranked paths</text>
+        <rect class="chip" x="116" width="112" height="26" rx="13"/>
+        <text x="172" y="18" text-anchor="middle" font-size="12" font-weight="760" class="green">evidence</text>
+        <rect class="chip" x="240" width="126" height="26" rx="13"/>
+        <text x="303" y="18" text-anchor="middle" font-size="12" font-weight="760" class="green">verify only</text>
+      </g>
+    </g>
+
+    <g transform="translate(565 322)">
+      <path class="arrowDim" d="M0 0 C18 -18 36 -18 54 0"/>
+      <path class="arrow" d="M0 42 H54"/>
+      <path d="M54 42 l-12 -8 v16 z" fill="#65f2ad"/>
+    </g>
+
+    <g transform="translate(100 536)">
+      <rect class="panel2" width="1000" height="48" rx="14"/>
+      <g class="mono" font-size="14">
+        <text x="28" y="30" class="dim">benchmark</text>
+        <text x="128" y="30" class="bad">raw 36.1s</text>
+        <text x="246" y="30" class="green">jikji-fast 10.4s</text>
+        <text x="410" y="30" class="cyan">jikji-direct 0.004s</text>
+        <text x="650" y="30" class="dim">.jikji/search_index.sqlite · doc_text/ · file_cards.jsonl</text>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,4 @@
+# Missing required fields: name, description, type
+dataDescription: Some data
+contentTypes:
+  - misc

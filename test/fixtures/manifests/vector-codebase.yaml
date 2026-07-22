@@ -1,0 +1,10 @@
+name: codebase-vectors
+description: Embedded code chunks from main repo
+type: vector
+dataDescription: TypeScript source code chunks from the AutoRAG codebase, embedded with text-embedding-3-small
+contentTypes:
+  - code
+  - typescript
+config:
+  endpoint: http://localhost:6333
+  collection: codebase

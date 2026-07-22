@@ -1,5 +1,7 @@
 # AutoRAG - AI-Powered RAG Pipeline Optimization
 
+> **NOTE (monorepo layout):** These instructions describe the **legacy Python AutoRAG**, which now lives in the `legacy/` directory of this repository. Run all commands below from `legacy/`. The repository root hosts AutoRAG 2.0, a TypeScript/Bun librarian agent (`src/`, `test/`, `package.json`).
+
 AutoRAG is a Python package for automatically finding optimal RAG (Retrieval-Augmented Generation) pipelines for your data using AutoML techniques. The system evaluates various RAG module combinations to find the best configuration for your specific use case.
 
 **ALWAYS reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.**
