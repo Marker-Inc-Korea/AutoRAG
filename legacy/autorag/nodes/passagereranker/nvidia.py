@@ -85,6 +85,9 @@ class NvidiaReranker(BasePassageReranker):
 				f"len(queries)={len(queries)}, len(contents_list)={len(contents_list)}, len(ids_list)={len(ids_list)}."
 			)
 
+		if not queries:
+			return [], [], []
+
 		tasks = [
 			nvidia_rerank_pure(
 				self.session,

@@ -1,4 +1,5 @@
 import itertools
+import asyncio
 import os
 import pathlib
 import tempfile
@@ -367,6 +368,29 @@ def test_process_batch():
     result = loop.run_until_complete(process_batch(tasks, batch_size=64))
 
     assert result == results
+
+
+def test_process_batch_waits_for_siblings_and_logs_all_failures(caplog):
+    release = asyncio.Event()
+    completed = []
+
+    async def fail(name):
+        await release.wait()
+        raise RuntimeError(name)
+
+    async def complete_sibling():
+        release.set()
+        completed.append("done")
+        return "done"
+
+    tasks = [fail("first"), complete_sibling(), fail("second")]
+    loop = get_event_loop()
+    with pytest.raises(RuntimeError, match="first"):
+        loop.run_until_complete(process_batch(tasks, batch_size=3))
+
+    assert completed == ["done"]
+    assert "first" in caplog.text
+    assert "second" in caplog.text
 
 
 def test_openai_truncate_by_token():

@@ -50,6 +50,10 @@ def run_node_line(
 			os.path.join(node_line_dir, node.node_type, "summary.csv")
 		)
 		best_node_row = node_summary_df.loc[node_summary_df["is_best"]]
+		if best_node_row.empty:
+			raise ValueError(
+				f"No best module found for node type {node.node_type} in summary file."
+			)
 		summary_lst.append(
 			{
 				"node_type": node.node_type,

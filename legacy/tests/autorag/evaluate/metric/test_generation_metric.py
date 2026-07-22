@@ -12,6 +12,7 @@ from autorag.evaluation.metric import (
     bert_score,
     deepeval_faithfulness,
 )
+from autorag.evaluation.metric.util import remove_think_tags
 from autorag.schema.metricinput import MetricInput
 from tests.delete_tests import is_github_action
 from tests.mock import mock_get_text_embedding_batch
@@ -129,6 +130,13 @@ similarity_generation_metric_inputs = [
         generations, generation_gts, retrieval_gt_contents
     )
 ]
+think_similarity_generation_metric_inputs = [
+    MetricInput(
+        generated_texts=f"<think>private reasoning</think>\n{metric_input.generated_texts}",
+        generation_gt=metric_input.generation_gt,
+    )
+    for metric_input in similarity_generation_metric_inputs
+]
 ko_similarity_generation_metric_inputs = [
     MetricInput(generated_texts=gen, generation_gt=gen_gt)
     for gen, gen_gt in zip(ko_generations, ko_generation_gts)
@@ -226,6 +234,38 @@ def test_meteor():
 
 def test_rouge():
     base_test_metrics(rouge, [0.909, 0.35714, 1.0], similarity_generation_metric_inputs)
+
+
+def test_remove_think_tags():
+    assert remove_think_tags("<think>reasoning</think>answer") == "answer"
+    assert remove_think_tags("<Thinking>line 1\nline 2</Thinking>\nanswer") == "answer"
+    assert remove_think_tags("I think this is correct") == "I think this is correct"
+
+
+def test_overlap_metrics_remove_think_tags_by_default():
+    clean_bleu = bleu(similarity_generation_metric_inputs, lowercase=True)
+    clean_rouge = rouge(similarity_generation_metric_inputs)
+    clean_meteor = meteor(
+        similarity_generation_metric_inputs, alpha=0.85, beta=0.2, gamma=0.6
+    )
+
+    assert bleu(think_similarity_generation_metric_inputs, lowercase=True) == pytest.approx(
+        clean_bleu
+    )
+    assert rouge(think_similarity_generation_metric_inputs) == pytest.approx(
+        clean_rouge
+    )
+    assert meteor(
+        think_similarity_generation_metric_inputs, alpha=0.85, beta=0.2, gamma=0.6
+    ) == pytest.approx(clean_meteor)
+
+
+def test_overlap_metrics_can_keep_think_tags():
+    clean_scores = rouge(think_similarity_generation_metric_inputs)
+    raw_scores = rouge(
+        think_similarity_generation_metric_inputs, remove_think_tags=False
+    )
+    assert raw_scores[0] < clean_scores[0]
 
 
 @pytest.mark.skipif(

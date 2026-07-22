@@ -125,3 +125,17 @@ A metric that measures the similarity between two sentences using BERT's Context
 
 Get the Contextual Embedding value of `Answer gt` and `LLM generated result` with BERT, evaluate the similarity with
 Cosine Similarity for each token-pair, and weight each token with IDF.
+
+## Removing reasoning (`<think>`) tags
+
+Reasoning models can include internal reasoning inside `<think>...</think>` or
+`<thinking>...</thinking>` blocks. BLEU, ROUGE, METEOR, and BERTScore remove
+complete reasoning blocks by default so they score the final answer rather than
+the hidden chain of thought.
+
+Set `remove_think_tags: false` on a metric to score the raw output instead:
+
+```yaml
+- metric_name: rouge
+  remove_think_tags: false
+```

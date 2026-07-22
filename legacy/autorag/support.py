@@ -131,6 +131,8 @@ def get_support_modules(module_name: str) -> Callable:
 		),
 		"flashrank_reranker": ("autorag.nodes.passagereranker", "FlashRankReranker"),
 		"FlashRankReranker": ("autorag.nodes.passagereranker", "FlashRankReranker"),
+		"nvidia_reranker": ("autorag.nodes.passagereranker", "NvidiaReranker"),
+		"NvidiaReranker": ("autorag.nodes.passagereranker", "NvidiaReranker"),
 		# passage_filter
 		"pass_passage_filter": ("autorag.nodes.passagefilter", "PassPassageFilter"),
 		"similarity_threshold_cutoff": (

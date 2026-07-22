@@ -302,7 +302,23 @@ async def process_batch(tasks, batch_size: int = 64) -> List[Any]:
 
 	for i in range(0, len(tasks), batch_size):
 		batch = tasks[i : i + batch_size]
-		batch_results = await asyncio.gather(*batch)
+		batch_results = await asyncio.gather(*batch, return_exceptions=True)
+
+		first_exception = None
+		for offset, item in enumerate(batch_results):
+			if isinstance(item, BaseException):
+				logger.error(
+					"process_batch task %d (batch offset %d) raised %s: %s",
+					i + offset,
+					offset,
+					type(item).__name__,
+					item,
+				)
+				if first_exception is None:
+					first_exception = item
+		if first_exception is not None:
+			raise first_exception
+
 		results.extend(batch_results)
 
 	return results

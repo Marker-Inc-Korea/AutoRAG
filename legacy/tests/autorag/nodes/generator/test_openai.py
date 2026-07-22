@@ -57,6 +57,15 @@ def openai_gpt_5_instance():
 	)
 
 
+async def mock_openai_responses_create(*args, **kwargs):
+	return SimpleNamespace(output_text="Why not")
+
+
+@patch.object(
+	openai.resources.responses.AsyncResponses,
+	"create",
+	mock_openai_responses_create,
+)
 def test_openai_llm_gpt_5(openai_gpt_5_instance):
 	answers, tokens, log_probs = openai_gpt_5_instance._pure(
 		prompts,
@@ -71,6 +80,11 @@ def test_openai_llm_gpt_5(openai_gpt_5_instance):
 @pytest.mark.parametrize(
 	"model_name",
 	["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4"],
+)
+@patch.object(
+	openai.resources.responses.AsyncResponses,
+	"create",
+	mock_openai_responses_create,
 )
 def test_openai_llm_latest_models(model_name):
 	instance = OpenAILLM(project_dir=".", llm=model_name, api_key="mock_openai_api_key")

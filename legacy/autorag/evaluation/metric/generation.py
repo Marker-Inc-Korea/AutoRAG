@@ -19,6 +19,7 @@ from autorag.evaluation.metric.deepeval_prompt import FaithfulnessTemplate
 from autorag.evaluation.metric.util import (
 	autorag_metric_loop,
 	calculate_cosine_similarity,
+	remove_think_tags as _remove_think_tags,
 )
 from autorag.nodes.generator import OpenAILLM
 from autorag.nodes.generator.base import BaseGenerator
@@ -36,7 +37,11 @@ from autorag.utils.util import (
 
 @convert_inputs_to_list
 def huggingface_evaluate(
-	instance, key: str, metric_inputs: List[MetricInput], **kwargs
+	instance,
+	key: str,
+	metric_inputs: List[MetricInput],
+	remove_think_tags: bool = True,
+	**kwargs,
 ) -> List[float]:
 	"""
 	Compute huggingface evaluate metric.
@@ -49,6 +54,8 @@ def huggingface_evaluate(
 	"""
 
 	def compute_score(gt: List[str], pred: str) -> float:
+		if remove_think_tags:
+			pred = _remove_think_tags(pred)
 		return max(
 			list(
 				map(
@@ -189,6 +196,7 @@ def bleu(
 	max_ngram_order: int = 4,
 	trg_lang: str = "",
 	effective_order: bool = True,
+	remove_think_tags: bool = True,
 	**kwargs,
 ) -> List[float]:
 	"""
@@ -213,14 +221,15 @@ def bleu(
 		**kwargs,
 	)
 
-	result = list(
-		map(
-			lambda x: bleu_instance.sentence_score(
-				x.generated_texts, x.generation_gt
-			).score,
-			metric_inputs,
-		)
-	)
+	def compute_score(metric_input: MetricInput) -> float:
+		prediction = metric_input.generated_texts
+		if remove_think_tags:
+			prediction = _remove_think_tags(prediction)
+		return bleu_instance.sentence_score(
+			prediction, metric_input.generation_gt
+		).score
+
+	result = list(map(compute_score, metric_inputs))
 	return result
 
 
@@ -230,6 +239,7 @@ def meteor(
 	alpha: float = 0.9,
 	beta: float = 3.0,
 	gamma: float = 0.5,
+	remove_think_tags: bool = True,
 ) -> List[float]:
 	"""
 	Compute meteor score for generation.
@@ -250,6 +260,7 @@ def meteor(
 		meteor_instance,
 		"meteor",
 		metric_inputs,
+		remove_think_tags=remove_think_tags,
 		alpha=alpha,
 		beta=beta,
 		gamma=gamma,
@@ -265,6 +276,7 @@ def rouge(
 	use_stemmer: bool = False,
 	split_summaries: bool = False,
 	batch: int = os.cpu_count(),
+	remove_think_tags: bool = True,
 ) -> List[float]:
 	"""
 	Compute rouge score for generation.
@@ -295,6 +307,8 @@ def rouge(
 	)
 
 	async def compute(gt: List[str], pred: str) -> float:
+		if remove_think_tags:
+			pred = _remove_think_tags(pred)
 		return rouge_instance.score_multi(targets=gt, prediction=pred)[
 			rouge_type
 		].fmeasure
@@ -476,8 +490,11 @@ def bert_score(
 	lang: str = "en",
 	batch: int = 128,
 	n_threads: int = os.cpu_count(),
+	remove_think_tags: bool = True,
 ) -> List[float]:
 	generations = [metric_input.generated_texts for metric_input in metric_inputs]
+	if remove_think_tags:
+		generations = [_remove_think_tags(generation) for generation in generations]
 	generation_gt = [metric_input.generation_gt for metric_input in metric_inputs]
 	evaluator = evaluate.load("bertscore")
 

@@ -1,10 +1,20 @@
 import functools
+import re
 from typing import List
 
 import numpy as np
 
 from autorag.schema.metricinput import MetricInput
 from autorag.utils.util import convert_inputs_to_list
+
+_THINK_TAG_PATTERN = re.compile(
+	r"<think(?:ing)?>[\s\S]*?</think(?:ing)?>\s*", re.IGNORECASE
+)
+
+
+def remove_think_tags(text: str) -> str:
+	"""Remove complete ``<think>`` or ``<thinking>`` reasoning blocks."""
+	return _THINK_TAG_PATTERN.sub("", text)
 
 
 def calculate_cosine_similarity(a, b):

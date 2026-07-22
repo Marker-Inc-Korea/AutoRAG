@@ -4,6 +4,7 @@ from aioresponses import aioresponses
 
 from autorag.nodes.passagereranker import NvidiaReranker
 from autorag.nodes.passagereranker.nvidia import nvidia_rerank_pure
+from autorag.support import get_support_modules
 from autorag.utils.util import get_event_loop
 from tests.autorag.nodes.passagereranker.test_passage_reranker_base import (
 	queries_example,
@@ -116,6 +117,15 @@ def test_nvidia_reranker_batch_one(nvidia_reranker_instance):
             batch=batch,
         )
         base_reranker_test(contents_result, id_result, score_result, top_k)
+
+
+def test_nvidia_reranker_empty_input(nvidia_reranker_instance):
+	assert nvidia_reranker_instance._pure([], [], [], [], top_k=3) == ([], [], [])
+
+
+def test_nvidia_reranker_registration():
+	assert get_support_modules("nvidia_reranker") is NvidiaReranker
+	assert get_support_modules("NvidiaReranker") is NvidiaReranker
 
 
 def test_nvidia_reranker_node():
