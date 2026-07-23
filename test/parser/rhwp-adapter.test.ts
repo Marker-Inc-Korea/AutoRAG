@@ -225,15 +225,148 @@ describe("createRhwpExtractor table traversal and validation", () => {
 		expect(document.getTableDimensions).toHaveBeenCalledTimes(1);
 	});
 
+	it("skips a deferred nested table while preserving body and top-level table extraction", async () => {
+		const layout = JSON.stringify({
+			controls: [
+				{ type: "table", secIdx: 0, paraIdx: 0, controlIdx: 3 },
+				{
+					type: "table",
+					x: 120,
+					y: 240,
+					w: 300,
+					h: 80,
+					rowCount: 1,
+					colCount: 1,
+					parentParaIdx: 0,
+					cellPath: [{ controlIndex: 3, cellIndex: 0, cellParaIndex: 0 }],
+					plane: 2,
+					zOrder: 0,
+					stableIndex: 12,
+					cells: [{ row: 0, col: 0, rowSpan: 1, colSpan: 1, cellIdx: 0 }],
+				},
+			],
+		});
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => layout),
+			getTableDimensions: vi.fn(() => '{"rowCount":1,"colCount":1,"cellCount":1}'),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).resolves.toEqual({
+			paragraphs: [{ sectionIndex: 0, paragraphIndex: 0, text: "body" }],
+			tables: [
+				{
+					sectionIndex: 0,
+					parentParagraphIndex: 0,
+					controlIndex: 3,
+					rowCount: 1,
+					columnCount: 1,
+					cells: [{ row: 0, column: 0, rowSpan: 1, columnSpan: 1, paragraphs: [] }],
+				},
+			],
+		});
+		expect(document.getTableDimensions).toHaveBeenCalledTimes(1);
+	});
+
+	it("skips the pinned runtime's deferred nested-table layout context", async () => {
+		const layout = JSON.stringify({
+			controls: [
+				{ type: "table", secIdx: 0, paraIdx: 0, controlIdx: 3 },
+				{
+					type: "table",
+					x: 120,
+					y: 240,
+					w: 300,
+					h: 80,
+					rowCount: 2,
+					colCount: 2,
+					plane: 2,
+					zOrder: 0,
+					stableIndex: 12,
+					cells: [
+						{ x: 120, y: 240, w: 300, h: 40, row: 0, col: 0, rowSpan: 1, colSpan: 2, cellIdx: 0 },
+						{ x: 120, y: 280, w: 150, h: 40, row: 1, col: 0, rowSpan: 1, colSpan: 1, cellIdx: 1 },
+						{ x: 270, y: 280, w: 150, h: 40, row: 1, col: 1, rowSpan: 1, colSpan: 1, cellIdx: 2 },
+					],
+				},
+			],
+		});
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => layout),
+			getTableDimensions: vi.fn(() => '{"rowCount":1,"colCount":1,"cellCount":1}'),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).resolves.toMatchObject({
+			paragraphs: [{ sectionIndex: 0, paragraphIndex: 0, text: "body" }],
+			tables: [{ sectionIndex: 0, parentParagraphIndex: 0, controlIndex: 3 }],
+		});
+		expect(document.getTableDimensions).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects malformed layout JSON", async () => {
+		const document = createFakeDocument({ getPageControlLayout: vi.fn(() => "{not json") });
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow();
+	});
+
 	it.each([
-		["malformed layout JSON", "{not json"],
-		["a table without secIdx", '{"controls":[{"type":"table","paraIdx":0,"controlIdx":0}]}'],
+		["a table with no coordinates or nested context", { type: "table" }],
+		["a partial coordinate set", { type: "table", paraIdx: 0, controlIdx: 0 }],
 		[
-			"nested table metadata",
-			'{"controls":[{"type":"table","secIdx":0,"paraIdx":0,"controlIdx":0,"cellPath":[{"controlIndex":0,"cellIndex":0,"cellParaIndex":0}]}]}',
+			"top-level coordinates mixed with nested context",
+			{
+				type: "table",
+				secIdx: 0,
+				paraIdx: 0,
+				controlIdx: 0,
+				parentParaIdx: 0,
+				cellPath: [{ controlIndex: 0, cellIndex: 0, cellParaIndex: 0 }],
+			},
 		],
-	])("rejects %s instead of skipping it", async (_label, layout) => {
-		const document = createFakeDocument({ getPageControlLayout: vi.fn(() => layout) });
+		["an empty nested path", { type: "table", parentParaIdx: 0, cellPath: [] }],
+		[
+			"an incomplete nested path entry",
+			{ type: "table", parentParaIdx: 0, cellPath: [{ controlIndex: 0, cellIndex: 0 }] },
+		],
+		[
+			"nested context without parentParaIdx",
+			{ type: "table", cellPath: [{ controlIndex: 0, cellIndex: 0, cellParaIndex: 0 }] },
+		],
+		[
+			"an empty pinned-runtime cell context",
+			{
+				type: "table",
+				x: 0,
+				y: 0,
+				w: 1,
+				h: 1,
+				rowCount: 1,
+				colCount: 1,
+				plane: 2,
+				zOrder: 0,
+				stableIndex: 0,
+				cells: [],
+			},
+		],
+		[
+			"a malformed pinned-runtime cell span",
+			{
+				type: "table",
+				x: 0,
+				y: 0,
+				w: 1,
+				h: 1,
+				rowCount: 1,
+				colCount: 1,
+				plane: 2,
+				zOrder: 0,
+				stableIndex: 0,
+				cells: [{ x: 0, y: 0, w: 1, h: 1, row: 0, col: 0, rowSpan: 0, colSpan: 1, cellIdx: 0 }],
+			},
+		],
+	])("rejects %s instead of broadly skipping it", async (_label, control) => {
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => JSON.stringify({ controls: [control] })),
+		});
 
 		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow();
 	});
@@ -255,6 +388,151 @@ describe("createRhwpExtractor table traversal and validation", () => {
 
 		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(/rowCount/);
 		expect(document.getCellInfo).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["zero rowCount", { rowCount: 0, colCount: 1, cellCount: 0 }, /rowCount/],
+		["zero colCount", { rowCount: 1, colCount: 0, cellCount: 0 }, /colCount/],
+		["zero cellCount for a nonempty grid", { rowCount: 1, colCount: 1, cellCount: 0 }, /cellCount/],
+		["more cells than logical coordinates", { rowCount: 1, colCount: 1, cellCount: 2 }, /cellCount/],
+	] as const)("rejects inconsistent table geometry with %s", async (_label, dimensions, expected) => {
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => topLevelTableLayout),
+			getTableDimensions: vi.fn(() => JSON.stringify(dimensions)),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(expected);
+	});
+
+	it.each([
+		["section", { type: "table", secIdx: 1, paraIdx: 0, controlIdx: 0 }],
+		["parent paragraph", { type: "table", secIdx: 0, paraIdx: 1, controlIdx: 0 }],
+	] as const)("rejects an out-of-range table %s coordinate", async (label, control) => {
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => JSON.stringify({ controls: [control] })),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(label);
+		expect(document.getTableDimensions).not.toHaveBeenCalled();
+	});
+
+	it("charges the logical grid against maxCells before cell iteration", async () => {
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => topLevelTableLayout),
+			getTableDimensions: vi.fn(() => '{"rowCount":10,"colCount":1,"cellCount":1}'),
+		});
+
+		await expect(
+			createRhwpExtractor(createRuntime(document), { maxCells: 1 })(new Uint8Array([1])),
+		).rejects.toMatchObject({
+			code: "HWP_EXTRACTION_BUDGET_EXCEEDED",
+			limit: "maxCells",
+			actual: 10,
+			maximum: 1,
+		});
+		expect(document.getCellInfo).not.toHaveBeenCalled();
+	});
+
+	it("rejects an overflow-unsafe logical grid before cell iteration", async () => {
+		const document = createFakeDocument({
+			getPageControlLayout: vi.fn(() => topLevelTableLayout),
+			getTableDimensions: vi.fn(() =>
+				JSON.stringify({ rowCount: Number.MAX_SAFE_INTEGER, colCount: 2, cellCount: 1 }),
+			),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toMatchObject({
+			code: "HWP_EXTRACTION_BUDGET_EXCEEDED",
+			limit: "maxCells",
+		});
+		expect(document.getCellInfo).not.toHaveBeenCalled();
+	});
+
+	it("charges logical grids cumulatively across tables", async () => {
+		const layout = JSON.stringify({
+			controls: [
+				{ type: "table", secIdx: 0, paraIdx: 0, controlIdx: 3 },
+				{ type: "table", secIdx: 0, paraIdx: 0, controlIdx: 4 },
+			],
+		});
+		const document = createFakeDocument({
+			getCellInfo: vi.fn(() => '{"row":0,"col":0,"rowSpan":1,"colSpan":2}'),
+			getPageControlLayout: vi.fn(() => layout),
+			getTableDimensions: vi.fn(() => '{"rowCount":1,"colCount":2,"cellCount":1}'),
+		});
+
+		await expect(
+			createRhwpExtractor(createRuntime(document), { maxCells: 3 })(new Uint8Array([1])),
+		).rejects.toMatchObject({
+			code: "HWP_EXTRACTION_BUDGET_EXCEEDED",
+			limit: "maxCells",
+			actual: 4,
+			maximum: 3,
+		});
+		expect(document.getCellInfo).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([
+		["row outside the table", { row: 2, col: 0, rowSpan: 1, colSpan: 1 }, /row.*range/],
+		["column outside the table", { row: 0, col: 2, rowSpan: 1, colSpan: 1 }, /col.*range/],
+		["zero rowSpan", { row: 0, col: 0, rowSpan: 0, colSpan: 1 }, /rowSpan/],
+		["zero colSpan", { row: 0, col: 0, rowSpan: 1, colSpan: 0 }, /colSpan/],
+		["rowSpan past the table", { row: 1, col: 0, rowSpan: 2, colSpan: 1 }, /rowSpan.*range/],
+		["colSpan past the table", { row: 0, col: 1, rowSpan: 1, colSpan: 2 }, /colSpan.*range/],
+	] as const)("rejects cell geometry with %s before paragraph traversal", async (_label, cellInfo, expected) => {
+		const document = createFakeDocument({
+			getCellInfo: vi.fn(() => JSON.stringify(cellInfo)),
+			getCellParagraphCount: vi.fn(() => {
+				throw new Error("must not traverse invalid cell geometry");
+			}),
+			getPageControlLayout: vi.fn(() => topLevelTableLayout),
+			getTableDimensions: vi.fn(() => '{"rowCount":2,"colCount":2,"cellCount":1}'),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(expected);
+		expect(document.getCellParagraphCount).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"duplicate anchors",
+			{ rowCount: 1, colCount: 2, cellCount: 2 },
+			[
+				{ row: 0, col: 0, rowSpan: 1, colSpan: 1 },
+				{ row: 0, col: 0, rowSpan: 1, colSpan: 1 },
+			],
+			/duplicate cell anchor/,
+		],
+		[
+			"overlapping spans",
+			{ rowCount: 1, colCount: 3, cellCount: 2 },
+			[
+				{ row: 0, col: 0, rowSpan: 1, colSpan: 2 },
+				{ row: 0, col: 1, rowSpan: 1, colSpan: 2 },
+			],
+			/overlapping cell spans/,
+		],
+		[
+			"an uncovered logical coordinate",
+			{ rowCount: 2, colCount: 2, cellCount: 2 },
+			[
+				{ row: 0, col: 0, rowSpan: 1, colSpan: 1 },
+				{ row: 1, col: 1, rowSpan: 1, colSpan: 1 },
+			],
+			/logical grid/,
+		],
+	] as const)("rejects %s before paragraph traversal", async (_label, dimensions, cellInfos, expected) => {
+		const document = createFakeDocument({
+			getCellInfo: vi.fn((_section, _paragraph, _control, cellIndex) => JSON.stringify(cellInfos[cellIndex])),
+			getCellParagraphCount: vi.fn(() => {
+				throw new Error("must validate the complete grid before paragraph traversal");
+			}),
+			getPageControlLayout: vi.fn(() => topLevelTableLayout),
+			getTableDimensions: vi.fn(() => JSON.stringify(dimensions)),
+		});
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toThrow(expected);
+		expect(document.getCellParagraphCount).not.toHaveBeenCalled();
 	});
 
 	it("rejects a non-finite numeric count", async () => {
@@ -287,7 +565,7 @@ describe("createRhwpExtractor table traversal and validation", () => {
 					{ type: "table", secIdx: 0, paraIdx: 0, controlIdx: 1 },
 				],
 			}),
-			{},
+			{ getTableDimensions: vi.fn(() => '{"rowCount":1,"colCount":1,"cellCount":1}') },
 		],
 		[
 			"maxCells",

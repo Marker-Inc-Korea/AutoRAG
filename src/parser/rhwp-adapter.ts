@@ -131,6 +131,7 @@ function createRuntimeInitializer(runtime: RhwpRuntime): () => Promise<void> {
 
 function extractDocument(document: RhwpDocumentApi, limits: EffectiveHwpExtractionLimits): HwpExtractedDocument {
 	const paragraphs: HwpBodyParagraph[] = [];
+	const paragraphCounts: number[] = [];
 	const counters = { characters: 0, tables: 0, cells: 0, cellParagraphs: 0 };
 	const sectionCount = readCount(document.getSectionCount(), "section count");
 	checkBudget("maxSections", sectionCount, limits);
@@ -139,6 +140,7 @@ function extractDocument(document: RhwpDocumentApi, limits: EffectiveHwpExtracti
 			document.getParagraphCount(sectionIndex),
 			`paragraph count for section ${sectionIndex}`,
 		);
+		paragraphCounts.push(paragraphCount);
 		checkBudget("maxBodyParagraphs", paragraphs.length + paragraphCount, limits);
 		for (let paragraphIndex = 0; paragraphIndex < paragraphCount; paragraphIndex += 1) {
 			const length = readCount(
@@ -158,7 +160,7 @@ function extractDocument(document: RhwpDocumentApi, limits: EffectiveHwpExtracti
 			});
 		}
 	}
-	return { paragraphs, tables: extractTables(document, limits, counters) };
+	return { paragraphs, tables: extractTables(document, limits, counters, paragraphCounts) };
 }
 
 interface ExtractionCounters {
@@ -178,6 +180,7 @@ function extractTables(
 	document: RhwpDocumentApi,
 	limits: EffectiveHwpExtractionLimits,
 	counters: ExtractionCounters,
+	paragraphCounts: readonly number[],
 ): HwpTable[] {
 	const tables: HwpTable[] = [];
 	const seen = new Set<string>();
@@ -191,17 +194,9 @@ function extractTables(
 				throw new TypeError(`rhwp returned an invalid control type at page ${pageIndex}:${layoutIndex}`);
 			}
 			if (control.type !== "table") continue;
-			if (Object.hasOwn(control, "cellPath")) {
-				throw new TypeError(
-					`rhwp returned nested table metadata at page ${pageIndex}:${layoutIndex}; only top-level tables are supported`,
-				);
-			}
-
-			const coordinates: TableCoordinates = {
-				sectionIndex: readCount(control.secIdx, `table secIdx at page ${pageIndex}:${layoutIndex}`),
-				parentParagraphIndex: readCount(control.paraIdx, `table paraIdx at page ${pageIndex}:${layoutIndex}`),
-				controlIndex: readCount(control.controlIdx, `table controlIdx at page ${pageIndex}:${layoutIndex}`),
-			};
+			const label = `table at page ${pageIndex}:${layoutIndex}`;
+			const coordinates = readTableCoordinates(control, label, paragraphCounts, limits);
+			if (coordinates === undefined) continue;
 			const key = `${coordinates.sectionIndex}:${coordinates.parentParagraphIndex}:${coordinates.controlIndex}`;
 			if (seen.has(key)) continue;
 			seen.add(key);
@@ -211,6 +206,137 @@ function extractTables(
 		}
 	}
 	return tables;
+}
+
+function readTableCoordinates(
+	control: Record<string, unknown>,
+	label: string,
+	paragraphCounts: readonly number[],
+	limits: EffectiveHwpExtractionLimits,
+): TableCoordinates | undefined {
+	const hasSectionIndex = Object.hasOwn(control, "secIdx");
+	const hasParagraphIndex = Object.hasOwn(control, "paraIdx");
+	const hasControlIndex = Object.hasOwn(control, "controlIdx");
+	const coordinateCount = Number(hasSectionIndex) + Number(hasParagraphIndex) + Number(hasControlIndex);
+
+	if (coordinateCount === 0) {
+		validateDeferredNestedTable(control, label, limits);
+		return undefined;
+	}
+	if (coordinateCount !== 3) {
+		throw new TypeError(`rhwp returned a partial coordinate set for ${label}`);
+	}
+	if (Object.hasOwn(control, "cellPath") || Object.hasOwn(control, "parentParaIdx")) {
+		throw new TypeError(`rhwp returned conflicting top-level and nested context for ${label}`);
+	}
+
+	const coordinates = {
+		sectionIndex: readCount(control.secIdx, `secIdx for ${label}`),
+		parentParagraphIndex: readCount(control.paraIdx, `paraIdx for ${label}`),
+		controlIndex: readCount(control.controlIdx, `controlIdx for ${label}`),
+	};
+	const paragraphCount = paragraphCounts[coordinates.sectionIndex];
+	if (paragraphCount === undefined) {
+		throw new TypeError(`rhwp returned a section coordinate outside the announced document range for ${label}`);
+	}
+	if (coordinates.parentParagraphIndex >= paragraphCount) {
+		throw new TypeError(
+			`rhwp returned a parent paragraph coordinate outside the announced section range for ${label}`,
+		);
+	}
+	return coordinates;
+}
+
+function validateDeferredNestedTable(
+	control: Record<string, unknown>,
+	label: string,
+	limits: EffectiveHwpExtractionLimits,
+): void {
+	if (!Object.hasOwn(control, "cellPath") && !Object.hasOwn(control, "parentParaIdx")) {
+		validateDeferredNestedLayout(control, label, limits);
+		return;
+	}
+	readCount(control.parentParaIdx, `parentParaIdx for deferred nested ${label}`);
+	const cellPath = readArray(control.cellPath, `cellPath for deferred nested ${label}`);
+	if (cellPath.length === 0) {
+		throw new TypeError(`rhwp returned an empty cellPath for deferred nested ${label}`);
+	}
+	checkBudget("maxCells", cellPath.length, limits);
+	for (let pathIndex = 0; pathIndex < cellPath.length; pathIndex += 1) {
+		const entry = readRecord(cellPath[pathIndex], `cellPath entry ${pathIndex} for deferred nested ${label}`);
+		readCount(entry.controlIndex, `controlIndex in cellPath entry ${pathIndex} for deferred nested ${label}`);
+		readCount(entry.cellIndex, `cellIndex in cellPath entry ${pathIndex} for deferred nested ${label}`);
+		readCount(entry.cellParaIndex, `cellParaIndex in cellPath entry ${pathIndex} for deferred nested ${label}`);
+	}
+}
+
+function validateDeferredNestedLayout(
+	control: Record<string, unknown>,
+	label: string,
+	limits: EffectiveHwpExtractionLimits,
+): void {
+	readFiniteNumber(control.x, `x for deferred nested ${label}`);
+	readFiniteNumber(control.y, `y for deferred nested ${label}`);
+	readPositiveFiniteNumber(control.w, `w for deferred nested ${label}`);
+	readPositiveFiniteNumber(control.h, `h for deferred nested ${label}`);
+	const rowCount = readPositiveCount(control.rowCount, `rowCount for deferred nested ${label}`);
+	const columnCount = readPositiveCount(control.colCount, `colCount for deferred nested ${label}`);
+	readCount(control.plane, `plane for deferred nested ${label}`);
+	readSafeInteger(control.zOrder, `zOrder for deferred nested ${label}`);
+	readCount(control.stableIndex, `stableIndex for deferred nested ${label}`);
+	const cells = readArray(control.cells, `cells for deferred nested ${label}`);
+	if (cells.length === 0) {
+		throw new TypeError(`rhwp returned empty cells for deferred nested ${label}`);
+	}
+	checkBudget("maxCells", cells.length, limits);
+	if (rowCount < Math.ceil(cells.length / columnCount)) {
+		throw new TypeError(`rhwp returned too many cells for deferred nested ${label}`);
+	}
+
+	const anchors = new Set<string>();
+	const cellIndexes = new Set<number>();
+	const coveredCoordinates = new Set<string>();
+	for (let cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
+		const cell = readRecord(cells[cellIndex], `cell ${cellIndex} for deferred nested ${label}`);
+		readFiniteNumber(cell.x, `x for cell ${cellIndex} in deferred nested ${label}`);
+		readFiniteNumber(cell.y, `y for cell ${cellIndex} in deferred nested ${label}`);
+		readPositiveFiniteNumber(cell.w, `w for cell ${cellIndex} in deferred nested ${label}`);
+		readPositiveFiniteNumber(cell.h, `h for cell ${cellIndex} in deferred nested ${label}`);
+		const row = readCount(cell.row, `row for cell ${cellIndex} in deferred nested ${label}`);
+		const column = readCount(cell.col, `col for cell ${cellIndex} in deferred nested ${label}`);
+		const rowSpan = readPositiveCount(cell.rowSpan, `rowSpan for cell ${cellIndex} in deferred nested ${label}`);
+		const columnSpan = readPositiveCount(cell.colSpan, `colSpan for cell ${cellIndex} in deferred nested ${label}`);
+		const runtimeCellIndex = readCount(cell.cellIdx, `cellIdx for cell ${cellIndex} in deferred nested ${label}`);
+		if (row >= rowCount || rowSpan > rowCount - row) {
+			throw new TypeError(
+				`rhwp returned an out-of-range row span for cell ${cellIndex} in deferred nested ${label}`,
+			);
+		}
+		if (column >= columnCount || columnSpan > columnCount - column) {
+			throw new TypeError(
+				`rhwp returned an out-of-range col span for cell ${cellIndex} in deferred nested ${label}`,
+			);
+		}
+		if (cellIndexes.has(runtimeCellIndex)) {
+			throw new TypeError(`rhwp returned a duplicate cellIdx for deferred nested ${label}`);
+		}
+		cellIndexes.add(runtimeCellIndex);
+
+		const anchor = `${row}:${column}`;
+		if (anchors.has(anchor)) {
+			throw new TypeError(`rhwp returned a duplicate cell anchor for deferred nested ${label}`);
+		}
+		anchors.add(anchor);
+		for (let coveredRow = row; coveredRow < row + rowSpan; coveredRow += 1) {
+			for (let coveredColumn = column; coveredColumn < column + columnSpan; coveredColumn += 1) {
+				const coordinate = `${coveredRow}:${coveredColumn}`;
+				if (coveredCoordinates.has(coordinate)) {
+					throw new TypeError(`rhwp returned overlapping cell spans for deferred nested ${label}`);
+				}
+				coveredCoordinates.add(coordinate);
+			}
+		}
+	}
 }
 
 function extractTable(
@@ -225,13 +351,25 @@ function extractTable(
 		document.getTableDimensions(sectionIndex, parentParagraphIndex, controlIndex),
 		`table dimensions at ${key}`,
 	);
-	const rowCount = readCount(dimensions.rowCount, `rowCount for table ${key}`);
-	const columnCount = readCount(dimensions.colCount, `colCount for table ${key}`);
+	const rowCount = readPositiveCount(dimensions.rowCount, `rowCount for table ${key}`);
+	const columnCount = readPositiveCount(dimensions.colCount, `colCount for table ${key}`);
 	const cellCount = readCount(dimensions.cellCount, `cellCount for table ${key}`);
-	counters.cells += cellCount;
-	checkBudget("maxCells", counters.cells, limits);
+	const logicalCellCount = chargeLogicalCells(rowCount, columnCount, counters, limits);
+	if (cellCount === 0 || cellCount > logicalCellCount) {
+		throw new TypeError(
+			`rhwp returned an invalid cellCount for table ${key}; expected 1..${logicalCellCount}, received ${cellCount}`,
+		);
+	}
 
-	const cells: HwpTableCell[] = [];
+	interface CellGeometry {
+		readonly row: number;
+		readonly column: number;
+		readonly rowSpan: number;
+		readonly columnSpan: number;
+	}
+	const cellGeometry: CellGeometry[] = [];
+	const anchors = new Set<number>();
+	const coveredCoordinates = new Set<number>();
 	for (let cellIndex = 0; cellIndex < cellCount; cellIndex += 1) {
 		const cellInfo = readJsonRecord(
 			document.getCellInfo(sectionIndex, parentParagraphIndex, controlIndex, cellIndex),
@@ -239,8 +377,49 @@ function extractTable(
 		);
 		const row = readCount(cellInfo.row, `row for cell ${key}:${cellIndex}`);
 		const column = readCount(cellInfo.col, `col for cell ${key}:${cellIndex}`);
-		const rowSpan = readCount(cellInfo.rowSpan, `rowSpan for cell ${key}:${cellIndex}`);
-		const columnSpan = readCount(cellInfo.colSpan, `colSpan for cell ${key}:${cellIndex}`);
+		const rowSpan = readPositiveCount(cellInfo.rowSpan, `rowSpan for cell ${key}:${cellIndex}`);
+		const columnSpan = readPositiveCount(cellInfo.colSpan, `colSpan for cell ${key}:${cellIndex}`);
+		if (row >= rowCount) {
+			throw new TypeError(`rhwp returned a row outside the table range for cell ${key}:${cellIndex}`);
+		}
+		if (column >= columnCount) {
+			throw new TypeError(`rhwp returned a col outside the table range for cell ${key}:${cellIndex}`);
+		}
+		if (rowSpan > rowCount - row) {
+			throw new TypeError(`rhwp returned a rowSpan outside the table range for cell ${key}:${cellIndex}`);
+		}
+		if (columnSpan > columnCount - column) {
+			throw new TypeError(`rhwp returned a colSpan outside the table range for cell ${key}:${cellIndex}`);
+		}
+
+		const anchor = row * columnCount + column;
+		if (anchors.has(anchor)) {
+			throw new TypeError(`rhwp returned a duplicate cell anchor for table ${key} at ${row}:${column}`);
+		}
+		anchors.add(anchor);
+		for (let coveredRow = row; coveredRow < row + rowSpan; coveredRow += 1) {
+			for (let coveredColumn = column; coveredColumn < column + columnSpan; coveredColumn += 1) {
+				const coordinate = coveredRow * columnCount + coveredColumn;
+				if (coveredCoordinates.has(coordinate)) {
+					throw new TypeError(
+						`rhwp returned overlapping cell spans for table ${key} at ${coveredRow}:${coveredColumn}`,
+					);
+				}
+				coveredCoordinates.add(coordinate);
+			}
+		}
+		cellGeometry.push({ row, column, rowSpan, columnSpan });
+	}
+	if (coveredCoordinates.size !== logicalCellCount) {
+		throw new TypeError(
+			`rhwp returned cellCount ${cellCount} that covers ${coveredCoordinates.size} of ${logicalCellCount} logical grid coordinates for table ${key}`,
+		);
+	}
+
+	const cells: HwpTableCell[] = [];
+	for (let cellIndex = 0; cellIndex < cellGeometry.length; cellIndex += 1) {
+		const geometry = cellGeometry[cellIndex];
+		if (geometry === undefined) throw new TypeError(`rhwp omitted cell geometry at ${key}:${cellIndex}`);
 		const paragraphCount = readCount(
 			document.getCellParagraphCount(sectionIndex, parentParagraphIndex, controlIndex, cellIndex),
 			`cell paragraph count at ${key}:${cellIndex}`,
@@ -278,10 +457,7 @@ function extractTable(
 		}
 
 		cells.push({
-			row,
-			column,
-			rowSpan,
-			columnSpan,
+			...geometry,
 			paragraphs,
 		});
 	}
@@ -294,6 +470,23 @@ function extractTable(
 		columnCount,
 		cells,
 	};
+}
+
+function chargeLogicalCells(
+	rowCount: number,
+	columnCount: number,
+	counters: ExtractionCounters,
+	limits: EffectiveHwpExtractionLimits,
+): number {
+	if (rowCount > Math.floor(limits.maxCells / columnCount)) {
+		throw new HwpExtractionBudgetError("maxCells", rowCount * columnCount, limits.maxCells);
+	}
+	const logicalCellCount = rowCount * columnCount;
+	if (logicalCellCount > limits.maxCells - counters.cells) {
+		throw new HwpExtractionBudgetError("maxCells", counters.cells + logicalCellCount, limits.maxCells);
+	}
+	counters.cells += logicalCellCount;
+	return logicalCellCount;
 }
 
 function resolveLimits(overrides: HwpExtractionLimits): EffectiveHwpExtractionLimits {
@@ -318,6 +511,36 @@ function readCount(value: unknown, label: string): number {
 		throw new TypeError(`rhwp returned an invalid ${label}; expected a non-negative safe integer`);
 	}
 	return value as number;
+}
+
+function readPositiveCount(value: unknown, label: string): number {
+	const count = readCount(value, label);
+	if (count === 0) {
+		throw new TypeError(`rhwp returned an invalid ${label}; expected a positive safe integer`);
+	}
+	return count;
+}
+
+function readSafeInteger(value: unknown, label: string): number {
+	if (!Number.isSafeInteger(value)) {
+		throw new TypeError(`rhwp returned an invalid ${label}; expected a safe integer`);
+	}
+	return value as number;
+}
+
+function readFiniteNumber(value: unknown, label: string): number {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		throw new TypeError(`rhwp returned an invalid ${label}; expected a finite number`);
+	}
+	return value;
+}
+
+function readPositiveFiniteNumber(value: unknown, label: string): number {
+	const number = readFiniteNumber(value, label);
+	if (number <= 0) {
+		throw new TypeError(`rhwp returned an invalid ${label}; expected a positive finite number`);
+	}
+	return number;
 }
 
 function readText(value: unknown, label: string): string {
