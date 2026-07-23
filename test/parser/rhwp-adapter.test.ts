@@ -302,6 +302,62 @@ describe("createRhwpExtractor table traversal and validation", () => {
 		expect(document.getTableDimensions).toHaveBeenCalledTimes(1);
 	});
 
+	it("charges a deferred nested table's logical grid before expanding cell spans", async () => {
+		const layout = JSON.stringify({
+			controls: [
+				{
+					type: "table",
+					x: 0,
+					y: 0,
+					w: 10,
+					h: 10,
+					rowCount: 10,
+					colCount: 1,
+					plane: 2,
+					zOrder: 0,
+					stableIndex: 0,
+					cells: [{ x: 0, y: 0, w: 10, h: 10, row: 0, col: 0, rowSpan: 10, colSpan: 1, cellIdx: 0 }],
+				},
+			],
+		});
+		const document = createFakeDocument({ getPageControlLayout: vi.fn(() => layout) });
+
+		await expect(
+			createRhwpExtractor(createRuntime(document), { maxCells: 1 })(new Uint8Array([1])),
+		).rejects.toMatchObject({
+			code: "HWP_EXTRACTION_BUDGET_EXCEEDED",
+			limit: "maxCells",
+			actual: 10,
+			maximum: 1,
+		});
+	});
+
+	it("rejects an overflow-unsafe deferred nested logical grid before span traversal", async () => {
+		const layout = JSON.stringify({
+			controls: [
+				{
+					type: "table",
+					x: 0,
+					y: 0,
+					w: 10,
+					h: 10,
+					rowCount: Number.MAX_SAFE_INTEGER,
+					colCount: 2,
+					plane: 2,
+					zOrder: 0,
+					stableIndex: 0,
+					cells: [{ x: 0, y: 0, w: 10, h: 10, row: 0, col: 0, rowSpan: 1, colSpan: 1, cellIdx: 0 }],
+				},
+			],
+		});
+		const document = createFakeDocument({ getPageControlLayout: vi.fn(() => layout) });
+
+		await expect(createRhwpExtractor(createRuntime(document))(new Uint8Array([1]))).rejects.toMatchObject({
+			code: "HWP_EXTRACTION_BUDGET_EXCEEDED",
+			limit: "maxCells",
+		});
+	});
+
 	it("rejects malformed layout JSON", async () => {
 		const document = createFakeDocument({ getPageControlLayout: vi.fn(() => "{not json") });
 

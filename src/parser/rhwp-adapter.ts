@@ -281,6 +281,7 @@ function validateDeferredNestedLayout(
 	readPositiveFiniteNumber(control.h, `h for deferred nested ${label}`);
 	const rowCount = readPositiveCount(control.rowCount, `rowCount for deferred nested ${label}`);
 	const columnCount = readPositiveCount(control.colCount, `colCount for deferred nested ${label}`);
+	const logicalCellCount = readLogicalCellCount(rowCount, columnCount, limits);
 	readCount(control.plane, `plane for deferred nested ${label}`);
 	readSafeInteger(control.zOrder, `zOrder for deferred nested ${label}`);
 	readCount(control.stableIndex, `stableIndex for deferred nested ${label}`);
@@ -289,7 +290,7 @@ function validateDeferredNestedLayout(
 		throw new TypeError(`rhwp returned empty cells for deferred nested ${label}`);
 	}
 	checkBudget("maxCells", cells.length, limits);
-	if (rowCount < Math.ceil(cells.length / columnCount)) {
+	if (cells.length > logicalCellCount) {
 		throw new TypeError(`rhwp returned too many cells for deferred nested ${label}`);
 	}
 
@@ -478,15 +479,19 @@ function chargeLogicalCells(
 	counters: ExtractionCounters,
 	limits: EffectiveHwpExtractionLimits,
 ): number {
-	if (rowCount > Math.floor(limits.maxCells / columnCount)) {
-		throw new HwpExtractionBudgetError("maxCells", rowCount * columnCount, limits.maxCells);
-	}
-	const logicalCellCount = rowCount * columnCount;
+	const logicalCellCount = readLogicalCellCount(rowCount, columnCount, limits);
 	if (logicalCellCount > limits.maxCells - counters.cells) {
 		throw new HwpExtractionBudgetError("maxCells", counters.cells + logicalCellCount, limits.maxCells);
 	}
 	counters.cells += logicalCellCount;
 	return logicalCellCount;
+}
+
+function readLogicalCellCount(rowCount: number, columnCount: number, limits: EffectiveHwpExtractionLimits): number {
+	if (rowCount > Math.floor(limits.maxCells / columnCount)) {
+		throw new HwpExtractionBudgetError("maxCells", rowCount * columnCount, limits.maxCells);
+	}
+	return rowCount * columnCount;
 }
 
 function resolveLimits(overrides: HwpExtractionLimits): EffectiveHwpExtractionLimits {
