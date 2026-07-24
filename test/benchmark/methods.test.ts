@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { CreateBenchmarkMethodsOptions } from "../../benchmark/miracl/methods.ts";
 import {
 	createBenchmarkMethods,
 	loadBenchmarkConfig,
@@ -10,9 +11,19 @@ import {
 } from "../../benchmark/miracl/methods.ts";
 import { runMethodQueries } from "../../benchmark/miracl/run.ts";
 import { materializeBenchmarkWorkspace } from "../../benchmark/miracl/workspace.ts";
-import type { MinSyncSyncResult } from "../../src/minsync/types.ts";
 import { ParallelRetriever, ResultMerger } from "../../src/retrieval/merger.ts";
 import type { RetrievalMethod, RetrievalResult } from "../../src/retrieval/types.ts";
+
+type AssertFalse<T extends false> = T;
+type AssertTrue<T extends true> = T;
+type _NoPublicEnvironmentBypass = AssertFalse<"env" extends keyof CreateBenchmarkMethodsOptions ? true : false>;
+type _NoPublicBm25FactoryBypass = AssertFalse<"createBm25" extends keyof CreateBenchmarkMethodsOptions ? true : false>;
+type _NoPublicMinSyncFactoryBypass = AssertFalse<
+	"createMinSync" extends keyof CreateBenchmarkMethodsOptions ? true : false
+>;
+type _ConfigLoaderUsesProcessEnvironment = AssertTrue<
+	Parameters<typeof loadBenchmarkConfig>["length"] extends 1 ? true : false
+>;
 
 function methodStub(name: string, results: readonly RetrievalResult[]): RetrievalMethod {
 	return {
@@ -25,6 +36,40 @@ function methodStub(name: string, results: readonly RetrievalResult[]): Retrieva
 		}),
 		retrieve: async () => [...results],
 	};
+}
+
+function writeFakeMinSync(root: string): { binaryPath: string; queryStatePath: string; syncStatePath: string } {
+	const binaryPath = join(root, "minsync");
+	const queryStatePath = join(root, "query-state.json");
+	const syncStatePath = join(root, "sync-state.json");
+	writeFileSync(queryStatePath, JSON.stringify({ ok: true, stdout: JSON.stringify({ results: [] }) }));
+	writeFileSync(syncStatePath, JSON.stringify({ ok: true, stdout: JSON.stringify({ synced: 1 }) }));
+	writeFileSync(
+		binaryPath,
+		`#!/usr/bin/env node
+const { readFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+if (args[0] === "init") {
+  console.log(JSON.stringify({ ok: true }));
+  process.exit(0);
+}
+if (args[0] === "sync") {
+  const state = JSON.parse(readFileSync(${JSON.stringify(syncStatePath)}, "utf8"));
+  if (state.stdout) process.stdout.write(state.stdout);
+  if (state.stderr) process.stderr.write(state.stderr);
+  process.exit(state.ok ? 0 : 1);
+}
+if (args[0] === "query") {
+  const state = JSON.parse(readFileSync(${JSON.stringify(queryStatePath)}, "utf8"));
+  if (state.stdout) process.stdout.write(state.stdout);
+  if (state.stderr) process.stderr.write(state.stderr);
+  process.exit(state.ok ? 0 : 1);
+}
+process.exit(2);
+`,
+	);
+	chmodSync(binaryPath, 0o755);
+	return { binaryPath, queryStatePath, syncStatePath };
 }
 
 describe("MIRACL benchmark methods", () => {
@@ -70,9 +115,13 @@ describe("MIRACL benchmark methods", () => {
 			}),
 		);
 
-		const config = loadBenchmarkConfig(configPath, {
-			MIRACL_EMBEDDING_TOKEN: "do-not-serialize-this-secret",
-		});
+		process.env.MIRACL_EMBEDDING_TOKEN = "do-not-serialize-this-secret";
+		let config!: ReturnType<typeof loadBenchmarkConfig>;
+		try {
+			config = loadBenchmarkConfig(configPath);
+		} finally {
+			delete process.env.MIRACL_EMBEDDING_TOKEN;
+		}
 
 		expect(config).toEqual({
 			binaryPath: "/opt/minsync",
@@ -99,7 +148,7 @@ describe("MIRACL benchmark methods", () => {
 		const configPath = join(root, "minsync.json");
 		writeFileSync(configPath, JSON.stringify(value));
 
-		expect(() => loadBenchmarkConfig(configPath, {})).toThrow(expectedMessage);
+		expect(() => loadBenchmarkConfig(configPath)).toThrow(expectedMessage);
 	});
 
 	it("rejects an absent referenced key without exposing a configured endpoint", () => {
@@ -118,8 +167,9 @@ describe("MIRACL benchmark methods", () => {
 		);
 
 		let message = "";
+		delete process.env.MISSING_TOKEN;
 		try {
-			loadBenchmarkConfig(configPath, {});
+			loadBenchmarkConfig(configPath);
 		} catch (error) {
 			message = error instanceof Error ? error.message : String(error);
 		}
@@ -231,18 +281,274 @@ describe("MIRACL benchmark methods", () => {
 		expect(JSON.stringify(records)).not.toContain("private.example");
 	});
 
+	it("records standalone MinSync as failed when its synchronized executable disappears before query", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		rmSync(binaryPath);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("does not grade BM25-only partial output when the synchronized MinSync executable disappears", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["hybrid"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		rmSync(binaryPath);
+
+		const records = await runMethodQueries({
+			method: "hybrid",
+			retrieval: created.methods.get("hybrid") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("records a non-zero MinSync query process as failed instead of a legitimate empty result", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, queryStatePath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		writeFileSync(
+			queryStatePath,
+			JSON.stringify({
+				ok: false,
+				stderr: "Authorization: Bearer private-token at https://private.example/v1",
+			}),
+		);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+		expect(JSON.stringify(records)).not.toContain("private-token");
+		expect(JSON.stringify(records)).not.toContain("private.example");
+	});
+
+	it("records malformed successful MinSync output as failed instead of a legitimate empty result", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, queryStatePath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		writeFileSync(queryStatePath, JSON.stringify({ ok: true, stdout: "{not-json" }));
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("keeps a verifiably executed zero-hit MinSync query as a successful empty result", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "no matches" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [] });
+		expect(records[0]?.errorCode).toBeUndefined();
+	});
+
+	it("maps a verifiably executed MinSync hit through the benchmark source identity", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, queryStatePath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		writeFileSync(
+			queryStatePath,
+			JSON.stringify({
+				ok: true,
+				stdout: JSON.stringify({
+					results: [{ path: "files/miracl/doc.md.md", score: 0.8, text: "query" }],
+				}),
+			}),
+		);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]?.hits).toEqual([{ documentId: "doc", score: 0.8, rank: 1 }]);
+		expect(records[0]?.errorCode).toBeUndefined();
+	});
+
+	it("does not fall back to PATH when an explicit MinSync binary path is missing", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const fallbackDirectory = join(parent, "fallback-bin");
+		mkdirSync(fallbackDirectory);
+		writeFakeMinSync(fallbackDirectory);
+		const previousPath = process.env.PATH;
+		process.env.PATH = `${fallbackDirectory}:${previousPath ?? ""}`;
+		try {
+			await expect(
+				createBenchmarkMethods({
+					names: ["minsync"],
+					root: workspace.root,
+					documentBySource: workspace.documentBySource,
+					config: {
+						binaryPath: join(parent, "missing-explicit-minsync"),
+						autoInstall: false,
+						embedder: { dimension: 1024 },
+					},
+				}),
+			).rejects.toThrow("MinSync benchmark executable is unavailable");
+		} finally {
+			process.env.PATH = previousPath;
+		}
+	});
+
+	it("rejects an explicit MinSync binary path that is not executable", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		chmodSync(binaryPath, 0o644);
+
+		await expect(
+			createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			}),
+		).rejects.toThrow("MinSync benchmark executable is unavailable");
+	});
+
+	it("stabilizes equal-score hybrid truncation regardless of retrieval completion order", async () => {
+		const runWithOrder = async (first: "bm25" | "minsync") => {
+			let releaseBm25!: () => void;
+			let releaseMinSync!: () => void;
+			const bm25Ready = new Promise<void>((resolve) => {
+				releaseBm25 = resolve;
+			});
+			const minSyncReady = new Promise<void>((resolve) => {
+				releaseMinSync = resolve;
+			});
+			const bm25: RetrievalMethod = {
+				...methodStub("bm25", []),
+				retrieve: async () => {
+					await bm25Ready;
+					return [{ id: "bm25:a", source: "/a.md", content: "a", score: 1, metadata: {} }];
+				},
+			};
+			const minsync: RetrievalMethod = {
+				...methodStub("minsync", []),
+				retrieve: async () => {
+					await minSyncReady;
+					return [{ id: "minsync:b", source: "/b.md", content: "b", score: 1, metadata: {} }];
+				},
+			};
+			const pending = retrieveHybrid([bm25, minsync], "질문", 1);
+			if (first === "bm25") {
+				releaseBm25();
+				await Promise.resolve();
+				releaseMinSync();
+			} else {
+				releaseMinSync();
+				await Promise.resolve();
+				releaseBm25();
+			}
+			return pending;
+		};
+
+		const bm25First = await runWithOrder("bm25");
+		const minSyncFirst = await runWithOrder("minsync");
+
+		expect(bm25First.map((hit) => hit.source)).toEqual(["/a.md"]);
+		expect(minSyncFirst).toEqual(bm25First);
+	});
+
 	it("rejects a degraded MinSync synchronization before returning query methods", async () => {
 		const parent = makeRoot();
 		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
 			{ documentId: "doc", title: "제목", text: "본문" },
 		]);
-		const retrieve = vi.fn(async () => []);
-		const sync = vi.fn(
-			async (): Promise<MinSyncSyncResult> => ({
+		const { binaryPath, syncStatePath } = writeFakeMinSync(parent);
+		writeFileSync(
+			syncStatePath,
+			JSON.stringify({
 				ok: false,
-				synced: 0,
-				workspacePath: join(workspace.root, ".autorag", "minsync"),
-				reason: "Authorization: Bearer private-token at https://private.example/v1",
+				stderr: "Authorization: Bearer private-token at https://private.example/v1",
 			}),
 		);
 
@@ -251,16 +557,27 @@ describe("MIRACL benchmark methods", () => {
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: workspace.documentBySource,
-				config: { embedder: { dimension: 1024 } },
-				createMinSync: () => ({
-					...methodStub("minsync", []),
-					sync,
-					retrieve,
-				}),
+				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
 			}),
 		).rejects.toThrow("MinSync benchmark indexing failed");
-		expect(sync).toHaveBeenCalledTimes(1);
-		expect(retrieve).not.toHaveBeenCalled();
+	});
+
+	it("rejects a zero-document MinSync synchronization for a non-empty benchmark mirror", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "본문" },
+		]);
+		const { binaryPath, syncStatePath } = writeFakeMinSync(parent);
+		writeFileSync(syncStatePath, JSON.stringify({ ok: true, stdout: JSON.stringify({ synced: 0 }) }));
+
+		await expect(
+			createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			}),
+		).rejects.toThrow("MinSync benchmark indexing failed");
 	});
 
 	it("rejects an invalid source mapping before constructing MinSync", async () => {
@@ -268,18 +585,17 @@ describe("MIRACL benchmark methods", () => {
 		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
 			{ documentId: "doc", title: "제목", text: "본문" },
 		]);
-		const createMinSync = vi.fn();
+		const { binaryPath } = writeFakeMinSync(parent);
 
 		expect(() =>
 			createBenchmarkMethods({
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: new Map([["/miracl/doc.md", "wrong"]]),
-				config: { embedder: { dimension: 1024 } },
-				createMinSync,
+				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
 			}),
 		).toThrow("bijective");
-		expect(createMinSync).not.toHaveBeenCalled();
+		expect(existsSync(join(workspace.root, ".autorag", "minsync"))).toBe(false);
 	});
 
 	it("constructs a real MinSync method by default and fails when no binary is available", async () => {
@@ -302,7 +618,7 @@ describe("MIRACL benchmark methods", () => {
 						embedder: { dimension: 1024 },
 					},
 				}),
-			).rejects.toThrow("MinSync benchmark indexing failed");
+			).rejects.toThrow("MinSync benchmark executable is unavailable");
 		} finally {
 			process.env.PATH = previousPath;
 		}
