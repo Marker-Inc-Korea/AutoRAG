@@ -103,6 +103,12 @@ example is deliberately nonfunctional:
 }
 ```
 
+Make the configuration owner-only before running the benchmark:
+
+```bash
+chmod 600 benchmark-config.local.json
+```
+
 Set the named environment variable without putting its value in the file or
 command history, then run:
 
@@ -118,10 +124,14 @@ bun run benchmark:miracl evaluate --run benchmark/miracl/runs/all-smoke
 The benchmark rejects omitted or ambiguous pinning: `binaryPath`,
 `autoInstall: false`, `embedder.id`, `embedder.dimension`, and
 `embedder.timeoutMs` are required, and no executable is resolved from `PATH`,
-an installer, or a cache. MinSync init, sync, and query subprocesses use the
-configured timeout and cap captured stdout at 16 MiB and stderr at 1 MiB.
-During a run the benchmark verifies that the executable and MinSync index do
-not change.
+an installer, or a cache. The configuration must be a nonsymlinked owner-only
+regular file no larger than 1 MiB; the loader reads through a pinned open handle
+and rejects path replacement during the read. MinSync init, sync, and query
+subprocesses use the configured timeout and cap captured stdout at 16 MiB and
+stderr at 1 MiB. On timeout or output overflow the runner terminates the POSIX
+process group (or Windows process tree), destroys its pipes, and settles at the
+deadline even if a descendant inherited stdout or stderr. During a run the
+benchmark verifies that the executable and MinSync index do not change.
 
 Reports record the executable SHA-256, immutable model ID, local/remote
 endpoint kind, authentication kind, dimension, timeout and process-output
@@ -148,7 +158,8 @@ Full MinSync and hybrid commands are rejected before prepared data is loaded.
 The full BM25 path uses the production markdown normalization, BM25 chunking,
 query parsing, virtual-path identity, and document-level ranking semantics. It
 requires Tantivy rather than silently falling back to an in-memory
-TypeScript-wide-corpus index.
+TypeScript-wide-corpus index. Persisted full manifests are accepted only when
+their method list is exactly `["bm25"]` and their recorded engine is `tantivy`.
 
 ## Generated files and schemas
 
@@ -173,7 +184,10 @@ Every successful run directory contains exactly:
 - `metrics.json`:
   `{schemaVersion, methods, indexingLatencyMs, peakRssBeforeReportBytes?}`;
   each method has `queryCount`, `failureCount`, `recallAt`, `mrrAt10`,
-  `successAt`, `ndcgAt10`, and latency `mean`, `p50`, and `p95`
+  `successAt`, `ndcgAt10`, and latency `mean`, `p50`, and `p95`.
+  `indexingLatencyMs` must contain exactly the index components implied by the
+  declared methods: BM25 for `bm25` or `hybrid`, and MinSync for `minsync` or
+  `hybrid`
 - `summary.md`: a human-readable rendering of the same dataset,
   configuration, quality, performance, and limitation fields
 
@@ -197,7 +211,10 @@ disclosed for traceability.
   documents have zero relevance.
 - Retrieval initially asks for 100 chunks and doubles the bounded request up to
   1,600 when chunk deduplication has not yet produced 100 unique MIRACL
-  documents. Document scores use the best matching chunk.
+  documents. If a backend fills the 1,600-candidate request without producing
+  the required unique-document count, the query fails closed instead of
+  reporting an understated Recall@100. A shorter result set is treated as
+  genuine backend exhaustion. Document scores use the best matching chunk.
 - Query mean, p50, and nearest-rank p95 include successful retrieval calls
   only. Indexing is reported separately; hybrid indexing time is the sum of
   BM25 and MinSync indexing.
@@ -209,8 +226,9 @@ publishes the complete report but exits nonzero if any query failed.
 `evaluate` requires exactly `manifest.json`, `results.jsonl`, `metrics.json`,
 and `summary.md`; it rejects extra or missing files, validates that
 `summary.md` is the canonical rendering of the structured artifacts,
-recomputes all metrics, prints `metrics.json` as JSON, and exits nonzero when
-any saved query failed. Preparation, indexing, configuration, integrity, or
+rechecks full-profile method/engine and indexing-latency coherence, recomputes
+all metrics, prints `metrics.json` as JSON, and exits nonzero when any saved
+query failed. Preparation, indexing, configuration, integrity, or
 artifact-validation errors also exit nonzero and may prevent report
 publication.
 
@@ -229,3 +247,11 @@ remain at query boundaries. Keep these integrity checks enabled: although
 excluded from query latency, content hashing can warm or evict filesystem cache
 pages and therefore perturb later retrieval timings. Compare runs only under
 equivalent cache, hardware, binary, embedder, and configuration conditions.
+
+Each MinSync integrity pass has an absolute 120-second deadline. Executable
+hashing is capped at 256 MiB; MinSync's internal config, manifest, and cursor
+files are capped at 1 MiB, 64 MiB, and 1 MiB respectively. Collection traversal
+is iterative and rejects depth above 32, more than 4,096 entries, or more than
+2 GiB of declared or streamed file content. All hashed files are opened without
+following symlinks and their open-handle and pathname identities are compared
+before and after streaming.
