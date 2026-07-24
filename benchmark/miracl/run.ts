@@ -45,11 +45,18 @@ export type BenchmarkBM25Factory = (options: BM25MethodOptions) => BenchmarkBM25
 
 export interface RunMethodQueriesOptions {
 	readonly method: BenchmarkMethod;
-	readonly retrieval: RetrievalMethod;
+	readonly retrieval: RetrievalMethod & BenchmarkRetrievalLifecycle;
 	readonly queries: readonly BenchmarkQuery[];
 	readonly documentBySource: ReadonlyMap<string, string>;
 	readonly topK: number;
 	readonly now?: () => number;
+}
+
+export interface BenchmarkRetrievalLifecycle {
+	beforeBenchmarkBatch?(): void | Promise<void>;
+	beforeBenchmarkQuery?(): void | Promise<void>;
+	afterBenchmarkQuery?(): void | Promise<void>;
+	afterBenchmarkBatch?(): void | Promise<void>;
 }
 
 export async function runBm25Queries(
@@ -105,34 +112,66 @@ export async function runMethodQueries(
 	validateDocumentBySource(options.documentBySource);
 	const now = options.now ?? (() => performance.now());
 	const records: QueryRunRecord[] = [];
+	const lifecycle = options.retrieval;
 
+	try {
+		await lifecycle.beforeBenchmarkBatch?.call(lifecycle);
+	} catch {
+		return options.queries.map((query) => failedQueryRecord(options.method, query.queryId, 0));
+	}
 	for (const query of options.queries) {
-		const startedAt = now();
+		let latencyMs = 0;
 		try {
-			const results = await options.retrieval.retrieve(query.text, {
-				topK: RETRIEVAL_CANDIDATE_LIMIT,
-			});
+			await lifecycle.beforeBenchmarkQuery?.call(lifecycle);
+			const startedAt = now();
+			let results: RetrievalResult[] | undefined;
+			let retrievalFailed = false;
+			try {
+				results = await options.retrieval.retrieve(query.text, {
+					topK: RETRIEVAL_CANDIDATE_LIMIT,
+				});
+			} catch {
+				retrievalFailed = true;
+			}
+			latencyMs = elapsedMilliseconds(startedAt, now());
+			await lifecycle.afterBenchmarkQuery?.call(lifecycle);
+			if (retrievalFailed || results === undefined) {
+				throw new Error("retrieval failed");
+			}
 			const hits = rankDocumentHits(results, options.documentBySource, options.topK);
 			records.push({
 				schemaVersion: 1,
 				method: options.method,
 				queryId: query.queryId,
-				latencyMs: elapsedMilliseconds(startedAt, now()),
+				latencyMs,
 				hits,
 			});
 		} catch {
-			records.push({
-				schemaVersion: 1,
-				method: options.method,
-				queryId: query.queryId,
-				latencyMs: elapsedMilliseconds(startedAt, now()),
-				hits: [],
-				errorCode: "retrieval-failed",
-			});
+			records.push(failedQueryRecord(options.method, query.queryId, latencyMs));
 		}
 	}
 
+	try {
+		await lifecycle.afterBenchmarkBatch?.call(lifecycle);
+	} catch {
+		return records.map((record) => failedQueryRecord(record.method, record.queryId, record.latencyMs));
+	}
 	return records;
+}
+
+function failedQueryRecord(
+	method: BenchmarkMethod,
+	queryId: string,
+	latencyMs: number,
+): QueryRunRecord {
+	return {
+		schemaVersion: 1,
+		method,
+		queryId,
+		latencyMs,
+		hits: [],
+		errorCode: "retrieval-failed",
+	};
 }
 
 export function validateBenchmarkWorkspace(

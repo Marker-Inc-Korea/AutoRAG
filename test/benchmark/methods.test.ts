@@ -1,4 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -47,20 +56,50 @@ function writeFakeMinSync(root: string): { binaryPath: string; queryStatePath: s
 	writeFileSync(
 		binaryPath,
 		`#!/usr/bin/env node
-const { readFileSync } = require("node:fs");
+const { mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } = require("node:fs");
+const { join } = require("node:path");
 const args = process.argv.slice(2);
 if (args[0] === "init") {
+  const stateDir = join(process.cwd(), ".minsync");
+  const storeDir = join(stateDir, "store");
+  mkdirSync(storeDir, { recursive: true });
+  writeFileSync(join(stateDir, "config.toml"), [
+    "version = 1",
+    'source_id = "benchmark-test"',
+    "[collection]",
+    'name = "benchmark"',
+    'path = "store"',
+    "[embedder]",
+    'id = "test"',
+    "[vectorstore]",
+    'id = "lancedb"',
+    "[vectorstore.options]",
+    "dimension = 1024",
+    "",
+  ].join("\\n"));
+  writeFileSync(join(stateDir, "manifest.json"), JSON.stringify({ files: {} }));
+  writeFileSync(join(storeDir, "index.lance"), "benchmark-index\\n");
   console.log(JSON.stringify({ ok: true }));
   process.exit(0);
 }
 if (args[0] === "sync") {
   const state = JSON.parse(readFileSync(${JSON.stringify(syncStatePath)}, "utf8"));
+  writeFileSync(join(process.cwd(), ".minsync", "cursor.json"), JSON.stringify({
+    source_id: "benchmark-test",
+    collection_path: ".minsync/store",
+  }));
   if (state.stdout) process.stdout.write(state.stdout);
   if (state.stderr) process.stderr.write(state.stderr);
   process.exit(state.ok ? 0 : 1);
 }
 if (args[0] === "query") {
   const state = JSON.parse(readFileSync(${JSON.stringify(queryStatePath)}, "utf8"));
+  if (state.mutateCollection) {
+    const indexPath = join(process.cwd(), ".minsync", "store", "index.lance");
+    const originalStats = statSync(indexPath);
+    writeFileSync(indexPath, "tampered-indexx\\n");
+    utimesSync(indexPath, originalStats.atime, originalStats.mtime);
+  }
   if (state.stdout) process.stdout.write(state.stdout);
   if (state.stderr) process.stderr.write(state.stderr);
   process.exit(state.ok ? 0 : 1);
@@ -446,6 +485,192 @@ describe("MIRACL benchmark methods", () => {
 
 		expect(records[0]?.hits).toEqual([{ documentId: "doc", score: 0.8, rank: 1 }]);
 		expect(records[0]?.errorCode).toBeUndefined();
+	});
+
+	it("fails an otherwise successful MinSync query when every returned path is outside the path map", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, queryStatePath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		writeFileSync(
+			queryStatePath,
+			JSON.stringify({
+				ok: true,
+				stdout: JSON.stringify({
+					results: [{ path: "/outside/unknown.md", score: 0.8, text: "query" }],
+				}),
+			}),
+		);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("fails a mixed mapped and unmapped MinSync result instead of grading the mapped subset", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, queryStatePath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		writeFileSync(
+			queryStatePath,
+			JSON.stringify({
+				ok: true,
+				stdout: JSON.stringify({
+					results: [
+						{ path: "files/miracl/doc.md.md", score: 0.8, text: "query" },
+						{ path: "/outside/unknown.md", score: 0.7, text: "query" },
+					],
+				}),
+			}),
+		);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("detects replacement of the MinSync workspace beneath an unchanged benchmark root", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		const minSyncWorkspace = join(workspace.root, ".autorag", "minsync");
+		const displacedWorkspace = join(workspace.root, ".autorag", "minsync-displaced");
+		renameSync(minSyncWorkspace, displacedWorkspace);
+		mkdirSync(minSyncWorkspace);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("detects replacement of the real MinSync collection index beneath an unchanged workspace", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		const collection = join(workspace.root, ".autorag", "minsync", ".minsync", "store");
+		const displacedCollection = join(workspace.root, ".autorag", "minsync", ".minsync", "store-displaced");
+		renameSync(collection, displacedCollection);
+		mkdirSync(collection);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("invalidates the batch when collection content changes without changing its file identity metadata", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, queryStatePath } = writeFakeMinSync(parent);
+		const created = await createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		writeFileSync(
+			queryStatePath,
+			JSON.stringify({
+				ok: true,
+				mutateCollection: true,
+				stdout: JSON.stringify({
+					results: [{ path: "files/miracl/doc.md.md", score: 0.8, text: "query" }],
+				}),
+			}),
+		);
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]).toMatchObject({ hits: [], errorCode: "retrieval-failed" });
+	});
+
+	it("checks the synchronized executable after the injected indexing clock stops", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const originalExecutable = readFileSync(binaryPath, "utf8");
+		let clockCalls = 0;
+
+		await expect(
+			createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+				now: () => {
+					clockCalls += 1;
+					if (clockCalls === 2) {
+						writeFileSync(binaryPath, originalExecutable.replace("process.exit(2);", "process.exit(3);"));
+					}
+					return clockCalls === 1 ? 10 : 15;
+				},
+			}),
+		).rejects.toThrow("MinSync benchmark executable changed");
+		expect(clockCalls).toBe(2);
 	});
 
 	it("does not fall back to PATH when an explicit MinSync binary path is missing", async () => {

@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
-import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
-import { basename, delimiter, join } from "node:path";
+import {
+	accessSync,
+	constants,
+	lstatSync,
+	readFileSync,
+	readdirSync,
+	realpathSync,
+} from "node:fs";
+import { basename, delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
+import { parse } from "smol-toml";
 import { MinSyncVectorMethod } from "../../src/minsync/method.ts";
 import { ensureMinSyncBinary, executableName } from "../../src/minsync/installer.ts";
 import { minSyncWorkspaceRoot } from "../../src/minsync/paths.ts";
@@ -28,7 +36,10 @@ import {
 	assertBenchmarkDirectoryIdentity,
 	snapshotBenchmarkDirectory,
 } from "./workspace.ts";
-import { validateBenchmarkWorkspace } from "./run.ts";
+import {
+	type BenchmarkRetrievalLifecycle,
+	validateBenchmarkWorkspace,
+} from "./run.ts";
 import type { BenchmarkMethod } from "./types.ts";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -178,18 +189,19 @@ async function constructAndSyncMethods(
 
 	if (options.needsBm25) {
 		const productionBm25 = new BM25Method({ root: options.root });
-		const startedAt = now();
 		let result: BM25SyncResult;
 		assertBenchmarkDirectoryIdentity(options.root, options.identity);
+		const startedAt = now();
 		try {
 			result = await productionBm25.sync();
 		} catch {
+			const indexingLatencyMsValue = elapsedMilliseconds(startedAt, now());
 			assertBenchmarkDirectoryIdentity(options.root, options.identity);
-			now();
+			indexingLatencyMs.bm25 = indexingLatencyMsValue;
 			throw new Error("BM25 benchmark indexing failed");
 		}
-		assertBenchmarkDirectoryIdentity(options.root, options.identity);
 		indexingLatencyMs.bm25 = elapsedMilliseconds(startedAt, now());
+		assertBenchmarkDirectoryIdentity(options.root, options.identity);
 		if (
 			(result.readiness !== "ready" &&
 				result.readiness !== "degraded_fallback") ||
@@ -218,21 +230,22 @@ async function constructAndSyncMethods(
 			autoInstall: false,
 			embedder: config.embedder,
 		});
-		const startedAt = now();
 		let result: MinSyncSyncResult;
 		assertBenchmarkDirectoryIdentity(options.root, options.identity);
-		assertExecutableIdentity(executable);
+		assertExecutableMetadata(executable);
+		const startedAt = now();
 		try {
 			result = await productionMinSync.sync();
 		} catch {
+			const indexingLatencyMsValue = elapsedMilliseconds(startedAt, now());
 			assertBenchmarkDirectoryIdentity(options.root, options.identity);
 			assertExecutableIdentity(executable);
-			now();
+			indexingLatencyMs.minsync = indexingLatencyMsValue;
 			throw new Error("MinSync benchmark indexing failed");
 		}
+		indexingLatencyMs.minsync = elapsedMilliseconds(startedAt, now());
 		assertBenchmarkDirectoryIdentity(options.root, options.identity);
 		assertExecutableIdentity(executable);
-		indexingLatencyMs.minsync = elapsedMilliseconds(startedAt, now());
 		const expectedWorkspacePath = minSyncWorkspaceRoot(options.root);
 		if (
 			!result.ok ||
@@ -242,11 +255,16 @@ async function constructAndSyncMethods(
 		) {
 			throw new Error("MinSync benchmark indexing failed");
 		}
+		const workspaceIdentity = snapshotMinSyncWorkspace(
+			options.root,
+			expectedWorkspacePath,
+		);
 		minsync = new CheckedMinSyncMethod({
 			root: options.root,
 			rootIdentity: options.identity,
 			executable,
 			workspacePath: expectedWorkspacePath,
+			workspaceIdentity,
 			embedder: config.embedder,
 		});
 	}
@@ -299,7 +317,7 @@ export async function retrieveHybrid(
 	return merger.merge(deterministicResults, { topK, dedup: true });
 }
 
-class HybridBenchmarkMethod implements RetrievalMethod {
+class HybridBenchmarkMethod implements RetrievalMethod, BenchmarkRetrievalLifecycle {
 	private readonly methods: readonly [RetrievalMethod, RetrievalMethod];
 
 	constructor(bm25: RetrievalMethod, minsync: RetrievalMethod) {
@@ -326,6 +344,39 @@ class HybridBenchmarkMethod implements RetrievalMethod {
 			options.topK ?? RETRIEVAL_LIMIT,
 		);
 	}
+
+	beforeBenchmarkBatch(): Promise<void> {
+		return runLifecycleHook(this.methods, "beforeBenchmarkBatch");
+	}
+
+	beforeBenchmarkQuery(): Promise<void> {
+		return runLifecycleHook(this.methods, "beforeBenchmarkQuery");
+	}
+
+	afterBenchmarkQuery(): Promise<void> {
+		return runLifecycleHook(this.methods, "afterBenchmarkQuery");
+	}
+
+	afterBenchmarkBatch(): Promise<void> {
+		return runLifecycleHook(this.methods, "afterBenchmarkBatch");
+	}
+}
+
+type LifecycleHookName =
+	| "beforeBenchmarkBatch"
+	| "beforeBenchmarkQuery"
+	| "afterBenchmarkQuery"
+	| "afterBenchmarkBatch";
+
+async function runLifecycleHook(
+	methods: readonly RetrievalMethod[],
+	hookName: LifecycleHookName,
+): Promise<void> {
+	for (const method of methods) {
+		const lifecycle = method as RetrievalMethod &
+			BenchmarkRetrievalLifecycle;
+		await lifecycle[hookName]?.call(lifecycle);
+	}
 }
 
 interface ExecutableIdentity {
@@ -333,7 +384,34 @@ interface ExecutableIdentity {
 	readonly device: number;
 	readonly inode: number;
 	readonly size: number;
+	readonly modifiedAtMs: number;
 	readonly sha256: string;
+}
+
+interface PathIdentity {
+	readonly path: string;
+	readonly device: number;
+	readonly inode: number;
+	readonly size: number;
+	readonly modifiedAtMs: number;
+	readonly kind: "directory" | "file";
+}
+
+interface FileIntegrity extends PathIdentity {
+	readonly kind: "file";
+	readonly sha256: string;
+}
+
+interface MinSyncWorkspaceIdentity {
+	readonly benchmarkRoot: string;
+	readonly workspace: PathIdentity;
+	readonly stateDirectory: PathIdentity;
+	readonly config: FileIntegrity;
+	readonly manifest: FileIntegrity;
+	readonly cursor: FileIntegrity;
+	readonly collection: PathIdentity;
+	readonly collectionTree: readonly PathIdentity[];
+	readonly collectionTreeSha256: string;
 }
 
 interface CheckedMinSyncMethodOptions {
@@ -341,14 +419,16 @@ interface CheckedMinSyncMethodOptions {
 	readonly rootIdentity: ReturnType<typeof snapshotBenchmarkDirectory>;
 	readonly executable: ExecutableIdentity;
 	readonly workspacePath: string;
+	readonly workspaceIdentity: MinSyncWorkspaceIdentity;
 	readonly embedder: MinSyncEmbedderConfig;
 }
 
-class CheckedMinSyncMethod implements RetrievalMethod {
+class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecycle {
 	private readonly root: string;
 	private readonly rootIdentity: ReturnType<typeof snapshotBenchmarkDirectory>;
 	private readonly executable: ExecutableIdentity;
 	private readonly workspacePath: string;
+	private readonly workspaceIdentity: MinSyncWorkspaceIdentity;
 	private readonly embedder: MinSyncEmbedderConfig;
 
 	constructor(options: CheckedMinSyncMethodOptions) {
@@ -356,6 +436,7 @@ class CheckedMinSyncMethod implements RetrievalMethod {
 		this.rootIdentity = options.rootIdentity;
 		this.executable = options.executable;
 		this.workspacePath = options.workspacePath;
+		this.workspaceIdentity = options.workspaceIdentity;
 		this.embedder = options.embedder;
 	}
 
@@ -374,7 +455,8 @@ class CheckedMinSyncMethod implements RetrievalMethod {
 		validateTopK(topK);
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), RETRIEVAL_LIMIT) : topK;
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
-		assertExecutableIdentity(this.executable);
+		assertExecutableMetadata(this.executable);
+		assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		let processResult: Awaited<ReturnType<typeof spawnProcess>>;
 		try {
@@ -388,7 +470,8 @@ class CheckedMinSyncMethod implements RetrievalMethod {
 			throw new Error("MinSync benchmark retrieval failed");
 		} finally {
 			assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
-			assertExecutableIdentity(this.executable);
+			assertExecutableMetadata(this.executable);
+			assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
 		}
 		if (!processResult.ok) {
 			throw new Error("MinSync benchmark retrieval failed");
@@ -397,7 +480,10 @@ class CheckedMinSyncMethod implements RetrievalMethod {
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
-			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
+			if (!entry) {
+				throw new Error("MinSync benchmark retrieval failed");
+			}
+			if (!matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
 			results.push({
 				id: `minsync:${entry.virtualPath}:${basename(hit.path)}`,
 				content: hit.text,
@@ -408,6 +494,30 @@ class CheckedMinSyncMethod implements RetrievalMethod {
 			if (results.length >= topK) break;
 		}
 		return results;
+	}
+
+	beforeBenchmarkBatch(): void {
+		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
+		assertExecutableIdentity(this.executable);
+		assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
+	}
+
+	beforeBenchmarkQuery(): void {
+		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
+		assertExecutableMetadata(this.executable);
+		assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
+	}
+
+	afterBenchmarkQuery(): void {
+		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
+		assertExecutableMetadata(this.executable);
+		assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
+	}
+
+	afterBenchmarkBatch(): void {
+		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
+		assertExecutableIdentity(this.executable);
+		assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
 	}
 }
 
@@ -449,27 +559,41 @@ function trySnapshotExecutable(path: string): ExecutableIdentity | undefined {
 }
 
 function snapshotExecutable(path: string): ExecutableIdentity {
+	const metadata = snapshotExecutableMetadata(path);
 	try {
-		const canonicalPath = realpathSync(path);
-		const stats = statSync(canonicalPath);
-		if (!stats.isFile()) throw new Error("not a file");
-		accessSync(canonicalPath, constants.X_OK);
 		return {
-			path: canonicalPath,
-			device: stats.dev,
-			inode: stats.ino,
-			size: stats.size,
-			sha256: createHash("sha256").update(readFileSync(canonicalPath)).digest("hex"),
+			...metadata,
+			sha256: createHash("sha256").update(readFileSync(metadata.path)).digest("hex"),
 		};
 	} catch {
 		throw new Error("MinSync benchmark executable is unavailable");
 	}
 }
 
-function assertExecutableIdentity(expected: ExecutableIdentity): void {
-	let actual: ExecutableIdentity;
+function snapshotExecutableMetadata(
+	path: string,
+): Omit<ExecutableIdentity, "sha256"> {
 	try {
-		actual = snapshotExecutable(expected.path);
+		const canonicalPath = realpathSync(path);
+		const stats = lstatSync(canonicalPath);
+		if (!stats.isFile() || stats.isSymbolicLink()) throw new Error("not a real file");
+		accessSync(canonicalPath, constants.X_OK);
+		return {
+			path: canonicalPath,
+			device: stats.dev,
+			inode: stats.ino,
+			size: stats.size,
+			modifiedAtMs: stats.mtimeMs,
+		};
+	} catch {
+		throw new Error("MinSync benchmark executable is unavailable");
+	}
+}
+
+function assertExecutableMetadata(expected: ExecutableIdentity): void {
+	let actual: Omit<ExecutableIdentity, "sha256">;
+	try {
+		actual = snapshotExecutableMetadata(expected.path);
 	} catch {
 		throw new Error("MinSync benchmark executable changed");
 	}
@@ -478,10 +602,245 @@ function assertExecutableIdentity(expected: ExecutableIdentity): void {
 		actual.device !== expected.device ||
 		actual.inode !== expected.inode ||
 		actual.size !== expected.size ||
-		actual.sha256 !== expected.sha256
+		actual.modifiedAtMs !== expected.modifiedAtMs
 	) {
 		throw new Error("MinSync benchmark executable changed");
 	}
+}
+
+function assertExecutableIdentity(expected: ExecutableIdentity): void {
+	assertExecutableMetadata(expected);
+	let digest: string;
+	try {
+		digest = createHash("sha256").update(readFileSync(expected.path)).digest("hex");
+	} catch {
+		throw new Error("MinSync benchmark executable changed");
+	}
+	if (digest !== expected.sha256) {
+		throw new Error("MinSync benchmark executable changed");
+	}
+}
+
+function snapshotMinSyncWorkspace(
+	benchmarkRoot: string,
+	workspacePath: string,
+): MinSyncWorkspaceIdentity {
+	try {
+		const workspace = snapshotPathIdentity(workspacePath, "directory", benchmarkRoot);
+		const stateDirectory = snapshotPathIdentity(
+			join(workspace.path, ".minsync"),
+			"directory",
+			workspace.path,
+		);
+		const config = snapshotFileIntegrity(
+			join(stateDirectory.path, "config.toml"),
+			stateDirectory.path,
+		);
+		const manifest = snapshotFileIntegrity(
+			join(stateDirectory.path, "manifest.json"),
+			stateDirectory.path,
+		);
+		const cursor = snapshotFileIntegrity(
+			join(stateDirectory.path, "cursor.json"),
+			stateDirectory.path,
+		);
+		const collectionPath = readCollectionPath(config.path);
+		if (
+			isAbsolute(collectionPath) ||
+			collectionPath.length === 0 ||
+			collectionPath.split(/[\\/]/u).includes("..")
+		) {
+			throw new Error("unsafe collection path");
+		}
+		const collection = snapshotPathIdentity(
+			resolve(stateDirectory.path, collectionPath),
+			"directory",
+			stateDirectory.path,
+		);
+		const collectionTree = snapshotDirectoryTree(collection.path, true);
+		return {
+			benchmarkRoot,
+			workspace,
+			stateDirectory,
+			config,
+			manifest,
+			cursor,
+			collection,
+			collectionTree: collectionTree.identities,
+			collectionTreeSha256: collectionTree.sha256,
+		};
+	} catch {
+		throw new Error("MinSync benchmark workspace changed");
+	}
+}
+
+function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): void {
+	for (const identity of [
+		expected.workspace,
+		expected.stateDirectory,
+		expected.config,
+		expected.manifest,
+		expected.cursor,
+		expected.collection,
+	]) {
+		let actual: PathIdentity;
+		try {
+			actual = snapshotPathIdentity(
+				identity.path,
+				identity.kind,
+				expected.benchmarkRoot,
+			);
+		} catch {
+			throw new Error("MinSync benchmark workspace changed");
+		}
+		if (!samePathIdentity(actual, identity)) {
+			throw new Error("MinSync benchmark workspace changed");
+		}
+	}
+	let actualCollectionTree: readonly PathIdentity[];
+	try {
+		actualCollectionTree = snapshotDirectoryTree(
+			expected.collection.path,
+			false,
+		).identities;
+	} catch {
+		throw new Error("MinSync benchmark workspace changed");
+	}
+	if (!samePathIdentityList(actualCollectionTree, expected.collectionTree)) {
+		throw new Error("MinSync benchmark workspace changed");
+	}
+}
+
+function assertMinSyncWorkspaceIntegrity(expected: MinSyncWorkspaceIdentity): void {
+	const actual = snapshotMinSyncWorkspace(
+		expected.benchmarkRoot,
+		expected.workspace.path,
+	);
+	if (
+		!samePathIdentity(actual.workspace, expected.workspace) ||
+		!samePathIdentity(actual.stateDirectory, expected.stateDirectory) ||
+		!sameFileIntegrity(actual.config, expected.config) ||
+		!sameFileIntegrity(actual.manifest, expected.manifest) ||
+		!sameFileIntegrity(actual.cursor, expected.cursor) ||
+		!samePathIdentity(actual.collection, expected.collection) ||
+		!samePathIdentityList(actual.collectionTree, expected.collectionTree) ||
+		actual.collectionTreeSha256 !== expected.collectionTreeSha256
+	) {
+		throw new Error("MinSync benchmark workspace changed");
+	}
+}
+
+function snapshotPathIdentity(
+	path: string,
+	kind: PathIdentity["kind"],
+	container: string,
+): PathIdentity {
+	const stats = lstatSync(path);
+	if (
+		stats.isSymbolicLink() ||
+		(kind === "directory" ? !stats.isDirectory() : !stats.isFile())
+	) {
+		throw new Error("invalid filesystem object");
+	}
+	const canonicalPath = realpathSync(path);
+	if (canonicalPath !== path || !isContainedPath(canonicalPath, container)) {
+		throw new Error("filesystem object escaped container");
+	}
+	return {
+		path: canonicalPath,
+		device: stats.dev,
+		inode: stats.ino,
+		size: stats.size,
+		modifiedAtMs: stats.mtimeMs,
+		kind,
+	};
+}
+
+function snapshotFileIntegrity(path: string, container: string): FileIntegrity {
+	const identity = snapshotPathIdentity(path, "file", container);
+	return {
+		...identity,
+		kind: "file",
+		sha256: createHash("sha256").update(readFileSync(identity.path)).digest("hex"),
+	};
+}
+
+function readCollectionPath(configPath: string): string {
+	const config = parse(readFileSync(configPath, "utf8")) as {
+		collection?: { path?: unknown };
+	};
+	const path = config.collection?.path;
+	if (typeof path !== "string") {
+		throw new Error("missing collection path");
+	}
+	return path;
+}
+
+function snapshotDirectoryTree(
+	root: string,
+	hashContents: boolean,
+): { readonly identities: readonly PathIdentity[]; readonly sha256: string } {
+	const hash = createHash("sha256");
+	const identities: PathIdentity[] = [];
+	const visit = (directory: string): void => {
+		for (const name of readdirSync(directory).sort(compareCodePoints)) {
+			const path = join(directory, name);
+			const identity = snapshotPathIdentity(
+				path,
+				lstatSync(path).isDirectory() ? "directory" : "file",
+				root,
+			);
+			identities.push(identity);
+			const relativePath = relative(root, identity.path);
+			hash.update(
+				`${identity.kind}\0${relativePath}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.modifiedAtMs}\0`,
+			);
+			if (identity.kind === "directory") {
+				visit(identity.path);
+			} else if (hashContents) {
+				hash.update(readFileSync(identity.path));
+			}
+		}
+	};
+	visit(root);
+	return { identities, sha256: hash.digest("hex") };
+}
+
+function samePathIdentity(left: PathIdentity, right: PathIdentity): boolean {
+	return (
+		left.path === right.path &&
+		left.device === right.device &&
+		left.inode === right.inode &&
+		left.size === right.size &&
+		left.modifiedAtMs === right.modifiedAtMs &&
+		left.kind === right.kind
+	);
+}
+
+function sameFileIntegrity(left: FileIntegrity, right: FileIntegrity): boolean {
+	return samePathIdentity(left, right) && left.sha256 === right.sha256;
+}
+
+function samePathIdentityList(
+	left: readonly PathIdentity[],
+	right: readonly PathIdentity[],
+): boolean {
+	return (
+		left.length === right.length &&
+		left.every((identity, index) => {
+			const expected = right[index];
+			return expected !== undefined && samePathIdentity(identity, expected);
+		})
+	);
+}
+
+function isContainedPath(path: string, root: string): boolean {
+	const descendant = relative(root, path);
+	return (
+		descendant !== ".." &&
+		!descendant.startsWith(`..${sep}`) &&
+		!isAbsolute(descendant)
+	);
 }
 
 function parseCheckedMinSyncHits(stdout: string): readonly MinSyncQueryHit[] {

@@ -419,6 +419,85 @@ describe("MIRACL benchmark workspace and runner", () => {
 		expect(retrieve).toHaveBeenCalledTimes(1);
 	});
 
+	it("runs benchmark integrity hooks outside the measured retrieval interval", async () => {
+		let clock = 0;
+		const events: string[] = [];
+		const retrieval: RetrievalMethod & {
+			beforeBenchmarkBatch(): Promise<void>;
+			beforeBenchmarkQuery(): Promise<void>;
+			afterBenchmarkQuery(): Promise<void>;
+			afterBenchmarkBatch(): Promise<void>;
+		} = {
+			...retrievalMethod(async () => {
+				events.push("retrieve");
+				clock += 4;
+				return [{ id: "hit", source: "/miracl/hit.md", content: "hit", score: 1, metadata: {} }];
+			}),
+			beforeBenchmarkBatch: async () => {
+				events.push("before-batch");
+				clock += 100;
+			},
+			beforeBenchmarkQuery: async () => {
+				events.push("before-query");
+				clock += 10;
+			},
+			afterBenchmarkQuery: async () => {
+				events.push("after-query");
+				clock += 20;
+			},
+			afterBenchmarkBatch: async () => {
+				events.push("after-batch");
+				clock += 200;
+			},
+		};
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: new Map([["/miracl/hit.md", "hit"]]),
+			topK: 5,
+			now: () => clock,
+		});
+
+		expect(events).toEqual(["before-batch", "before-query", "retrieve", "after-query", "after-batch"]);
+		expect(records[0]?.latencyMs).toBe(4);
+		expect(records[0]?.errorCode).toBeUndefined();
+	});
+
+	it("invalidates completed query records when the post-batch integrity hook fails", async () => {
+		const retrieve = vi.fn(async () => [
+			{ id: "hit", source: "/miracl/hit.md", content: "hit", score: 1, metadata: {} },
+		]);
+		const retrieval: RetrievalMethod & { afterBenchmarkBatch(): Promise<void> } = {
+			...retrievalMethod(retrieve),
+			afterBenchmarkBatch: async () => {
+				throw new Error("private integrity detail");
+			},
+		};
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: new Map([["/miracl/hit.md", "hit"]]),
+			topK: 5,
+			now: deterministicClock([0, 3]),
+		});
+
+		expect(records).toEqual([
+			{
+				schemaVersion: 1,
+				method: "minsync",
+				queryId: "q1",
+				latencyMs: 3,
+				hits: [],
+				errorCode: "retrieval-failed",
+			},
+		]);
+		expect(JSON.stringify(records)).not.toContain("private integrity detail");
+	});
+
 	it("rejects a wrong workspace root before BM25 synchronization", async () => {
 		const parent = makeParent();
 		const root = join(realpathSync(parent), "user-checkout");
