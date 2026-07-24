@@ -1,13 +1,14 @@
 import {
 	lstatSync,
 	mkdirSync,
+	readlinkSync,
 	realpathSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { saveMirrorIndex, type ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
-import { parsedOutputPath } from "../../src/mirror/paths.ts";
+import { parsedMirrorIndexPath, parsedOutputPath } from "../../src/mirror/paths.ts";
 import type { CorpusDocument } from "./types.ts";
 
 export interface BenchmarkWorkspace {
@@ -19,7 +20,16 @@ export interface BenchmarkWorkspace {
 interface MaterializedDocument {
 	readonly document: CorpusDocument;
 	readonly virtualPath: string;
-	readonly markdown: string;
+}
+
+interface ValidatedCorpus {
+	readonly documents: readonly MaterializedDocument[];
+	readonly documentBySource: ReadonlyMap<string, string>;
+}
+
+interface DirectoryIdentity {
+	readonly device: number;
+	readonly inode: number;
 }
 
 const BENCHMARK_PARSER_NAME = "miracl-benchmark";
@@ -29,21 +39,23 @@ export function materializeBenchmarkWorkspace(
 	root: string,
 	corpus: readonly CorpusDocument[],
 ): BenchmarkWorkspace {
-	const documents = validateCorpus(corpus);
+	const validated = validateCorpus(corpus);
 	const canonicalRoot = validateNewWorkspaceRoot(root);
 	mkdirSync(canonicalRoot, { mode: 0o700 });
+	const ownedRoot = readDirectoryIdentity(canonicalRoot);
 
 	try {
 		const mirrorFiles: string[] = [];
-		const documentBySource = new Map<string, string>();
 		const entries: Record<string, ParsedMirrorEntry> = {};
 
-		for (const { document, virtualPath, markdown } of documents) {
+		for (const { document, virtualPath } of validated.documents) {
+			const markdown = `# ${document.title}\n\n${document.text}\n`;
 			const outputPath = parsedOutputPath(canonicalRoot, virtualPath);
-			mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
+			ensureTrustedDirectory(dirname(outputPath), canonicalRoot, ownedRoot);
+			assertTrustedDirectory(dirname(outputPath), canonicalRoot, ownedRoot);
 			writeFileSync(outputPath, markdown, { encoding: "utf8", flag: "wx", mode: 0o600 });
+			assertTrustedDirectory(dirname(outputPath), canonicalRoot, ownedRoot);
 			mirrorFiles.push(outputPath);
-			documentBySource.set(virtualPath, document.documentId);
 			entries[virtualPath] = {
 				virtualPath,
 				sourcePath: virtualPath,
@@ -55,18 +67,22 @@ export function materializeBenchmarkWorkspace(
 			};
 		}
 
+		ensureTrustedDirectory(dirname(parsedMirrorIndexPath(canonicalRoot)), canonicalRoot, ownedRoot);
+		assertTrustedDirectory(dirname(parsedMirrorIndexPath(canonicalRoot)), canonicalRoot, ownedRoot);
 		saveMirrorIndex(canonicalRoot, { version: 1, entries });
-		return { root: canonicalRoot, mirrorFiles, documentBySource };
+		assertTrustedDirectory(dirname(parsedMirrorIndexPath(canonicalRoot)), canonicalRoot, ownedRoot);
+		return { root: canonicalRoot, mirrorFiles, documentBySource: validated.documentBySource };
 	} catch (error) {
-		rmSync(canonicalRoot, { recursive: true, force: true });
+		cleanupOwnedRoot(canonicalRoot, ownedRoot);
 		throw error;
 	}
 }
 
-function validateCorpus(corpus: readonly CorpusDocument[]): MaterializedDocument[] {
+function validateCorpus(corpus: readonly CorpusDocument[]): ValidatedCorpus {
 	const documentIds = new Set<string>();
 	const virtualPaths = new Set<string>();
-	return corpus.map((document) => {
+	const documentBySource = new Map<string, string>();
+	const documents = corpus.map((document) => {
 		if (document.documentId.trim().length === 0) {
 			throw new Error("MIRACL document id must not be blank");
 		}
@@ -80,28 +96,28 @@ function validateCorpus(corpus: readonly CorpusDocument[]): MaterializedDocument
 			throw new Error("MIRACL document ids must encode to unique virtual paths");
 		}
 		virtualPaths.add(virtualPath);
-		return {
-			document,
-			virtualPath,
-			markdown: `# ${document.title}\n\n${document.text}\n`,
-		};
+		documentBySource.set(virtualPath, document.documentId);
+		return { document, virtualPath };
 	});
+	return { documents, documentBySource };
 }
 
 function validateNewWorkspaceRoot(root: string): string {
 	if (root.trim().length === 0) {
 		throw new Error("benchmark workspace root must not be blank");
 	}
+	assertNoAutoragComponent(root);
 	const absoluteRoot = resolve(root);
+	assertNoAutoragComponent(absoluteRoot);
+	inspectExistingComponents(absoluteRoot);
 	if (pathEntryExists(absoluteRoot)) {
 		throw new Error("benchmark workspace root must not already exist");
 	}
 
 	const canonicalParent = realpathSync(dirname(absoluteRoot));
+	assertNoAutoragComponent(canonicalParent);
 	const canonicalRoot = join(canonicalParent, basename(absoluteRoot));
-	if (isInsideExistingAutorag(canonicalRoot)) {
-		throw new Error("benchmark workspace root must not resolve inside an existing .autorag");
-	}
+	assertNoAutoragComponent(canonicalRoot);
 	return canonicalRoot;
 }
 
@@ -115,14 +131,91 @@ function pathEntryExists(path: string): boolean {
 	}
 }
 
-function isInsideExistingAutorag(path: string): boolean {
-	let current = dirname(path);
-	while (true) {
-		if (basename(current) === ".autorag" && pathEntryExists(current)) {
-			return true;
-		}
-		const parent = dirname(current);
-		if (parent === current) return false;
-		current = parent;
+function assertNoAutoragComponent(path: string): void {
+	const components = path.split(/[\\/]+/u);
+	if (components.some((component) => component.toLowerCase() === ".autorag")) {
+		throw new Error("benchmark workspace root must not resolve inside an existing .autorag");
 	}
+}
+
+function inspectExistingComponents(path: string, inspectedSymlinks = new Set<string>()): void {
+	assertNoAutoragComponent(path);
+	const pathRoot = parse(path).root;
+	let current = pathRoot;
+	for (const component of path.slice(pathRoot.length).split(sep).filter(Boolean)) {
+		current = join(current, component);
+		let stats: ReturnType<typeof lstatSync>;
+		try {
+			stats = lstatSync(current);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
+		}
+		if (stats.isSymbolicLink()) {
+			if (!inspectedSymlinks.has(current)) {
+				inspectedSymlinks.add(current);
+				const target = resolve(dirname(current), readlinkSync(current));
+				assertNoAutoragComponent(target);
+				inspectExistingComponents(target, inspectedSymlinks);
+			}
+		}
+		assertNoAutoragComponent(realpathSync(current));
+	}
+}
+
+function readDirectoryIdentity(path: string): DirectoryIdentity {
+	const stats = lstatSync(path);
+	if (!stats.isDirectory() || stats.isSymbolicLink()) {
+		throw new Error("benchmark workspace directory changed during materialization");
+	}
+	return { device: stats.dev, inode: stats.ino };
+}
+
+function assertOwnedRoot(root: string, identity: DirectoryIdentity): void {
+	const current = readDirectoryIdentity(root);
+	if (current.device !== identity.device || current.inode !== identity.inode) {
+		throw new Error("benchmark workspace directory changed during materialization");
+	}
+}
+
+function ensureTrustedDirectory(path: string, root: string, identity: DirectoryIdentity): void {
+	assertContainedPath(path, root);
+	assertOwnedRoot(root, identity);
+	mkdirSync(path, { recursive: true, mode: 0o700 });
+	assertTrustedDirectory(path, root, identity);
+}
+
+function assertTrustedDirectory(path: string, root: string, identity: DirectoryIdentity): void {
+	assertContainedPath(path, root);
+	assertOwnedRoot(root, identity);
+	const descendant = relative(root, path);
+	let current = root;
+	for (const component of descendant.split(sep).filter(Boolean)) {
+		current = join(current, component);
+		const stats = lstatSync(current);
+		if (!stats.isDirectory() || stats.isSymbolicLink()) {
+			throw new Error("benchmark workspace directory changed during materialization");
+		}
+	}
+	if (realpathSync(path) !== path) {
+		throw new Error("benchmark workspace directory changed during materialization");
+	}
+	assertOwnedRoot(root, identity);
+}
+
+function assertContainedPath(path: string, root: string): void {
+	const descendant = relative(root, path);
+	if (descendant === ".." || descendant.startsWith(`..${sep}`) || isAbsolute(descendant)) {
+		throw new Error("benchmark workspace directory changed during materialization");
+	}
+}
+
+function cleanupOwnedRoot(root: string, identity: DirectoryIdentity): void {
+	try {
+		const current = readDirectoryIdentity(root);
+		if (current.device !== identity.device || current.inode !== identity.inode) return;
+	} catch {
+		return;
+	}
+	rmSync(root, { recursive: true, force: true });
 }

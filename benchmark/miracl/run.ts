@@ -1,4 +1,13 @@
+import { lstatSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
 import { performance } from "node:perf_hooks";
+import { loadMirrorIndex } from "../../src/mirror/index-store.ts";
+import { parsedMirrorIndexPath, parsedOutputPath } from "../../src/mirror/paths.ts";
+import {
+	BM25Method,
+	type BM25MethodOptions,
+	type BM25SyncResult,
+} from "../../src/retrieval/methods/bm25.ts";
 import type { RetrievalMethod, RetrievalResult } from "../../src/retrieval/types.ts";
 import type {
 	BenchmarkMethod,
@@ -9,6 +18,20 @@ import type {
 
 const RETRIEVAL_CANDIDATE_LIMIT = 100;
 
+export interface RunBm25QueriesOptions {
+	readonly root: string;
+	readonly queries: readonly BenchmarkQuery[];
+	readonly documentBySource: ReadonlyMap<string, string>;
+	readonly topK: number;
+	readonly now?: () => number;
+	readonly bm25?: Omit<BM25MethodOptions, "root" | "indexPath">;
+}
+
+export interface BM25QueryRunResult {
+	readonly indexingLatencyMs: number;
+	readonly records: readonly QueryRunRecord[];
+}
+
 export interface RunMethodQueriesOptions {
 	readonly method: BenchmarkMethod;
 	readonly retrieval: RetrievalMethod;
@@ -18,13 +41,49 @@ export interface RunMethodQueriesOptions {
 	readonly now?: () => number;
 }
 
+export async function runBm25Queries(options: RunBm25QueriesOptions): Promise<BM25QueryRunResult> {
+	validateTopK(options.topK);
+	const root = validateBenchmarkMirror(options.root, options.documentBySource);
+	const now = options.now ?? (() => performance.now());
+	const retrieval = new BM25Method({
+		root,
+		enabled: options.bm25?.enabled,
+		fallback: options.bm25?.fallback,
+		forceEngine: options.bm25?.forceEngine,
+		importBinding: options.bm25?.importBinding,
+	});
+	const indexingStartedAt = now();
+	let syncResult: BM25SyncResult;
+	try {
+		syncResult = await retrieval.sync();
+	} catch {
+		now();
+		throw new Error("BM25 benchmark indexing failed");
+	}
+	const indexingLatencyMs = elapsedMilliseconds(indexingStartedAt, now());
+	if (
+		(syncResult.readiness !== "ready" && syncResult.readiness !== "degraded_fallback") ||
+		syncResult.engine === "none" ||
+		syncResult.indexedChunks < 1
+	) {
+		throw new Error("BM25 benchmark indexing failed");
+	}
+
+	const records = await runMethodQueries({
+		method: "bm25",
+		retrieval,
+		queries: options.queries,
+		documentBySource: options.documentBySource,
+		topK: options.topK,
+		now,
+	});
+	return { indexingLatencyMs, records };
+}
+
 export async function runMethodQueries(
 	options: RunMethodQueriesOptions,
 ): Promise<QueryRunRecord[]> {
 	validateTopK(options.topK);
-	if (options.retrieval.describe().status !== "active") {
-		throw new Error("benchmark retrieval method must be ready before queries run");
-	}
 	const now = options.now ?? (() => performance.now());
 	const records: QueryRunRecord[] = [];
 
@@ -55,6 +114,62 @@ export async function runMethodQueries(
 	}
 
 	return records;
+}
+
+function validateBenchmarkMirror(root: string, documentBySource: ReadonlyMap<string, string>): string {
+	let canonicalRoot: string;
+	try {
+		const rootStats = lstatSync(root);
+		if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+			throw new Error("not a real directory");
+		}
+		canonicalRoot = realpathSync(root);
+		const indexStats = lstatSync(parsedMirrorIndexPath(canonicalRoot));
+		if (!indexStats.isFile() || indexStats.isSymbolicLink()) {
+			throw new Error("not a real mirror index");
+		}
+	} catch {
+		throw new Error("BM25 benchmark requires a valid parsed mirror workspace");
+	}
+
+	let index: ReturnType<typeof loadMirrorIndex>;
+	try {
+		index = loadMirrorIndex(canonicalRoot);
+	} catch {
+		throw new Error("BM25 benchmark requires a valid parsed mirror workspace");
+	}
+	const entries = Object.values(index.entries);
+	if (entries.length === 0 || entries.length !== documentBySource.size) {
+		throw new Error("BM25 benchmark requires a valid parsed mirror workspace");
+	}
+
+	for (const entry of entries) {
+		if (
+			!documentBySource.has(entry.virtualPath) ||
+			!entry.virtualPath.startsWith("/miracl/") ||
+			entry.sourcePath !== entry.virtualPath ||
+			entry.parserName !== "miracl-benchmark"
+		) {
+			throw new Error("BM25 benchmark requires a valid parsed mirror workspace");
+		}
+		const expectedOutput = parsedOutputPath(canonicalRoot, entry.virtualPath);
+		if (entry.outputPath !== expectedOutput) {
+			throw new Error("BM25 benchmark parsed mirror is stale");
+		}
+		try {
+			const outputStats = lstatSync(entry.outputPath);
+			if (!outputStats.isFile() || outputStats.isSymbolicLink()) {
+				throw new Error("not a real mirror file");
+			}
+			const realOutput = realpathSync(entry.outputPath);
+			if (realOutput !== entry.outputPath || !isContainedPath(realOutput, canonicalRoot)) {
+				throw new Error("mirror file escaped workspace");
+			}
+		} catch {
+			throw new Error("BM25 benchmark parsed mirror is stale");
+		}
+	}
+	return canonicalRoot;
 }
 
 function rankDocumentHits(
@@ -103,4 +218,9 @@ function elapsedMilliseconds(startedAt: number, finishedAt: number): number {
 
 function compareCodePoints(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function isContainedPath(path: string, root: string): boolean {
+	const descendant = relative(root, path);
+	return descendant !== ".." && !descendant.startsWith(`..${sep}`) && !isAbsolute(descendant);
 }
