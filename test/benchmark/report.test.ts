@@ -15,6 +15,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MethodMetrics } from "../../benchmark/miracl/metrics.ts";
 import {
+	MIRACL_FULL_CORPUS_PASSAGES,
+	MIRACL_NORMALIZATION_VERSION,
+	MIRACL_SOURCES,
+} from "../../benchmark/miracl/profiles.ts";
+import {
 	normalizeRunManifest,
 	normalizeRunMetrics,
 	validateQueryRunRecord,
@@ -33,20 +38,20 @@ const metrics: MethodMetrics[] = [
 		method: "minsync",
 		queryCount: 1,
 		failureCount: 0,
-		recallAt: { "5": 1, "10": 1, "100": 1 },
-		mrrAt10: 1,
-		successAt: { "1": 1, "5": 1 },
-		ndcgAt10: 1,
+		recallAt: { "5": 0, "10": 0, "100": 0 },
+		mrrAt10: 0,
+		successAt: { "1": 0, "5": 0 },
+		ndcgAt10: 0,
 		latencyMs: { mean: 4, p50: 4, p95: 4 },
 	},
 	{
 		method: "bm25",
 		queryCount: 1,
 		failureCount: 0,
-		recallAt: { "5": 0.5, "10": 0.5, "100": 0.5 },
-		mrrAt10: 0.5,
-		successAt: { "1": 0, "5": 1 },
-		ndcgAt10: 0.5,
+		recallAt: { "5": 1, "10": 1, "100": 1 },
+		mrrAt10: 1,
+		successAt: { "1": 1, "5": 1 },
+		ndcgAt10: 1,
 		latencyMs: { mean: 2, p50: 2, p95: 2 },
 	},
 ];
@@ -73,8 +78,11 @@ function manifest() {
 		schemaVersion: 1 as const,
 		profile: "smoke" as const,
 		dataset: {
-			normalizationVersion: 1,
-			revisions: { topics: "topics-pin", corpus: "corpus-pin" },
+			normalizationVersion: MIRACL_NORMALIZATION_VERSION,
+			revisions: {
+				topics: MIRACL_SOURCES.topics.revision,
+				corpus: MIRACL_SOURCES.corpus.revision,
+			},
 			seed: 20260723,
 			counts: { queries: 1, qrels: 1, positiveQrels: 1, corpus: 1, judgedDocuments: 1, distractors: 0 },
 			input: {
@@ -190,6 +198,34 @@ describe("MIRACL run reports", () => {
 				methodConfig: { ...smoke.methodConfig, baseUrl: "https://private.example" },
 			} as never),
 		).toThrow("methodConfig");
+		expect(() =>
+			normalizeRunManifest({
+				...smoke,
+				dataset: { ...smoke.dataset, normalizationVersion: MIRACL_NORMALIZATION_VERSION + 1 },
+			} as never),
+		).toThrow("normalizationVersion");
+		expect(() =>
+			normalizeRunManifest({
+				...smoke,
+				dataset: {
+					...smoke.dataset,
+					revisions: { ...smoke.dataset.revisions, topics: "unpinned" },
+				},
+			} as never),
+		).toThrow("topics revision");
+		expect(() =>
+			normalizeRunManifest({
+				...smoke,
+				dataset: {
+					...smoke.dataset,
+					counts: { ...smoke.dataset.counts, positiveQrels: 0 },
+					evaluation: {
+						schemaVersion: 1,
+						qrels: [{ queryId: "q1", documentId: "a", relevance: 0 }],
+					},
+				},
+			} as never),
+		).toThrow("positive");
 		const parsedSmoke = JSON.parse(JSON.stringify(smoke)) as unknown;
 		const normalizedSmoke = normalizeRunManifest(parsedSmoke as never);
 		expect(normalizedSmoke).not.toBe(parsedSmoke);
@@ -205,12 +241,12 @@ describe("MIRACL run reports", () => {
 					queries: 1,
 					qrels: 1,
 					positiveQrels: 1,
-					corpus: 1_486_752,
+					corpus: MIRACL_FULL_CORPUS_PASSAGES,
 					judgedDocuments: 1,
 				},
 				normalized: {
 					...withoutSeed.normalized,
-					corpus: attestation("1", 1_486_752),
+					corpus: attestation("1", MIRACL_FULL_CORPUS_PASSAGES),
 				},
 			},
 		};
@@ -229,6 +265,19 @@ describe("MIRACL run reports", () => {
 				},
 			} as never),
 		).toThrow("counts");
+		expect(() =>
+			normalizeRunManifest({
+				...full,
+				dataset: {
+					...full.dataset,
+					counts: { ...full.dataset.counts, corpus: MIRACL_FULL_CORPUS_PASSAGES - 1 },
+					normalized: {
+						...full.dataset.normalized,
+						corpus: attestation("1", MIRACL_FULL_CORPUS_PASSAGES - 1),
+					},
+				},
+			} as never),
+		).toThrow("full corpus");
 
 		const normalizedMetrics = normalizeRunMetrics({
 			schemaVersion: 1,
@@ -244,6 +293,55 @@ describe("MIRACL run reports", () => {
 				unknownRoot: true,
 			} as never),
 		).toThrow("unknown field unknownRoot");
+	});
+
+	it("bounds embedded qrels, MIRACL ids, and canonical manifest bytes", () => {
+		const smoke = manifest();
+		const tooManyQrels = Array.from({ length: 10_001 }, (_, index) => ({
+			queryId: "q1",
+			documentId: `${index}`,
+			relevance: 1,
+		}));
+		expect(() =>
+			normalizeRunManifest({
+				...smoke,
+				dataset: {
+					...smoke.dataset,
+					counts: {
+						queries: 1,
+						qrels: tooManyQrels.length,
+						positiveQrels: tooManyQrels.length,
+						corpus: tooManyQrels.length,
+						judgedDocuments: tooManyQrels.length,
+						distractors: 0,
+					},
+					normalized: {
+						...smoke.dataset.normalized,
+						qrels: attestation("0", tooManyQrels.length),
+						corpus: attestation("1", tooManyQrels.length),
+					},
+					evaluation: { schemaVersion: 1, qrels: tooManyQrels },
+				},
+			} as never),
+		).toThrow("at most 10000");
+		expect(() =>
+			normalizeRunManifest({
+				...smoke,
+				dataset: {
+					...smoke.dataset,
+					evaluation: {
+						schemaVersion: 1,
+						qrels: [{ queryId: "q".repeat(129), documentId: "a", relevance: 1 }],
+					},
+				},
+			} as never),
+		).toThrow("128 bytes");
+		expect(() =>
+			normalizeRunManifest({
+				...smoke,
+				environment: { ...smoke.environment, autoRagCommit: "a".repeat(4 * 1024 * 1024) },
+			} as never),
+		).toThrow("manifest");
 	});
 
 	it("requires persisted hit ranks to be contiguous and bounded at 100", () => {
@@ -280,7 +378,54 @@ describe("MIRACL run reports", () => {
 		).toThrow("at most 100");
 	});
 
-	it("writes private path-free lock metadata while publishing", async () => {
+	it("publishes only a complete query-method grid with recomputed matching metrics", async () => {
+		const parent = makeRoot();
+		const twoQueryManifest = {
+			...manifest(),
+			dataset: {
+				...manifest().dataset,
+				counts: {
+					queries: 2,
+					qrels: 2,
+					positiveQrels: 2,
+					corpus: 2,
+					judgedDocuments: 2,
+					distractors: 0,
+				},
+				normalized: {
+					...manifest().dataset.normalized,
+					queries: attestation("f", 2),
+					qrels: attestation("0", 2),
+					corpus: attestation("1", 2),
+				},
+				evaluation: {
+					schemaVersion: 1 as const,
+					qrels: [
+						{ queryId: "q1", documentId: "a", relevance: 1 },
+						{ queryId: "q2", documentId: "b", relevance: 1 },
+					],
+				},
+			},
+		};
+		await expect(
+			writeRunReport({
+				directory: join(parent, "incomplete"),
+				manifest: twoQueryManifest as never,
+				records,
+				metrics,
+			}),
+		).rejects.toThrow("incomplete");
+		await expect(
+			writeRunReport({
+				directory: join(parent, "wrong-metrics"),
+				manifest: manifest() as never,
+				records,
+				metrics: metrics.map((entry) => (entry.method === "bm25" ? { ...entry, ndcgAt10: 0.25 } : entry)),
+			}),
+		).rejects.toThrow("metrics do not match");
+	});
+
+	it("publishes without a lock file", async () => {
 		const parent = makeRoot();
 		const output = join(parent, "run");
 		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
@@ -307,96 +452,12 @@ describe("MIRACL run reports", () => {
 		const publication = writePaused({ directory: output, manifest: manifest() as never, records, metrics });
 		await entered;
 		const lock = `${join(realpathSync(parent), "run")}.publish.lock`;
-		const rawLock = readFileSync(lock, "utf8");
-		const lockMode = lstatSync(lock).mode & 0o777;
+		const lockExists = existsSync(lock);
 		continueResolve();
 		await publication;
 
-		expect(lockMode).toBe(0o600);
-		expect(JSON.parse(rawLock)).toEqual({
-			schemaVersion: 1,
-			pid: process.pid,
-			startedAt: expect.any(String),
-			nonce: expect.stringMatching(/^[0-9a-f-]+$/),
-		});
-		expect(rawLock).not.toContain(parent);
-	});
-
-	it("recovers a valid dead-process lock while live and invalid locks fail closed", async () => {
-		const parent = makeRoot();
-		const staleOutput = join(parent, "stale-run");
-		writeFileSync(
-			`${staleOutput}.publish.lock`,
-			`${JSON.stringify({
-				schemaVersion: 1,
-				pid: 2_147_483_647,
-				startedAt: "2026-07-24T00:00:00.000Z",
-				nonce: "00000000-0000-4000-8000-000000000000",
-			})}\n`,
-			{ mode: 0o600 },
-		);
-		await expect(
-			writeRunReport({ directory: staleOutput, manifest: manifest() as never, records, metrics }),
-		).resolves.toBeUndefined();
-
-		const liveOutput = join(parent, "live-run");
-		writeFileSync(
-			`${liveOutput}.publish.lock`,
-			`${JSON.stringify({
-				schemaVersion: 1,
-				pid: process.pid,
-				startedAt: "2026-07-24T00:00:00.000Z",
-				nonce: "00000000-0000-4000-8000-000000000000",
-			})}\n`,
-			{ mode: 0o600 },
-		);
-		await expect(
-			writeRunReport({ directory: liveOutput, manifest: manifest() as never, records, metrics }),
-		).rejects.toThrow("being published");
-
-		const invalidOutput = join(parent, "invalid-run");
-		writeFileSync(`${invalidOutput}.publish.lock`, "not-json\n", { mode: 0o600 });
-		await expect(
-			writeRunReport({ directory: invalidOutput, manifest: manifest() as never, records, metrics }),
-		).rejects.toThrow("being published");
-	});
-
-	it("fails closed and preserves a stale-lock pathname replacement", async () => {
-		const parent = makeRoot();
-		const output = join(parent, "run");
-		const lock = `${join(realpathSync(parent), "run")}.publish.lock`;
-		const displaced = join(parent, "stale-lock");
-		writeFileSync(
-			lock,
-			`${JSON.stringify({
-				schemaVersion: 1,
-				pid: 2_147_483_647,
-				startedAt: "2026-07-24T00:00:00.000Z",
-				nonce: "00000000-0000-4000-8000-000000000000",
-			})}\n`,
-			{ mode: 0o600 },
-		);
-		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
-		let replaced = false;
-		vi.doMock("node:fs/promises", () => ({
-			...actual,
-			lstat: async (path: string) => {
-				if (!replaced && String(path) === lock) {
-					replaced = true;
-					renameSync(lock, displaced);
-					writeFileSync(lock, "replacement lock\n", { mode: 0o600 });
-				}
-				return actual.lstat(path);
-			},
-		}));
-		vi.resetModules();
-		const { writeRunReport: writeWithLockRace } = await import("../../benchmark/miracl/report.ts");
-
-		await expect(
-			writeWithLockRace({ directory: output, manifest: manifest() as never, records, metrics }),
-		).rejects.toThrow("being published");
-		expect(readFileSync(lock, "utf8")).toBe("replacement lock\n");
-		expect(existsSync(displaced)).toBe(true);
+		expect(lockExists).toBe(false);
+		expect(existsSync(lock)).toBe(false);
 	});
 
 	it("rejects and preserves a replaced regular staging child", async () => {
@@ -461,32 +522,29 @@ describe("MIRACL run reports", () => {
 		expect(lstatSync(readFileSync(stagingPathFile, "utf8")).isSymbolicLink()).toBe(true);
 	});
 
-	it("does not recursively remove a last-window staging-directory replacement", async () => {
+	it("leaves private staging fail-closed without pathname cleanup", async () => {
 		const parent = makeRoot();
 		const output = join(parent, "run");
-		const displaced = join(parent, "owned-staging");
-		const replacementPathFile = join(parent, "replacement-path.txt");
 		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
 		let failedSync = false;
-		let replaced = false;
+		let stagingPath: string | undefined;
+		let pathnameCleanupAttempted = false;
 		vi.doMock("node:fs/promises", () => ({
 			...actual,
 			open: async (path: string, flags: string, mode?: number) => {
 				if (!failedSync && String(path).includes(".staging-") && flags === "r") {
 					failedSync = true;
+					stagingPath = String(path);
 					throw new Error("injected staging sync failure");
 				}
 				return actual.open(path, flags, mode);
 			},
+			unlink: async (path: string) => {
+				if (String(path).includes(".staging-")) pathnameCleanupAttempted = true;
+				return actual.unlink(path);
+			},
 			rmdir: async (path: string) => {
-				const pathText = String(path);
-				if (!replaced && pathText.includes(".staging-")) {
-					replaced = true;
-					renameSync(pathText, displaced);
-					mkdirSync(pathText);
-					writeFileSync(join(pathText, "replacement.txt"), "replacement data\n");
-					writeFileSync(replacementPathFile, pathText);
-				}
+				if (String(path).includes(".staging-")) pathnameCleanupAttempted = true;
 				return actual.rmdir(path);
 			},
 		}));
@@ -496,9 +554,41 @@ describe("MIRACL run reports", () => {
 		await expect(
 			writeWithLastWindow({ directory: output, manifest: manifest() as never, records, metrics }),
 		).rejects.toThrow("injected staging sync failure");
-		const replacement = readFileSync(replacementPathFile, "utf8");
-		expect(readFileSync(join(replacement, "replacement.txt"), "utf8")).toBe("replacement data\n");
-		expect(existsSync(displaced)).toBe(true);
+		expect(stagingPath).toBeDefined();
+		expect(existsSync(stagingPath as string)).toBe(true);
+		expect(lstatSync(stagingPath as string).mode & 0o077).toBe(0);
+		expect(pathnameCleanupAttempted).toBe(false);
+	});
+
+	it("preserves a final-window destination replacement and reports corruption", async () => {
+		const parent = makeRoot();
+		const output = join(parent, "run");
+		const canonicalOutput = join(realpathSync(parent), "run");
+		const displaced = join(parent, "published-report");
+		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+		let injected = false;
+		vi.doMock("node:fs/promises", () => ({
+			...actual,
+			lstat: async (path: string) => {
+				const pathText = String(path);
+				const stats = await actual.lstat(path);
+				if (!injected && pathText === canonicalOutput && stats.isDirectory()) {
+					injected = true;
+					renameSync(pathText, displaced);
+					mkdirSync(pathText);
+					writeFileSync(join(pathText, "replacement.txt"), "replacement data\n");
+				}
+				return stats;
+			},
+		}));
+		vi.resetModules();
+		const { writeRunReport: writeWithFinalReplacement } = await import("../../benchmark/miracl/report.ts");
+
+		await expect(
+			writeWithFinalReplacement({ directory: output, manifest: manifest() as never, records, metrics }),
+		).rejects.toThrow(/changed|corrupt/u);
+		expect(readFileSync(join(output, "replacement.txt"), "utf8")).toBe("replacement data\n");
+		expect(readFileSync(join(displaced, "manifest.json"), "utf8")).toContain('"schemaVersion":1');
 	});
 
 	it("fails closed when no true no-replace publication runtime is available", async () => {

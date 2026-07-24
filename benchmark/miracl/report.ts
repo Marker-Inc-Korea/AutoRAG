@@ -1,19 +1,24 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { lstat, mkdir, open, realpath, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { SanitizedMethodConfig } from "./methods.ts";
-import type { MethodMetrics } from "./metrics.ts";
+import { evaluateRun, type MethodMetrics } from "./metrics.ts";
+import {
+	MIRACL_FULL_CORPUS_PASSAGES,
+	MIRACL_NORMALIZATION_VERSION,
+	MIRACL_SOURCES,
+} from "./profiles.ts";
 import type { BenchmarkMethod, Qrel, QueryRunRecord, RankedHit } from "./types.ts";
 
 const REPORT_FILES = ["manifest.json", "results.jsonl", "metrics.json", "summary.md"] as const;
 const METHOD_NAMES = new Set<BenchmarkMethod>(["bm25", "minsync", "hybrid"]);
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-const MAX_EMBEDDED_QRELS = 1_000_000;
-const MAX_DISCLOSED_ID_BYTES = 4_096;
+const MAX_EMBEDDED_QRELS = 10_000;
+const MAX_DISCLOSED_ID_BYTES = 128;
+const MAX_MANIFEST_CANONICAL_BYTES = 4 * 1_024 * 1_024;
 
 export interface RunFileAttestation {
 	readonly sha256: string;
@@ -125,16 +130,10 @@ interface FileIdentity extends DirectoryIdentity {
 	readonly size: number;
 }
 
-interface PublicationLock {
-	readonly handle: FileHandle;
-	readonly identity: FileIdentity;
-}
-
 interface PublicationPaths {
 	readonly parent: string;
 	readonly destination: string;
 	readonly staging: string;
-	readonly lock: string;
 }
 
 export async function writeRunReport(options: WriteRunReportOptions): Promise<void> {
@@ -151,6 +150,7 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 		peakRssBytes: options.peakRssBytes,
 	});
 	validateReportCoherence(manifest, records, metrics);
+	validateCompleteGridAndMetrics(manifest, records, metrics);
 	const contents = new Map<(typeof REPORT_FILES)[number], string>([
 		["manifest.json", `${JSON.stringify(manifest)}\n`],
 		["results.jsonl", records.map((record) => JSON.stringify(record)).join("\n") + (records.length > 0 ? "\n" : "")],
@@ -158,40 +158,40 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 		["summary.md", renderSummary(manifest, metrics)],
 	]);
 
-	let lock: PublicationLock | undefined;
-	let stagingIdentity: DirectoryIdentity | undefined;
+	let stagingIdentity: DirectoryIdentity;
 	const children = new Map<(typeof REPORT_FILES)[number], FileIdentity>();
 	let published = false;
-	try {
-		lock = await acquirePublicationLock(paths);
-		await assertDestinationAbsent(paths.destination);
-		await mkdir(paths.staging, { mode: 0o700 });
-		stagingIdentity = await snapshotDirectory(paths.staging);
-		for (const name of REPORT_FILES) {
-			await assertDirectoryIdentity(paths.staging, stagingIdentity);
-			await assertOwnedChildren(paths.staging, children);
-			const identity = await writeDurablePrivateFile(join(paths.staging, name), contents.get(name) as string);
-			children.set(name, identity);
-			await assertFileIdentity(join(paths.staging, name), identity);
-			await assertDirectoryIdentity(paths.staging, stagingIdentity);
-		}
-		await assertOwnedChildren(paths.staging, children);
-		await fsyncDirectory(paths.staging, stagingIdentity);
+	await assertDestinationAbsent(paths.destination);
+	await mkdir(paths.staging, { mode: 0o700 });
+	stagingIdentity = await snapshotDirectory(paths.staging);
+	for (const name of REPORT_FILES) {
 		await assertDirectoryIdentity(paths.staging, stagingIdentity);
-		await assertDestinationAbsent(paths.destination);
-		await renameDirectoryNoReplace(paths.staging, paths.destination);
+		await assertOwnedChildren(paths.staging, children);
+		const identity = await writeDurablePrivateFile(
+			join(paths.staging, name),
+			contents.get(name) as string,
+			(initial) => children.set(name, initial),
+		);
+		children.set(name, identity);
+		await assertFileIdentity(join(paths.staging, name), identity);
+		await assertDirectoryIdentity(paths.staging, stagingIdentity);
+	}
+	await assertOwnedChildren(paths.staging, children);
+	await fsyncDirectory(paths.staging, stagingIdentity);
+	await assertDirectoryIdentity(paths.staging, stagingIdentity);
+	await renameDirectoryNoReplace(paths.staging, paths.destination);
+	published = true;
+	try {
 		await assertDirectoryIdentity(paths.destination, stagingIdentity);
 		await assertOwnedChildren(paths.destination, children);
-		published = true;
 		await fsyncDirectory(paths.parent);
-	} finally {
-		if (!published && stagingIdentity !== undefined) {
-			await removeOwnedDirectory(paths.staging, stagingIdentity, children);
-		}
-		if (lock !== undefined) {
-			await releasePublicationLock(paths.lock, lock);
-		}
+	} catch (error) {
+		throw new Error(
+			"published report failed identity validation and was left in place as potentially corrupt",
+			{ cause: error },
+		);
 	}
+	if (!published) throw new Error("report publication failed");
 }
 
 export function normalizeRunManifest(value: unknown): RunManifestV1 {
@@ -226,6 +226,9 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 		datasetValue.normalizationVersion,
 		"run manifest normalizationVersion",
 	);
+	if (normalizationVersion !== MIRACL_NORMALIZATION_VERSION) {
+		throw new Error(`run manifest normalizationVersion must be ${MIRACL_NORMALIZATION_VERSION}`);
+	}
 	const revisionsValue = requireExactShape(
 		datasetValue.revisions,
 		["topics", "corpus"],
@@ -236,6 +239,12 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 		topics: requireOpaqueDisclosure(revisionsValue.topics, "run manifest topics revision"),
 		corpus: requireOpaqueDisclosure(revisionsValue.corpus, "run manifest corpus revision"),
 	};
+	if (revisions.topics !== MIRACL_SOURCES.topics.revision) {
+		throw new Error("run manifest topics revision must match the pinned MIRACL source");
+	}
+	if (revisions.corpus !== MIRACL_SOURCES.corpus.revision) {
+		throw new Error("run manifest corpus revision must match the pinned MIRACL source");
+	}
 	const countKeys = [
 		"queries",
 		"qrels",
@@ -298,14 +307,14 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 			normalized,
 			evaluation,
 		};
-		return {
+		return assertCanonicalManifestSize({
 			schemaVersion: 1,
 			profile,
 			dataset,
 			methods,
 			environment,
 			...(methodConfig === undefined ? {} : { methodConfig }),
-		};
+		});
 	}
 	const dataset: FullRunDatasetManifest = {
 		normalizationVersion,
@@ -315,14 +324,14 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 		normalized,
 		evaluation,
 	};
-	return {
+	return assertCanonicalManifestSize({
 		schemaVersion: 1,
 		profile,
 		dataset,
 		methods,
 		environment,
 		...(methodConfig === undefined ? {} : { methodConfig }),
-	};
+	});
 }
 
 export function normalizeRunMetrics(value: unknown): RunMetricsV1 {
@@ -536,6 +545,11 @@ function normalizeEvaluation(value: unknown, counts: Readonly<Record<string, num
 	if (positives !== counts.positiveQrels) {
 		throw new Error("run manifest evaluation positive qrel count does not match dataset counts");
 	}
+	for (const queryId of queryIds) {
+		if (!qrels.some((qrel) => qrel.queryId === queryId && qrel.relevance > 0)) {
+			throw new Error(`run manifest evaluation query ${queryId} has no positive qrel`);
+		}
+	}
 	return { schemaVersion: 1, qrels };
 }
 
@@ -552,6 +566,17 @@ function validateDatasetCounts(profile: "smoke" | "full", counts: Readonly<Recor
 	if (profile === "smoke" && counts.distractors !== counts.corpus - counts.judgedDocuments) {
 		throw new Error("run manifest distractors do not match corpus minus judged documents");
 	}
+	if (profile === "full" && counts.corpus !== MIRACL_FULL_CORPUS_PASSAGES) {
+		throw new Error(`full corpus must contain exactly ${MIRACL_FULL_CORPUS_PASSAGES} passages`);
+	}
+}
+
+function assertCanonicalManifestSize(manifest: RunManifestV1): RunManifestV1 {
+	const bytes = Buffer.byteLength(JSON.stringify(manifest), "utf8");
+	if (bytes > MAX_MANIFEST_CANONICAL_BYTES) {
+		throw new Error(`run manifest exceeds ${MAX_MANIFEST_CANONICAL_BYTES} canonical bytes`);
+	}
+	return manifest;
 }
 
 function normalizeCutoffMap<K extends string>(value: unknown, keys: readonly K[], label: string): Record<K, number> {
@@ -668,6 +693,29 @@ function validateReportCoherence(
 	}
 }
 
+function validateCompleteGridAndMetrics(
+	manifest: RunManifestV1,
+	records: readonly QueryRunRecord[],
+	metrics: RunMetricsV1,
+): void {
+	const queryIds = new Set(manifest.dataset.evaluation.qrels.map((qrel) => qrel.queryId));
+	const expectedPairs = new Set<string>();
+	for (const method of manifest.methods) {
+		for (const queryId of queryIds) expectedPairs.add(`${method}\0${queryId}`);
+	}
+	const actualPairs = new Set(records.map((record) => `${record.method}\0${record.queryId}`));
+	if (
+		actualPairs.size !== expectedPairs.size ||
+		[...expectedPairs].some((pair) => !actualPairs.has(pair))
+	) {
+		throw new Error("run report has an incomplete query-method grid");
+	}
+	const recomputed = evaluateRun(records, manifest.dataset.evaluation.qrels);
+	if (JSON.stringify(recomputed) !== JSON.stringify(metrics.methods)) {
+		throw new Error("run report metrics do not match recomputed metrics");
+	}
+}
+
 function stabilizeRecord(record: QueryRunRecord): QueryRunRecord {
 	return {
 		...record,
@@ -772,122 +820,19 @@ async function resolvePublicationPaths(directory: string): Promise<PublicationPa
 		parent,
 		destination,
 		staging: `${destination}.staging-${process.pid}-${randomUUID()}`,
-		lock: `${destination}.publish.lock`,
 	};
 }
 
-async function acquirePublicationLock(paths: PublicationPaths): Promise<PublicationLock> {
-	for (let attempt = 0; attempt < 2; attempt += 1) {
-		try {
-			const handle = await open(paths.lock, "wx", 0o600);
-			let identity: FileIdentity | undefined;
-			try {
-				identity = await snapshotOpenRegularFile(handle, "publication lock");
-				const metadata = {
-					schemaVersion: 1,
-					pid: process.pid,
-					startedAt: new Date().toISOString(),
-					nonce: randomUUID(),
-				};
-				await handle.writeFile(`${JSON.stringify(metadata)}\n`, "utf8");
-				await handle.sync();
-				const written = await snapshotOpenRegularFile(handle, "publication lock");
-				if (written.device !== identity.device || written.inode !== identity.inode) {
-					throw new Error("publication lock changed");
-				}
-				await assertFileIdentity(paths.lock, written);
-				return { handle, identity: written };
-			} catch (error) {
-				await handle.close().catch(() => undefined);
-				if (identity !== undefined) {
-					try {
-						await assertFileIdentity(paths.lock, identity, false);
-						await unlink(paths.lock);
-					} catch {
-						// A replaced lock is never removed.
-					}
-				}
-				throw error;
-			}
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-			if (attempt === 0 && (await recoverDeadPublicationLock(paths.lock))) continue;
-			throw new Error(`report directory already exists or is being published: ${paths.destination}`);
-		}
-	}
-	throw new Error(`report directory already exists or is being published: ${paths.destination}`);
-}
-
-async function recoverDeadPublicationLock(path: string): Promise<boolean> {
-	let handle: FileHandle;
-	try {
-		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-	} catch {
-		return false;
-	}
-	let identity: FileIdentity;
-	let raw: string;
-	try {
-		identity = await snapshotOpenRegularFile(handle, "publication lock");
-		if (identity.size < 2 || identity.size > 1_024) return false;
-		const buffer = Buffer.alloc(identity.size);
-		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-		if (bytesRead !== buffer.length) return false;
-		raw = buffer.toString("utf8");
-	} catch {
-		return false;
-	} finally {
-		await handle.close().catch(() => undefined);
-	}
-	let metadata: Record<string, unknown>;
-	try {
-		metadata = requireExactShape(JSON.parse(raw), ["schemaVersion", "pid", "startedAt", "nonce"], [], "lock");
-	} catch {
-		return false;
-	}
-	if (
-		metadata.schemaVersion !== 1 ||
-		!Number.isSafeInteger(metadata.pid) ||
-		(metadata.pid as number) < 1 ||
-		typeof metadata.startedAt !== "string" ||
-		!Number.isFinite(Date.parse(metadata.startedAt)) ||
-		typeof metadata.nonce !== "string" ||
-		!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(metadata.nonce)
-	) {
-		return false;
-	}
-	try {
-		process.kill(metadata.pid as number, 0);
-		return false;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ESRCH") return false;
-	}
-	try {
-		await assertFileIdentity(path, identity);
-		await unlink(path);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-async function releasePublicationLock(path: string, lock: PublicationLock): Promise<void> {
-	await lock.handle.close();
-	try {
-		await assertFileIdentity(path, lock.identity);
-		await unlink(path);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-			// Fail closed: a replaced lock is never removed.
-		}
-	}
-}
-
-async function writeDurablePrivateFile(path: string, contents: string): Promise<FileIdentity> {
+async function writeDurablePrivateFile(
+	path: string,
+	contents: string,
+	onInitialIdentity: (identity: FileIdentity) => void,
+): Promise<FileIdentity> {
 	const handle = await open(path, "wx", 0o600);
 	let identity: FileIdentity;
 	try {
 		identity = await snapshotOpenRegularFile(handle, "report file");
+		onInitialIdentity(identity);
 		await handle.writeFile(contents, "utf8");
 		await handle.sync();
 		const written = await snapshotOpenRegularFile(handle, "report file");
@@ -1074,33 +1019,6 @@ async function assertOwnedChildren(
 ): Promise<void> {
 	for (const [name, identity] of children) {
 		await assertFileIdentity(join(root, name), identity);
-	}
-}
-
-async function removeOwnedDirectory(
-	path: string,
-	identity: DirectoryIdentity,
-	children: ReadonlyMap<(typeof REPORT_FILES)[number], FileIdentity>,
-): Promise<void> {
-	try {
-		await assertDirectoryIdentity(path, identity);
-	} catch {
-		return;
-	}
-	for (const [name, childIdentity] of [...children].reverse()) {
-		const child = join(path, name);
-		try {
-			await assertFileIdentity(child, childIdentity);
-			await unlink(child);
-		} catch {
-			// Unknown, replaced, or already absent children are preserved.
-		}
-	}
-	try {
-		await assertDirectoryIdentity(path, identity);
-		await rmdir(path);
-	} catch {
-		// Non-empty or replaced directories are preserved.
 	}
 }
 
