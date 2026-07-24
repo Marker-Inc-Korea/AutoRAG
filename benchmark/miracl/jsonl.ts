@@ -1,26 +1,54 @@
 import { createReadStream } from "node:fs";
-import { lstat, open, rename, rm } from "node:fs/promises";
+import { link, lstat, open, rm, unlink } from "node:fs/promises";
 import { createInterface } from "node:readline";
+import { Transform, type TransformCallback } from "node:stream";
 import type { BenchmarkQuery, Qrel } from "./types.ts";
 
 const MAX_LINE_BYTES = 16 * 1024 * 1024;
 
+class LineLimitTransform extends Transform {
+	#bytesSinceNewline = 0;
+	#lineNumber = 1;
+	readonly #path: string;
+
+	constructor(path: string) {
+		super();
+		this.#path = path;
+	}
+
+	_transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback): void {
+		const bytes = typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk;
+		for (const byte of bytes) {
+			if (byte === 0x0a) {
+				this.#bytesSinceNewline = 0;
+				this.#lineNumber += 1;
+				continue;
+			}
+			this.#bytesSinceNewline += 1;
+			if (this.#bytesSinceNewline > MAX_LINE_BYTES) {
+				callback(new Error(`line ${this.#lineNumber} in ${this.#path} exceeds 16 MiB`));
+				return;
+			}
+		}
+		callback(null, chunk);
+	}
+}
+
 async function forEachLine(path: string, visit: (line: string, lineNumber: number) => void): Promise<void> {
 	const input = createReadStream(path, { encoding: "utf8" });
-	const reader = createInterface({ input, crlfDelay: Number.POSITIVE_INFINITY });
+	const lineLimit = new LineLimitTransform(path);
+	const reader = createInterface({ input: input.pipe(lineLimit), crlfDelay: Number.POSITIVE_INFINITY });
 	let lineNumber = 0;
 
 	try {
 		for await (const line of reader) {
 			lineNumber += 1;
-			if (Buffer.byteLength(line, "utf8") > MAX_LINE_BYTES) {
-				throw new Error(`line ${lineNumber} in ${path} exceeds 16 MiB`);
-			}
 			visit(line, lineNumber);
 		}
 	} finally {
 		reader.close();
 		input.destroy();
+		lineLimit.destroy();
 	}
 
 	if (lineNumber === 0) {
@@ -124,7 +152,15 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
 		} finally {
 			await handle.close();
 		}
-		await rename(temporaryPath, path);
+		try {
+			await link(temporaryPath, path);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+				throw new Error(`destination already exists: ${path}`);
+			}
+			throw error;
+		}
+		await unlink(temporaryPath);
 		temporaryFileCreated = false;
 	} finally {
 		if (temporaryFileCreated) {
