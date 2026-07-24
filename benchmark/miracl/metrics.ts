@@ -46,7 +46,13 @@ export function evaluateRun(
 
 	return [...recordsByMethod.entries()]
 		.sort(([left], [right]) => compareCodePoints(left, right))
-		.map(([method, methodRecords]) => evaluateMethod(method, methodRecords, qrelsByQuery));
+		.map(([method, methodRecords]) =>
+			evaluateMethod(
+				method,
+				[...methodRecords].sort((left, right) => compareCodePoints(left.queryId, right.queryId)),
+				qrelsByQuery,
+			),
+		);
 }
 
 function groupQrels(qrels: readonly Qrel[]): ReadonlyMap<string, ReadonlyMap<string, number>> {

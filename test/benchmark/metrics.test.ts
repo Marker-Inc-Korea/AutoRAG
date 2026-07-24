@@ -122,6 +122,31 @@ describe("evaluateRun", () => {
 		expect(metrics.map((metric) => metric.method)).toEqual(["hybrid", "minsync"]);
 	});
 
+	it("produces identical macro metrics for permuted query records", () => {
+		const relevantCounts = new Map([
+			["q1", 3],
+			["q2", 5],
+			["q3", 7],
+			["q4", 11],
+			["q5", 13],
+		]);
+		const qrels = [...relevantCounts].flatMap(([queryId, count]) =>
+			Array.from({ length: count }, (_, index) => ({
+				queryId,
+				documentId: `${queryId}-${index}`,
+				relevance: 1,
+			})),
+		);
+		const records = [...relevantCounts].map(([queryId], index) =>
+			record(queryId, {
+				latencyMs: (index + 1) / 10,
+				hits: [{ documentId: `${queryId}-0`, score: 1, rank: 1 }],
+			}),
+		);
+
+		expect(evaluateRun([...records].reverse(), qrels)).toEqual(evaluateRun(records, qrels));
+	});
+
 	it("rejects duplicate run records and qrels, record queries without qrels, and malformed numeric inputs", () => {
 		const qrels = [{ queryId: "q1", documentId: "a", relevance: 1 }];
 

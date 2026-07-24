@@ -13,7 +13,9 @@ describe("MIRACL input parsing", () => {
 	};
 
 	afterEach(() => {
-		roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }));
+		roots.splice(0).forEach((root) => {
+			rmSync(root, { recursive: true, force: true });
+		});
 		vi.doUnmock("node:fs/promises");
 		vi.resetModules();
 	});
@@ -72,7 +74,7 @@ describe("MIRACL input parsing", () => {
 		const blankPath = join(root, "blank.jsonl");
 		const malformedPath = join(root, "malformed.jsonl");
 		writeFileSync(validPath, '{"id":"one"}\r\n{"id":"two"}\n');
-		writeFileSync(blankPath, '\n');
+		writeFileSync(blankPath, "\n");
 		writeFileSync(malformedPath, '{"id":}\n');
 		expect(await readJsonLines<{ id: string }>(validPath)).toEqual([{ id: "one" }, { id: "two" }]);
 		await expect(readJsonLines(blankPath)).rejects.toThrow("must not be blank");
@@ -130,7 +132,9 @@ describe("MIRACL input parsing", () => {
 			},
 		}));
 		const { writeJsonAtomic: writeWithConcurrentDestination } = await import("../../benchmark/miracl/jsonl.ts");
-		await expect(writeWithConcurrentDestination(path, { status: "new" })).rejects.toThrow("destination already exists");
+		await expect(writeWithConcurrentDestination(path, { status: "new" })).rejects.toThrow(
+			"destination already exists",
+		);
 		expect(readFileSync(path, "utf8")).toBe('"competing"\n');
 		expect(existsSync(`${path}.tmp-${process.pid}`)).toBe(false);
 	});
