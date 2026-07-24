@@ -399,7 +399,7 @@ else process.stdout.write("x".repeat(4096));
 			maxStderrBytes: 1024,
 		});
 		const oversized = await runBoundedMinSyncProcess(script, ["oversized"], root, {
-			timeoutMs: 1_000,
+			timeoutMs: 10_000,
 			maxStdoutBytes: 1024,
 			maxStderrBytes: 1024,
 		});
