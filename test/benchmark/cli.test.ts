@@ -15,7 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runCli } from "../../benchmark/miracl/cli.ts";
+import { normalizeMaxRssBytes, runCli } from "../../benchmark/miracl/cli.ts";
 import type { CreatedBenchmarkMethods } from "../../benchmark/miracl/methods.ts";
 import type { PreparedManifest } from "../../benchmark/miracl/prepare.ts";
 import { MIRACL_SOURCES } from "../../benchmark/miracl/profiles.ts";
@@ -106,6 +106,13 @@ describe("MIRACL benchmark CLI", () => {
 		vi.restoreAllMocks();
 		vi.doUnmock("node:fs/promises");
 		vi.resetModules();
+	});
+
+	it("normalizes max RSS using the active runtime's units", () => {
+		const bytes = 365 * 1024 * 1024;
+
+		expect(normalizeMaxRssBytes(bytes, "1.3.13")).toBe(bytes);
+		expect(normalizeMaxRssBytes(bytes / 1024, undefined)).toBe(bytes);
 	});
 
 	it("rejects unknown, duplicate, missing, and conflicting flags", async () => {

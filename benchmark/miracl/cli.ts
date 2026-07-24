@@ -936,9 +936,12 @@ function readAutoRagCommit(): string {
 
 function readPeakRssBytes(): number | undefined {
 	if (!["darwin", "linux", "freebsd"].includes(process.platform)) return undefined;
-	const maxRssKiB = process.resourceUsage().maxRSS;
-	if (!Number.isSafeInteger(maxRssKiB) || maxRssKiB <= 0) return undefined;
-	const bytes = maxRssKiB * 1024;
+	return normalizeMaxRssBytes(process.resourceUsage().maxRSS, process.versions.bun);
+}
+
+export function normalizeMaxRssBytes(maxRss: number, bunVersion: string | undefined): number | undefined {
+	if (!Number.isSafeInteger(maxRss) || maxRss <= 0) return undefined;
+	const bytes = bunVersion === undefined ? maxRss * 1024 : maxRss;
 	return Number.isSafeInteger(bytes) ? bytes : undefined;
 }
 
