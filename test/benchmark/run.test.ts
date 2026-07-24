@@ -11,11 +11,11 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runBm25Queries, runMethodQueries } from "../../benchmark/miracl/run.ts";
 import { materializeBenchmarkWorkspace } from "../../benchmark/miracl/workspace.ts";
-import { loadMirrorIndex, saveMirrorIndex } from "../../src/mirror/index-store.ts";
+import { loadMirrorIndex, type ParsedMirrorEntry, saveMirrorIndex } from "../../src/mirror/index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "../../src/mirror/paths.ts";
 import type { RetrievalMethod, RetrievalResult } from "../../src/retrieval/types.ts";
 
@@ -40,6 +40,33 @@ function retrievalMethod(retrieve: RetrievalMethod["retrieve"], name = "bm25"): 
 		}),
 		retrieve,
 	};
+}
+
+function createBenchmarkShapedWorkspace(
+	root: string,
+	documentIds: readonly string[] = ["doc"],
+): ReadonlyMap<string, string> {
+	mkdirSync(root, { recursive: true });
+	const entries: Record<string, ParsedMirrorEntry> = {};
+	const documentBySource = new Map<string, string>();
+	for (const documentId of documentIds) {
+		const virtualPath = `/miracl/${encodeURIComponent(documentId)}.md`;
+		const outputPath = parsedOutputPath(root, virtualPath);
+		mkdirSync(dirname(outputPath), { recursive: true });
+		writeFileSync(outputPath, `# ${documentId}\n\nquery\n`);
+		entries[virtualPath] = {
+			virtualPath,
+			sourcePath: virtualPath,
+			outputPath,
+			parserName: "miracl-benchmark",
+			sourceMtimeNs: 0,
+			sourceSizeBytes: 13,
+			updatedAt: "1970-01-01T00:00:00.000Z",
+		};
+		documentBySource.set(virtualPath, documentId);
+	}
+	saveMirrorIndex(root, { version: 1, entries });
+	return documentBySource;
 }
 
 describe("MIRACL benchmark workspace and runner", () => {
@@ -169,6 +196,62 @@ describe("MIRACL benchmark workspace and runner", () => {
 		expect(readdirSync(indexTarget)).toEqual([]);
 	});
 
+	it("rejects a benchmark-shaped root beneath a symlinked checkout .autorag before BM25 writes", async () => {
+		const parent = realpathSync(makeParent());
+		const checkout = join(parent, "checkout");
+		const reservedTarget = join(parent, "reserved-target");
+		const root = join(reservedTarget, "workspace");
+		const autoragLink = join(checkout, ".autorag");
+		mkdirSync(checkout);
+		mkdirSync(reservedTarget);
+		const documentBySource = createBenchmarkShapedWorkspace(root);
+		const sentinel = join(reservedTarget, "keep.txt");
+		writeFileSync(sentinel, "reserved data\n");
+		symlinkSync(reservedTarget, autoragLink, "dir");
+
+		await expect(
+			runBm25Queries({
+				root: join(autoragLink, "workspace"),
+				queries: [{ queryId: "q1", text: "query" }],
+				documentBySource,
+				topK: 5,
+				bm25: { forceEngine: "typescript-fallback" },
+			}),
+		).rejects.toThrow("existing .autorag");
+		expect(readFileSync(sentinel, "utf8")).toBe("reserved data\n");
+		expect(readdirSync(join(root, ".autorag")).sort()).toEqual(["parsed"]);
+	});
+
+	it("rejects a benchmark-shaped root beneath a chained .autorag symlink target before BM25 writes", async () => {
+		const parent = realpathSync(makeParent());
+		const checkout = join(parent, "checkout");
+		const reservedTarget = join(parent, "reserved-target");
+		const root = join(reservedTarget, "workspace");
+		const autoragLink = join(checkout, ".AUTORAG");
+		const intermediateAlias = join(parent, "intermediate-alias");
+		const outerAlias = join(parent, "outer-alias");
+		mkdirSync(checkout);
+		mkdirSync(reservedTarget);
+		const documentBySource = createBenchmarkShapedWorkspace(root);
+		const sentinel = join(reservedTarget, "keep.txt");
+		writeFileSync(sentinel, "reserved data\n");
+		symlinkSync(reservedTarget, autoragLink, "dir");
+		symlinkSync(autoragLink, intermediateAlias, "dir");
+		symlinkSync(intermediateAlias, outerAlias, "dir");
+
+		await expect(
+			runBm25Queries({
+				root: join(outerAlias, "workspace"),
+				queries: [{ queryId: "q1", text: "query" }],
+				documentBySource,
+				topK: 5,
+				bm25: { forceEngine: "typescript-fallback" },
+			}),
+		).rejects.toThrow("existing .autorag");
+		expect(readFileSync(sentinel, "utf8")).toBe("reserved data\n");
+		expect(readdirSync(join(root, ".autorag")).sort()).toEqual(["parsed"]);
+	});
+
 	it("does not recursively clean a replacement at the workspace pathname", async () => {
 		const parent = makeParent();
 		const root = join(parent, "workspace");
@@ -264,8 +347,58 @@ describe("MIRACL benchmark workspace and runner", () => {
 		expect(existsSync(join(workspace.root, ".autorag", "bm25", "fallback-index.json"))).toBe(true);
 	});
 
+	it("rejects a workspace root replaced during async BM25 synchronization", async () => {
+		const parent = realpathSync(makeParent());
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const displacedRoot = join(parent, "displaced-workspace");
+		const replacementSentinel = join(workspace.root, "replacement.txt");
+		const retrieve = vi.fn(async () => []);
+		const factory = vi.fn(() => ({
+			describe: () => ({
+				name: "bm25",
+				type: "bm25" as const,
+				description: "injected BM25",
+				status: "active" as const,
+				capabilities: [],
+			}),
+			sync: async () => {
+				await Promise.resolve();
+				renameSync(workspace.root, displacedRoot);
+				mkdirSync(workspace.root);
+				writeFileSync(replacementSentinel, "replacement data\n");
+				return {
+					indexPath: join(displacedRoot, ".autorag", "bm25"),
+					indexedChunks: 1,
+					readiness: "degraded_fallback" as const,
+					engine: "typescript-fallback" as const,
+				};
+			},
+			retrieve,
+		}));
+
+		await expect(
+			runBm25Queries(
+				{
+					root: workspace.root,
+					queries: [{ queryId: "q1", text: "query" }],
+					documentBySource: workspace.documentBySource,
+					topK: 5,
+				},
+				factory,
+			),
+		).rejects.toThrow("workspace root changed");
+		expect(readFileSync(replacementSentinel, "utf8")).toBe("replacement data\n");
+		expect(retrieve).not.toHaveBeenCalled();
+		expect(existsSync(join(workspace.root, ".autorag"))).toBe(false);
+		expect(existsSync(displacedRoot)).toBe(true);
+	});
+
 	it("keeps generic query execution independent from descriptor readiness", async () => {
-		const retrieve = vi.fn(async () => [{ id: "hit", source: "/hit", content: "hit", score: 1, metadata: {} }]);
+		const retrieve = vi.fn(async () => [
+			{ id: "hit", source: "/miracl/hit.md", content: "hit", score: 1, metadata: {} },
+		]);
 		const retrieval: RetrievalMethod = {
 			describe: () => {
 				throw new Error("generic runner must not infer lifecycle readiness");
@@ -277,7 +410,7 @@ describe("MIRACL benchmark workspace and runner", () => {
 			method: "bm25",
 			retrieval,
 			queries: [{ queryId: "q1", text: "query" }],
-			documentBySource: new Map([["/hit", "hit"]]),
+			documentBySource: new Map([["/miracl/hit.md", "hit"]]),
 			topK: 5,
 			now: deterministicClock([0, 1]),
 		});
@@ -382,13 +515,74 @@ describe("MIRACL benchmark workspace and runner", () => {
 		).rejects.toThrow("BM25 benchmark indexing failed");
 	});
 
+	it("rejects a source map whose document id does not encode to its virtual path", async () => {
+		const parent = makeParent();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const source = [...workspace.documentBySource.keys()][0] as string;
+
+		await expect(
+			runBm25Queries({
+				root: workspace.root,
+				queries: [{ queryId: "q1", text: "query" }],
+				documentBySource: new Map([[source, "wrong-id"]]),
+				topK: 5,
+				bm25: { forceEngine: "typescript-fallback" },
+			}),
+		).rejects.toThrow("bijective");
+		expect(existsSync(join(workspace.root, ".autorag", "bm25"))).toBe(false);
+	});
+
+	it("rejects duplicate document ids in the source map before BM25 synchronization", async () => {
+		const parent = makeParent();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "first", title: "첫째", text: "query" },
+			{ documentId: "second", title: "둘째", text: "query" },
+		]);
+		const sources = [...workspace.documentBySource.keys()];
+
+		await expect(
+			runBm25Queries({
+				root: workspace.root,
+				queries: [{ queryId: "q1", text: "query" }],
+				documentBySource: new Map([
+					[sources[0] as string, "first"],
+					[sources[1] as string, "first"],
+				]),
+				topK: 5,
+				bm25: { forceEngine: "typescript-fallback" },
+			}),
+		).rejects.toThrow("bijective");
+		expect(existsSync(join(workspace.root, ".autorag", "bm25"))).toBe(false);
+	});
+
+	it("rejects blank document ids in the source map before BM25 synchronization", async () => {
+		const parent = makeParent();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const source = [...workspace.documentBySource.keys()][0] as string;
+
+		await expect(
+			runBm25Queries({
+				root: workspace.root,
+				queries: [{ queryId: "q1", text: "query" }],
+				documentBySource: new Map([[source, " "]]),
+				topK: 5,
+				bm25: { forceEngine: "typescript-fallback" },
+			}),
+		).rejects.toThrow("bijective");
+		expect(existsSync(join(workspace.root, ".autorag", "bm25"))).toBe(false);
+	});
+
 	it("requests 100 candidates and emits stable document-level rankings", async () => {
 		const calls: Array<{ query: string; topK: number | undefined }> = [];
 		const results: RetrievalResult[] = [
-			{ id: "a-low", source: "/a", content: "a1", score: 1, metadata: {} },
-			{ id: "b", source: "/b", content: "b", score: 3, metadata: {} },
-			{ id: "a-high", source: "/a", content: "a2", score: 3, metadata: {} },
-			{ id: "c", source: "/c", content: "c", score: 3, metadata: {} },
+			{ id: "a-low", source: "/miracl/a.md", content: "a1", score: 1, metadata: {} },
+			{ id: "b", source: "/miracl/b.md", content: "b", score: 3, metadata: {} },
+			{ id: "a-high", source: "/miracl/a.md", content: "a2", score: 3, metadata: {} },
+			{ id: "c", source: "/miracl/c.md", content: "c", score: 3, metadata: {} },
 		];
 		const retrieval = retrievalMethod(async (query, options) => {
 			calls.push({ query, topK: options.topK });
@@ -400,9 +594,9 @@ describe("MIRACL benchmark workspace and runner", () => {
 			retrieval,
 			queries: [{ queryId: "q1", text: "query" }],
 			documentBySource: new Map([
-				["/a", "a"],
-				["/b", "b"],
-				["/c", "c"],
+				["/miracl/a.md", "a"],
+				["/miracl/b.md", "b"],
+				["/miracl/c.md", "c"],
 			]),
 			topK: 2,
 			now: deterministicClock([10, 12]),
@@ -424,7 +618,7 @@ describe("MIRACL benchmark workspace and runner", () => {
 			try {
 				await Promise.resolve();
 				if (query === "first") throw new Error("secret endpoint and filesystem path");
-				return [{ id: "ok", source: "/ok", content: "ok", score: 1, metadata: {} }];
+				return [{ id: "ok", source: "/miracl/ok.md", content: "ok", score: 1, metadata: {} }];
 			} finally {
 				inFlight -= 1;
 			}
@@ -437,7 +631,7 @@ describe("MIRACL benchmark workspace and runner", () => {
 				{ queryId: "q1", text: "first" },
 				{ queryId: "q2", text: "second" },
 			],
-			documentBySource: new Map([["/ok", "ok"]]),
+			documentBySource: new Map([["/miracl/ok.md", "ok"]]),
 			topK: 5,
 			now: deterministicClock([0, 2, 3, 7]),
 		});

@@ -27,7 +27,7 @@ interface ValidatedCorpus {
 	readonly documentBySource: ReadonlyMap<string, string>;
 }
 
-interface DirectoryIdentity {
+export interface BenchmarkDirectoryIdentity {
 	readonly device: number;
 	readonly inode: number;
 }
@@ -42,7 +42,7 @@ export function materializeBenchmarkWorkspace(
 	const validated = validateCorpus(corpus);
 	const canonicalRoot = validateNewWorkspaceRoot(root);
 	mkdirSync(canonicalRoot, { mode: 0o700 });
-	const ownedRoot = readDirectoryIdentity(canonicalRoot);
+	const ownedRoot = snapshotBenchmarkDirectory(canonicalRoot);
 
 	try {
 		const mirrorFiles: string[] = [];
@@ -106,10 +106,8 @@ function validateNewWorkspaceRoot(root: string): string {
 	if (root.trim().length === 0) {
 		throw new Error("benchmark workspace root must not be blank");
 	}
-	assertNoAutoragComponent(root);
+	assertBenchmarkPathOutsideAutorag(root);
 	const absoluteRoot = resolve(root);
-	assertNoAutoragComponent(absoluteRoot);
-	inspectExistingComponents(absoluteRoot);
 	if (pathEntryExists(absoluteRoot)) {
 		throw new Error("benchmark workspace root must not already exist");
 	}
@@ -119,6 +117,13 @@ function validateNewWorkspaceRoot(root: string): string {
 	const canonicalRoot = join(canonicalParent, basename(absoluteRoot));
 	assertNoAutoragComponent(canonicalRoot);
 	return canonicalRoot;
+}
+
+export function assertBenchmarkPathOutsideAutorag(path: string): void {
+	assertNoAutoragComponent(path);
+	const absolutePath = resolve(path);
+	assertNoAutoragComponent(absolutePath);
+	inspectExistingComponents(absolutePath);
 }
 
 function pathEntryExists(path: string): boolean {
@@ -163,31 +168,34 @@ function inspectExistingComponents(path: string, inspectedSymlinks = new Set<str
 	}
 }
 
-function readDirectoryIdentity(path: string): DirectoryIdentity {
+export function snapshotBenchmarkDirectory(path: string): BenchmarkDirectoryIdentity {
 	const stats = lstatSync(path);
 	if (!stats.isDirectory() || stats.isSymbolicLink()) {
-		throw new Error("benchmark workspace directory changed during materialization");
+		throw new Error("benchmark workspace root changed");
 	}
 	return { device: stats.dev, inode: stats.ino };
 }
 
-function assertOwnedRoot(root: string, identity: DirectoryIdentity): void {
-	const current = readDirectoryIdentity(root);
+export function assertBenchmarkDirectoryIdentity(
+	root: string,
+	identity: BenchmarkDirectoryIdentity,
+): void {
+	const current = snapshotBenchmarkDirectory(root);
 	if (current.device !== identity.device || current.inode !== identity.inode) {
-		throw new Error("benchmark workspace directory changed during materialization");
+		throw new Error("benchmark workspace root changed");
 	}
 }
 
-function ensureTrustedDirectory(path: string, root: string, identity: DirectoryIdentity): void {
+function ensureTrustedDirectory(path: string, root: string, identity: BenchmarkDirectoryIdentity): void {
 	assertContainedPath(path, root);
-	assertOwnedRoot(root, identity);
+	assertBenchmarkDirectoryIdentity(root, identity);
 	mkdirSync(path, { recursive: true, mode: 0o700 });
 	assertTrustedDirectory(path, root, identity);
 }
 
-function assertTrustedDirectory(path: string, root: string, identity: DirectoryIdentity): void {
+function assertTrustedDirectory(path: string, root: string, identity: BenchmarkDirectoryIdentity): void {
 	assertContainedPath(path, root);
-	assertOwnedRoot(root, identity);
+	assertBenchmarkDirectoryIdentity(root, identity);
 	const descendant = relative(root, path);
 	let current = root;
 	for (const component of descendant.split(sep).filter(Boolean)) {
@@ -200,7 +208,7 @@ function assertTrustedDirectory(path: string, root: string, identity: DirectoryI
 	if (realpathSync(path) !== path) {
 		throw new Error("benchmark workspace directory changed during materialization");
 	}
-	assertOwnedRoot(root, identity);
+	assertBenchmarkDirectoryIdentity(root, identity);
 }
 
 function assertContainedPath(path: string, root: string): void {
@@ -210,9 +218,9 @@ function assertContainedPath(path: string, root: string): void {
 	}
 }
 
-function cleanupOwnedRoot(root: string, identity: DirectoryIdentity): void {
+function cleanupOwnedRoot(root: string, identity: BenchmarkDirectoryIdentity): void {
 	try {
-		const current = readDirectoryIdentity(root);
+		const current = snapshotBenchmarkDirectory(root);
 		if (current.device !== identity.device || current.inode !== identity.inode) return;
 	} catch {
 		return;

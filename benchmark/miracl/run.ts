@@ -9,6 +9,11 @@ import {
 	type BM25SyncResult,
 } from "../../src/retrieval/methods/bm25.ts";
 import type { RetrievalMethod, RetrievalResult } from "../../src/retrieval/types.ts";
+import {
+	assertBenchmarkDirectoryIdentity,
+	assertBenchmarkPathOutsideAutorag,
+	snapshotBenchmarkDirectory,
+} from "./workspace.ts";
 import type {
 	BenchmarkMethod,
 	BenchmarkQuery,
@@ -32,6 +37,12 @@ export interface BM25QueryRunResult {
 	readonly records: readonly QueryRunRecord[];
 }
 
+export interface BenchmarkBM25Method extends RetrievalMethod {
+	sync(): Promise<BM25SyncResult>;
+}
+
+export type BenchmarkBM25Factory = (options: BM25MethodOptions) => BenchmarkBM25Method;
+
 export interface RunMethodQueriesOptions {
 	readonly method: BenchmarkMethod;
 	readonly retrieval: RetrievalMethod;
@@ -41,11 +52,16 @@ export interface RunMethodQueriesOptions {
 	readonly now?: () => number;
 }
 
-export async function runBm25Queries(options: RunBm25QueriesOptions): Promise<BM25QueryRunResult> {
+export async function runBm25Queries(
+	options: RunBm25QueriesOptions,
+	createBm25: BenchmarkBM25Factory = (methodOptions) => new BM25Method(methodOptions),
+): Promise<BM25QueryRunResult> {
 	validateTopK(options.topK);
+	assertBenchmarkPathOutsideAutorag(options.root);
 	const root = validateBenchmarkMirror(options.root, options.documentBySource);
+	const rootIdentity = snapshotBenchmarkDirectory(root);
 	const now = options.now ?? (() => performance.now());
-	const retrieval = new BM25Method({
+	const retrieval = createBm25({
 		root,
 		enabled: options.bm25?.enabled,
 		fallback: options.bm25?.fallback,
@@ -54,12 +70,15 @@ export async function runBm25Queries(options: RunBm25QueriesOptions): Promise<BM
 	});
 	const indexingStartedAt = now();
 	let syncResult: BM25SyncResult;
+	assertBenchmarkDirectoryIdentity(root, rootIdentity);
 	try {
 		syncResult = await retrieval.sync();
 	} catch {
+		assertBenchmarkDirectoryIdentity(root, rootIdentity);
 		now();
 		throw new Error("BM25 benchmark indexing failed");
 	}
+	assertBenchmarkDirectoryIdentity(root, rootIdentity);
 	const indexingLatencyMs = elapsedMilliseconds(indexingStartedAt, now());
 	if (
 		(syncResult.readiness !== "ready" && syncResult.readiness !== "degraded_fallback") ||
@@ -84,6 +103,7 @@ export async function runMethodQueries(
 	options: RunMethodQueriesOptions,
 ): Promise<QueryRunRecord[]> {
 	validateTopK(options.topK);
+	validateDocumentBySource(options.documentBySource);
 	const now = options.now ?? (() => performance.now());
 	const records: QueryRunRecord[] = [];
 
@@ -169,7 +189,27 @@ function validateBenchmarkMirror(root: string, documentBySource: ReadonlyMap<str
 			throw new Error("BM25 benchmark parsed mirror is stale");
 		}
 	}
+	validateDocumentBySource(documentBySource);
 	return canonicalRoot;
+}
+
+function validateDocumentBySource(documentBySource: ReadonlyMap<string, string>): void {
+	const documentIds = new Set<string>();
+	for (const [source, documentId] of documentBySource) {
+		if (typeof documentId !== "string" || documentId.trim().length === 0 || documentIds.has(documentId)) {
+			throw new Error("BM25 benchmark document source map must be bijective");
+		}
+		documentIds.add(documentId);
+		let expectedSource: string;
+		try {
+			expectedSource = `/miracl/${encodeURIComponent(documentId)}.md`;
+		} catch {
+			throw new Error("BM25 benchmark document source map must be bijective");
+		}
+		if (source !== expectedSource) {
+			throw new Error("BM25 benchmark document source map must be bijective");
+		}
+	}
 }
 
 function rankDocumentHits(
