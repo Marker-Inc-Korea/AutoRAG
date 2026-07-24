@@ -14,6 +14,11 @@ const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
 const DEFAULT_MAX_DECOMPRESSED_BYTES_PER_SHARD = 4 * 1024 * 1024 * 1024;
 const MAX_CORPUS_LINE_BYTES = 16 * 1024 * 1024;
+const DUPLICATE_PARTITION_COUNT = 256;
+const MAX_DUPLICATE_PARTITION_IDS = 50_000;
+const MAX_DUPLICATE_PARTITION_BYTES = 64 * 1024 * 1024;
+const MAX_OPEN_DUPLICATE_PARTITIONS = 32;
+const DUPLICATE_WRITE_BUFFER_BYTES = 64 * 1024;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -305,6 +310,145 @@ class BoundedDistractorHeap {
 	}
 }
 
+class DiskBackedDuplicateDetector {
+	readonly #directoryPath: string;
+	readonly #counts = new Uint32Array(DUPLICATE_PARTITION_COUNT);
+	readonly #bytes = new Float64Array(DUPLICATE_PARTITION_COUNT);
+	readonly #openHandles = new Map<number, FileHandle>();
+	readonly #pending = Array<string>(DUPLICATE_PARTITION_COUNT).fill("");
+	readonly #pendingBytes = new Uint32Array(DUPLICATE_PARTITION_COUNT);
+
+	constructor(directoryPath: string) {
+		this.#directoryPath = directoryPath;
+	}
+
+	async record(documentId: string): Promise<void> {
+		const partition = createHash("sha256").update(documentId, "utf8").digest()[0];
+		const line = `${JSON.stringify(documentId)}\n`;
+		const lineBytes = Buffer.byteLength(line, "utf8");
+		if (this.#counts[partition] >= MAX_DUPLICATE_PARTITION_IDS) {
+			throw new Error(
+				`duplicate-check partition ${partition} exceeds ${MAX_DUPLICATE_PARTITION_IDS} document IDs`,
+			);
+		}
+		if (this.#bytes[partition] + lineBytes > MAX_DUPLICATE_PARTITION_BYTES) {
+			throw new Error(
+				`duplicate-check partition ${partition} exceeds ${MAX_DUPLICATE_PARTITION_BYTES} bytes`,
+			);
+		}
+		this.#pending[partition] += line;
+		this.#pendingBytes[partition] += lineBytes;
+		this.#counts[partition] += 1;
+		this.#bytes[partition] += lineBytes;
+		if (this.#pendingBytes[partition] >= DUPLICATE_WRITE_BUFFER_BYTES) {
+			await this.#flushPartition(partition);
+		}
+	}
+
+	async assertNoDuplicates(): Promise<void> {
+		await this.#flushAll();
+		await this.#closeHandles();
+		for (let partition = 0; partition < DUPLICATE_PARTITION_COUNT; partition += 1) {
+			const expectedCount = this.#counts[partition];
+			if (expectedCount === 0) {
+				continue;
+			}
+			const path = this.#pathFor(partition);
+			const input = createReadStream(path, { encoding: "utf8" });
+			const reader = createInterface({ input, crlfDelay: Number.POSITIVE_INFINITY });
+			const seen = new Set<string>();
+			let count = 0;
+			try {
+				for await (const line of reader) {
+					count += 1;
+					const documentId = JSON.parse(line) as unknown;
+					if (typeof documentId !== "string") {
+						throw new Error(`invalid duplicate-check record in partition ${partition}`);
+					}
+					if (seen.has(documentId)) {
+						throw new Error(`duplicate corpus document id: ${documentId}`);
+					}
+					seen.add(documentId);
+				}
+			} finally {
+				reader.close();
+				input.destroy();
+			}
+			if (count !== expectedCount) {
+				throw new Error(
+					`duplicate-check partition ${partition} expected ${expectedCount} records but read ${count}`,
+				);
+			}
+			await rm(path, { force: true });
+		}
+	}
+
+	async dispose(): Promise<void> {
+		this.#pending.fill("");
+		this.#pendingBytes.fill(0);
+		try {
+			await this.#closeHandles();
+		} finally {
+			await rm(this.#directoryPath, { recursive: true, force: true });
+		}
+	}
+
+	async #getHandle(partition: number): Promise<FileHandle> {
+		const existing = this.#openHandles.get(partition);
+		if (existing !== undefined) {
+			this.#openHandles.delete(partition);
+			this.#openHandles.set(partition, existing);
+			return existing;
+		}
+		if (this.#openHandles.size >= MAX_OPEN_DUPLICATE_PARTITIONS) {
+			const oldest = this.#openHandles.entries().next().value as [number, FileHandle] | undefined;
+			if (oldest !== undefined) {
+				await oldest[1].close();
+				this.#openHandles.delete(oldest[0]);
+			}
+		}
+		const handle = await open(this.#pathFor(partition), "a", 0o600);
+		this.#openHandles.set(partition, handle);
+		return handle;
+	}
+
+	async #flushAll(): Promise<void> {
+		for (let partition = 0; partition < DUPLICATE_PARTITION_COUNT; partition += 1) {
+			await this.#flushPartition(partition);
+		}
+	}
+
+	async #flushPartition(partition: number): Promise<void> {
+		const pending = this.#pending[partition];
+		if (pending.length === 0) {
+			return;
+		}
+		const handle = await this.#getHandle(partition);
+		await handle.writeFile(pending, "utf8");
+		this.#pending[partition] = "";
+		this.#pendingBytes[partition] = 0;
+	}
+
+	async #closeHandles(): Promise<void> {
+		let firstError: unknown;
+		for (const [partition, handle] of [...this.#openHandles]) {
+			try {
+				await handle.close();
+				this.#openHandles.delete(partition);
+			} catch (error) {
+				firstError ??= error;
+			}
+		}
+		if (firstError !== undefined) {
+			throw firstError;
+		}
+	}
+
+	#pathFor(partition: number): string {
+		return join(this.#directoryPath, `partition-${partition.toString(16).padStart(2, "0")}.jsonl`);
+	}
+}
+
 class DecompressedLimitTransform extends Transform {
 	#totalBytes = 0;
 	#lineBytes = 0;
@@ -365,7 +509,7 @@ function parseCorpusDocument(line: string, path: string, lineNumber: number): Co
 async function forEachGzipCorpusDocument(
 	path: string,
 	maxDecompressedBytes: number,
-	visit: (document: CorpusDocument) => void,
+	visit: (document: CorpusDocument) => void | Promise<void>,
 ): Promise<void> {
 	const input = createReadStream(path);
 	const gunzip = createGunzip();
@@ -381,7 +525,7 @@ async function forEachGzipCorpusDocument(
 			if (line.trim().length === 0) {
 				throw new Error(`corpus line at ${path}:${lineNumber} must not be blank`);
 			}
-			visit(parseCorpusDocument(line, path, lineNumber));
+			await visit(parseCorpusDocument(line, path, lineNumber));
 		}
 	} finally {
 		reader.close();
@@ -476,11 +620,19 @@ async function downloadPinnedFile(
 	if (response.body === null) {
 		throw new Error(`download from ${currentUrl.toString()} returned no body`);
 	}
-	const expectedBytes = parseContentLength(response, maxBytes, currentUrl.toString());
+	const body = response.body;
+	let expectedBytes: number | undefined;
+	let handle: FileHandle;
+	try {
+		expectedBytes = parseContentLength(response, maxBytes, currentUrl.toString());
+		handle = await open(destinationPath, "wx", 0o600);
+	} catch (error) {
+		await body.cancel().catch(() => undefined);
+		throw error;
+	}
 	const hash = createHash("sha256");
-	const handle = await open(destinationPath, "wx", 0o600);
 	let bytes = 0;
-	const reader = response.body.getReader();
+	const reader = body.getReader();
 	try {
 		while (true) {
 			const { done, value } = await reader.read();
@@ -610,10 +762,28 @@ export function validatePreparedManifest(value: unknown): PreparedManifest {
 	}
 	assertManifest(counts.queries === queryIds.length, "query count does not match selected query IDs");
 	assertManifest(counts.corpus === documentIds.length, "corpus count does not match selected document IDs");
-	assertManifest((counts.positiveQrels as number) <= (counts.qrels as number), "positive qrel count exceeds qrels");
+	const queryCount = counts.queries as number;
+	const qrelCount = counts.qrels as number;
+	const positiveQrelCount = counts.positiveQrels as number;
+	const corpusCount = counts.corpus as number;
+	const judgedDocumentCount = counts.judgedDocuments as number;
+	const distractorCount = counts.distractors as number;
+	assertManifest(queryCount > 0, "smoke manifest must contain at least one selected query");
+	assertManifest(qrelCount >= positiveQrelCount, "qrel count is lower than positive qrel count");
 	assertManifest(
-		(counts.judgedDocuments as number) + (counts.distractors as number) === counts.corpus,
-		"judged and distractor counts do not match corpus",
+		positiveQrelCount >= queryCount,
+		"positive qrel count must cover every selected query",
+	);
+	assertManifest(judgedDocumentCount > 0, "smoke manifest must contain at least one judged document");
+	assertManifest(judgedDocumentCount <= qrelCount, "judged document count exceeds qrels");
+	assertManifest(judgedDocumentCount <= corpusCount, "judged document count exceeds corpus");
+	assertManifest(
+		BigInt(qrelCount) <= BigInt(queryCount) * BigInt(judgedDocumentCount),
+		"qrel count exceeds the possible query/document pairs",
+	);
+	assertManifest(
+		distractorCount === corpusCount - judgedDocumentCount,
+		"distractor count does not match corpus minus judged documents",
 	);
 
 	assertManifest(typeof manifest.files === "object" && manifest.files !== null, "files must be an object");
@@ -682,29 +852,32 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 		const selectedJudgedIds = new Set(selected.qrels.map((qrel) => qrel.documentId));
 		const allReferencedIds = new Set(allQrels.map((qrel) => qrel.documentId));
 		const seenReferencedIds = new Set<string>();
-		const seenDocumentIds = new Set<string>();
 		const judgedDocuments = new Map<string, CorpusDocument>();
 		const distractors = new BoundedDistractorHeap(selectionOptions.distractorCount);
-
-		for (const [index] of MIRACL_SOURCES.corpus.urls.entries()) {
-			const path = join(downloadsDir, `docs-${index}.jsonl.gz`);
-			await forEachGzipCorpusDocument(path, maxDecompressedBytes, (document) => {
-				if (seenDocumentIds.has(document.documentId)) {
-					throw new Error(`duplicate corpus document id: ${document.documentId}`);
-				}
-				seenDocumentIds.add(document.documentId);
-				if (allReferencedIds.has(document.documentId)) {
-					seenReferencedIds.add(document.documentId);
-				}
-				if (selectedJudgedIds.has(document.documentId)) {
-					judgedDocuments.set(document.documentId, document);
-					return;
-				}
-				distractors.add({
-					key: deterministicKey(selectionOptions.seed, document.documentId),
-					document,
+		const duplicateCheckDirectory = join(options.outputDir, ".duplicate-check");
+		await mkdir(duplicateCheckDirectory, { mode: 0o700 });
+		const duplicateDetector = new DiskBackedDuplicateDetector(duplicateCheckDirectory);
+		try {
+			for (const [index] of MIRACL_SOURCES.corpus.urls.entries()) {
+				const path = join(downloadsDir, `docs-${index}.jsonl.gz`);
+				await forEachGzipCorpusDocument(path, maxDecompressedBytes, async (document) => {
+					await duplicateDetector.record(document.documentId);
+					if (allReferencedIds.has(document.documentId)) {
+						seenReferencedIds.add(document.documentId);
+					}
+					if (selectedJudgedIds.has(document.documentId)) {
+						judgedDocuments.set(document.documentId, document);
+						return;
+					}
+					distractors.add({
+						key: deterministicKey(selectionOptions.seed, document.documentId),
+						document,
+					});
 				});
-			});
+			}
+			await duplicateDetector.assertNoDuplicates();
+		} finally {
+			await duplicateDetector.dispose();
 		}
 		const missingReferencedIds = [...allReferencedIds].filter((documentId) => !seenReferencedIds.has(documentId));
 		if (missingReferencedIds.length > 0) {

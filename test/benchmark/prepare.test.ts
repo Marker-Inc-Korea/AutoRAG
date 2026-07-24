@@ -63,6 +63,19 @@ function fixtureFetch(overrides: ReadonlyMap<string, Uint8Array> = new Map()) {
 	};
 }
 
+function cancellableResponse(headers: Record<string, string> = {}) {
+	let cancelled = false;
+	const response = new Response(
+		new ReadableStream<Uint8Array>({
+			cancel() {
+				cancelled = true;
+			},
+		}),
+		{ status: 200, headers },
+	);
+	return { response, wasCancelled: () => cancelled };
+}
+
 describe("MIRACL preparation", () => {
 	const roots: string[] = [];
 	const makeOutput = () => {
@@ -113,6 +126,7 @@ describe("MIRACL preparation", () => {
 		expect(qrels).toHaveLength(2);
 		expect(corpus.map((document) => document.documentId)).toEqual(manifest.selectedIds.documentIds);
 		expect(JSON.parse(readFileSync(join(outputDir, "prepared-manifest.json"), "utf8"))).toEqual(manifest);
+		expect(existsSync(join(outputDir, ".duplicate-check"))).toBe(false);
 		expect(() =>
 			validatePreparedManifest({
 				...manifest,
@@ -134,6 +148,34 @@ describe("MIRACL preparation", () => {
 				},
 			}),
 		).toThrow("deterministic order");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				counts: { ...manifest.counts, positiveQrels: 0 },
+			}),
+		).toThrow("positive qrel count must cover every selected query");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				counts: {
+					...manifest.counts,
+					judgedDocuments: manifest.counts.qrels + 1,
+					distractors: 0,
+				},
+			}),
+		).toThrow("judged document count exceeds qrels");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				counts: { ...manifest.counts, qrels: 3 },
+			}),
+		).toThrow("possible query/document pairs");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				counts: { ...manifest.counts, distractors: manifest.counts.distractors + 1 },
+			}),
+		).toThrow("distractor count");
 	});
 
 	it("rejects redirects outside the pinned download hosts before following them", async () => {
@@ -196,6 +238,139 @@ describe("MIRACL preparation", () => {
 			}),
 		).rejects.toThrow("byte limit");
 		expect(existsSync(byteOutput)).toBe(false);
+	});
+
+	it.each([
+		["invalid", "not-a-number", 1024, "invalid content-length"],
+		["oversized", "1025", 1024, "byte limit"],
+	] as const)("cancels the body for %s Content-Length", async (_case, contentLength, maxBytes, message) => {
+		const outputDir = makeOutput();
+		const body = cancellableResponse({ "content-length": contentLength });
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: async () => body.response,
+				maxDownloadBytes: maxBytes,
+			}),
+		).rejects.toThrow(message);
+
+		expect(body.wasCancelled()).toBe(true);
+		expect(existsSync(outputDir)).toBe(false);
+	});
+
+	it("cancels the body when exclusive destination creation fails", async () => {
+		const outputDir = makeOutput();
+		const body = cancellableResponse();
+		const fetchImpl = vi.fn(async () => {
+			writeFileSync(join(outputDir, "downloads", "topics.tsv"), "competing file");
+			return body.response;
+		});
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl,
+			}),
+		).rejects.toThrow();
+
+		expect(body.wasCancelled()).toBe(true);
+		expect(existsSync(outputDir)).toBe(false);
+	});
+
+	it("rejects a declared Content-Length mismatch and removes the partial output", async () => {
+		const outputDir = makeOutput();
+		const fetchImpl = vi.fn(async () => {
+			return new Response(new Uint8Array([1, 2]), {
+				status: 200,
+				headers: { "content-length": "3" },
+			});
+		});
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl,
+			}),
+		).rejects.toThrow("declared 3 bytes but returned 2");
+		expect(existsSync(outputDir)).toBe(false);
+	});
+
+	it("rejects an explicit corpus line larger than 16 MiB", async () => {
+		const outputDir = makeOutput();
+		const oversizedShard = gzipSync(
+			`${JSON.stringify({
+				docid: "gold",
+				title: "oversized",
+				text: "x".repeat(16 * 1024 * 1024 + 1),
+			})}\n`,
+		);
+		const fixture = fixtureFetch(new Map([[MIRACL_SOURCES.corpus.urls[0], oversizedShard]]));
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: fixture.fetchImpl,
+			}),
+		).rejects.toThrow("exceeds 16 MiB");
+		expect(existsSync(outputDir)).toBe(false);
+	});
+
+	it("rejects duplicate document IDs across corpus shards", async () => {
+		const outputDir = makeOutput();
+		const duplicateId = "cross-shard-duplicate";
+		const firstShard = gzipSync(
+			`${[
+				JSON.stringify({ docid: "gold", title: "정답", text: "본문" }),
+				JSON.stringify({ docid: duplicateId, title: "첫 사본", text: "본문" }),
+			].join("\n")}\n`,
+		);
+		const secondShard = gzipSync(
+			`${[
+				JSON.stringify({ docid: "judged-negative", title: "오답", text: "본문" }),
+				JSON.stringify({ docid: duplicateId, title: "둘째 사본", text: "본문" }),
+			].join("\n")}\n`,
+		);
+		const fixture = fixtureFetch(
+			new Map([
+				[MIRACL_SOURCES.corpus.urls[0], firstShard],
+				[MIRACL_SOURCES.corpus.urls[1], secondShard],
+			]),
+		);
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: fixture.fetchImpl,
+			}),
+		).rejects.toThrow(`duplicate corpus document id: ${duplicateId}`);
+		expect(existsSync(outputDir)).toBe(false);
+	});
+
+	it("still rejects a selected qrel document missing from every corpus shard", async () => {
+		const outputDir = makeOutput();
+		const shardWithoutGold = gzipSync(`${JSON.stringify({ docid: "d2", title: "방해 문서", text: "본문" })}\n`);
+		const fixture = fixtureFetch(new Map([[MIRACL_SOURCES.corpus.urls[0], shardWithoutGold]]));
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: fixture.fetchImpl,
+			}),
+		).rejects.toThrow("qrels reference missing corpus document: gold");
+		expect(existsSync(outputDir)).toBe(false);
 	});
 
 	it("bounds decompressed corpus bytes and preserves a pre-existing output directory", async () => {
