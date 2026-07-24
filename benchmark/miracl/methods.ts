@@ -1,31 +1,15 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-	accessSync,
-	constants,
-	createReadStream,
-	lstatSync,
-	readFileSync,
-	readdirSync,
-	realpathSync,
-} from "node:fs";
-import { basename, delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { accessSync, constants, createReadStream, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { parse } from "smol-toml";
-import { MinSyncVectorMethod } from "../../src/minsync/method.ts";
-import { ensureMinSyncBinary, executableName } from "../../src/minsync/installer.ts";
+import { rewriteEmbedderConfig } from "../../src/minsync/embedder-config.ts";
 import { minSyncWorkspaceRoot } from "../../src/minsync/paths.ts";
-import { spawnProcess } from "../../src/minsync/process.ts";
-import type {
-	MinSyncEmbedderConfig,
-	MinSyncQueryHit,
-	MinSyncSyncResult,
-} from "../../src/minsync/types.ts";
-import { buildMinSyncPathMap } from "../../src/minsync/workspace.ts";
-import {
-	BM25Method,
-	type BM25SyncResult,
-} from "../../src/retrieval/methods/bm25.ts";
+import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "../../src/minsync/types.ts";
+import { buildMinSyncPathMap, syncMinSyncWorkspace } from "../../src/minsync/workspace.ts";
 import { ParallelRetriever, ResultMerger } from "../../src/retrieval/merger.ts";
+import { BM25Method, type BM25SyncResult } from "../../src/retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope } from "../../src/retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -33,15 +17,11 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
-import {
-	assertBenchmarkDirectoryIdentity,
-	snapshotBenchmarkDirectory,
-} from "./workspace.ts";
-import {
-	type BenchmarkRetrievalLifecycle,
-	validateBenchmarkWorkspace,
-} from "./run.ts";
+import { FullCorpusBm25Method } from "./full-bm25.ts";
+import type { JsonLinesAttestation } from "./jsonl.ts";
+import { type BenchmarkRetrievalLifecycle, validateBenchmarkWorkspace } from "./run.ts";
 import type { BenchmarkMethod } from "./types.ts";
+import { assertBenchmarkDirectoryIdentity, snapshotBenchmarkDirectory } from "./workspace.ts";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const EMBEDDER_FIELDS = new Set([
@@ -57,42 +37,140 @@ const EMBEDDER_FIELDS = new Set([
 	"maxConcurrent",
 ]);
 const CONFIG_FIELDS = new Set(["binaryPath", "autoInstall", "embedder"]);
-const POSITIVE_INTEGER_FIELDS = [
-	"dimension",
-	"timeoutMs",
-	"batchSize",
-	"maxRetries",
-	"maxConcurrent",
-] as const;
+const POSITIVE_INTEGER_FIELDS = ["dimension", "timeoutMs", "batchSize", "maxRetries", "maxConcurrent"] as const;
 const RETRIEVAL_LIMIT = 100;
+const RETRIEVAL_OVERFETCH_LIMIT = 1_600;
 const HYBRID_METHOD_ORDER = ["bm25", "minsync"] as const;
+const MINSYNC_MAX_STDOUT_BYTES = 16 * 1024 * 1024;
+const MINSYNC_MAX_STDERR_BYTES = 1024 * 1024;
+
+export interface BoundedMinSyncProcessOptions {
+	readonly timeoutMs: number;
+	readonly maxStdoutBytes: number;
+	readonly maxStderrBytes: number;
+}
+
+export interface BoundedMinSyncProcessResult {
+	readonly ok: boolean;
+	readonly stdout: string;
+	readonly stderr: string;
+	readonly code: number | null;
+	readonly timedOut?: true;
+	readonly outputExceeded?: true;
+}
+
+export function runBoundedMinSyncProcess(
+	command: string,
+	args: readonly string[],
+	cwd: string,
+	options: BoundedMinSyncProcessOptions,
+): Promise<BoundedMinSyncProcessResult> {
+	for (const [label, value] of [
+		["timeoutMs", options.timeoutMs],
+		["maxStdoutBytes", options.maxStdoutBytes],
+		["maxStderrBytes", options.maxStderrBytes],
+	] as const) {
+		if (!Number.isSafeInteger(value) || value < 1) {
+			throw new Error(`MinSync benchmark process ${label} must be a positive safe integer`);
+		}
+	}
+	return new Promise((resolvePromise) => {
+		const child = spawn(command, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
+		let stdoutBytes = 0;
+		let stderrBytes = 0;
+		let timedOut = false;
+		let outputExceeded = false;
+		let settled = false;
+		const append = (chunks: Buffer[], chunk: Buffer, currentBytes: number, maximum: number): number => {
+			const remaining = Math.max(maximum - currentBytes, 0);
+			if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
+			if (chunk.byteLength > remaining) {
+				outputExceeded = true;
+				child.kill("SIGKILL");
+			}
+			return Math.min(currentBytes + chunk.byteLength, maximum);
+		};
+		child.stdout.on("data", (chunk: Buffer) => {
+			stdoutBytes = append(stdout, chunk, stdoutBytes, options.maxStdoutBytes);
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			stderrBytes = append(stderr, chunk, stderrBytes, options.maxStderrBytes);
+		});
+		const timer = setTimeout(() => {
+			timedOut = true;
+			child.kill("SIGKILL");
+		}, options.timeoutMs);
+		const finish = (code: number | null, processError?: Error) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			const stdoutText = Buffer.concat(stdout, stdoutBytes).toString("utf8");
+			const stderrText =
+				processError === undefined ? Buffer.concat(stderr, stderrBytes).toString("utf8") : processError.message;
+			resolvePromise({
+				ok: !timedOut && !outputExceeded && processError === undefined && code === 0,
+				stdout: stdoutText,
+				stderr: stderrText,
+				code,
+				...(timedOut ? { timedOut: true as const } : {}),
+				...(outputExceeded ? { outputExceeded: true as const } : {}),
+			});
+		};
+		child.once("error", (error) => finish(null, error));
+		child.once("close", (code) => finish(code));
+	});
+}
 
 export interface BenchmarkMinSyncConfig {
-	readonly binaryPath?: string;
-	readonly autoInstall?: boolean;
-	readonly embedder: MinSyncEmbedderConfig;
+	readonly binaryPath: string;
+	readonly autoInstall: false;
+	readonly embedder: MinSyncEmbedderConfig & {
+		readonly id: string;
+		readonly dimension: number;
+		readonly timeoutMs: number;
+	};
+}
+
+export interface SanitizedMinSyncConfig {
+	readonly executableSha256: string;
+	readonly modelId: string;
+	readonly endpointKind: "local" | "remote";
+	readonly authentication: "environment" | "none";
+	readonly dimension: number;
+	readonly timeoutMs: number;
+	readonly maxStdoutBytes: number;
+	readonly maxStderrBytes: number;
+	readonly queryPrefixSha256: string;
+	readonly passagePrefixSha256: string;
+	readonly batchSize?: number;
+	readonly maxRetries?: number;
+	readonly maxConcurrent?: number;
 }
 
 export interface SanitizedMethodConfig {
-	readonly embedderId?: string;
-	readonly endpointKind: "local" | "remote";
-	readonly apiKeyEnv?: string;
-	readonly dimension: number;
+	readonly bm25?: {
+		readonly engine: "tantivy" | "typescript-fallback";
+	};
+	readonly minsync?: SanitizedMinSyncConfig;
 }
 
 export interface CreateBenchmarkMethodsOptions {
 	readonly names: readonly BenchmarkMethod[];
 	readonly root: string;
 	readonly documentBySource?: ReadonlyMap<string, string>;
+	readonly fullCorpus?: {
+		readonly path: string;
+		readonly attestation: JsonLinesAttestation;
+	};
 	readonly config: BenchmarkMinSyncConfig | undefined;
 	readonly now?: () => number;
 }
 
 export interface CreatedBenchmarkMethods {
 	readonly methods: ReadonlyMap<BenchmarkMethod, RetrievalMethod>;
-	readonly indexingLatencyMs: Readonly<
-		Partial<Record<"bm25" | "minsync", number>>
-	>;
+	readonly indexingLatencyMs: Readonly<Partial<Record<"bm25" | "minsync", number>>>;
 	readonly reportConfig?: SanitizedMethodConfig;
 }
 
@@ -115,25 +193,33 @@ export function loadBenchmarkConfig(path: string): BenchmarkMinSyncConfig {
  * Return the deliberately small method-config shape permitted in benchmark
  * reports. API key values and literal endpoint URLs are never copied.
  */
-export function sanitizeMethodConfig(
-	config: Pick<BenchmarkMinSyncConfig, "embedder">,
-): SanitizedMethodConfig {
+export function sanitizeMethodConfig(config: BenchmarkMinSyncConfig, executableSha256: string): SanitizedMinSyncConfig {
 	const embedder = config.embedder;
-	const sanitized: {
-		embedderId?: string;
-		endpointKind: "local" | "remote";
-		apiKeyEnv?: string;
-		dimension: number;
-	} = {
+	if (!/^[0-9a-f]{64}$/u.test(executableSha256)) {
+		throw new Error("MinSync benchmark executable SHA-256 is invalid");
+	}
+	const sanitized: SanitizedMinSyncConfig = {
+		executableSha256,
+		modelId: requirePortableEmbedderId(embedder.id),
 		endpointKind: endpointKind(embedder.baseUrl),
-		dimension: requirePositiveSafeInteger(
-			embedder.dimension,
-			"embedder.dimension",
-		),
+		authentication: embedder.apiKeyEnv === undefined ? "none" : "environment",
+		dimension: requirePositiveSafeInteger(embedder.dimension, "embedder.dimension"),
+		timeoutMs: requirePositiveSafeInteger(embedder.timeoutMs, "embedder.timeoutMs"),
+		maxStdoutBytes: MINSYNC_MAX_STDOUT_BYTES,
+		maxStderrBytes: MINSYNC_MAX_STDERR_BYTES,
+		queryPrefixSha256: createHash("sha256")
+			.update(embedder.queryPrefix ?? "", "utf8")
+			.digest("hex"),
+		passagePrefixSha256: createHash("sha256")
+			.update(embedder.passagePrefix ?? "", "utf8")
+			.digest("hex"),
 	};
-	if (embedder.id !== undefined) sanitized.embedderId = requirePortableEmbedderId(embedder.id);
-	if (embedder.apiKeyEnv !== undefined) sanitized.apiKeyEnv = embedder.apiKeyEnv;
-	return sanitized;
+	return {
+		...sanitized,
+		...(embedder.batchSize === undefined ? {} : { batchSize: embedder.batchSize }),
+		...(embedder.maxRetries === undefined ? {} : { maxRetries: embedder.maxRetries }),
+		...(embedder.maxConcurrent === undefined ? {} : { maxConcurrent: embedder.maxConcurrent }),
+	};
 }
 
 /**
@@ -141,12 +227,13 @@ export function sanitizeMethodConfig(
  * a benchmark run. Validation is synchronous so malformed configuration and
  * workspace identities fail before the returned promise or any index write.
  */
-export function createBenchmarkMethods(
-	options: CreateBenchmarkMethodsOptions,
-): Promise<CreatedBenchmarkMethods> {
+export function createBenchmarkMethods(options: CreateBenchmarkMethodsOptions): Promise<CreatedBenchmarkMethods> {
 	const names = validateMethodNames(options.names);
 	const needsBm25 = names.has("bm25") || names.has("hybrid");
 	const needsMinSync = names.has("minsync") || names.has("hybrid");
+	if (options.fullCorpus !== undefined && (names.size !== 1 || !names.has("bm25"))) {
+		throw new Error("full profile supports only bm25");
+	}
 	let config: BenchmarkMinSyncConfig | undefined;
 	if (needsMinSync) {
 		if (options.config?.embedder === undefined) {
@@ -154,10 +241,13 @@ export function createBenchmarkMethods(
 		}
 		config = normalizeMethodConfig(options.config, process.env);
 	}
-	if (options.documentBySource === undefined) {
+	if (options.documentBySource === undefined && options.fullCorpus === undefined) {
 		throw new Error("MIRACL benchmark requires an exact document source map");
 	}
-	const root = validateBenchmarkWorkspace(options.root, options.documentBySource);
+	const root =
+		options.fullCorpus === undefined
+			? validateBenchmarkWorkspace(options.root, options.documentBySource as ReadonlyMap<string, string>)
+			: realpathSync(options.root);
 	const identity = snapshotBenchmarkDirectory(root);
 	return constructAndSyncMethods({
 		...options,
@@ -170,8 +260,7 @@ export function createBenchmarkMethods(
 	});
 }
 
-interface ConstructOptions
-	extends Omit<CreateBenchmarkMethodsOptions, "names" | "config" | "root"> {
+interface ConstructOptions extends Omit<CreateBenchmarkMethodsOptions, "names" | "config" | "root"> {
 	readonly names: ReadonlySet<BenchmarkMethod>;
 	readonly needsBm25: boolean;
 	readonly needsMinSync: boolean;
@@ -180,38 +269,56 @@ interface ConstructOptions
 	readonly identity: ReturnType<typeof snapshotBenchmarkDirectory>;
 }
 
-async function constructAndSyncMethods(
-	options: ConstructOptions,
-): Promise<CreatedBenchmarkMethods> {
+async function constructAndSyncMethods(options: ConstructOptions): Promise<CreatedBenchmarkMethods> {
 	const now = options.now ?? (() => performance.now());
 	const indexingLatencyMs: Partial<Record<"bm25" | "minsync", number>> = {};
 	let bm25: RetrievalMethod | undefined;
+	let bm25Engine: "tantivy" | "typescript-fallback" | undefined;
 	let minsync: RetrievalMethod | undefined;
+	let minSyncReportConfig: SanitizedMinSyncConfig | undefined;
 
 	if (options.needsBm25) {
-		const productionBm25 = new BM25Method({ root: options.root });
-		let result: BM25SyncResult;
-		assertBenchmarkDirectoryIdentity(options.root, options.identity);
-		const startedAt = now();
-		try {
-			result = await productionBm25.sync();
-		} catch {
-			const indexingLatencyMsValue = elapsedMilliseconds(startedAt, now());
+		if (options.fullCorpus !== undefined) {
+			const streamingBm25 = new FullCorpusBm25Method({
+				root: options.root,
+				corpusPath: options.fullCorpus.path,
+				attestation: options.fullCorpus.attestation,
+			});
 			assertBenchmarkDirectoryIdentity(options.root, options.identity);
-			indexingLatencyMs.bm25 = indexingLatencyMsValue;
-			throw new Error("BM25 benchmark indexing failed");
+			const startedAt = now();
+			const result = await streamingBm25.sync();
+			indexingLatencyMs.bm25 = elapsedMilliseconds(startedAt, now());
+			assertBenchmarkDirectoryIdentity(options.root, options.identity);
+			if (result.indexedDocuments !== options.fullCorpus.attestation.records || result.indexedChunks < 1) {
+				throw new Error("BM25 benchmark indexing failed");
+			}
+			bm25 = streamingBm25;
+			bm25Engine = "tantivy";
+		} else {
+			const productionBm25 = new BM25Method({ root: options.root });
+			let result: BM25SyncResult;
+			assertBenchmarkDirectoryIdentity(options.root, options.identity);
+			const startedAt = now();
+			try {
+				result = await productionBm25.sync();
+			} catch {
+				const indexingLatencyMsValue = elapsedMilliseconds(startedAt, now());
+				assertBenchmarkDirectoryIdentity(options.root, options.identity);
+				indexingLatencyMs.bm25 = indexingLatencyMsValue;
+				throw new Error("BM25 benchmark indexing failed");
+			}
+			indexingLatencyMs.bm25 = elapsedMilliseconds(startedAt, now());
+			assertBenchmarkDirectoryIdentity(options.root, options.identity);
+			if (
+				(result.readiness !== "ready" && result.readiness !== "degraded_fallback") ||
+				result.engine === "none" ||
+				result.indexedChunks < 1
+			) {
+				throw new Error("BM25 benchmark indexing failed");
+			}
+			bm25 = productionBm25;
+			bm25Engine = result.engine as "tantivy" | "typescript-fallback";
 		}
-		indexingLatencyMs.bm25 = elapsedMilliseconds(startedAt, now());
-		assertBenchmarkDirectoryIdentity(options.root, options.identity);
-		if (
-			(result.readiness !== "ready" &&
-				result.readiness !== "degraded_fallback") ||
-			result.engine === "none" ||
-			result.indexedChunks < 1
-		) {
-			throw new Error("BM25 benchmark indexing failed");
-		}
-		bm25 = productionBm25;
 	}
 
 	if (options.needsMinSync) {
@@ -225,18 +332,12 @@ async function constructAndSyncMethods(
 			throw new Error("MinSync benchmark executable is unavailable");
 		}
 		assertBenchmarkDirectoryIdentity(options.root, options.identity);
-		const productionMinSync = new MinSyncVectorMethod({
-			root: options.root,
-			binaryPath: executable.path,
-			autoInstall: false,
-			embedder: config.embedder,
-		});
 		let result: MinSyncSyncResult;
 		assertBenchmarkDirectoryIdentity(options.root, options.identity);
 		assertExecutableMetadata(executable);
 		const startedAt = now();
 		try {
-			result = await productionMinSync.sync();
+			result = await syncBenchmarkMinSync(options.root, executable.path, config.embedder);
 		} catch {
 			const indexingLatencyMsValue = elapsedMilliseconds(startedAt, now());
 			assertBenchmarkDirectoryIdentity(options.root, options.identity);
@@ -256,10 +357,7 @@ async function constructAndSyncMethods(
 		) {
 			throw new Error("MinSync benchmark indexing failed");
 		}
-		const workspaceIdentity = await snapshotMinSyncWorkspace(
-			options.root,
-			expectedWorkspacePath,
-		);
+		const workspaceIdentity = await snapshotMinSyncWorkspace(options.root, expectedWorkspacePath);
 		minsync = new CheckedMinSyncMethod({
 			root: options.root,
 			rootIdentity: options.identity,
@@ -267,7 +365,9 @@ async function constructAndSyncMethods(
 			workspacePath: expectedWorkspacePath,
 			workspaceIdentity,
 			embedder: config.embedder,
+			pathMap: buildMinSyncPathMap(options.root, expectedWorkspacePath),
 		});
+		minSyncReportConfig = sanitizeMethodConfig(config, executable.sha256);
 	}
 
 	const methods = new Map<BenchmarkMethod, RetrievalMethod>();
@@ -281,10 +381,10 @@ async function constructAndSyncMethods(
 	return {
 		methods,
 		indexingLatencyMs,
-		reportConfig:
-			options.config === undefined
-				? undefined
-				: sanitizeMethodConfig(options.config),
+		reportConfig: {
+			...(bm25Engine === undefined ? {} : { bm25: { engine: bm25Engine } }),
+			...(minSyncReportConfig === undefined ? {} : { minsync: minSyncReportConfig }),
+		},
 	};
 }
 
@@ -335,15 +435,8 @@ class HybridBenchmarkMethod implements RetrievalMethod, BenchmarkRetrievalLifecy
 		};
 	}
 
-	retrieve(
-		query: string,
-		options: RetrievalOptions,
-	): Promise<RetrievalResult[]> {
-		return retrieveHybrid(
-			this.methods,
-			query,
-			options.topK ?? RETRIEVAL_LIMIT,
-		);
+	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		return retrieveHybrid(this.methods, query, options.topK ?? RETRIEVAL_LIMIT);
 	}
 
 	beforeBenchmarkBatch(): Promise<void> {
@@ -369,13 +462,9 @@ type LifecycleHookName =
 	| "afterBenchmarkQuery"
 	| "afterBenchmarkBatch";
 
-async function runLifecycleHook(
-	methods: readonly RetrievalMethod[],
-	hookName: LifecycleHookName,
-): Promise<void> {
+async function runLifecycleHook(methods: readonly RetrievalMethod[], hookName: LifecycleHookName): Promise<void> {
 	for (const method of methods) {
-		const lifecycle = method as RetrievalMethod &
-			BenchmarkRetrievalLifecycle;
+		const lifecycle = method as RetrievalMethod & BenchmarkRetrievalLifecycle;
 		await lifecycle[hookName]?.call(lifecycle);
 	}
 }
@@ -422,6 +511,7 @@ interface CheckedMinSyncMethodOptions {
 	readonly workspacePath: string;
 	readonly workspaceIdentity: MinSyncWorkspaceIdentity;
 	readonly embedder: MinSyncEmbedderConfig;
+	readonly pathMap: ReturnType<typeof buildMinSyncPathMap>;
 }
 
 class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecycle {
@@ -431,6 +521,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 	private readonly workspacePath: string;
 	private readonly workspaceIdentity: MinSyncWorkspaceIdentity;
 	private readonly embedder: MinSyncEmbedderConfig;
+	private readonly pathMap: ReturnType<typeof buildMinSyncPathMap>;
 
 	constructor(options: CheckedMinSyncMethodOptions) {
 		this.root = options.root;
@@ -439,6 +530,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 		this.workspacePath = options.workspacePath;
 		this.workspaceIdentity = options.workspaceIdentity;
 		this.embedder = options.embedder;
+		this.pathMap = options.pathMap;
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -454,18 +546,21 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? 20;
 		validateTopK(topK);
-		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), RETRIEVAL_LIMIT) : topK;
+		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), RETRIEVAL_OVERFETCH_LIMIT) : topK;
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
 		assertExecutableMetadata(this.executable);
 		assertMinSyncQueryBoundaryMetadata(this.workspaceIdentity);
-		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
-		let processResult: Awaited<ReturnType<typeof spawnProcess>>;
+		let processResult: BoundedMinSyncProcessResult;
 		try {
-			processResult = await spawnProcess(
+			processResult = await runBoundedMinSyncProcess(
 				this.executable.path,
 				["query", "--format", "json", "-k", String(queryK), query],
 				this.workspacePath,
-				this.embedder.timeoutMs === undefined ? {} : { timeoutMs: this.embedder.timeoutMs },
+				{
+					timeoutMs: this.embedder.timeoutMs as number,
+					maxStdoutBytes: MINSYNC_MAX_STDOUT_BYTES,
+					maxStderrBytes: MINSYNC_MAX_STDERR_BYTES,
+				},
 			);
 		} catch {
 			throw new Error("MinSync benchmark retrieval failed");
@@ -480,7 +575,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 		const hits = parseCheckedMinSyncHits(processResult.stdout);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
-			const entry = byPath.get(hit.path);
+			const entry = this.pathMap.get(hit.path);
 			if (!entry) {
 				throw new Error("MinSync benchmark retrieval failed");
 			}
@@ -522,41 +617,52 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 	}
 }
 
-async function resolveBenchmarkExecutable(
+async function syncBenchmarkMinSync(
 	root: string,
-	config: BenchmarkMinSyncConfig,
-): Promise<ExecutableIdentity> {
-	if (config.binaryPath !== undefined) {
-		return snapshotExecutable(config.binaryPath);
-	}
-	const executable = executableName(process.platform);
-	const pathValue = process.env.PATH;
-	if (typeof pathValue === "string") {
-		for (const directory of pathValue.split(delimiter)) {
-			if (directory.length === 0) continue;
-			const identity = trySnapshotExecutable(join(directory, executable));
-			if (identity !== undefined) return identity;
-		}
-	}
-	const cached = trySnapshotExecutable(join(root, ".autorag", "bin", executable));
-	if (cached !== undefined) return cached;
-	if (config.autoInstall === true) {
-		try {
-			const installed = await ensureMinSyncBinary({ root });
-			return snapshotExecutable(installed.binaryPath);
-		} catch {
-			throw new Error("MinSync benchmark executable is unavailable");
-		}
-	}
-	throw new Error("MinSync benchmark executable is unavailable");
+	binaryPath: string,
+	embedder: MinSyncEmbedderConfig,
+): Promise<MinSyncSyncResult> {
+	const workspacePath = minSyncWorkspaceRoot(root);
+	syncMinSyncWorkspace(root, { workspacePath });
+	const processOptions = {
+		timeoutMs: embedder.timeoutMs as number,
+		maxStdoutBytes: MINSYNC_MAX_STDOUT_BYTES,
+		maxStderrBytes: MINSYNC_MAX_STDERR_BYTES,
+	};
+	const init = await runBoundedMinSyncProcess(
+		binaryPath,
+		["init", "--format", "json", "--embedder", embedder.id as string],
+		workspacePath,
+		processOptions,
+	);
+	if (!init.ok) return { ok: false, synced: 0, workspacePath, reason: "init-failed" };
+	rewriteEmbedderConfig(workspacePath, embedder);
+	const sync = await runBoundedMinSyncProcess(binaryPath, ["sync", "--format", "json"], workspacePath, processOptions);
+	if (!sync.ok) return { ok: false, synced: 0, workspacePath, reason: "sync-failed" };
+	return { ok: true, synced: readSyncedCount(sync.stdout), workspacePath };
 }
 
-function trySnapshotExecutable(path: string): ExecutableIdentity | undefined {
+function readSyncedCount(stdout: string): number {
+	let parsed: unknown;
 	try {
-		return snapshotExecutable(path);
+		parsed = JSON.parse(stdout);
 	} catch {
-		return undefined;
+		return 0;
 	}
+	if (!isRecord(parsed)) return 0;
+	for (const field of ["files_processed", "synced"]) {
+		const value = parsed[field];
+		if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+	}
+	return 0;
+}
+
+async function resolveBenchmarkExecutable(root: string, config: BenchmarkMinSyncConfig): Promise<ExecutableIdentity> {
+	void root;
+	if (config.binaryPath === undefined || config.autoInstall !== false) {
+		throw new Error("MinSync benchmark executable is unavailable");
+	}
+	return snapshotExecutable(config.binaryPath);
 }
 
 function snapshotExecutable(path: string): ExecutableIdentity {
@@ -571,9 +677,7 @@ function snapshotExecutable(path: string): ExecutableIdentity {
 	}
 }
 
-function snapshotExecutableMetadata(
-	path: string,
-): Omit<ExecutableIdentity, "sha256"> {
+function snapshotExecutableMetadata(path: string): Omit<ExecutableIdentity, "sha256"> {
 	try {
 		const canonicalPath = realpathSync(path);
 		const stats = lstatSync(canonicalPath);
@@ -628,29 +732,12 @@ async function snapshotMinSyncWorkspace(
 ): Promise<MinSyncWorkspaceIdentity> {
 	try {
 		const workspace = snapshotPathIdentity(workspacePath, "directory", benchmarkRoot);
-		const stateDirectory = snapshotPathIdentity(
-			join(workspace.path, ".minsync"),
-			"directory",
-			workspace.path,
-		);
-		const config = snapshotFileIntegrity(
-			join(stateDirectory.path, "config.toml"),
-			stateDirectory.path,
-		);
-		const manifest = snapshotFileIntegrity(
-			join(stateDirectory.path, "manifest.json"),
-			stateDirectory.path,
-		);
-		const cursor = snapshotFileIntegrity(
-			join(stateDirectory.path, "cursor.json"),
-			stateDirectory.path,
-		);
+		const stateDirectory = snapshotPathIdentity(join(workspace.path, ".minsync"), "directory", workspace.path);
+		const config = snapshotFileIntegrity(join(stateDirectory.path, "config.toml"), stateDirectory.path);
+		const manifest = snapshotFileIntegrity(join(stateDirectory.path, "manifest.json"), stateDirectory.path);
+		const cursor = snapshotFileIntegrity(join(stateDirectory.path, "cursor.json"), stateDirectory.path);
 		const collectionPath = readCollectionPath(config.path);
-		if (
-			isAbsolute(collectionPath) ||
-			collectionPath.length === 0 ||
-			collectionPath.split(/[\\/]/u).includes("..")
-		) {
+		if (isAbsolute(collectionPath) || collectionPath.length === 0 || collectionPath.split(/[\\/]/u).includes("..")) {
 			throw new Error("unsafe collection path");
 		}
 		const collection = snapshotPathIdentity(
@@ -668,27 +755,18 @@ async function snapshotMinSyncWorkspace(
 			cursor,
 			collection,
 			collectionTree,
-			collectionTreeSha256: await hashDirectoryTree(
-				collection.path,
-				collectionTree,
-			),
+			collectionTreeSha256: await hashDirectoryTree(collection.path, collectionTree),
 		};
 	} catch {
 		throw new Error("MinSync benchmark workspace changed");
 	}
 }
 
-function assertMinSyncQueryBoundaryMetadata(
-	expected: MinSyncWorkspaceIdentity,
-): void {
+function assertMinSyncQueryBoundaryMetadata(expected: MinSyncWorkspaceIdentity): void {
 	for (const identity of [expected.workspace, expected.stateDirectory]) {
 		let actual: PathIdentity;
 		try {
-			actual = snapshotPathIdentity(
-				identity.path,
-				identity.kind,
-				expected.benchmarkRoot,
-			);
+			actual = snapshotPathIdentity(identity.path, identity.kind, expected.benchmarkRoot);
 		} catch {
 			throw new Error("MinSync benchmark workspace changed");
 		}
@@ -709,11 +787,7 @@ function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): voi
 	]) {
 		let actual: PathIdentity;
 		try {
-			actual = snapshotPathIdentity(
-				identity.path,
-				identity.kind,
-				expected.benchmarkRoot,
-			);
+			actual = snapshotPathIdentity(identity.path, identity.kind, expected.benchmarkRoot);
 		} catch {
 			throw new Error("MinSync benchmark workspace changed");
 		}
@@ -723,9 +797,7 @@ function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): voi
 	}
 	let actualCollectionTree: readonly PathIdentity[];
 	try {
-		actualCollectionTree = snapshotDirectoryTreeMetadata(
-			expected.collection.path,
-		);
+		actualCollectionTree = snapshotDirectoryTreeMetadata(expected.collection.path);
 	} catch {
 		throw new Error("MinSync benchmark workspace changed");
 	}
@@ -734,13 +806,8 @@ function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): voi
 	}
 }
 
-async function assertMinSyncWorkspaceIntegrity(
-	expected: MinSyncWorkspaceIdentity,
-): Promise<void> {
-	const actual = await snapshotMinSyncWorkspace(
-		expected.benchmarkRoot,
-		expected.workspace.path,
-	);
+async function assertMinSyncWorkspaceIntegrity(expected: MinSyncWorkspaceIdentity): Promise<void> {
+	const actual = await snapshotMinSyncWorkspace(expected.benchmarkRoot, expected.workspace.path);
 	if (
 		!samePathIdentity(actual.workspace, expected.workspace) ||
 		!samePathIdentity(actual.stateDirectory, expected.stateDirectory) ||
@@ -755,16 +822,9 @@ async function assertMinSyncWorkspaceIntegrity(
 	}
 }
 
-function snapshotPathIdentity(
-	path: string,
-	kind: PathIdentity["kind"],
-	container: string,
-): PathIdentity {
+function snapshotPathIdentity(path: string, kind: PathIdentity["kind"], container: string): PathIdentity {
 	const stats = lstatSync(path);
-	if (
-		stats.isSymbolicLink() ||
-		(kind === "directory" ? !stats.isDirectory() : !stats.isFile())
-	) {
+	if (stats.isSymbolicLink() || (kind === "directory" ? !stats.isDirectory() : !stats.isFile())) {
 		throw new Error("invalid filesystem object");
 	}
 	const canonicalPath = realpathSync(path);
@@ -806,11 +866,7 @@ function snapshotDirectoryTreeMetadata(root: string): readonly PathIdentity[] {
 	const visit = (directory: string): void => {
 		for (const name of readdirSync(directory).sort(compareCodePoints)) {
 			const path = join(directory, name);
-			const identity = snapshotPathIdentity(
-				path,
-				lstatSync(path).isDirectory() ? "directory" : "file",
-				root,
-			);
+			const identity = snapshotPathIdentity(path, lstatSync(path).isDirectory() ? "directory" : "file", root);
 			identities.push(identity);
 			if (identity.kind === "directory") {
 				visit(identity.path);
@@ -821,10 +877,7 @@ function snapshotDirectoryTreeMetadata(root: string): readonly PathIdentity[] {
 	return identities;
 }
 
-async function hashDirectoryTree(
-	root: string,
-	identities: readonly PathIdentity[],
-): Promise<string> {
+async function hashDirectoryTree(root: string, identities: readonly PathIdentity[]): Promise<string> {
 	const hash = createHash("sha256");
 	for (const identity of identities) {
 		const relativePath = relative(root, identity.path);
@@ -855,10 +908,7 @@ function sameFileIntegrity(left: FileIntegrity, right: FileIntegrity): boolean {
 	return samePathIdentity(left, right) && left.sha256 === right.sha256;
 }
 
-function samePathIdentityList(
-	left: readonly PathIdentity[],
-	right: readonly PathIdentity[],
-): boolean {
+function samePathIdentityList(left: readonly PathIdentity[], right: readonly PathIdentity[]): boolean {
 	return (
 		left.length === right.length &&
 		left.every((identity, index) => {
@@ -870,11 +920,7 @@ function samePathIdentityList(
 
 function isContainedPath(path: string, root: string): boolean {
 	const descendant = relative(root, path);
-	return (
-		descendant !== ".." &&
-		!descendant.startsWith(`..${sep}`) &&
-		!isAbsolute(descendant)
-	);
+	return descendant !== ".." && !descendant.startsWith(`..${sep}`) && !isAbsolute(descendant);
 }
 
 function parseCheckedMinSyncHits(stdout: string): readonly MinSyncQueryHit[] {
@@ -910,9 +956,7 @@ function compareRetrievalResults(left: RetrievalResult, right: RetrievalResult):
 		throw new Error("Hybrid benchmark retrieval failed");
 	}
 	return (
-		right.score - left.score ||
-		compareCodePoints(left.source, right.source) ||
-		compareCodePoints(left.id, right.id)
+		right.score - left.score || compareCodePoints(left.source, right.source) || compareCodePoints(left.id, right.id)
 	);
 }
 
@@ -920,21 +964,20 @@ function compareCodePoints(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function normalizeMethodConfig(
-	raw: unknown,
-	env: NodeJS.ProcessEnv,
-): BenchmarkMinSyncConfig {
+function normalizeMethodConfig(raw: unknown, env: NodeJS.ProcessEnv): BenchmarkMinSyncConfig {
 	const record = requireRecord(raw, "MinSync benchmark configuration");
 	rejectUnknownFields(record, CONFIG_FIELDS, "MinSync benchmark configuration");
-	const embedderRecord = requireRecord(
-		record.embedder,
-		"MinSync benchmark embedder",
-	);
-	rejectUnknownFields(
-		embedderRecord,
-		EMBEDDER_FIELDS,
-		"MinSync benchmark embedder",
-	);
+	if (record.binaryPath === undefined) {
+		throw new Error("MinSync benchmark binaryPath is required");
+	}
+	if (typeof record.binaryPath !== "string" || record.binaryPath.trim().length === 0) {
+		throw new Error("MinSync benchmark binaryPath must be a non-empty string");
+	}
+	if (record.autoInstall !== false) {
+		throw new Error("MinSync benchmark autoInstall must be false");
+	}
+	const embedderRecord = requireRecord(record.embedder, "MinSync benchmark embedder");
+	rejectUnknownFields(embedderRecord, EMBEDDER_FIELDS, "MinSync benchmark embedder");
 
 	const embedder: {
 		id?: string;
@@ -948,18 +991,16 @@ function normalizeMethodConfig(
 		maxRetries?: number;
 		maxConcurrent?: number;
 	} = {
-		dimension: requirePositiveSafeInteger(
-			embedderRecord.dimension,
-			"embedder.dimension",
-		),
+		dimension: requirePositiveSafeInteger(embedderRecord.dimension, "embedder.dimension"),
 	};
 	const embedderId = embedderRecord.id;
-	if (embedderId !== undefined) {
-		if (typeof embedderId !== "string" || embedderId.trim().length === 0) {
-			throw new Error("MinSync benchmark embedder.id must be a non-empty string");
-		}
-		embedder.id = requirePortableEmbedderId(embedderId);
+	if (embedderId === undefined) {
+		throw new Error("MinSync benchmark embedder.id is required");
 	}
+	if (typeof embedderId !== "string" || embedderId.trim().length === 0) {
+		throw new Error("MinSync benchmark embedder.id must be a non-empty string");
+	}
+	embedder.id = requirePortableEmbedderId(embedderId);
 	const baseUrl = embedderRecord.baseUrl;
 	if (baseUrl !== undefined) {
 		if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
@@ -980,57 +1021,29 @@ function normalizeMethodConfig(
 		if (field === "dimension") continue;
 		const value = embedderRecord[field];
 		if (value !== undefined) {
-			embedder[field] = requirePositiveSafeInteger(
-				value,
-				`embedder.${field}`,
-			);
+			embedder[field] = requirePositiveSafeInteger(value, `embedder.${field}`);
 		}
 	}
+	if (embedder.timeoutMs === undefined) {
+		throw new Error("MinSync benchmark embedder.timeoutMs is required");
+	}
 	if (embedderRecord.apiKeyEnv !== undefined) {
-		if (
-			typeof embedderRecord.apiKeyEnv !== "string" ||
-			!API_KEY_ENV_PATTERN.test(embedderRecord.apiKeyEnv)
-		) {
-			throw new Error(
-				"MinSync benchmark embedder.apiKeyEnv must be a valid environment-variable name",
-			);
+		if (typeof embedderRecord.apiKeyEnv !== "string" || !API_KEY_ENV_PATTERN.test(embedderRecord.apiKeyEnv)) {
+			throw new Error("MinSync benchmark embedder.apiKeyEnv must be a valid environment-variable name");
 		}
 		const apiKeyEnv = embedderRecord.apiKeyEnv;
-		if (
-			!Object.hasOwn(env, apiKeyEnv) ||
-			typeof env[apiKeyEnv] !== "string" ||
-			env[apiKeyEnv]?.length === 0
-		) {
-			throw new Error(
-				`MinSync benchmark requires environment variable ${apiKeyEnv}`,
-			);
+		if (!Object.hasOwn(env, apiKeyEnv) || typeof env[apiKeyEnv] !== "string" || env[apiKeyEnv]?.length === 0) {
+			throw new Error(`MinSync benchmark requires environment variable ${apiKeyEnv}`);
 		}
 		embedder.apiKeyEnv = apiKeyEnv;
 	}
 
 	const normalized: {
-		binaryPath?: string;
-		autoInstall?: boolean;
+		binaryPath: string;
+		autoInstall: false;
 		embedder: MinSyncEmbedderConfig;
-	} = { embedder };
-	if (record.binaryPath !== undefined) {
-		if (
-			typeof record.binaryPath !== "string" ||
-			record.binaryPath.trim().length === 0
-		) {
-			throw new Error(
-				"MinSync benchmark binaryPath must be a non-empty string",
-			);
-		}
-		normalized.binaryPath = record.binaryPath;
-	}
-	if (record.autoInstall !== undefined) {
-		if (typeof record.autoInstall !== "boolean") {
-			throw new Error("MinSync benchmark autoInstall must be a boolean");
-		}
-		normalized.autoInstall = record.autoInstall;
-	}
-	return normalized;
+	} = { binaryPath: record.binaryPath, autoInstall: false, embedder };
+	return normalized as BenchmarkMinSyncConfig;
 }
 
 function requirePortableEmbedderId(value: string): string {
@@ -1040,9 +1053,7 @@ function requirePortableEmbedderId(value: string): string {
 	return value;
 }
 
-function validateMethodNames(
-	names: readonly BenchmarkMethod[],
-): ReadonlySet<BenchmarkMethod> {
+function validateMethodNames(names: readonly BenchmarkMethod[]): ReadonlySet<BenchmarkMethod> {
 	if (names.length === 0) {
 		throw new Error("MIRACL benchmark requires at least one retrieval method");
 	}
@@ -1064,42 +1075,25 @@ function validateHybridMethods(methods: readonly RetrievalMethod[]): void {
 		throw new Error("Hybrid benchmark requires BM25 and MinSync methods");
 	}
 	const names = new Set(methods.map((method) => method.describe().name));
-	if (
-		names.size !== 2 ||
-		!names.has("bm25") ||
-		!names.has("minsync")
-	) {
+	if (names.size !== 2 || !names.has("bm25") || !names.has("minsync")) {
 		throw new Error("Hybrid benchmark requires BM25 and MinSync methods");
 	}
 }
 
 function validateTopK(topK: number): void {
-	if (
-		!Number.isSafeInteger(topK) ||
-		topK < 1 ||
-		topK > RETRIEVAL_LIMIT
-	) {
-		throw new Error(
-			`topK must be a safe integer between 1 and ${RETRIEVAL_LIMIT}`,
-		);
+	if (!Number.isSafeInteger(topK) || topK < 1 || topK > RETRIEVAL_OVERFETCH_LIMIT) {
+		throw new Error(`topK must be a safe integer between 1 and ${RETRIEVAL_OVERFETCH_LIMIT}`);
 	}
 }
 
-function requireRecord(
-	value: unknown,
-	label: string,
-): Record<string, unknown> {
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) {
 		throw new Error(`${label} must be an object`);
 	}
 	return value as Record<string, unknown>;
 }
 
-function rejectUnknownFields(
-	record: Record<string, unknown>,
-	allowlist: ReadonlySet<string>,
-	label: string,
-): void {
+function rejectUnknownFields(record: Record<string, unknown>, allowlist: ReadonlySet<string>, label: string): void {
 	for (const field of Object.keys(record)) {
 		if (!allowlist.has(field)) {
 			throw new Error(`${label}.${field} is not a recognized field`);
@@ -1108,14 +1102,8 @@ function rejectUnknownFields(
 }
 
 function requirePositiveSafeInteger(value: unknown, field: string): number {
-	if (
-		typeof value !== "number" ||
-		!Number.isSafeInteger(value) ||
-		value < 1
-	) {
-		throw new Error(
-			`MinSync benchmark ${field} must be a positive safe integer`,
-		);
+	if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+		throw new Error(`MinSync benchmark ${field} must be a positive safe integer`);
 	}
 	return value;
 }
@@ -1127,9 +1115,7 @@ function validateBaseUrl(baseUrl: string): void {
 			throw new Error("unsupported protocol");
 		}
 	} catch {
-		throw new Error(
-			"MinSync benchmark embedder.baseUrl must be a valid HTTP endpoint",
-		);
+		throw new Error("MinSync benchmark embedder.baseUrl must be a valid HTTP endpoint");
 	}
 }
 

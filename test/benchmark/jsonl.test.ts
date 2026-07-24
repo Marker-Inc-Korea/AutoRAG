@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readJsonLines, readQrels, readTopicsTsv, writeJsonAtomic } from "../../benchmark/miracl/jsonl.ts";
+import {
+	forEachJsonLine,
+	readJsonLines,
+	readQrels,
+	readTopicsTsv,
+	writeJsonAtomic,
+} from "../../benchmark/miracl/jsonl.ts";
 
 describe("MIRACL input parsing", () => {
 	const roots: string[] = [];
@@ -38,6 +45,17 @@ describe("MIRACL input parsing", () => {
 		writeFileSync(join(root, "qrels.txt"), "q1 Q0 d1 NaN\n");
 		await expect(readTopicsTsv(join(root, "topics.tsv"))).rejects.toThrow("duplicate query id");
 		await expect(readQrels(join(root, "qrels.txt"))).rejects.toThrow("finite integer");
+	});
+
+	it("applies declared byte and record ceilings to source topics and qrels", async () => {
+		const root = makeRoot();
+		const topics = join(root, "topics.tsv");
+		const qrels = join(root, "qrels.txt");
+		writeFileSync(topics, "q1\ta\nq2\tb\n");
+		writeFileSync(qrels, "q1 Q0 d1 1\nq2 Q0 d2 1\n");
+
+		await expect(readTopicsTsv(topics, { maxRecords: 1 })).rejects.toThrow("at most 1 records");
+		await expect(readQrels(qrels, { totalBytes: 1 })).rejects.toThrow("exceeds 1 bytes");
 	});
 
 	it("rejects blank topic identifiers and incomplete qrel columns", async () => {
@@ -79,6 +97,30 @@ describe("MIRACL input parsing", () => {
 		expect(await readJsonLines<{ id: string }>(validPath)).toEqual([{ id: "one" }, { id: "two" }]);
 		await expect(readJsonLines(blankPath)).rejects.toThrow("must not be blank");
 		await expect(readJsonLines(malformedPath)).rejects.toThrow("invalid JSON");
+	});
+
+	it("streams JSONL through an async visitor and returns the exact bounded attestation", async () => {
+		const root = makeRoot();
+		const path = join(root, "stream.jsonl");
+		const contents = `${JSON.stringify({ id: "one" })}\n${JSON.stringify({ id: "two" })}\n`;
+		writeFileSync(path, contents, { mode: 0o600 });
+		const visited: string[] = [];
+
+		const attestation = await forEachJsonLine<{ id: string }>(
+			path,
+			async (record) => {
+				await Promise.resolve();
+				visited.push(record.id);
+			},
+			{ totalBytes: Buffer.byteLength(contents), maxRecords: 2, requirePrivateFile: true },
+		);
+
+		expect(visited).toEqual(["one", "two"]);
+		expect(attestation).toEqual({
+			sha256: createHash("sha256").update(contents).digest("hex"),
+			bytes: Buffer.byteLength(contents),
+			records: 2,
+		});
 	});
 
 	it("writes a private JSON file without replacing an existing destination", async () => {

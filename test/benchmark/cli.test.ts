@@ -23,6 +23,14 @@ import { normalizeRunMetrics } from "../../benchmark/miracl/report.ts";
 import type { RetrievalMethod } from "../../src/retrieval/types.ts";
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+const PREPARED_QUERY = `${JSON.stringify({ queryId: "q1", text: "needle" })}\n`;
+const PREPARED_QREL = `${JSON.stringify({ queryId: "q1", documentId: "doc", relevance: 1 })}\n`;
+const PREPARED_CORPUS = `${JSON.stringify({ documentId: "doc", title: "title", text: "needle" })}\n`;
+const normalized = (value: string, records: number) => ({
+	sha256: sha256(value),
+	bytes: Buffer.byteLength(value),
+	records,
+});
 
 function preparedManifest(): PreparedManifest {
 	const source = (url: string, path: string) => ({ url, path, sha256: sha256(url), bytes: 1 });
@@ -49,6 +57,11 @@ function preparedManifest(): PreparedManifest {
 			judgedDocuments: 1,
 			distractors: 0,
 		},
+		normalized: {
+			queries: normalized(PREPARED_QUERY, 1),
+			qrels: normalized(PREPARED_QREL, 1),
+			corpus: normalized(PREPARED_CORPUS, 1),
+		},
 		files: { queries: "queries.jsonl", qrels: "qrels.jsonl", corpus: "corpus.jsonl" },
 	};
 }
@@ -56,19 +69,11 @@ function preparedManifest(): PreparedManifest {
 function writePrepared(directory: string): void {
 	mkdirSync(directory, { mode: 0o700 });
 	writeFileSync(join(directory, "prepared-manifest.json"), `${JSON.stringify(preparedManifest())}\n`, { mode: 0o600 });
-	writeFileSync(join(directory, "queries.jsonl"), `${JSON.stringify({ queryId: "q1", text: "needle" })}\n`, {
+	writeFileSync(join(directory, "queries.jsonl"), PREPARED_QUERY, {
 		mode: 0o600,
 	});
-	writeFileSync(
-		join(directory, "qrels.jsonl"),
-		`${JSON.stringify({ queryId: "q1", documentId: "doc", relevance: 1 })}\n`,
-		{ mode: 0o600 },
-	);
-	writeFileSync(
-		join(directory, "corpus.jsonl"),
-		`${JSON.stringify({ documentId: "doc", title: "title", text: "needle" })}\n`,
-		{ mode: 0o600 },
-	);
+	writeFileSync(join(directory, "qrels.jsonl"), PREPARED_QREL, { mode: 0o600 });
+	writeFileSync(join(directory, "corpus.jsonl"), PREPARED_CORPUS, { mode: 0o600 });
 }
 
 function methodFactory(fails = false) {
@@ -89,6 +94,7 @@ function methodFactory(fails = false) {
 		async (): Promise<CreatedBenchmarkMethods> => ({
 			methods: new Map([["bm25", retrieval]]),
 			indexingLatencyMs: { bm25: 3 },
+			reportConfig: { bm25: { engine: "tantivy" } },
 		}),
 	);
 }
@@ -165,6 +171,28 @@ describe("MIRACL benchmark CLI", () => {
 		expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ profile: "full", outputDir: directory }));
 	});
 
+	it("fails closed instead of claiming unsupported full MinSync or hybrid execution", async () => {
+		const parent = makeRoot();
+		const config = join(parent, "minsync.json");
+		writeFileSync(config, "{}\n", { mode: 0o600 });
+
+		await expect(
+			runCli([
+				"run",
+				"--profile",
+				"full",
+				"--prepared",
+				join(parent, "missing-prepared"),
+				"--output",
+				join(parent, "run"),
+				"--methods",
+				"minsync",
+				"--config",
+				config,
+			]),
+		).rejects.toThrow("full profile supports only bm25");
+	});
+
 	it("writes a path-free run that evaluates after moves and copies without prepared data", async () => {
 		const parent = makeRoot();
 		const prepared = join(parent, "prepared");
@@ -211,6 +239,59 @@ describe("MIRACL benchmark CLI", () => {
 			expect(evaluated.indexingLatencyMs).toEqual({ bm25: 3 });
 			expect(evaluated.methods[0]).toMatchObject({ method: "bm25", failureCount: 0 });
 		}
+	});
+
+	it("rejects smoke normalized text edits even when IDs and record counts are unchanged", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const output = join(parent, "run");
+		const createMethods = methodFactory();
+		writePrepared(prepared);
+		writeFileSync(join(prepared, "queries.jsonl"), PREPARED_QUERY.replace("needle", "tamper"), { mode: 0o600 });
+
+		await expect(
+			runCli(["run", "--profile", "smoke", "--prepared", prepared, "--output", output, "--methods", "bm25"], {
+				createBenchmarkMethods: createMethods,
+			}),
+		).rejects.toThrow("normalized queries identity");
+		expect(createMethods).not.toHaveBeenCalled();
+	});
+
+	it("bounds prepared manifests and normalized JSONL before parsing", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		writePrepared(prepared);
+		truncateSync(join(prepared, "prepared-manifest.json"), 1024 * 1024 + 1);
+		await expect(
+			runCli([
+				"run",
+				"--profile",
+				"smoke",
+				"--prepared",
+				prepared,
+				"--output",
+				join(parent, "run"),
+				"--methods",
+				"bm25",
+			]),
+		).rejects.toThrow("prepared manifest exceeds");
+
+		rmSync(prepared, { recursive: true, force: true });
+		writePrepared(prepared);
+		writeFileSync(join(prepared, "queries.jsonl"), `${PREPARED_QUERY}${"x".repeat(1024 * 1024)}`, { mode: 0o600 });
+		await expect(
+			runCli([
+				"run",
+				"--profile",
+				"smoke",
+				"--prepared",
+				prepared,
+				"--output",
+				join(parent, "run"),
+				"--methods",
+				"bm25",
+			]),
+		).rejects.toThrow(`prepared queries exceeds ${Buffer.byteLength(PREPARED_QUERY)} bytes`);
 	});
 
 	it("publishes query failures durably and returns nonzero", async () => {
@@ -274,6 +355,36 @@ describe("MIRACL benchmark CLI", () => {
 		await expect(runCli(["evaluate", "--run", output], { writeStdout: vi.fn() })).rejects.toThrow("methodConfig");
 	});
 
+	it("evaluates only the exact four-file report and recomputes summary.md byte-for-byte", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const baseRun = join(parent, "base-run");
+		writePrepared(prepared);
+		await runCli(["run", "--profile", "smoke", "--prepared", prepared, "--output", baseRun, "--methods", "bm25"], {
+			createBenchmarkMethods: methodFactory(),
+		});
+
+		const extra = join(parent, "extra");
+		cpSync(baseRun, extra, { recursive: true });
+		writeFileSync(join(extra, "notes.txt"), "not part of the report\n", { mode: 0o600 });
+		await expect(runCli(["evaluate", "--run", extra], { writeStdout: vi.fn() })).rejects.toThrow(
+			"exactly manifest.json, results.jsonl, metrics.json, and summary.md",
+		);
+
+		const alteredSummary = join(parent, "altered-summary");
+		cpSync(baseRun, alteredSummary, { recursive: true });
+		writeFileSync(
+			join(alteredSummary, "summary.md"),
+			`${readFileSync(join(alteredSummary, "summary.md"), "utf8")}\n`,
+			{
+				mode: 0o600,
+			},
+		);
+		await expect(runCli(["evaluate", "--run", alteredSummary], { writeStdout: vi.fn() })).rejects.toThrow(
+			"summary.md does not match",
+		);
+	});
+
 	it("bounds private run artifacts before parsing and limits streamed result records", async () => {
 		const parent = makeRoot();
 		const prepared = join(parent, "prepared");
@@ -326,9 +437,17 @@ describe("MIRACL benchmark CLI", () => {
 		const output = join(parent, "run");
 		const config = join(parent, "minsync.json");
 		writePrepared(prepared);
-		writeFileSync(config, JSON.stringify({ embedder: { id: "intfloat/model", dimension: 1024 } }), {
-			mode: 0o600,
-		});
+		writeFileSync(
+			config,
+			JSON.stringify({
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
+				embedder: { id: "intfloat/model", dimension: 1024, timeoutMs: 30_000 },
+			}),
+			{
+				mode: 0o600,
+			},
+		);
 
 		await expect(
 			runCli(

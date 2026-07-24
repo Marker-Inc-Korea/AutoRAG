@@ -5,16 +5,11 @@ import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { SanitizedMethodConfig } from "./methods.ts";
 import { evaluateRun, type MethodMetrics } from "./metrics.ts";
-import {
-	MIRACL_FULL_CORPUS_PASSAGES,
-	MIRACL_NORMALIZATION_VERSION,
-	MIRACL_SOURCES,
-} from "./profiles.ts";
+import { MIRACL_FULL_CORPUS_PASSAGES, MIRACL_NORMALIZATION_VERSION, MIRACL_SOURCES } from "./profiles.ts";
 import type { BenchmarkMethod, Qrel, QueryRunRecord, RankedHit } from "./types.ts";
 
 const REPORT_FILES = ["manifest.json", "results.jsonl", "metrics.json", "summary.md"] as const;
 const METHOD_NAMES = new Set<BenchmarkMethod>(["bm25", "minsync", "hybrid"]);
-const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_EMBEDDED_QRELS = 10_000;
 const MAX_DISCLOSED_ID_BYTES = 128;
@@ -89,7 +84,7 @@ export interface RunEnvironmentManifest {
 interface RunManifestInputBase {
 	readonly schemaVersion: 1;
 	readonly methods: readonly BenchmarkMethod[];
-	readonly methodConfig?: SanitizedMethodConfig;
+	readonly methodConfig: SanitizedMethodConfig;
 	readonly environment: RunEnvironmentManifest;
 }
 
@@ -109,7 +104,7 @@ export interface RunMetricsV1 {
 	readonly schemaVersion: 1;
 	readonly methods: readonly MethodMetrics[];
 	readonly indexingLatencyMs: Readonly<Partial<Record<"bm25" | "minsync", number>>>;
-	readonly peakRssBytes?: number;
+	readonly peakRssBeforeReportBytes?: number;
 }
 
 export interface WriteRunReportOptions {
@@ -118,7 +113,7 @@ export interface WriteRunReportOptions {
 	readonly records: readonly QueryRunRecord[];
 	readonly metrics: readonly MethodMetrics[];
 	readonly indexingLatencyMs?: Readonly<Partial<Record<"bm25" | "minsync", number>>>;
-	readonly peakRssBytes?: number;
+	readonly peakRssBeforeReportBytes?: number;
 }
 
 interface DirectoryIdentity {
@@ -147,7 +142,7 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 		schemaVersion: 1,
 		methods: options.metrics,
 		indexingLatencyMs: options.indexingLatencyMs ?? {},
-		peakRssBytes: options.peakRssBytes,
+		peakRssBeforeReportBytes: options.peakRssBeforeReportBytes,
 	});
 	validateReportCoherence(manifest, records, metrics);
 	validateCompleteGridAndMetrics(manifest, records, metrics);
@@ -155,7 +150,7 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 		["manifest.json", `${JSON.stringify(manifest)}\n`],
 		["results.jsonl", records.map((record) => JSON.stringify(record)).join("\n") + (records.length > 0 ? "\n" : "")],
 		["metrics.json", `${JSON.stringify(metrics)}\n`],
-		["summary.md", renderSummary(manifest, metrics)],
+		["summary.md", renderRunSummary(manifest, metrics)],
 	]);
 
 	let stagingIdentity: DirectoryIdentity;
@@ -186,10 +181,9 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 		await assertOwnedChildren(paths.destination, children);
 		await fsyncDirectory(paths.parent);
 	} catch (error) {
-		throw new Error(
-			"published report failed identity validation and was left in place as potentially corrupt",
-			{ cause: error },
-		);
+		throw new Error("published report failed identity validation and was left in place as potentially corrupt", {
+			cause: error,
+		});
 	}
 	if (!published) throw new Error("report publication failed");
 }
@@ -197,8 +191,8 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 export function normalizeRunManifest(value: unknown): RunManifestV1 {
 	const manifest = requireExactShape(
 		value,
-		["schemaVersion", "profile", "dataset", "methods", "environment"],
-		["methodConfig"],
+		["schemaVersion", "profile", "dataset", "methods", "methodConfig", "environment"],
+		[],
 		"run manifest",
 	);
 	if (manifest.schemaVersion !== 1) {
@@ -293,10 +287,7 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 	validateDatasetCounts(profile, counts);
 	const methods = normalizeMethodNames(manifest.methods as readonly BenchmarkMethod[]);
 	const environment = normalizeEnvironment(manifest.environment as RunEnvironmentManifest);
-	const methodConfig =
-		manifest.methodConfig === undefined
-			? undefined
-			: normalizeMethodConfig(manifest.methodConfig as SanitizedMethodConfig);
+	const methodConfig = normalizeMethodConfig(manifest.methodConfig as SanitizedMethodConfig, methods);
 	if (profile === "smoke") {
 		const dataset: SmokeRunDatasetManifest = {
 			normalizationVersion,
@@ -313,7 +304,7 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 			dataset,
 			methods,
 			environment,
-			...(methodConfig === undefined ? {} : { methodConfig }),
+			methodConfig,
 		});
 	}
 	const dataset: FullRunDatasetManifest = {
@@ -330,7 +321,7 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 		dataset,
 		methods,
 		environment,
-		...(methodConfig === undefined ? {} : { methodConfig }),
+		methodConfig,
 	});
 }
 
@@ -338,7 +329,7 @@ export function normalizeRunMetrics(value: unknown): RunMetricsV1 {
 	const metricsValue = requireExactShape(
 		value,
 		["schemaVersion", "methods", "indexingLatencyMs"],
-		["peakRssBytes"],
+		["peakRssBeforeReportBytes"],
 		"metrics",
 	);
 	if (metricsValue.schemaVersion !== 1) {
@@ -374,10 +365,13 @@ export function normalizeRunMetrics(value: unknown): RunMetricsV1 {
 		schemaVersion: 1;
 		methods: readonly MethodMetrics[];
 		indexingLatencyMs: Partial<Record<"bm25" | "minsync", number>>;
-		peakRssBytes?: number;
+		peakRssBeforeReportBytes?: number;
 	} = { schemaVersion: 1, methods, indexingLatencyMs };
-	if (metricsValue.peakRssBytes !== undefined) {
-		normalized.peakRssBytes = requirePositiveSafeInteger(metricsValue.peakRssBytes, "peakRssBytes");
+	if (metricsValue.peakRssBeforeReportBytes !== undefined) {
+		normalized.peakRssBeforeReportBytes = requirePositiveSafeInteger(
+			metricsValue.peakRssBeforeReportBytes,
+			"peakRssBeforeReportBytes",
+		);
 	}
 	return normalized;
 }
@@ -587,6 +581,19 @@ function normalizeCutoffMap<K extends string>(value: unknown, keys: readonly K[]
 	) as Record<K, number>;
 }
 
+function normalizeOptionalPositiveIntegers<K extends string>(
+	value: Readonly<Record<string, unknown>>,
+	keys: readonly K[],
+): Partial<Record<K, number>> {
+	const normalized: Partial<Record<K, number>> = {};
+	for (const key of keys) {
+		if (value[key] !== undefined) {
+			normalized[key] = requirePositiveSafeInteger(value[key], `methodConfig minsync ${key}`);
+		}
+	}
+	return normalized;
+}
+
 function normalizeMethodNames(values: readonly BenchmarkMethod[]): BenchmarkMethod[] {
 	if (!Array.isArray(values) || values.length === 0) {
 		throw new Error("run manifest methods must be a non-empty array");
@@ -598,29 +605,72 @@ function normalizeMethodNames(values: readonly BenchmarkMethod[]): BenchmarkMeth
 	return names.sort(compareCodePoints);
 }
 
-function normalizeMethodConfig(value: SanitizedMethodConfig): SanitizedMethodConfig {
-	const config = requireExactShape(value, ["endpointKind", "dimension"], ["embedderId", "apiKeyEnv"], "methodConfig");
-	if (config.endpointKind !== "local" && config.endpointKind !== "remote") {
-		throw new Error("methodConfig endpointKind must be local or remote");
-	}
+function normalizeMethodConfig(
+	value: SanitizedMethodConfig,
+	methods: readonly BenchmarkMethod[],
+): SanitizedMethodConfig {
+	const config = requireExactShape(value, [], ["bm25", "minsync"], "methodConfig");
+	const requiresBm25 = methods.some((method) => method === "bm25" || method === "hybrid");
+	const requiresMinSync = methods.some((method) => method === "minsync" || method === "hybrid");
 	const normalized: {
-		embedderId?: string;
-		endpointKind: "local" | "remote";
-		apiKeyEnv?: string;
-		dimension: number;
-	} = {
-		endpointKind: config.endpointKind,
-		dimension: requirePositiveSafeInteger(config.dimension, "methodConfig dimension"),
-	};
-	if (config.embedderId !== undefined) {
-		normalized.embedderId = requirePortableEmbedderId(config.embedderId, "methodConfig embedderId");
-	}
-	if (config.apiKeyEnv !== undefined) {
-		const apiKeyEnv = requireNonBlank(config.apiKeyEnv, "methodConfig apiKeyEnv");
-		if (!ENV_NAME_PATTERN.test(apiKeyEnv)) {
-			throw new Error("methodConfig apiKeyEnv must be an environment variable name");
+		bm25?: SanitizedMethodConfig["bm25"];
+		minsync?: SanitizedMethodConfig["minsync"];
+	} = {};
+	if (config.bm25 !== undefined) {
+		const bm25 = requireExactShape(config.bm25, ["engine"], [], "methodConfig bm25");
+		if (bm25.engine !== "tantivy" && bm25.engine !== "typescript-fallback") {
+			throw new Error("methodConfig bm25 engine is invalid");
 		}
-		normalized.apiKeyEnv = apiKeyEnv;
+		normalized.bm25 = { engine: bm25.engine };
+	}
+	if (config.minsync !== undefined) {
+		const minsync = requireExactShape(
+			config.minsync,
+			[
+				"executableSha256",
+				"modelId",
+				"endpointKind",
+				"authentication",
+				"dimension",
+				"timeoutMs",
+				"maxStdoutBytes",
+				"maxStderrBytes",
+				"queryPrefixSha256",
+				"passagePrefixSha256",
+			],
+			["batchSize", "maxRetries", "maxConcurrent"],
+			"methodConfig minsync",
+		);
+		for (const field of ["executableSha256", "queryPrefixSha256", "passagePrefixSha256"] as const) {
+			if (typeof minsync[field] !== "string" || !SHA256_PATTERN.test(minsync[field])) {
+				throw new Error(`methodConfig minsync ${field} is invalid`);
+			}
+		}
+		if (minsync.endpointKind !== "local" && minsync.endpointKind !== "remote") {
+			throw new Error("methodConfig minsync endpointKind must be local or remote");
+		}
+		if (minsync.authentication !== "none" && minsync.authentication !== "environment") {
+			throw new Error("methodConfig minsync authentication is invalid");
+		}
+		normalized.minsync = {
+			executableSha256: minsync.executableSha256 as string,
+			modelId: requirePortableEmbedderId(minsync.modelId, "methodConfig minsync modelId"),
+			endpointKind: minsync.endpointKind,
+			authentication: minsync.authentication,
+			dimension: requirePositiveSafeInteger(minsync.dimension, "methodConfig minsync dimension"),
+			timeoutMs: requirePositiveSafeInteger(minsync.timeoutMs, "methodConfig minsync timeoutMs"),
+			maxStdoutBytes: requirePositiveSafeInteger(minsync.maxStdoutBytes, "methodConfig minsync maxStdoutBytes"),
+			maxStderrBytes: requirePositiveSafeInteger(minsync.maxStderrBytes, "methodConfig minsync maxStderrBytes"),
+			queryPrefixSha256: minsync.queryPrefixSha256 as string,
+			passagePrefixSha256: minsync.passagePrefixSha256 as string,
+			...normalizeOptionalPositiveIntegers(minsync, ["batchSize", "maxRetries", "maxConcurrent"]),
+		};
+	}
+	if (requiresBm25 !== (normalized.bm25 !== undefined)) {
+		throw new Error("methodConfig bm25 provenance does not match declared methods");
+	}
+	if (requiresMinSync !== (normalized.minsync !== undefined)) {
+		throw new Error("methodConfig minsync provenance does not match declared methods");
 	}
 	return normalized;
 }
@@ -704,10 +754,7 @@ function validateCompleteGridAndMetrics(
 		for (const queryId of queryIds) expectedPairs.add(`${method}\0${queryId}`);
 	}
 	const actualPairs = new Set(records.map((record) => `${record.method}\0${record.queryId}`));
-	if (
-		actualPairs.size !== expectedPairs.size ||
-		[...expectedPairs].some((pair) => !actualPairs.has(pair))
-	) {
+	if (actualPairs.size !== expectedPairs.size || [...expectedPairs].some((pair) => !actualPairs.has(pair))) {
 		throw new Error("run report has an incomplete query-method grid");
 	}
 	const recomputed = evaluateRun(records, manifest.dataset.evaluation.qrels);
@@ -725,7 +772,7 @@ function stabilizeRecord(record: QueryRunRecord): QueryRunRecord {
 	};
 }
 
-function renderSummary(manifest: RunManifestV1, metrics: RunMetricsV1): string {
+export function renderRunSummary(manifest: RunManifestV1, metrics: RunMetricsV1): string {
 	const lines = [
 		"# MIRACL Korean Retrieval Benchmark",
 		"",
@@ -742,14 +789,21 @@ function renderSummary(manifest: RunManifestV1, metrics: RunMetricsV1): string {
 		"| Field | Value |",
 		"| --- | --- |",
 	];
-	if (manifest.methodConfig === undefined) {
-		lines.push("| MinSync embedder | Not used |");
+	if (manifest.methodConfig.bm25 !== undefined) {
+		lines.push(`| BM25 engine | ${manifest.methodConfig.bm25.engine} |`);
+	}
+	if (manifest.methodConfig.minsync === undefined) {
+		lines.push("| MinSync | Not used |");
 	} else {
 		lines.push(
-			`| Embedder ID | ${markdown(manifest.methodConfig.embedderId ?? "not disclosed")} |`,
-			`| Endpoint kind | ${manifest.methodConfig.endpointKind} |`,
-			`| API key environment variable | ${markdown(manifest.methodConfig.apiKeyEnv ?? "none")} |`,
-			`| Dimension | ${manifest.methodConfig.dimension} |`,
+			`| MinSync executable SHA-256 | ${manifest.methodConfig.minsync.executableSha256} |`,
+			`| Embedder model ID | ${markdown(manifest.methodConfig.minsync.modelId)} |`,
+			`| Endpoint kind | ${manifest.methodConfig.minsync.endpointKind} |`,
+			`| Authentication | ${manifest.methodConfig.minsync.authentication} |`,
+			`| Dimension | ${manifest.methodConfig.minsync.dimension} |`,
+			`| Process timeout ms | ${manifest.methodConfig.minsync.timeoutMs} |`,
+			`| Stdout ceiling bytes | ${manifest.methodConfig.minsync.maxStdoutBytes} |`,
+			`| Stderr ceiling bytes | ${manifest.methodConfig.minsync.maxStderrBytes} |`,
 		);
 	}
 	lines.push(
@@ -782,13 +836,15 @@ function renderSummary(manifest: RunManifestV1, metrics: RunMetricsV1): string {
 	}
 	lines.push(
 		"",
-		`Peak process RSS: ${metrics.peakRssBytes === undefined ? "unavailable" : `${metrics.peakRssBytes} bytes`}.`,
+		`Peak process RSS before report publication: ${
+			metrics.peakRssBeforeReportBytes === undefined ? "unavailable" : `${metrics.peakRssBeforeReportBytes} bytes`
+		}.`,
 		"",
 		"## Limitations",
 		"",
 		"- Query failures are scored as zero for quality metrics and excluded from latency statistics.",
-		"- Peak RSS is process-wide and is disclosed only when the runtime reports a reliable maximum.",
-		"- Full MinSync executable and index-content hashes run outside measured query intervals; cheap O(1) device, inode, size, and mtime checks run at query boundaries.",
+		"- The RSS sample is the benchmark CLI process-wide maximum through data loading, indexing, retrieval, evaluation, and report-input construction. It excludes report serialization, staging, publication, and MinSync child-process memory.",
+		"- MinSync executable and collection-content SHA-256 checks run outside measured query intervals; cheap O(1) device, inode, size, and mtime checks run at query boundaries.",
 		"- Results from different embedders or endpoint kinds are not directly comparable.",
 		"",
 	);

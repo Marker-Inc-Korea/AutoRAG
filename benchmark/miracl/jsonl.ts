@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import { link, lstat, open, rm, unlink } from "node:fs/promises";
 import { createInterface } from "node:readline";
@@ -13,6 +14,12 @@ export interface ReadJsonLinesOptions {
 	readonly label?: string;
 }
 
+export interface JsonLinesAttestation {
+	readonly sha256: string;
+	readonly bytes: number;
+	readonly records: number;
+}
+
 class LineLimitTransform extends Transform {
 	#bytesSinceNewline = 0;
 	#lineNumber = 1;
@@ -20,6 +27,7 @@ class LineLimitTransform extends Transform {
 	readonly #path: string;
 	readonly #maxTotalBytes: number | undefined;
 	readonly #label: string;
+	readonly #hash = createHash("sha256");
 
 	constructor(path: string, options: ReadJsonLinesOptions) {
 		super();
@@ -31,6 +39,7 @@ class LineLimitTransform extends Transform {
 	_transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback): void {
 		const bytes = typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk;
 		this.#totalBytes += bytes.byteLength;
+		this.#hash.update(bytes);
 		if (this.#maxTotalBytes !== undefined && this.#totalBytes > this.#maxTotalBytes) {
 			callback(new Error(`${this.#label} exceeds ${this.#maxTotalBytes} bytes`));
 			return;
@@ -49,13 +58,21 @@ class LineLimitTransform extends Transform {
 		}
 		callback(null, chunk);
 	}
+
+	attestation(records: number): JsonLinesAttestation {
+		return {
+			sha256: this.#hash.digest("hex"),
+			bytes: this.#totalBytes,
+			records,
+		};
+	}
 }
 
 async function forEachLine(
 	path: string,
-	visit: (line: string, lineNumber: number) => void,
+	visit: (line: string, lineNumber: number) => void | Promise<void>,
 	options: ReadJsonLinesOptions = {},
-): Promise<void> {
+): Promise<JsonLinesAttestation> {
 	assertOptionalLimit(options.totalBytes, "totalBytes");
 	assertOptionalLimit(options.maxRecords, "maxRecords");
 	let exactHandle: Awaited<ReturnType<typeof open>> | undefined;
@@ -86,9 +103,24 @@ async function forEachLine(
 		for await (const line of reader) {
 			lineNumber += 1;
 			if (options.maxRecords !== undefined && lineNumber > options.maxRecords) {
-				throw new Error(`${options.label ?? `input file ${path}`} must contain at most ${options.maxRecords} records`);
+				throw new Error(
+					`${options.label ?? `input file ${path}`} must contain at most ${options.maxRecords} records`,
+				);
 			}
-			visit(line, lineNumber);
+			await visit(line, lineNumber);
+		}
+		if (exactHandle !== undefined) {
+			const finalStats = await exactHandle.stat();
+			const pathStats = await lstat(path);
+			assertBoundedInputStats(finalStats, options, path);
+			assertBoundedInputStats(pathStats, options, path);
+			if (
+				finalStats.dev !== pathStats.dev ||
+				finalStats.ino !== pathStats.ino ||
+				finalStats.size !== pathStats.size
+			) {
+				throw new Error(`${options.label ?? `input file ${path}`} changed while reading`);
+			}
 		}
 	} finally {
 		reader.close();
@@ -100,6 +132,7 @@ async function forEachLine(
 	if (lineNumber === 0) {
 		throw new Error(`input file ${path} is empty`);
 	}
+	return lineLimit.attestation(lineNumber);
 }
 
 function assertOptionalLimit(value: number | undefined, label: string): void {
@@ -129,16 +162,19 @@ function assertNonBlankId(value: string, label: string, path: string, lineNumber
 	}
 }
 
-export async function readJsonLines<T>(path: string, options: ReadJsonLinesOptions = {}): Promise<T[]> {
-	const records: T[] = [];
-	await forEachLine(
+export async function forEachJsonLine<T>(
+	path: string,
+	visit: (record: T, lineNumber: number) => void | Promise<void>,
+	options: ReadJsonLinesOptions = {},
+): Promise<JsonLinesAttestation> {
+	return forEachLine(
 		path,
 		(line, lineNumber) => {
 			if (line.trim().length === 0) {
 				throw new Error(`JSONL line at ${path}:${lineNumber} must not be blank`);
 			}
 			try {
-				records.push(JSON.parse(line) as T);
+				return visit(JSON.parse(line) as T, lineNumber);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				throw new Error(`invalid JSON at ${path}:${lineNumber}: ${message}`);
@@ -146,55 +182,76 @@ export async function readJsonLines<T>(path: string, options: ReadJsonLinesOptio
 		},
 		options,
 	);
+}
+
+export async function readJsonLines<T>(path: string, options: ReadJsonLinesOptions = {}): Promise<T[]> {
+	const records: T[] = [];
+	await forEachJsonLine<T>(
+		path,
+		(record) => {
+			records.push(record);
+		},
+		options,
+	);
 	return records;
 }
 
-export async function readTopicsTsv(path: string): Promise<BenchmarkQuery[]> {
+export async function readTopicsTsv(path: string, options: ReadJsonLinesOptions = {}): Promise<BenchmarkQuery[]> {
 	const topics: BenchmarkQuery[] = [];
 	const queryIds = new Set<string>();
 
-	await forEachLine(path, (line, lineNumber) => {
-		const fields = line.split("\t");
-		if (fields.length !== 2) {
-			throw new Error(`topic at ${path}:${lineNumber} must contain exactly two TSV columns`);
-		}
-		const [queryId, text] = fields;
-		assertNonBlankId(queryId, "query id", path, lineNumber);
-		if (queryIds.has(queryId)) {
-			throw new Error(`duplicate query id ${queryId} at ${path}:${lineNumber}`);
-		}
-		queryIds.add(queryId);
-		topics.push({ queryId, text });
-	});
+	await forEachLine(
+		path,
+		(line, lineNumber) => {
+			const fields = line.split("\t");
+			if (fields.length !== 2) {
+				throw new Error(`topic at ${path}:${lineNumber} must contain exactly two TSV columns`);
+			}
+			const [queryId, text] = fields;
+			assertNonBlankId(queryId, "query id", path, lineNumber);
+			if (queryIds.has(queryId)) {
+				throw new Error(`duplicate query id ${queryId} at ${path}:${lineNumber}`);
+			}
+			queryIds.add(queryId);
+			topics.push({ queryId, text });
+		},
+		options,
+	);
 
 	return topics;
 }
 
-export async function readQrels(path: string): Promise<Qrel[]> {
+export async function readQrels(path: string, options: ReadJsonLinesOptions = {}): Promise<Qrel[]> {
 	const qrels: Qrel[] = [];
 	const pairs = new Set<string>();
 
-	await forEachLine(path, (line, lineNumber) => {
-		const fields = line.trim().split(/\s+/);
-		if (fields.length !== 4) {
-			throw new Error(`qrel at ${path}:${lineNumber} must contain exactly four columns`);
-		}
-		const [queryId, , documentId, relevanceText] = fields;
-		assertNonBlankId(queryId, "query id", path, lineNumber);
-		assertNonBlankId(documentId, "document id", path, lineNumber);
+	await forEachLine(
+		path,
+		(line, lineNumber) => {
+			const fields = line.trim().split(/\s+/);
+			if (fields.length !== 4) {
+				throw new Error(`qrel at ${path}:${lineNumber} must contain exactly four columns`);
+			}
+			const [queryId, , documentId, relevanceText] = fields;
+			assertNonBlankId(queryId, "query id", path, lineNumber);
+			assertNonBlankId(documentId, "document id", path, lineNumber);
 
-		const relevance = Number(relevanceText);
-		if (!Number.isFinite(relevance) || !Number.isInteger(relevance) || relevance < 0) {
-			throw new Error(`qrel relevance at ${path}:${lineNumber} must be a finite integer greater than or equal to zero`);
-		}
+			const relevance = Number(relevanceText);
+			if (!Number.isFinite(relevance) || !Number.isInteger(relevance) || relevance < 0) {
+				throw new Error(
+					`qrel relevance at ${path}:${lineNumber} must be a finite integer greater than or equal to zero`,
+				);
+			}
 
-		const pair = `${queryId}\u0000${documentId}`;
-		if (pairs.has(pair)) {
-			throw new Error(`duplicate qrel for ${queryId}/${documentId} at ${path}:${lineNumber}`);
-		}
-		pairs.add(pair);
-		qrels.push({ queryId, documentId, relevance });
-	});
+			const pair = `${queryId}\u0000${documentId}`;
+			if (pairs.has(pair)) {
+				throw new Error(`duplicate qrel for ${queryId}/${documentId} at ${path}:${lineNumber}`);
+			}
+			pairs.add(pair);
+			qrels.push({ queryId, documentId, relevance });
+		},
+		options,
+	);
 
 	return qrels;
 }

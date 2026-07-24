@@ -16,6 +16,7 @@ import {
 	createBenchmarkMethods,
 	loadBenchmarkConfig,
 	retrieveHybrid,
+	runBoundedMinSyncProcess,
 	sanitizeMethodConfig,
 } from "../../benchmark/miracl/methods.ts";
 import { runMethodQueries } from "../../benchmark/miracl/run.ts";
@@ -109,6 +110,7 @@ if (args[0] === "init") {
   console.log(JSON.stringify({ ok: true }));
   process.exit(0);
 }
+
 if (args[0] === "sync") {
   const state = JSON.parse(readFileSync(${JSON.stringify(syncStatePath)}, "utf8"));
   writeFileSync(join(process.cwd(), ".minsync", "cursor.json"), JSON.stringify({
@@ -136,6 +138,14 @@ process.exit(2);
 	);
 	chmodSync(binaryPath, 0o755);
 	return { binaryPath, queryStatePath, syncStatePath };
+}
+
+function pinnedMinSyncConfig(binaryPath: string) {
+	return {
+		binaryPath,
+		autoInstall: false as const,
+		embedder: { id: "test/model", dimension: 1024, timeoutMs: 30_000 },
+	};
 }
 
 describe("MIRACL benchmark methods", () => {
@@ -202,7 +212,80 @@ describe("MIRACL benchmark methods", () => {
 				timeoutMs: 30_000,
 			},
 		});
-		expect(JSON.stringify(sanitizeMethodConfig(config))).not.toContain("do-not-serialize-this-secret");
+		const sanitized = sanitizeMethodConfig(config, "a".repeat(64));
+		expect(sanitized).toMatchObject({
+			executableSha256: "a".repeat(64),
+			modelId: "model",
+			endpointKind: "remote",
+			authentication: "environment",
+			dimension: 1024,
+			timeoutMs: 30_000,
+			maxStdoutBytes: 16 * 1024 * 1024,
+			maxStderrBytes: 1024 * 1024,
+		});
+		const serialized = JSON.stringify(sanitized);
+		expect(serialized).not.toContain("do-not-serialize-this-secret");
+		expect(serialized).not.toContain("MIRACL_EMBEDDING_TOKEN");
+		expect(serialized).not.toContain("/opt/minsync");
+		expect(serialized).not.toContain("private.example");
+	});
+
+	it.each([
+		[{ autoInstall: false, embedder: { id: "model", dimension: 1024, timeoutMs: 30_000 } }, "binaryPath is required"],
+		[
+			{ binaryPath: "/opt/minsync", embedder: { id: "model", dimension: 1024, timeoutMs: 30_000 } },
+			"autoInstall must be false",
+		],
+		[
+			{
+				binaryPath: "/opt/minsync",
+				autoInstall: true,
+				embedder: { id: "model", dimension: 1024, timeoutMs: 30_000 },
+			},
+			"autoInstall must be false",
+		],
+		[
+			{ binaryPath: "/opt/minsync", autoInstall: false, embedder: { dimension: 1024, timeoutMs: 30_000 } },
+			"embedder.id is required",
+		],
+		[
+			{ binaryPath: "/opt/minsync", autoInstall: false, embedder: { id: "model", dimension: 1024 } },
+			"embedder.timeoutMs is required",
+		],
+	])("rejects ambiguous MinSync benchmark configuration %#", (value, expectedMessage) => {
+		const root = makeRoot();
+		const configPath = join(root, "minsync.json");
+		writeFileSync(configPath, JSON.stringify(value));
+
+		expect(() => loadBenchmarkConfig(configPath)).toThrow(expectedMessage);
+	});
+
+	it("bounds MinSync subprocess time and captured output", async () => {
+		const root = makeRoot();
+		const script = join(root, "untrusted-minsync");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+if (process.argv[2] === "hang") setInterval(() => {}, 1000);
+else process.stdout.write("x".repeat(4096));
+`,
+		);
+		chmodSync(script, 0o755);
+
+		const timedOut = await runBoundedMinSyncProcess(script, ["hang"], root, {
+			timeoutMs: 20,
+			maxStdoutBytes: 1024,
+			maxStderrBytes: 1024,
+		});
+		const oversized = await runBoundedMinSyncProcess(script, ["oversized"], root, {
+			timeoutMs: 1_000,
+			maxStdoutBytes: 1024,
+			maxStderrBytes: 1024,
+		});
+
+		expect(timedOut).toMatchObject({ ok: false, timedOut: true });
+		expect(oversized).toMatchObject({ ok: false, outputExceeded: true });
+		expect(Buffer.byteLength(oversized.stdout)).toBeLessThanOrEqual(1024);
 	});
 
 	it.each([
@@ -215,13 +298,25 @@ describe("MIRACL benchmark methods", () => {
 	])("rejects filesystem-like embedder ID %s", (embedderId) => {
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
-		writeFileSync(configPath, JSON.stringify({ embedder: { id: embedderId, dimension: 1024 } }));
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
+				embedder: { id: embedderId, dimension: 1024, timeoutMs: 30_000 },
+			}),
+		);
 
 		expect(() => loadBenchmarkConfig(configPath)).toThrow("embedder.id must not be an absolute filesystem path");
 		expect(() =>
-			sanitizeMethodConfig({
-				embedder: { id: embedderId, dimension: 1024 },
-			}),
+			sanitizeMethodConfig(
+				{
+					binaryPath: "/opt/minsync",
+					autoInstall: false,
+					embedder: { id: embedderId, dimension: 1024, timeoutMs: 30_000 },
+				},
+				"a".repeat(64),
+			),
 		).toThrow("embedder.id must not be an absolute filesystem path");
 	});
 
@@ -230,7 +325,11 @@ describe("MIRACL benchmark methods", () => {
 		const configPath = join(root, "minsync.json");
 		writeFileSync(
 			configPath,
-			JSON.stringify({ embedder: { id: "intfloat/multilingual-e5-large", dimension: 1024 } }),
+			JSON.stringify({
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
+				embedder: { id: "intfloat/multilingual-e5-large", dimension: 1024, timeoutMs: 30_000 },
+			}),
 		);
 
 		expect(loadBenchmarkConfig(configPath).embedder.id).toBe("intfloat/multilingual-e5-large");
@@ -245,7 +344,21 @@ describe("MIRACL benchmark methods", () => {
 	])("rejects malformed or extra configuration", (value, expectedMessage) => {
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
-		writeFileSync(configPath, JSON.stringify(value));
+		const completeValue = {
+			binaryPath: "/opt/minsync",
+			autoInstall: false,
+			...value,
+			...(Object.hasOwn(value, "embedder")
+				? {
+						embedder: {
+							id: "model",
+							timeoutMs: 30_000,
+							...(value as { embedder: Record<string, unknown> }).embedder,
+						},
+					}
+				: {}),
+		};
+		writeFileSync(configPath, JSON.stringify(completeValue));
 
 		expect(() => loadBenchmarkConfig(configPath)).toThrow(expectedMessage);
 	});
@@ -257,10 +370,14 @@ describe("MIRACL benchmark methods", () => {
 		writeFileSync(
 			configPath,
 			JSON.stringify({
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
 				embedder: {
+					id: "model",
 					baseUrl: endpoint,
 					apiKeyEnv: "MISSING_TOKEN",
 					dimension: 1024,
+					timeoutMs: 30_000,
 				},
 			}),
 		);
@@ -278,19 +395,27 @@ describe("MIRACL benchmark methods", () => {
 
 	it("redacts endpoint and secret values", () => {
 		expect(
-			sanitizeMethodConfig({
-				embedder: {
-					id: "model",
-					baseUrl: "https://private.example/v1",
-					apiKeyEnv: "TOKEN",
-					dimension: 1024,
+			sanitizeMethodConfig(
+				{
+					binaryPath: "/opt/minsync",
+					autoInstall: false,
+					embedder: {
+						id: "model",
+						baseUrl: "https://private.example/v1",
+						apiKeyEnv: "TOKEN",
+						dimension: 1024,
+						timeoutMs: 30_000,
+					},
 				},
-			}),
-		).toEqual({
-			embedderId: "model",
+				"a".repeat(64),
+			),
+		).toMatchObject({
+			executableSha256: "a".repeat(64),
+			modelId: "model",
 			endpointKind: "remote",
-			apiKeyEnv: "TOKEN",
+			authentication: "environment",
 			dimension: 1024,
+			timeoutMs: 30_000,
 		});
 	});
 
@@ -300,9 +425,14 @@ describe("MIRACL benchmark methods", () => {
 		["http://[::1]:8080/v1", "local"],
 		["https://embeddings.example/v1", "remote"],
 	] as const)("reports only the endpoint kind for %s", (baseUrl, endpointKind) => {
-		const sanitized = sanitizeMethodConfig({
-			embedder: { id: "model", baseUrl, dimension: 1024 },
-		});
+		const sanitized = sanitizeMethodConfig(
+			{
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
+				embedder: { id: "model", baseUrl, dimension: 1024, timeoutMs: 30_000 },
+			},
+			"a".repeat(64),
+		);
 
 		expect(sanitized.endpointKind).toBe(endpointKind);
 		expect(JSON.stringify(sanitized)).not.toContain(baseUrl);
@@ -390,7 +520,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		rmSync(binaryPath);
 
@@ -415,7 +545,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["hybrid"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		rmSync(binaryPath);
 
@@ -440,7 +570,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		writeFileSync(
 			queryStatePath,
@@ -473,7 +603,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		writeFileSync(queryStatePath, JSON.stringify({ ok: true, stdout: "{not-json" }));
 
@@ -498,7 +628,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 
 		const records = await runMethodQueries({
@@ -523,7 +653,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		writeFileSync(
 			queryStatePath,
@@ -547,6 +677,43 @@ describe("MIRACL benchmark methods", () => {
 		expect(records[0]?.errorCode).toBeUndefined();
 	});
 
+	it("builds the MinSync source-path map once during sync instead of once per query", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const mirrorIndexPath = join(workspace.root, ".autorag", "parsed", "index.json");
+		let mirrorIndexReads = 0;
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			onReadFile: (path) => {
+				if (String(path) === mirrorIndexPath) mirrorIndexReads += 1;
+			},
+		});
+		const created = await instrumentedMethods.createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: pinnedMinSyncConfig(binaryPath),
+		});
+		const readsAfterSync = mirrorIndexReads;
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [
+				{ queryId: "q1", text: "query one" },
+				{ queryId: "q2", text: "query two" },
+			],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records.every((record) => record.errorCode === undefined)).toBe(true);
+		expect(readsAfterSync).toBeGreaterThan(0);
+		expect(mirrorIndexReads).toBe(readsAfterSync);
+	});
+
 	it("fails an otherwise successful MinSync query when every returned path is outside the path map", async () => {
 		const parent = makeRoot();
 		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
@@ -557,7 +724,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		writeFileSync(
 			queryStatePath,
@@ -590,7 +757,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		writeFileSync(
 			queryStatePath,
@@ -626,7 +793,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		const minSyncWorkspace = join(workspace.root, ".autorag", "minsync");
 		const displacedWorkspace = join(workspace.root, ".autorag", "minsync-displaced");
@@ -654,7 +821,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		const collection = join(workspace.root, ".autorag", "minsync", ".minsync", "store");
 		const displacedCollection = join(workspace.root, ".autorag", "minsync", ".minsync", "store-displaced");
@@ -682,7 +849,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		writeFileSync(
 			queryStatePath,
@@ -720,7 +887,7 @@ describe("MIRACL benchmark methods", () => {
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: workspace.documentBySource,
-				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+				config: pinnedMinSyncConfig(binaryPath),
 				now: () => {
 					clockCalls += 1;
 					if (clockCalls === 2) {
@@ -751,7 +918,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		const clockWalkCounts: number[] = [];
 
@@ -801,7 +968,7 @@ describe("MIRACL benchmark methods", () => {
 			names: ["minsync"],
 			root: workspace.root,
 			documentBySource: workspace.documentBySource,
-			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+			config: pinnedMinSyncConfig(binaryPath),
 		});
 		const records = await runMethodQueries({
 			method: "minsync",
@@ -836,7 +1003,7 @@ describe("MIRACL benchmark methods", () => {
 					config: {
 						binaryPath: join(parent, "missing-explicit-minsync"),
 						autoInstall: false,
-						embedder: { dimension: 1024 },
+						embedder: { id: "test/model", dimension: 1024, timeoutMs: 30_000 },
 					},
 				}),
 			).rejects.toThrow("MinSync benchmark executable is unavailable");
@@ -858,7 +1025,7 @@ describe("MIRACL benchmark methods", () => {
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: workspace.documentBySource,
-				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+				config: pinnedMinSyncConfig(binaryPath),
 			}),
 		).rejects.toThrow("MinSync benchmark executable is unavailable");
 	});
@@ -926,7 +1093,7 @@ describe("MIRACL benchmark methods", () => {
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: workspace.documentBySource,
-				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+				config: pinnedMinSyncConfig(binaryPath),
 			}),
 		).rejects.toThrow("MinSync benchmark indexing failed");
 	});
@@ -944,7 +1111,7 @@ describe("MIRACL benchmark methods", () => {
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: workspace.documentBySource,
-				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+				config: pinnedMinSyncConfig(binaryPath),
 			}),
 		).rejects.toThrow("MinSync benchmark indexing failed");
 	});
@@ -961,7 +1128,7 @@ describe("MIRACL benchmark methods", () => {
 				names: ["minsync"],
 				root: workspace.root,
 				documentBySource: new Map([["/miracl/doc.md", "wrong"]]),
-				config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+				config: pinnedMinSyncConfig(binaryPath),
 			}),
 		).toThrow("bijective");
 		expect(existsSync(join(workspace.root, ".autorag", "minsync"))).toBe(false);
@@ -984,7 +1151,7 @@ describe("MIRACL benchmark methods", () => {
 					config: {
 						binaryPath: join(parent, "missing-minsync"),
 						autoInstall: false,
-						embedder: { dimension: 1024 },
+						embedder: { id: "test/model", dimension: 1024, timeoutMs: 30_000 },
 					},
 				}),
 			).rejects.toThrow("MinSync benchmark executable is unavailable");

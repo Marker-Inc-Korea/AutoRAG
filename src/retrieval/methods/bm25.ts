@@ -329,7 +329,7 @@ function loadChunks(root: string): IndexedChunk[] {
 	for (const entry of Object.values(index.entries).sort((a, b) => a.virtualPath.localeCompare(b.virtualPath))) {
 		if (!existsSync(entry.outputPath)) continue;
 		const content = normalizeMarkdown(readFileSync(entry.outputPath, "utf8"));
-		for (const [chunkIndex, chunkContent] of chunkMarkdown(content).entries()) {
+		for (const [chunkIndex, chunkContent] of chunkBm25Markdown(content).entries()) {
 			chunks.push({
 				id: `bm25:${entry.virtualPath}:${chunkIndex}:${hash(chunkContent)}`,
 				virtualPath: entry.virtualPath,
@@ -341,7 +341,7 @@ function loadChunks(root: string): IndexedChunk[] {
 	return chunks;
 }
 
-function chunkMarkdown(markdown: string): string[] {
+export function chunkBm25Markdown(markdown: string): string[] {
 	const paragraphs = markdown
 		.split(/\n{2,}/u)
 		.map((part) => part.trim())

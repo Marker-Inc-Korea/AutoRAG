@@ -688,6 +688,47 @@ describe("MIRACL benchmark workspace and runner", () => {
 		]);
 	});
 
+	it("overfetches bounded chunk rankings until Recall@100 has 100 unique documents", async () => {
+		const allResults: RetrievalResult[] = [
+			...Array.from({ length: 100 }, (_, index) => ({
+				id: `duplicate:${index}`,
+				source: "/miracl/duplicate.md",
+				content: `duplicate ${index}`,
+				score: 1_000 - index,
+				metadata: {},
+			})),
+			...Array.from({ length: 99 }, (_, index) => ({
+				id: `unique:${index}`,
+				source: `/miracl/doc-${index}.md`,
+				content: `unique ${index}`,
+				score: 899 - index,
+				metadata: {},
+			})),
+		];
+		const requested: number[] = [];
+		const retrieval = retrievalMethod(async (_query, options) => {
+			requested.push(options.topK ?? 0);
+			return allResults.slice(0, options.topK);
+		});
+		const documentBySource = new Map<string, string>([
+			["/miracl/duplicate.md", "duplicate"],
+			...Array.from({ length: 99 }, (_, index) => [`/miracl/doc-${index}.md`, `doc-${index}`] as const),
+		]);
+
+		const records = await runMethodQueries({
+			method: "bm25",
+			retrieval,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource,
+			topK: 100,
+		});
+
+		expect(requested).toEqual([100, 200]);
+		expect(records[0]?.hits).toHaveLength(100);
+		expect(new Set(records[0]?.hits.map((hit) => hit.documentId)).size).toBe(100);
+		expect(records[0]?.hits[0]).toMatchObject({ documentId: "duplicate", score: 1_000, rank: 1 });
+	});
+
 	it("records opaque query failures durably and continues sequentially", async () => {
 		let inFlight = 0;
 		let maximumInFlight = 0;

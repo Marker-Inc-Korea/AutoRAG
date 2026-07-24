@@ -3,25 +3,18 @@ import { isAbsolute, relative, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { loadMirrorIndex } from "../../src/mirror/index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "../../src/mirror/paths.ts";
-import {
-	BM25Method,
-	type BM25MethodOptions,
-	type BM25SyncResult,
-} from "../../src/retrieval/methods/bm25.ts";
+import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../../src/retrieval/methods/bm25.ts";
 import type { RetrievalMethod, RetrievalResult } from "../../src/retrieval/types.ts";
+import type { BenchmarkMethod, BenchmarkQuery, QueryRunRecord, RankedHit } from "./types.ts";
 import {
 	assertBenchmarkDirectoryIdentity,
 	assertBenchmarkPathOutsideAutorag,
 	snapshotBenchmarkDirectory,
 } from "./workspace.ts";
-import type {
-	BenchmarkMethod,
-	BenchmarkQuery,
-	QueryRunRecord,
-	RankedHit,
-} from "./types.ts";
 
 const RETRIEVAL_CANDIDATE_LIMIT = 100;
+const RETRIEVAL_OVERFETCH_LIMIT = 1_600;
+export type BenchmarkDocumentResolver = ReadonlyMap<string, string> | ((source: string) => string | undefined);
 
 export interface RunBm25QueriesOptions {
 	readonly root: string;
@@ -47,7 +40,7 @@ export interface RunMethodQueriesOptions {
 	readonly method: BenchmarkMethod;
 	readonly retrieval: RetrievalMethod & BenchmarkRetrievalLifecycle;
 	readonly queries: readonly BenchmarkQuery[];
-	readonly documentBySource: ReadonlyMap<string, string>;
+	readonly documentBySource: BenchmarkDocumentResolver;
 	readonly topK: number;
 	readonly now?: () => number;
 }
@@ -105,11 +98,9 @@ export async function runBm25Queries(
 	return { indexingLatencyMs, records };
 }
 
-export async function runMethodQueries(
-	options: RunMethodQueriesOptions,
-): Promise<QueryRunRecord[]> {
+export async function runMethodQueries(options: RunMethodQueriesOptions): Promise<QueryRunRecord[]> {
 	validateTopK(options.topK);
-	validateDocumentBySource(options.documentBySource);
+	if (typeof options.documentBySource !== "function") validateDocumentBySource(options.documentBySource);
 	const now = options.now ?? (() => performance.now());
 	const records: QueryRunRecord[] = [];
 	const lifecycle = options.retrieval;
@@ -127,9 +118,7 @@ export async function runMethodQueries(
 			let results: RetrievalResult[] | undefined;
 			let retrievalFailed = false;
 			try {
-				results = await options.retrieval.retrieve(query.text, {
-					topK: RETRIEVAL_CANDIDATE_LIMIT,
-				});
+				results = await retrieveDocumentCandidates(options.retrieval, query.text, options.topK);
 			} catch {
 				retrievalFailed = true;
 			}
@@ -159,11 +148,22 @@ export async function runMethodQueries(
 	return records;
 }
 
-function failedQueryRecord(
-	method: BenchmarkMethod,
-	queryId: string,
-	latencyMs: number,
-): QueryRunRecord {
+async function retrieveDocumentCandidates(
+	retrieval: RetrievalMethod,
+	query: string,
+	requiredDocuments: number,
+): Promise<RetrievalResult[]> {
+	let candidateLimit = RETRIEVAL_CANDIDATE_LIMIT;
+	let results: RetrievalResult[] = [];
+	while (true) {
+		results = await retrieval.retrieve(query, { topK: candidateLimit });
+		if (new Set(results.map((result) => result.source)).size >= requiredDocuments) return results;
+		if (results.length < candidateLimit || candidateLimit >= RETRIEVAL_OVERFETCH_LIMIT) return results;
+		candidateLimit = Math.min(candidateLimit * 2, RETRIEVAL_OVERFETCH_LIMIT);
+	}
+}
+
+function failedQueryRecord(method: BenchmarkMethod, queryId: string, latencyMs: number): QueryRunRecord {
 	return {
 		schemaVersion: 1,
 		method,
@@ -174,10 +174,7 @@ function failedQueryRecord(
 	};
 }
 
-export function validateBenchmarkWorkspace(
-	root: string,
-	documentBySource: ReadonlyMap<string, string>,
-): string {
+export function validateBenchmarkWorkspace(root: string, documentBySource: ReadonlyMap<string, string>): string {
 	assertBenchmarkPathOutsideAutorag(root);
 	let canonicalRoot: string;
 	try {
@@ -256,12 +253,13 @@ function validateDocumentBySource(documentBySource: ReadonlyMap<string, string>)
 
 function rankDocumentHits(
 	results: readonly RetrievalResult[],
-	documentBySource: ReadonlyMap<string, string>,
+	documentBySource: BenchmarkDocumentResolver,
 	topK: number,
 ): RankedHit[] {
 	const scoreByDocument = new Map<string, number>();
 	for (const result of results) {
-		const documentId = documentBySource.get(result.source);
+		const documentId =
+			typeof documentBySource === "function" ? documentBySource(result.source) : documentBySource.get(result.source);
 		if (documentId === undefined) {
 			throw new Error("retrieval returned a source outside the benchmark corpus");
 		}
@@ -276,8 +274,7 @@ function rankDocumentHits(
 
 	return [...scoreByDocument]
 		.sort(
-			([leftId, leftScore], [rightId, rightScore]) =>
-				rightScore - leftScore || compareCodePoints(leftId, rightId),
+			([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || compareCodePoints(leftId, rightId),
 		)
 		.slice(0, topK)
 		.map(([documentId, score], index) => ({

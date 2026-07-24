@@ -1,13 +1,6 @@
-import {
-	lstatSync,
-	mkdirSync,
-	readlinkSync,
-	realpathSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { lstatSync, mkdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
-import { saveMirrorIndex, type ParsedMirrorEntry } from "../../src/mirror/index-store.ts";
+import { type ParsedMirrorEntry, saveMirrorIndex } from "../../src/mirror/index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "../../src/mirror/paths.ts";
 import type { CorpusDocument } from "./types.ts";
 
@@ -35,10 +28,7 @@ export interface BenchmarkDirectoryIdentity {
 const BENCHMARK_PARSER_NAME = "miracl-benchmark";
 const DETERMINISTIC_UPDATED_AT = "1970-01-01T00:00:00.000Z";
 
-export function materializeBenchmarkWorkspace(
-	root: string,
-	corpus: readonly CorpusDocument[],
-): BenchmarkWorkspace {
+export function materializeBenchmarkWorkspace(root: string, corpus: readonly CorpusDocument[]): BenchmarkWorkspace {
 	const validated = validateCorpus(corpus);
 	const canonicalRoot = validateNewWorkspaceRoot(root);
 	mkdirSync(canonicalRoot, { mode: 0o700 });
@@ -76,6 +66,12 @@ export function materializeBenchmarkWorkspace(
 		cleanupOwnedRoot(canonicalRoot, ownedRoot);
 		throw error;
 	}
+}
+
+export function materializeEmptyBenchmarkWorkspace(root: string): string {
+	const canonicalRoot = validateNewWorkspaceRoot(root);
+	mkdirSync(canonicalRoot, { mode: 0o700 });
+	return canonicalRoot;
 }
 
 function validateCorpus(corpus: readonly CorpusDocument[]): ValidatedCorpus {
@@ -176,10 +172,7 @@ export function snapshotBenchmarkDirectory(path: string): BenchmarkDirectoryIden
 	return { device: stats.dev, inode: stats.ino };
 }
 
-export function assertBenchmarkDirectoryIdentity(
-	root: string,
-	identity: BenchmarkDirectoryIdentity,
-): void {
+export function assertBenchmarkDirectoryIdentity(root: string, identity: BenchmarkDirectoryIdentity): void {
 	const current = snapshotBenchmarkDirectory(root);
 	if (current.device !== identity.device || current.inode !== identity.inode) {
 		throw new Error("benchmark workspace root changed");

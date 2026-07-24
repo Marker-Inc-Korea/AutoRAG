@@ -136,6 +136,23 @@ describe("MIRACL preparation", () => {
 		expect(queries).toEqual([{ queryId: "q1", text: "첫 질문" }]);
 		expect(qrels).toHaveLength(2);
 		expect(corpus.map((document) => document.documentId)).toEqual(manifest.selectedIds.documentIds);
+		expect(manifest.normalized).toEqual({
+			queries: {
+				sha256: sha256(readFileSync(join(outputDir, "queries.jsonl"))),
+				bytes: readFileSync(join(outputDir, "queries.jsonl")).byteLength,
+				records: 1,
+			},
+			qrels: {
+				sha256: sha256(readFileSync(join(outputDir, "qrels.jsonl"))),
+				bytes: readFileSync(join(outputDir, "qrels.jsonl")).byteLength,
+				records: 2,
+			},
+			corpus: {
+				sha256: sha256(readFileSync(join(outputDir, "corpus.jsonl"))),
+				bytes: readFileSync(join(outputDir, "corpus.jsonl")).byteLength,
+				records: 3,
+			},
+		});
 		expect(JSON.parse(readFileSync(join(outputDir, "prepared-manifest.json"), "utf8"))).toEqual(manifest);
 		expect(existsSync(join(outputDir, ".duplicate-check"))).toBe(false);
 		expect(() =>
@@ -213,12 +230,11 @@ describe("MIRACL preparation", () => {
 			validatePreparedManifest({
 				...manifest,
 				normalized: {
-					queries: { sha256: "0".repeat(64), bytes: 1, records: 1 },
-					qrels: { sha256: "0".repeat(64), bytes: 1, records: 2 },
-					corpus: { sha256: "0".repeat(64), bytes: 1, records: 3 },
+					...manifest.normalized,
+					queries: { ...manifest.normalized.queries, records: 2 },
 				},
 			}),
-		).toThrow("unknown field normalized");
+		).toThrow("normalized.queries.records");
 		const parsedSmoke = JSON.parse(JSON.stringify(manifest)) as unknown;
 		const normalizedSmoke = validatePreparedManifest(parsedSmoke);
 		expect(normalizedSmoke).toEqual(manifest);
@@ -377,6 +393,34 @@ describe("MIRACL preparation", () => {
 			}),
 		).rejects.toThrow("byte limit");
 		expect(existsSync(byteOutput)).toBe(false);
+	});
+
+	it("aborts a stalled fetch at the configured preparation timeout", async () => {
+		const outputDir = makeOutput();
+		let observedSignal: AbortSignal | undefined;
+		const fetchImpl = vi.fn(
+			async (_input: string | URL, init?: RequestInit): Promise<Response> =>
+				new Promise((_resolve, reject) => {
+					observedSignal = init?.signal ?? undefined;
+					if (observedSignal === undefined) {
+						setTimeout(() => reject(new Error("missing abort signal")), 25);
+						return;
+					}
+					observedSignal.addEventListener("abort", () => reject(observedSignal?.reason), { once: true });
+				}),
+		);
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl,
+				fetchTimeoutMs: 10,
+			}),
+		).rejects.toThrow("timed out");
+		expect(observedSignal?.aborted).toBe(true);
+		expect(existsSync(outputDir)).toBe(false);
 	});
 
 	it.each([

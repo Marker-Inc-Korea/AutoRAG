@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 
 import { execFileSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { constants, createReadStream } from "node:fs";
-import { lstat, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import { lstat, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readJsonLines } from "./jsonl.ts";
+import { streamFullCorpus } from "./full-bm25.ts";
+import { forEachJsonLine, readJsonLines } from "./jsonl.ts";
 import {
 	type CreateBenchmarkMethodsOptions,
 	type CreatedBenchmarkMethods,
@@ -24,6 +25,7 @@ import {
 	type RunManifestV1,
 	type RunMetricsV1,
 	type RunNormalizedAttestation,
+	renderRunSummary,
 	validateQueryRunRecord,
 	type WriteRunReportOptions,
 	writeRunReport,
@@ -41,6 +43,7 @@ import {
 	assertBenchmarkPathOutsideAutorag,
 	type BenchmarkDirectoryIdentity,
 	materializeBenchmarkWorkspace,
+	materializeEmptyBenchmarkWorkspace,
 	snapshotBenchmarkDirectory,
 } from "./workspace.ts";
 
@@ -50,6 +53,16 @@ const MAX_RUN_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_RUN_METRICS_BYTES = 256 * 1024;
 const MAX_RUN_RESULTS_BYTES = 64 * 1024 * 1024;
 const MAX_RUN_RESULT_RECORDS = 30_000;
+const MAX_RUN_SUMMARY_BYTES = 256 * 1024;
+const RUN_REPORT_FILES = ["manifest.json", "metrics.json", "results.jsonl", "summary.md"] as const;
+const MAX_PREPARED_MANIFEST_BYTES = 1024 * 1024;
+const MAX_PREPARED_QUERIES_BYTES = 32 * 1024 * 1024;
+const MAX_PREPARED_QRELS_BYTES = 256 * 1024 * 1024;
+const MAX_PREPARED_SMOKE_CORPUS_BYTES = 512 * 1024 * 1024;
+const MAX_PREPARED_FULL_CORPUS_BYTES = 12 * 1024 * 1024 * 1024;
+const MAX_PREPARED_QUERIES = 10_000;
+const MAX_PREPARED_QRELS = 100_000;
+const MAX_PREPARED_SMOKE_CORPUS_RECORDS = 100_000;
 
 class BoundedArtifactReadError extends Error {}
 
@@ -60,7 +73,7 @@ export interface CliDependencies {
 	readonly writeStdout: (line: string) => void;
 	readonly now: () => Date;
 	readonly autoRagCommit: () => string;
-	readonly peakRssBytes: () => number | undefined;
+	readonly peakRssBeforeReportBytes: () => number | undefined;
 }
 
 type CliDependencyOverrides = Partial<CliDependencies>;
@@ -94,6 +107,7 @@ interface LoadedPrepared {
 	readonly queries: readonly BenchmarkQuery[];
 	readonly qrels: readonly Qrel[];
 	readonly corpus?: readonly CorpusDocument[];
+	readonly corpusPath?: string;
 	readonly normalized: {
 		readonly queries: RunNormalizedAttestation;
 		readonly qrels: RunNormalizedAttestation;
@@ -157,17 +171,27 @@ async function runPrepareCommand(command: PrepareCommand, dependencies: CliDepen
 async function runBenchmarkCommand(command: RunCommand, dependencies: CliDependencies): Promise<number> {
 	assertBenchmarkPathOutsideAutorag(command.prepared);
 	assertBenchmarkPathOutsideAutorag(command.output);
+	if (command.profile === "full" && (command.methods.length !== 1 || command.methods[0] !== "bm25")) {
+		throw new Error(
+			"full profile supports only bm25; production MinSync requires a file per passage and is not claimed as scalable",
+		);
+	}
 	await assertPathAbsent(command.output, "run output");
 	const prepared = await loadPrepared(command.prepared, true);
 	if (prepared.manifest.profile !== command.profile) {
 		throw new Error(`--profile ${command.profile} does not match prepared profile ${prepared.manifest.profile}`);
 	}
-	const corpus = prepared.corpus as readonly CorpusDocument[];
 	const workspacePath = await allocateWorkspacePath(command.output);
 	let workspaceIdentity: BenchmarkDirectoryIdentity | undefined;
 	let workspaceOwnership: WorkspaceTreeOwnership | undefined;
 	try {
-		const workspace = materializeBenchmarkWorkspace(workspacePath, corpus);
+		const workspace =
+			prepared.manifest.profile === "full"
+				? {
+						root: materializeEmptyBenchmarkWorkspace(workspacePath),
+						documentBySource: undefined,
+					}
+				: materializeBenchmarkWorkspace(workspacePath, prepared.corpus as readonly CorpusDocument[]);
 		workspaceIdentity = snapshotBenchmarkDirectory(workspace.root);
 		workspaceOwnership = await snapshotOwnedWorkspace(workspace.root, workspaceIdentity);
 		const needsMinSync = command.methods.some((method) => method === "minsync" || method === "hybrid");
@@ -184,6 +208,14 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 				names: command.methods,
 				root: workspace.root,
 				documentBySource: workspace.documentBySource,
+				...(prepared.manifest.profile === "full"
+					? {
+							fullCorpus: {
+								path: prepared.corpusPath as string,
+								attestation: prepared.manifest.normalized.corpus,
+							},
+						}
+					: {}),
 				config,
 			});
 		} catch (error) {
@@ -206,7 +238,7 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 					method,
 					retrieval,
 					queries: prepared.queries,
-					documentBySource: workspace.documentBySource,
+					documentBySource: workspace.documentBySource ?? miraclDocumentIdFromSource,
 					topK: 100,
 				})),
 			);
@@ -224,7 +256,7 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 			records,
 			metrics,
 			indexingLatencyMs: created.indexingLatencyMs,
-			peakRssBytes: dependencies.peakRssBytes(),
+			peakRssBeforeReportBytes: dependencies.peakRssBeforeReportBytes(),
 		});
 		const failures = records.filter((record) => record.errorCode !== undefined).length;
 		dependencies.writeStdout(
@@ -248,7 +280,9 @@ async function runEvaluateCommand(command: EvaluateCommand, dependencies: CliDep
 		schemaVersion: 1,
 		methods: evaluated,
 		indexingLatencyMs: run.metrics.indexingLatencyMs,
-		...(run.metrics.peakRssBytes === undefined ? {} : { peakRssBytes: run.metrics.peakRssBytes }),
+		...(run.metrics.peakRssBeforeReportBytes === undefined
+			? {}
+			: { peakRssBeforeReportBytes: run.metrics.peakRssBeforeReportBytes }),
 	});
 	dependencies.writeStdout(JSON.stringify(output));
 	return run.records.some((record) => record.errorCode !== undefined) ? 1 : 0;
@@ -365,32 +399,77 @@ async function loadPrepared(directory: string, includeCorpus: boolean): Promise<
 	const manifestPath = await containedRegularFile(canonicalDirectory, "prepared-manifest.json");
 	let rawManifest: unknown;
 	try {
-		rawManifest = JSON.parse(await readFile(manifestPath, "utf8"));
-	} catch {
-		throw new Error("prepared manifest is not valid JSON");
+		rawManifest = JSON.parse(
+			await readBoundedPrivateUtf8(manifestPath, MAX_PREPARED_MANIFEST_BYTES, "prepared manifest"),
+		);
+	} catch (error) {
+		throwPreservingBoundedReadError(error, "prepared manifest is not valid JSON");
 	}
 	const manifest = validatePreparedManifest(rawManifest);
+	assertPreparedBounds(manifest);
 	const queriesPath = await containedRegularFile(canonicalDirectory, manifest.files.queries);
 	const qrelsPath = await containedRegularFile(canonicalDirectory, manifest.files.qrels);
-	const queries = validateQueries(await readJsonLines<unknown>(queriesPath));
-	const qrels = validateQrels(await readJsonLines<unknown>(qrelsPath), new Set(queries.map((query) => query.queryId)));
-	const normalizedQueries = await attestNormalizedFile(queriesPath, queries.length);
-	const normalizedQrels = await attestNormalizedFile(qrelsPath, qrels.length);
+	const queryValues: unknown[] = [];
+	const normalizedQueries = await forEachJsonLine<unknown>(
+		queriesPath,
+		(value) => {
+			queryValues.push(value);
+		},
+		{
+			totalBytes: manifest.normalized.queries.bytes,
+			maxRecords: manifest.normalized.queries.records,
+			requirePrivateFile: true,
+			label: "prepared queries",
+		},
+	);
+	const queries = validateQueries(queryValues);
+	const qrelValues: unknown[] = [];
+	const normalizedQrels = await forEachJsonLine<unknown>(
+		qrelsPath,
+		(value) => {
+			qrelValues.push(value);
+		},
+		{
+			totalBytes: manifest.normalized.qrels.bytes,
+			maxRecords: manifest.normalized.qrels.records,
+			requirePrivateFile: true,
+			label: "prepared qrels",
+		},
+	);
+	const qrels = validateQrels(qrelValues, new Set(queries.map((query) => query.queryId)));
 	let corpus: CorpusDocument[] | undefined;
 	let corpusPath: string | undefined;
 	let normalizedCorpus: RunNormalizedAttestation | undefined;
 	if (includeCorpus) {
 		corpusPath = await containedRegularFile(canonicalDirectory, manifest.files.corpus);
-		corpus = validateCorpus(await readJsonLines<unknown>(corpusPath));
-		normalizedCorpus = await attestNormalizedFile(corpusPath, corpus.length);
+		if (manifest.profile === "full") {
+			normalizedCorpus = await streamFullCorpus({
+				path: corpusPath,
+				attestation: manifest.normalized.corpus,
+				requiredDocumentIds: new Set(qrels.map((qrel) => qrel.documentId)),
+			});
+		} else {
+			const corpusValues: unknown[] = [];
+			normalizedCorpus = await forEachJsonLine<unknown>(
+				corpusPath,
+				(value) => {
+					corpusValues.push(value);
+				},
+				{
+					totalBytes: manifest.normalized.corpus.bytes,
+					maxRecords: manifest.normalized.corpus.records,
+					requirePrivateFile: true,
+					label: "prepared corpus",
+				},
+			);
+			corpus = validateCorpus(corpusValues);
+		}
 	}
 	validatePreparedContents(manifest, queries, qrels, corpus);
-	if (manifest.profile === "full") {
-		assertNormalizedIdentity(normalizedQueries, manifest.normalized.queries, "queries");
-		assertNormalizedIdentity(normalizedQrels, manifest.normalized.qrels, "qrels");
-		if (includeCorpus && normalizedCorpus !== undefined) {
-			assertNormalizedIdentity(normalizedCorpus, manifest.normalized.corpus, "corpus");
-		}
+	assertNormalizedIdentity(normalizedQueries, manifest.normalized.queries, "queries");
+	assertNormalizedIdentity(normalizedQrels, manifest.normalized.qrels, "qrels");
+	if (includeCorpus && normalizedCorpus !== undefined) {
+		assertNormalizedIdentity(normalizedCorpus, manifest.normalized.corpus, "corpus");
 	}
 	return {
 		directory: canonicalDirectory,
@@ -398,12 +477,47 @@ async function loadPrepared(directory: string, includeCorpus: boolean): Promise<
 		queries,
 		qrels,
 		...(corpus === undefined ? {} : { corpus }),
+		...(corpusPath === undefined ? {} : { corpusPath }),
 		normalized: {
 			queries: normalizedQueries,
 			qrels: normalizedQrels,
 			...(normalizedCorpus === undefined ? {} : { corpus: normalizedCorpus }),
 		},
 	};
+}
+
+function miraclDocumentIdFromSource(source: string): string | undefined {
+	const match = /^\/miracl\/([^/]+)\.md$/u.exec(source);
+	if (match === null) return undefined;
+	try {
+		const documentId = decodeURIComponent(match[1] as string);
+		return `/miracl/${encodeURIComponent(documentId)}.md` === source && documentId.trim().length > 0
+			? documentId
+			: undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function assertPreparedBounds(manifest: PreparedManifest): void {
+	const declarations = [
+		["queries", manifest.normalized.queries, MAX_PREPARED_QUERIES_BYTES, MAX_PREPARED_QUERIES],
+		["qrels", manifest.normalized.qrels, MAX_PREPARED_QRELS_BYTES, MAX_PREPARED_QRELS],
+		[
+			"corpus",
+			manifest.normalized.corpus,
+			manifest.profile === "full" ? MAX_PREPARED_FULL_CORPUS_BYTES : MAX_PREPARED_SMOKE_CORPUS_BYTES,
+			manifest.profile === "full" ? MIRACL_FULL_CORPUS_PASSAGES : MAX_PREPARED_SMOKE_CORPUS_RECORDS,
+		],
+	] as const;
+	for (const [label, declaration, maxBytes, maxRecords] of declarations) {
+		if (declaration.bytes > maxBytes) {
+			throw new Error(`prepared ${label} declaration exceeds ${maxBytes} bytes`);
+		}
+		if (declaration.records > maxRecords) {
+			throw new Error(`prepared ${label} declaration exceeds ${maxRecords} records`);
+		}
+	}
 }
 
 function validatePreparedContents(
@@ -513,12 +627,17 @@ function validateCorpus(values: readonly unknown[]): CorpusDocument[] {
 
 async function loadRun(directory: string): Promise<LoadedRun> {
 	const canonicalDirectory = await canonicalDirectoryPath(directory, "run directory");
+	const children = (await readdir(canonicalDirectory)).sort(compareCodePoints);
+	if (
+		children.length !== RUN_REPORT_FILES.length ||
+		children.some((name, index) => name !== RUN_REPORT_FILES[index])
+	) {
+		throw new Error("run directory must contain exactly manifest.json, results.jsonl, metrics.json, and summary.md");
+	}
 	const manifestPath = await containedRegularFile(canonicalDirectory, "manifest.json");
 	let rawManifest: unknown;
 	try {
-		rawManifest = JSON.parse(
-			await readBoundedPrivateUtf8(manifestPath, MAX_RUN_MANIFEST_BYTES, "run manifest"),
-		);
+		rawManifest = JSON.parse(await readBoundedPrivateUtf8(manifestPath, MAX_RUN_MANIFEST_BYTES, "run manifest"));
 	} catch (error) {
 		throwPreservingBoundedReadError(error, "run manifest is not valid JSON");
 	}
@@ -544,6 +663,11 @@ async function loadRun(directory: string): Promise<LoadedRun> {
 		throwPreservingBoundedReadError(error, "run metrics are not valid JSON");
 	}
 	const metrics = normalizeRunMetrics(rawMetrics);
+	const summaryPath = await containedRegularFile(canonicalDirectory, "summary.md");
+	const summary = await readBoundedPrivateUtf8(summaryPath, MAX_RUN_SUMMARY_BYTES, "run summary");
+	if (summary !== renderRunSummary(manifest, metrics)) {
+		throw new Error("summary.md does not match the canonical report");
+	}
 	return { directory: canonicalDirectory, manifest, records, metrics };
 }
 
@@ -570,11 +694,7 @@ async function readBoundedPrivateUtf8(path: string, maxBytes: number, label: str
 			offset += result.bytesRead;
 		}
 		const finalStats = await handle.stat();
-		if (
-			finalStats.dev !== openStats.dev ||
-			finalStats.ino !== openStats.ino ||
-			finalStats.size !== openStats.size
-		) {
+		if (finalStats.dev !== openStats.dev || finalStats.ino !== openStats.ino || finalStats.size !== openStats.size) {
 			throw new BoundedArtifactReadError(`${label} changed while reading`);
 		}
 		return bytes.toString("utf8");
@@ -675,7 +795,11 @@ function createRunManifest(
 		schemaVersion: 1 as const,
 		methods: command.methods,
 		environment,
-		...(created.reportConfig === undefined ? {} : { methodConfig: created.reportConfig }),
+		methodConfig:
+			created.reportConfig ??
+			(() => {
+				throw new Error("benchmark method provenance is unavailable");
+			})(),
 	};
 	if (prepared.manifest.profile === "smoke") {
 		return {
@@ -707,16 +831,6 @@ function assertPersistedMetricsMatch(evaluated: readonly MethodMetrics[], persis
 
 function sourceAttestation(source: { readonly sha256: string; readonly bytes: number }): RunFileAttestation {
 	return { sha256: source.sha256, bytes: source.bytes };
-}
-
-async function attestNormalizedFile(path: string, actualRecords: number): Promise<RunNormalizedAttestation> {
-	const hash = createHash("sha256");
-	let bytes = 0;
-	for await (const chunk of createReadStream(path)) {
-		hash.update(chunk);
-		bytes += chunk.byteLength;
-	}
-	return { sha256: hash.digest("hex"), bytes, records: actualRecords };
 }
 
 function assertNormalizedIdentity(
@@ -916,7 +1030,7 @@ function dependenciesWithDefaults(overrides: CliDependencyOverrides): CliDepende
 		writeStdout: (line) => console.log(line),
 		now: () => new Date(),
 		autoRagCommit: readAutoRagCommit,
-		peakRssBytes: readPeakRssBytes,
+		peakRssBeforeReportBytes: readPeakRssBytes,
 		...overrides,
 	};
 }

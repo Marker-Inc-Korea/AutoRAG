@@ -18,7 +18,10 @@ import type { BenchmarkProfile, BenchmarkQuery, CorpusDocument, Qrel } from "./t
 const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
 const DEFAULT_MAX_DECOMPRESSED_BYTES_PER_SHARD = 4 * 1024 * 1024 * 1024;
+const DEFAULT_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_CORPUS_LINE_BYTES = 16 * 1024 * 1024;
+const MAX_TOPIC_RECORDS = 10_000;
+const MAX_QREL_RECORDS = 100_000;
 const DUPLICATE_PARTITION_COUNT = 256;
 const MAX_DUPLICATE_PARTITION_IDS = 50_000;
 const MAX_DUPLICATE_PARTITION_BYTES = 64 * 1024 * 1024;
@@ -45,6 +48,7 @@ interface CommonPrepareOptions {
 	maxRedirects?: number;
 	maxDownloadBytes?: number;
 	maxDecompressedBytesPerShard?: number;
+	fetchTimeoutMs?: number;
 }
 
 export interface SmokePrepareOptions extends CommonPrepareOptions, Partial<SmokeSelectionOptions> {
@@ -86,6 +90,11 @@ interface PreparedManifestBase {
 		qrels: "qrels.jsonl";
 		corpus: "corpus.jsonl";
 	};
+	normalized: {
+		queries: NormalizedPreparedFile;
+		qrels: NormalizedPreparedFile;
+		corpus: NormalizedPreparedFile;
+	};
 }
 
 export interface SmokePreparedManifest extends PreparedManifestBase {
@@ -119,11 +128,6 @@ export interface FullPreparedManifest extends PreparedManifestBase {
 		positiveQrels: number;
 		corpus: number;
 		judgedDocuments: number;
-	};
-	normalized: {
-		queries: NormalizedPreparedFile;
-		qrels: NormalizedPreparedFile;
-		corpus: NormalizedPreparedFile;
 	};
 }
 
@@ -481,9 +485,7 @@ class DiskBackedDuplicateDetector {
 		}
 		const known = this.#fileIdentities.get(partition);
 		const handle =
-			known === undefined
-				? await this.#createPartition(partition)
-				: await this.#reopenPartition(partition, known);
+			known === undefined ? await this.#createPartition(partition) : await this.#reopenPartition(partition, known);
 		this.#openHandles.set(partition, handle);
 		return handle;
 	}
@@ -731,81 +733,99 @@ async function downloadPinnedFile(
 	fetchImpl: FetchLike,
 	maxRedirects: number,
 	maxBytes: number,
+	timeoutMs: number,
 ): Promise<DownloadResult> {
+	const controller = new AbortController();
+	const timeoutError = new Error(`download from ${url} timed out after ${timeoutMs} ms`);
+	let rejectTimeout!: (reason: Error) => void;
+	const timeout = new Promise<never>((_resolve, reject) => {
+		rejectTimeout = reject;
+	});
+	const timer = setTimeout(() => {
+		controller.abort(timeoutError);
+		rejectTimeout(timeoutError);
+	}, timeoutMs);
 	let currentUrl = new URL(url);
 	let response: Response | undefined;
-	for (let redirectCount = 0; ; redirectCount += 1) {
-		response = await fetchImpl(currentUrl, { method: "GET", redirect: "manual" });
-		if (!REDIRECT_STATUSES.has(response.status)) {
-			break;
-		}
-		if (redirectCount >= maxRedirects) {
-			await response.body?.cancel();
-			throw new Error(`download from ${url} exceeded ${maxRedirects} redirects`);
-		}
-		const location = response.headers.get("location");
-		if (location === null) {
-			await response.body?.cancel();
-			throw new Error(`redirect from ${currentUrl.toString()} has no location`);
-		}
-		const nextUrl = new URL(location, currentUrl);
-		if (nextUrl.protocol !== "https:") {
-			await response.body?.cancel();
-			throw new Error(`redirect from ${currentUrl.toString()} must use HTTPS`);
-		}
-		if (!isAllowedDownloadHost(nextUrl.hostname)) {
-			await response.body?.cancel();
-			throw new Error(`redirect from ${currentUrl.toString()} is outside the allowed download hosts`);
-		}
-		await response.body?.cancel();
-		currentUrl = nextUrl;
-	}
-	if (!response.ok) {
-		await response.body?.cancel();
-		throw new Error(`download from ${currentUrl.toString()} failed with HTTP ${response.status}`);
-	}
-	if (response.body === null) {
-		throw new Error(`download from ${currentUrl.toString()} returned no body`);
-	}
-	const body = response.body;
-	let expectedBytes: number | undefined;
-	let handle: FileHandle;
 	try {
-		expectedBytes = parseContentLength(response, maxBytes, currentUrl.toString());
-		handle = await open(destinationPath, "wx", 0o600);
-	} catch (error) {
-		await body.cancel().catch(() => undefined);
-		throw error;
-	}
-	const hash = createHash("sha256");
-	let bytes = 0;
-	const reader = body.getReader();
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) {
+		for (let redirectCount = 0; ; redirectCount += 1) {
+			response = await Promise.race([
+				fetchImpl(currentUrl, { method: "GET", redirect: "manual", signal: controller.signal }),
+				timeout,
+			]);
+			if (!REDIRECT_STATUSES.has(response.status)) {
 				break;
 			}
-			if (bytes + value.byteLength > maxBytes) {
-				await reader.cancel();
-				throw new Error(`download from ${currentUrl.toString()} exceeds the configured byte limit`);
+			if (redirectCount >= maxRedirects) {
+				await response.body?.cancel();
+				throw new Error(`download from ${url} exceeded ${maxRedirects} redirects`);
 			}
-			hash.update(value);
-			bytes = await writeBytes(handle, value, bytes);
+			const location = response.headers.get("location");
+			if (location === null) {
+				await response.body?.cancel();
+				throw new Error(`redirect from ${currentUrl.toString()} has no location`);
+			}
+			const nextUrl = new URL(location, currentUrl);
+			if (nextUrl.protocol !== "https:") {
+				await response.body?.cancel();
+				throw new Error(`redirect from ${currentUrl.toString()} must use HTTPS`);
+			}
+			if (!isAllowedDownloadHost(nextUrl.hostname)) {
+				await response.body?.cancel();
+				throw new Error(`redirect from ${currentUrl.toString()} is outside the allowed download hosts`);
+			}
+			await response.body?.cancel();
+			currentUrl = nextUrl;
 		}
-		if (expectedBytes !== undefined && expectedBytes !== bytes) {
-			throw new Error(
-				`download from ${currentUrl.toString()} declared ${expectedBytes} bytes but returned ${bytes}`,
-			);
+		if (!response.ok) {
+			await response.body?.cancel();
+			throw new Error(`download from ${currentUrl.toString()} failed with HTTP ${response.status}`);
 		}
-	} catch (error) {
-		await reader.cancel().catch(() => undefined);
-		throw error;
+		if (response.body === null) {
+			throw new Error(`download from ${currentUrl.toString()} returned no body`);
+		}
+		const body = response.body;
+		let expectedBytes: number | undefined;
+		let handle: FileHandle;
+		try {
+			expectedBytes = parseContentLength(response, maxBytes, currentUrl.toString());
+			handle = await open(destinationPath, "wx", 0o600);
+		} catch (error) {
+			await body.cancel().catch(() => undefined);
+			throw error;
+		}
+		const hash = createHash("sha256");
+		let bytes = 0;
+		const reader = body.getReader();
+		try {
+			while (true) {
+				const { done, value } = await Promise.race([reader.read(), timeout]);
+				if (done) {
+					break;
+				}
+				if (bytes + value.byteLength > maxBytes) {
+					await reader.cancel();
+					throw new Error(`download from ${currentUrl.toString()} exceeds the configured byte limit`);
+				}
+				hash.update(value);
+				bytes = await writeBytes(handle, value, bytes);
+			}
+			if (expectedBytes !== undefined && expectedBytes !== bytes) {
+				throw new Error(
+					`download from ${currentUrl.toString()} declared ${expectedBytes} bytes but returned ${bytes}`,
+				);
+			}
+		} catch (error) {
+			await reader.cancel().catch(() => undefined);
+			throw error;
+		} finally {
+			reader.releaseLock();
+			await handle.close();
+		}
+		return { url, path: relativePath, sha256: hash.digest("hex"), bytes };
 	} finally {
-		reader.releaseLock();
-		await handle.close();
+		clearTimeout(timer);
 	}
-	return { url, path: relativePath, sha256: hash.digest("hex"), bytes };
 }
 
 async function writeJsonLinesFile(path: string, records: readonly unknown[]): Promise<NormalizedPreparedFile> {
@@ -933,12 +953,7 @@ function validateSource(value: unknown, expectedUrl: string, expectedPath: strin
 	} as PreparedSource;
 }
 
-function validateCommonPreparedManifest(
-	manifest: Record<string, unknown>,
-): Pick<
-	PreparedManifestBase,
-	"schemaVersion" | "normalizationVersion" | "profile" | "revisions" | "sources" | "files"
-> {
+function validateCommonPreparedManifest(manifest: Record<string, unknown>): Omit<PreparedManifestBase, "normalized"> {
 	assertManifest(manifest.schemaVersion === 1, "schemaVersion must be 1");
 	assertManifest(
 		manifest.normalizationVersion === MIRACL_NORMALIZATION_VERSION,
@@ -1072,6 +1087,7 @@ export function validatePreparedManifest(value: unknown, options: PrepareValidat
 			"seed",
 			"selectedIds",
 			"counts",
+			"normalized",
 			"files",
 		],
 		"root",
@@ -1127,6 +1143,7 @@ export function validatePreparedManifest(value: unknown, options: PrepareValidat
 		distractorCount === corpusCount - judgedDocumentCount,
 		"distractor count does not match corpus minus judged documents",
 	);
+	const normalized = exactManifestRecord(manifest.normalized, ["queries", "qrels", "corpus"], "normalized");
 
 	return {
 		...common,
@@ -1140,6 +1157,11 @@ export function validatePreparedManifest(value: unknown, options: PrepareValidat
 			corpus: corpusCount,
 			judgedDocuments: judgedDocumentCount,
 			distractors: distractorCount,
+		},
+		normalized: {
+			queries: validateNormalizedFile(normalized.queries, queryCount, "normalized.queries"),
+			qrels: validateNormalizedFile(normalized.qrels, qrelCount, "normalized.qrels"),
+			corpus: validateNormalizedFile(normalized.corpus, corpusCount, "normalized.corpus"),
 		},
 	};
 }
@@ -1173,9 +1195,11 @@ export async function prepareMiracl(
 	const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
 	const maxDownloadBytes = options.maxDownloadBytes ?? DEFAULT_MAX_DOWNLOAD_BYTES;
 	const maxDecompressedBytes = options.maxDecompressedBytesPerShard ?? DEFAULT_MAX_DECOMPRESSED_BYTES_PER_SHARD;
+	const fetchTimeoutMs = options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
 	assertCount(maxRedirects, "maxRedirects", true);
 	assertCount(maxDownloadBytes, "maxDownloadBytes", false);
 	assertCount(maxDecompressedBytes, "maxDecompressedBytesPerShard", false);
+	assertCount(fetchTimeoutMs, "fetchTimeoutMs", false);
 	const fetchImpl = options.fetchImpl ?? fetch;
 
 	let outputIdentity: PreparedDirectoryIdentity | undefined;
@@ -1191,6 +1215,7 @@ export async function prepareMiracl(
 			fetchImpl,
 			maxRedirects,
 			maxDownloadBytes,
+			fetchTimeoutMs,
 		);
 		const qrelsSource = await downloadPinnedFile(
 			MIRACL_SOURCES.topics.qrelsUrl,
@@ -1199,6 +1224,7 @@ export async function prepareMiracl(
 			fetchImpl,
 			maxRedirects,
 			maxDownloadBytes,
+			fetchTimeoutMs,
 		);
 		const corpusSources: PreparedSource[] = [];
 		for (const [index, url] of MIRACL_SOURCES.corpus.urls.entries()) {
@@ -1210,12 +1236,23 @@ export async function prepareMiracl(
 					fetchImpl,
 					maxRedirects,
 					maxDownloadBytes,
+					fetchTimeoutMs,
 				),
 			);
 		}
 
-		const allQueries = await readTopicsTsv(join(downloadsDir, "topics.tsv"));
-		const allQrels = await readQrels(join(downloadsDir, "qrels.tsv"));
+		const allQueries = await readTopicsTsv(join(downloadsDir, "topics.tsv"), {
+			totalBytes: topics.bytes,
+			maxRecords: MAX_TOPIC_RECORDS,
+			requirePrivateFile: true,
+			label: "downloaded topics",
+		});
+		const allQrels = await readQrels(join(downloadsDir, "qrels.tsv"), {
+			totalBytes: qrelsSource.bytes,
+			maxRecords: MAX_QREL_RECORDS,
+			requirePrivateFile: true,
+			label: "downloaded qrels",
+		});
 		validateQueriesAndQrels(allQueries, allQrels);
 		if (profile === "full") {
 			const queriesNormalized = await writeJsonLinesFile(join(options.outputDir, "queries.jsonl"), allQueries);
@@ -1343,9 +1380,9 @@ export async function prepareMiracl(
 			compare(left.documentId, right.documentId),
 		);
 
-		await writeJsonLinesFile(join(options.outputDir, "queries.jsonl"), selected.queries);
-		await writeJsonLinesFile(join(options.outputDir, "qrels.jsonl"), selected.qrels);
-		await writeJsonLinesFile(join(options.outputDir, "corpus.jsonl"), selectedCorpus);
+		const queriesNormalized = await writeJsonLinesFile(join(options.outputDir, "queries.jsonl"), selected.queries);
+		const qrelsNormalized = await writeJsonLinesFile(join(options.outputDir, "qrels.jsonl"), selected.qrels);
+		const corpusNormalized = await writeJsonLinesFile(join(options.outputDir, "corpus.jsonl"), selectedCorpus);
 		const manifest: SmokePreparedManifest = {
 			schemaVersion: 1,
 			normalizationVersion: MIRACL_NORMALIZATION_VERSION,
@@ -1371,6 +1408,11 @@ export async function prepareMiracl(
 				corpus: selectedCorpus.length,
 				judgedDocuments: judgedDocuments.size,
 				distractors: selectedDistractors.length,
+			},
+			normalized: {
+				queries: queriesNormalized,
+				qrels: qrelsNormalized,
+				corpus: corpusNormalized,
 			},
 			files: {
 				queries: "queries.jsonl",

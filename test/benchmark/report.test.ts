@@ -102,10 +102,19 @@ function manifest() {
 		},
 		methods: ["minsync", "bm25"] as const,
 		methodConfig: {
-			embedderId: "safe-model",
-			endpointKind: "remote" as const,
-			apiKeyEnv: "TOKEN",
-			dimension: 1024,
+			bm25: { engine: "tantivy" as const },
+			minsync: {
+				executableSha256: "2".repeat(64),
+				modelId: "safe-model",
+				endpointKind: "remote" as const,
+				authentication: "environment" as const,
+				dimension: 1024,
+				timeoutMs: 30_000,
+				maxStdoutBytes: 16 * 1024 * 1024,
+				maxStderrBytes: 1024 * 1024,
+				queryPrefixSha256: "3".repeat(64),
+				passagePrefixSha256: "4".repeat(64),
+			},
 		},
 		environment: {
 			autoRagCommit: "abc123",
@@ -142,7 +151,7 @@ describe("MIRACL run reports", () => {
 			records,
 			metrics,
 			indexingLatencyMs: { minsync: 20, bm25: 10 },
-			peakRssBytes: 123_456,
+			peakRssBeforeReportBytes: 123_456,
 		});
 
 		const serialized = ["manifest.json", "results.jsonl", "metrics.json", "summary.md"]
@@ -153,16 +162,20 @@ describe("MIRACL run reports", () => {
 		expect(persistedManifest.schemaVersion).toBe(1);
 		expect(persistedManifest.methods).toEqual(["bm25", "minsync"]);
 		expect(persistedManifest.methodConfig).toEqual({
-			embedderId: "safe-model",
-			endpointKind: "remote",
-			apiKeyEnv: "TOKEN",
-			dimension: 1024,
+			bm25: { engine: "tantivy" },
+			minsync: expect.objectContaining({
+				executableSha256: "2".repeat(64),
+				modelId: "safe-model",
+				endpointKind: "remote",
+				authentication: "environment",
+				timeoutMs: 30_000,
+			}),
 		});
 		expect(readFileSync(join(output, "results.jsonl"), "utf8").split("\n")[0]).toContain('"method":"bm25"');
 		expect(persistedMetrics).toMatchObject({
 			schemaVersion: 1,
 			indexingLatencyMs: { bm25: 10, minsync: 20 },
-			peakRssBytes: 123_456,
+			peakRssBeforeReportBytes: 123_456,
 		});
 		expect(persistedMetrics.methods.map((entry: MethodMetrics) => entry.method)).toEqual(["bm25", "minsync"]);
 		expect(readFileSync(join(output, "summary.md"), "utf8")).toContain("| Method | nDCG@10 |");
@@ -195,7 +208,10 @@ describe("MIRACL run reports", () => {
 		expect(() =>
 			normalizeRunManifest({
 				...smoke,
-				methodConfig: { ...smoke.methodConfig, baseUrl: "https://private.example" },
+				methodConfig: {
+					...smoke.methodConfig,
+					minsync: { ...smoke.methodConfig.minsync, baseUrl: "https://private.example" },
+				},
 			} as never),
 		).toThrow("methodConfig");
 		expect(() =>
@@ -356,9 +372,12 @@ describe("MIRACL run reports", () => {
 		expect(() =>
 			normalizeRunManifest({
 				...value,
-				methodConfig: { ...value.methodConfig, embedderId },
+				methodConfig: {
+					...value.methodConfig,
+					minsync: { ...value.methodConfig.minsync, modelId: embedderId },
+				},
 			} as never),
-		).toThrow("embedderId must not be an absolute filesystem path");
+		).toThrow("modelId must not be an absolute filesystem path");
 	});
 
 	it("allows repository-style persisted model IDs containing a slash", () => {
@@ -366,8 +385,11 @@ describe("MIRACL run reports", () => {
 		expect(
 			normalizeRunManifest({
 				...value,
-				methodConfig: { ...value.methodConfig, embedderId: "intfloat/multilingual-e5-large" },
-			} as never).methodConfig?.embedderId,
+				methodConfig: {
+					...value.methodConfig,
+					minsync: { ...value.methodConfig.minsync, modelId: "intfloat/multilingual-e5-large" },
+				},
+			} as never).methodConfig.minsync?.modelId,
 		).toBe("intfloat/multilingual-e5-large");
 	});
 
