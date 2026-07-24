@@ -112,7 +112,7 @@ export interface WriteRunReportOptions {
 	readonly manifest: RunManifestInput;
 	readonly records: readonly QueryRunRecord[];
 	readonly metrics: readonly MethodMetrics[];
-	readonly indexingLatencyMs?: Readonly<Partial<Record<"bm25" | "minsync", number>>>;
+	readonly indexingLatencyMs: Readonly<Partial<Record<"bm25" | "minsync", number>>>;
 	readonly peakRssBeforeReportBytes?: number;
 }
 
@@ -141,11 +141,10 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 	const metrics = normalizeRunMetrics({
 		schemaVersion: 1,
 		methods: options.metrics,
-		indexingLatencyMs: options.indexingLatencyMs ?? {},
+		indexingLatencyMs: options.indexingLatencyMs,
 		peakRssBeforeReportBytes: options.peakRssBeforeReportBytes,
 	});
-	validateReportCoherence(manifest, records, metrics);
-	validateCompleteGridAndMetrics(manifest, records, metrics);
+	validateRunReportCoherence(manifest, records, metrics);
 	const contents = new Map<(typeof REPORT_FILES)[number], string>([
 		["manifest.json", `${JSON.stringify(manifest)}\n`],
 		["results.jsonl", records.map((record) => JSON.stringify(record)).join("\n") + (records.length > 0 ? "\n" : "")],
@@ -288,6 +287,14 @@ export function normalizeRunManifest(value: unknown): RunManifestV1 {
 	const methods = normalizeMethodNames(manifest.methods as readonly BenchmarkMethod[]);
 	const environment = normalizeEnvironment(manifest.environment as RunEnvironmentManifest);
 	const methodConfig = normalizeMethodConfig(manifest.methodConfig as SanitizedMethodConfig, methods);
+	if (profile === "full") {
+		if (methods.length !== 1 || methods[0] !== "bm25") {
+			throw new Error("full run manifest methods must be exactly bm25");
+		}
+		if (methodConfig.bm25?.engine !== "tantivy") {
+			throw new Error("full run manifest BM25 engine must be tantivy");
+		}
+	}
 	if (profile === "smoke") {
 		const dataset: SmokeRunDatasetManifest = {
 			normalizationVersion,
@@ -705,7 +712,7 @@ function normalizeEnvironment(value: RunEnvironmentManifest): RunEnvironmentMani
 	return normalized;
 }
 
-function validateReportCoherence(
+export function validateRunReportCoherence(
 	manifest: RunManifestV1,
 	records: readonly QueryRunRecord[],
 	metrics: RunMetricsV1,
@@ -741,6 +748,22 @@ function validateReportCoherence(
 			throw new Error(`metrics counts do not match records for ${metric.method}`);
 		}
 	}
+	const requiredIndexingMethods = new Set<"bm25" | "minsync">();
+	for (const method of manifest.methods) {
+		if (method === "bm25" || method === "hybrid") requiredIndexingMethods.add("bm25");
+		if (method === "minsync" || method === "hybrid") requiredIndexingMethods.add("minsync");
+	}
+	for (const method of requiredIndexingMethods) {
+		if (metrics.indexingLatencyMs[method] === undefined) {
+			throw new Error(`indexingLatencyMs is missing required ${method} latency`);
+		}
+	}
+	for (const method of Object.keys(metrics.indexingLatencyMs) as Array<"bm25" | "minsync">) {
+		if (!requiredIndexingMethods.has(method)) {
+			throw new Error(`indexingLatencyMs contains undeclared ${method} latency`);
+		}
+	}
+	validateCompleteGridAndMetrics(manifest, records, metrics);
 }
 
 function validateCompleteGridAndMetrics(

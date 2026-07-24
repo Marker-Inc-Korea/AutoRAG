@@ -1,6 +1,19 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { accessSync, constants, createReadStream, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import {
+	accessSync,
+	closeSync,
+	constants,
+	createReadStream,
+	fstatSync,
+	lstatSync,
+	openSync,
+	readdirSync,
+	readSync,
+	realpathSync,
+	type Stats,
+} from "node:fs";
+import { open } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
 import { parse } from "smol-toml";
@@ -43,6 +56,15 @@ const RETRIEVAL_OVERFETCH_LIMIT = 1_600;
 const HYBRID_METHOD_ORDER = ["bm25", "minsync"] as const;
 const MINSYNC_MAX_STDOUT_BYTES = 16 * 1024 * 1024;
 const MINSYNC_MAX_STDERR_BYTES = 1024 * 1024;
+const MINSYNC_EXECUTABLE_MAX_BYTES = 256 * 1024 * 1024;
+const MINSYNC_CONFIG_MAX_BYTES = 1024 * 1024;
+const MINSYNC_MANIFEST_MAX_BYTES = 64 * 1024 * 1024;
+const MINSYNC_CURSOR_MAX_BYTES = 1024 * 1024;
+const MINSYNC_COLLECTION_MAX_DEPTH = 32;
+const MINSYNC_COLLECTION_MAX_ENTRIES = 4_096;
+const MINSYNC_COLLECTION_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+const MINSYNC_INTEGRITY_DEADLINE_MS = 120_000;
+const INTEGRITY_STREAM_CHUNK_BYTES = 64 * 1024;
 
 export interface BoundedMinSyncProcessOptions {
 	readonly timeoutMs: number;
@@ -75,7 +97,12 @@ export function runBoundedMinSyncProcess(
 		}
 	}
 	return new Promise((resolvePromise) => {
-		const child = spawn(command, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+		const child = spawn(command, [...args], {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+			windowsHide: true,
+			detached: process.platform !== "win32",
+		});
 		const stdout: Buffer[] = [];
 		const stderr: Buffer[] = [];
 		let stdoutBytes = 0;
@@ -83,25 +110,34 @@ export function runBoundedMinSyncProcess(
 		let timedOut = false;
 		let outputExceeded = false;
 		let settled = false;
-		const append = (chunks: Buffer[], chunk: Buffer, currentBytes: number, maximum: number): number => {
-			const remaining = Math.max(maximum - currentBytes, 0);
-			if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
-			if (chunk.byteLength > remaining) {
-				outputExceeded = true;
-				child.kill("SIGKILL");
+		let timer: ReturnType<typeof setTimeout>;
+		const killProcessTree = (): void => {
+			if (process.platform === "win32" && child.pid !== undefined) {
+				try {
+					const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+						stdio: "ignore",
+						windowsHide: true,
+					});
+					killer.unref();
+				} catch {
+					// Direct termination below is the Windows fallback.
+				}
+			} else if (child.pid !== undefined) {
+				try {
+					process.kill(-child.pid, "SIGKILL");
+				} catch {
+					// The group may already be gone; direct termination is the fallback.
+				}
 			}
-			return Math.min(currentBytes + chunk.byteLength, maximum);
+			try {
+				child.kill("SIGKILL");
+			} catch {
+				// The direct child may already have exited.
+			}
+			child.stdout.destroy();
+			child.stderr.destroy();
+			child.unref();
 		};
-		child.stdout.on("data", (chunk: Buffer) => {
-			stdoutBytes = append(stdout, chunk, stdoutBytes, options.maxStdoutBytes);
-		});
-		child.stderr.on("data", (chunk: Buffer) => {
-			stderrBytes = append(stderr, chunk, stderrBytes, options.maxStderrBytes);
-		});
-		const timer = setTimeout(() => {
-			timedOut = true;
-			child.kill("SIGKILL");
-		}, options.timeoutMs);
 		const finish = (code: number | null, processError?: Error) => {
 			if (settled) return;
 			settled = true;
@@ -118,8 +154,39 @@ export function runBoundedMinSyncProcess(
 				...(outputExceeded ? { outputExceeded: true as const } : {}),
 			});
 		};
+		const terminate = (reason: "timeout" | "output"): void => {
+			if (settled) return;
+			if (reason === "timeout") timedOut = true;
+			else outputExceeded = true;
+			killProcessTree();
+			finish(null);
+		};
+		const append = (chunks: Buffer[], chunk: Buffer, currentBytes: number, maximum: number): number => {
+			const remaining = Math.max(maximum - currentBytes, 0);
+			if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
+			if (chunk.byteLength > remaining) {
+				terminate("output");
+			}
+			return Math.min(currentBytes + chunk.byteLength, maximum);
+		};
+		child.stdout.on("data", (chunk: Buffer) => {
+			stdoutBytes = append(stdout, chunk, stdoutBytes, options.maxStdoutBytes);
+		});
+		child.stderr.on("data", (chunk: Buffer) => {
+			stderrBytes = append(stderr, chunk, stderrBytes, options.maxStderrBytes);
+		});
+		timer = setTimeout(() => terminate("timeout"), options.timeoutMs);
 		child.once("error", (error) => finish(null, error));
-		child.once("close", (code) => finish(code));
+		child.once("close", (code) => {
+			if (process.platform !== "win32" && child.pid !== undefined) {
+				try {
+					process.kill(-child.pid, "SIGKILL");
+				} catch {
+					// No residual process group remains.
+				}
+			}
+			finish(code);
+		});
 	});
 }
 
@@ -180,13 +247,80 @@ export interface CreatedBenchmarkMethods {
  * {@link sanitizeMethodConfig}.
  */
 export function loadBenchmarkConfig(path: string): BenchmarkMinSyncConfig {
+	const contents = readPrivateBenchmarkConfig(path);
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(readFileSync(path, "utf8"));
+		parsed = JSON.parse(contents);
 	} catch {
 		throw new Error("Unable to load MinSync benchmark configuration");
 	}
 	return normalizeMethodConfig(parsed, process.env);
+}
+
+function readPrivateBenchmarkConfig(path: string): string {
+	let initial: Stats;
+	try {
+		initial = lstatSync(path);
+	} catch {
+		throw new Error("MinSync benchmark configuration must be a regular file");
+	}
+	if (initial.isSymbolicLink() || !initial.isFile()) {
+		throw new Error("MinSync benchmark configuration must be a regular file");
+	}
+	if (!Number.isSafeInteger(initial.size) || initial.size < 0 || initial.size > MINSYNC_CONFIG_MAX_BYTES) {
+		throw new Error(`MinSync benchmark configuration exceeds ${MINSYNC_CONFIG_MAX_BYTES} bytes`);
+	}
+	if ((initial.mode & 0o077) !== 0) {
+		throw new Error("MinSync benchmark configuration must be private (mode 0600)");
+	}
+	let descriptor: number;
+	try {
+		descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+	} catch {
+		throw new Error("MinSync benchmark configuration must be a regular file");
+	}
+	try {
+		const opened = fstatSync(descriptor);
+		if (!sameConfigFileIdentity(opened, initial)) {
+			throw new Error("MinSync benchmark configuration changed while reading");
+		}
+		const buffer = Buffer.alloc(initial.size);
+		let offset = 0;
+		while (offset < buffer.byteLength) {
+			const bytesRead = readSync(descriptor, buffer, offset, buffer.byteLength - offset, offset);
+			if (bytesRead === 0) break;
+			offset += bytesRead;
+		}
+		const afterHandle = fstatSync(descriptor);
+		let afterPath: Stats;
+		try {
+			afterPath = lstatSync(path);
+		} catch {
+			throw new Error("MinSync benchmark configuration changed while reading");
+		}
+		if (
+			offset !== initial.size ||
+			!sameConfigFileIdentity(afterHandle, initial) ||
+			!sameConfigFileIdentity(afterPath, initial)
+		) {
+			throw new Error("MinSync benchmark configuration changed while reading");
+		}
+		return buffer.toString("utf8");
+	} finally {
+		closeSync(descriptor);
+	}
+}
+
+function sameConfigFileIdentity(left: Stats, right: Stats): boolean {
+	return (
+		left.isFile() &&
+		!left.isSymbolicLink() &&
+		left.dev === right.dev &&
+		left.ino === right.ino &&
+		left.size === right.size &&
+		left.mtimeMs === right.mtimeMs &&
+		left.mode === right.mode
+	);
 }
 
 /**
@@ -341,13 +475,13 @@ async function constructAndSyncMethods(options: ConstructOptions): Promise<Creat
 		} catch {
 			const indexingLatencyMsValue = elapsedMilliseconds(startedAt, now());
 			assertBenchmarkDirectoryIdentity(options.root, options.identity);
-			assertExecutableIdentity(executable);
+			await assertExecutableIdentity(executable);
 			indexingLatencyMs.minsync = indexingLatencyMsValue;
 			throw new Error("MinSync benchmark indexing failed");
 		}
 		indexingLatencyMs.minsync = elapsedMilliseconds(startedAt, now());
 		assertBenchmarkDirectoryIdentity(options.root, options.identity);
-		assertExecutableIdentity(executable);
+		await assertExecutableIdentity(executable);
 		const expectedWorkspacePath = minSyncWorkspaceRoot(options.root);
 		if (
 			!result.ok ||
@@ -594,7 +728,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 
 	async beforeBenchmarkBatch(): Promise<void> {
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
-		assertExecutableIdentity(this.executable);
+		await assertExecutableIdentity(this.executable);
 		await assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
 	}
 
@@ -612,7 +746,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 
 	async afterBenchmarkBatch(): Promise<void> {
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
-		assertExecutableIdentity(this.executable);
+		await assertExecutableIdentity(this.executable);
 		await assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
 	}
 }
@@ -665,12 +799,18 @@ async function resolveBenchmarkExecutable(root: string, config: BenchmarkMinSync
 	return snapshotExecutable(config.binaryPath);
 }
 
-function snapshotExecutable(path: string): ExecutableIdentity {
+async function snapshotExecutable(path: string): Promise<ExecutableIdentity> {
 	const metadata = snapshotExecutableMetadata(path);
 	try {
+		const deadlineAt = createIntegrityDeadline();
 		return {
 			...metadata,
-			sha256: createHash("sha256").update(readFileSync(metadata.path)).digest("hex"),
+			sha256: await hashBoundedIdentity(
+				{ ...metadata, kind: "file" },
+				MINSYNC_EXECUTABLE_MAX_BYTES,
+				deadlineAt,
+				() => ({ ...snapshotExecutableMetadata(metadata.path), kind: "file" }),
+			),
 		};
 	} catch {
 		throw new Error("MinSync benchmark executable is unavailable");
@@ -713,11 +853,16 @@ function assertExecutableMetadata(expected: ExecutableIdentity): void {
 	}
 }
 
-function assertExecutableIdentity(expected: ExecutableIdentity): void {
+async function assertExecutableIdentity(expected: ExecutableIdentity): Promise<void> {
 	assertExecutableMetadata(expected);
 	let digest: string;
 	try {
-		digest = createHash("sha256").update(readFileSync(expected.path)).digest("hex");
+		digest = await hashBoundedIdentity(
+			{ ...expected, kind: "file" },
+			MINSYNC_EXECUTABLE_MAX_BYTES,
+			createIntegrityDeadline(),
+			() => ({ ...snapshotExecutableMetadata(expected.path), kind: "file" }),
+		);
 	} catch {
 		throw new Error("MinSync benchmark executable changed");
 	}
@@ -731,12 +876,34 @@ async function snapshotMinSyncWorkspace(
 	workspacePath: string,
 ): Promise<MinSyncWorkspaceIdentity> {
 	try {
+		const deadlineAt = createIntegrityDeadline();
 		const workspace = snapshotPathIdentity(workspacePath, "directory", benchmarkRoot);
 		const stateDirectory = snapshotPathIdentity(join(workspace.path, ".minsync"), "directory", workspace.path);
-		const config = snapshotFileIntegrity(join(stateDirectory.path, "config.toml"), stateDirectory.path);
-		const manifest = snapshotFileIntegrity(join(stateDirectory.path, "manifest.json"), stateDirectory.path);
-		const cursor = snapshotFileIntegrity(join(stateDirectory.path, "cursor.json"), stateDirectory.path);
-		const collectionPath = readCollectionPath(config.path);
+		const configSnapshot = await snapshotFileIntegrity(
+			join(stateDirectory.path, "config.toml"),
+			stateDirectory.path,
+			MINSYNC_CONFIG_MAX_BYTES,
+			deadlineAt,
+			true,
+		);
+		const config = configSnapshot.integrity;
+		const manifest = (
+			await snapshotFileIntegrity(
+				join(stateDirectory.path, "manifest.json"),
+				stateDirectory.path,
+				MINSYNC_MANIFEST_MAX_BYTES,
+				deadlineAt,
+			)
+		).integrity;
+		const cursor = (
+			await snapshotFileIntegrity(
+				join(stateDirectory.path, "cursor.json"),
+				stateDirectory.path,
+				MINSYNC_CURSOR_MAX_BYTES,
+				deadlineAt,
+			)
+		).integrity;
+		const collectionPath = readCollectionPath(configSnapshot.contents as Buffer);
 		if (isAbsolute(collectionPath) || collectionPath.length === 0 || collectionPath.split(/[\\/]/u).includes("..")) {
 			throw new Error("unsafe collection path");
 		}
@@ -745,7 +912,7 @@ async function snapshotMinSyncWorkspace(
 			"directory",
 			stateDirectory.path,
 		);
-		const collectionTree = snapshotDirectoryTreeMetadata(collection.path);
+		const collectionTree = snapshotDirectoryTreeMetadata(collection.path, deadlineAt);
 		return {
 			benchmarkRoot,
 			workspace,
@@ -755,7 +922,7 @@ async function snapshotMinSyncWorkspace(
 			cursor,
 			collection,
 			collectionTree,
-			collectionTreeSha256: await hashDirectoryTree(collection.path, collectionTree),
+			collectionTreeSha256: await hashDirectoryTree(collection, collectionTree, deadlineAt),
 		};
 	} catch {
 		throw new Error("MinSync benchmark workspace changed");
@@ -795,15 +962,6 @@ function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): voi
 			throw new Error("MinSync benchmark workspace changed");
 		}
 	}
-	let actualCollectionTree: readonly PathIdentity[];
-	try {
-		actualCollectionTree = snapshotDirectoryTreeMetadata(expected.collection.path);
-	} catch {
-		throw new Error("MinSync benchmark workspace changed");
-	}
-	if (!samePathIdentityList(actualCollectionTree, expected.collectionTree)) {
-		throw new Error("MinSync benchmark workspace changed");
-	}
 }
 
 async function assertMinSyncWorkspaceIntegrity(expected: MinSyncWorkspaceIdentity): Promise<void> {
@@ -841,17 +999,38 @@ function snapshotPathIdentity(path: string, kind: PathIdentity["kind"], containe
 	};
 }
 
-function snapshotFileIntegrity(path: string, container: string): FileIntegrity {
+async function snapshotFileIntegrity(
+	path: string,
+	container: string,
+	maxBytes: number,
+	deadlineAt: number,
+	captureContents = false,
+): Promise<{ readonly integrity: FileIntegrity; readonly contents?: Buffer }> {
 	const identity = snapshotPathIdentity(path, "file", container);
+	const hash = createHash("sha256");
+	const chunks: Buffer[] = [];
+	await readBoundedIdentity(
+		identity,
+		maxBytes,
+		deadlineAt,
+		() => snapshotPathIdentity(identity.path, "file", container),
+		(chunk) => {
+			hash.update(chunk);
+			if (captureContents) chunks.push(Buffer.from(chunk));
+		},
+	);
 	return {
-		...identity,
-		kind: "file",
-		sha256: createHash("sha256").update(readFileSync(identity.path)).digest("hex"),
+		integrity: {
+			...identity,
+			kind: "file",
+			sha256: hash.digest("hex"),
+		},
+		...(captureContents ? { contents: Buffer.concat(chunks, identity.size) } : {}),
 	};
 }
 
-function readCollectionPath(configPath: string): string {
-	const config = parse(readFileSync(configPath, "utf8")) as {
+function readCollectionPath(configBytes: Buffer): string {
+	const config = parse(configBytes.toString("utf8")) as {
 		collection?: { path?: unknown };
 	};
 	const path = config.collection?.path;
@@ -861,36 +1040,167 @@ function readCollectionPath(configPath: string): string {
 	return path;
 }
 
-function snapshotDirectoryTreeMetadata(root: string): readonly PathIdentity[] {
+function snapshotDirectoryTreeMetadata(root: string, deadlineAt: number): readonly PathIdentity[] {
 	const identities: PathIdentity[] = [];
-	const visit = (directory: string): void => {
-		for (const name of readdirSync(directory).sort(compareCodePoints)) {
-			const path = join(directory, name);
-			const identity = snapshotPathIdentity(path, lstatSync(path).isDirectory() ? "directory" : "file", root);
+	const pending: Array<{ readonly directory: string; readonly depth: number }> = [{ directory: root, depth: 0 }];
+	let declaredBytes = 0;
+	while (pending.length > 0) {
+		assertIntegrityDeadline(deadlineAt);
+		const current = pending.pop();
+		if (current === undefined) break;
+		const childDirectories: Array<{ readonly directory: string; readonly depth: number }> = [];
+		for (const name of readdirSync(current.directory).sort(compareCodePoints)) {
+			assertIntegrityDeadline(deadlineAt);
+			if (identities.length >= MINSYNC_COLLECTION_MAX_ENTRIES) {
+				throw new Error("too many collection entries");
+			}
+			const path = join(current.directory, name);
+			const stats = lstatSync(path);
+			const kind = stats.isDirectory() ? "directory" : "file";
+			const identity = snapshotPathIdentity(path, kind, root);
 			identities.push(identity);
 			if (identity.kind === "directory") {
-				visit(identity.path);
+				const depth = current.depth + 1;
+				if (depth > MINSYNC_COLLECTION_MAX_DEPTH) {
+					throw new Error("collection depth exceeded");
+				}
+				childDirectories.push({ directory: identity.path, depth });
+			} else {
+				if (!Number.isSafeInteger(identity.size) || identity.size < 0) {
+					throw new Error("invalid collection file size");
+				}
+				declaredBytes += identity.size;
+				if (!Number.isSafeInteger(declaredBytes) || declaredBytes > MINSYNC_COLLECTION_MAX_BYTES) {
+					throw new Error("collection bytes exceeded");
+				}
 			}
 		}
-	};
-	visit(root);
-	return identities;
+		for (let index = childDirectories.length - 1; index >= 0; index -= 1) {
+			const child = childDirectories[index];
+			if (child !== undefined) pending.push(child);
+		}
+	}
+	return identities.sort((left, right) => compareCodePoints(relative(root, left.path), relative(root, right.path)));
 }
 
-async function hashDirectoryTree(root: string, identities: readonly PathIdentity[]): Promise<string> {
+async function hashDirectoryTree(
+	root: PathIdentity,
+	identities: readonly PathIdentity[],
+	deadlineAt: number,
+): Promise<string> {
 	const hash = createHash("sha256");
+	let hashedBytes = 0;
 	for (const identity of identities) {
-		const relativePath = relative(root, identity.path);
+		assertIntegrityDeadline(deadlineAt);
+		const relativePath = relative(root.path, identity.path);
 		hash.update(
 			`${identity.kind}\0${relativePath}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.modifiedAtMs}\0`,
 		);
 		if (identity.kind !== "file") continue;
-		const stream = createReadStream(identity.path, { highWaterMark: 64 * 1024 });
-		for await (const chunk of stream) {
-			hash.update(chunk);
-		}
+		await readBoundedIdentity(
+			identity,
+			Math.min(identity.size, MINSYNC_COLLECTION_MAX_BYTES - hashedBytes),
+			deadlineAt,
+			() => snapshotPathIdentity(identity.path, "file", root.path),
+			(chunk) => {
+				hashedBytes += chunk.byteLength;
+				if (hashedBytes > MINSYNC_COLLECTION_MAX_BYTES) throw new Error("collection bytes exceeded");
+				hash.update(chunk);
+			},
+		);
+	}
+	for (const identity of [root, ...identities.filter((entry) => entry.kind === "directory")]) {
+		assertIntegrityDeadline(deadlineAt);
+		const actual = snapshotPathIdentity(identity.path, "directory", root.path);
+		if (!samePathIdentity(actual, identity)) throw new Error("collection changed during integrity snapshot");
 	}
 	return hash.digest("hex");
+}
+
+async function hashBoundedIdentity(
+	identity: PathIdentity,
+	maxBytes: number,
+	deadlineAt: number,
+	snapshotAgain: () => PathIdentity,
+): Promise<string> {
+	const hash = createHash("sha256");
+	await readBoundedIdentity(identity, maxBytes, deadlineAt, snapshotAgain, (chunk) => hash.update(chunk));
+	return hash.digest("hex");
+}
+
+async function readBoundedIdentity(
+	identity: PathIdentity,
+	maxBytes: number,
+	deadlineAt: number,
+	snapshotAgain: () => PathIdentity,
+	onChunk: (chunk: Buffer) => void,
+): Promise<void> {
+	assertIntegrityDeadline(deadlineAt);
+	if (
+		identity.kind !== "file" ||
+		!Number.isSafeInteger(identity.size) ||
+		identity.size < 0 ||
+		identity.size > maxBytes
+	) {
+		throw new Error("integrity file exceeds its byte bound");
+	}
+	const handle = await open(identity.path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		const opened = await handle.stat();
+		assertIntegrityDeadline(deadlineAt);
+		if (!sameOpenFileIdentity(opened, identity)) throw new Error("integrity file changed before hashing");
+		const abort = new AbortController();
+		const remainingMs = deadlineAt - performance.now();
+		if (!(remainingMs > 0)) throw new Error("integrity deadline exceeded");
+		timer = setTimeout(() => abort.abort(), Math.max(1, Math.ceil(remainingMs)));
+		const stream = createReadStream(identity.path, {
+			fd: handle.fd,
+			autoClose: false,
+			highWaterMark: INTEGRITY_STREAM_CHUNK_BYTES,
+			signal: abort.signal,
+		});
+		let bytesRead = 0;
+		for await (const value of stream) {
+			assertIntegrityDeadline(deadlineAt);
+			const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+			bytesRead += chunk.byteLength;
+			if (!Number.isSafeInteger(bytesRead) || bytesRead > maxBytes || bytesRead > identity.size) {
+				throw new Error("integrity file exceeds its byte bound");
+			}
+			onChunk(chunk);
+		}
+		if (bytesRead !== identity.size) throw new Error("integrity file size changed while hashing");
+		const afterHandle = await handle.stat();
+		assertIntegrityDeadline(deadlineAt);
+		const afterPath = snapshotAgain();
+		if (!sameOpenFileIdentity(afterHandle, identity) || !samePathIdentity(afterPath, identity)) {
+			throw new Error("integrity file changed while hashing");
+		}
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+		await handle.close();
+	}
+}
+
+function sameOpenFileIdentity(stats: Stats, identity: PathIdentity): boolean {
+	return (
+		stats.isFile() &&
+		stats.dev === identity.device &&
+		stats.ino === identity.inode &&
+		stats.size === identity.size &&
+		stats.mtimeMs === identity.modifiedAtMs
+	);
+}
+
+function createIntegrityDeadline(): number {
+	return performance.now() + MINSYNC_INTEGRITY_DEADLINE_MS;
+}
+
+function assertIntegrityDeadline(deadlineAt: number): void {
+	if (performance.now() >= deadlineAt) {
+		throw new Error("MinSync integrity deadline exceeded");
+	}
 }
 
 function samePathIdentity(left: PathIdentity, right: PathIdentity): boolean {

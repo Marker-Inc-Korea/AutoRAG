@@ -729,6 +729,37 @@ describe("MIRACL benchmark workspace and runner", () => {
 		expect(records[0]?.hits[0]).toMatchObject({ documentId: "duplicate", score: 1_000, rank: 1 });
 	});
 
+	it("fails closed when the overfetch ceiling is full without 100 unique documents", async () => {
+		const requested: number[] = [];
+		const retrieval = retrievalMethod(async (_query, options) => {
+			const topK = options.topK ?? 0;
+			requested.push(topK);
+			return Array.from({ length: topK }, (_, index) => ({
+				id: `duplicate:${index}`,
+				source: "/miracl/duplicate.md",
+				content: `duplicate ${index}`,
+				score: topK - index,
+				metadata: {},
+			}));
+		});
+
+		const records = await runMethodQueries({
+			method: "bm25",
+			retrieval,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: new Map([["/miracl/duplicate.md", "duplicate"]]),
+			topK: 100,
+		});
+
+		expect(requested).toEqual([100, 200, 400, 800, 1_600]);
+		expect(records[0]).toMatchObject({
+			method: "bm25",
+			queryId: "q1",
+			hits: [],
+			errorCode: "retrieval-failed",
+		});
+	});
+
 	it("records opaque query failures durably and continues sequentially", async () => {
 		let inFlight = 0;
 		let maximumInFlight = 0;

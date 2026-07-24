@@ -158,7 +158,10 @@ async function retrieveDocumentCandidates(
 	while (true) {
 		results = await retrieval.retrieve(query, { topK: candidateLimit });
 		if (new Set(results.map((result) => result.source)).size >= requiredDocuments) return results;
-		if (results.length < candidateLimit || candidateLimit >= RETRIEVAL_OVERFETCH_LIMIT) return results;
+		if (results.length < candidateLimit) return results;
+		if (candidateLimit >= RETRIEVAL_OVERFETCH_LIMIT) {
+			throw new Error("retrieval candidate ceiling exhausted before enough unique documents were found");
+		}
 		candidateLimit = Math.min(candidateLimit * 2, RETRIEVAL_OVERFETCH_LIMIT);
 	}
 }

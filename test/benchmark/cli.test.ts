@@ -241,6 +241,24 @@ describe("MIRACL benchmark CLI", () => {
 		}
 	});
 
+	it("rejects persisted indexing latencies that do not match the declared smoke methods", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const output = join(parent, "run");
+		writePrepared(prepared);
+		await runCli(["run", "--profile", "smoke", "--prepared", prepared, "--output", output, "--methods", "bm25"], {
+			createBenchmarkMethods: methodFactory(),
+		});
+		const metricsPath = join(output, "metrics.json");
+		const persisted = JSON.parse(readFileSync(metricsPath, "utf8")) as Record<string, unknown>;
+		persisted.indexingLatencyMs = {};
+		writeFileSync(metricsPath, `${JSON.stringify(persisted)}\n`, { mode: 0o600 });
+
+		await expect(runCli(["evaluate", "--run", output], { writeStdout: vi.fn() })).rejects.toThrow(
+			"indexingLatencyMs is missing required bm25 latency",
+		);
+	});
+
 	it("rejects smoke normalized text edits even when IDs and record counts are unchanged", async () => {
 		const parent = makeRoot();
 		const prepared = join(parent, "prepared");

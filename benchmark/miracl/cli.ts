@@ -27,6 +27,7 @@ import {
 	type RunNormalizedAttestation,
 	renderRunSummary,
 	validateQueryRunRecord,
+	validateRunReportCoherence,
 	type WriteRunReportOptions,
 	writeRunReport,
 } from "./report.ts";
@@ -663,6 +664,7 @@ async function loadRun(directory: string): Promise<LoadedRun> {
 		throwPreservingBoundedReadError(error, "run metrics are not valid JSON");
 	}
 	const metrics = normalizeRunMetrics(rawMetrics);
+	validateRunReportCoherence(manifest, records, metrics);
 	const summaryPath = await containedRegularFile(canonicalDirectory, "summary.md");
 	const summary = await readBoundedPrivateUtf8(summaryPath, MAX_RUN_SUMMARY_BYTES, "run summary");
 	if (summary !== renderRunSummary(manifest, metrics)) {

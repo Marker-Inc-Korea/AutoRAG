@@ -72,6 +72,7 @@ const records: QueryRunRecord[] = [
 		hits: [{ documentId: "a", score: 1, rank: 1 }],
 	},
 ];
+const indexingLatencyMs = { bm25: 10, minsync: 20 } as const;
 
 function manifest() {
 	return {
@@ -127,6 +128,31 @@ function manifest() {
 	};
 }
 
+function fullManifest() {
+	const smoke = manifest();
+	const { seed: _seed, ...withoutSeed } = smoke.dataset;
+	return {
+		...smoke,
+		profile: "full" as const,
+		dataset: {
+			...withoutSeed,
+			counts: {
+				queries: 1,
+				qrels: 1,
+				positiveQrels: 1,
+				corpus: MIRACL_FULL_CORPUS_PASSAGES,
+				judgedDocuments: 1,
+			},
+			normalized: {
+				...withoutSeed.normalized,
+				corpus: attestation("1", MIRACL_FULL_CORPUS_PASSAGES),
+			},
+		},
+		methods: ["bm25"] as const,
+		methodConfig: { bm25: { engine: "tantivy" as const } },
+	};
+}
+
 describe("MIRACL run reports", () => {
 	const roots: string[] = [];
 	const makeRoot = () => {
@@ -150,7 +176,7 @@ describe("MIRACL run reports", () => {
 			manifest: manifest() as never,
 			records,
 			metrics,
-			indexingLatencyMs: { minsync: 20, bm25: 10 },
+			indexingLatencyMs,
 			peakRssBeforeReportBytes: 123_456,
 		});
 
@@ -186,7 +212,7 @@ describe("MIRACL run reports", () => {
 			expect(lstatSync(join(output, file)).mode & 0o777).toBe(0o600);
 		}
 		await expect(
-			writeRunReport({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeRunReport({ directory: output, manifest: manifest() as never, records, metrics, indexingLatencyMs }),
 		).rejects.toThrow("already exists");
 	});
 
@@ -247,25 +273,7 @@ describe("MIRACL run reports", () => {
 		expect(normalizedSmoke).not.toBe(parsedSmoke);
 		expect(normalizedSmoke.dataset).not.toBe((parsedSmoke as typeof smoke).dataset);
 
-		const { seed: _seed, ...withoutSeed } = smoke.dataset;
-		const full = {
-			...smoke,
-			profile: "full" as const,
-			dataset: {
-				...withoutSeed,
-				counts: {
-					queries: 1,
-					qrels: 1,
-					positiveQrels: 1,
-					corpus: MIRACL_FULL_CORPUS_PASSAGES,
-					judgedDocuments: 1,
-				},
-				normalized: {
-					...withoutSeed.normalized,
-					corpus: attestation("1", MIRACL_FULL_CORPUS_PASSAGES),
-				},
-			},
-		};
+		const full = fullManifest();
 		expect(() =>
 			normalizeRunManifest({
 				...full,
@@ -309,6 +317,62 @@ describe("MIRACL run reports", () => {
 				unknownRoot: true,
 			} as never),
 		).toThrow("unknown field unknownRoot");
+	});
+
+	it.each([
+		[["minsync"], { minsync: manifest().methodConfig.minsync }],
+		[["hybrid"], manifest().methodConfig],
+		[["bm25", "minsync"], manifest().methodConfig],
+	] as const)("requires full run methods to be exactly bm25 (%#)", (methods, methodConfig) => {
+		expect(() =>
+			normalizeRunManifest({
+				...fullManifest(),
+				methods,
+				methodConfig,
+			} as never),
+		).toThrow("full run manifest methods must be exactly bm25");
+	});
+
+	it("requires the tantivy engine for full run manifests", () => {
+		const full = fullManifest();
+		expect(() =>
+			normalizeRunManifest({
+				...full,
+				methodConfig: { bm25: { engine: "typescript-fallback" } },
+			} as never),
+		).toThrow("full run manifest BM25 engine must be tantivy");
+	});
+
+	it.each([
+		[{}, "missing required bm25"],
+		[{ bm25: 10 }, "missing required minsync"],
+	] as const)("requires coherent indexing latencies for smoke reports %#", async (latencies, message) => {
+		await expect(
+			writeRunReport({
+				directory: join(makeRoot(), "run"),
+				manifest: manifest() as never,
+				records,
+				metrics,
+				indexingLatencyMs: latencies,
+			}),
+		).rejects.toThrow(message);
+	});
+
+	it("rejects indexing latency for a component undeclared by a smoke report", async () => {
+		const smoke = manifest();
+		await expect(
+			writeRunReport({
+				directory: join(makeRoot(), "run"),
+				manifest: {
+					...smoke,
+					methods: ["bm25"],
+					methodConfig: { bm25: smoke.methodConfig.bm25 },
+				} as never,
+				records: records.filter((record) => record.method === "bm25"),
+				metrics: metrics.filter((entry) => entry.method === "bm25"),
+				indexingLatencyMs,
+			}),
+		).rejects.toThrow("contains undeclared minsync");
 	});
 
 	it("bounds embedded qrels, MIRACL ids, and canonical manifest bytes", () => {
@@ -462,6 +526,7 @@ describe("MIRACL run reports", () => {
 				manifest: twoQueryManifest as never,
 				records,
 				metrics,
+				indexingLatencyMs,
 			}),
 		).rejects.toThrow("incomplete");
 		await expect(
@@ -470,6 +535,7 @@ describe("MIRACL run reports", () => {
 				manifest: manifest() as never,
 				records,
 				metrics: metrics.map((entry) => (entry.method === "bm25" ? { ...entry, ndcgAt10: 0.25 } : entry)),
+				indexingLatencyMs,
 			}),
 		).rejects.toThrow("metrics do not match");
 	});
@@ -498,7 +564,13 @@ describe("MIRACL run reports", () => {
 		}));
 		vi.resetModules();
 		const { writeRunReport: writePaused } = await import("../../benchmark/miracl/report.ts");
-		const publication = writePaused({ directory: output, manifest: manifest() as never, records, metrics });
+		const publication = writePaused({
+			directory: output,
+			manifest: manifest() as never,
+			records,
+			metrics,
+			indexingLatencyMs,
+		});
 		await entered;
 		const lock = `${join(realpathSync(parent), "run")}.publish.lock`;
 		const lockExists = existsSync(lock);
@@ -533,7 +605,13 @@ describe("MIRACL run reports", () => {
 		const { writeRunReport: writeWithReplacement } = await import("../../benchmark/miracl/report.ts");
 
 		await expect(
-			writeWithReplacement({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeWithReplacement({
+				directory: output,
+				manifest: manifest() as never,
+				records,
+				metrics,
+				indexingLatencyMs,
+			}),
 		).rejects.toThrow("report file changed");
 		const stagingChild = readFileSync(stagingPathFile, "utf8");
 		expect(readFileSync(stagingChild, "utf8")).toBe("replacement data\n");
@@ -565,7 +643,13 @@ describe("MIRACL run reports", () => {
 		const { writeRunReport: writeWithSymlink } = await import("../../benchmark/miracl/report.ts");
 
 		await expect(
-			writeWithSymlink({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeWithSymlink({
+				directory: output,
+				manifest: manifest() as never,
+				records,
+				metrics,
+				indexingLatencyMs,
+			}),
 		).rejects.toThrow("report file changed");
 		expect(readFileSync(external, "utf8")).toBe("external data\n");
 		expect(lstatSync(readFileSync(stagingPathFile, "utf8")).isSymbolicLink()).toBe(true);
@@ -601,7 +685,13 @@ describe("MIRACL run reports", () => {
 		const { writeRunReport: writeWithLastWindow } = await import("../../benchmark/miracl/report.ts");
 
 		await expect(
-			writeWithLastWindow({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeWithLastWindow({
+				directory: output,
+				manifest: manifest() as never,
+				records,
+				metrics,
+				indexingLatencyMs,
+			}),
 		).rejects.toThrow("injected staging sync failure");
 		expect(stagingPath).toBeDefined();
 		expect(existsSync(stagingPath as string)).toBe(true);
@@ -634,7 +724,13 @@ describe("MIRACL run reports", () => {
 		const { writeRunReport: writeWithFinalReplacement } = await import("../../benchmark/miracl/report.ts");
 
 		await expect(
-			writeWithFinalReplacement({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeWithFinalReplacement({
+				directory: output,
+				manifest: manifest() as never,
+				records,
+				metrics,
+				indexingLatencyMs,
+			}),
 		).rejects.toThrow(/changed|corrupt/u);
 		expect(readFileSync(join(output, "replacement.txt"), "utf8")).toBe("replacement data\n");
 		expect(readFileSync(join(displaced, "manifest.json"), "utf8")).toContain('"schemaVersion":1');
@@ -661,7 +757,13 @@ describe("MIRACL run reports", () => {
 		const { writeRunReport: writeWithoutPrimitive } = await import("../../benchmark/miracl/report.ts");
 
 		await expect(
-			writeWithoutPrimitive({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeWithoutPrimitive({
+				directory: output,
+				manifest: manifest() as never,
+				records,
+				metrics,
+				indexingLatencyMs,
+			}),
 		).rejects.toThrow("no-replace");
 		expect(existsSync(output)).toBe(false);
 	});
@@ -669,7 +771,7 @@ describe("MIRACL run reports", () => {
 	it("allows only one concurrent publisher and preserves competing output", async () => {
 		const parent = makeRoot();
 		const output = join(parent, "run");
-		const options = { directory: output, manifest: manifest() as never, records, metrics };
+		const options = { directory: output, manifest: manifest() as never, records, metrics, indexingLatencyMs };
 
 		const settled = await Promise.allSettled([writeRunReport(options), writeRunReport(options)]);
 
@@ -691,6 +793,7 @@ describe("MIRACL run reports", () => {
 				manifest: manifest() as never,
 				records,
 				metrics,
+				indexingLatencyMs,
 			}),
 		).rejects.toThrow();
 		expect(readFileSync(sentinel, "utf8")).toBe("competing data\n");
@@ -704,7 +807,7 @@ describe("MIRACL run reports", () => {
 		symlinkSync(target, output);
 
 		await expect(
-			writeRunReport({ directory: output, manifest: manifest() as never, records, metrics }),
+			writeRunReport({ directory: output, manifest: manifest() as never, records, metrics, indexingLatencyMs }),
 		).rejects.toThrow("already exists");
 		expect(readFileSync(target, "utf8")).toBe("sentinel\n");
 	});

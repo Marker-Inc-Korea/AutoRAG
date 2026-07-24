@@ -4,12 +4,15 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CreateBenchmarkMethodsOptions } from "../../benchmark/miracl/methods.ts";
 import {
@@ -39,6 +42,9 @@ async function importMethodsWithFsInstrumentation(instrumentation: {
 	readonly onCreateReadStream?: (path: unknown, options: unknown) => void;
 	readonly onReadDirectory?: (path: unknown) => void;
 	readonly onReadFile?: (path: unknown) => void;
+	readonly onReadSync?: () => void;
+	readonly transformReadDirectory?: (path: unknown, entries: unknown) => unknown;
+	readonly transformStats?: (path: unknown, stats: unknown) => unknown;
 }): Promise<typeof import("../../benchmark/miracl/methods.ts")> {
 	vi.resetModules();
 	vi.doMock("node:fs", async () => {
@@ -53,9 +59,19 @@ async function importMethodsWithFsInstrumentation(instrumentation: {
 				instrumentation.onReadFile?.(args[0]);
 				return Reflect.apply(actual.readFileSync, actual, args);
 			}) as typeof actual.readFileSync,
+			readSync: ((...args: unknown[]) => {
+				const result = Reflect.apply(actual.readSync, actual, args);
+				instrumentation.onReadSync?.();
+				return result;
+			}) as typeof actual.readSync,
+			lstatSync: ((...args: unknown[]) => {
+				const stats = Reflect.apply(actual.lstatSync, actual, args);
+				return instrumentation.transformStats?.(args[0], stats) ?? stats;
+			}) as typeof actual.lstatSync,
 			readdirSync: ((...args: unknown[]) => {
 				instrumentation.onReadDirectory?.(args[0]);
-				return Reflect.apply(actual.readdirSync, actual, args);
+				const entries = Reflect.apply(actual.readdirSync, actual, args);
+				return instrumentation.transformReadDirectory?.(args[0], entries) ?? entries;
 			}) as typeof actual.readdirSync,
 		};
 	});
@@ -113,6 +129,13 @@ if (args[0] === "init") {
 
 if (args[0] === "sync") {
   const state = JSON.parse(readFileSync(${JSON.stringify(syncStatePath)}, "utf8"));
+  if (state.collectionDepth) {
+    let directory = join(process.cwd(), ".minsync", "store");
+    for (let depth = 0; depth < state.collectionDepth; depth += 1) {
+      directory = join(directory, "nested");
+      mkdirSync(directory);
+    }
+  }
   writeFileSync(join(process.cwd(), ".minsync", "cursor.json"), JSON.stringify({
     source_id: "benchmark-test",
     collection_path: ".minsync/store",
@@ -148,6 +171,27 @@ function pinnedMinSyncConfig(binaryPath: string) {
 	};
 }
 
+function validBenchmarkConfig() {
+	return {
+		binaryPath: "/opt/minsync",
+		autoInstall: false,
+		embedder: { id: "model", dimension: 1024, timeoutMs: 30_000 },
+	};
+}
+
+function writePrivateBenchmarkConfig(path: string, value: unknown): void {
+	writeFileSync(path, JSON.stringify(value), { mode: 0o600 });
+	chmodSync(path, 0o600);
+}
+
+function statsReportingSize(stats: unknown, size: number): unknown {
+	return new Proxy(stats as object, {
+		get(target, property) {
+			return property === "size" ? size : Reflect.get(target, property, target);
+		},
+	});
+}
+
 describe("MIRACL benchmark methods", () => {
 	const temporaryRoots: string[] = [];
 	const makeRoot = () => {
@@ -178,20 +222,17 @@ describe("MIRACL benchmark methods", () => {
 	it("loads only documented MinSync settings and verifies the key environment reference", () => {
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
-		writeFileSync(
-			configPath,
-			JSON.stringify({
-				binaryPath: "/opt/minsync",
-				autoInstall: false,
-				embedder: {
-					id: "model",
-					baseUrl: "https://private.example/v1",
-					apiKeyEnv: "MIRACL_EMBEDDING_TOKEN",
-					dimension: 1024,
-					timeoutMs: 30_000,
-				},
-			}),
-		);
+		writePrivateBenchmarkConfig(configPath, {
+			binaryPath: "/opt/minsync",
+			autoInstall: false,
+			embedder: {
+				id: "model",
+				baseUrl: "https://private.example/v1",
+				apiKeyEnv: "MIRACL_EMBEDDING_TOKEN",
+				dimension: 1024,
+				timeoutMs: 30_000,
+			},
+		});
 
 		process.env.MIRACL_EMBEDDING_TOKEN = "do-not-serialize-this-secret";
 		let config!: ReturnType<typeof loadBenchmarkConfig>;
@@ -230,6 +271,59 @@ describe("MIRACL benchmark methods", () => {
 		expect(serialized).not.toContain("private.example");
 	});
 
+	it("rejects a MinSync benchmark config larger than one MiB", () => {
+		const root = makeRoot();
+		const configPath = join(root, "minsync.json");
+		writeFileSync(configPath, `${JSON.stringify(validBenchmarkConfig())}${" ".repeat(1024 * 1024)}`, {
+			mode: 0o600,
+		});
+
+		expect(() => loadBenchmarkConfig(configPath)).toThrow("configuration exceeds 1048576 bytes");
+	});
+
+	it("requires the MinSync benchmark config to be owner-only", () => {
+		const root = makeRoot();
+		const configPath = join(root, "minsync.json");
+		writePrivateBenchmarkConfig(configPath, validBenchmarkConfig());
+		chmodSync(configPath, 0o644);
+
+		expect(() => loadBenchmarkConfig(configPath)).toThrow("configuration must be private");
+	});
+
+	it("rejects a symlinked MinSync benchmark config", () => {
+		const root = makeRoot();
+		const targetPath = join(root, "target.json");
+		const configPath = join(root, "minsync.json");
+		writePrivateBenchmarkConfig(targetPath, validBenchmarkConfig());
+		symlinkSync(targetPath, configPath);
+
+		expect(() => loadBenchmarkConfig(configPath)).toThrow("configuration must be a regular file");
+	});
+
+	it("rejects a MinSync benchmark config replaced while its open handle is read", async () => {
+		const root = makeRoot();
+		const configPath = join(root, "minsync.json");
+		const originalPath = join(root, "original.json");
+		writePrivateBenchmarkConfig(configPath, validBenchmarkConfig());
+		let replaced = false;
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			onReadSync: () => {
+				if (replaced) return;
+				replaced = true;
+				renameSync(configPath, originalPath);
+				writePrivateBenchmarkConfig(configPath, {
+					...validBenchmarkConfig(),
+					embedder: { id: "replacement", dimension: 1024, timeoutMs: 30_000 },
+				});
+			},
+		});
+
+		expect(() => instrumentedMethods.loadBenchmarkConfig(configPath)).toThrow(
+			"MinSync benchmark configuration changed while reading",
+		);
+		expect(replaced).toBe(true);
+	});
+
 	it.each([
 		[{ autoInstall: false, embedder: { id: "model", dimension: 1024, timeoutMs: 30_000 } }, "binaryPath is required"],
 		[
@@ -255,7 +349,7 @@ describe("MIRACL benchmark methods", () => {
 	])("rejects ambiguous MinSync benchmark configuration %#", (value, expectedMessage) => {
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
-		writeFileSync(configPath, JSON.stringify(value));
+		writePrivateBenchmarkConfig(configPath, value);
 
 		expect(() => loadBenchmarkConfig(configPath)).toThrow(expectedMessage);
 	});
@@ -288,6 +382,41 @@ else process.stdout.write("x".repeat(4096));
 		expect(Buffer.byteLength(oversized.stdout)).toBeLessThanOrEqual(1024);
 	});
 
+	it("settles at the deadline when a descendant keeps the subprocess pipes open", async () => {
+		const root = makeRoot();
+		const descendantPidPath = join(root, "descendant.pid");
+		const descendantScript = `
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+  stdio: ["ignore", "inherit", "inherit"],
+});
+writeFileSync(process.argv[1], String(descendant.pid));
+`;
+		const bounded = runBoundedMinSyncProcess(process.execPath, ["-e", descendantScript, descendantPidPath], root, {
+			timeoutMs: 30,
+			maxStdoutBytes: 1024,
+			maxStderrBytes: 1024,
+		});
+		const outcome = await Promise.race([
+			bounded,
+			new Promise<"unsettled">((resolvePromise) => setTimeout(() => resolvePromise("unsettled"), 500)),
+		]);
+
+		try {
+			expect(outcome).not.toBe("unsettled");
+			expect(outcome).toMatchObject({ ok: false, timedOut: true });
+		} finally {
+			if (existsSync(descendantPidPath)) {
+				try {
+					process.kill(Number(readFileSync(descendantPidPath, "utf8")), "SIGKILL");
+				} catch {
+					// The bounded runner already terminated the descendant.
+				}
+			}
+		}
+	});
+
 	it.each([
 		"/tmp/embedder",
 		"C:\\models\\embedder",
@@ -298,14 +427,11 @@ else process.stdout.write("x".repeat(4096));
 	])("rejects filesystem-like embedder ID %s", (embedderId) => {
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
-		writeFileSync(
-			configPath,
-			JSON.stringify({
-				binaryPath: "/opt/minsync",
-				autoInstall: false,
-				embedder: { id: embedderId, dimension: 1024, timeoutMs: 30_000 },
-			}),
-		);
+		writePrivateBenchmarkConfig(configPath, {
+			binaryPath: "/opt/minsync",
+			autoInstall: false,
+			embedder: { id: embedderId, dimension: 1024, timeoutMs: 30_000 },
+		});
 
 		expect(() => loadBenchmarkConfig(configPath)).toThrow("embedder.id must not be an absolute filesystem path");
 		expect(() =>
@@ -323,14 +449,11 @@ else process.stdout.write("x".repeat(4096));
 	it("allows repository-style model IDs containing a slash", () => {
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
-		writeFileSync(
-			configPath,
-			JSON.stringify({
-				binaryPath: "/opt/minsync",
-				autoInstall: false,
-				embedder: { id: "intfloat/multilingual-e5-large", dimension: 1024, timeoutMs: 30_000 },
-			}),
-		);
+		writePrivateBenchmarkConfig(configPath, {
+			binaryPath: "/opt/minsync",
+			autoInstall: false,
+			embedder: { id: "intfloat/multilingual-e5-large", dimension: 1024, timeoutMs: 30_000 },
+		});
 
 		expect(loadBenchmarkConfig(configPath).embedder.id).toBe("intfloat/multilingual-e5-large");
 	});
@@ -358,7 +481,7 @@ else process.stdout.write("x".repeat(4096));
 					}
 				: {}),
 		};
-		writeFileSync(configPath, JSON.stringify(completeValue));
+		writePrivateBenchmarkConfig(configPath, completeValue);
 
 		expect(() => loadBenchmarkConfig(configPath)).toThrow(expectedMessage);
 	});
@@ -367,20 +490,17 @@ else process.stdout.write("x".repeat(4096));
 		const root = makeRoot();
 		const configPath = join(root, "minsync.json");
 		const endpoint = "https://private.example/v1";
-		writeFileSync(
-			configPath,
-			JSON.stringify({
-				binaryPath: "/opt/minsync",
-				autoInstall: false,
-				embedder: {
-					id: "model",
-					baseUrl: endpoint,
-					apiKeyEnv: "MISSING_TOKEN",
-					dimension: 1024,
-					timeoutMs: 30_000,
-				},
-			}),
-		);
+		writePrivateBenchmarkConfig(configPath, {
+			binaryPath: "/opt/minsync",
+			autoInstall: false,
+			embedder: {
+				id: "model",
+				baseUrl: endpoint,
+				apiKeyEnv: "MISSING_TOKEN",
+				dimension: 1024,
+				timeoutMs: 30_000,
+			},
+		});
 
 		let message = "";
 		delete process.env.MISSING_TOKEN;
@@ -982,6 +1102,121 @@ else process.stdout.write("x".repeat(4096));
 		expect(wholeCollectionReads).toBe(0);
 		expect(streamBufferSizes.length).toBeGreaterThan(0);
 		expect(streamBufferSizes.every((size) => size <= 64 * 1024)).toBe(true);
+	});
+
+	it("rejects a synchronized MinSync collection deeper than the integrity bound", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath, syncStatePath } = writeFakeMinSync(parent);
+		writeFileSync(
+			syncStatePath,
+			JSON.stringify({ ok: true, stdout: JSON.stringify({ synced: 1 }), collectionDepth: 33 }),
+		);
+
+		await expect(
+			createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: pinnedMinSyncConfig(binaryPath),
+			}),
+		).rejects.toThrow("MinSync benchmark workspace changed");
+	});
+
+	it("rejects a synchronized MinSync collection with too many integrity entries", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const collectionPath = join(workspace.root, ".autorag", "minsync", ".minsync", "store");
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			transformReadDirectory: (path, entries) =>
+				String(path) === collectionPath ? Array.from({ length: 4_097 }, () => "index.lance") : entries,
+		});
+
+		await expect(
+			instrumentedMethods.createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: pinnedMinSyncConfig(binaryPath),
+			}),
+		).rejects.toThrow("MinSync benchmark workspace changed");
+	});
+
+	it("rejects a synchronized MinSync collection whose declared bytes exceed the integrity bound", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const indexPath = join(workspace.root, ".autorag", "minsync", ".minsync", "store", "index.lance");
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			transformStats: (path, stats) =>
+				String(path) === indexPath ? statsReportingSize(stats, 2 * 1024 * 1024 * 1024 + 1) : stats,
+		});
+
+		await expect(
+			instrumentedMethods.createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: pinnedMinSyncConfig(binaryPath),
+			}),
+		).rejects.toThrow("MinSync benchmark workspace changed");
+	});
+
+	it("rejects MinSync integrity work when its absolute deadline is exhausted", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		let clockCalls = 0;
+		vi.spyOn(performance, "now").mockImplementation(() => {
+			clockCalls += 1;
+			return clockCalls <= 3 ? 0 : 121_000;
+		});
+
+		await expect(
+			createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: pinnedMinSyncConfig(binaryPath),
+			}),
+		).rejects.toThrow();
+	});
+
+	it.each([
+		["executable", (_workspaceRoot: string, binaryPath: string) => binaryPath],
+		["config", (workspaceRoot: string) => join(workspaceRoot, ".autorag", "minsync", ".minsync", "config.toml")],
+		["manifest", (workspaceRoot: string) => join(workspaceRoot, ".autorag", "minsync", ".minsync", "manifest.json")],
+		["cursor", (workspaceRoot: string) => join(workspaceRoot, ".autorag", "minsync", ".minsync", "cursor.json")],
+	] as const)("bounds the MinSync %s integrity file before hashing", async (_label, targetPath) => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		const boundedPath = targetPath(workspace.root, binaryPath);
+		const canonicalBoundedPath = _label === "executable" ? realpathSync(boundedPath) : boundedPath;
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			transformStats: (path, stats) =>
+				String(path) === canonicalBoundedPath ? statsReportingSize(stats, Number.MAX_SAFE_INTEGER) : stats,
+		});
+
+		await expect(
+			instrumentedMethods.createBenchmarkMethods({
+				names: ["minsync"],
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config: pinnedMinSyncConfig(binaryPath),
+			}),
+		).rejects.toThrow();
 	});
 
 	it("does not fall back to PATH when an explicit MinSync binary path is missing", async () => {
