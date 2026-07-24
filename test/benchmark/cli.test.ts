@@ -9,6 +9,7 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
 	truncateSync,
 	writeFileSync,
 } from "node:fs";
@@ -495,6 +496,102 @@ describe("MIRACL benchmark CLI", () => {
 
 		expect(readdirSync(parent).filter((name) => name.startsWith(".run.workspace-"))).toEqual([]);
 		expect(existsSync(output)).toBe(false);
+	});
+
+	it("passes an ordinary user config pathname directly to the hardened loader", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const output = join(parent, "run");
+		const config = join(parent, "minsync.json");
+		writePrepared(prepared);
+		writeFileSync(
+			config,
+			JSON.stringify({
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
+				embedder: { id: "intfloat/model", dimension: 1024, timeoutMs: 30_000 },
+			}),
+			{ mode: 0o600 },
+		);
+		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+		let configRealpathCalls = 0;
+		vi.doMock("node:fs/promises", () => ({
+			...actual,
+			realpath: async (path: string) => {
+				if (String(path) === config) {
+					configRealpathCalls += 1;
+					throw new Error("config pathname must not be canonicalized");
+				}
+				return actual.realpath(path);
+			},
+		}));
+		vi.resetModules();
+		const { runCli: runWithOriginalConfig } = await import("../../benchmark/miracl/cli.ts");
+
+		await expect(
+			runWithOriginalConfig(
+				[
+					"run",
+					"--profile",
+					"smoke",
+					"--prepared",
+					prepared,
+					"--output",
+					output,
+					"--methods",
+					"minsync",
+					"--config",
+					config,
+				],
+				{
+					createBenchmarkMethods: async (options) => {
+						expect(options.config?.embedder.id).toBe("intfloat/model");
+						throw new Error("method factory reached");
+					},
+				},
+			),
+		).rejects.toThrow("method factory reached");
+		expect(configRealpathCalls).toBe(0);
+	});
+
+	it("routes a symlinked user config to the hardened nofollow loader", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const output = join(parent, "run");
+		const target = join(parent, "target.json");
+		const config = join(parent, "minsync.json");
+		writePrepared(prepared);
+		writeFileSync(
+			target,
+			JSON.stringify({
+				binaryPath: "/opt/minsync",
+				autoInstall: false,
+				embedder: { id: "intfloat/model", dimension: 1024, timeoutMs: 30_000 },
+			}),
+			{ mode: 0o600 },
+		);
+		symlinkSync(target, config);
+		const createMethods = vi.fn();
+
+		await expect(
+			runCli(
+				[
+					"run",
+					"--profile",
+					"smoke",
+					"--prepared",
+					prepared,
+					"--output",
+					output,
+					"--methods",
+					"minsync",
+					"--config",
+					config,
+				],
+				{ createBenchmarkMethods: createMethods },
+			),
+		).rejects.toThrow("MinSync benchmark configuration must be a regular file");
+		expect(createMethods).not.toHaveBeenCalled();
 	});
 
 	it("does not recursively clean a replacement benchmark workspace", async () => {

@@ -196,10 +196,7 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 		workspaceIdentity = snapshotBenchmarkDirectory(workspace.root);
 		workspaceOwnership = await snapshotOwnedWorkspace(workspace.root, workspaceIdentity);
 		const needsMinSync = command.methods.some((method) => method === "minsync" || method === "hybrid");
-		const config =
-			command.config === undefined
-				? undefined
-				: loadBenchmarkConfig(await canonicalRegularFile(command.config, "benchmark config"));
+		const config = command.config === undefined ? undefined : loadBenchmarkConfig(command.config);
 		if (needsMinSync && config === undefined) {
 			throw new Error("--config is required for MinSync or hybrid methods");
 		}

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	accessSync,
 	closeSync,
@@ -8,16 +8,14 @@ import {
 	fstatSync,
 	lstatSync,
 	openSync,
-	readdirSync,
 	readSync,
 	realpathSync,
 	type Stats,
 } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, opendir, rename } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { performance } from "node:perf_hooks";
-import { parse } from "smol-toml";
-import { rewriteEmbedderConfig } from "../../src/minsync/embedder-config.ts";
+import { parse, stringify } from "smol-toml";
 import { minSyncWorkspaceRoot } from "../../src/minsync/paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "../../src/minsync/types.ts";
 import { buildMinSyncPathMap, syncMinSyncWorkspace } from "../../src/minsync/workspace.ts";
@@ -609,6 +607,7 @@ interface ExecutableIdentity {
 	readonly inode: number;
 	readonly size: number;
 	readonly modifiedAtMs: number;
+	readonly mode: number;
 	readonly sha256: string;
 }
 
@@ -618,6 +617,7 @@ interface PathIdentity {
 	readonly inode: number;
 	readonly size: number;
 	readonly modifiedAtMs: number;
+	readonly mode: number;
 	readonly kind: "directory" | "file";
 }
 
@@ -770,10 +770,122 @@ async function syncBenchmarkMinSync(
 		processOptions,
 	);
 	if (!init.ok) return { ok: false, synced: 0, workspacePath, reason: "init-failed" };
-	rewriteEmbedderConfig(workspacePath, embedder);
+	await rewriteBenchmarkGeneratedMinSyncConfig(workspacePath, embedder);
 	const sync = await runBoundedMinSyncProcess(binaryPath, ["sync", "--format", "json"], workspacePath, processOptions);
 	if (!sync.ok) return { ok: false, synced: 0, workspacePath, reason: "sync-failed" };
 	return { ok: true, synced: readSyncedCount(sync.stdout), workspacePath };
+}
+
+async function rewriteBenchmarkGeneratedMinSyncConfig(
+	workspacePath: string,
+	embedder: MinSyncEmbedderConfig,
+): Promise<void> {
+	const deadlineAt = createIntegrityDeadline();
+	const workspace = snapshotPathIdentity(workspacePath, "directory", workspacePath);
+	const stateDirectory = snapshotPathIdentity(join(workspace.path, ".minsync"), "directory", workspace.path);
+	const directoryHandle = await open(
+		stateDirectory.path,
+		constants.O_RDONLY | (constants.O_DIRECTORY ?? 0) | (constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		if (!sameOpenDirectoryIdentity(await directoryHandle.stat(), stateDirectory)) {
+			throw new Error("generated MinSync state directory changed");
+		}
+		const configPath = join(stateDirectory.path, "config.toml");
+		const configSnapshot = await snapshotFileIntegrity(
+			configPath,
+			stateDirectory.path,
+			MINSYNC_CONFIG_MAX_BYTES,
+			deadlineAt,
+			true,
+			true,
+		);
+		if (configSnapshot.contents === undefined) {
+			throw new Error("generated MinSync config was not captured");
+		}
+		const parsed = parse(configSnapshot.contents.toString("utf8"));
+		if (!isRecord(parsed)) throw new Error("generated MinSync config must be a TOML table");
+		rewriteBenchmarkEmbedderSections(parsed, embedder);
+		const rewritten = Buffer.from(stringify(parsed), "utf8");
+		if (rewritten.byteLength > MINSYNC_CONFIG_MAX_BYTES) {
+			throw new Error("rewritten MinSync config exceeds its byte bound");
+		}
+		assertIntegrityDeadline(deadlineAt);
+
+		const temporaryPath = join(stateDirectory.path, `.config.toml.benchmark-${process.pid}-${randomUUID()}.tmp`);
+		const temporaryHandle = await open(
+			temporaryPath,
+			constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
+			0o600,
+		);
+		let temporaryIdentity: PathIdentity;
+		try {
+			await temporaryHandle.writeFile(rewritten);
+			await temporaryHandle.sync();
+			assertIntegrityDeadline(deadlineAt);
+			temporaryIdentity = snapshotPathIdentity(temporaryPath, "file", stateDirectory.path);
+			if (
+				(temporaryIdentity.mode & 0o077) !== 0 ||
+				!sameOpenFileIdentity(await temporaryHandle.stat(), temporaryIdentity)
+			) {
+				throw new Error("temporary MinSync config identity is invalid");
+			}
+		} finally {
+			await temporaryHandle.close();
+		}
+
+		const currentWorkspace = snapshotPathIdentity(workspace.path, "directory", workspace.path);
+		const currentStateDirectory = snapshotPathIdentity(stateDirectory.path, "directory", workspace.path);
+		const currentConfig = snapshotPathIdentity(configPath, "file", stateDirectory.path);
+		if (
+			!samePathIdentity(currentWorkspace, workspace) ||
+			!sameDirectoryObjectIdentity(currentStateDirectory, stateDirectory) ||
+			!samePathIdentity(currentConfig, configSnapshot.integrity) ||
+			(currentConfig.mode & 0o077) !== 0 ||
+			!sameOpenDirectoryIdentity(await directoryHandle.stat(), stateDirectory)
+		) {
+			throw new Error("generated MinSync config changed before replacement");
+		}
+		await rename(temporaryPath, configPath);
+		assertIntegrityDeadline(deadlineAt);
+		const replacedConfig = snapshotPathIdentity(configPath, "file", stateDirectory.path);
+		const replacedStateDirectory = snapshotPathIdentity(stateDirectory.path, "directory", workspace.path);
+		if (
+			!sameFilesystemObjectIdentity(replacedConfig, temporaryIdentity) ||
+			(replacedConfig.mode & 0o077) !== 0 ||
+			!sameDirectoryObjectIdentity(replacedStateDirectory, stateDirectory) ||
+			!sameOpenDirectoryIdentity(await directoryHandle.stat(), stateDirectory)
+		) {
+			throw new Error("generated MinSync config replacement changed identity");
+		}
+	} finally {
+		await directoryHandle.close();
+	}
+}
+
+function rewriteBenchmarkEmbedderSections(config: Record<string, unknown>, embedder: MinSyncEmbedderConfig): void {
+	const embedderSection = requireTomlTable(config.embedder, "embedder");
+	const vectorstore = requireTomlTable(config.vectorstore, "vectorstore");
+	const options = requireTomlTable(vectorstore.options, "vectorstore.options");
+	config.embedder = embedderSection;
+	config.vectorstore = vectorstore;
+	vectorstore.options = options;
+
+	if (embedder.id !== undefined) embedderSection.id = embedder.id;
+	if (embedder.baseUrl !== undefined) embedderSection.base_url = embedder.baseUrl;
+	if (embedder.queryPrefix !== undefined) embedderSection.query_prefix = embedder.queryPrefix;
+	if (embedder.passagePrefix !== undefined) embedderSection.passage_prefix = embedder.passagePrefix;
+	if (embedder.batchSize !== undefined) embedderSection.batch_size = embedder.batchSize;
+	if (embedder.maxRetries !== undefined) embedderSection.max_retries = embedder.maxRetries;
+	if (embedder.maxConcurrent !== undefined) embedderSection.max_concurrent = embedder.maxConcurrent;
+	if (embedder.timeoutMs !== undefined) embedderSection.timeout_seconds = Math.ceil(embedder.timeoutMs / 1000);
+	if (embedder.dimension !== undefined) options.dimension = embedder.dimension;
+}
+
+function requireTomlTable(value: unknown, label: string): Record<string, unknown> {
+	if (value === undefined) return {};
+	if (!isRecord(value)) throw new Error(`generated MinSync config ${label} must be a TOML table`);
+	return value;
 }
 
 function readSyncedCount(stdout: string): number {
@@ -829,6 +941,7 @@ function snapshotExecutableMetadata(path: string): Omit<ExecutableIdentity, "sha
 			inode: stats.ino,
 			size: stats.size,
 			modifiedAtMs: stats.mtimeMs,
+			mode: stats.mode,
 		};
 	} catch {
 		throw new Error("MinSync benchmark executable is unavailable");
@@ -847,7 +960,8 @@ function assertExecutableMetadata(expected: ExecutableIdentity): void {
 		actual.device !== expected.device ||
 		actual.inode !== expected.inode ||
 		actual.size !== expected.size ||
-		actual.modifiedAtMs !== expected.modifiedAtMs
+		actual.modifiedAtMs !== expected.modifiedAtMs ||
+		actual.mode !== expected.mode
 	) {
 		throw new Error("MinSync benchmark executable changed");
 	}
@@ -912,7 +1026,7 @@ async function snapshotMinSyncWorkspace(
 			"directory",
 			stateDirectory.path,
 		);
-		const collectionTree = snapshotDirectoryTreeMetadata(collection.path, deadlineAt);
+		const collectionTree = await snapshotDirectoryTreeMetadata(collection.path, deadlineAt);
 		return {
 			benchmarkRoot,
 			workspace,
@@ -995,6 +1109,7 @@ function snapshotPathIdentity(path: string, kind: PathIdentity["kind"], containe
 		inode: stats.ino,
 		size: stats.size,
 		modifiedAtMs: stats.mtimeMs,
+		mode: stats.mode,
 		kind,
 	};
 }
@@ -1005,8 +1120,12 @@ async function snapshotFileIntegrity(
 	maxBytes: number,
 	deadlineAt: number,
 	captureContents = false,
+	requirePrivate = false,
 ): Promise<{ readonly integrity: FileIntegrity; readonly contents?: Buffer }> {
 	const identity = snapshotPathIdentity(path, "file", container);
+	if (requirePrivate && (identity.mode & 0o077) !== 0) {
+		throw new Error("integrity file must be private");
+	}
 	const hash = createHash("sha256");
 	const chunks: Buffer[] = [];
 	await readBoundedIdentity(
@@ -1040,7 +1159,7 @@ function readCollectionPath(configBytes: Buffer): string {
 	return path;
 }
 
-function snapshotDirectoryTreeMetadata(root: string, deadlineAt: number): readonly PathIdentity[] {
+async function snapshotDirectoryTreeMetadata(root: string, deadlineAt: number): Promise<readonly PathIdentity[]> {
 	const identities: PathIdentity[] = [];
 	const pending: Array<{ readonly directory: string; readonly depth: number }> = [{ directory: root, depth: 0 }];
 	let declaredBytes = 0;
@@ -1049,11 +1168,17 @@ function snapshotDirectoryTreeMetadata(root: string, deadlineAt: number): readon
 		const current = pending.pop();
 		if (current === undefined) break;
 		const childDirectories: Array<{ readonly directory: string; readonly depth: number }> = [];
-		for (const name of readdirSync(current.directory).sort(compareCodePoints)) {
+		const names: string[] = [];
+		const directory = await opendir(current.directory, { bufferSize: 32 });
+		for await (const entry of directory) {
 			assertIntegrityDeadline(deadlineAt);
-			if (identities.length >= MINSYNC_COLLECTION_MAX_ENTRIES) {
+			if (identities.length + names.length >= MINSYNC_COLLECTION_MAX_ENTRIES) {
 				throw new Error("too many collection entries");
 			}
+			names.push(entry.name);
+		}
+		for (const name of names.sort(compareCodePoints)) {
+			assertIntegrityDeadline(deadlineAt);
 			const path = join(current.directory, name);
 			const stats = lstatSync(path);
 			const kind = stats.isDirectory() ? "directory" : "file";
@@ -1094,7 +1219,7 @@ async function hashDirectoryTree(
 		assertIntegrityDeadline(deadlineAt);
 		const relativePath = relative(root.path, identity.path);
 		hash.update(
-			`${identity.kind}\0${relativePath}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.modifiedAtMs}\0`,
+			`${identity.kind}\0${relativePath}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.modifiedAtMs}\0${identity.mode}\0`,
 		);
 		if (identity.kind !== "file") continue;
 		await readBoundedIdentity(
@@ -1189,7 +1314,33 @@ function sameOpenFileIdentity(stats: Stats, identity: PathIdentity): boolean {
 		stats.dev === identity.device &&
 		stats.ino === identity.inode &&
 		stats.size === identity.size &&
-		stats.mtimeMs === identity.modifiedAtMs
+		stats.mtimeMs === identity.modifiedAtMs &&
+		stats.mode === identity.mode
+	);
+}
+
+function sameOpenDirectoryIdentity(stats: Stats, identity: PathIdentity): boolean {
+	return stats.isDirectory() && stats.dev === identity.device && stats.ino === identity.inode;
+}
+
+function sameDirectoryObjectIdentity(left: PathIdentity, right: PathIdentity): boolean {
+	return (
+		left.kind === "directory" &&
+		right.kind === "directory" &&
+		left.path === right.path &&
+		left.device === right.device &&
+		left.inode === right.inode
+	);
+}
+
+function sameFilesystemObjectIdentity(left: PathIdentity, right: PathIdentity): boolean {
+	return (
+		left.kind === right.kind &&
+		left.device === right.device &&
+		left.inode === right.inode &&
+		left.size === right.size &&
+		left.modifiedAtMs === right.modifiedAtMs &&
+		left.mode === right.mode
 	);
 }
 
@@ -1210,6 +1361,7 @@ function samePathIdentity(left: PathIdentity, right: PathIdentity): boolean {
 		left.inode === right.inode &&
 		left.size === right.size &&
 		left.modifiedAtMs === right.modifiedAtMs &&
+		left.mode === right.mode &&
 		left.kind === right.kind
 	);
 }
