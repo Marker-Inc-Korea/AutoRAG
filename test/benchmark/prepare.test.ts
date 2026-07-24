@@ -528,6 +528,102 @@ describe("MIRACL preparation", () => {
 		expect(readFileSync(external, "utf8")).toBe("external data\n");
 	});
 
+	it("bounds duplicate partition handles and refuses a substituted evicted partition", async () => {
+		const outputDir = makeOutput();
+		const external = `${outputDir}-reopen-target.txt`;
+		writeFileSync(external, "external data\n", { mode: 0o600 });
+		const padding = "x".repeat(66 * 1024);
+		const idsByPartition = new Map<number, string>();
+		let candidate = 0;
+		while (idsByPartition.size < 256) {
+			const id = `partition-candidate-${candidate}-${padding}`;
+			const partition = createHash("sha256").update(id, "utf8").digest()[0];
+			if (!idsByPartition.has(partition)) idsByPartition.set(partition, id);
+			candidate += 1;
+		}
+		let secondPartitionZero = "";
+		while (secondPartitionZero.length === 0) {
+			const id = `partition-reopen-${candidate}-${padding}`;
+			if (createHash("sha256").update(id, "utf8").digest()[0] === 0 && id !== idsByPartition.get(0)) {
+				secondPartitionZero = id;
+			}
+			candidate += 1;
+		}
+		const documents = [
+			...[...idsByPartition.entries()]
+				.sort(([left], [right]) => left - right)
+				.map(([, docid]) => ({ docid, title: "partition", text: "body" })),
+			{ docid: "gold", title: "gold", text: "body" },
+			{ docid: "judged-negative", title: "judged", text: "body" },
+			{ docid: "other-gold", title: "other", text: "body" },
+			{ docid: secondPartitionZero, title: "reopen", text: "body" },
+		];
+		const shardSize = Math.ceil(documents.length / 3);
+		const overrides = new Map(
+			MIRACL_SOURCES.corpus.urls.map((url, index) => [
+				url,
+				gzipSync(
+					`${documents
+						.slice(index * shardSize, (index + 1) * shardSize)
+						.map((document) => JSON.stringify(document))
+						.join("\n")}\n`,
+				),
+			]),
+		);
+		const fixture = fixtureFetch(overrides);
+		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+		let activePartitionHandles = 0;
+		let maxPartitionHandles = 0;
+		let injected = false;
+		vi.doMock("node:fs/promises", () => ({
+			...actual,
+			open: async (path: string, flags: string | number, mode?: number) => {
+				const pathText = String(path);
+				const isPartition = pathText.includes(".duplicate-check/partition-");
+				if (isPartition && typeof flags === "number" && pathText.endsWith("partition-00.jsonl") && !injected) {
+					injected = true;
+					renameSync(pathText, `${pathText}.owned`);
+					symlinkSync(external, pathText);
+				}
+				const handle = await actual.open(path, flags, mode);
+				if (!isPartition) return handle;
+				activePartitionHandles += 1;
+				maxPartitionHandles = Math.max(maxPartitionHandles, activePartitionHandles);
+				let closed = false;
+				return new Proxy(handle, {
+					get(target, property) {
+						if (property === "close") {
+							return async () => {
+								if (!closed) {
+									closed = true;
+									activePartitionHandles -= 1;
+								}
+								return target.close();
+							};
+						}
+						const value = Reflect.get(target, property, target);
+						return typeof value === "function" ? value.bind(target) : value;
+					},
+				});
+			},
+		}));
+		vi.resetModules();
+		const { prepareMiracl: prepareWithReopenRace } = await import("../../benchmark/miracl/prepare.ts");
+
+		await expect(
+			prepareWithReopenRace({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: fixture.fetchImpl,
+			}),
+		).rejects.toThrow("duplicate-check partition 0 changed");
+		expect(injected).toBe(true);
+		expect(maxPartitionHandles).toBeLessThanOrEqual(32);
+		expect(activePartitionHandles).toBe(0);
+		expect(readFileSync(external, "utf8")).toBe("external data\n");
+	});
+
 	it("still rejects a selected qrel document missing from every corpus shard", async () => {
 		const outputDir = makeOutput();
 		const shardWithoutGold = gzipSync(`${JSON.stringify({ docid: "d2", title: "방해 문서", text: "본문" })}\n`);

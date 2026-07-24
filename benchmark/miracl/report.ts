@@ -1058,7 +1058,7 @@ function requireOpaqueDisclosure(value: unknown, label: string): string {
 
 function requirePortableEmbedderId(value: unknown, label: string): string {
 	const text = requireNonBlank(value, label);
-	if (/^(?:\/|\\\\|[A-Za-z]:[\\/]|file:)/iu.test(text)) {
+	if (/^(?:[\\/]|[A-Za-z]:[\\/]|file:)/iu.test(text)) {
 		throw new Error(`${label} must not be an absolute filesystem path`);
 	}
 	return requireOpaqueDisclosure(text, label);

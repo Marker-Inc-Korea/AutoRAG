@@ -209,6 +209,7 @@ describe("MIRACL benchmark methods", () => {
 		"/tmp/embedder",
 		"C:\\models\\embedder",
 		"C:/models/embedder",
+		"\\models\\embedder",
 		"\\\\server\\share\\embedder",
 		"file:///tmp/embedder",
 	])("rejects filesystem-like embedder ID %s", (embedderId) => {

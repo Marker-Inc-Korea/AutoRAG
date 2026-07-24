@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { constants, createReadStream } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -22,6 +22,7 @@ const MAX_CORPUS_LINE_BYTES = 16 * 1024 * 1024;
 const DUPLICATE_PARTITION_COUNT = 256;
 const MAX_DUPLICATE_PARTITION_IDS = 50_000;
 const MAX_DUPLICATE_PARTITION_BYTES = 64 * 1024 * 1024;
+const MAX_OPEN_DUPLICATE_PARTITIONS = 32;
 const DUPLICATE_WRITE_BUFFER_BYTES = 64 * 1024;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -140,6 +141,10 @@ interface RankedDocument {
 interface PreparedDirectoryIdentity {
 	readonly device: number;
 	readonly inode: number;
+}
+
+interface PreparedFileIdentity extends PreparedDirectoryIdentity {
+	readonly mode: number;
 }
 
 interface PreparedTreeOwnership {
@@ -373,7 +378,7 @@ class DiskBackedDuplicateDetector {
 	readonly #counts = new Uint32Array(DUPLICATE_PARTITION_COUNT);
 	readonly #bytes = new Float64Array(DUPLICATE_PARTITION_COUNT);
 	readonly #openHandles = new Map<number, FileHandle>();
-	readonly #fileIdentities = new Map<number, PreparedDirectoryIdentity>();
+	readonly #fileIdentities = new Map<number, PreparedFileIdentity>();
 	readonly #pending = Array<string>(DUPLICATE_PARTITION_COUNT).fill("");
 	readonly #pendingBytes = new Uint32Array(DUPLICATE_PARTITION_COUNT);
 
@@ -462,28 +467,87 @@ class DiskBackedDuplicateDetector {
 
 	async #getHandle(partition: number): Promise<FileHandle> {
 		const existing = this.#openHandles.get(partition);
-		if (existing !== undefined) return existing;
+		if (existing !== undefined) {
+			this.#openHandles.delete(partition);
+			this.#openHandles.set(partition, existing);
+			return existing;
+		}
+		if (this.#openHandles.size >= MAX_OPEN_DUPLICATE_PARTITIONS) {
+			const oldest = this.#openHandles.entries().next().value as [number, FileHandle] | undefined;
+			if (oldest !== undefined) {
+				await oldest[1].close();
+				this.#openHandles.delete(oldest[0]);
+			}
+		}
+		const known = this.#fileIdentities.get(partition);
+		const handle =
+			known === undefined
+				? await this.#createPartition(partition)
+				: await this.#reopenPartition(partition, known);
+		this.#openHandles.set(partition, handle);
+		return handle;
+	}
+
+	async #createPartition(partition: number): Promise<FileHandle> {
 		const path = this.#pathFor(partition);
 		const handle = await open(path, "wx", 0o600);
 		try {
 			const stats = await handle.stat();
 			const pathStats = await lstat(path);
+			const mode = Number(stats.mode) & 0o777;
 			if (
 				!stats.isFile() ||
-				(stats.mode & 0o077) !== 0 ||
+				(mode & 0o077) !== 0 ||
 				!pathStats.isFile() ||
 				pathStats.isSymbolicLink() ||
 				pathStats.dev !== stats.dev ||
-				pathStats.ino !== stats.ino
+				pathStats.ino !== stats.ino ||
+				(Number(pathStats.mode) & 0o777) !== mode
 			) {
 				throw new Error(`duplicate-check partition ${partition} is not an exact private regular file`);
 			}
-			this.#fileIdentities.set(partition, { device: stats.dev, inode: stats.ino });
-			this.#openHandles.set(partition, handle);
+			this.#fileIdentities.set(partition, { device: stats.dev, inode: stats.ino, mode });
 			return handle;
 		} catch (error) {
 			await handle.close();
 			throw error;
+		}
+	}
+
+	async #reopenPartition(partition: number, identity: PreparedFileIdentity): Promise<FileHandle> {
+		const path = this.#pathFor(partition);
+		try {
+			this.#assertPartitionStats(await lstat(path), partition, identity);
+		} catch {
+			throw new Error(`duplicate-check partition ${partition} changed`);
+		}
+		const noFollow = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
+		let handle: FileHandle | undefined;
+		try {
+			handle = await open(path, constants.O_WRONLY | constants.O_APPEND | noFollow);
+			this.#assertPartitionStats(await handle.stat(), partition, identity);
+			this.#assertPartitionStats(await lstat(path), partition, identity);
+			return handle;
+		} catch {
+			await handle?.close().catch(() => undefined);
+			throw new Error(`duplicate-check partition ${partition} changed`);
+		}
+	}
+
+	#assertPartitionStats(
+		stats: Awaited<ReturnType<typeof lstat>>,
+		partition: number,
+		identity: PreparedFileIdentity,
+	): void {
+		if (
+			!stats.isFile() ||
+			stats.isSymbolicLink() ||
+			stats.dev !== identity.device ||
+			stats.ino !== identity.inode ||
+			(Number(stats.mode) & 0o777) !== identity.mode ||
+			(Number(stats.mode) & 0o077) !== 0
+		) {
+			throw new Error(`duplicate-check partition ${partition} changed`);
 		}
 	}
 
@@ -526,10 +590,7 @@ class DiskBackedDuplicateDetector {
 	async #assertOwnedPartition(partition: number): Promise<void> {
 		const identity = this.#fileIdentities.get(partition);
 		if (identity === undefined) throw new Error(`duplicate-check partition ${partition} has no identity`);
-		const stats = await lstat(this.#pathFor(partition));
-		if (!stats.isFile() || stats.isSymbolicLink() || stats.dev !== identity.device || stats.ino !== identity.inode) {
-			throw new Error(`duplicate-check partition ${partition} changed`);
-		}
+		this.#assertPartitionStats(await lstat(this.#pathFor(partition)), partition, identity);
 	}
 
 	async #removeOwnedPartition(partition: number): Promise<void> {

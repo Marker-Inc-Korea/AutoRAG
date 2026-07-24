@@ -348,6 +348,7 @@ describe("MIRACL run reports", () => {
 		"/tmp/embedder",
 		"C:\\models\\embedder",
 		"C:/models/embedder",
+		"\\models\\embedder",
 		"\\\\server\\share\\embedder",
 		"file:///tmp/embedder",
 	])("rejects filesystem-like persisted embedder ID %s", (embedderId) => {

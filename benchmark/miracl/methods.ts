@@ -1034,7 +1034,7 @@ function normalizeMethodConfig(
 }
 
 function requirePortableEmbedderId(value: string): string {
-	if (/^(?:\/|\\\\|[A-Za-z]:[\\/]|file:)/iu.test(value)) {
+	if (/^(?:[\\/]|[A-Za-z]:[\\/]|file:)/iu.test(value)) {
 		throw new Error("embedder.id must not be an absolute filesystem path");
 	}
 	return value;
