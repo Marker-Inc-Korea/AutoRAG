@@ -126,12 +126,22 @@ The benchmark rejects omitted or ambiguous pinning: `binaryPath`,
 `embedder.timeoutMs` are required, and no executable is resolved from `PATH`,
 an installer, or a cache. The configuration must be a nonsymlinked owner-only
 regular file no larger than 1 MiB; the loader reads through a pinned open handle
-and rejects path replacement during the read. MinSync init, sync, and query
-subprocesses use the configured timeout and cap captured stdout at 16 MiB and
-stderr at 1 MiB. On timeout or output overflow the runner terminates the POSIX
-process group (or Windows process tree), destroys its pipes, and settles at the
-deadline even if a descendant inherited stdout or stderr. During a run the
-benchmark verifies that the executable and MinSync index do not change.
+and rejects path replacement during the read. The CLI gives that loader the
+exact user-supplied pathname instead of resolving it first. MinSync init, sync,
+and query subprocesses use the configured timeout and cap captured stdout at 16
+MiB and stderr at 1 MiB. On timeout or output overflow the runner terminates the
+POSIX process group (or Windows process tree), destroys its pipes, and settles
+at the deadline even if a descendant inherited stdout or stderr.
+
+After external `minsync init` returns, its generated `config.toml` must also be
+a nonsymlinked owner-only regular file no larger than 1 MiB. The benchmark reads
+it through a pinned nofollow handle, validates and rewrites only the allowed
+embedder fields, writes an exclusive private temporary file, and atomically
+replaces the validated pathname while the state directory identity remains
+pinned. An oversized, public, replaced, or symlinked generated config fails
+before `minsync sync`; the benchmark never writes through it. During the rest of
+the run the benchmark verifies that the executable and MinSync index do not
+change.
 
 Reports record the executable SHA-256, immutable model ID, local/remote
 endpoint kind, authentication kind, dimension, timeout and process-output
@@ -242,16 +252,18 @@ maximum.
 
 MinSync executable and collection-content hashing happen before and after the
 smoke query batch, outside reported query latency. The source-path map is built
-once after sync, while cheap device, inode, size, and modification-time checks
-remain at query boundaries. Keep these integrity checks enabled: although
-excluded from query latency, content hashing can warm or evict filesystem cache
-pages and therefore perturb later retrieval timings. Compare runs only under
-equivalent cache, hardware, binary, embedder, and configuration conditions.
+once after sync, while cheap device, inode, size, permission, and
+modification-time checks remain at query boundaries. Keep these integrity
+checks enabled: although excluded from query latency, content hashing can warm
+or evict filesystem cache pages and therefore perturb later retrieval timings.
+Compare runs only under equivalent cache, hardware, binary, embedder, and
+configuration conditions.
 
 Each MinSync integrity pass has an absolute 120-second deadline. Executable
 hashing is capped at 256 MiB; MinSync's internal config, manifest, and cursor
 files are capped at 1 MiB, 64 MiB, and 1 MiB respectively. Collection traversal
-is iterative and rejects depth above 32, more than 4,096 entries, or more than
-2 GiB of declared or streamed file content. All hashed files are opened without
-following symlinks and their open-handle and pathname identities are compared
-before and after streaming.
+uses bounded streaming directory handles: it rejects as soon as entry 4,097 is
+observed and sorts only the accepted bounded set for deterministic hashing. It
+also rejects depth above 32 or more than 2 GiB of declared or streamed file
+content. All hashed files are opened without following symlinks and their
+open-handle and pathname identities are compared before and after streaming.
