@@ -379,8 +379,7 @@ dependencies = [
     { name = "datasets" },
     { name = "emoji" },
     { name = "evaluate" },
-    { name = "fastapi", version = "0.115.13", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "fastapi", version = "0.135.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "fastapi" },
     { name = "fastparquet" },
     { name = "gradio", version = "6.15.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "gradio", version = "6.17.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
@@ -1873,62 +1872,14 @@ wheels = [
 
 [[package]]
 name = "fastapi"
-version = "0.115.13"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.12.4' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version == '3.11.*' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version == '3.11.*' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version < '3.11' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version < '3.11' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version < '3.11' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform != 'darwin'",
-]
-dependencies = [
-    { name = "pydantic", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/20/64/ec0788201b5554e2a87c49af26b77a4d132f807a0fa9675257ac92c6aa0e/fastapi-0.115.13.tar.gz", hash = "sha256:55d1d25c2e1e0a0a50aceb1c8705cd932def273c102bff0b1c1da88b3c6eb307", size = 295680, upload-time = "2025-06-17T11:49:45.575Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/4a/e17764385382062b0edbb35a26b7cf76d71e27e456546277a42ba6545c6e/fastapi-0.115.13-py3-none-any.whl", hash = "sha256:0a0cab59afa7bab22f5eb347f8c9864b681558c278395e94035a741fc10cd865", size = 95315, upload-time = "2025-06-17T11:49:44.106Z" },
-]
-
-[package.optional-dependencies]
-standard = [
-    { name = "email-validator", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "fastapi-cli", extra = ["standard"], marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "httpx", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "jinja2", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "python-multipart", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "uvicorn", extra = ["standard"], marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-]
-
-[[package]]
-name = "fastapi"
 version = "0.135.2"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
-]
 dependencies = [
-    { name = "annotated-doc", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "pydantic", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "typing-extensions", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "typing-inspection", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c4/73/5903c4b13beae98618d64eb9870c3fac4f605523dd0312ca5c80dadbd5b9/fastapi-0.135.2.tar.gz", hash = "sha256:88a832095359755527b7f63bb4c6bc9edb8329a026189eed83d6c1afcf419d56", size = 395833, upload-time = "2026-03-23T14:12:41.697Z" }
 wheels = [
@@ -1937,14 +1888,14 @@ wheels = [
 
 [package.optional-dependencies]
 standard = [
-    { name = "email-validator", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "fastapi-cli", extra = ["standard"], marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "httpx", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "jinja2", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "pydantic-extra-types", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "pydantic-settings", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "python-multipart", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "uvicorn", extra = ["standard"], marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "email-validator" },
+    { name = "fastapi-cli", extra = ["standard"] },
+    { name = "httpx" },
+    { name = "jinja2" },
+    { name = "pydantic-extra-types" },
+    { name = "pydantic-settings" },
+    { name = "python-multipart" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [[package]]
@@ -2449,7 +2400,7 @@ resolution-markers = [
 dependencies = [
     { name = "anyio", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "brotli", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "fastapi", version = "0.115.13", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
+    { name = "fastapi", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "gradio-client", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "groovy", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "hf-gradio", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
@@ -2469,7 +2420,7 @@ dependencies = [
     { name = "pyyaml", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "safehttpx", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "semantic-version", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
+    { name = "starlette", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "tomlkit", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "typer", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "typing-extensions", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
@@ -2491,7 +2442,7 @@ resolution-markers = [
 dependencies = [
     { name = "anyio", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "brotli", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "fastapi", version = "0.135.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "fastapi", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "gradio-client", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "groovy", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "hf-gradio", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
@@ -2511,7 +2462,7 @@ dependencies = [
     { name = "pyyaml", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "safehttpx", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "semantic-version", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "starlette", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "tomlkit", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "typer", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "typing-extensions", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
@@ -4455,7 +4406,7 @@ dependencies = [
     { name = "pyjwt", extra = ["crypto"], marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "python-multipart", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "sse-starlette", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "starlette", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "typing-extensions", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "typing-inspection", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "uvicorn", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
@@ -4676,7 +4627,7 @@ resolution-markers = [
     "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform != 'darwin'",
 ]
 dependencies = [
-    { name = "fastapi", version = "0.115.13", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
+    { name = "fastapi", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "httpx", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "jmespath", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "pydantic", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
@@ -4695,12 +4646,12 @@ resolution-markers = [
     "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
 ]
 dependencies = [
-    { name = "fastapi", version = "0.135.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "fastapi", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "httpx", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "jmespath", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "pydantic", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "setuptools", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "starlette", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "supervisor", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c6/3d/cf5c6029648cb0a116f7b5c2f74aa155ab0c6dd723a1f204a6d7ff354526/model_hosting_container_standards-0.1.14.tar.gz", hash = "sha256:b6cf4c46d88ce6acd6e543a578bb88ffd55d1179a7c09c22e61ae1d8a567c564", size = 90386, upload-time = "2026-03-18T21:25:14.513Z" }
@@ -5992,48 +5943,11 @@ wheels = [
 
 [[package]]
 name = "prometheus-fastapi-instrumentator"
-version = "7.1.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.12.4' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version == '3.11.*' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version == '3.11.*' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version < '3.11' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version < '3.11' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version < '3.11' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform != 'darwin'",
-]
-dependencies = [
-    { name = "prometheus-client", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/69/6d/24d53033cf93826aa7857699a4450c1c67e5b9c710e925b1ed2b320c04df/prometheus_fastapi_instrumentator-7.1.0.tar.gz", hash = "sha256:be7cd61eeea4e5912aeccb4261c6631b3f227d8924542d79eaf5af3f439cbe5e", size = 20220, upload-time = "2025-03-19T19:35:05.351Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/72/0824c18f3bc75810f55dacc2dd933f6ec829771180245ae3cc976195dec0/prometheus_fastapi_instrumentator-7.1.0-py3-none-any.whl", hash = "sha256:978130f3c0bb7b8ebcc90d35516a6fe13e02d2eb358c8f83887cdef7020c31e9", size = 19296, upload-time = "2025-03-19T19:35:04.323Z" },
-]
-
-[[package]]
-name = "prometheus-fastapi-instrumentator"
 version = "8.0.2"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
-]
 dependencies = [
-    { name = "prometheus-client", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "prometheus-client" },
+    { name = "starlette" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1b/e9/2065686d1dfa62296fdc158b6e8fd25b0cb3dca09b0632cabeb5ae81fe4d/prometheus_fastapi_instrumentator-8.0.2.tar.gz", hash = "sha256:3c252e748151768a7aefd66824a04a870144f71de48a67aed211749a9ca2a548", size = 21342, upload-time = "2026-06-23T09:39:31.611Z" }
 wheels = [
@@ -7808,7 +7722,7 @@ version = "3.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "starlette", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/26/8c/f9290339ef6d79badbc010f067cd769d6601ec11a57d78569c683fb4dd87/sse_starlette-3.3.4.tar.gz", hash = "sha256:aaf92fc067af8a5427192895ac028e947b484ac01edbc3caf00e7e7137c7bef1", size = 32427, upload-time = "2026-03-29T09:00:23.307Z" }
 wheels = [
@@ -7831,47 +7745,11 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "0.46.2"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.12.4' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.12.4' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version >= '3.12' and python_full_version < '3.12.4' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version == '3.11.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version == '3.11.*' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version == '3.11.*' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version == '3.11.*' and platform_machine == 's390x' and sys_platform != 'darwin'",
-    "python_full_version < '3.11' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform == 'darwin'",
-    "python_full_version < '3.11' and platform_machine == 'aarch64' and sys_platform == 'linux'",
-    "(python_full_version < '3.11' and platform_machine != 'aarch64' and platform_machine != 's390x' and sys_platform == 'linux') or (python_full_version < '3.11' and platform_machine != 's390x' and sys_platform != 'darwin' and sys_platform != 'linux')",
-    "python_full_version < '3.11' and platform_machine == 's390x' and sys_platform != 'darwin'",
-]
-dependencies = [
-    { name = "anyio", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/20/08dfcd9c983f6a6f4a1000d934b9e6d626cff8d2eeb77a89a68eef20a2b7/starlette-0.46.2.tar.gz", hash = "sha256:7f7361f34eed179294600af672f565727419830b54b7b084efe44bb82d2fccd5", size = 2580846, upload-time = "2025-04-13T13:56:17.942Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/0c/9d30a4ebeb6db2b25a841afbb80f6ef9a854fc3b41be131d249a977b4959/starlette-0.46.2-py3-none-any.whl", hash = "sha256:595633ce89f8ffa71a015caed34a5b2dc1c0cdb3f0f1fbd1e69339cf2abeec35", size = 72037, upload-time = "2025-04-13T13:56:16.21Z" },
-]
-
-[[package]]
-name = "starlette"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.12.4' and platform_machine != 's390x' and sys_platform == 'darwin'",
-    "python_full_version >= '3.12.4' and platform_machine == 's390x' and sys_platform == 'darwin'",
-]
 dependencies = [
-    { name = "anyio", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "typing-extensions", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "anyio" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
@@ -7900,8 +7778,7 @@ dependencies = [
     { name = "pydeck" },
     { name = "python-multipart" },
     { name = "requests" },
-    { name = "starlette", version = "0.46.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "starlette", version = "1.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "starlette" },
     { name = "tenacity" },
     { name = "toml" },
     { name = "typing-extensions" },
@@ -8699,7 +8576,7 @@ dependencies = [
     { name = "depyf", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "diskcache", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "einops", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "fastapi", version = "0.115.13", source = { registry = "https://pypi.org/simple" }, extra = ["standard"], marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
+    { name = "fastapi", extra = ["standard"], marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "filelock", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "flashinfer-python", version = "0.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "gguf", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
@@ -8719,7 +8596,7 @@ dependencies = [
     { name = "partial-json-parser", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "pillow", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "prometheus-client", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
-    { name = "prometheus-fastapi-instrumentator", version = "7.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
+    { name = "prometheus-fastapi-instrumentator", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "protobuf", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "psutil", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
     { name = "py-cpuinfo", marker = "python_full_version < '3.12.4' or sys_platform != 'darwin'" },
@@ -8773,7 +8650,7 @@ dependencies = [
     { name = "depyf", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "diskcache", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "einops", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "fastapi", version = "0.135.2", source = { registry = "https://pypi.org/simple" }, extra = ["standard"], marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "fastapi", extra = ["standard"], marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "filelock", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "flashinfer-python", version = "0.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "gguf", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
@@ -8795,7 +8672,7 @@ dependencies = [
     { name = "partial-json-parser", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "pillow", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "prometheus-client", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
-    { name = "prometheus-fastapi-instrumentator", version = "8.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
+    { name = "prometheus-fastapi-instrumentator", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "protobuf", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "psutil", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
     { name = "py-cpuinfo", marker = "python_full_version >= '3.12.4' and sys_platform == 'darwin'" },
