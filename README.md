@@ -314,6 +314,10 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
     └─────────────┘
 ```
 
+## Development
+
+- [MIRACL Korean retrieval benchmark](benchmark/miracl/README.md)
+
 ## License
 
 MIT
