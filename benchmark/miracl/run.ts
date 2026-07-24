@@ -57,8 +57,7 @@ export async function runBm25Queries(
 	createBm25: BenchmarkBM25Factory = (methodOptions) => new BM25Method(methodOptions),
 ): Promise<BM25QueryRunResult> {
 	validateTopK(options.topK);
-	assertBenchmarkPathOutsideAutorag(options.root);
-	const root = validateBenchmarkMirror(options.root, options.documentBySource);
+	const root = validateBenchmarkWorkspace(options.root, options.documentBySource);
 	const rootIdentity = snapshotBenchmarkDirectory(root);
 	const now = options.now ?? (() => performance.now());
 	const retrieval = createBm25({
@@ -136,7 +135,11 @@ export async function runMethodQueries(
 	return records;
 }
 
-function validateBenchmarkMirror(root: string, documentBySource: ReadonlyMap<string, string>): string {
+export function validateBenchmarkWorkspace(
+	root: string,
+	documentBySource: ReadonlyMap<string, string>,
+): string {
+	assertBenchmarkPathOutsideAutorag(root);
 	let canonicalRoot: string;
 	try {
 		const rootStats = lstatSync(root);
