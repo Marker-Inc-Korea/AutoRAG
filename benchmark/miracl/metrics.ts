@@ -1,7 +1,7 @@
 import type { BenchmarkMethod, Qrel, QueryRunRecord, RankedHit } from "./types.ts";
 
 const RECALL_CUTOFFS = [5, 10, 100] as const;
-const SUCCESS_CUTOFFS = [1, 5, 10] as const;
+const SUCCESS_CUTOFFS = [1, 5] as const;
 const NDCG_CUTOFF = 10;
 const MRR_CUTOFF = 10;
 
@@ -9,9 +9,9 @@ type RecallCutoff = (typeof RECALL_CUTOFFS)[number];
 type SuccessCutoff = (typeof SUCCESS_CUTOFFS)[number];
 
 export interface LatencyMetrics {
+	readonly mean: number;
 	readonly p50: number;
 	readonly p95: number;
-	readonly p99: number;
 }
 
 export interface MethodMetrics {
@@ -112,17 +112,25 @@ function evaluateMethod(
 		successfulLatencies.push(record.latencyMs);
 		const queryMetrics = evaluateQuery(record.hits, qrelsByQuery.get(record.queryId)!);
 		for (const cutoff of RECALL_CUTOFFS) {
-			recallTotals[`${cutoff}`] += queryMetrics.recallAt[`${cutoff}`];
+			recallTotals[`${cutoff}`] = addFinite(
+				recallTotals[`${cutoff}`],
+				queryMetrics.recallAt[`${cutoff}`],
+				"metric accumulation",
+			);
 		}
 		for (const cutoff of SUCCESS_CUTOFFS) {
-			successTotals[`${cutoff}`] += queryMetrics.successAt[`${cutoff}`];
+			successTotals[`${cutoff}`] = addFinite(
+				successTotals[`${cutoff}`],
+				queryMetrics.successAt[`${cutoff}`],
+				"metric accumulation",
+			);
 		}
-		mrrTotal += queryMetrics.mrrAt10;
-		ndcgTotal += queryMetrics.ndcgAt10;
+		mrrTotal = addFinite(mrrTotal, queryMetrics.mrrAt10, "metric accumulation");
+		ndcgTotal = addFinite(ndcgTotal, queryMetrics.ndcgAt10, "metric accumulation");
 	}
 
 	const denominator = records.length;
-	return {
+	const metrics = {
 		method,
 		queryCount: denominator,
 		failureCount,
@@ -132,6 +140,8 @@ function evaluateMethod(
 		ndcgAt10: ndcgTotal / denominator,
 		latencyMs: percentileMetrics(successfulLatencies),
 	};
+	assertMethodMetricsFinite(metrics);
+	return metrics;
 }
 
 function evaluateQuery(hits: readonly RankedHit[], qrels: ReadonlyMap<string, number>): QueryMetrics {
@@ -159,12 +169,14 @@ function evaluateQuery(hits: readonly RankedHit[], qrels: ReadonlyMap<string, nu
 	);
 	const dcg = discountedCumulativeGain(rankedHits, qrels, NDCG_CUTOFF);
 	const idealDcg = idealDiscountedCumulativeGain(qrels, NDCG_CUTOFF);
-	return {
+	const metrics = {
 		recallAt,
 		mrrAt10: firstRelevant === undefined ? 0 : 1 / firstRelevant.rank,
 		successAt,
 		ndcgAt10: idealDcg === 0 ? 0 : dcg / idealDcg,
 	};
+	assertQueryMetricsFinite(metrics);
+	return metrics;
 }
 
 function discountedCumulativeGain(
@@ -174,7 +186,7 @@ function discountedCumulativeGain(
 ): number {
 	return hits.reduce((total, hit) => {
 		if (hit.rank > cutoff) return total;
-		return total + gain(qrels.get(hit.documentId) ?? 0) / discount(hit.rank);
+		return addFinite(total, gain(qrels.get(hit.documentId) ?? 0) / discount(hit.rank), "metric accumulation");
 	}, 0);
 }
 
@@ -182,11 +194,17 @@ function idealDiscountedCumulativeGain(qrels: ReadonlyMap<string, number>, cutof
 	return [...qrels.values()]
 		.sort((left, right) => right - left)
 		.slice(0, cutoff)
-		.reduce((total, relevance, index) => total + gain(relevance) / discount(index + 1), 0);
+		.reduce(
+			(total, relevance, index) =>
+				addFinite(total, gain(relevance) / discount(index + 1), "metric accumulation"),
+			0,
+		);
 }
 
 function gain(relevance: number): number {
-	return 2 ** relevance - 1;
+	const value = 2 ** relevance - 1;
+	assertFinite(value, "qrel gain");
+	return value;
 }
 
 function discount(rank: number): number {
@@ -195,10 +213,19 @@ function discount(rank: number): number {
 
 function percentileMetrics(latencies: readonly number[]): LatencyMetrics {
 	return {
+		mean: arithmeticMean(latencies),
 		p50: nearestRankPercentile(latencies, 50),
 		p95: nearestRankPercentile(latencies, 95),
-		p99: nearestRankPercentile(latencies, 99),
 	};
+}
+
+function arithmeticMean(values: readonly number[]): number {
+	let mean = 0;
+	for (let index = 0; index < values.length; index += 1) {
+		mean += (values[index]! - mean) / (index + 1);
+		assertFinite(mean, "latency mean");
+	}
+	return mean;
 }
 
 function nearestRankPercentile(values: readonly number[], percentile: number): number {
@@ -245,6 +272,31 @@ function assertFinite(value: number, field: string): void {
 	}
 }
 
+function addFinite(total: number, value: number, field: string): number {
+	assertFinite(value, field);
+	const result = total + value;
+	assertFinite(result, field);
+	return result;
+}
+
+function assertQueryMetricsFinite(metrics: QueryMetrics): void {
+	for (const value of [
+		metrics.mrrAt10,
+		metrics.ndcgAt10,
+		...Object.values(metrics.recallAt),
+		...Object.values(metrics.successAt),
+	]) {
+		assertFinite(value, "metric output");
+	}
+}
+
+function assertMethodMetricsFinite(metrics: MethodMetrics): void {
+	assertQueryMetricsFinite(metrics);
+	for (const value of Object.values(metrics.latencyMs)) {
+		assertFinite(value, "metric output");
+	}
+}
+
 function assertNonBlankId(value: string, field: string): void {
 	if (typeof value !== "string" || value.trim().length === 0) {
 		throw new Error(`${field} must be non-blank`);
@@ -256,7 +308,7 @@ function zeroRecallTotals(): Record<`${RecallCutoff}`, number> {
 }
 
 function zeroSuccessTotals(): Record<`${SuccessCutoff}`, number> {
-	return { "1": 0, "5": 0, "10": 0 };
+	return { "1": 0, "5": 0 };
 }
 
 function divideRecallTotals(
@@ -270,7 +322,7 @@ function divideSuccessTotals(
 	totals: Record<`${SuccessCutoff}`, number>,
 	denominator: number,
 ): Record<`${SuccessCutoff}`, number> {
-	return { "1": totals["1"] / denominator, "5": totals["5"] / denominator, "10": totals["10"] / denominator };
+	return { "1": totals["1"] / denominator, "5": totals["5"] / denominator };
 }
 
 function compareCodePoints(left: string, right: string): number {
