@@ -21,4 +21,6 @@ export const MIRACL_SMOKE_PROFILE = {
 	distractorCount: 10_000,
 } as const;
 
+export const MIRACL_FULL_CORPUS_PASSAGES = 1_486_752 as const;
+
 export const MIRACL_NORMALIZATION_VERSION = 1 as const;

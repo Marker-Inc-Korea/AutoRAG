@@ -31,6 +31,7 @@
     "build": "bun build src/index.ts src/cli/index.ts src/subagents/explorer-tools-extension.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
+    "benchmark:miracl": "bun benchmark/miracl/cli.ts",
     "test": "vitest run",
     "check": "biome check --write .",
     "typecheck": "tsc --noEmit"

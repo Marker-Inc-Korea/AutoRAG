@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readJsonLines } from "../../benchmark/miracl/jsonl.ts";
 import { prepareMiracl, selectSmokeDataset, validatePreparedManifest } from "../../benchmark/miracl/prepare.ts";
-import { MIRACL_SOURCES } from "../../benchmark/miracl/profiles.ts";
+import { MIRACL_FULL_CORPUS_PASSAGES, MIRACL_SOURCES } from "../../benchmark/miracl/profiles.ts";
 import type { BenchmarkQuery, CorpusDocument, Qrel } from "../../benchmark/miracl/types.ts";
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -176,6 +176,61 @@ describe("MIRACL preparation", () => {
 				counts: { ...manifest.counts, distractors: manifest.counts.distractors + 1 },
 			}),
 		).toThrow("distractor count");
+	});
+
+	it("streams every record for the full profile and attests normalized outputs without selected ids", async () => {
+		const outputDir = makeOutput();
+		const fixture = fixtureFetch();
+
+		const manifest = await prepareMiracl(
+			{
+				profile: "full",
+				outputDir,
+				fetchImpl: fixture.fetchImpl,
+				maxRedirects: 1,
+				maxDownloadBytes: 1024 * 1024,
+			},
+			{ expectedFullCorpusPassages: 5 },
+		);
+
+		expect(MIRACL_FULL_CORPUS_PASSAGES).toBe(1_486_752);
+		expect(manifest.profile).toBe("full");
+		expect(manifest.counts).toEqual({
+			queries: 2,
+			qrels: 3,
+			positiveQrels: 1,
+			corpus: 5,
+			judgedDocuments: 3,
+		});
+		expect("seed" in manifest).toBe(false);
+		expect("selectedIds" in manifest).toBe(false);
+		expect(
+			(await readJsonLines<BenchmarkQuery>(join(outputDir, "queries.jsonl"))).map((query) => query.queryId),
+		).toEqual(["q1", "q2"]);
+		expect((await readJsonLines<Qrel>(join(outputDir, "qrels.jsonl"))).map((qrel) => qrel.queryId)).toEqual([
+			"q1",
+			"q1",
+			"q2",
+		]);
+		expect(
+			(await readJsonLines<CorpusDocument>(join(outputDir, "corpus.jsonl"))).map((document) => document.documentId),
+		).toEqual(["d2", "gold", "judged-negative", "d1", "other-gold"]);
+		for (const normalized of Object.values(manifest.normalized)) {
+			expect(normalized.sha256).toMatch(/^[0-9a-f]{64}$/);
+			expect(normalized.bytes).toBeGreaterThan(0);
+			expect(normalized.records).toBeGreaterThan(0);
+		}
+		expect(validatePreparedManifest(manifest, { expectedFullCorpusPassages: 5 })).toEqual(manifest);
+		expect(() => validatePreparedManifest(manifest)).toThrow(`${MIRACL_FULL_CORPUS_PASSAGES}`);
+		expect(() =>
+			validatePreparedManifest(
+				{
+					...manifest,
+					selectedIds: { queryIds: [], documentIds: [] },
+				},
+				{ expectedFullCorpusPassages: 5 },
+			),
+		).toThrow("selectedIds");
 	});
 
 	it("rejects redirects outside the pinned download hosts before following them", async () => {
@@ -399,6 +454,33 @@ describe("MIRACL preparation", () => {
 			}),
 		).rejects.toThrow();
 		expect(readFileSync(join(existingOutput, "keep.txt"), "utf8")).toBe("keep");
+	});
+
+	it("does not clean a replacement that appears at an owned output pathname", async () => {
+		const outputDir = makeOutput();
+		const displaced = `${outputDir}-displaced`;
+		const replacement = join(outputDir, "replacement.txt");
+		const fixture = fixtureFetch();
+		const fetchImpl = vi.fn(async (input: string | URL, _init?: RequestInit) => {
+			if (fetchImpl.mock.calls.length === 1) {
+				renameSync(outputDir, displaced);
+				mkdirSync(outputDir);
+				writeFileSync(replacement, "replacement data\n");
+				throw new Error("injected preparation failure");
+			}
+			return fixture.fetchImpl(input);
+		});
+
+		await expect(
+			prepareMiracl({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl,
+			}),
+		).rejects.toThrow("injected preparation failure");
+		expect(readFileSync(replacement, "utf8")).toBe("replacement data\n");
+		expect(existsSync(displaced)).toBe(true);
 	});
 });
 

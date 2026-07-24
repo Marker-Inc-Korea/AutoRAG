@@ -1,14 +1,19 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, rm } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
+import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Transform, type TransformCallback } from "node:stream";
 import { createGunzip } from "node:zlib";
 import { readQrels, readTopicsTsv, writeJsonAtomic } from "./jsonl.ts";
-import { MIRACL_NORMALIZATION_VERSION, MIRACL_SMOKE_PROFILE, MIRACL_SOURCES } from "./profiles.ts";
-import type { BenchmarkQuery, CorpusDocument, Qrel } from "./types.ts";
+import {
+	MIRACL_FULL_CORPUS_PASSAGES,
+	MIRACL_NORMALIZATION_VERSION,
+	MIRACL_SMOKE_PROFILE,
+	MIRACL_SOURCES,
+} from "./profiles.ts";
+import type { BenchmarkProfile, BenchmarkQuery, CorpusDocument, Qrel } from "./types.ts";
 
 const DEFAULT_MAX_REDIRECTS = 5;
 const DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
@@ -34,12 +39,26 @@ export interface SmokeSelectionOptions {
 	distractorCount: number;
 }
 
-export interface PrepareOptions extends Partial<SmokeSelectionOptions> {
+interface CommonPrepareOptions {
 	outputDir: string;
 	fetchImpl?: FetchLike;
 	maxRedirects?: number;
 	maxDownloadBytes?: number;
 	maxDecompressedBytesPerShard?: number;
+}
+
+export interface SmokePrepareOptions extends CommonPrepareOptions, Partial<SmokeSelectionOptions> {
+	profile?: "smoke";
+}
+
+export interface FullPrepareOptions extends CommonPrepareOptions {
+	profile: "full";
+}
+
+export type PrepareOptions = SmokePrepareOptions | FullPrepareOptions;
+
+export interface PrepareValidationOptions {
+	readonly expectedFullCorpusPassages?: number;
 }
 
 export interface PreparedSource {
@@ -49,10 +68,10 @@ export interface PreparedSource {
 	bytes: number;
 }
 
-export interface PreparedManifest {
+interface PreparedManifestBase {
 	schemaVersion: 1;
 	normalizationVersion: typeof MIRACL_NORMALIZATION_VERSION;
-	profile: "smoke";
+	profile: BenchmarkProfile;
 	revisions: {
 		topics: string;
 		corpus: string;
@@ -62,6 +81,15 @@ export interface PreparedManifest {
 		qrels: PreparedSource;
 		corpus: PreparedSource[];
 	};
+	files: {
+		queries: "queries.jsonl";
+		qrels: "qrels.jsonl";
+		corpus: "corpus.jsonl";
+	};
+}
+
+export interface SmokePreparedManifest extends PreparedManifestBase {
+	profile: "smoke";
 	seed: number;
 	selectedIds: {
 		queryIds: string[];
@@ -75,12 +103,31 @@ export interface PreparedManifest {
 		judgedDocuments: number;
 		distractors: number;
 	};
-	files: {
-		queries: "queries.jsonl";
-		qrels: "qrels.jsonl";
-		corpus: "corpus.jsonl";
+}
+
+export interface NormalizedPreparedFile {
+	sha256: string;
+	bytes: number;
+	records: number;
+}
+
+export interface FullPreparedManifest extends PreparedManifestBase {
+	profile: "full";
+	counts: {
+		queries: number;
+		qrels: number;
+		positiveQrels: number;
+		corpus: number;
+		judgedDocuments: number;
+	};
+	normalized: {
+		queries: NormalizedPreparedFile;
+		qrels: NormalizedPreparedFile;
+		corpus: NormalizedPreparedFile;
 	};
 }
+
+export type PreparedManifest = SmokePreparedManifest | FullPreparedManifest;
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -89,6 +136,11 @@ interface DownloadResult extends PreparedSource {}
 interface RankedDocument {
 	key: string;
 	document: CorpusDocument;
+}
+
+interface PreparedDirectoryIdentity {
+	readonly device: number;
+	readonly inode: number;
 }
 
 function assertNonBlank(value: string, label: string): void {
@@ -327,14 +379,10 @@ class DiskBackedDuplicateDetector {
 		const line = `${JSON.stringify(documentId)}\n`;
 		const lineBytes = Buffer.byteLength(line, "utf8");
 		if (this.#counts[partition] >= MAX_DUPLICATE_PARTITION_IDS) {
-			throw new Error(
-				`duplicate-check partition ${partition} exceeds ${MAX_DUPLICATE_PARTITION_IDS} document IDs`,
-			);
+			throw new Error(`duplicate-check partition ${partition} exceeds ${MAX_DUPLICATE_PARTITION_IDS} document IDs`);
 		}
 		if (this.#bytes[partition] + lineBytes > MAX_DUPLICATE_PARTITION_BYTES) {
-			throw new Error(
-				`duplicate-check partition ${partition} exceeds ${MAX_DUPLICATE_PARTITION_BYTES} bytes`,
-			);
+			throw new Error(`duplicate-check partition ${partition} exceeds ${MAX_DUPLICATE_PARTITION_BYTES} bytes`);
 		}
 		this.#pending[partition] += line;
 		this.#pendingBytes[partition] += lineBytes;
@@ -558,11 +606,7 @@ function parseContentLength(response: Response, maxBytes: number, url: string): 
 
 function isAllowedDownloadHost(hostname: string): boolean {
 	const normalized = hostname.toLowerCase();
-	return (
-		normalized === "huggingface.co" ||
-		normalized.endsWith(".huggingface.co") ||
-		normalized.endsWith(".hf.co")
-	);
+	return normalized === "huggingface.co" || normalized.endsWith(".huggingface.co") || normalized.endsWith(".hf.co");
 }
 
 async function writeBytes(handle: FileHandle, bytes: Uint8Array, position: number): Promise<number> {
@@ -661,8 +705,9 @@ async function downloadPinnedFile(
 	return { url, path: relativePath, sha256: hash.digest("hex"), bytes };
 }
 
-async function writeJsonLinesFile(path: string, records: readonly unknown[]): Promise<void> {
+async function writeJsonLinesFile(path: string, records: readonly unknown[]): Promise<NormalizedPreparedFile> {
 	const handle = await open(path, "wx", 0o600);
+	const hash = createHash("sha256");
 	let position = 0;
 	try {
 		for (const record of records) {
@@ -670,11 +715,72 @@ async function writeJsonLinesFile(path: string, records: readonly unknown[]): Pr
 			if (serialized === undefined) {
 				throw new Error(`record for ${path} is not JSON serializable`);
 			}
-			position = await writeBytes(handle, Buffer.from(`${serialized}\n`, "utf8"), position);
+			const bytes = Buffer.from(`${serialized}\n`, "utf8");
+			hash.update(bytes);
+			position = await writeBytes(handle, bytes, position);
 		}
+		await handle.sync();
 	} finally {
 		await handle.close();
 	}
+	return { sha256: hash.digest("hex"), bytes: position, records: records.length };
+}
+
+interface JsonLinesWriter {
+	readonly path: string;
+	readonly handle: FileHandle;
+	readonly hash: ReturnType<typeof createHash>;
+	position: number;
+	records: number;
+	closed: boolean;
+}
+
+async function openJsonLinesWriter(path: string): Promise<JsonLinesWriter> {
+	return {
+		path,
+		handle: await open(path, "wx", 0o600),
+		hash: createHash("sha256"),
+		position: 0,
+		records: 0,
+		closed: false,
+	};
+}
+
+async function appendJsonLine(writer: JsonLinesWriter, record: unknown): Promise<void> {
+	if (writer.closed) {
+		throw new Error(`normalized output ${writer.path} is closed`);
+	}
+	const serialized = JSON.stringify(record);
+	if (serialized === undefined) {
+		throw new Error(`record for ${writer.path} is not JSON serializable`);
+	}
+	const bytes = Buffer.from(`${serialized}\n`, "utf8");
+	writer.hash.update(bytes);
+	writer.position = await writeBytes(writer.handle, bytes, writer.position);
+	writer.records += 1;
+}
+
+async function finalizeJsonLinesWriter(writer: JsonLinesWriter): Promise<NormalizedPreparedFile> {
+	if (writer.closed) {
+		throw new Error(`normalized output ${writer.path} is closed`);
+	}
+	writer.closed = true;
+	try {
+		await writer.handle.sync();
+	} finally {
+		await writer.handle.close();
+	}
+	return {
+		sha256: writer.hash.digest("hex"),
+		bytes: writer.position,
+		records: writer.records,
+	};
+}
+
+async function closeJsonLinesWriter(writer: JsonLinesWriter): Promise<void> {
+	if (writer.closed) return;
+	writer.closed = true;
+	await writer.handle.close();
 }
 
 function assertManifest(condition: unknown, message: string): asserts condition {
@@ -699,24 +805,22 @@ function validateSource(value: unknown, expectedUrl: string, expectedPath: strin
 	const source = value as Record<string, unknown>;
 	assertManifest(source.url === expectedUrl, `${label}.url does not match the pinned source`);
 	assertManifest(source.path === expectedPath, `${label}.path must be ${expectedPath}`);
-	assertManifest(typeof source.sha256 === "string" && SHA256_PATTERN.test(source.sha256), `${label}.sha256 is invalid`);
+	assertManifest(
+		typeof source.sha256 === "string" && SHA256_PATTERN.test(source.sha256),
+		`${label}.sha256 is invalid`,
+	);
 	assertManifest(Number.isSafeInteger(source.bytes) && (source.bytes as number) > 0, `${label}.bytes is invalid`);
 }
 
-export function validatePreparedManifest(value: unknown): PreparedManifest {
-	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), "root must be an object");
-	const manifest = value as Record<string, unknown>;
+function validateCommonPreparedManifest(manifest: Record<string, unknown>): void {
 	assertManifest(manifest.schemaVersion === 1, "schemaVersion must be 1");
 	assertManifest(
 		manifest.normalizationVersion === MIRACL_NORMALIZATION_VERSION,
 		`normalizationVersion must be ${MIRACL_NORMALIZATION_VERSION}`,
 	);
-	assertManifest(manifest.profile === "smoke", "profile must be smoke");
+	assertManifest(manifest.profile === "smoke" || manifest.profile === "full", "profile must be smoke or full");
 
-	assertManifest(
-		typeof manifest.revisions === "object" && manifest.revisions !== null,
-		"revisions must be an object",
-	);
+	assertManifest(typeof manifest.revisions === "object" && manifest.revisions !== null, "revisions must be an object");
 	const revisions = manifest.revisions as Record<string, unknown>;
 	assertManifest(revisions.topics === MIRACL_SOURCES.topics.revision, "topics revision does not match the pin");
 	assertManifest(revisions.corpus === MIRACL_SOURCES.corpus.revision, "corpus revision does not match the pin");
@@ -726,9 +830,67 @@ export function validatePreparedManifest(value: unknown): PreparedManifest {
 	validateSource(sources.topics, MIRACL_SOURCES.topics.topicsUrl, "downloads/topics.tsv", "sources.topics");
 	validateSource(sources.qrels, MIRACL_SOURCES.topics.qrelsUrl, "downloads/qrels.tsv", "sources.qrels");
 	assertManifest(Array.isArray(sources.corpus), "sources.corpus must be an array");
-	assertManifest(sources.corpus.length === MIRACL_SOURCES.corpus.urls.length, "sources.corpus must contain three shards");
+	assertManifest(
+		sources.corpus.length === MIRACL_SOURCES.corpus.urls.length,
+		"sources.corpus must contain three shards",
+	);
 	for (const [index, url] of MIRACL_SOURCES.corpus.urls.entries()) {
 		validateSource(sources.corpus[index], url, `downloads/docs-${index}.jsonl.gz`, `sources.corpus[${index}]`);
+	}
+
+	assertManifest(typeof manifest.files === "object" && manifest.files !== null, "files must be an object");
+	const files = manifest.files as Record<string, unknown>;
+	assertManifest(files.queries === "queries.jsonl", "files.queries is invalid");
+	assertManifest(files.qrels === "qrels.jsonl", "files.qrels is invalid");
+	assertManifest(files.corpus === "corpus.jsonl", "files.corpus is invalid");
+}
+
+function validateNormalizedFile(value: unknown, expectedRecords: number, label: string): void {
+	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), `${label} must be an object`);
+	const file = value as Record<string, unknown>;
+	assertManifest(typeof file.sha256 === "string" && SHA256_PATTERN.test(file.sha256), `${label}.sha256 is invalid`);
+	assertManifest(Number.isSafeInteger(file.bytes) && (file.bytes as number) > 0, `${label}.bytes is invalid`);
+	assertManifest(file.records === expectedRecords, `${label}.records does not match counts`);
+}
+
+export function validatePreparedManifest(value: unknown, options: PrepareValidationOptions = {}): PreparedManifest {
+	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), "root must be an object");
+	const manifest = value as Record<string, unknown>;
+	validateCommonPreparedManifest(manifest);
+	if (manifest.profile === "full") {
+		assertManifest(!("seed" in manifest), "full manifest must not contain seed");
+		assertManifest(!("selectedIds" in manifest), "full manifest must not contain selectedIds");
+		assertManifest(typeof manifest.counts === "object" && manifest.counts !== null, "counts must be an object");
+		const counts = manifest.counts as Record<string, unknown>;
+		for (const field of ["queries", "qrels", "positiveQrels", "corpus", "judgedDocuments"]) {
+			assertManifest(
+				Number.isSafeInteger(counts[field]) && (counts[field] as number) >= 0,
+				`counts.${field} must be a non-negative safe integer`,
+			);
+		}
+		assertManifest(!("distractors" in counts), "full counts must not contain distractors");
+		const expectedCorpusPassages = options.expectedFullCorpusPassages ?? MIRACL_FULL_CORPUS_PASSAGES;
+		assertCount(expectedCorpusPassages, "expectedFullCorpusPassages", false);
+		assertManifest(counts.corpus === expectedCorpusPassages, `full corpus count must be ${expectedCorpusPassages}`);
+		const queryCount = counts.queries as number;
+		const qrelCount = counts.qrels as number;
+		const positiveQrelCount = counts.positiveQrels as number;
+		const judgedDocumentCount = counts.judgedDocuments as number;
+		assertManifest(queryCount > 0, "full manifest must contain at least one query");
+		assertManifest(qrelCount > 0, "full manifest must contain at least one qrel");
+		assertManifest(qrelCount >= positiveQrelCount, "qrel count is lower than positive qrel count");
+		assertManifest(judgedDocumentCount > 0, "full manifest must contain at least one judged document");
+		assertManifest(judgedDocumentCount <= qrelCount, "judged document count exceeds qrels");
+		assertManifest(judgedDocumentCount <= expectedCorpusPassages, "judged document count exceeds corpus");
+		assertManifest(
+			typeof manifest.normalized === "object" && manifest.normalized !== null,
+			"normalized must be an object",
+		);
+		const normalized = manifest.normalized as Record<string, unknown>;
+		validateNormalizedFile(normalized.queries, queryCount, "normalized.queries");
+		validateNormalizedFile(normalized.qrels, qrelCount, "normalized.qrels");
+		validateNormalizedFile(normalized.corpus, expectedCorpusPassages, "normalized.corpus");
+		return value as FullPreparedManifest;
 	}
 
 	assertManifest(Number.isSafeInteger(manifest.seed), "seed must be a safe integer");
@@ -770,10 +932,7 @@ export function validatePreparedManifest(value: unknown): PreparedManifest {
 	const distractorCount = counts.distractors as number;
 	assertManifest(queryCount > 0, "smoke manifest must contain at least one selected query");
 	assertManifest(qrelCount >= positiveQrelCount, "qrel count is lower than positive qrel count");
-	assertManifest(
-		positiveQrelCount >= queryCount,
-		"positive qrel count must cover every selected query",
-	);
+	assertManifest(positiveQrelCount >= queryCount, "positive qrel count must cover every selected query");
 	assertManifest(judgedDocumentCount > 0, "smoke manifest must contain at least one judged document");
 	assertManifest(judgedDocumentCount <= qrelCount, "judged document count exceeds qrels");
 	assertManifest(judgedDocumentCount <= corpusCount, "judged document count exceeds corpus");
@@ -786,22 +945,35 @@ export function validatePreparedManifest(value: unknown): PreparedManifest {
 		"distractor count does not match corpus minus judged documents",
 	);
 
-	assertManifest(typeof manifest.files === "object" && manifest.files !== null, "files must be an object");
-	const files = manifest.files as Record<string, unknown>;
-	assertManifest(files.queries === "queries.jsonl", "files.queries is invalid");
-	assertManifest(files.qrels === "qrels.jsonl", "files.qrels is invalid");
-	assertManifest(files.corpus === "corpus.jsonl", "files.corpus is invalid");
-	return value as PreparedManifest;
+	return value as SmokePreparedManifest;
 }
 
-export async function prepareMiracl(options: PrepareOptions): Promise<PreparedManifest> {
+export function prepareMiracl(
+	options: FullPrepareOptions,
+	validationOptions?: PrepareValidationOptions,
+): Promise<FullPreparedManifest>;
+export function prepareMiracl(
+	options: SmokePrepareOptions,
+	validationOptions?: PrepareValidationOptions,
+): Promise<SmokePreparedManifest>;
+export async function prepareMiracl(
+	options: PrepareOptions,
+	validationOptions: PrepareValidationOptions = {},
+): Promise<PreparedManifest> {
 	assertNonBlank(options.outputDir, "outputDir");
-	const selectionOptions: SmokeSelectionOptions = {
-		seed: options.seed ?? MIRACL_SMOKE_PROFILE.seed,
-		queryCount: options.queryCount ?? MIRACL_SMOKE_PROFILE.queryCount,
-		distractorCount: options.distractorCount ?? MIRACL_SMOKE_PROFILE.distractorCount,
-	};
-	validateSelectionOptions(selectionOptions);
+	const profile = options.profile ?? "smoke";
+	const smokeOptions = options as SmokePrepareOptions;
+	const selectionOptions: SmokeSelectionOptions | undefined =
+		profile === "smoke"
+			? {
+					seed: smokeOptions.seed ?? MIRACL_SMOKE_PROFILE.seed,
+					queryCount: smokeOptions.queryCount ?? MIRACL_SMOKE_PROFILE.queryCount,
+					distractorCount: smokeOptions.distractorCount ?? MIRACL_SMOKE_PROFILE.distractorCount,
+				}
+			: undefined;
+	if (selectionOptions !== undefined) validateSelectionOptions(selectionOptions);
+	const expectedFullCorpusPassages = validationOptions.expectedFullCorpusPassages ?? MIRACL_FULL_CORPUS_PASSAGES;
+	assertCount(expectedFullCorpusPassages, "expectedFullCorpusPassages", false);
 	const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
 	const maxDownloadBytes = options.maxDownloadBytes ?? DEFAULT_MAX_DOWNLOAD_BYTES;
 	const maxDecompressedBytes = options.maxDecompressedBytesPerShard ?? DEFAULT_MAX_DECOMPRESSED_BYTES_PER_SHARD;
@@ -810,10 +982,10 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 	assertCount(maxDecompressedBytes, "maxDecompressedBytesPerShard", false);
 	const fetchImpl = options.fetchImpl ?? fetch;
 
-	let outputCreated = false;
+	let outputIdentity: PreparedDirectoryIdentity | undefined;
 	try {
 		await mkdir(options.outputDir, { mode: 0o700 });
-		outputCreated = true;
+		outputIdentity = await snapshotPreparedDirectory(options.outputDir);
 		const downloadsDir = join(options.outputDir, "downloads");
 		await mkdir(downloadsDir, { mode: 0o700 });
 		const topics = await downloadPinnedFile(
@@ -848,12 +1020,87 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 
 		const allQueries = await readTopicsTsv(join(downloadsDir, "topics.tsv"));
 		const allQrels = await readQrels(join(downloadsDir, "qrels.tsv"));
-		const selected = selectQueriesAndQrels(allQueries, allQrels, selectionOptions);
+		validateQueriesAndQrels(allQueries, allQrels);
+		if (profile === "full") {
+			const queriesNormalized = await writeJsonLinesFile(join(options.outputDir, "queries.jsonl"), allQueries);
+			const qrelsNormalized = await writeJsonLinesFile(join(options.outputDir, "qrels.jsonl"), allQrels);
+			const allReferencedIds = new Set(allQrels.map((qrel) => qrel.documentId));
+			const seenReferencedIds = new Set<string>();
+			const duplicateCheckDirectory = join(options.outputDir, ".duplicate-check");
+			await mkdir(duplicateCheckDirectory, { mode: 0o700 });
+			const duplicateDetector = new DiskBackedDuplicateDetector(duplicateCheckDirectory);
+			const corpusWriter = await openJsonLinesWriter(join(options.outputDir, "corpus.jsonl"));
+			let corpusNormalized: NormalizedPreparedFile;
+			try {
+				for (const [index] of MIRACL_SOURCES.corpus.urls.entries()) {
+					const path = join(downloadsDir, `docs-${index}.jsonl.gz`);
+					await forEachGzipCorpusDocument(path, maxDecompressedBytes, async (document) => {
+						await duplicateDetector.record(document.documentId);
+						if (allReferencedIds.has(document.documentId)) {
+							seenReferencedIds.add(document.documentId);
+						}
+						await appendJsonLine(corpusWriter, document);
+					});
+				}
+				await duplicateDetector.assertNoDuplicates();
+				corpusNormalized = await finalizeJsonLinesWriter(corpusWriter);
+			} catch (error) {
+				await closeJsonLinesWriter(corpusWriter).catch(() => undefined);
+				throw error;
+			} finally {
+				await duplicateDetector.dispose();
+			}
+			const missingReferencedIds = [...allReferencedIds].filter((documentId) => !seenReferencedIds.has(documentId));
+			if (missingReferencedIds.length > 0) {
+				throw new Error(`qrels reference missing corpus document: ${missingReferencedIds[0]}`);
+			}
+			if (corpusNormalized.records !== expectedFullCorpusPassages) {
+				throw new Error(
+					`full MIRACL Korean corpus must contain ${expectedFullCorpusPassages} passages but contained ${corpusNormalized.records}`,
+				);
+			}
+			const manifest: FullPreparedManifest = {
+				schemaVersion: 1,
+				normalizationVersion: MIRACL_NORMALIZATION_VERSION,
+				profile: "full",
+				revisions: {
+					topics: MIRACL_SOURCES.topics.revision,
+					corpus: MIRACL_SOURCES.corpus.revision,
+				},
+				sources: {
+					topics,
+					qrels: qrelsSource,
+					corpus: corpusSources,
+				},
+				counts: {
+					queries: allQueries.length,
+					qrels: allQrels.length,
+					positiveQrels: allQrels.filter((qrel) => qrel.relevance > 0).length,
+					corpus: corpusNormalized.records,
+					judgedDocuments: allReferencedIds.size,
+				},
+				normalized: {
+					queries: queriesNormalized,
+					qrels: qrelsNormalized,
+					corpus: corpusNormalized,
+				},
+				files: {
+					queries: "queries.jsonl",
+					qrels: "qrels.jsonl",
+					corpus: "corpus.jsonl",
+				},
+			};
+			validatePreparedManifest(manifest, { expectedFullCorpusPassages });
+			await writeJsonAtomic(join(options.outputDir, "prepared-manifest.json"), manifest);
+			return manifest;
+		}
+		const smokeSelectionOptions = selectionOptions as SmokeSelectionOptions;
+		const selected = selectQueriesAndQrels(allQueries, allQrels, smokeSelectionOptions);
 		const selectedJudgedIds = new Set(selected.qrels.map((qrel) => qrel.documentId));
 		const allReferencedIds = new Set(allQrels.map((qrel) => qrel.documentId));
 		const seenReferencedIds = new Set<string>();
 		const judgedDocuments = new Map<string, CorpusDocument>();
-		const distractors = new BoundedDistractorHeap(selectionOptions.distractorCount);
+		const distractors = new BoundedDistractorHeap(smokeSelectionOptions.distractorCount);
 		const duplicateCheckDirectory = join(options.outputDir, ".duplicate-check");
 		await mkdir(duplicateCheckDirectory, { mode: 0o700 });
 		const duplicateDetector = new DiskBackedDuplicateDetector(duplicateCheckDirectory);
@@ -870,7 +1117,7 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 						return;
 					}
 					distractors.add({
-						key: deterministicKey(selectionOptions.seed, document.documentId),
+						key: deterministicKey(smokeSelectionOptions.seed, document.documentId),
 						document,
 					});
 				});
@@ -884,12 +1131,12 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 			throw new Error(`qrels reference missing corpus document: ${missingReferencedIds[0]}`);
 		}
 		const selectedDistractors = distractors.values();
-		if (selectedDistractors.length < selectionOptions.distractorCount) {
+		if (selectedDistractors.length < smokeSelectionOptions.distractorCount) {
 			throw new Error(
-				`requested ${selectionOptions.distractorCount} distractors but only ${selectedDistractors.length} unjudged documents are available`,
+				`requested ${smokeSelectionOptions.distractorCount} distractors but only ${selectedDistractors.length} unjudged documents are available`,
 			);
 		}
-		const compare = compareIds(selectionOptions.seed);
+		const compare = compareIds(smokeSelectionOptions.seed);
 		const selectedCorpus = [...judgedDocuments.values(), ...selectedDistractors].sort((left, right) =>
 			compare(left.documentId, right.documentId),
 		);
@@ -897,7 +1144,7 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 		await writeJsonLinesFile(join(options.outputDir, "queries.jsonl"), selected.queries);
 		await writeJsonLinesFile(join(options.outputDir, "qrels.jsonl"), selected.qrels);
 		await writeJsonLinesFile(join(options.outputDir, "corpus.jsonl"), selectedCorpus);
-		const manifest: PreparedManifest = {
+		const manifest: SmokePreparedManifest = {
 			schemaVersion: 1,
 			normalizationVersion: MIRACL_NORMALIZATION_VERSION,
 			profile: "smoke",
@@ -910,7 +1157,7 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 				qrels: qrelsSource,
 				corpus: corpusSources,
 			},
-			seed: selectionOptions.seed,
+			seed: smokeSelectionOptions.seed,
 			selectedIds: {
 				queryIds: selected.queries.map((query) => query.queryId),
 				documentIds: selectedCorpus.map((document) => document.documentId),
@@ -933,9 +1180,45 @@ export async function prepareMiracl(options: PrepareOptions): Promise<PreparedMa
 		await writeJsonAtomic(join(options.outputDir, "prepared-manifest.json"), manifest);
 		return manifest;
 	} catch (error) {
-		if (outputCreated) {
-			await rm(options.outputDir, { recursive: true, force: true });
+		if (outputIdentity !== undefined) {
+			await cleanupOwnedPreparedDirectory(options.outputDir, outputIdentity).catch(() => undefined);
 		}
 		throw error;
+	}
+}
+
+async function snapshotPreparedDirectory(path: string): Promise<PreparedDirectoryIdentity> {
+	const stats = await lstat(path);
+	if (!stats.isDirectory() || stats.isSymbolicLink()) {
+		throw new Error("prepared output directory changed");
+	}
+	return { device: stats.dev, inode: stats.ino };
+}
+
+async function cleanupOwnedPreparedDirectory(path: string, identity: PreparedDirectoryIdentity): Promise<void> {
+	let current: PreparedDirectoryIdentity;
+	try {
+		current = await snapshotPreparedDirectory(path);
+	} catch {
+		return;
+	}
+	if (current.device !== identity.device || current.inode !== identity.inode) return;
+	const quarantine = `${path}.cleanup-${process.pid}-${randomUUID()}`;
+	await rename(path, quarantine);
+	let moved: PreparedDirectoryIdentity;
+	try {
+		moved = await snapshotPreparedDirectory(quarantine);
+	} catch {
+		return;
+	}
+	if (moved.device === identity.device && moved.inode === identity.inode) {
+		await rm(quarantine, { recursive: true, force: true });
+		return;
+	}
+	try {
+		await rename(quarantine, path);
+	} catch {
+		// Preserve a replacement under the quarantine name when the original
+		// pathname was concurrently claimed.
 	}
 }
