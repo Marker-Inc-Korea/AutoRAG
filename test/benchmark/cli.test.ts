@@ -1,5 +1,17 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	truncateSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -253,6 +265,92 @@ describe("MIRACL benchmark CLI", () => {
 		writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
 
 		await expect(runCli(["evaluate", "--run", output], { writeStdout: vi.fn() })).rejects.toThrow("methodConfig");
+	});
+
+	it("bounds private run artifacts before parsing and limits streamed result records", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const baseRun = join(parent, "base-run");
+		writePrepared(prepared);
+		await runCli(["run", "--profile", "smoke", "--prepared", prepared, "--output", baseRun, "--methods", "bm25"], {
+			createBenchmarkMethods: methodFactory(),
+		});
+
+		const oversizedManifest = join(parent, "oversized-manifest");
+		cpSync(baseRun, oversizedManifest, { recursive: true });
+		truncateSync(join(oversizedManifest, "manifest.json"), 4 * 1024 * 1024 + 1);
+		await expect(runCli(["evaluate", "--run", oversizedManifest], { writeStdout: vi.fn() })).rejects.toThrow(
+			"run manifest exceeds",
+		);
+
+		const oversizedMetrics = join(parent, "oversized-metrics");
+		cpSync(baseRun, oversizedMetrics, { recursive: true });
+		truncateSync(join(oversizedMetrics, "metrics.json"), 256 * 1024 + 1);
+		await expect(runCli(["evaluate", "--run", oversizedMetrics], { writeStdout: vi.fn() })).rejects.toThrow(
+			"run metrics exceeds",
+		);
+
+		const oversizedResults = join(parent, "oversized-results");
+		cpSync(baseRun, oversizedResults, { recursive: true });
+		truncateSync(join(oversizedResults, "results.jsonl"), 64 * 1024 * 1024 + 1);
+		await expect(runCli(["evaluate", "--run", oversizedResults], { writeStdout: vi.fn() })).rejects.toThrow(
+			"results JSONL exceeds",
+		);
+
+		const tooManyResults = join(parent, "too-many-results");
+		cpSync(baseRun, tooManyResults, { recursive: true });
+		const validRecord = readFileSync(join(tooManyResults, "results.jsonl"), "utf8");
+		writeFileSync(join(tooManyResults, "results.jsonl"), `${validRecord}{not-json}\n`);
+		await expect(runCli(["evaluate", "--run", tooManyResults], { writeStdout: vi.fn() })).rejects.toThrow(
+			"at most 1 records",
+		);
+
+		const publicManifest = join(parent, "public-manifest");
+		cpSync(baseRun, publicManifest, { recursive: true });
+		chmodSync(join(publicManifest, "manifest.json"), 0o644);
+		await expect(runCli(["evaluate", "--run", publicManifest], { writeStdout: vi.fn() })).rejects.toThrow(
+			"must be private",
+		);
+	});
+
+	it("resnapshots and cleans workspace files created before a method factory failure", async () => {
+		const parent = makeRoot();
+		const prepared = join(parent, "prepared");
+		const output = join(parent, "run");
+		const config = join(parent, "minsync.json");
+		writePrepared(prepared);
+		writeFileSync(config, JSON.stringify({ embedder: { id: "intfloat/model", dimension: 1024 } }), {
+			mode: 0o600,
+		});
+
+		await expect(
+			runCli(
+				[
+					"run",
+					"--profile",
+					"smoke",
+					"--prepared",
+					prepared,
+					"--output",
+					output,
+					"--methods",
+					"bm25,minsync",
+					"--config",
+					config,
+				],
+				{
+					createBenchmarkMethods: async (options) => {
+						const partialIndex = join(options.root, ".bm25-partial");
+						mkdirSync(partialIndex, { mode: 0o700 });
+						writeFileSync(join(partialIndex, "index.bin"), "created before MinSync failure", { mode: 0o600 });
+						throw new Error("MinSync benchmark indexing failed");
+					},
+				},
+			),
+		).rejects.toThrow("MinSync benchmark indexing failed");
+
+		expect(readdirSync(parent).filter((name) => name.startsWith(".run.workspace-"))).toEqual([]);
+		expect(existsSync(output)).toBe(false);
 	});
 
 	it("does not recursively clean a replacement benchmark workspace", async () => {

@@ -344,6 +344,32 @@ describe("MIRACL run reports", () => {
 		).toThrow("manifest");
 	});
 
+	it.each([
+		"/tmp/embedder",
+		"C:\\models\\embedder",
+		"C:/models/embedder",
+		"\\\\server\\share\\embedder",
+		"file:///tmp/embedder",
+	])("rejects filesystem-like persisted embedder ID %s", (embedderId) => {
+		const value = manifest();
+		expect(() =>
+			normalizeRunManifest({
+				...value,
+				methodConfig: { ...value.methodConfig, embedderId },
+			} as never),
+		).toThrow("embedderId must not be an absolute filesystem path");
+	});
+
+	it("allows repository-style persisted model IDs containing a slash", () => {
+		const value = manifest();
+		expect(
+			normalizeRunManifest({
+				...value,
+				methodConfig: { ...value.methodConfig, embedderId: "intfloat/multilingual-e5-large" },
+			} as never).methodConfig?.embedderId,
+		).toBe("intfloat/multilingual-e5-large");
+	});
+
 	it("requires persisted hit ranks to be contiguous and bounded at 100", () => {
 		const base = {
 			schemaVersion: 1,

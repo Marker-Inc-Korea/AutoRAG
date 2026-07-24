@@ -206,6 +206,36 @@ describe("MIRACL benchmark methods", () => {
 	});
 
 	it.each([
+		"/tmp/embedder",
+		"C:\\models\\embedder",
+		"C:/models/embedder",
+		"\\\\server\\share\\embedder",
+		"file:///tmp/embedder",
+	])("rejects filesystem-like embedder ID %s", (embedderId) => {
+		const root = makeRoot();
+		const configPath = join(root, "minsync.json");
+		writeFileSync(configPath, JSON.stringify({ embedder: { id: embedderId, dimension: 1024 } }));
+
+		expect(() => loadBenchmarkConfig(configPath)).toThrow("embedder.id must not be an absolute filesystem path");
+		expect(() =>
+			sanitizeMethodConfig({
+				embedder: { id: embedderId, dimension: 1024 },
+			}),
+		).toThrow("embedder.id must not be an absolute filesystem path");
+	});
+
+	it("allows repository-style model IDs containing a slash", () => {
+		const root = makeRoot();
+		const configPath = join(root, "minsync.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({ embedder: { id: "intfloat/multilingual-e5-large", dimension: 1024 } }),
+		);
+
+		expect(loadBenchmarkConfig(configPath).embedder.id).toBe("intfloat/multilingual-e5-large");
+	});
+
+	it.each([
 		[{ unknown: true }, "not a recognized field"],
 		[{ authorization: "Bearer private-token" }, "not a recognized field"],
 		[{ embedder: { dimension: 0 } }, "positive safe integer"],

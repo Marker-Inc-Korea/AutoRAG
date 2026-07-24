@@ -2,8 +2,8 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { lstat, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readJsonLines } from "./jsonl.ts";
@@ -46,6 +46,12 @@ import {
 
 const METHODS = new Set<BenchmarkMethod>(["bm25", "minsync", "hybrid"]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const MAX_RUN_MANIFEST_BYTES = 4 * 1024 * 1024;
+const MAX_RUN_METRICS_BYTES = 256 * 1024;
+const MAX_RUN_RESULTS_BYTES = 64 * 1024 * 1024;
+const MAX_RUN_RESULT_RECORDS = 30_000;
+
+class BoundedArtifactReadError extends Error {}
 
 export interface CliDependencies {
 	readonly prepareMiracl: (options: PrepareOptions) => Promise<PreparedManifest>;
@@ -172,12 +178,22 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 		if (needsMinSync && config === undefined) {
 			throw new Error("--config is required for MinSync or hybrid methods");
 		}
-		const created = await dependencies.createBenchmarkMethods({
-			names: command.methods,
-			root: workspace.root,
-			documentBySource: workspace.documentBySource,
-			config,
-		});
+		let created: CreatedBenchmarkMethods;
+		try {
+			created = await dependencies.createBenchmarkMethods({
+				names: command.methods,
+				root: workspace.root,
+				documentBySource: workspace.documentBySource,
+				config,
+			});
+		} catch (error) {
+			try {
+				workspaceOwnership = await snapshotOwnedWorkspace(workspace.root, workspaceIdentity);
+			} catch {
+				// The previous exact snapshot remains the only cleanup authority.
+			}
+			throw error;
+		}
 		workspaceOwnership = await snapshotOwnedWorkspace(workspace.root, workspaceIdentity);
 		const records: QueryRunRecord[] = [];
 		for (const method of [...command.methods].sort(compareCodePoints)) {
@@ -500,23 +516,87 @@ async function loadRun(directory: string): Promise<LoadedRun> {
 	const manifestPath = await containedRegularFile(canonicalDirectory, "manifest.json");
 	let rawManifest: unknown;
 	try {
-		rawManifest = JSON.parse(await readFile(manifestPath, "utf8"));
-	} catch {
-		throw new Error("run manifest is not valid JSON");
+		rawManifest = JSON.parse(
+			await readBoundedPrivateUtf8(manifestPath, MAX_RUN_MANIFEST_BYTES, "run manifest"),
+		);
+	} catch (error) {
+		throwPreservingBoundedReadError(error, "run manifest is not valid JSON");
 	}
 	const manifest = normalizeRunManifest(rawManifest);
-	const records = (await readJsonLines<unknown>(await containedRegularFile(canonicalDirectory, "results.jsonl"))).map(
-		validateQueryRunRecord,
-	);
+	const queryCount = new Set(manifest.dataset.evaluation.qrels.map((qrel) => qrel.queryId)).size;
+	const expectedRecords = queryCount * manifest.methods.length;
+	if (!Number.isSafeInteger(expectedRecords) || expectedRecords < 1 || expectedRecords > MAX_RUN_RESULT_RECORDS) {
+		throw new Error(`run results declaration exceeds ${MAX_RUN_RESULT_RECORDS} records`);
+	}
+	const records = (
+		await readJsonLines<unknown>(await containedRegularFile(canonicalDirectory, "results.jsonl"), {
+			totalBytes: MAX_RUN_RESULTS_BYTES,
+			maxRecords: expectedRecords,
+			requirePrivateFile: true,
+			label: "results JSONL",
+		})
+	).map(validateQueryRunRecord);
 	const metricsPath = await containedRegularFile(canonicalDirectory, "metrics.json");
 	let rawMetrics: unknown;
 	try {
-		rawMetrics = JSON.parse(await readFile(metricsPath, "utf8"));
-	} catch {
-		throw new Error("run metrics are not valid JSON");
+		rawMetrics = JSON.parse(await readBoundedPrivateUtf8(metricsPath, MAX_RUN_METRICS_BYTES, "run metrics"));
+	} catch (error) {
+		throwPreservingBoundedReadError(error, "run metrics are not valid JSON");
 	}
 	const metrics = normalizeRunMetrics(rawMetrics);
 	return { directory: canonicalDirectory, manifest, records, metrics };
+}
+
+function throwPreservingBoundedReadError(error: unknown, fallback: string): never {
+	if (error instanceof BoundedArtifactReadError) throw error;
+	throw new Error(fallback);
+}
+
+async function readBoundedPrivateUtf8(path: string, maxBytes: number, label: string): Promise<string> {
+	const pathStats = await lstat(path);
+	assertPrivateBoundedRegularFile(pathStats, maxBytes, label);
+	const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+	try {
+		const openStats = await handle.stat();
+		assertPrivateBoundedRegularFile(openStats, maxBytes, label);
+		if (openStats.dev !== pathStats.dev || openStats.ino !== pathStats.ino || openStats.size !== pathStats.size) {
+			throw new BoundedArtifactReadError(`${label} changed before reading`);
+		}
+		const bytes = Buffer.alloc(openStats.size);
+		let offset = 0;
+		while (offset < bytes.length) {
+			const result = await handle.read(bytes, offset, bytes.length - offset, offset);
+			if (result.bytesRead === 0) throw new BoundedArtifactReadError(`${label} changed while reading`);
+			offset += result.bytesRead;
+		}
+		const finalStats = await handle.stat();
+		if (
+			finalStats.dev !== openStats.dev ||
+			finalStats.ino !== openStats.ino ||
+			finalStats.size !== openStats.size
+		) {
+			throw new BoundedArtifactReadError(`${label} changed while reading`);
+		}
+		return bytes.toString("utf8");
+	} finally {
+		await handle.close();
+	}
+}
+
+function assertPrivateBoundedRegularFile(
+	stats: Awaited<ReturnType<typeof lstat>>,
+	maxBytes: number,
+	label: string,
+): void {
+	if (!stats.isFile() || stats.isSymbolicLink()) {
+		throw new BoundedArtifactReadError(`${label} must be a real file`);
+	}
+	if ((Number(stats.mode) & 0o077) !== 0) {
+		throw new BoundedArtifactReadError(`${label} must be private`);
+	}
+	if (stats.size > maxBytes) {
+		throw new BoundedArtifactReadError(`${label} exceeds ${maxBytes} bytes`);
+	}
 }
 
 function assertCompleteRunRecords(

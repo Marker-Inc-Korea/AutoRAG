@@ -613,7 +613,7 @@ function normalizeMethodConfig(value: SanitizedMethodConfig): SanitizedMethodCon
 		dimension: requirePositiveSafeInteger(config.dimension, "methodConfig dimension"),
 	};
 	if (config.embedderId !== undefined) {
-		normalized.embedderId = requireOpaqueDisclosure(config.embedderId, "methodConfig embedderId");
+		normalized.embedderId = requirePortableEmbedderId(config.embedderId, "methodConfig embedderId");
 	}
 	if (config.apiKeyEnv !== undefined) {
 		const apiKeyEnv = requireNonBlank(config.apiKeyEnv, "methodConfig apiKeyEnv");
@@ -1054,6 +1054,14 @@ function requireOpaqueDisclosure(value: unknown, label: string): string {
 		throw new Error(`${label} must be an opaque value`);
 	}
 	return text;
+}
+
+function requirePortableEmbedderId(value: unknown, label: string): string {
+	const text = requireNonBlank(value, label);
+	if (/^(?:\/|\\\\|[A-Za-z]:[\\/]|file:)/iu.test(text)) {
+		throw new Error(`${label} must not be an absolute filesystem path`);
+	}
+	return requireOpaqueDisclosure(text, label);
 }
 
 function requireSafeInteger(value: unknown, label: string): number {

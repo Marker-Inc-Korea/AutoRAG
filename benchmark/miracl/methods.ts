@@ -131,7 +131,7 @@ export function sanitizeMethodConfig(
 			"embedder.dimension",
 		),
 	};
-	if (embedder.id !== undefined) sanitized.embedderId = embedder.id;
+	if (embedder.id !== undefined) sanitized.embedderId = requirePortableEmbedderId(embedder.id);
 	if (embedder.apiKeyEnv !== undefined) sanitized.apiKeyEnv = embedder.apiKeyEnv;
 	return sanitized;
 }
@@ -953,13 +953,19 @@ function normalizeMethodConfig(
 			"embedder.dimension",
 		),
 	};
-	for (const field of ["id", "baseUrl"] as const) {
-		const value = embedderRecord[field];
-		if (value === undefined) continue;
-		if (typeof value !== "string" || value.trim().length === 0) {
-			throw new Error(`MinSync benchmark embedder.${field} must be a non-empty string`);
+	const embedderId = embedderRecord.id;
+	if (embedderId !== undefined) {
+		if (typeof embedderId !== "string" || embedderId.trim().length === 0) {
+			throw new Error("MinSync benchmark embedder.id must be a non-empty string");
 		}
-		embedder[field] = value;
+		embedder.id = requirePortableEmbedderId(embedderId);
+	}
+	const baseUrl = embedderRecord.baseUrl;
+	if (baseUrl !== undefined) {
+		if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+			throw new Error("MinSync benchmark embedder.baseUrl must be a non-empty string");
+		}
+		embedder.baseUrl = baseUrl;
 	}
 	if (embedder.baseUrl !== undefined) validateBaseUrl(embedder.baseUrl);
 	for (const field of ["queryPrefix", "passagePrefix"] as const) {
@@ -1025,6 +1031,13 @@ function normalizeMethodConfig(
 		normalized.autoInstall = record.autoInstall;
 	}
 	return normalized;
+}
+
+function requirePortableEmbedderId(value: string): string {
+	if (/^(?:\/|\\\\|[A-Za-z]:[\\/]|file:)/iu.test(value)) {
+		throw new Error("embedder.id must not be an absolute filesystem path");
+	}
+	return value;
 }
 
 function validateMethodNames(

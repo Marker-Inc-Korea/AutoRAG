@@ -22,7 +22,6 @@ const MAX_CORPUS_LINE_BYTES = 16 * 1024 * 1024;
 const DUPLICATE_PARTITION_COUNT = 256;
 const MAX_DUPLICATE_PARTITION_IDS = 50_000;
 const MAX_DUPLICATE_PARTITION_BYTES = 64 * 1024 * 1024;
-const MAX_OPEN_DUPLICATE_PARTITIONS = 32;
 const DUPLICATE_WRITE_BUFFER_BYTES = 64 * 1024;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -463,32 +462,29 @@ class DiskBackedDuplicateDetector {
 
 	async #getHandle(partition: number): Promise<FileHandle> {
 		const existing = this.#openHandles.get(partition);
-		if (existing !== undefined) {
-			this.#openHandles.delete(partition);
-			this.#openHandles.set(partition, existing);
-			return existing;
-		}
-		if (this.#openHandles.size >= MAX_OPEN_DUPLICATE_PARTITIONS) {
-			const oldest = this.#openHandles.entries().next().value as [number, FileHandle] | undefined;
-			if (oldest !== undefined) {
-				await oldest[1].close();
-				this.#openHandles.delete(oldest[0]);
+		if (existing !== undefined) return existing;
+		const path = this.#pathFor(partition);
+		const handle = await open(path, "wx", 0o600);
+		try {
+			const stats = await handle.stat();
+			const pathStats = await lstat(path);
+			if (
+				!stats.isFile() ||
+				(stats.mode & 0o077) !== 0 ||
+				!pathStats.isFile() ||
+				pathStats.isSymbolicLink() ||
+				pathStats.dev !== stats.dev ||
+				pathStats.ino !== stats.ino
+			) {
+				throw new Error(`duplicate-check partition ${partition} is not an exact private regular file`);
 			}
-		}
-		const handle = await open(this.#pathFor(partition), "a", 0o600);
-		const stats = await handle.stat();
-		if (!stats.isFile()) {
+			this.#fileIdentities.set(partition, { device: stats.dev, inode: stats.ino });
+			this.#openHandles.set(partition, handle);
+			return handle;
+		} catch (error) {
 			await handle.close();
-			throw new Error(`duplicate-check partition ${partition} is not a regular file`);
+			throw error;
 		}
-		const known = this.#fileIdentities.get(partition);
-		if (known !== undefined && (known.device !== stats.dev || known.inode !== stats.ino)) {
-			await handle.close();
-			throw new Error(`duplicate-check partition ${partition} changed`);
-		}
-		this.#fileIdentities.set(partition, { device: stats.dev, inode: stats.ino });
-		this.#openHandles.set(partition, handle);
-		return handle;
 	}
 
 	async #flushAll(): Promise<void> {

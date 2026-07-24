@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -485,6 +494,38 @@ describe("MIRACL preparation", () => {
 			}),
 		).rejects.toThrow(`duplicate corpus document id: ${duplicateId}`);
 		expect(existsSync(outputDir)).toBe(false);
+	});
+
+	it("never follows a preexisting duplicate-partition symlink", async () => {
+		const outputDir = makeOutput();
+		const external = `${outputDir}-external.txt`;
+		const fixture = fixtureFetch();
+		writeFileSync(external, "external data\n", { mode: 0o600 });
+		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+		let injected = false;
+		vi.doMock("node:fs/promises", () => ({
+			...actual,
+			open: async (path: string, flags: string | number, mode?: number) => {
+				const pathText = String(path);
+				if (!injected && pathText.includes(".duplicate-check/partition-")) {
+					injected = true;
+					symlinkSync(external, pathText);
+				}
+				return actual.open(path, flags, mode);
+			},
+		}));
+		vi.resetModules();
+		const { prepareMiracl: prepareWithSymlink } = await import("../../benchmark/miracl/prepare.ts");
+
+		await expect(
+			prepareWithSymlink({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: fixture.fetchImpl,
+			}),
+		).rejects.toThrow();
+		expect(readFileSync(external, "utf8")).toBe("external data\n");
 	});
 
 	it("still rejects a selected qrel document missing from every corpus shard", async () => {
