@@ -1,0 +1,768 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { mkdir, open, rm } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { Transform, type TransformCallback } from "node:stream";
+import { createGunzip } from "node:zlib";
+import { readQrels, readTopicsTsv, writeJsonAtomic } from "./jsonl.ts";
+import { MIRACL_NORMALIZATION_VERSION, MIRACL_SMOKE_PROFILE, MIRACL_SOURCES } from "./profiles.ts";
+import type { BenchmarkQuery, CorpusDocument, Qrel } from "./types.ts";
+
+const DEFAULT_MAX_REDIRECTS = 5;
+const DEFAULT_MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+const DEFAULT_MAX_DECOMPRESSED_BYTES_PER_SHARD = 4 * 1024 * 1024 * 1024;
+const MAX_CORPUS_LINE_BYTES = 16 * 1024 * 1024;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
+export interface MiraclDataset {
+	queries: readonly BenchmarkQuery[];
+	qrels: readonly Qrel[];
+	corpus: readonly CorpusDocument[];
+}
+
+export interface SmokeSelectionOptions {
+	seed: number;
+	queryCount: number;
+	distractorCount: number;
+}
+
+export interface PrepareOptions extends Partial<SmokeSelectionOptions> {
+	outputDir: string;
+	fetchImpl?: FetchLike;
+	maxRedirects?: number;
+	maxDownloadBytes?: number;
+	maxDecompressedBytesPerShard?: number;
+}
+
+export interface PreparedSource {
+	url: string;
+	path: string;
+	sha256: string;
+	bytes: number;
+}
+
+export interface PreparedManifest {
+	schemaVersion: 1;
+	normalizationVersion: typeof MIRACL_NORMALIZATION_VERSION;
+	profile: "smoke";
+	revisions: {
+		topics: string;
+		corpus: string;
+	};
+	sources: {
+		topics: PreparedSource;
+		qrels: PreparedSource;
+		corpus: PreparedSource[];
+	};
+	seed: number;
+	selectedIds: {
+		queryIds: string[];
+		documentIds: string[];
+	};
+	counts: {
+		queries: number;
+		qrels: number;
+		positiveQrels: number;
+		corpus: number;
+		judgedDocuments: number;
+		distractors: number;
+	};
+	files: {
+		queries: "queries.jsonl";
+		qrels: "qrels.jsonl";
+		corpus: "corpus.jsonl";
+	};
+}
+
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+interface DownloadResult extends PreparedSource {}
+
+interface RankedDocument {
+	key: string;
+	document: CorpusDocument;
+}
+
+function assertNonBlank(value: string, label: string): void {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new Error(`${label} must not be blank`);
+	}
+}
+
+function assertCount(value: number, label: string, allowZero: boolean): void {
+	const minimum = allowZero ? 0 : 1;
+	if (!Number.isSafeInteger(value) || value < minimum) {
+		throw new Error(`${label} must be a safe integer greater than or equal to ${minimum}`);
+	}
+}
+
+function deterministicKey(seed: number, id: string): string {
+	return createHash("sha256").update(`${seed}\0${id}`, "utf8").digest("hex");
+}
+
+function compareLexically(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function compareRanked(left: RankedDocument, right: RankedDocument): number {
+	const keyOrder = compareLexically(left.key, right.key);
+	return keyOrder === 0 ? compareLexically(left.document.documentId, right.document.documentId) : keyOrder;
+}
+
+function compareIds(seed: number): (left: string, right: string) => number {
+	return (left, right) => {
+		const keyOrder = compareLexically(deterministicKey(seed, left), deterministicKey(seed, right));
+		return keyOrder === 0 ? compareLexically(left, right) : keyOrder;
+	};
+}
+
+function validateQueriesAndQrels(
+	queries: readonly BenchmarkQuery[],
+	qrels: readonly Qrel[],
+): Map<string, BenchmarkQuery> {
+	const queryById = new Map<string, BenchmarkQuery>();
+	for (const query of queries) {
+		assertNonBlank(query.queryId, "query id");
+		if (queryById.has(query.queryId)) {
+			throw new Error(`duplicate query id: ${query.queryId}`);
+		}
+		queryById.set(query.queryId, query);
+	}
+
+	const qrelPairs = new Set<string>();
+	for (const qrel of qrels) {
+		assertNonBlank(qrel.queryId, "qrel query id");
+		assertNonBlank(qrel.documentId, "qrel document id");
+		if (!Number.isInteger(qrel.relevance) || !Number.isFinite(qrel.relevance) || qrel.relevance < 0) {
+			throw new Error(`qrel relevance for ${qrel.queryId}/${qrel.documentId} must be a non-negative integer`);
+		}
+		if (!queryById.has(qrel.queryId)) {
+			throw new Error(`qrel references missing query: ${qrel.queryId}`);
+		}
+		const pair = `${qrel.queryId}\0${qrel.documentId}`;
+		if (qrelPairs.has(pair)) {
+			throw new Error(`duplicate qrel: ${qrel.queryId}/${qrel.documentId}`);
+		}
+		qrelPairs.add(pair);
+	}
+	return queryById;
+}
+
+function validateDataset(input: MiraclDataset): {
+	queryById: Map<string, BenchmarkQuery>;
+	documentById: Map<string, CorpusDocument>;
+} {
+	const queryById = validateQueriesAndQrels(input.queries, input.qrels);
+
+	const documentById = new Map<string, CorpusDocument>();
+	for (const document of input.corpus) {
+		assertNonBlank(document.documentId, "document id");
+		if (documentById.has(document.documentId)) {
+			throw new Error(`duplicate document id: ${document.documentId}`);
+		}
+		documentById.set(document.documentId, document);
+	}
+
+	for (const qrel of input.qrels) {
+		if (!documentById.has(qrel.documentId)) {
+			throw new Error(`qrel references missing corpus document: ${qrel.documentId}`);
+		}
+	}
+
+	return { queryById, documentById };
+}
+
+function validateSelectionOptions(options: SmokeSelectionOptions): void {
+	if (!Number.isSafeInteger(options.seed)) {
+		throw new Error("seed must be a safe integer");
+	}
+	assertCount(options.queryCount, "queryCount", false);
+	assertCount(options.distractorCount, "distractorCount", true);
+}
+
+function selectQueriesAndQrels(
+	queries: readonly BenchmarkQuery[],
+	qrels: readonly Qrel[],
+	options: SmokeSelectionOptions,
+): {
+	queries: BenchmarkQuery[];
+	qrels: Qrel[];
+} {
+	const queryById = validateQueriesAndQrels(queries, qrels);
+	const positiveQueryIds = new Set(qrels.filter((qrel) => qrel.relevance > 0).map((qrel) => qrel.queryId));
+	if (positiveQueryIds.size < options.queryCount) {
+		throw new Error(
+			`requested ${options.queryCount} queries but only ${positiveQueryIds.size} have positive relevance judgments`,
+		);
+	}
+
+	const compare = compareIds(options.seed);
+	const selectedQueryIds = [...positiveQueryIds].sort(compare).slice(0, options.queryCount);
+	const selectedQueryIdSet = new Set(selectedQueryIds);
+	return {
+		queries: selectedQueryIds.map((queryId) => queryById.get(queryId) as BenchmarkQuery),
+		qrels: qrels
+			.filter((qrel) => selectedQueryIdSet.has(qrel.queryId))
+			.sort((left, right) => {
+				const queryOrder = compare(left.queryId, right.queryId);
+				return queryOrder === 0 ? compare(left.documentId, right.documentId) : queryOrder;
+			}),
+	};
+}
+
+export function selectSmokeDataset(input: MiraclDataset, options: SmokeSelectionOptions): MiraclDataset {
+	validateSelectionOptions(options);
+
+	const { queryById, documentById } = validateDataset(input);
+	const selected = selectQueriesAndQrels(input.queries, input.qrels, options);
+	const compare = compareIds(options.seed);
+	const judgedDocumentIds = new Set(selected.qrels.map((qrel) => qrel.documentId));
+	const distractors = new BoundedDistractorHeap(options.distractorCount);
+	for (const document of documentById.values()) {
+		if (!judgedDocumentIds.has(document.documentId)) {
+			distractors.add({ key: deterministicKey(options.seed, document.documentId), document });
+		}
+	}
+	const selectedDistractors = distractors.values();
+	if (selectedDistractors.length < options.distractorCount) {
+		throw new Error(
+			`requested ${options.distractorCount} distractors but only ${selectedDistractors.length} unjudged documents are available`,
+		);
+	}
+	const selectedDocumentIds = [
+		...judgedDocumentIds,
+		...selectedDistractors.map((document) => document.documentId),
+	].sort(compare);
+
+	return {
+		queries: selected.queries.map((query) => queryById.get(query.queryId) as BenchmarkQuery),
+		qrels: selected.qrels,
+		corpus: selectedDocumentIds.map((documentId) => documentById.get(documentId) as CorpusDocument),
+	};
+}
+
+class BoundedDistractorHeap {
+	readonly #capacity: number;
+	readonly #items: RankedDocument[] = [];
+
+	constructor(capacity: number) {
+		this.#capacity = capacity;
+	}
+
+	add(item: RankedDocument): void {
+		if (this.#capacity === 0) {
+			return;
+		}
+		if (this.#items.length < this.#capacity) {
+			this.#items.push(item);
+			this.#bubbleUp(this.#items.length - 1);
+			return;
+		}
+		if (compareRanked(item, this.#items[0]) >= 0) {
+			return;
+		}
+		this.#items[0] = item;
+		this.#sinkDown(0);
+	}
+
+	values(): CorpusDocument[] {
+		return [...this.#items].sort(compareRanked).map((item) => item.document);
+	}
+
+	#bubbleUp(startIndex: number): void {
+		let index = startIndex;
+		while (index > 0) {
+			const parent = Math.floor((index - 1) / 2);
+			if (compareRanked(this.#items[parent], this.#items[index]) >= 0) {
+				break;
+			}
+			[this.#items[parent], this.#items[index]] = [this.#items[index], this.#items[parent]];
+			index = parent;
+		}
+	}
+
+	#sinkDown(startIndex: number): void {
+		let index = startIndex;
+		while (true) {
+			const left = index * 2 + 1;
+			const right = left + 1;
+			let largest = index;
+			if (left < this.#items.length && compareRanked(this.#items[left], this.#items[largest]) > 0) {
+				largest = left;
+			}
+			if (right < this.#items.length && compareRanked(this.#items[right], this.#items[largest]) > 0) {
+				largest = right;
+			}
+			if (largest === index) {
+				return;
+			}
+			[this.#items[index], this.#items[largest]] = [this.#items[largest], this.#items[index]];
+			index = largest;
+		}
+	}
+}
+
+class DecompressedLimitTransform extends Transform {
+	#totalBytes = 0;
+	#lineBytes = 0;
+	#lineNumber = 1;
+	readonly #path: string;
+	readonly #maxTotalBytes: number;
+
+	constructor(path: string, maxTotalBytes: number) {
+		super();
+		this.#path = path;
+		this.#maxTotalBytes = maxTotalBytes;
+	}
+
+	_transform(chunk: Buffer, encoding: BufferEncoding, callback: TransformCallback): void {
+		const bytes = typeof chunk === "string" ? Buffer.from(chunk, encoding) : chunk;
+		this.#totalBytes += bytes.byteLength;
+		if (this.#totalBytes > this.#maxTotalBytes) {
+			callback(new Error(`decompressed data in ${this.#path} exceeds the configured byte limit`));
+			return;
+		}
+		for (const byte of bytes) {
+			if (byte === 0x0a) {
+				this.#lineBytes = 0;
+				this.#lineNumber += 1;
+				continue;
+			}
+			this.#lineBytes += 1;
+			if (this.#lineBytes > MAX_CORPUS_LINE_BYTES) {
+				callback(new Error(`line ${this.#lineNumber} in ${this.#path} exceeds 16 MiB`));
+				return;
+			}
+		}
+		callback(null, chunk);
+	}
+}
+
+function parseCorpusDocument(line: string, path: string, lineNumber: number): CorpusDocument {
+	let value: unknown;
+	try {
+		value = JSON.parse(line);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`invalid corpus JSON at ${path}:${lineNumber}: ${message}`);
+	}
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error(`corpus record at ${path}:${lineNumber} must be an object`);
+	}
+	const record = value as Record<string, unknown>;
+	if (typeof record.docid !== "string" || record.docid.trim().length === 0) {
+		throw new Error(`corpus docid at ${path}:${lineNumber} must not be blank`);
+	}
+	if (typeof record.title !== "string" || typeof record.text !== "string") {
+		throw new Error(`corpus title and text at ${path}:${lineNumber} must be strings`);
+	}
+	return { documentId: record.docid, title: record.title, text: record.text };
+}
+
+async function forEachGzipCorpusDocument(
+	path: string,
+	maxDecompressedBytes: number,
+	visit: (document: CorpusDocument) => void,
+): Promise<void> {
+	const input = createReadStream(path);
+	const gunzip = createGunzip();
+	const limiter = new DecompressedLimitTransform(path, maxDecompressedBytes);
+	const reader = createInterface({
+		input: input.pipe(gunzip).pipe(limiter),
+		crlfDelay: Number.POSITIVE_INFINITY,
+	});
+	let lineNumber = 0;
+	try {
+		for await (const line of reader) {
+			lineNumber += 1;
+			if (line.trim().length === 0) {
+				throw new Error(`corpus line at ${path}:${lineNumber} must not be blank`);
+			}
+			visit(parseCorpusDocument(line, path, lineNumber));
+		}
+	} finally {
+		reader.close();
+		input.destroy();
+		gunzip.destroy();
+		limiter.destroy();
+	}
+	if (lineNumber === 0) {
+		throw new Error(`corpus shard ${path} is empty`);
+	}
+}
+
+function parseContentLength(response: Response, maxBytes: number, url: string): number | undefined {
+	const value = response.headers.get("content-length");
+	if (value === null) {
+		return undefined;
+	}
+	if (!/^\d+$/.test(value)) {
+		throw new Error(`invalid content-length from ${url}`);
+	}
+	const bytes = Number(value);
+	if (!Number.isSafeInteger(bytes)) {
+		throw new Error(`content-length from ${url} is not a safe integer`);
+	}
+	if (bytes > maxBytes) {
+		throw new Error(`download from ${url} exceeds the configured byte limit`);
+	}
+	return bytes;
+}
+
+function isAllowedDownloadHost(hostname: string): boolean {
+	const normalized = hostname.toLowerCase();
+	return (
+		normalized === "huggingface.co" ||
+		normalized.endsWith(".huggingface.co") ||
+		normalized.endsWith(".hf.co")
+	);
+}
+
+async function writeBytes(handle: FileHandle, bytes: Uint8Array, position: number): Promise<number> {
+	let offset = 0;
+	while (offset < bytes.byteLength) {
+		const result = await handle.write(bytes, offset, bytes.byteLength - offset, position + offset);
+		if (result.bytesWritten === 0) {
+			throw new Error("file write made no progress");
+		}
+		offset += result.bytesWritten;
+	}
+	return position + offset;
+}
+
+async function downloadPinnedFile(
+	url: string,
+	destinationPath: string,
+	relativePath: string,
+	fetchImpl: FetchLike,
+	maxRedirects: number,
+	maxBytes: number,
+): Promise<DownloadResult> {
+	let currentUrl = new URL(url);
+	let response: Response | undefined;
+	for (let redirectCount = 0; ; redirectCount += 1) {
+		response = await fetchImpl(currentUrl, { method: "GET", redirect: "manual" });
+		if (!REDIRECT_STATUSES.has(response.status)) {
+			break;
+		}
+		if (redirectCount >= maxRedirects) {
+			await response.body?.cancel();
+			throw new Error(`download from ${url} exceeded ${maxRedirects} redirects`);
+		}
+		const location = response.headers.get("location");
+		if (location === null) {
+			await response.body?.cancel();
+			throw new Error(`redirect from ${currentUrl.toString()} has no location`);
+		}
+		const nextUrl = new URL(location, currentUrl);
+		if (nextUrl.protocol !== "https:") {
+			await response.body?.cancel();
+			throw new Error(`redirect from ${currentUrl.toString()} must use HTTPS`);
+		}
+		if (!isAllowedDownloadHost(nextUrl.hostname)) {
+			await response.body?.cancel();
+			throw new Error(`redirect from ${currentUrl.toString()} is outside the allowed download hosts`);
+		}
+		await response.body?.cancel();
+		currentUrl = nextUrl;
+	}
+	if (!response.ok) {
+		await response.body?.cancel();
+		throw new Error(`download from ${currentUrl.toString()} failed with HTTP ${response.status}`);
+	}
+	if (response.body === null) {
+		throw new Error(`download from ${currentUrl.toString()} returned no body`);
+	}
+	const expectedBytes = parseContentLength(response, maxBytes, currentUrl.toString());
+	const hash = createHash("sha256");
+	const handle = await open(destinationPath, "wx", 0o600);
+	let bytes = 0;
+	const reader = response.body.getReader();
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+			if (bytes + value.byteLength > maxBytes) {
+				await reader.cancel();
+				throw new Error(`download from ${currentUrl.toString()} exceeds the configured byte limit`);
+			}
+			hash.update(value);
+			bytes = await writeBytes(handle, value, bytes);
+		}
+		if (expectedBytes !== undefined && expectedBytes !== bytes) {
+			throw new Error(
+				`download from ${currentUrl.toString()} declared ${expectedBytes} bytes but returned ${bytes}`,
+			);
+		}
+	} catch (error) {
+		await reader.cancel().catch(() => undefined);
+		throw error;
+	} finally {
+		reader.releaseLock();
+		await handle.close();
+	}
+	return { url, path: relativePath, sha256: hash.digest("hex"), bytes };
+}
+
+async function writeJsonLinesFile(path: string, records: readonly unknown[]): Promise<void> {
+	const handle = await open(path, "wx", 0o600);
+	let position = 0;
+	try {
+		for (const record of records) {
+			const serialized = JSON.stringify(record);
+			if (serialized === undefined) {
+				throw new Error(`record for ${path} is not JSON serializable`);
+			}
+			position = await writeBytes(handle, Buffer.from(`${serialized}\n`, "utf8"), position);
+		}
+	} finally {
+		await handle.close();
+	}
+}
+
+function assertManifest(condition: unknown, message: string): asserts condition {
+	if (!condition) {
+		throw new Error(`invalid prepared manifest: ${message}`);
+	}
+}
+
+function validateStringIds(value: unknown, label: string): string[] {
+	assertManifest(Array.isArray(value), `${label} must be an array`);
+	const ids = value as unknown[];
+	assertManifest(
+		ids.every((id) => typeof id === "string" && id.trim().length > 0),
+		`${label} must contain non-blank strings`,
+	);
+	assertManifest(new Set(ids).size === ids.length, `${label} must not contain duplicates`);
+	return ids as string[];
+}
+
+function validateSource(value: unknown, expectedUrl: string, expectedPath: string, label: string): void {
+	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), `${label} must be an object`);
+	const source = value as Record<string, unknown>;
+	assertManifest(source.url === expectedUrl, `${label}.url does not match the pinned source`);
+	assertManifest(source.path === expectedPath, `${label}.path must be ${expectedPath}`);
+	assertManifest(typeof source.sha256 === "string" && SHA256_PATTERN.test(source.sha256), `${label}.sha256 is invalid`);
+	assertManifest(Number.isSafeInteger(source.bytes) && (source.bytes as number) > 0, `${label}.bytes is invalid`);
+}
+
+export function validatePreparedManifest(value: unknown): PreparedManifest {
+	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), "root must be an object");
+	const manifest = value as Record<string, unknown>;
+	assertManifest(manifest.schemaVersion === 1, "schemaVersion must be 1");
+	assertManifest(
+		manifest.normalizationVersion === MIRACL_NORMALIZATION_VERSION,
+		`normalizationVersion must be ${MIRACL_NORMALIZATION_VERSION}`,
+	);
+	assertManifest(manifest.profile === "smoke", "profile must be smoke");
+
+	assertManifest(
+		typeof manifest.revisions === "object" && manifest.revisions !== null,
+		"revisions must be an object",
+	);
+	const revisions = manifest.revisions as Record<string, unknown>;
+	assertManifest(revisions.topics === MIRACL_SOURCES.topics.revision, "topics revision does not match the pin");
+	assertManifest(revisions.corpus === MIRACL_SOURCES.corpus.revision, "corpus revision does not match the pin");
+
+	assertManifest(typeof manifest.sources === "object" && manifest.sources !== null, "sources must be an object");
+	const sources = manifest.sources as Record<string, unknown>;
+	validateSource(sources.topics, MIRACL_SOURCES.topics.topicsUrl, "downloads/topics.tsv", "sources.topics");
+	validateSource(sources.qrels, MIRACL_SOURCES.topics.qrelsUrl, "downloads/qrels.tsv", "sources.qrels");
+	assertManifest(Array.isArray(sources.corpus), "sources.corpus must be an array");
+	assertManifest(sources.corpus.length === MIRACL_SOURCES.corpus.urls.length, "sources.corpus must contain three shards");
+	for (const [index, url] of MIRACL_SOURCES.corpus.urls.entries()) {
+		validateSource(sources.corpus[index], url, `downloads/docs-${index}.jsonl.gz`, `sources.corpus[${index}]`);
+	}
+
+	assertManifest(Number.isSafeInteger(manifest.seed), "seed must be a safe integer");
+	const seed = manifest.seed as number;
+	assertManifest(
+		typeof manifest.selectedIds === "object" && manifest.selectedIds !== null,
+		"selectedIds must be an object",
+	);
+	const selectedIds = manifest.selectedIds as Record<string, unknown>;
+	const queryIds = validateStringIds(selectedIds.queryIds, "selectedIds.queryIds");
+	const documentIds = validateStringIds(selectedIds.documentIds, "selectedIds.documentIds");
+	const compare = compareIds(seed);
+	const sortedQueryIds = [...queryIds].sort(compare);
+	const sortedDocumentIds = [...documentIds].sort(compare);
+	assertManifest(
+		queryIds.every((queryId, index) => queryId === sortedQueryIds[index]),
+		"selectedIds.queryIds are not in deterministic order",
+	);
+	assertManifest(
+		documentIds.every((documentId, index) => documentId === sortedDocumentIds[index]),
+		"selectedIds.documentIds are not in deterministic order",
+	);
+
+	assertManifest(typeof manifest.counts === "object" && manifest.counts !== null, "counts must be an object");
+	const counts = manifest.counts as Record<string, unknown>;
+	for (const field of ["queries", "qrels", "positiveQrels", "corpus", "judgedDocuments", "distractors"]) {
+		assertManifest(
+			Number.isSafeInteger(counts[field]) && (counts[field] as number) >= 0,
+			`counts.${field} must be a non-negative safe integer`,
+		);
+	}
+	assertManifest(counts.queries === queryIds.length, "query count does not match selected query IDs");
+	assertManifest(counts.corpus === documentIds.length, "corpus count does not match selected document IDs");
+	assertManifest((counts.positiveQrels as number) <= (counts.qrels as number), "positive qrel count exceeds qrels");
+	assertManifest(
+		(counts.judgedDocuments as number) + (counts.distractors as number) === counts.corpus,
+		"judged and distractor counts do not match corpus",
+	);
+
+	assertManifest(typeof manifest.files === "object" && manifest.files !== null, "files must be an object");
+	const files = manifest.files as Record<string, unknown>;
+	assertManifest(files.queries === "queries.jsonl", "files.queries is invalid");
+	assertManifest(files.qrels === "qrels.jsonl", "files.qrels is invalid");
+	assertManifest(files.corpus === "corpus.jsonl", "files.corpus is invalid");
+	return value as PreparedManifest;
+}
+
+export async function prepareMiracl(options: PrepareOptions): Promise<PreparedManifest> {
+	assertNonBlank(options.outputDir, "outputDir");
+	const selectionOptions: SmokeSelectionOptions = {
+		seed: options.seed ?? MIRACL_SMOKE_PROFILE.seed,
+		queryCount: options.queryCount ?? MIRACL_SMOKE_PROFILE.queryCount,
+		distractorCount: options.distractorCount ?? MIRACL_SMOKE_PROFILE.distractorCount,
+	};
+	validateSelectionOptions(selectionOptions);
+	const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
+	const maxDownloadBytes = options.maxDownloadBytes ?? DEFAULT_MAX_DOWNLOAD_BYTES;
+	const maxDecompressedBytes = options.maxDecompressedBytesPerShard ?? DEFAULT_MAX_DECOMPRESSED_BYTES_PER_SHARD;
+	assertCount(maxRedirects, "maxRedirects", true);
+	assertCount(maxDownloadBytes, "maxDownloadBytes", false);
+	assertCount(maxDecompressedBytes, "maxDecompressedBytesPerShard", false);
+	const fetchImpl = options.fetchImpl ?? fetch;
+
+	let outputCreated = false;
+	try {
+		await mkdir(options.outputDir, { mode: 0o700 });
+		outputCreated = true;
+		const downloadsDir = join(options.outputDir, "downloads");
+		await mkdir(downloadsDir, { mode: 0o700 });
+		const topics = await downloadPinnedFile(
+			MIRACL_SOURCES.topics.topicsUrl,
+			join(downloadsDir, "topics.tsv"),
+			"downloads/topics.tsv",
+			fetchImpl,
+			maxRedirects,
+			maxDownloadBytes,
+		);
+		const qrelsSource = await downloadPinnedFile(
+			MIRACL_SOURCES.topics.qrelsUrl,
+			join(downloadsDir, "qrels.tsv"),
+			"downloads/qrels.tsv",
+			fetchImpl,
+			maxRedirects,
+			maxDownloadBytes,
+		);
+		const corpusSources: PreparedSource[] = [];
+		for (const [index, url] of MIRACL_SOURCES.corpus.urls.entries()) {
+			corpusSources.push(
+				await downloadPinnedFile(
+					url,
+					join(downloadsDir, `docs-${index}.jsonl.gz`),
+					`downloads/docs-${index}.jsonl.gz`,
+					fetchImpl,
+					maxRedirects,
+					maxDownloadBytes,
+				),
+			);
+		}
+
+		const allQueries = await readTopicsTsv(join(downloadsDir, "topics.tsv"));
+		const allQrels = await readQrels(join(downloadsDir, "qrels.tsv"));
+		const selected = selectQueriesAndQrels(allQueries, allQrels, selectionOptions);
+		const selectedJudgedIds = new Set(selected.qrels.map((qrel) => qrel.documentId));
+		const allReferencedIds = new Set(allQrels.map((qrel) => qrel.documentId));
+		const seenReferencedIds = new Set<string>();
+		const seenDocumentIds = new Set<string>();
+		const judgedDocuments = new Map<string, CorpusDocument>();
+		const distractors = new BoundedDistractorHeap(selectionOptions.distractorCount);
+
+		for (const [index] of MIRACL_SOURCES.corpus.urls.entries()) {
+			const path = join(downloadsDir, `docs-${index}.jsonl.gz`);
+			await forEachGzipCorpusDocument(path, maxDecompressedBytes, (document) => {
+				if (seenDocumentIds.has(document.documentId)) {
+					throw new Error(`duplicate corpus document id: ${document.documentId}`);
+				}
+				seenDocumentIds.add(document.documentId);
+				if (allReferencedIds.has(document.documentId)) {
+					seenReferencedIds.add(document.documentId);
+				}
+				if (selectedJudgedIds.has(document.documentId)) {
+					judgedDocuments.set(document.documentId, document);
+					return;
+				}
+				distractors.add({
+					key: deterministicKey(selectionOptions.seed, document.documentId),
+					document,
+				});
+			});
+		}
+		const missingReferencedIds = [...allReferencedIds].filter((documentId) => !seenReferencedIds.has(documentId));
+		if (missingReferencedIds.length > 0) {
+			throw new Error(`qrels reference missing corpus document: ${missingReferencedIds[0]}`);
+		}
+		const selectedDistractors = distractors.values();
+		if (selectedDistractors.length < selectionOptions.distractorCount) {
+			throw new Error(
+				`requested ${selectionOptions.distractorCount} distractors but only ${selectedDistractors.length} unjudged documents are available`,
+			);
+		}
+		const compare = compareIds(selectionOptions.seed);
+		const selectedCorpus = [...judgedDocuments.values(), ...selectedDistractors].sort((left, right) =>
+			compare(left.documentId, right.documentId),
+		);
+
+		await writeJsonLinesFile(join(options.outputDir, "queries.jsonl"), selected.queries);
+		await writeJsonLinesFile(join(options.outputDir, "qrels.jsonl"), selected.qrels);
+		await writeJsonLinesFile(join(options.outputDir, "corpus.jsonl"), selectedCorpus);
+		const manifest: PreparedManifest = {
+			schemaVersion: 1,
+			normalizationVersion: MIRACL_NORMALIZATION_VERSION,
+			profile: "smoke",
+			revisions: {
+				topics: MIRACL_SOURCES.topics.revision,
+				corpus: MIRACL_SOURCES.corpus.revision,
+			},
+			sources: {
+				topics,
+				qrels: qrelsSource,
+				corpus: corpusSources,
+			},
+			seed: selectionOptions.seed,
+			selectedIds: {
+				queryIds: selected.queries.map((query) => query.queryId),
+				documentIds: selectedCorpus.map((document) => document.documentId),
+			},
+			counts: {
+				queries: selected.queries.length,
+				qrels: selected.qrels.length,
+				positiveQrels: selected.qrels.filter((qrel) => qrel.relevance > 0).length,
+				corpus: selectedCorpus.length,
+				judgedDocuments: judgedDocuments.size,
+				distractors: selectedDistractors.length,
+			},
+			files: {
+				queries: "queries.jsonl",
+				qrels: "qrels.jsonl",
+				corpus: "corpus.jsonl",
+			},
+		};
+		validatePreparedManifest(manifest);
+		await writeJsonAtomic(join(options.outputDir, "prepared-manifest.json"), manifest);
+		return manifest;
+	} catch (error) {
+		if (outputCreated) {
+			await rm(options.outputDir, { recursive: true, force: true });
+		}
+		throw error;
+	}
+}
