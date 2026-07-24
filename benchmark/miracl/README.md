@@ -1,18 +1,20 @@
 # MIRACL Korean retrieval benchmark
 
-This manual benchmark exercises AutoRAG's production BM25, MinSync, and hybrid
-retrieval paths against the Korean MIRACL development set. It is intentionally
-not run in CI: preparation downloads and scans the full Korean corpus, and
-MinSync requires a contributor-supplied embedding service.
+This manual benchmark exercises AutoRAG's production retrieval semantics
+against the Korean MIRACL development set. Smoke runs support BM25, MinSync,
+and hybrid retrieval. Full runs support streaming Tantivy BM25 only; production
+MinSync requires one file per passage, so this benchmark does not claim a
+scalable 1,486,752-file MinSync or hybrid workflow. It is intentionally not run
+in CI: preparation downloads and scans the full Korean corpus, and MinSync
+requires a contributor-supplied embedding service.
 
 ## Dataset and prerequisites
 
 - [Bun](https://bun.sh/) and this repository's dependencies (`bun install`)
 - Network access to Hugging Face for preparation
-- Enough local disk for the downloads, normalized data, temporary parsed
-  mirrors, and indexes
-- For MinSync or hybrid: a MinSync executable plus an explicitly configured,
-  reproducible embedder
+- Enough local disk for the downloads, normalized data, and indexes
+- For smoke MinSync or hybrid: an explicitly pinned MinSync executable plus an
+  explicitly configured, reproducible embedder
 
 The benchmark pins the Korean development topics and qrels from
 [`miracl/miracl`](https://huggingface.co/datasets/miracl/miracl/tree/5be20db9509754dadad47689368639fcec739c00)
@@ -43,10 +45,14 @@ dataset as:
 ```
 
 Preparation downloads about 226 MB compressed even for smoke, then streams and
-decompresses every corpus shard to select the deterministic subset. Keep
-several hundred MB free for smoke. Full preparation, mirror materialization,
-and indexing need substantially more space and time; exact requirements depend
-on filesystem, network, method, and embedder throughput.
+decompresses every corpus shard to select the deterministic subset. Each
+download has a ten-minute timeout, and source and normalized inputs are parsed
+with byte and record bounds. Keep several hundred MB free for smoke. Full
+preparation and Tantivy indexing need substantially more space and time; exact
+requirements depend on filesystem, network, and storage throughput. Full
+indexing streams the attested `corpus.jsonl` directly into Tantivy and does not
+materialize one mirror file per passage or retain the corpus as an in-memory
+array.
 
 ## Smoke benchmark
 
@@ -109,15 +115,19 @@ bun run benchmark:miracl run --profile smoke \
 bun run benchmark:miracl evaluate --run benchmark/miracl/runs/all-smoke
 ```
 
-For reproducibility, set `autoInstall` to `false`, retain the exact MinSync
-binary and its SHA-256, and use an immutable embedder model/service revision
-with identical settings. `autoInstall: true` resolves the latest verified
-release and is convenient, but is not a durable version pin. During a run the
-benchmark verifies that the executable and MinSync index do not change.
-However, reports deliberately disclose only embedder ID, local/remote endpoint
-kind, API-key environment-variable name, and dimension. They omit the binary
-path/digest, literal base URL, secret value, and operational tuning fields, so
-retain those reproducibility details separately without publishing secrets.
+The benchmark rejects omitted or ambiguous pinning: `binaryPath`,
+`autoInstall: false`, `embedder.id`, `embedder.dimension`, and
+`embedder.timeoutMs` are required, and no executable is resolved from `PATH`,
+an installer, or a cache. MinSync init, sync, and query subprocesses use the
+configured timeout and cap captured stdout at 16 MiB and stderr at 1 MiB.
+During a run the benchmark verifies that the executable and MinSync index do
+not change.
+
+Reports record the executable SHA-256, immutable model ID, local/remote
+endpoint kind, authentication kind, dimension, timeout and process-output
+caps, SHA-256 hashes of both prefixes, and supplied batch/retry/concurrency
+settings. They omit the binary path, literal base URL, API-key environment
+variable name, and secret value.
 
 ## Full benchmark
 
@@ -134,17 +144,11 @@ bun run benchmark:miracl run --profile full \
 bun run benchmark:miracl evaluate --run benchmark/miracl/runs/bm25-full
 ```
 
-To run every method, use a new output directory and the same reviewed MinSync
-configuration:
-
-```bash
-bun run benchmark:miracl run --profile full \
-  --prepared benchmark/miracl/data/full \
-  --output benchmark/miracl/runs/all-full \
-  --methods bm25,minsync,hybrid \
-  --config benchmark-config.local.json
-bun run benchmark:miracl evaluate --run benchmark/miracl/runs/all-full
-```
+Full MinSync and hybrid commands are rejected before prepared data is loaded.
+The full BM25 path uses the production markdown normalization, BM25 chunking,
+query parsing, virtual-path identity, and document-level ranking semantics. It
+requires Tantivy rather than silently falling back to an in-memory
+TypeScript-wide-corpus index.
 
 ## Generated files and schemas
 
@@ -153,27 +157,31 @@ compressed corpus shards, normalized `queries.jsonl`, `qrels.jsonl`, and
 `corpus.jsonl`, plus `prepared-manifest.json`. The manifest records
 `schemaVersion: 1`, `normalizationVersion: 1`, profile, exact source
 revisions/URLs, source SHA-256 and byte counts, normalized file names, and
-dataset counts. Smoke also records the seed and selected query/document IDs;
-full also records normalized-file SHA-256, byte, and record attestations.
+dataset counts. Every profile records SHA-256, byte, and record attestations
+for normalized queries, qrels, and corpus. Smoke also records the seed and
+selected query/document IDs. A run recomputes and compares all three
+attestations before indexing; matching IDs or counts alone are insufficient.
 
 Every successful run directory contains exactly:
 
 - `manifest.json`: schema version, profile, dataset counts/revisions and input
   and normalized attestations, embedded evaluation qrels, methods, sanitized
-  method configuration, and runtime/commit metadata
+  method configuration, actual BM25 engine, and runtime/commit metadata
 - `results.jsonl`: one record per query and method:
   `{schemaVersion, method, queryId, latencyMs, hits, errorCode?}`, where each hit
   is `{documentId, score, rank}`
-- `metrics.json`: `{schemaVersion, methods, indexingLatencyMs, peakRssBytes?}`;
+- `metrics.json`:
+  `{schemaVersion, methods, indexingLatencyMs, peakRssBeforeReportBytes?}`;
   each method has `queryCount`, `failureCount`, `recallAt`, `mrrAt10`,
   `successAt`, `ndcgAt10`, and latency `mean`, `p50`, and `p95`
 - `summary.md`: a human-readable rendering of the same dataset,
   configuration, quality, performance, and limitation fields
 
 Published run artifacts contain MIRACL document IDs, not local source paths.
-They never contain an API-key value or literal embedder base URL. Review all
-artifacts before sharing them; the API-key environment-variable name and
-embedder ID are intentionally disclosed for traceability.
+They never contain an API-key value, API-key environment-variable name, literal
+embedder base URL, or executable path. Review all artifacts before sharing
+them; the immutable embedder ID and executable digest are intentionally
+disclosed for traceability.
 
 ## Metrics, timing, and failures
 
@@ -187,6 +195,9 @@ embedder ID are intentionally disclosed for traceability.
   judged result by the cutoff.
 - Quality metrics are macro-averaged over query-method records. Unjudged
   documents have zero relevance.
+- Retrieval initially asks for 100 chunks and doubles the bounded request up to
+  1,600 when chunk deduplication has not yet produced 100 unique MIRACL
+  documents. Document scores use the best matching chunk.
 - Query mean, p50, and nearest-rank p95 include successful retrieval calls
   only. Indexing is reported separately; hybrid indexing time is the sum of
   BM25 and MinSync indexing.
@@ -195,21 +206,26 @@ A query retrieval failure is persisted as `errorCode: "retrieval-failed"` with
 no private exception text. It scores zero in every quality metric, remains in
 the query denominator, and is excluded from latency statistics. `run` still
 publishes the complete report but exits nonzero if any query failed.
-`evaluate` validates and recomputes the saved report, prints `metrics.json` as
-JSON, and exits nonzero when any saved query failed. Preparation, indexing,
-configuration, integrity, or artifact-validation errors also exit nonzero and
-may prevent report publication.
+`evaluate` requires exactly `manifest.json`, `results.jsonl`, `metrics.json`,
+and `summary.md`; it rejects extra or missing files, validates that
+`summary.md` is the canonical rendering of the structured artifacts,
+recomputes all metrics, prints `metrics.json` as JSON, and exits nonzero when
+any saved query failed. Preparation, indexing, configuration, integrity, or
+artifact-validation errors also exit nonzero and may prevent report
+publication.
 
-Peak RSS is the maximum reported for the benchmark CLI process as a whole, not
-a per-method or per-query measurement. It can include prepared-data loading,
-mirror materialization, in-process indexing/retrieval, and report work, and it
-does not measure an external MinSync child process's own peak. The field is
-omitted when the runtime cannot provide a reliable maximum.
+`peakRssBeforeReportBytes` is the maximum reported for the benchmark CLI
+process as a whole through prepared-data loading, indexing, retrieval,
+evaluation, and report-input construction. It is sampled before report
+serialization, staging, and publication, and it does not measure an external
+MinSync child process's own peak. It is not a per-method or per-query
+measurement. The field is omitted when the runtime cannot provide a reliable
+maximum.
 
-Full MinSync executable and collection-content hashing happens before and
-after the query batch, outside reported query latency. Cheap device, inode,
-size, and modification-time checks remain at query boundaries. Keep these
-integrity checks enabled: although excluded from query latency, full hashing
-can warm or evict filesystem cache pages and therefore perturb later retrieval
-timings. Compare runs only under equivalent cache, hardware, binary, embedder,
-and configuration conditions.
+MinSync executable and collection-content hashing happen before and after the
+smoke query batch, outside reported query latency. The source-path map is built
+once after sync, while cheap device, inode, size, and modification-time checks
+remain at query boundaries. Keep these integrity checks enabled: although
+excluded from query latency, content hashing can warm or evict filesystem cache
+pages and therefore perturb later retrieval timings. Compare runs only under
+equivalent cache, hardware, binary, embedder, and configuration conditions.
