@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { runCli } from "../../benchmark/miracl/cli.ts";
 import type { CreatedBenchmarkMethods } from "../../benchmark/miracl/methods.ts";
 import type { PreparedManifest } from "../../benchmark/miracl/prepare.ts";
 import { MIRACL_SOURCES } from "../../benchmark/miracl/profiles.ts";
+import { normalizeRunMetrics } from "../../benchmark/miracl/report.ts";
 import type { RetrievalMethod } from "../../src/retrieval/types.ts";
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -145,10 +146,12 @@ describe("MIRACL benchmark CLI", () => {
 		expect(prepare).toHaveBeenCalledWith(expect.objectContaining({ profile: "full", outputDir: directory }));
 	});
 
-	it("runs and evaluates a prepared profile through isolated method lifecycles", async () => {
+	it("writes a path-free run that evaluates after moves and copies without prepared data", async () => {
 		const parent = makeRoot();
 		const prepared = join(parent, "prepared");
 		const output = join(parent, "run");
+		const copied = join(parent, "copied-run");
+		const moved = join(parent, "moved-run");
 		writePrepared(prepared);
 
 		const exitCode = await runCli(
@@ -157,12 +160,38 @@ describe("MIRACL benchmark CLI", () => {
 		);
 
 		expect(exitCode).toBe(0);
-		expect(JSON.parse(readFileSync(join(output, "manifest.json"), "utf8")).methods).toEqual(["bm25"]);
+		const persistedManifest = JSON.parse(readFileSync(join(output, "manifest.json"), "utf8"));
+		expect(persistedManifest.methods).toEqual(["bm25"]);
+		expect(persistedManifest).not.toHaveProperty("preparedDirectory");
+		expect(persistedManifest.dataset.evaluation).toEqual({
+			schemaVersion: 1,
+			qrels: [{ queryId: "q1", documentId: "doc", relevance: 1 }],
+		});
+		expect(persistedManifest.dataset.input.corpus).toHaveLength(3);
+		expect(persistedManifest.dataset.normalized.qrels).toMatchObject({ records: 1 });
 		expect(JSON.parse(readFileSync(join(output, "metrics.json"), "utf8")).methods[0]).toMatchObject({
 			method: "bm25",
 			failureCount: 0,
 		});
-		expect(await runCli(["evaluate", "--run", output], { writeStdout: vi.fn() })).toBe(0);
+		const serialized = ["manifest.json", "results.jsonl", "metrics.json", "summary.md"]
+			.map((name) => readFileSync(join(output, name), "utf8"))
+			.join("\n");
+		expect(serialized).not.toContain(prepared);
+		expect(serialized).not.toContain(parent);
+		if (process.env.USER !== undefined) expect(serialized).not.toContain(process.env.USER);
+
+		cpSync(output, copied, { recursive: true });
+		renameSync(output, moved);
+		rmSync(prepared, { recursive: true });
+		for (const runDirectory of [copied, moved]) {
+			const stdout: string[] = [];
+			expect(await runCli(["evaluate", "--run", runDirectory], { writeStdout: (line) => stdout.push(line) })).toBe(
+				0,
+			);
+			const evaluated = normalizeRunMetrics(JSON.parse(stdout[0] as string));
+			expect(evaluated.indexingLatencyMs).toEqual({ bm25: 3 });
+			expect(evaluated.methods[0]).toMatchObject({ method: "bm25", failureCount: 0 });
+		}
 	});
 
 	it("publishes query failures durably and returns nonzero", async () => {
@@ -235,20 +264,28 @@ describe("MIRACL benchmark CLI", () => {
 		writePrepared(prepared);
 		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
 		let replaced = false;
+		let usedRecursiveRemoval = false;
 		vi.doMock("node:fs/promises", () => ({
 			...actual,
-			rename: async (source: string, destination: string) => {
-				const pathText = String(source);
-				if (!replaced && pathText.includes(".run.workspace-") && String(destination).includes(".cleanup-")) {
+			rm: async (path: string, options: Parameters<typeof actual.rm>[1]) => {
+				if (options?.recursive === true && String(path).includes(".run.workspace-")) {
+					usedRecursiveRemoval = true;
+				}
+				return actual.rm(path, options);
+			},
+			rmdir: async (path: string) => {
+				const pathText = String(path);
+				if (!replaced && pathText.split("/").at(-1)?.startsWith(".run.workspace-")) {
 					replaced = true;
 					renameSync(pathText, displaced);
 					mkdirSync(pathText);
 					writeFileSync(join(pathText, "replacement.txt"), "replacement data\n");
 					writeFileSync(replacementPathFile, pathText);
 				}
-				return actual.rename(source, destination);
+				return actual.rmdir(path);
 			},
 		}));
+		vi.resetModules();
 		const { runCli: runWithRace } = await import("../../benchmark/miracl/cli.ts");
 
 		await runWithRace(
@@ -259,5 +296,6 @@ describe("MIRACL benchmark CLI", () => {
 		const replacement = readFileSync(replacementPathFile, "utf8");
 		expect(readFileSync(join(replacement, "replacement.txt"), "utf8")).toBe("replacement data\n");
 		expect(existsSync(displaced)).toBe(true);
+		expect(usedRecursiveRemoval).toBe(false);
 	});
 });

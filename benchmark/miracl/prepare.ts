@@ -1,7 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Transform, type TransformCallback } from "node:stream";
@@ -141,6 +141,12 @@ interface RankedDocument {
 interface PreparedDirectoryIdentity {
 	readonly device: number;
 	readonly inode: number;
+}
+
+interface PreparedTreeOwnership {
+	readonly root: PreparedDirectoryIdentity;
+	readonly files: ReadonlyMap<string, PreparedDirectoryIdentity>;
+	readonly directories: ReadonlyMap<string, PreparedDirectoryIdentity>;
 }
 
 function assertNonBlank(value: string, label: string): void {
@@ -364,14 +370,17 @@ class BoundedDistractorHeap {
 
 class DiskBackedDuplicateDetector {
 	readonly #directoryPath: string;
+	readonly #directoryIdentity: PreparedDirectoryIdentity;
 	readonly #counts = new Uint32Array(DUPLICATE_PARTITION_COUNT);
 	readonly #bytes = new Float64Array(DUPLICATE_PARTITION_COUNT);
 	readonly #openHandles = new Map<number, FileHandle>();
+	readonly #fileIdentities = new Map<number, PreparedDirectoryIdentity>();
 	readonly #pending = Array<string>(DUPLICATE_PARTITION_COUNT).fill("");
 	readonly #pendingBytes = new Uint32Array(DUPLICATE_PARTITION_COUNT);
 
-	constructor(directoryPath: string) {
+	constructor(directoryPath: string, directoryIdentity: PreparedDirectoryIdentity) {
 		this.#directoryPath = directoryPath;
+		this.#directoryIdentity = directoryIdentity;
 	}
 
 	async record(documentId: string): Promise<void> {
@@ -402,6 +411,7 @@ class DiskBackedDuplicateDetector {
 				continue;
 			}
 			const path = this.#pathFor(partition);
+			await this.#assertOwnedPartition(partition);
 			const input = createReadStream(path, { encoding: "utf8" });
 			const reader = createInterface({ input, crlfDelay: Number.POSITIVE_INFINITY });
 			const seen = new Set<string>();
@@ -427,7 +437,7 @@ class DiskBackedDuplicateDetector {
 					`duplicate-check partition ${partition} expected ${expectedCount} records but read ${count}`,
 				);
 			}
-			await rm(path, { force: true });
+			await this.#removeOwnedPartition(partition);
 		}
 	}
 
@@ -437,7 +447,17 @@ class DiskBackedDuplicateDetector {
 		try {
 			await this.#closeHandles();
 		} finally {
-			await rm(this.#directoryPath, { recursive: true, force: true });
+			for (const partition of [...this.#fileIdentities.keys()]) {
+				await this.#removeOwnedPartition(partition).catch(() => undefined);
+			}
+			try {
+				const current = await snapshotPreparedDirectory(this.#directoryPath);
+				if (current.device === this.#directoryIdentity.device && current.inode === this.#directoryIdentity.inode) {
+					await rmdir(this.#directoryPath);
+				}
+			} catch {
+				// Non-empty or replaced duplicate-check directories are preserved.
+			}
 		}
 	}
 
@@ -456,6 +476,17 @@ class DiskBackedDuplicateDetector {
 			}
 		}
 		const handle = await open(this.#pathFor(partition), "a", 0o600);
+		const stats = await handle.stat();
+		if (!stats.isFile()) {
+			await handle.close();
+			throw new Error(`duplicate-check partition ${partition} is not a regular file`);
+		}
+		const known = this.#fileIdentities.get(partition);
+		if (known !== undefined && (known.device !== stats.dev || known.inode !== stats.ino)) {
+			await handle.close();
+			throw new Error(`duplicate-check partition ${partition} changed`);
+		}
+		this.#fileIdentities.set(partition, { device: stats.dev, inode: stats.ino });
 		this.#openHandles.set(partition, handle);
 		return handle;
 	}
@@ -494,6 +525,21 @@ class DiskBackedDuplicateDetector {
 
 	#pathFor(partition: number): string {
 		return join(this.#directoryPath, `partition-${partition.toString(16).padStart(2, "0")}.jsonl`);
+	}
+
+	async #assertOwnedPartition(partition: number): Promise<void> {
+		const identity = this.#fileIdentities.get(partition);
+		if (identity === undefined) throw new Error(`duplicate-check partition ${partition} has no identity`);
+		const stats = await lstat(this.#pathFor(partition));
+		if (!stats.isFile() || stats.isSymbolicLink() || stats.dev !== identity.device || stats.ino !== identity.inode) {
+			throw new Error(`duplicate-check partition ${partition} changed`);
+		}
+	}
+
+	async #removeOwnedPartition(partition: number): Promise<void> {
+		await this.#assertOwnedPartition(partition);
+		await unlink(this.#pathFor(partition));
+		this.#fileIdentities.delete(partition);
 	}
 }
 
@@ -797,12 +843,24 @@ function validateStringIds(value: unknown, label: string): string[] {
 		`${label} must contain non-blank strings`,
 	);
 	assertManifest(new Set(ids).size === ids.length, `${label} must not contain duplicates`);
-	return ids as string[];
+	return [...(ids as string[])];
 }
 
-function validateSource(value: unknown, expectedUrl: string, expectedPath: string, label: string): void {
+function exactManifestRecord(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
 	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), `${label} must be an object`);
-	const source = value as Record<string, unknown>;
+	const record = value as Record<string, unknown>;
+	const allowed = new Set(keys);
+	for (const key of Object.keys(record)) {
+		assertManifest(allowed.has(key), `${label} has unknown field ${key}`);
+	}
+	for (const key of keys) {
+		assertManifest(key in record, `${label} is missing field ${key}`);
+	}
+	return record;
+}
+
+function validateSource(value: unknown, expectedUrl: string, expectedPath: string, label: string): PreparedSource {
+	const source = exactManifestRecord(value, ["url", "path", "sha256", "bytes"], label);
 	assertManifest(source.url === expectedUrl, `${label}.url does not match the pinned source`);
 	assertManifest(source.path === expectedPath, `${label}.path must be ${expectedPath}`);
 	assertManifest(
@@ -810,9 +868,20 @@ function validateSource(value: unknown, expectedUrl: string, expectedPath: strin
 		`${label}.sha256 is invalid`,
 	);
 	assertManifest(Number.isSafeInteger(source.bytes) && (source.bytes as number) > 0, `${label}.bytes is invalid`);
+	return {
+		url: source.url,
+		path: source.path,
+		sha256: source.sha256,
+		bytes: source.bytes as number,
+	} as PreparedSource;
 }
 
-function validateCommonPreparedManifest(manifest: Record<string, unknown>): void {
+function validateCommonPreparedManifest(
+	manifest: Record<string, unknown>,
+): Pick<
+	PreparedManifestBase,
+	"schemaVersion" | "normalizationVersion" | "profile" | "revisions" | "sources" | "files"
+> {
 	assertManifest(manifest.schemaVersion === 1, "schemaVersion must be 1");
 	assertManifest(
 		manifest.normalizationVersion === MIRACL_NORMALIZATION_VERSION,
@@ -820,55 +889,85 @@ function validateCommonPreparedManifest(manifest: Record<string, unknown>): void
 	);
 	assertManifest(manifest.profile === "smoke" || manifest.profile === "full", "profile must be smoke or full");
 
-	assertManifest(typeof manifest.revisions === "object" && manifest.revisions !== null, "revisions must be an object");
-	const revisions = manifest.revisions as Record<string, unknown>;
+	const revisions = exactManifestRecord(manifest.revisions, ["topics", "corpus"], "revisions");
 	assertManifest(revisions.topics === MIRACL_SOURCES.topics.revision, "topics revision does not match the pin");
 	assertManifest(revisions.corpus === MIRACL_SOURCES.corpus.revision, "corpus revision does not match the pin");
 
-	assertManifest(typeof manifest.sources === "object" && manifest.sources !== null, "sources must be an object");
-	const sources = manifest.sources as Record<string, unknown>;
-	validateSource(sources.topics, MIRACL_SOURCES.topics.topicsUrl, "downloads/topics.tsv", "sources.topics");
-	validateSource(sources.qrels, MIRACL_SOURCES.topics.qrelsUrl, "downloads/qrels.tsv", "sources.qrels");
+	const sources = exactManifestRecord(manifest.sources, ["topics", "qrels", "corpus"], "sources");
+	const topics = validateSource(
+		sources.topics,
+		MIRACL_SOURCES.topics.topicsUrl,
+		"downloads/topics.tsv",
+		"sources.topics",
+	);
+	const qrels = validateSource(sources.qrels, MIRACL_SOURCES.topics.qrelsUrl, "downloads/qrels.tsv", "sources.qrels");
 	assertManifest(Array.isArray(sources.corpus), "sources.corpus must be an array");
 	assertManifest(
 		sources.corpus.length === MIRACL_SOURCES.corpus.urls.length,
 		"sources.corpus must contain three shards",
 	);
+	const corpus: PreparedSource[] = [];
 	for (const [index, url] of MIRACL_SOURCES.corpus.urls.entries()) {
-		validateSource(sources.corpus[index], url, `downloads/docs-${index}.jsonl.gz`, `sources.corpus[${index}]`);
+		corpus.push(
+			validateSource(sources.corpus[index], url, `downloads/docs-${index}.jsonl.gz`, `sources.corpus[${index}]`),
+		);
 	}
 
-	assertManifest(typeof manifest.files === "object" && manifest.files !== null, "files must be an object");
-	const files = manifest.files as Record<string, unknown>;
+	const files = exactManifestRecord(manifest.files, ["queries", "qrels", "corpus"], "files");
 	assertManifest(files.queries === "queries.jsonl", "files.queries is invalid");
 	assertManifest(files.qrels === "qrels.jsonl", "files.qrels is invalid");
 	assertManifest(files.corpus === "corpus.jsonl", "files.corpus is invalid");
+	return {
+		schemaVersion: 1,
+		normalizationVersion: MIRACL_NORMALIZATION_VERSION,
+		profile: manifest.profile,
+		revisions: {
+			topics: revisions.topics,
+			corpus: revisions.corpus,
+		} as PreparedManifestBase["revisions"],
+		sources: { topics, qrels, corpus },
+		files: {
+			queries: "queries.jsonl",
+			qrels: "qrels.jsonl",
+			corpus: "corpus.jsonl",
+		},
+	};
 }
 
-function validateNormalizedFile(value: unknown, expectedRecords: number, label: string): void {
-	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), `${label} must be an object`);
-	const file = value as Record<string, unknown>;
+function validateNormalizedFile(value: unknown, expectedRecords: number, label: string): NormalizedPreparedFile {
+	const file = exactManifestRecord(value, ["sha256", "bytes", "records"], label);
 	assertManifest(typeof file.sha256 === "string" && SHA256_PATTERN.test(file.sha256), `${label}.sha256 is invalid`);
 	assertManifest(Number.isSafeInteger(file.bytes) && (file.bytes as number) > 0, `${label}.bytes is invalid`);
 	assertManifest(file.records === expectedRecords, `${label}.records does not match counts`);
+	return {
+		sha256: file.sha256,
+		bytes: file.bytes as number,
+		records: file.records,
+	} as NormalizedPreparedFile;
 }
 
 export function validatePreparedManifest(value: unknown, options: PrepareValidationOptions = {}): PreparedManifest {
 	assertManifest(typeof value === "object" && value !== null && !Array.isArray(value), "root must be an object");
 	const manifest = value as Record<string, unknown>;
-	validateCommonPreparedManifest(manifest);
+	assertManifest(manifest.profile === "smoke" || manifest.profile === "full", "profile must be smoke or full");
 	if (manifest.profile === "full") {
-		assertManifest(!("seed" in manifest), "full manifest must not contain seed");
-		assertManifest(!("selectedIds" in manifest), "full manifest must not contain selectedIds");
-		assertManifest(typeof manifest.counts === "object" && manifest.counts !== null, "counts must be an object");
-		const counts = manifest.counts as Record<string, unknown>;
+		exactManifestRecord(
+			manifest,
+			["schemaVersion", "normalizationVersion", "profile", "revisions", "sources", "counts", "normalized", "files"],
+			"root",
+		);
+		const common = validateCommonPreparedManifest(manifest);
+		const counts = exactManifestRecord(
+			manifest.counts,
+			["queries", "qrels", "positiveQrels", "corpus", "judgedDocuments"],
+			"counts",
+		);
 		for (const field of ["queries", "qrels", "positiveQrels", "corpus", "judgedDocuments"]) {
 			assertManifest(
 				Number.isSafeInteger(counts[field]) && (counts[field] as number) >= 0,
 				`counts.${field} must be a non-negative safe integer`,
 			);
 		}
-		assertManifest(!("distractors" in counts), "full counts must not contain distractors");
 		const expectedCorpusPassages = options.expectedFullCorpusPassages ?? MIRACL_FULL_CORPUS_PASSAGES;
 		assertCount(expectedCorpusPassages, "expectedFullCorpusPassages", false);
 		assertManifest(counts.corpus === expectedCorpusPassages, `full corpus count must be ${expectedCorpusPassages}`);
@@ -886,20 +985,44 @@ export function validatePreparedManifest(value: unknown, options: PrepareValidat
 			typeof manifest.normalized === "object" && manifest.normalized !== null,
 			"normalized must be an object",
 		);
-		const normalized = manifest.normalized as Record<string, unknown>;
-		validateNormalizedFile(normalized.queries, queryCount, "normalized.queries");
-		validateNormalizedFile(normalized.qrels, qrelCount, "normalized.qrels");
-		validateNormalizedFile(normalized.corpus, expectedCorpusPassages, "normalized.corpus");
-		return value as FullPreparedManifest;
+		const normalized = exactManifestRecord(manifest.normalized, ["queries", "qrels", "corpus"], "normalized");
+		return {
+			...common,
+			profile: "full",
+			counts: {
+				queries: queryCount,
+				qrels: qrelCount,
+				positiveQrels: positiveQrelCount,
+				corpus: expectedCorpusPassages,
+				judgedDocuments: judgedDocumentCount,
+			},
+			normalized: {
+				queries: validateNormalizedFile(normalized.queries, queryCount, "normalized.queries"),
+				qrels: validateNormalizedFile(normalized.qrels, qrelCount, "normalized.qrels"),
+				corpus: validateNormalizedFile(normalized.corpus, expectedCorpusPassages, "normalized.corpus"),
+			},
+		};
 	}
 
+	exactManifestRecord(
+		manifest,
+		[
+			"schemaVersion",
+			"normalizationVersion",
+			"profile",
+			"revisions",
+			"sources",
+			"seed",
+			"selectedIds",
+			"counts",
+			"files",
+		],
+		"root",
+	);
+	const common = validateCommonPreparedManifest(manifest);
 	assertManifest(Number.isSafeInteger(manifest.seed), "seed must be a safe integer");
 	const seed = manifest.seed as number;
-	assertManifest(
-		typeof manifest.selectedIds === "object" && manifest.selectedIds !== null,
-		"selectedIds must be an object",
-	);
-	const selectedIds = manifest.selectedIds as Record<string, unknown>;
+	const selectedIds = exactManifestRecord(manifest.selectedIds, ["queryIds", "documentIds"], "selectedIds");
 	const queryIds = validateStringIds(selectedIds.queryIds, "selectedIds.queryIds");
 	const documentIds = validateStringIds(selectedIds.documentIds, "selectedIds.documentIds");
 	const compare = compareIds(seed);
@@ -914,8 +1037,11 @@ export function validatePreparedManifest(value: unknown, options: PrepareValidat
 		"selectedIds.documentIds are not in deterministic order",
 	);
 
-	assertManifest(typeof manifest.counts === "object" && manifest.counts !== null, "counts must be an object");
-	const counts = manifest.counts as Record<string, unknown>;
+	const counts = exactManifestRecord(
+		manifest.counts,
+		["queries", "qrels", "positiveQrels", "corpus", "judgedDocuments", "distractors"],
+		"counts",
+	);
 	for (const field of ["queries", "qrels", "positiveQrels", "corpus", "judgedDocuments", "distractors"]) {
 		assertManifest(
 			Number.isSafeInteger(counts[field]) && (counts[field] as number) >= 0,
@@ -945,7 +1071,20 @@ export function validatePreparedManifest(value: unknown, options: PrepareValidat
 		"distractor count does not match corpus minus judged documents",
 	);
 
-	return value as SmokePreparedManifest;
+	return {
+		...common,
+		profile: "smoke",
+		seed,
+		selectedIds: { queryIds, documentIds },
+		counts: {
+			queries: queryCount,
+			qrels: qrelCount,
+			positiveQrels: positiveQrelCount,
+			corpus: corpusCount,
+			judgedDocuments: judgedDocumentCount,
+			distractors: distractorCount,
+		},
+	};
 }
 
 export function prepareMiracl(
@@ -1028,7 +1167,10 @@ export async function prepareMiracl(
 			const seenReferencedIds = new Set<string>();
 			const duplicateCheckDirectory = join(options.outputDir, ".duplicate-check");
 			await mkdir(duplicateCheckDirectory, { mode: 0o700 });
-			const duplicateDetector = new DiskBackedDuplicateDetector(duplicateCheckDirectory);
+			const duplicateDetector = new DiskBackedDuplicateDetector(
+				duplicateCheckDirectory,
+				await snapshotPreparedDirectory(duplicateCheckDirectory),
+			);
 			const corpusWriter = await openJsonLinesWriter(join(options.outputDir, "corpus.jsonl"));
 			let corpusNormalized: NormalizedPreparedFile;
 			try {
@@ -1103,7 +1245,10 @@ export async function prepareMiracl(
 		const distractors = new BoundedDistractorHeap(smokeSelectionOptions.distractorCount);
 		const duplicateCheckDirectory = join(options.outputDir, ".duplicate-check");
 		await mkdir(duplicateCheckDirectory, { mode: 0o700 });
-		const duplicateDetector = new DiskBackedDuplicateDetector(duplicateCheckDirectory);
+		const duplicateDetector = new DiskBackedDuplicateDetector(
+			duplicateCheckDirectory,
+			await snapshotPreparedDirectory(duplicateCheckDirectory),
+		);
 		try {
 			for (const [index] of MIRACL_SOURCES.corpus.urls.entries()) {
 				const path = join(downloadsDir, `docs-${index}.jsonl.gz`);
@@ -1196,29 +1341,79 @@ async function snapshotPreparedDirectory(path: string): Promise<PreparedDirector
 }
 
 async function cleanupOwnedPreparedDirectory(path: string, identity: PreparedDirectoryIdentity): Promise<void> {
-	let current: PreparedDirectoryIdentity;
+	let ownership: PreparedTreeOwnership;
 	try {
-		current = await snapshotPreparedDirectory(path);
+		ownership = await snapshotPreparedTree(path, identity);
 	} catch {
 		return;
 	}
-	if (current.device !== identity.device || current.inode !== identity.inode) return;
-	const quarantine = `${path}.cleanup-${process.pid}-${randomUUID()}`;
-	await rename(path, quarantine);
-	let moved: PreparedDirectoryIdentity;
+	for (const [relativePath, childIdentity] of ownership.files) {
+		const child = join(path, relativePath);
+		try {
+			const stats = await lstat(child);
+			if (
+				stats.isFile() &&
+				!stats.isSymbolicLink() &&
+				stats.dev === childIdentity.device &&
+				stats.ino === childIdentity.inode
+			) {
+				await unlink(child);
+			}
+		} catch {
+			// Replaced or missing files are preserved.
+		}
+	}
+	const directories = [...ownership.directories].sort(
+		([left], [right]) => right.split(/[\\/]/u).length - left.split(/[\\/]/u).length,
+	);
+	for (const [relativePath, childIdentity] of directories) {
+		const child = join(path, relativePath);
+		try {
+			const stats = await lstat(child);
+			if (
+				stats.isDirectory() &&
+				!stats.isSymbolicLink() &&
+				stats.dev === childIdentity.device &&
+				stats.ino === childIdentity.inode
+			) {
+				await rmdir(child);
+			}
+		} catch {
+			// Non-empty, replaced, or missing directories are preserved.
+		}
+	}
 	try {
-		moved = await snapshotPreparedDirectory(quarantine);
+		const current = await snapshotPreparedDirectory(path);
+		if (current.device === ownership.root.device && current.inode === ownership.root.inode) {
+			await rmdir(path);
+		}
 	} catch {
-		return;
+		// Non-empty or replaced roots are preserved.
 	}
-	if (moved.device === identity.device && moved.inode === identity.inode) {
-		await rm(quarantine, { recursive: true, force: true });
-		return;
+}
+
+async function snapshotPreparedTree(path: string, expected: PreparedDirectoryIdentity): Promise<PreparedTreeOwnership> {
+	const root = await snapshotPreparedDirectory(path);
+	if (root.device !== expected.device || root.inode !== expected.inode) {
+		throw new Error("prepared output directory changed");
 	}
-	try {
-		await rename(quarantine, path);
-	} catch {
-		// Preserve a replacement under the quarantine name when the original
-		// pathname was concurrently claimed.
-	}
+	const files = new Map<string, PreparedDirectoryIdentity>();
+	const directories = new Map<string, PreparedDirectoryIdentity>();
+	const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
+		for (const name of await readdir(directory)) {
+			const relativePath = relativeDirectory.length === 0 ? name : join(relativeDirectory, name);
+			const childPath = join(path, relativePath);
+			const stats = await lstat(childPath);
+			if (stats.isSymbolicLink()) continue;
+			const childIdentity = { device: stats.dev, inode: stats.ino };
+			if (stats.isFile()) {
+				files.set(relativePath, childIdentity);
+			} else if (stats.isDirectory()) {
+				directories.set(relativePath, childIdentity);
+				await visit(childPath, relativePath);
+			}
+		}
+	};
+	await visit(path, "");
+	return { root, files, directories };
 }

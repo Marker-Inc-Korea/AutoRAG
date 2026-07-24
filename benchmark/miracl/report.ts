@@ -1,24 +1,76 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { chmod, lstat, mkdir, open, realpath, rename, rm, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { SanitizedMethodConfig } from "./methods.ts";
 import type { MethodMetrics } from "./metrics.ts";
-import type { BenchmarkMethod, BenchmarkProfile, QueryRunRecord, RankedHit } from "./types.ts";
+import type { BenchmarkMethod, Qrel, QueryRunRecord, RankedHit } from "./types.ts";
 
 const REPORT_FILES = ["manifest.json", "results.jsonl", "metrics.json", "summary.md"] as const;
 const METHOD_NAMES = new Set<BenchmarkMethod>(["bm25", "minsync", "hybrid"]);
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const MAX_EMBEDDED_QRELS = 1_000_000;
+const MAX_DISCLOSED_ID_BYTES = 4_096;
 
-export interface RunDatasetManifest {
+export interface RunFileAttestation {
+	readonly sha256: string;
+	readonly bytes: number;
+}
+
+export interface RunNormalizedAttestation extends RunFileAttestation {
+	readonly records: number;
+}
+
+export interface RunEvaluationV1 {
+	readonly schemaVersion: 1;
+	readonly qrels: readonly Qrel[];
+}
+
+interface RunDatasetManifestBase {
 	readonly normalizationVersion: number;
 	readonly revisions: {
 		readonly topics: string;
 		readonly corpus: string;
 	};
-	readonly seed?: number;
-	readonly counts: Readonly<Record<string, number>>;
+	readonly input: {
+		readonly topics: RunFileAttestation;
+		readonly qrels: RunFileAttestation;
+		readonly corpus: readonly RunFileAttestation[];
+	};
+	readonly normalized: {
+		readonly queries: RunNormalizedAttestation;
+		readonly qrels: RunNormalizedAttestation;
+		readonly corpus: RunNormalizedAttestation;
+	};
+	readonly evaluation: RunEvaluationV1;
 }
+
+export interface SmokeRunDatasetManifest extends RunDatasetManifestBase {
+	readonly seed: number;
+	readonly counts: {
+		readonly queries: number;
+		readonly qrels: number;
+		readonly positiveQrels: number;
+		readonly corpus: number;
+		readonly judgedDocuments: number;
+		readonly distractors: number;
+	};
+}
+
+export interface FullRunDatasetManifest extends RunDatasetManifestBase {
+	readonly counts: {
+		readonly queries: number;
+		readonly qrels: number;
+		readonly positiveQrels: number;
+		readonly corpus: number;
+		readonly judgedDocuments: number;
+	};
+}
+
+export type RunDatasetManifest = SmokeRunDatasetManifest | FullRunDatasetManifest;
 
 export interface RunEnvironmentManifest {
 	readonly autoRagCommit: string;
@@ -29,20 +81,24 @@ export interface RunEnvironmentManifest {
 	readonly measuredAt: string;
 }
 
-export interface RunManifestInput {
-	readonly profile: BenchmarkProfile;
-	readonly preparedDirectory: string;
-	readonly dataset: RunDatasetManifest;
+interface RunManifestInputBase {
+	readonly schemaVersion: 1;
 	readonly methods: readonly BenchmarkMethod[];
 	readonly methodConfig?: SanitizedMethodConfig;
 	readonly environment: RunEnvironmentManifest;
 }
 
-export interface RunManifestV1 extends RunManifestInput {
-	readonly schemaVersion: 1;
-	readonly methods: readonly BenchmarkMethod[];
-	readonly methodConfig?: SanitizedMethodConfig;
-}
+export type RunManifestInput =
+	| (RunManifestInputBase & {
+			readonly profile: "smoke";
+			readonly dataset: SmokeRunDatasetManifest;
+	  })
+	| (RunManifestInputBase & {
+			readonly profile: "full";
+			readonly dataset: FullRunDatasetManifest;
+	  });
+
+export type RunManifestV1 = RunManifestInput;
 
 export interface RunMetricsV1 {
 	readonly schemaVersion: 1;
@@ -63,6 +119,15 @@ export interface WriteRunReportOptions {
 interface DirectoryIdentity {
 	readonly device: number;
 	readonly inode: number;
+}
+
+interface FileIdentity extends DirectoryIdentity {
+	readonly size: number;
+}
+
+interface PublicationLock {
+	readonly handle: FileHandle;
+	readonly identity: FileIdentity;
 }
 
 interface PublicationPaths {
@@ -93,79 +158,166 @@ export async function writeRunReport(options: WriteRunReportOptions): Promise<vo
 		["summary.md", renderSummary(manifest, metrics)],
 	]);
 
-	let lockHandle: FileHandle | undefined;
+	let lock: PublicationLock | undefined;
 	let stagingIdentity: DirectoryIdentity | undefined;
+	const children = new Map<(typeof REPORT_FILES)[number], FileIdentity>();
 	let published = false;
 	try {
-		lockHandle = await acquirePublicationLock(paths);
+		lock = await acquirePublicationLock(paths);
 		await assertDestinationAbsent(paths.destination);
 		await mkdir(paths.staging, { mode: 0o700 });
-		await chmod(paths.staging, 0o700);
 		stagingIdentity = await snapshotDirectory(paths.staging);
 		for (const name of REPORT_FILES) {
 			await assertDirectoryIdentity(paths.staging, stagingIdentity);
-			await writeDurablePrivateFile(join(paths.staging, name), contents.get(name) as string);
+			await assertOwnedChildren(paths.staging, children);
+			const identity = await writeDurablePrivateFile(join(paths.staging, name), contents.get(name) as string);
+			children.set(name, identity);
+			await assertFileIdentity(join(paths.staging, name), identity);
 			await assertDirectoryIdentity(paths.staging, stagingIdentity);
 		}
-		await fsyncDirectory(paths.staging);
+		await assertOwnedChildren(paths.staging, children);
+		await fsyncDirectory(paths.staging, stagingIdentity);
 		await assertDirectoryIdentity(paths.staging, stagingIdentity);
 		await assertDestinationAbsent(paths.destination);
 		await renameDirectoryNoReplace(paths.staging, paths.destination);
 		await assertDirectoryIdentity(paths.destination, stagingIdentity);
+		await assertOwnedChildren(paths.destination, children);
 		published = true;
 		await fsyncDirectory(paths.parent);
 	} finally {
 		if (!published && stagingIdentity !== undefined) {
-			await removeOwnedDirectory(paths.staging, stagingIdentity);
+			await removeOwnedDirectory(paths.staging, stagingIdentity, children);
 		}
-		if (lockHandle !== undefined) {
-			await releasePublicationLock(paths.lock, lockHandle);
+		if (lock !== undefined) {
+			await releasePublicationLock(paths.lock, lock);
 		}
 	}
 }
 
-export function normalizeRunManifest(value: RunManifestInput): RunManifestV1 {
-	if (value.profile !== "smoke" && value.profile !== "full") {
+export function normalizeRunManifest(value: unknown): RunManifestV1 {
+	const manifest = requireExactShape(
+		value,
+		["schemaVersion", "profile", "dataset", "methods", "environment"],
+		["methodConfig"],
+		"run manifest",
+	);
+	if (manifest.schemaVersion !== 1) {
+		throw new Error("run manifest schemaVersion must be 1");
+	}
+	if (manifest.profile !== "smoke" && manifest.profile !== "full") {
 		throw new Error("run manifest profile must be smoke or full");
 	}
-	const preparedDirectory = requireNonBlank(value.preparedDirectory, "run manifest preparedDirectory");
+	const profile = manifest.profile;
+	const datasetValue = requireExactShape(
+		manifest.dataset,
+		[
+			"normalizationVersion",
+			"revisions",
+			"counts",
+			"input",
+			"normalized",
+			"evaluation",
+			...(profile === "smoke" ? ["seed"] : []),
+		],
+		[],
+		"run manifest dataset",
+	);
 	const normalizationVersion = requireNonNegativeSafeInteger(
-		value.dataset?.normalizationVersion,
+		datasetValue.normalizationVersion,
 		"run manifest normalizationVersion",
 	);
+	const revisionsValue = requireExactShape(
+		datasetValue.revisions,
+		["topics", "corpus"],
+		[],
+		"run manifest dataset revisions",
+	);
 	const revisions = {
-		topics: requireNonBlank(value.dataset?.revisions?.topics, "run manifest topics revision"),
-		corpus: requireNonBlank(value.dataset?.revisions?.corpus, "run manifest corpus revision"),
+		topics: requireOpaqueDisclosure(revisionsValue.topics, "run manifest topics revision"),
+		corpus: requireOpaqueDisclosure(revisionsValue.corpus, "run manifest corpus revision"),
 	};
-	const counts: Record<string, number> = {};
-	for (const key of [
+	const countKeys = [
 		"queries",
 		"qrels",
 		"positiveQrels",
 		"corpus",
 		"judgedDocuments",
-		...(value.profile === "smoke" ? ["distractors"] : []),
-	]) {
-		counts[key] = requireNonNegativeSafeInteger(value.dataset?.counts?.[key], `run manifest counts.${key}`);
+		...(profile === "smoke" ? ["distractors"] : []),
+	];
+	const countValues = requireExactShape(datasetValue.counts, countKeys, [], "run manifest dataset counts");
+	const counts: Record<string, number> = {};
+	for (const key of countKeys) {
+		counts[key] = requireNonNegativeSafeInteger(countValues[key], `run manifest counts.${key}`);
 	}
-	const methods = normalizeMethodNames(value.methods);
-	const environment = normalizeEnvironment(value.environment);
-	const dataset: {
-		normalizationVersion: number;
-		revisions: { topics: string; corpus: string };
-		seed?: number;
-		counts: Record<string, number>;
-	} = { normalizationVersion, revisions, counts };
-	if (value.profile === "smoke") {
-		dataset.seed = requireSafeInteger(value.dataset.seed, "run manifest seed");
-	} else if (value.dataset.seed !== undefined) {
-		throw new Error("full run manifest must not contain a seed");
+	const inputValue = requireExactShape(
+		datasetValue.input,
+		["topics", "qrels", "corpus"],
+		[],
+		"run manifest dataset input",
+	);
+	if (!Array.isArray(inputValue.corpus) || inputValue.corpus.length !== 3) {
+		throw new Error("run manifest dataset input corpus must contain three attestations");
 	}
-	const methodConfig = value.methodConfig === undefined ? undefined : normalizeMethodConfig(value.methodConfig);
+	const input = {
+		topics: normalizeFileAttestation(inputValue.topics, "run manifest dataset input topics"),
+		qrels: normalizeFileAttestation(inputValue.qrels, "run manifest dataset input qrels"),
+		corpus: inputValue.corpus.map((entry, index) =>
+			normalizeFileAttestation(entry, `run manifest dataset input corpus ${index}`),
+		),
+	};
+	const normalizedValue = requireExactShape(
+		datasetValue.normalized,
+		["queries", "qrels", "corpus"],
+		[],
+		"run manifest dataset normalized",
+	);
+	const normalized = {
+		queries: normalizeFileAttestation(
+			normalizedValue.queries,
+			"run manifest dataset normalized queries",
+			counts.queries,
+		),
+		qrels: normalizeFileAttestation(normalizedValue.qrels, "run manifest dataset normalized qrels", counts.qrels),
+		corpus: normalizeFileAttestation(normalizedValue.corpus, "run manifest dataset normalized corpus", counts.corpus),
+	};
+	const evaluation = normalizeEvaluation(datasetValue.evaluation, counts);
+	validateDatasetCounts(profile, counts);
+	const methods = normalizeMethodNames(manifest.methods as readonly BenchmarkMethod[]);
+	const environment = normalizeEnvironment(manifest.environment as RunEnvironmentManifest);
+	const methodConfig =
+		manifest.methodConfig === undefined
+			? undefined
+			: normalizeMethodConfig(manifest.methodConfig as SanitizedMethodConfig);
+	if (profile === "smoke") {
+		const dataset: SmokeRunDatasetManifest = {
+			normalizationVersion,
+			revisions,
+			seed: requireSafeInteger(datasetValue.seed, "run manifest seed"),
+			counts: counts as unknown as SmokeRunDatasetManifest["counts"],
+			input,
+			normalized,
+			evaluation,
+		};
+		return {
+			schemaVersion: 1,
+			profile,
+			dataset,
+			methods,
+			environment,
+			...(methodConfig === undefined ? {} : { methodConfig }),
+		};
+	}
+	const dataset: FullRunDatasetManifest = {
+		normalizationVersion,
+		revisions,
+		counts: counts as unknown as FullRunDatasetManifest["counts"],
+		input,
+		normalized,
+		evaluation,
+	};
 	return {
 		schemaVersion: 1,
-		profile: value.profile,
-		preparedDirectory,
+		profile,
 		dataset,
 		methods,
 		environment,
@@ -173,24 +325,26 @@ export function normalizeRunManifest(value: RunManifestInput): RunManifestV1 {
 	};
 }
 
-export function normalizeRunMetrics(value: RunMetricsV1): RunMetricsV1 {
-	if (value.schemaVersion !== 1) {
+export function normalizeRunMetrics(value: unknown): RunMetricsV1 {
+	const metricsValue = requireExactShape(
+		value,
+		["schemaVersion", "methods", "indexingLatencyMs"],
+		["peakRssBytes"],
+		"metrics",
+	);
+	if (metricsValue.schemaVersion !== 1) {
 		throw new Error("metrics schemaVersion must be 1");
 	}
-	if (!isRecord(value.indexingLatencyMs)) {
+	if (!isRecord(metricsValue.indexingLatencyMs)) {
 		throw new Error("indexingLatencyMs must be an object");
 	}
-	assertExactKeys(
-		value.indexingLatencyMs,
-		new Set(Object.keys(value.indexingLatencyMs).filter((key) => key === "bm25" || key === "minsync")),
-		"indexingLatencyMs",
-	);
-	for (const key of Object.keys(value.indexingLatencyMs)) {
+	for (const key of Object.keys(metricsValue.indexingLatencyMs)) {
 		if (key !== "bm25" && key !== "minsync") {
 			throw new Error(`indexingLatencyMs has unknown field ${key}`);
 		}
 	}
-	const methods = [...value.methods]
+	if (!Array.isArray(metricsValue.methods)) throw new Error("metrics methods must be an array");
+	const methods = [...metricsValue.methods]
 		.map(validateMethodMetrics)
 		.sort((left, right) => compareCodePoints(left.method, right.method));
 	const methodNames = new Set<BenchmarkMethod>();
@@ -202,7 +356,7 @@ export function normalizeRunMetrics(value: RunMetricsV1): RunMetricsV1 {
 	}
 	const indexingLatencyMs: Partial<Record<"bm25" | "minsync", number>> = {};
 	for (const method of ["bm25", "minsync"] as const) {
-		const valueForMethod = value.indexingLatencyMs[method];
+		const valueForMethod = metricsValue.indexingLatencyMs[method];
 		if (valueForMethod !== undefined) {
 			indexingLatencyMs[method] = requireFiniteNonNegative(valueForMethod, `indexingLatencyMs.${method}`);
 		}
@@ -213,8 +367,8 @@ export function normalizeRunMetrics(value: RunMetricsV1): RunMetricsV1 {
 		indexingLatencyMs: Partial<Record<"bm25" | "minsync", number>>;
 		peakRssBytes?: number;
 	} = { schemaVersion: 1, methods, indexingLatencyMs };
-	if (value.peakRssBytes !== undefined) {
-		normalized.peakRssBytes = requirePositiveSafeInteger(value.peakRssBytes, "peakRssBytes");
+	if (metricsValue.peakRssBytes !== undefined) {
+		normalized.peakRssBytes = requirePositiveSafeInteger(metricsValue.peakRssBytes, "peakRssBytes");
 	}
 	return normalized;
 }
@@ -230,6 +384,7 @@ export function validateQueryRunRecord(value: unknown): QueryRunRecord {
 	const queryId = requireNonBlank(value.queryId, "record queryId");
 	const latencyMs = requireFiniteNonNegative(value.latencyMs, "record latencyMs");
 	if (!Array.isArray(value.hits)) throw new Error("record hits must be an array");
+	if (value.hits.length > 100) throw new Error("record hits must contain at most 100 entries");
 	const hits = value.hits.map((hit, index) => validateRankedHit(hit, index));
 	const documentIds = new Set<string>();
 	const ranks = new Set<number>();
@@ -240,6 +395,9 @@ export function validateQueryRunRecord(value: unknown): QueryRunRecord {
 		if (ranks.has(hit.rank)) throw new Error(`duplicate hit rank ${hit.rank}`);
 		documentIds.add(hit.documentId);
 		ranks.add(hit.rank);
+	}
+	for (let rank = 1; rank <= hits.length; rank += 1) {
+		if (!ranks.has(rank)) throw new Error("record hit ranks must be contiguous from 1");
 	}
 	if (value.errorCode !== undefined && value.errorCode !== "retrieval-failed") {
 		throw new Error("record errorCode is invalid");
@@ -298,8 +456,102 @@ function validateRankedHit(value: unknown, index: number): RankedHit {
 	return {
 		documentId: requireNonBlank(value.documentId, `record hit ${index} documentId`),
 		score: requireFinite(value.score, `record hit ${index} score`),
-		rank: requirePositiveSafeInteger(value.rank, `record hit ${index} rank`),
+		rank: requireAtMost(
+			requirePositiveSafeInteger(value.rank, `record hit ${index} rank`),
+			100,
+			`record hit ${index} rank`,
+		),
 	};
+}
+
+function normalizeFileAttestation(value: unknown, label: string): RunFileAttestation;
+function normalizeFileAttestation(value: unknown, label: string, expectedRecords: number): RunNormalizedAttestation;
+function normalizeFileAttestation(
+	value: unknown,
+	label: string,
+	expectedRecords?: number,
+): RunFileAttestation | RunNormalizedAttestation {
+	const record = requireExactShape(
+		value,
+		["sha256", "bytes", ...(expectedRecords === undefined ? [] : ["records"])],
+		[],
+		label,
+	);
+	if (typeof record.sha256 !== "string" || !SHA256_PATTERN.test(record.sha256)) {
+		throw new Error(`${label} sha256 is invalid`);
+	}
+	const normalized: { sha256: string; bytes: number; records?: number } = {
+		sha256: record.sha256,
+		bytes: requirePositiveSafeInteger(record.bytes, `${label} bytes`),
+	};
+	if (expectedRecords !== undefined) {
+		const records = requireNonNegativeSafeInteger(record.records, `${label} records`);
+		if (records !== expectedRecords) throw new Error(`${label} records do not match dataset counts`);
+		normalized.records = records;
+	}
+	return normalized as RunFileAttestation | RunNormalizedAttestation;
+}
+
+function normalizeEvaluation(value: unknown, counts: Readonly<Record<string, number>>): RunEvaluationV1 {
+	const evaluation = requireExactShape(value, ["schemaVersion", "qrels"], [], "run manifest dataset evaluation");
+	if (evaluation.schemaVersion !== 1) throw new Error("run manifest dataset evaluation schemaVersion must be 1");
+	if (!Array.isArray(evaluation.qrels)) throw new Error("run manifest dataset evaluation qrels must be an array");
+	if (evaluation.qrels.length > MAX_EMBEDDED_QRELS) {
+		throw new Error(`run manifest dataset evaluation qrels must contain at most ${MAX_EMBEDDED_QRELS} entries`);
+	}
+	if (evaluation.qrels.length !== counts.qrels) {
+		throw new Error("run manifest dataset evaluation qrel count does not match dataset counts");
+	}
+	const pairs = new Set<string>();
+	const qrels = evaluation.qrels.map((value, index): Qrel => {
+		const qrel = requireExactShape(
+			value,
+			["queryId", "documentId", "relevance"],
+			[],
+			`run manifest dataset evaluation qrel ${index}`,
+		);
+		const queryId = requireBoundedId(qrel.queryId, `run manifest dataset evaluation qrel ${index} queryId`);
+		const documentId = requireBoundedId(qrel.documentId, `run manifest dataset evaluation qrel ${index} documentId`);
+		const relevance = requireNonNegativeSafeInteger(
+			qrel.relevance,
+			`run manifest dataset evaluation qrel ${index} relevance`,
+		);
+		const pair = `${queryId}\0${documentId}`;
+		if (pairs.has(pair)) throw new Error(`duplicate run manifest evaluation qrel ${queryId}/${documentId}`);
+		pairs.add(pair);
+		return { queryId, documentId, relevance };
+	});
+	qrels.sort(
+		(left, right) =>
+			compareCodePoints(left.queryId, right.queryId) || compareCodePoints(left.documentId, right.documentId),
+	);
+	const queryIds = new Set(qrels.map((qrel) => qrel.queryId));
+	const documentIds = new Set(qrels.map((qrel) => qrel.documentId));
+	const positives = qrels.filter((qrel) => qrel.relevance > 0).length;
+	if (queryIds.size !== counts.queries)
+		throw new Error("run manifest evaluation query count does not match dataset counts");
+	if (documentIds.size !== counts.judgedDocuments) {
+		throw new Error("run manifest evaluation judged document count does not match dataset counts");
+	}
+	if (positives !== counts.positiveQrels) {
+		throw new Error("run manifest evaluation positive qrel count does not match dataset counts");
+	}
+	return { schemaVersion: 1, qrels };
+}
+
+function validateDatasetCounts(profile: "smoke" | "full", counts: Readonly<Record<string, number>>): void {
+	if (counts.queries < 1) throw new Error("run manifest dataset must contain at least one query");
+	if (counts.qrels < 1) throw new Error("run manifest dataset must contain at least one qrel");
+	if (counts.positiveQrels > counts.qrels) throw new Error("run manifest positive qrels exceed qrels");
+	if (counts.judgedDocuments < 1 || counts.judgedDocuments > counts.qrels) {
+		throw new Error("run manifest judged documents are inconsistent with qrels");
+	}
+	if (counts.judgedDocuments > counts.corpus) {
+		throw new Error("run manifest judged documents exceed corpus");
+	}
+	if (profile === "smoke" && counts.distractors !== counts.corpus - counts.judgedDocuments) {
+		throw new Error("run manifest distractors do not match corpus minus judged documents");
+	}
 }
 
 function normalizeCutoffMap<K extends string>(value: unknown, keys: readonly K[], label: string): Record<K, number> {
@@ -322,8 +574,8 @@ function normalizeMethodNames(values: readonly BenchmarkMethod[]): BenchmarkMeth
 }
 
 function normalizeMethodConfig(value: SanitizedMethodConfig): SanitizedMethodConfig {
-	if (!isRecord(value)) throw new Error("methodConfig must be an object");
-	if (value.endpointKind !== "local" && value.endpointKind !== "remote") {
+	const config = requireExactShape(value, ["endpointKind", "dimension"], ["embedderId", "apiKeyEnv"], "methodConfig");
+	if (config.endpointKind !== "local" && config.endpointKind !== "remote") {
 		throw new Error("methodConfig endpointKind must be local or remote");
 	}
 	const normalized: {
@@ -332,14 +584,14 @@ function normalizeMethodConfig(value: SanitizedMethodConfig): SanitizedMethodCon
 		apiKeyEnv?: string;
 		dimension: number;
 	} = {
-		endpointKind: value.endpointKind,
-		dimension: requirePositiveSafeInteger(value.dimension, "methodConfig dimension"),
+		endpointKind: config.endpointKind,
+		dimension: requirePositiveSafeInteger(config.dimension, "methodConfig dimension"),
 	};
-	if (value.embedderId !== undefined) {
-		normalized.embedderId = requireOpaqueDisclosure(value.embedderId, "methodConfig embedderId");
+	if (config.embedderId !== undefined) {
+		normalized.embedderId = requireOpaqueDisclosure(config.embedderId, "methodConfig embedderId");
 	}
-	if (value.apiKeyEnv !== undefined) {
-		const apiKeyEnv = requireNonBlank(value.apiKeyEnv, "methodConfig apiKeyEnv");
+	if (config.apiKeyEnv !== undefined) {
+		const apiKeyEnv = requireNonBlank(config.apiKeyEnv, "methodConfig apiKeyEnv");
 		if (!ENV_NAME_PATTERN.test(apiKeyEnv)) {
 			throw new Error("methodConfig apiKeyEnv must be an environment variable name");
 		}
@@ -349,7 +601,12 @@ function normalizeMethodConfig(value: SanitizedMethodConfig): SanitizedMethodCon
 }
 
 function normalizeEnvironment(value: RunEnvironmentManifest): RunEnvironmentManifest {
-	if (!isRecord(value)) throw new Error("run manifest environment must be an object");
+	const environment = requireExactShape(
+		value,
+		["autoRagCommit", "platform", "architecture", "node", "measuredAt"],
+		["bun"],
+		"run manifest environment",
+	);
 	const normalized: {
 		autoRagCommit: string;
 		platform: string;
@@ -358,17 +615,17 @@ function normalizeEnvironment(value: RunEnvironmentManifest): RunEnvironmentMani
 		bun?: string;
 		measuredAt: string;
 	} = {
-		autoRagCommit: requireOpaqueDisclosure(value.autoRagCommit, "environment autoRagCommit"),
-		platform: requireOpaqueDisclosure(value.platform, "environment platform"),
-		architecture: requireOpaqueDisclosure(value.architecture, "environment architecture"),
-		node: requireOpaqueDisclosure(value.node, "environment node"),
-		measuredAt: requireNonBlank(value.measuredAt, "environment measuredAt"),
+		autoRagCommit: requireOpaqueDisclosure(environment.autoRagCommit, "environment autoRagCommit"),
+		platform: requireOpaqueDisclosure(environment.platform, "environment platform"),
+		architecture: requireOpaqueDisclosure(environment.architecture, "environment architecture"),
+		node: requireOpaqueDisclosure(environment.node, "environment node"),
+		measuredAt: requireNonBlank(environment.measuredAt, "environment measuredAt"),
 	};
 	if (!Number.isFinite(Date.parse(normalized.measuredAt))) {
 		throw new Error("environment measuredAt must be an ISO timestamp");
 	}
-	if (value.bun !== undefined) {
-		normalized.bun = requireOpaqueDisclosure(value.bun, "environment bun");
+	if (environment.bun !== undefined) {
+		normalized.bun = requireOpaqueDisclosure(environment.bun, "environment bun");
 	}
 	return normalized;
 }
@@ -483,7 +740,7 @@ function renderSummary(manifest: RunManifestV1, metrics: RunMetricsV1): string {
 		"",
 		"- Query failures are scored as zero for quality metrics and excluded from latency statistics.",
 		"- Peak RSS is process-wide and is disclosed only when the runtime reports a reliable maximum.",
-		"- MinSync integrity checks run outside measured query intervals and may affect filesystem cache state.",
+		"- Full MinSync executable and index-content hashes run outside measured query intervals; cheap O(1) device, inode, size, and mtime checks run at query boundaries.",
 		"- Results from different embedders or endpoint kinds are not directly comparable.",
 		"",
 	);
@@ -519,59 +776,141 @@ async function resolvePublicationPaths(directory: string): Promise<PublicationPa
 	};
 }
 
-async function acquirePublicationLock(paths: PublicationPaths): Promise<FileHandle> {
-	try {
-		const handle = await open(paths.lock, "wx", 0o600);
-		await handle.sync();
-		return handle;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+async function acquirePublicationLock(paths: PublicationPaths): Promise<PublicationLock> {
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		try {
+			const handle = await open(paths.lock, "wx", 0o600);
+			let identity: FileIdentity | undefined;
+			try {
+				identity = await snapshotOpenRegularFile(handle, "publication lock");
+				const metadata = {
+					schemaVersion: 1,
+					pid: process.pid,
+					startedAt: new Date().toISOString(),
+					nonce: randomUUID(),
+				};
+				await handle.writeFile(`${JSON.stringify(metadata)}\n`, "utf8");
+				await handle.sync();
+				const written = await snapshotOpenRegularFile(handle, "publication lock");
+				if (written.device !== identity.device || written.inode !== identity.inode) {
+					throw new Error("publication lock changed");
+				}
+				await assertFileIdentity(paths.lock, written);
+				return { handle, identity: written };
+			} catch (error) {
+				await handle.close().catch(() => undefined);
+				if (identity !== undefined) {
+					try {
+						await assertFileIdentity(paths.lock, identity, false);
+						await unlink(paths.lock);
+					} catch {
+						// A replaced lock is never removed.
+					}
+				}
+				throw error;
+			}
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			if (attempt === 0 && (await recoverDeadPublicationLock(paths.lock))) continue;
 			throw new Error(`report directory already exists or is being published: ${paths.destination}`);
 		}
-		throw error;
 	}
+	throw new Error(`report directory already exists or is being published: ${paths.destination}`);
 }
 
-async function releasePublicationLock(path: string, handle: FileHandle): Promise<void> {
-	const owned = await handle.stat();
-	await handle.close();
-	const quarantine = `${path}.cleanup-${process.pid}-${randomUUID()}`;
+async function recoverDeadPublicationLock(path: string): Promise<boolean> {
+	let handle: FileHandle;
 	try {
-		await rename(path, quarantine);
-		const current = await lstat(quarantine);
-		if (current.isFile() && !current.isSymbolicLink() && current.dev === owned.dev && current.ino === owned.ino) {
-			await unlink(quarantine);
-			return;
-		}
-		try {
-			await rename(quarantine, path);
-		} catch {
-			// Preserve a replacement under the quarantine name when the lock
-			// pathname was concurrently claimed.
-		}
+		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+	} catch {
+		return false;
+	}
+	let identity: FileIdentity;
+	let raw: string;
+	try {
+		identity = await snapshotOpenRegularFile(handle, "publication lock");
+		if (identity.size < 2 || identity.size > 1_024) return false;
+		const buffer = Buffer.alloc(identity.size);
+		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+		if (bytesRead !== buffer.length) return false;
+		raw = buffer.toString("utf8");
+	} catch {
+		return false;
+	} finally {
+		await handle.close().catch(() => undefined);
+	}
+	let metadata: Record<string, unknown>;
+	try {
+		metadata = requireExactShape(JSON.parse(raw), ["schemaVersion", "pid", "startedAt", "nonce"], [], "lock");
+	} catch {
+		return false;
+	}
+	if (
+		metadata.schemaVersion !== 1 ||
+		!Number.isSafeInteger(metadata.pid) ||
+		(metadata.pid as number) < 1 ||
+		typeof metadata.startedAt !== "string" ||
+		!Number.isFinite(Date.parse(metadata.startedAt)) ||
+		typeof metadata.nonce !== "string" ||
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(metadata.nonce)
+	) {
+		return false;
+	}
+	try {
+		process.kill(metadata.pid as number, 0);
+		return false;
 	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		if ((error as NodeJS.ErrnoException).code !== "ESRCH") return false;
+	}
+	try {
+		await assertFileIdentity(path, identity);
+		await unlink(path);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
-async function writeDurablePrivateFile(path: string, contents: string): Promise<void> {
-	const handle = await open(path, "wx", 0o600);
+async function releasePublicationLock(path: string, lock: PublicationLock): Promise<void> {
+	await lock.handle.close();
 	try {
+		await assertFileIdentity(path, lock.identity);
+		await unlink(path);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+			// Fail closed: a replaced lock is never removed.
+		}
+	}
+}
+
+async function writeDurablePrivateFile(path: string, contents: string): Promise<FileIdentity> {
+	const handle = await open(path, "wx", 0o600);
+	let identity: FileIdentity;
+	try {
+		identity = await snapshotOpenRegularFile(handle, "report file");
 		await handle.writeFile(contents, "utf8");
 		await handle.sync();
+		const written = await snapshotOpenRegularFile(handle, "report file");
+		if (written.device !== identity.device || written.inode !== identity.inode) {
+			throw new Error("report file changed during staging");
+		}
+		identity = written;
 	} finally {
 		await handle.close();
 	}
-	await chmod(path, 0o600);
-	const stats = await lstat(path);
-	if (!stats.isFile() || stats.isSymbolicLink()) {
-		throw new Error("report file changed during staging");
-	}
+	return identity;
 }
 
-async function fsyncDirectory(path: string): Promise<void> {
+async function fsyncDirectory(path: string, expected?: DirectoryIdentity): Promise<void> {
 	const handle = await open(path, "r");
 	try {
+		const stats = await handle.stat();
+		if (
+			!stats.isDirectory() ||
+			(expected !== undefined && (stats.dev !== expected.device || stats.ino !== expected.inode))
+		) {
+			throw new Error("report staging directory changed");
+		}
 		await handle.sync();
 	} finally {
 		await handle.close();
@@ -590,11 +929,11 @@ interface BunFfiModule {
 }
 
 async function renameDirectoryNoReplace(source: string, destination: string): Promise<void> {
-	if (process.versions.bun === undefined || (process.platform !== "darwin" && process.platform !== "linux")) {
-		// The benchmark CLI runs under Bun. Node's Windows directory rename is
-		// already non-replacing; Node-based unit tests use the adjacent lock to
-		// serialize conforming publishers.
-		await rename(source, destination);
+	if (process.platform !== "darwin" && process.platform !== "linux") {
+		throw new Error("atomic no-replace report publication is unavailable on this platform");
+	}
+	if (process.versions.bun === undefined) {
+		await renameDirectoryNoReplaceWithBun(source, destination);
 		return;
 	}
 	const runtimeImport = (specifier: string): Promise<unknown> => import(specifier);
@@ -635,6 +974,53 @@ async function renameDirectoryNoReplace(source: string, destination: string): Pr
 	}
 }
 
+const BUN_NO_REPLACE_HELPER = String.raw`
+import { dlopen, ptr } from "bun:ffi";
+const source = Buffer.from(process.argv[1] + "\0");
+const destination = Buffer.from(process.argv[2] + "\0");
+let result;
+if (process.platform === "darwin") {
+  const library = dlopen("/usr/lib/libSystem.B.dylib", {
+    renamex_np: { args: ["ptr", "ptr", "u32"], returns: "i32" },
+  });
+  try { result = library.symbols.renamex_np(ptr(source), ptr(destination), 4); }
+  finally { library.close(); }
+} else if (process.platform === "linux") {
+  const library = dlopen("libc.so.6", {
+    renameat2: { args: ["i32", "ptr", "i32", "ptr", "u32"], returns: "i32" },
+  });
+  try { result = library.symbols.renameat2(-100, ptr(source), -100, ptr(destination), 1); }
+  finally { library.close(); }
+} else {
+  process.exit(72);
+}
+process.exit(result === 0 ? 0 : 73);
+`;
+
+async function renameDirectoryNoReplaceWithBun(source: string, destination: string): Promise<void> {
+	try {
+		await new Promise<void>((resolvePromise, rejectPromise) => {
+			execFile(
+				"bun",
+				["-e", BUN_NO_REPLACE_HELPER, source, destination],
+				{ timeout: 5_000, windowsHide: true },
+				(error) => {
+					if (error === null) resolvePromise();
+					else rejectPromise(error);
+				},
+			);
+		});
+	} catch {
+		try {
+			await lstat(destination);
+			throw new Error(`report directory already exists: ${destination}`);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
+		throw new Error("atomic no-replace report publication failed: no-replace runtime unavailable or failed");
+	}
+}
+
 async function assertDestinationAbsent(path: string): Promise<void> {
 	try {
 		await lstat(path);
@@ -651,6 +1037,7 @@ async function snapshotDirectory(path: string): Promise<DirectoryIdentity> {
 	}
 	const canonical = await realpath(path);
 	if (canonical !== path) throw new Error("report staging directory escaped");
+	if ((stats.mode & 0o077) !== 0) throw new Error("report staging directory permissions are not private");
 	return { device: stats.dev, inode: stats.ino };
 }
 
@@ -661,29 +1048,59 @@ async function assertDirectoryIdentity(path: string, identity: DirectoryIdentity
 	}
 }
 
-async function removeOwnedDirectory(path: string, identity: DirectoryIdentity): Promise<void> {
+async function snapshotOpenRegularFile(handle: FileHandle, label: string): Promise<FileIdentity> {
+	const stats = await handle.stat();
+	if (!stats.isFile()) throw new Error(`${label} must be a regular file`);
+	if ((stats.mode & 0o077) !== 0) throw new Error(`${label} permissions are not private`);
+	return { device: stats.dev, inode: stats.ino, size: stats.size };
+}
+
+async function assertFileIdentity(path: string, identity: FileIdentity, requireExactSize = true): Promise<void> {
+	const stats = await lstat(path);
+	if (
+		!stats.isFile() ||
+		stats.isSymbolicLink() ||
+		stats.dev !== identity.device ||
+		stats.ino !== identity.inode ||
+		(requireExactSize && stats.size !== identity.size)
+	) {
+		throw new Error("report file changed during staging");
+	}
+}
+
+async function assertOwnedChildren(
+	root: string,
+	children: ReadonlyMap<(typeof REPORT_FILES)[number], FileIdentity>,
+): Promise<void> {
+	for (const [name, identity] of children) {
+		await assertFileIdentity(join(root, name), identity);
+	}
+}
+
+async function removeOwnedDirectory(
+	path: string,
+	identity: DirectoryIdentity,
+	children: ReadonlyMap<(typeof REPORT_FILES)[number], FileIdentity>,
+): Promise<void> {
 	try {
 		await assertDirectoryIdentity(path, identity);
 	} catch {
 		return;
 	}
-	const quarantine = `${path}.cleanup-${process.pid}-${randomUUID()}`;
-	await rename(path, quarantine);
-	let moved: DirectoryIdentity;
-	try {
-		moved = await snapshotDirectory(quarantine);
-	} catch {
-		return;
-	}
-	if (moved.device === identity.device && moved.inode === identity.inode) {
-		await rm(quarantine, { recursive: true, force: true });
-		return;
+	for (const [name, childIdentity] of [...children].reverse()) {
+		const child = join(path, name);
+		try {
+			await assertFileIdentity(child, childIdentity);
+			await unlink(child);
+		} catch {
+			// Unknown, replaced, or already absent children are preserved.
+		}
 	}
 	try {
-		await rename(quarantine, path);
+		await assertDirectoryIdentity(path, identity);
+		await rmdir(path);
 	} catch {
-		// Preserve a replacement under the quarantine name when the original
-		// pathname was concurrently claimed.
+		// Non-empty or replaced directories are preserved.
 	}
 }
 
@@ -703,6 +1120,14 @@ function requireNonBlank(value: unknown, label: string): string {
 		throw new Error(`${label} must be non-blank`);
 	}
 	return value;
+}
+
+function requireBoundedId(value: unknown, label: string): string {
+	const id = requireNonBlank(value, label);
+	if (Buffer.byteLength(id, "utf8") > MAX_DISCLOSED_ID_BYTES) {
+		throw new Error(`${label} exceeds ${MAX_DISCLOSED_ID_BYTES} bytes`);
+	}
+	return id;
 }
 
 function requireOpaqueDisclosure(value: unknown, label: string): string {
@@ -730,6 +1155,11 @@ function requirePositiveSafeInteger(value: unknown, label: string): number {
 	return number;
 }
 
+function requireAtMost(value: number, maximum: number, label: string): number {
+	if (value > maximum) throw new Error(`${label} must be at most ${maximum}`);
+	return value;
+}
+
 function requireFinite(value: unknown, label: string): number {
 	if (typeof value !== "number" || !Number.isFinite(value)) {
 		throw new Error(`${label} must be finite`);
@@ -751,6 +1181,23 @@ function requireUnitInterval(value: unknown, label: string): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireExactShape(
+	value: unknown,
+	requiredKeys: readonly string[],
+	optionalKeys: readonly string[],
+	label: string,
+): Record<string, unknown> {
+	if (!isRecord(value)) throw new Error(`${label} must be an object`);
+	const allowed = new Set([...requiredKeys, ...optionalKeys]);
+	for (const key of Object.keys(value)) {
+		if (!allowed.has(key)) throw new Error(`${label} has unknown field ${key}`);
+	}
+	for (const key of requiredKeys) {
+		if (!(key in value)) throw new Error(`${label} is missing field ${key}`);
+	}
+	return value;
 }
 
 function assertExactKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>, label: string): void {

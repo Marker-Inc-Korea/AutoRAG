@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readFile, realpath, rename, rm } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readJsonLines } from "./jsonl.ts";
@@ -19,9 +19,11 @@ import { MIRACL_FULL_CORPUS_PASSAGES } from "./profiles.ts";
 import {
 	normalizeRunManifest,
 	normalizeRunMetrics,
+	type RunFileAttestation,
 	type RunManifestInput,
 	type RunManifestV1,
 	type RunMetricsV1,
+	type RunNormalizedAttestation,
 	validateQueryRunRecord,
 	type WriteRunReportOptions,
 	writeRunReport,
@@ -86,6 +88,11 @@ interface LoadedPrepared {
 	readonly queries: readonly BenchmarkQuery[];
 	readonly qrels: readonly Qrel[];
 	readonly corpus?: readonly CorpusDocument[];
+	readonly normalized: {
+		readonly queries: RunNormalizedAttestation;
+		readonly qrels: RunNormalizedAttestation;
+		readonly corpus?: RunNormalizedAttestation;
+	};
 }
 
 interface LoadedRun {
@@ -93,6 +100,17 @@ interface LoadedRun {
 	readonly manifest: RunManifestV1;
 	readonly records: readonly QueryRunRecord[];
 	readonly metrics: RunMetricsV1;
+}
+
+interface WorkspaceEntryIdentity {
+	readonly device: number;
+	readonly inode: number;
+}
+
+interface WorkspaceTreeOwnership {
+	readonly root: BenchmarkDirectoryIdentity;
+	readonly files: ReadonlyMap<string, WorkspaceEntryIdentity>;
+	readonly directories: ReadonlyMap<string, WorkspaceEntryIdentity>;
 }
 
 export async function runCli(args: readonly string[], overrides: CliDependencyOverrides = {}): Promise<number> {
@@ -141,9 +159,11 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 	const corpus = prepared.corpus as readonly CorpusDocument[];
 	const workspacePath = await allocateWorkspacePath(command.output);
 	let workspaceIdentity: BenchmarkDirectoryIdentity | undefined;
+	let workspaceOwnership: WorkspaceTreeOwnership | undefined;
 	try {
 		const workspace = materializeBenchmarkWorkspace(workspacePath, corpus);
 		workspaceIdentity = snapshotBenchmarkDirectory(workspace.root);
+		workspaceOwnership = await snapshotOwnedWorkspace(workspace.root, workspaceIdentity);
 		const needsMinSync = command.methods.some((method) => method === "minsync" || method === "hybrid");
 		const config =
 			command.config === undefined
@@ -158,6 +178,7 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 			documentBySource: workspace.documentBySource,
 			config,
 		});
+		workspaceOwnership = await snapshotOwnedWorkspace(workspace.root, workspaceIdentity);
 		const records: QueryRunRecord[] = [];
 		for (const method of [...command.methods].sort(compareCodePoints)) {
 			const retrieval = created.methods.get(method);
@@ -195,27 +216,25 @@ async function runBenchmarkCommand(command: RunCommand, dependencies: CliDepende
 		);
 		return failures === 0 ? 0 : 1;
 	} finally {
-		if (workspaceIdentity !== undefined) {
-			await removeOwnedWorkspace(workspacePath, workspaceIdentity);
+		if (workspaceOwnership !== undefined) {
+			await removeOwnedWorkspace(workspacePath, workspaceOwnership);
 		}
 	}
 }
 
 async function runEvaluateCommand(command: EvaluateCommand, dependencies: CliDependencies): Promise<number> {
 	const run = await loadRun(command.run);
-	const prepared = await loadPrepared(run.manifest.preparedDirectory, false);
-	if (prepared.manifest.profile !== run.manifest.profile) {
-		throw new Error("run profile does not match its prepared dataset");
-	}
-	assertDatasetMatchesRunManifest(prepared.manifest, run.manifest);
-	assertCompleteRunRecords(
-		run.records,
-		run.manifest.methods,
-		prepared.queries.map((query) => query.queryId),
-	);
-	const evaluated = evaluateRun(run.records, prepared.qrels);
+	const qrels = run.manifest.dataset.evaluation.qrels;
+	assertCompleteRunRecords(run.records, run.manifest.methods, [...new Set(qrels.map((qrel) => qrel.queryId))]);
+	const evaluated = evaluateRun(run.records, qrels);
 	assertPersistedMetricsMatch(evaluated, run.metrics);
-	dependencies.writeStdout(JSON.stringify({ schemaVersion: 1, methods: evaluated }));
+	const output = normalizeRunMetrics({
+		schemaVersion: 1,
+		methods: evaluated,
+		indexingLatencyMs: run.metrics.indexingLatencyMs,
+		...(run.metrics.peakRssBytes === undefined ? {} : { peakRssBytes: run.metrics.peakRssBytes }),
+	});
+	dependencies.writeStdout(JSON.stringify(output));
 	return run.records.some((record) => record.errorCode !== undefined) ? 1 : 0;
 }
 
@@ -339,18 +358,22 @@ async function loadPrepared(directory: string, includeCorpus: boolean): Promise<
 	const qrelsPath = await containedRegularFile(canonicalDirectory, manifest.files.qrels);
 	const queries = validateQueries(await readJsonLines<unknown>(queriesPath));
 	const qrels = validateQrels(await readJsonLines<unknown>(qrelsPath), new Set(queries.map((query) => query.queryId)));
+	const normalizedQueries = await attestNormalizedFile(queriesPath, queries.length);
+	const normalizedQrels = await attestNormalizedFile(qrelsPath, qrels.length);
 	let corpus: CorpusDocument[] | undefined;
 	let corpusPath: string | undefined;
+	let normalizedCorpus: RunNormalizedAttestation | undefined;
 	if (includeCorpus) {
 		corpusPath = await containedRegularFile(canonicalDirectory, manifest.files.corpus);
 		corpus = validateCorpus(await readJsonLines<unknown>(corpusPath));
+		normalizedCorpus = await attestNormalizedFile(corpusPath, corpus.length);
 	}
 	validatePreparedContents(manifest, queries, qrels, corpus);
 	if (manifest.profile === "full") {
-		await assertNormalizedFile(queriesPath, manifest.normalized.queries, queries.length, "queries");
-		await assertNormalizedFile(qrelsPath, manifest.normalized.qrels, qrels.length, "qrels");
-		if (includeCorpus && corpusPath !== undefined && corpus !== undefined) {
-			await assertNormalizedFile(corpusPath, manifest.normalized.corpus, corpus.length, "corpus");
+		assertNormalizedIdentity(normalizedQueries, manifest.normalized.queries, "queries");
+		assertNormalizedIdentity(normalizedQrels, manifest.normalized.qrels, "qrels");
+		if (includeCorpus && normalizedCorpus !== undefined) {
+			assertNormalizedIdentity(normalizedCorpus, manifest.normalized.corpus, "corpus");
 		}
 	}
 	return {
@@ -359,6 +382,11 @@ async function loadPrepared(directory: string, includeCorpus: boolean): Promise<
 		queries,
 		qrels,
 		...(corpus === undefined ? {} : { corpus }),
+		normalized: {
+			queries: normalizedQueries,
+			qrels: normalizedQrels,
+			...(normalizedCorpus === undefined ? {} : { corpus: normalizedCorpus }),
+		},
 	};
 }
 
@@ -476,24 +504,7 @@ async function loadRun(directory: string): Promise<LoadedRun> {
 	} catch {
 		throw new Error("run manifest is not valid JSON");
 	}
-	const manifestRecord = requireExactRecord(
-		rawManifest,
-		new Set([
-			"schemaVersion",
-			"profile",
-			"preparedDirectory",
-			"dataset",
-			"methods",
-			"environment",
-			...((rawManifest as Record<string, unknown>)?.methodConfig === undefined ? [] : ["methodConfig"]),
-		]),
-		"run manifest",
-	);
-	if (manifestRecord.schemaVersion !== 1) {
-		throw new Error("run manifest schemaVersion must be 1");
-	}
-	validatePersistedRunManifestShape(manifestRecord);
-	const manifest = normalizeRunManifest(manifestRecord as unknown as RunManifestInput);
+	const manifest = normalizeRunManifest(rawManifest);
 	const records = (await readJsonLines<unknown>(await containedRegularFile(canonicalDirectory, "results.jsonl"))).map(
 		validateQueryRunRecord,
 	);
@@ -504,64 +515,8 @@ async function loadRun(directory: string): Promise<LoadedRun> {
 	} catch {
 		throw new Error("run metrics are not valid JSON");
 	}
-	const metricsRecord = requireExactRecord(
-		rawMetrics,
-		new Set([
-			"schemaVersion",
-			"methods",
-			"indexingLatencyMs",
-			...((rawMetrics as Record<string, unknown>)?.peakRssBytes === undefined ? [] : ["peakRssBytes"]),
-		]),
-		"run metrics",
-	);
-	requireRecordShape(
-		metricsRecord.indexingLatencyMs,
-		new Set(),
-		new Set(["bm25", "minsync"]),
-		"run metrics indexingLatencyMs",
-	);
-	const metrics = normalizeRunMetrics(metricsRecord as unknown as RunMetricsV1);
+	const metrics = normalizeRunMetrics(rawMetrics);
 	return { directory: canonicalDirectory, manifest, records, metrics };
-}
-
-function validatePersistedRunManifestShape(manifest: Record<string, unknown>): void {
-	const profile = manifest.profile;
-	if (profile !== "smoke" && profile !== "full") {
-		throw new Error("run manifest profile must be smoke or full");
-	}
-	const dataset = requireRecordShape(
-		manifest.dataset,
-		new Set(["normalizationVersion", "revisions", "counts", ...(profile === "smoke" ? ["seed"] : [])]),
-		new Set(["normalizationVersion", "revisions", "counts", ...(profile === "smoke" ? ["seed"] : [])]),
-		"run manifest dataset",
-	);
-	requireExactRecord(dataset.revisions, new Set(["topics", "corpus"]), "run manifest dataset revisions");
-	requireExactRecord(
-		dataset.counts,
-		new Set([
-			"queries",
-			"qrels",
-			"positiveQrels",
-			"corpus",
-			"judgedDocuments",
-			...(profile === "smoke" ? ["distractors"] : []),
-		]),
-		"run manifest dataset counts",
-	);
-	requireRecordShape(
-		manifest.environment,
-		new Set(["autoRagCommit", "platform", "architecture", "node", "measuredAt"]),
-		new Set(["autoRagCommit", "platform", "architecture", "node", "bun", "measuredAt"]),
-		"run manifest environment",
-	);
-	if (manifest.methodConfig !== undefined) {
-		requireRecordShape(
-			manifest.methodConfig,
-			new Set(["endpointKind", "dimension"]),
-			new Set(["endpointKind", "dimension", "embedderId", "apiKeyEnv"]),
-			"run manifest methodConfig",
-		);
-	}
 }
 
 function assertCompleteRunRecords(
@@ -616,32 +571,51 @@ function createRunManifest(
 	};
 	const bunVersion = process.versions.bun;
 	if (bunVersion !== undefined) environment.bun = bunVersion;
-	const dataset: RunManifestInput["dataset"] = {
+	const corpusNormalized = prepared.normalized.corpus;
+	if (corpusNormalized === undefined) throw new Error("prepared corpus attestation is unavailable");
+	const identity = {
 		normalizationVersion: prepared.manifest.normalizationVersion,
 		revisions: { ...prepared.manifest.revisions },
-		counts: { ...prepared.manifest.counts },
-		...(prepared.manifest.profile === "smoke" ? { seed: prepared.manifest.seed } : {}),
+		input: {
+			topics: sourceAttestation(prepared.manifest.sources.topics),
+			qrels: sourceAttestation(prepared.manifest.sources.qrels),
+			corpus: prepared.manifest.sources.corpus.map(sourceAttestation),
+		},
+		normalized: {
+			queries: { ...prepared.normalized.queries },
+			qrels: { ...prepared.normalized.qrels },
+			corpus: { ...corpusNormalized },
+		},
+		evaluation: {
+			schemaVersion: 1 as const,
+			qrels: prepared.qrels.map((qrel) => ({ ...qrel })),
+		},
 	};
-	return {
-		profile: command.profile,
-		preparedDirectory: prepared.directory,
-		dataset,
+	const common = {
+		schemaVersion: 1 as const,
 		methods: command.methods,
 		environment,
 		...(created.reportConfig === undefined ? {} : { methodConfig: created.reportConfig }),
 	};
-}
-
-function assertDatasetMatchesRunManifest(prepared: PreparedManifest, run: RunManifestV1): void {
-	const expected = {
-		normalizationVersion: prepared.normalizationVersion,
-		revisions: prepared.revisions,
-		counts: prepared.counts,
-		...(prepared.profile === "smoke" ? { seed: prepared.seed } : {}),
-	};
-	if (JSON.stringify(run.dataset) !== JSON.stringify(expected)) {
-		throw new Error("run dataset disclosure does not match prepared manifest");
+	if (prepared.manifest.profile === "smoke") {
+		return {
+			...common,
+			profile: "smoke",
+			dataset: {
+				...identity,
+				seed: prepared.manifest.seed,
+				counts: { ...prepared.manifest.counts },
+			},
+		};
 	}
+	return {
+		...common,
+		profile: "full",
+		dataset: {
+			...identity,
+			counts: { ...prepared.manifest.counts },
+		},
+	};
 }
 
 function assertPersistedMetricsMatch(evaluated: readonly MethodMetrics[], persisted: RunMetricsV1): void {
@@ -651,22 +625,29 @@ function assertPersistedMetricsMatch(evaluated: readonly MethodMetrics[], persis
 	}
 }
 
-async function assertNormalizedFile(
-	path: string,
-	expected: { readonly sha256: string; readonly bytes: number; readonly records: number },
-	actualRecords: number,
-	label: string,
-): Promise<void> {
-	if (!SHA256_PATTERN.test(expected.sha256)) {
-		throw new Error(`prepared normalized ${label} hash is invalid`);
-	}
+function sourceAttestation(source: { readonly sha256: string; readonly bytes: number }): RunFileAttestation {
+	return { sha256: source.sha256, bytes: source.bytes };
+}
+
+async function attestNormalizedFile(path: string, actualRecords: number): Promise<RunNormalizedAttestation> {
 	const hash = createHash("sha256");
 	let bytes = 0;
 	for await (const chunk of createReadStream(path)) {
 		hash.update(chunk);
 		bytes += chunk.byteLength;
 	}
-	if (hash.digest("hex") !== expected.sha256 || bytes !== expected.bytes || actualRecords !== expected.records) {
+	return { sha256: hash.digest("hex"), bytes, records: actualRecords };
+}
+
+function assertNormalizedIdentity(
+	actual: RunNormalizedAttestation,
+	expected: { readonly sha256: string; readonly bytes: number; readonly records: number },
+	label: string,
+): void {
+	if (!SHA256_PATTERN.test(expected.sha256)) {
+		throw new Error(`prepared normalized ${label} hash is invalid`);
+	}
+	if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes || actual.records !== expected.records) {
 		throw new Error(`prepared normalized ${label} identity does not match manifest`);
 	}
 }
@@ -731,30 +712,84 @@ async function assertPathAbsent(path: string, label: string): Promise<void> {
 	}
 }
 
-async function removeOwnedWorkspace(path: string, identity: BenchmarkDirectoryIdentity): Promise<void> {
+async function snapshotOwnedWorkspace(
+	path: string,
+	identity: BenchmarkDirectoryIdentity,
+): Promise<WorkspaceTreeOwnership> {
+	const root = snapshotBenchmarkDirectory(path);
+	if (root.device !== identity.device || root.inode !== identity.inode) {
+		throw new Error("benchmark workspace changed");
+	}
+	const files = new Map<string, WorkspaceEntryIdentity>();
+	const directories = new Map<string, WorkspaceEntryIdentity>();
+	const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
+		for (const name of await readdir(directory)) {
+			const relativePath = relativeDirectory.length === 0 ? name : join(relativeDirectory, name);
+			const childPath = join(path, relativePath);
+			const stats = await lstat(childPath);
+			if (stats.isSymbolicLink()) continue;
+			const entryIdentity = { device: stats.dev, inode: stats.ino };
+			if (stats.isFile()) {
+				files.set(relativePath, entryIdentity);
+			} else if (stats.isDirectory()) {
+				directories.set(relativePath, entryIdentity);
+				await visit(childPath, relativePath);
+			}
+		}
+	};
+	await visit(path, "");
+	return { root, files, directories };
+}
+
+async function removeOwnedWorkspace(path: string, ownership: WorkspaceTreeOwnership): Promise<void> {
 	try {
 		const current = snapshotBenchmarkDirectory(path);
-		if (current.device !== identity.device || current.inode !== identity.inode) return;
+		if (current.device !== ownership.root.device || current.inode !== ownership.root.inode) return;
 	} catch {
 		return;
 	}
-	const quarantine = `${path}.cleanup-${process.pid}-${randomUUID()}`;
-	await rename(path, quarantine);
-	let moved: BenchmarkDirectoryIdentity;
+	for (const [relativePath, identity] of ownership.files) {
+		const child = join(path, relativePath);
+		try {
+			const stats = await lstat(child);
+			if (
+				stats.isFile() &&
+				!stats.isSymbolicLink() &&
+				stats.dev === identity.device &&
+				stats.ino === identity.inode
+			) {
+				await unlink(child);
+			}
+		} catch {
+			// Replaced or missing children are preserved.
+		}
+	}
+	const directories = [...ownership.directories].sort(
+		([left], [right]) => right.split(sep).length - left.split(sep).length,
+	);
+	for (const [relativePath, identity] of directories) {
+		const child = join(path, relativePath);
+		try {
+			const stats = await lstat(child);
+			if (
+				stats.isDirectory() &&
+				!stats.isSymbolicLink() &&
+				stats.dev === identity.device &&
+				stats.ino === identity.inode
+			) {
+				await rmdir(child);
+			}
+		} catch {
+			// Non-empty, replaced, or missing directories are preserved.
+		}
+	}
 	try {
-		moved = snapshotBenchmarkDirectory(quarantine);
+		const current = snapshotBenchmarkDirectory(path);
+		if (current.device === ownership.root.device && current.inode === ownership.root.inode) {
+			await rmdir(path);
+		}
 	} catch {
-		return;
-	}
-	if (moved.device === identity.device && moved.inode === identity.inode) {
-		await rm(quarantine, { recursive: true, force: true });
-		return;
-	}
-	try {
-		await rename(quarantine, path);
-	} catch {
-		// Preserve a replacement under the quarantine name when the original
-		// pathname was concurrently claimed.
+		// Non-empty or replaced roots are preserved.
 	}
 }
 

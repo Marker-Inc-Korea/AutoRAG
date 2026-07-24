@@ -88,6 +88,8 @@ describe("MIRACL preparation", () => {
 		for (const root of roots.splice(0)) {
 			rmSync(root, { recursive: true, force: true });
 		}
+		vi.doUnmock("node:fs/promises");
+		vi.resetModules();
 	});
 
 	it("downloads pinned files through bounded redirects and writes normalized smoke data", async () => {
@@ -176,6 +178,43 @@ describe("MIRACL preparation", () => {
 				counts: { ...manifest.counts, distractors: manifest.counts.distractors + 1 },
 			}),
 		).toThrow("distractor count");
+		expect(() => validatePreparedManifest({ ...manifest, unknownRoot: true })).toThrow("unknown field unknownRoot");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				revisions: { ...manifest.revisions, unknownNested: true },
+			}),
+		).toThrow("revisions");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				sources: {
+					...manifest.sources,
+					topics: { ...manifest.sources.topics, unknownNested: true },
+				},
+			}),
+		).toThrow("sources.topics");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				selectedIds: { ...manifest.selectedIds, unknownNested: true },
+			}),
+		).toThrow("selectedIds");
+		expect(() =>
+			validatePreparedManifest({
+				...manifest,
+				normalized: {
+					queries: { sha256: "0".repeat(64), bytes: 1, records: 1 },
+					qrels: { sha256: "0".repeat(64), bytes: 1, records: 2 },
+					corpus: { sha256: "0".repeat(64), bytes: 1, records: 3 },
+				},
+			}),
+		).toThrow("unknown field normalized");
+		const parsedSmoke = JSON.parse(JSON.stringify(manifest)) as unknown;
+		const normalizedSmoke = validatePreparedManifest(parsedSmoke);
+		expect(normalizedSmoke).toEqual(manifest);
+		expect(normalizedSmoke).not.toBe(parsedSmoke);
+		expect(normalizedSmoke.revisions).not.toBe((parsedSmoke as typeof manifest).revisions);
 	});
 
 	it("streams every record for the full profile and attests normalized outputs without selected ids", async () => {
@@ -231,6 +270,42 @@ describe("MIRACL preparation", () => {
 				{ expectedFullCorpusPassages: 5 },
 			),
 		).toThrow("selectedIds");
+		expect(() =>
+			validatePreparedManifest(
+				{
+					...manifest,
+					counts: { ...manifest.counts, distractors: 0 },
+				},
+				{ expectedFullCorpusPassages: 5 },
+			),
+		).toThrow("counts");
+		expect(() =>
+			validatePreparedManifest(
+				{
+					...manifest,
+					normalized: {
+						...manifest.normalized,
+						queries: { ...manifest.normalized.queries, unknownNested: true },
+					},
+				},
+				{ expectedFullCorpusPassages: 5 },
+			),
+		).toThrow("normalized.queries");
+		expect(() =>
+			validatePreparedManifest(
+				{
+					...manifest,
+					unknownRoot: true,
+				},
+				{ expectedFullCorpusPassages: 5 },
+			),
+		).toThrow("unknown field unknownRoot");
+		const parsedFull = JSON.parse(JSON.stringify(manifest)) as unknown;
+		const normalizedFull = validatePreparedManifest(parsedFull, { expectedFullCorpusPassages: 5 });
+		if (normalizedFull.profile !== "full") throw new Error("expected full manifest");
+		expect(normalizedFull).toEqual(manifest);
+		expect(normalizedFull).not.toBe(parsedFull);
+		expect(normalizedFull.normalized).not.toBe((parsedFull as typeof manifest).normalized);
 	});
 
 	it("rejects redirects outside the pinned download hosts before following them", async () => {
@@ -481,6 +556,49 @@ describe("MIRACL preparation", () => {
 		).rejects.toThrow("injected preparation failure");
 		expect(readFileSync(replacement, "utf8")).toBe("replacement data\n");
 		expect(existsSync(displaced)).toBe(true);
+	});
+
+	it("uses nonrecursive identity-checked cleanup for a last-window output replacement", async () => {
+		const outputDir = makeOutput();
+		const displaced = `${outputDir}-displaced`;
+		const replacement = join(outputDir, "replacement.txt");
+		const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+		let replaced = false;
+		let usedRecursiveRemoval = false;
+		vi.doMock("node:fs/promises", () => ({
+			...actual,
+			rm: async (path: string, options: Parameters<typeof actual.rm>[1]) => {
+				if (options?.recursive === true && String(path).includes("autorag-miracl-prepare-")) {
+					usedRecursiveRemoval = true;
+				}
+				return actual.rm(path, options);
+			},
+			rmdir: async (path: string) => {
+				if (!replaced && String(path) === outputDir) {
+					replaced = true;
+					renameSync(outputDir, displaced);
+					mkdirSync(outputDir);
+					writeFileSync(replacement, "replacement data\n");
+				}
+				return actual.rmdir(path);
+			},
+		}));
+		vi.resetModules();
+		const { prepareMiracl: prepareWithCleanup } = await import("../../benchmark/miracl/prepare.ts");
+
+		await expect(
+			prepareWithCleanup({
+				outputDir,
+				queryCount: 1,
+				distractorCount: 0,
+				fetchImpl: async () => {
+					throw new Error("injected preparation failure");
+				},
+			}),
+		).rejects.toThrow("injected preparation failure");
+		expect(readFileSync(replacement, "utf8")).toBe("replacement data\n");
+		expect(existsSync(displaced)).toBe(true);
+		expect(usedRecursiveRemoval).toBe(false);
 	});
 });
 
