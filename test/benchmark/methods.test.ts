@@ -34,6 +34,33 @@ type _ConfigLoaderUsesProcessEnvironment = AssertTrue<
 	Parameters<typeof loadBenchmarkConfig>["length"] extends 1 ? true : false
 >;
 
+async function importMethodsWithFsInstrumentation(instrumentation: {
+	readonly onCreateReadStream?: (path: unknown, options: unknown) => void;
+	readonly onReadDirectory?: (path: unknown) => void;
+	readonly onReadFile?: (path: unknown) => void;
+}): Promise<typeof import("../../benchmark/miracl/methods.ts")> {
+	vi.resetModules();
+	vi.doMock("node:fs", async () => {
+		const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+		return {
+			...actual,
+			createReadStream: ((...args: unknown[]) => {
+				instrumentation.onCreateReadStream?.(args[0], args[1]);
+				return Reflect.apply(actual.createReadStream, actual, args);
+			}) as typeof actual.createReadStream,
+			readFileSync: ((...args: unknown[]) => {
+				instrumentation.onReadFile?.(args[0]);
+				return Reflect.apply(actual.readFileSync, actual, args);
+			}) as typeof actual.readFileSync,
+			readdirSync: ((...args: unknown[]) => {
+				instrumentation.onReadDirectory?.(args[0]);
+				return Reflect.apply(actual.readdirSync, actual, args);
+			}) as typeof actual.readdirSync,
+		};
+	});
+	return import("../../benchmark/miracl/methods.ts");
+}
+
 function methodStub(name: string, results: readonly RetrievalResult[]): RetrievalMethod {
 	return {
 		describe: () => ({
@@ -124,6 +151,8 @@ describe("MIRACL benchmark methods", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 		vi.restoreAllMocks();
+		vi.doUnmock("node:fs");
+		vi.resetModules();
 	});
 
 	it("requires embedder settings before constructing MinSync", () => {
@@ -671,6 +700,90 @@ describe("MIRACL benchmark methods", () => {
 			}),
 		).rejects.toThrow("MinSync benchmark executable changed");
 		expect(clockCalls).toBe(2);
+	});
+
+	it("keeps recursive collection metadata walks outside the measured retrieval interval", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		let collectionWalks = 0;
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			onReadDirectory: (path) => {
+				if (String(path).includes(`${join(".minsync", "store")}`)) {
+					collectionWalks += 1;
+				}
+			},
+		});
+		const created = await instrumentedMethods.createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		const clockWalkCounts: number[] = [];
+
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+			now: () => {
+				clockWalkCounts.push(collectionWalks);
+				return clockWalkCounts.length === 1 ? 10 : 15;
+			},
+		});
+
+		expect(records[0]?.errorCode).toBeUndefined();
+		expect(clockWalkCounts).toHaveLength(2);
+		expect(clockWalkCounts[0]).toBeGreaterThan(0);
+		expect(clockWalkCounts[1]).toBe(clockWalkCounts[0]);
+		expect(collectionWalks).toBeGreaterThan(clockWalkCounts[1] as number);
+	});
+
+	it("streams collection files without whole-file synchronous reads", async () => {
+		const parent = makeRoot();
+		const workspace = materializeBenchmarkWorkspace(join(parent, "workspace"), [
+			{ documentId: "doc", title: "제목", text: "query" },
+		]);
+		const { binaryPath } = writeFakeMinSync(parent);
+		let wholeCollectionReads = 0;
+		const streamBufferSizes: number[] = [];
+		const instrumentedMethods = await importMethodsWithFsInstrumentation({
+			onCreateReadStream: (path, options) => {
+				if (!String(path).includes(`${join(".minsync", "store")}${process.platform === "win32" ? "\\" : "/"}`)) {
+					return;
+				}
+				const highWaterMark = (options as { highWaterMark?: unknown } | undefined)?.highWaterMark;
+				if (typeof highWaterMark === "number") streamBufferSizes.push(highWaterMark);
+			},
+			onReadFile: (path) => {
+				if (String(path).includes(`${join(".minsync", "store")}${process.platform === "win32" ? "\\" : "/"}`)) {
+					wholeCollectionReads += 1;
+				}
+			},
+		});
+
+		const created = await instrumentedMethods.createBenchmarkMethods({
+			names: ["minsync"],
+			root: workspace.root,
+			documentBySource: workspace.documentBySource,
+			config: { binaryPath, autoInstall: false, embedder: { dimension: 1024 } },
+		});
+		const records = await runMethodQueries({
+			method: "minsync",
+			retrieval: created.methods.get("minsync") as RetrievalMethod,
+			queries: [{ queryId: "q1", text: "query" }],
+			documentBySource: workspace.documentBySource,
+			topK: 5,
+		});
+
+		expect(records[0]?.errorCode).toBeUndefined();
+		expect(wholeCollectionReads).toBe(0);
+		expect(streamBufferSizes.length).toBeGreaterThan(0);
+		expect(streamBufferSizes.every((size) => size <= 64 * 1024)).toBe(true);
 	});
 
 	it("does not fall back to PATH when an explicit MinSync binary path is missing", async () => {

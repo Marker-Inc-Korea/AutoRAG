@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
 	accessSync,
 	constants,
+	createReadStream,
 	lstatSync,
 	readFileSync,
 	readdirSync,
@@ -255,7 +256,7 @@ async function constructAndSyncMethods(
 		) {
 			throw new Error("MinSync benchmark indexing failed");
 		}
-		const workspaceIdentity = snapshotMinSyncWorkspace(
+		const workspaceIdentity = await snapshotMinSyncWorkspace(
 			options.root,
 			expectedWorkspacePath,
 		);
@@ -456,7 +457,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), RETRIEVAL_LIMIT) : topK;
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
 		assertExecutableMetadata(this.executable);
-		assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
+		assertMinSyncQueryBoundaryMetadata(this.workspaceIdentity);
 		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		let processResult: Awaited<ReturnType<typeof spawnProcess>>;
 		try {
@@ -471,7 +472,7 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 		} finally {
 			assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
 			assertExecutableMetadata(this.executable);
-			assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
+			assertMinSyncQueryBoundaryMetadata(this.workspaceIdentity);
 		}
 		if (!processResult.ok) {
 			throw new Error("MinSync benchmark retrieval failed");
@@ -496,10 +497,10 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 		return results;
 	}
 
-	beforeBenchmarkBatch(): void {
+	async beforeBenchmarkBatch(): Promise<void> {
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
 		assertExecutableIdentity(this.executable);
-		assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
+		await assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
 	}
 
 	beforeBenchmarkQuery(): void {
@@ -514,10 +515,10 @@ class CheckedMinSyncMethod implements RetrievalMethod, BenchmarkRetrievalLifecyc
 		assertMinSyncWorkspaceMetadata(this.workspaceIdentity);
 	}
 
-	afterBenchmarkBatch(): void {
+	async afterBenchmarkBatch(): Promise<void> {
 		assertBenchmarkDirectoryIdentity(this.root, this.rootIdentity);
 		assertExecutableIdentity(this.executable);
-		assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
+		await assertMinSyncWorkspaceIntegrity(this.workspaceIdentity);
 	}
 }
 
@@ -621,10 +622,10 @@ function assertExecutableIdentity(expected: ExecutableIdentity): void {
 	}
 }
 
-function snapshotMinSyncWorkspace(
+async function snapshotMinSyncWorkspace(
 	benchmarkRoot: string,
 	workspacePath: string,
-): MinSyncWorkspaceIdentity {
+): Promise<MinSyncWorkspaceIdentity> {
 	try {
 		const workspace = snapshotPathIdentity(workspacePath, "directory", benchmarkRoot);
 		const stateDirectory = snapshotPathIdentity(
@@ -657,7 +658,7 @@ function snapshotMinSyncWorkspace(
 			"directory",
 			stateDirectory.path,
 		);
-		const collectionTree = snapshotDirectoryTree(collection.path, true);
+		const collectionTree = snapshotDirectoryTreeMetadata(collection.path);
 		return {
 			benchmarkRoot,
 			workspace,
@@ -666,11 +667,34 @@ function snapshotMinSyncWorkspace(
 			manifest,
 			cursor,
 			collection,
-			collectionTree: collectionTree.identities,
-			collectionTreeSha256: collectionTree.sha256,
+			collectionTree,
+			collectionTreeSha256: await hashDirectoryTree(
+				collection.path,
+				collectionTree,
+			),
 		};
 	} catch {
 		throw new Error("MinSync benchmark workspace changed");
+	}
+}
+
+function assertMinSyncQueryBoundaryMetadata(
+	expected: MinSyncWorkspaceIdentity,
+): void {
+	for (const identity of [expected.workspace, expected.stateDirectory]) {
+		let actual: PathIdentity;
+		try {
+			actual = snapshotPathIdentity(
+				identity.path,
+				identity.kind,
+				expected.benchmarkRoot,
+			);
+		} catch {
+			throw new Error("MinSync benchmark workspace changed");
+		}
+		if (!samePathIdentity(actual, identity)) {
+			throw new Error("MinSync benchmark workspace changed");
+		}
 	}
 }
 
@@ -699,10 +723,9 @@ function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): voi
 	}
 	let actualCollectionTree: readonly PathIdentity[];
 	try {
-		actualCollectionTree = snapshotDirectoryTree(
+		actualCollectionTree = snapshotDirectoryTreeMetadata(
 			expected.collection.path,
-			false,
-		).identities;
+		);
 	} catch {
 		throw new Error("MinSync benchmark workspace changed");
 	}
@@ -711,8 +734,10 @@ function assertMinSyncWorkspaceMetadata(expected: MinSyncWorkspaceIdentity): voi
 	}
 }
 
-function assertMinSyncWorkspaceIntegrity(expected: MinSyncWorkspaceIdentity): void {
-	const actual = snapshotMinSyncWorkspace(
+async function assertMinSyncWorkspaceIntegrity(
+	expected: MinSyncWorkspaceIdentity,
+): Promise<void> {
+	const actual = await snapshotMinSyncWorkspace(
 		expected.benchmarkRoot,
 		expected.workspace.path,
 	);
@@ -776,11 +801,7 @@ function readCollectionPath(configPath: string): string {
 	return path;
 }
 
-function snapshotDirectoryTree(
-	root: string,
-	hashContents: boolean,
-): { readonly identities: readonly PathIdentity[]; readonly sha256: string } {
-	const hash = createHash("sha256");
+function snapshotDirectoryTreeMetadata(root: string): readonly PathIdentity[] {
 	const identities: PathIdentity[] = [];
 	const visit = (directory: string): void => {
 		for (const name of readdirSync(directory).sort(compareCodePoints)) {
@@ -791,19 +812,32 @@ function snapshotDirectoryTree(
 				root,
 			);
 			identities.push(identity);
-			const relativePath = relative(root, identity.path);
-			hash.update(
-				`${identity.kind}\0${relativePath}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.modifiedAtMs}\0`,
-			);
 			if (identity.kind === "directory") {
 				visit(identity.path);
-			} else if (hashContents) {
-				hash.update(readFileSync(identity.path));
 			}
 		}
 	};
 	visit(root);
-	return { identities, sha256: hash.digest("hex") };
+	return identities;
+}
+
+async function hashDirectoryTree(
+	root: string,
+	identities: readonly PathIdentity[],
+): Promise<string> {
+	const hash = createHash("sha256");
+	for (const identity of identities) {
+		const relativePath = relative(root, identity.path);
+		hash.update(
+			`${identity.kind}\0${relativePath}\0${identity.device}\0${identity.inode}\0${identity.size}\0${identity.modifiedAtMs}\0`,
+		);
+		if (identity.kind !== "file") continue;
+		const stream = createReadStream(identity.path, { highWaterMark: 64 * 1024 });
+		for await (const chunk of stream) {
+			hash.update(chunk);
+		}
+	}
+	return hash.digest("hex");
 }
 
 function samePathIdentity(left: PathIdentity, right: PathIdentity): boolean {
