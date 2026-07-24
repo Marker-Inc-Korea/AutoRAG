@@ -61,7 +61,7 @@
     "@biomejs/biome": "2.3.5",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^24.3.0",
-    "typescript": "^5.7.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
