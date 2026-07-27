@@ -6,11 +6,21 @@ export interface SourceRoot {
 	readonly prefix: string;
 }
 
+function stripTrailingSeparators(value: string): string {
+	let end = value.length;
+	while (end > 0) {
+		const character = value[end - 1];
+		if (character !== "/" && character !== "\\") break;
+		end -= 1;
+	}
+	return end === value.length ? value : value.slice(0, end);
+}
+
 export function planSourceRoots(searchPaths: readonly string[]): readonly SourceRoot[] {
 	const sorted = searchPaths.map((path) => resolve(path)).sort((a, b) => a.localeCompare(b));
 	const used = new Set<string>();
 	return sorted.map((rootPath) => {
-		const base = basename(rootPath.replace(/[/\\]+$/, "")) || "root";
+		const base = basename(stripTrailingSeparators(rootPath)) || "root";
 		let prefix = `/${base}`;
 		let suffix = 2;
 		while (used.has(prefix)) {
