@@ -72,6 +72,7 @@ dependencies = [
     "llama-index-llms-openai-like>=0.4.0",
     "llama-index-retrievers-bm25>=0.5.2",
     "llama-index-llms-bedrock>=0.3.8",
+    "llama-parse>=0.6.21",  # llamaparse parser; no longer transitively provided by llama-index
     # WebUI
     "streamlit>=1.54.0",
     "gradio>=6.15.0",
