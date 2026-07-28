@@ -8,6 +8,9 @@ on:
       - "legacy/docs/**"
       - ".github/workflows/sphinx.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest

@@ -17,6 +17,9 @@ on:
 env:
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+permissions:
+  contents: read
+
 jobs:
   legacy-test:
     runs-on: ubuntu-latest
