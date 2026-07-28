@@ -34,5 +34,5 @@ process.send({ type: "ready", workerId });
 process.on("message", (message: unknown) => {
 	if (message !== "save") return;
 	memory.save();
-	process.send?.({ type: "saved", workerId }, () => process.disconnect());
+	process.send?.({ type: "saved", workerId }, () => process.disconnect?.());
 });
