@@ -43,6 +43,12 @@ import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
+import {
+	buildRetrievalScopeBindings,
+	normalizeVirtualPath,
+	type RetrievalScopeBinding,
+	resolveRetrievalScope,
+} from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
 import { safeParseExplorerReport } from "../subagents/contracts.ts";
 import { buildDispatchTemplatesPromptSection } from "../subagents/dispatch-templates.ts";
@@ -255,6 +261,9 @@ export class AutoRAGAgent {
 	};
 
 	private readonly searchPaths: string[];
+	private readonly configuredSearchPaths: readonly string[];
+	private retrievalScopeBindings: readonly RetrievalScopeBinding[];
+	private readonly datasourceVirtualScopePrefixes: readonly string[];
 	private readonly allowedExplorerRoots: readonly string[];
 	private readonly workspaceProjectRoot: string;
 	private readonly methodRegistry = new RetrievalMethodRegistry();
@@ -288,11 +297,20 @@ export class AutoRAGAgent {
 			(async (sessionOptions) => (await createMandatorySubagentSession(sessionOptions)).session);
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
+		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
+			normalizeVirtualPath(`/${skill.describe().name}`),
+		);
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
 
+		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
+		this.retrievalScopeBindings = buildRetrievalScopeBindings(
+			this.workspaceProjectRoot,
+			this.searchPaths,
+			this.configuredSearchPaths,
+		);
 		this.allowedExplorerRoots = [...new Set(this.searchPaths)].sort();
 		this.parserOptions = options.parserOptions;
 
@@ -319,10 +337,16 @@ export class AutoRAGAgent {
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const searchBM25Tool = createSearchBM25DocumentsTool(() => this.bm25Method);
+		const searchBM25Tool = createSearchBM25DocumentsTool(
+			() => this.bm25Method,
+			(scope) => this.resolveRetrievalScope(scope),
+		);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 
-		const searchMinSyncTool = createSearchMinSyncDocumentsTool(() => this.minSyncMethod);
+		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
+			() => this.minSyncMethod,
+			(scope) => this.resolveRetrievalScope(scope),
+		);
 		const searchAllTool = createSearchAllDocumentsTool(this);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
@@ -805,6 +829,7 @@ export class AutoRAGAgent {
 			this.lastSessionId = sessionId;
 			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions);
 		}
+		options = this.normalizeRetrievalOptions(options);
 
 		this.activeRun = true;
 		this.activeJikjiPolicy = undefined;
@@ -1076,6 +1101,11 @@ export class AutoRAGAgent {
 			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
 			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
+			this.retrievalScopeBindings = buildRetrievalScopeBindings(
+				this.workspaceProjectRoot,
+				this.searchPaths,
+				this.configuredSearchPaths,
+			);
 			const jikjiDiagnostics = (jikji ?? [])
 				.map((result) => jikjiPrepareDiagnostic(result))
 				.filter((diag): diag is JikjiDiagnostic => diag !== undefined);
@@ -1569,6 +1599,7 @@ export class AutoRAGAgent {
 		query: string,
 		options: RetrievalOptions = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
 		const filteredByMethod = this.datasourceFilter.filter(
@@ -1628,6 +1659,24 @@ export class AutoRAGAgent {
 
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
+	}
+
+	private normalizeRetrievalOptions(options: RetrievalOptions): RetrievalOptions {
+		const scope = this.resolveRetrievalScope(options.scope);
+		if (scope === undefined) {
+			const { scope: _scope, ...rest } = options;
+			return rest;
+		}
+		return { ...options, scope };
+	}
+
+	private resolveRetrievalScope(scope: string | undefined): string | undefined {
+		return resolveRetrievalScope(
+			scope,
+			this.retrievalScopeBindings,
+			process.platform,
+			this.datasourceVirtualScopePrefixes,
+		);
 	}
 }
 

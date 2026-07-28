@@ -29,6 +29,7 @@ export interface SearchMinSyncDocumentsDetails {
  */
 export function createSearchMinSyncDocumentsTool(
 	getMethod: () => MinSyncVectorMethod | undefined,
+	resolveScope: (scope: string | undefined) => string | undefined = (scope) => scope,
 ): AgentTool<typeof searchMinSyncSchema, SearchMinSyncDocumentsDetails> {
 	return {
 		name: SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
@@ -50,8 +51,12 @@ export function createSearchMinSyncDocumentsTool(
 					details: { method: "search_minsync_documents", resultCount: 0, sources: [], available: true },
 				};
 			}
+			const scope = resolveScope(params.scope);
 			try {
-				const results = await method.retrieve(params.query, { topK: params.topK, scope: params.scope });
+				const results = await method.retrieve(params.query, {
+					topK: params.topK,
+					scope,
+				});
 				return {
 					content: [{ type: "text", text: formatResults(results) }],
 					details: {

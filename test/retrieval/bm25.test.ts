@@ -1,12 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createSearchBM25DocumentsTool } from "../../src/agent/search-bm25-tool.ts";
 import { syncParsedMirrors } from "../../src/mirror/sync.ts";
 import { BM25Method } from "../../src/retrieval/methods/bm25.ts";
-import { matchesVirtualPathScope } from "../../src/retrieval/scope.ts";
+import { matchesVirtualPathScope, RetrievalScopeError } from "../../src/retrieval/scope.ts";
 
 let root: string;
 let docs: string;
@@ -162,5 +162,47 @@ describe("AutoRAG BM25 integration", () => {
 		expect(result.details).toMatchObject({ method: "bm25", resultCount: 1, readiness: "degraded_fallback" });
 		expect(result.details?.sources).toEqual(["/docs/sub/guide.txt"]);
 		expect(result.content[0]?.type).toBe("text");
+	});
+
+	it("normalizes model-supplied physical scopes before BM25 retrieval", async () => {
+		writeFileSync(join(docs, "sub", "guide.txt"), "chargeback scoped process\n");
+		await refreshMirrors();
+		const method = new BM25Method({
+			root,
+			indexPath: join(root, ".autorag", "tool-scope-bm25"),
+			forceEngine: "typescript-fallback",
+		});
+		await method.sync();
+		const normalizeScope = vi.fn(() => "/docs/sub");
+		const factory = createSearchBM25DocumentsTool as unknown as (
+			getMethod: () => BM25Method,
+			resolveScope: typeof normalizeScope,
+		) => ReturnType<typeof createSearchBM25DocumentsTool>;
+		const tool = factory(() => method, normalizeScope);
+
+		const result = await tool.execute("tool-scope", { query: "chargeback", scope: join(docs, "sub") });
+
+		expect(normalizeScope).toHaveBeenCalledWith(join(docs, "sub"));
+		expect(result.details.sources).toEqual(["/docs/sub/guide.txt"]);
+	});
+
+	it("preserves coded scope errors at the BM25 tool boundary", async () => {
+		const method = new BM25Method({
+			root,
+			indexPath: join(root, ".autorag", "tool-error-bm25"),
+			forceEngine: "typescript-fallback",
+		});
+		const tool = createSearchBM25DocumentsTool(
+			() => method,
+			() => {
+				throw new RetrievalScopeError(["/docs"]);
+			},
+		);
+
+		await expect(
+			tool.execute("tool-invalid-scope", { query: "chargeback", scope: "/outside" }),
+		).rejects.toMatchObject({
+			code: "invalid-retrieval-scope",
+		});
 	});
 });
