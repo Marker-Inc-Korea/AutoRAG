@@ -46,10 +46,10 @@ dependencies = [
     "emoji>=2.14.1",
     "fastapi>=0.115.13",
     "banks>=2.4.2",
-    "grpcio>=1.66.2,<1.83.0",
-    "grpcio-health-checking>=1.66.2,<1.83.0",
-    "grpcio-status>=1.66.2,<1.83.0",
-    "grpcio-tools>=1.66.2,<1.83.0",
+    "grpcio>=1.66.2,<1.84.0",
+    "grpcio-health-checking>=1.66.2,<1.84.0",
+    "grpcio-status>=1.66.2,<1.84.0",
+    "grpcio-tools>=1.66.2,<1.84.0",
     "datasets>=3.5.1",
     # Vector DB
     "pymilvus>=2.6.0b0,<3",  # for using milvus vectordb (3.x drops milvus-lite)
