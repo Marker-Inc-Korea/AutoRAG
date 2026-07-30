@@ -274,34 +274,33 @@ describe("exported API — #22 observable refresh status and watch", () => {
 		expect(blob).not.toContain("indexPath");
 	});
 
-	it(
-		"keeps parsed mirrors current via the root-exported startWatchRefresh and stops cleanly",
-		{ retry: 3, timeout: 30000 },
-		async () => {
-			const agent = new AutoRAGAgent({
-				searchPaths: [docs],
-				memoryPath: join(root, "memory.json"),
-				workspacePath: root,
-			});
-			await agent.refresh(true);
-			const handle = agent.startWatchRefresh({ debounceMs: 30 });
+	it("keeps parsed mirrors current via the root-exported startWatchRefresh and stops cleanly", {
+		retry: 3,
+		timeout: 30000,
+	}, async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+		});
+		await agent.refresh(true);
+		const handle = agent.startWatchRefresh({ debounceMs: 30 });
 
-			writeFileSync(join(docs, "watched.txt"), "Watched content about ledgers.\n");
-			const mirror = parsedOutputPath(root, "/docs/watched.txt");
-			const start = Date.now();
-			let updated = false;
-			while (Date.now() - start < 10000) {
-				// The parsed-mirror file appearing is the latching signal that the
-				// watcher re-indexed the new source (the per-refresh `written` counter
-				// resets to 0 on the next no-op refresh, so it is not a stable latch).
-				if (existsSync(mirror)) {
-					updated = true;
-					break;
-				}
-				await new Promise((resolve) => setTimeout(resolve, 40));
+		writeFileSync(join(docs, "watched.txt"), "Watched content about ledgers.\n");
+		const mirror = parsedOutputPath(root, "/docs/watched.txt");
+		const start = Date.now();
+		let updated = false;
+		while (Date.now() - start < 10000) {
+			// The parsed-mirror file appearing is the latching signal that the
+			// watcher re-indexed the new source (the per-refresh `written` counter
+			// resets to 0 on the next no-op refresh, so it is not a stable latch).
+			if (existsSync(mirror)) {
+				updated = true;
+				break;
 			}
-			handle.stop();
-			expect(updated).toBe(true);
-		},
-	);
+			await new Promise((resolve) => setTimeout(resolve, 40));
+		}
+		handle.stop();
+		expect(updated).toBe(true);
+	});
 });
