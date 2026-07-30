@@ -22,6 +22,7 @@ export interface SearchBM25DocumentsDetails {
 
 export function createSearchBM25DocumentsTool(
 	getMethod: () => BM25Method | undefined,
+	resolveScope: (scope: string | undefined) => string | undefined = (scope) => scope,
 ): AgentTool<typeof searchBM25Schema, SearchBM25DocumentsDetails> {
 	return {
 		name: SEARCH_BM25_DOCUMENTS_TOOL_NAME,
@@ -50,8 +51,12 @@ export function createSearchBM25DocumentsTool(
 					},
 				};
 			}
+			const scope = resolveScope(params.scope);
 			try {
-				const results = await method.retrieve(params.query, { topK: params.topK, scope: params.scope });
+				const results = await method.retrieve(params.query, {
+					topK: params.topK,
+					scope,
+				});
 				return {
 					content: [{ type: "text", text: formatResults(results, method.getStatus()) }],
 					details: {

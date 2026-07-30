@@ -7,6 +7,7 @@ import {
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 } from "../../src/agent/search-minsync-tool.ts";
 import { MinSyncVectorMethod } from "../../src/minsync/method.ts";
+import { RetrievalScopeError } from "../../src/retrieval/scope.ts";
 import type { RetrievalResult } from "../../src/retrieval/types.ts";
 
 let tmpDir: string;
@@ -102,6 +103,44 @@ describe("search_minsync_documents tool", () => {
 		expect(text).toContain("/docs/notes");
 		expect(text).toContain("/docs/guide");
 		expect(text).not.toContain(tmpDir);
+	});
+
+	it("normalizes model-supplied physical scopes before MinSync retrieval", async () => {
+		const seenScopes: Array<string | undefined> = [];
+		const method: StubMethod = {
+			isBinaryMissing: () => false,
+			retrieve(_query, options) {
+				seenScopes.push(options.scope);
+				return Promise.resolve([result("a", "/docs/notes")]);
+			},
+		};
+		const normalizeScope = () => "/docs";
+		const factory = createSearchMinSyncDocumentsTool as unknown as (
+			getMethod: () => MinSyncVectorMethod,
+			resolveScope: typeof normalizeScope,
+		) => ReturnType<typeof createSearchMinSyncDocumentsTool>;
+		const tool = factory(() => method as never, normalizeScope);
+
+		await tool.execute("call-scope", { query: "concept", scope: join(tmpDir, "docs") });
+
+		expect(seenScopes).toEqual(["/docs"]);
+	});
+
+	it("preserves coded scope errors at the MinSync tool boundary", async () => {
+		const method: StubMethod = {
+			isBinaryMissing: () => false,
+			retrieve: () => Promise.resolve([]),
+		};
+		const tool = createSearchMinSyncDocumentsTool(
+			() => method as never,
+			() => {
+				throw new RetrievalScopeError(["/docs"]);
+			},
+		);
+
+		await expect(tool.execute("call-invalid-scope", { query: "concept", scope: "/outside" })).rejects.toMatchObject({
+			code: "invalid-retrieval-scope",
+		});
 	});
 
 	it("reports a path-free unavailable message when retrieval throws", async () => {
