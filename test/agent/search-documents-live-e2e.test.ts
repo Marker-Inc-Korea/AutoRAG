@@ -9,7 +9,7 @@ import {
 	fauxAssistantMessage,
 	fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
@@ -146,6 +146,7 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 				model: options.model,
 				tools: [subagentTool, ...options.tools],
 			},
+			streamFn: streamSimple,
 			convertToLlm: (messages) =>
 				messages.filter(
 					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",

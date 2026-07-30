@@ -3,6 +3,7 @@ import { watch as fsWatch, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -417,6 +418,7 @@ export class AutoRAGAgent {
 				model: options.model as Model<Api>,
 				tools,
 			},
+			streamFn: streamSimple,
 			convertToLlm: (messages) =>
 				messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult"),
 			transformContext: async (messages) => this.withMemoryContext(messages),

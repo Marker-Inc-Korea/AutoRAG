@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/index.ts";
@@ -124,6 +124,7 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 				model: options.model,
 				tools: [subagentTool, ...options.tools],
 			},
+			streamFn: streamSimple,
 			convertToLlm: (messages) =>
 				messages.filter(
 					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
@@ -273,34 +274,33 @@ describe("exported API — #22 observable refresh status and watch", () => {
 		expect(blob).not.toContain("indexPath");
 	});
 
-	it(
-		"keeps parsed mirrors current via the root-exported startWatchRefresh and stops cleanly",
-		{ retry: 3, timeout: 30000 },
-		async () => {
-			const agent = new AutoRAGAgent({
-				searchPaths: [docs],
-				memoryPath: join(root, "memory.json"),
-				workspacePath: root,
-			});
-			await agent.refresh(true);
-			const handle = agent.startWatchRefresh({ debounceMs: 30 });
+	it("keeps parsed mirrors current via the root-exported startWatchRefresh and stops cleanly", {
+		retry: 3,
+		timeout: 30000,
+	}, async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+		});
+		await agent.refresh(true);
+		const handle = agent.startWatchRefresh({ debounceMs: 30 });
 
-			writeFileSync(join(docs, "watched.txt"), "Watched content about ledgers.\n");
-			const mirror = parsedOutputPath(root, "/docs/watched.txt");
-			const start = Date.now();
-			let updated = false;
-			while (Date.now() - start < 10000) {
-				// The parsed-mirror file appearing is the latching signal that the
-				// watcher re-indexed the new source (the per-refresh `written` counter
-				// resets to 0 on the next no-op refresh, so it is not a stable latch).
-				if (existsSync(mirror)) {
-					updated = true;
-					break;
-				}
-				await new Promise((resolve) => setTimeout(resolve, 40));
+		writeFileSync(join(docs, "watched.txt"), "Watched content about ledgers.\n");
+		const mirror = parsedOutputPath(root, "/docs/watched.txt");
+		const start = Date.now();
+		let updated = false;
+		while (Date.now() - start < 10000) {
+			// The parsed-mirror file appearing is the latching signal that the
+			// watcher re-indexed the new source (the per-refresh `written` counter
+			// resets to 0 on the next no-op refresh, so it is not a stable latch).
+			if (existsSync(mirror)) {
+				updated = true;
+				break;
 			}
-			handle.stop();
-			expect(updated).toBe(true);
-		},
-	);
+			await new Promise((resolve) => setTimeout(resolve, 40));
+		}
+		handle.stop();
+		expect(updated).toBe(true);
+	});
 });
