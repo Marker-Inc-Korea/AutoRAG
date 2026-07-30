@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
-import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/index.ts";
@@ -124,6 +124,7 @@ function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGA
 				model: options.model,
 				tools: [subagentTool, ...options.tools],
 			},
+			streamFn: streamSimple,
 			convertToLlm: (messages) =>
 				messages.filter(
 					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
