@@ -444,8 +444,12 @@ export class AutoRAGAgent {
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
 		const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
-		if (hints.length === 0 && insights.length === 0) return messages;
-		const summary = renderMemoryContext(hints, { insights });
+		const contextHints = this.lastQuery ? this.memory.getContextHints(this.lastQuery) : undefined;
+		const contextHintCount = contextHints
+			? Object.values(contextHints).reduce((count, values) => count + values.length, 0)
+			: 0;
+		if (hints.length === 0 && insights.length === 0 && contextHintCount === 0) return messages;
+		const summary = renderMemoryContext(hints, { insights, contextHints });
 		return [
 			{
 				role: "user",
@@ -1627,7 +1631,10 @@ export class AutoRAGAgent {
 			});
 		}
 		return {
-			results: this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+			results: this.rerankWithMemory(
+				query,
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+			),
 			diagnostics,
 		};
 	}
@@ -1657,7 +1664,10 @@ export class AutoRAGAgent {
 		);
 		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
 		return {
-			results: this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+			results: this.rerankWithMemory(
+				query,
+				this.merger.merge(filteredByMethod, { topK: options.topK ?? 20, dedup: true }),
+			),
 			diagnostics,
 		};
 	}
@@ -1669,6 +1679,49 @@ export class AutoRAGAgent {
 
 	getSystemPrompt(): string {
 		return this.innerAgent.state.systemPrompt;
+	}
+
+	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {
+		const methodScores = new Map(this.memory.getMethodHints(query).map((hint) => [hint.method, hint.score]));
+		const context = this.memory.getContextHints(query);
+		const scoreMap = (
+			hints: readonly { readonly value: string; readonly score: number }[],
+		): ReadonlyMap<string, number> => new Map(hints.map((hint) => [hint.value, hint.score]));
+		const contextScores = {
+			documentArea: scoreMap(context.documentAreas),
+			documentType: scoreMap(context.documentTypes),
+			evidenceType: scoreMap(context.evidenceTypes),
+			evidenceLocation: scoreMap(context.evidenceLocations),
+			parserType: scoreMap(context.parserTypes),
+			retrieverMix: scoreMap(context.retrieverMix),
+		};
+		return results
+			.map((result, index) => {
+				const method = typeof result.metadata.method === "string" ? result.metadata.method : undefined;
+				let preference = method ? (methodScores.get(method) ?? 0) : 0;
+				for (const key of [
+					"documentArea",
+					"documentType",
+					"evidenceType",
+					"evidenceLocation",
+					"parserType",
+				] as const) {
+					const value = result.metadata[key];
+					if (typeof value === "string") preference += contextScores[key].get(value) ?? 0;
+				}
+				const retrievers = Array.isArray(result.metadata.retrieverMix)
+					? result.metadata.retrieverMix
+					: method
+						? [method]
+						: [];
+				for (const retriever of retrievers) {
+					if (typeof retriever === "string") preference += contextScores.retrieverMix.get(retriever) ?? 0;
+				}
+				const adjustment = Math.max(-0.25, Math.min(0.25, preference * 0.05));
+				return { result, index, rankScore: result.score + adjustment };
+			})
+			.sort((a, b) => b.rankScore - a.rankScore || a.index - b.index)
+			.map(({ result }) => result);
 	}
 
 	private normalizeRetrievalOptions(options: RetrievalOptions): RetrievalOptions {

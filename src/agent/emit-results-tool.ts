@@ -13,14 +13,17 @@ const evidenceRefSchema = Type.Object({
 	lineNumber: Type.Optional(Type.Integer({ description: "Line number, if available" })),
 	stableEvidenceId: Type.Optional(Type.String({ description: "Stable evidence ID, if already normalized" })),
 	retrieverMix: Type.Optional(
-		Type.Array(Type.String(), { description: "Retrievers that contributed to this result" }),
+		Type.Array(Type.String({ maxLength: 64 }), {
+			description: "Retrievers that contributed to this result",
+			maxItems: 8,
+		}),
 	),
-	parserType: Type.Optional(Type.String({ description: "Parser that produced this evidence" })),
-	documentType: Type.Optional(Type.String({ description: "Document type, if known" })),
-	documentArea: Type.Optional(Type.String({ description: "Document collection area, if known" })),
-	evidenceType: Type.Optional(Type.String({ description: "Evidence type, if known" })),
-	evidenceLocation: Type.Optional(Type.String({ description: "Human-readable evidence location" })),
-	confidence: Type.Optional(Type.Number({ description: "Evidence confidence, 0..1" })),
+	parserType: Type.Optional(Type.String({ description: "Parser that produced this evidence", maxLength: 120 })),
+	documentType: Type.Optional(Type.String({ description: "Document type, if known", maxLength: 120 })),
+	documentArea: Type.Optional(Type.String({ description: "Document collection area, if known", maxLength: 120 })),
+	evidenceType: Type.Optional(Type.String({ description: "Evidence type, if known", maxLength: 120 })),
+	evidenceLocation: Type.Optional(Type.String({ description: "Human-readable evidence location", maxLength: 120 })),
+	confidence: Type.Optional(Type.Number({ description: "Evidence confidence, 0..1", minimum: 0, maximum: 1 })),
 });
 
 const emitResultsSchema = Type.Object({

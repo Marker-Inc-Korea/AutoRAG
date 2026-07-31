@@ -198,6 +198,9 @@ const INSIGHT_BATCH_SIZE = 100;
 const MAX_INSIGHTS = 200;
 const MIN_INSIGHT_SUPPORT = 5;
 const MIN_INSIGHT_SCORE = 3;
+const MAX_CONTEXT_LABEL_LENGTH = 120;
+const MAX_RETRIEVER_LABEL_LENGTH = 64;
+const MAX_RETRIEVER_MIX = 8;
 const INSIGHT_WARNING = "[AutoRAG] Retrieval memory insight extraction failed; continuing without insights";
 const RESET_WARNING = "[AutoRAG] Retrieval memory is not v4-compatible; starting fresh";
 const LOCK_WAIT_TIMEOUT_MS = 5_000;
@@ -301,7 +304,7 @@ function normalizeV4(
 	return {
 		version: 4,
 		curatedResults: data.curatedResults,
-		evidenceChunks: data.evidenceChunks,
+		evidenceChunks: data.evidenceChunks.map(normalizeEvidenceChunkRecord),
 		feedbackSignals: data.feedbackSignals,
 		signalDefaults: data.signalDefaults,
 		warnings: data.warnings,
@@ -310,6 +313,60 @@ function normalizeV4(
 			? data.pendingInsightSignals.filter(isInsightExtractionSignal).slice(-INSIGHT_BATCH_SIZE + 1)
 			: [],
 	};
+}
+
+function normalizeContextLabel(value: string | undefined, maxLength = MAX_CONTEXT_LABEL_LENGTH): string | undefined {
+	if (value === undefined) return undefined;
+	let withoutControls = "";
+	for (const character of value) {
+		const code = character.charCodeAt(0);
+		withoutControls += code < 32 || code === 127 ? " " : character;
+	}
+	const normalized = withoutControls.replace(/\s+/gu, " ").trim().slice(0, maxLength);
+	if (!normalized || !isPathOpaqueIdentifier(normalized)) return undefined;
+	return normalized;
+}
+
+function normalizeEvidenceContext(context: EvidenceContext): EvidenceContext {
+	const retrieverMix = Array.from(
+		new Set(
+			(context.retrieverMix ?? [])
+				.map((value) => normalizeContextLabel(value, MAX_RETRIEVER_LABEL_LENGTH))
+				.filter((value): value is string => value !== undefined),
+		),
+	).slice(0, MAX_RETRIEVER_MIX);
+	const parserType = normalizeContextLabel(context.parserType);
+	const documentType = normalizeContextLabel(context.documentType);
+	const documentArea = normalizeContextLabel(context.documentArea);
+	const evidenceType = normalizeContextLabel(context.evidenceType);
+	const evidenceLocation = normalizeContextLabel(context.evidenceLocation);
+	const confidence =
+		context.confidence !== undefined && Number.isFinite(context.confidence)
+			? Math.max(0, Math.min(1, context.confidence))
+			: undefined;
+	return {
+		...(retrieverMix.length > 0 ? { retrieverMix } : {}),
+		...(parserType !== undefined ? { parserType } : {}),
+		...(documentType !== undefined ? { documentType } : {}),
+		...(documentArea !== undefined ? { documentArea } : {}),
+		...(evidenceType !== undefined ? { evidenceType } : {}),
+		...(evidenceLocation !== undefined ? { evidenceLocation } : {}),
+		...(confidence !== undefined ? { confidence } : {}),
+	};
+}
+
+function normalizeEvidenceChunkRecord(record: EvidenceChunkRecord): EvidenceChunkRecord {
+	const {
+		retrieverMix: _retrieverMix,
+		parserType: _parserType,
+		documentType: _documentType,
+		documentArea: _documentArea,
+		evidenceType: _evidenceType,
+		evidenceLocation: _evidenceLocation,
+		confidence: _confidence,
+		...base
+	} = record;
+	return { ...base, ...normalizeEvidenceContext(record) };
 }
 
 function migrateV3(data: { readonly entries: readonly unknown[] }): MemorySchemaV4 {
@@ -640,7 +697,7 @@ export class RetrievalMemory {
 			const key = `${signal.eventId}\0${method}`;
 			const current = eventScores.get(key) ?? { method, score: 0, signals: 0, cap: signal.confidenceCap };
 			current.score += signal.weight;
-			current.signals++;
+			current.signals = 1;
 			current.cap = Math.max(current.cap, signal.confidenceCap);
 			eventScores.set(key, current);
 		}
@@ -680,7 +737,7 @@ export class RetrievalMemory {
 				cap: signal.confidenceCap,
 			};
 			current.score += signal.weight;
-			current.signals++;
+			current.signals = 1;
 			current.cap = Math.max(current.cap, signal.confidenceCap);
 			events.set(key, current);
 		};
@@ -1066,8 +1123,19 @@ export class RetrievalMemory {
 export function normalizeSessionEvidenceRef(
 	input: Omit<SessionEvidenceRef, "stableEvidenceId"> & { readonly stableEvidenceId?: string },
 ): SessionEvidenceRef {
-	if (input.stableEvidenceId && isPathOpaqueIdentifier(input.stableEvidenceId)) {
-		return { ...input, stableEvidenceId: input.stableEvidenceId };
+	const context = normalizeEvidenceContext(input);
+	const {
+		retrieverMix: _retrieverMix,
+		parserType: _parserType,
+		documentType: _documentType,
+		documentArea: _documentArea,
+		evidenceType: _evidenceType,
+		evidenceLocation: _evidenceLocation,
+		confidence: _confidence,
+		...base
+	} = input;
+	if (base.stableEvidenceId && isPathOpaqueIdentifier(base.stableEvidenceId)) {
+		return { ...base, stableEvidenceId: base.stableEvidenceId, ...context };
 	}
-	return normalizeEvidenceRef(input);
+	return { ...normalizeEvidenceRef(base), ...context };
 }
