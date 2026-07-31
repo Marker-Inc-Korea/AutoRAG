@@ -58,6 +58,7 @@ describe("ResultMerger", () => {
 
 		expect(merged.map((result) => result.source).slice(0, 2)).toEqual([repeatedSource, singletonSource]);
 		expect(merged[0].score).toBeGreaterThan(merged[1].score);
+		expect(merged[0].score).toBeLessThanOrEqual(1);
 		expect(merged[0].source).toBe(repeatedSource);
 		expect(merged[0].metadata).toMatchObject({
 			aggregateHitCount: 2,
@@ -85,12 +86,38 @@ describe("ResultMerger", () => {
 
 		const merged = merger.merge(results, { topK: 5, dedup: true });
 		const repeated = merged.find((result) => result.source === repeatedSource);
+		const singleton = merged.find((result) => result.source === "opaque:document:single");
 
 		expect(merged[0].source).toBe(repeatedSource);
-		expect(repeated?.score).toBeGreaterThan(1);
-		expect(repeated?.score).toBeLessThanOrEqual(1.3);
+		expect(repeated?.score).toBeGreaterThan(singleton?.score ?? Number.POSITIVE_INFINITY);
+		expect(repeated?.score).toBeLessThanOrEqual(1);
 		expect(repeated?.metadata.aggregateHitCount).toBe(5);
 		expect(repeated?.id).toBe("repeat-1");
+	});
+
+	it("does not reward exact duplicate evidence identities", () => {
+		const merger = new ResultMerger();
+		const repeatedSource = "opaque:document:duplicate";
+		const duplicate = makeResult("same-chunk-id", repeatedSource, 0.9);
+		const results = new Map([
+			[
+				"bm25",
+				[
+					makeResult("single", "opaque:document:single", 0.95),
+					duplicate,
+					{ ...duplicate },
+					{ ...duplicate },
+					makeResult("floor", "opaque:floor", 0.1),
+				],
+			],
+		]);
+
+		const merged = merger.merge(results, { topK: 5, dedup: true });
+		const repeated = merged.find((result) => result.source === repeatedSource);
+
+		expect(merged[0].source).toBe("opaque:document:single");
+		expect(repeated?.metadata.aggregateHitCount).toBeUndefined();
+		expect(repeated?.score).toBeLessThanOrEqual(1);
 	});
 
 	it("keeps hit-level behavior unchanged when deduplication is disabled", () => {

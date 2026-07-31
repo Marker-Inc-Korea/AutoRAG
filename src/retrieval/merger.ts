@@ -65,12 +65,16 @@ export class ResultMerger {
 
 function aggregateBySource(results: readonly MethodResult[]): RetrievalResult[] {
 	const bySource = new Map<string, { readonly order: number; readonly hits: [MethodResult, ...MethodResult[]] }>();
+	const seenEvidence = new Set<string>();
 	for (const hit of results) {
+		const evidenceKey = `${hit.method}\0${hit.result.source}\0${hit.result.id}`;
+		if (seenEvidence.has(evidenceKey)) continue;
+		seenEvidence.add(evidenceKey);
 		const group = bySource.get(hit.result.source);
 		if (group) group.hits.push(hit);
 		else bySource.set(hit.result.source, { order: bySource.size, hits: [hit] });
 	}
-	return Array.from(bySource.values())
+	const aggregated = Array.from(bySource.values())
 		.map(({ order, hits }) => {
 			const ranked = hits
 				.map((hit, index) => ({ ...hit, index }))
@@ -97,8 +101,15 @@ function aggregateBySource(results: readonly MethodResult[]): RetrievalResult[] 
 				},
 			};
 		})
-		.sort((a, b) => b.result.score - a.result.score || a.order - b.order)
-		.map(({ result }) => result);
+		.sort((a, b) => b.result.score - a.result.score || a.order - b.order);
+	const scores = aggregated.map(({ result }) => result.score);
+	const min = Math.min(...scores);
+	const max = Math.max(...scores);
+	const range = max - min;
+	return aggregated.map(({ result }) => ({
+		...result,
+		score: range > 0 ? (result.score - min) / range : 1,
+	}));
 }
 
 export class ParallelRetriever {
