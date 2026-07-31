@@ -45,6 +45,7 @@ export class MinSyncClient {
 		}
 		const spawnOpts = this.embedder?.timeoutMs !== undefined ? { timeoutMs: this.embedder.timeoutMs } : {};
 		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
+		const cursorPath = join(this.workspacePath, ".minsync", "cursor.json");
 		if (!initialized) {
 			const initArgs = ["init", "--format", "json"];
 			if (this.embedder?.id) {
@@ -72,7 +73,11 @@ export class MinSyncClient {
 				reason: sanitizeReason(check.stderr || "check-failed"),
 			};
 		}
-		const syncArgs = initialized ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
+		const checkFailure = readCheckFailure(check.stdout);
+		if (checkFailure) {
+			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
+		}
+		const syncArgs = existsSync(cursorPath) ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
 		const result = await spawnProcess(this.binaryPath, syncArgs, this.workspacePath, spawnOpts);
 		if (!result.ok) {
 			return {
@@ -82,7 +87,7 @@ export class MinSyncClient {
 				reason: sanitizeReason(result.stderr || "sync-failed"),
 			};
 		}
-		if (!existsSync(join(this.workspacePath, ".minsync", "cursor.json"))) {
+		if (!existsSync(cursorPath)) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
 		return { ok: true, synced: readSyncedCount(result.stdout), workspacePath: this.workspacePath };
@@ -112,6 +117,15 @@ function readSyncedCount(stdout: string): number {
 		if (typeof count === "number" && Number.isFinite(count)) return count;
 	}
 	return 0;
+}
+
+function readCheckFailure(stdout: string): string | undefined {
+	const parsed = parseJson(stdout);
+	if (!isRecord(parsed)) return "check-failed: invalid response";
+	if (parsed.embedder_ok !== true) return "check-failed: embedder unavailable";
+	if (parsed.vectorstore_ok !== true) return "check-failed: vector store unavailable";
+	if (parsed.all_passed === false) return "check-failed: preflight unhealthy";
+	return undefined;
 }
 
 function parseQueryHits(stdout: string): readonly MinSyncQueryHit[] {

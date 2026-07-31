@@ -26,7 +26,14 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFaithfulMinSync(options: { readonly checkFails?: boolean } = {}): void {
+function writeFaithfulMinSync(
+	options: {
+		readonly checkFails?: boolean;
+		readonly checkUnhealthyJson?: boolean;
+		readonly checkUnhealthyOnce?: boolean;
+		readonly fullSyncCreatesCursor?: boolean;
+	} = {},
+): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
@@ -37,6 +44,7 @@ const args = process.argv.slice(2);
 const cwd = process.cwd();
 const config = join(cwd, ".minsync", "config.toml");
 const cursor = join(cwd, ".minsync", "cursor.json");
+const unhealthyOnceMarker = join(cwd, ".minsync", "check-failed-once");
 const log = ${JSON.stringify(commandLog)};
 appendFileSync(log, JSON.stringify(args) + "\\n");
 
@@ -56,14 +64,25 @@ if (args[0] === "check") {
     console.error("embedder unavailable");
     process.exit(1);
   }
-  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+  if (${options.checkUnhealthyOnce === true ? "true" : "false"} && !existsSync(unhealthyOnceMarker)) {
+    writeFileSync(unhealthyOnceMarker, "failed");
+    console.log(JSON.stringify({ all_passed: false, vectorstore_ok: true, embedder_ok: false }));
+    process.exit(0);
+  }
+  if (${options.checkUnhealthyJson === true ? "true" : "false"}) {
+    console.log(JSON.stringify({ all_passed: false, vectorstore_ok: true, embedder_ok: false }));
+    process.exit(0);
+  }
+  console.log(JSON.stringify({ all_passed: true, vectorstore_ok: true, embedder_ok: true }));
   process.exit(0);
 }
 
 if (args[0] === "sync") {
   if (args.includes("--full")) {
-    mkdirSync(dirname(cursor), { recursive: true });
-    writeFileSync(cursor, JSON.stringify({ ready: true }));
+    if (${options.fullSyncCreatesCursor === false ? "false" : "true"}) {
+      mkdirSync(dirname(cursor), { recursive: true });
+      writeFileSync(cursor, JSON.stringify({ ready: true }));
+    }
     console.log(JSON.stringify({ files_processed: 1, embedded_texts: 1 }));
     process.exit(0);
   }
@@ -139,6 +158,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		const secondRefresh = await agent.refresh(false);
 
 		expect(firstRefresh.minsync).toMatchObject({ ok: true, synced: 1 });
+		expect(firstRefresh.minsync).not.toHaveProperty("workspacePath");
 		expect(secondRefresh.minsync).toMatchObject({ ok: true, synced: 0 });
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
 		expect(hits.map((hit) => hit.source)).toEqual(["/docs/handbook.txt"]);
@@ -152,8 +172,23 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		]);
 	});
 
-	it("reports exit-zero incremental sync without a cursor as unready", async () => {
+	it("recovers a config-only workspace with a full sync", async () => {
 		writeFaithfulMinSync();
+		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
+		writeFileSync(join(minsyncWorkspace, ".minsync", "config.toml"), '[embedder]\nid = "openai"\n');
+		const agent = createAgent();
+
+		const refresh = await agent.refresh(false);
+
+		expect(refresh.minsync).toMatchObject({ ok: true, synced: 1 });
+		expect(loggedCommands()).toEqual([
+			["check", "--format", "json"],
+			["sync", "--full", "--format", "json"],
+		]);
+	});
+
+	it("reports exit-zero full sync without a cursor as unready", async () => {
+		writeFaithfulMinSync({ fullSyncCreatesCursor: false });
 		mkdirSync(join(minsyncWorkspace, ".minsync"), { recursive: true });
 		writeFileSync(join(minsyncWorkspace, ".minsync", "config.toml"), '[embedder]\nid = "openai"\n');
 		const agent = createAgent();
@@ -164,7 +199,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(refresh.minsync?.reason).toContain("not-ready");
 		expect(loggedCommands()).toEqual([
 			["check", "--format", "json"],
-			["sync", "--format", "json"],
+			["sync", "--full", "--format", "json"],
 		]);
 		expect((await agent.getRefreshStatus()).components.minsync).toBe("degraded");
 	});
@@ -181,5 +216,39 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 			["check", "--format", "json"],
 		]);
 		expect((await agent.getRefreshStatus()).components.minsync).toBe("degraded");
+	});
+
+	it("rejects exit-zero unhealthy preflight JSON before sync", async () => {
+		writeFaithfulMinSync({ checkUnhealthyJson: true });
+		const agent = createAgent();
+
+		const refresh = await agent.refresh(true);
+
+		expect(refresh.minsync).toMatchObject({
+			ok: false,
+			synced: 0,
+			reason: "check-failed: embedder unavailable",
+		});
+		expect(loggedCommands()).toEqual([
+			["init", "--format", "json"],
+			["check", "--format", "json"],
+		]);
+	});
+
+	it("retries a transient preflight failure with a full sync", async () => {
+		writeFaithfulMinSync({ checkUnhealthyOnce: true });
+		const agent = createAgent();
+
+		const first = await agent.refresh(true);
+		const second = await agent.refresh(false);
+
+		expect(first.minsync).toMatchObject({ ok: false, synced: 0 });
+		expect(second.minsync).toMatchObject({ ok: true, synced: 1 });
+		expect(loggedCommands()).toEqual([
+			["init", "--format", "json"],
+			["check", "--format", "json"],
+			["check", "--format", "json"],
+			["sync", "--full", "--format", "json"],
+		]);
 	});
 });
