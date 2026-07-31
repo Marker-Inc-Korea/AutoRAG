@@ -820,6 +820,14 @@ export class AutoRAGAgent {
 		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
 	}
 
+	recordFeedbackByIds(usefulFeedbackIds: readonly string[], notUsefulFeedbackIds: readonly string[] = []): void {
+		const feedback = [
+			...usefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: true })),
+			...notUsefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: false })),
+		];
+		if (this.memory.recordFeedbackByIds(feedback)) this.memory.save();
+	}
+
 	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
 		const sid = sessionId ?? this.lastSessionId;
 		const session = sid ? this.sessions.get(sid) : undefined;

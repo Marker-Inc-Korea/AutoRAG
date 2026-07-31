@@ -53,6 +53,26 @@ describe("AutoRAGAgent numbered feedback", () => {
 		expect(typeof agent.recordFeedbackByNumbers).toBe("function");
 	});
 
+	it("records durable result feedback by stable feedback ID after restart", () => {
+		const memPath = join(tmpDir, "memory.json");
+		const first = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+		seedCuratedResult(internals(first).memory, "durable-session", "src/durable.ts");
+		internals(first).memory.save();
+
+		const restarted = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: memPath,
+		});
+		restarted.recordFeedbackByIds(["durable-session:1"]);
+
+		const memory = new RetrievalMemory({ storagePath: memPath });
+		memory.load();
+		expect(memory.getMethodHints("q").find((hint) => hint.method === "grep")?.score).toBeGreaterThan(0);
+	});
+
 	it("resolves useful entries by number with session", () => {
 		const memPath = join(tmpDir, "memory.json");
 		const agent = new AutoRAGAgent({

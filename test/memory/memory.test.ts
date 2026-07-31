@@ -156,12 +156,20 @@ function recordSession(memory: RetrievalMemory): void {
 				content: "TypeScript handbook content",
 				method: "posix",
 				source: "/docs/handbook.md",
+				confidence: 0.91,
 				evidenceRefs: [
 					normalizeSessionEvidenceRef({
 						method: "posix",
 						source: "/docs/handbook.md",
 						excerpt: "TypeScript handbook content",
 						lineNumber: 4,
+						retrieverMix: ["bm25", "minsync"],
+						parserType: "markdown",
+						documentType: "handbook",
+						documentArea: "language-guides",
+						evidenceType: "reference",
+						evidenceLocation: "API section",
+						confidence: 0.87,
 					}),
 				],
 			},
@@ -414,15 +422,36 @@ describe("RetrievalMemory", () => {
 		expect(warn).toHaveBeenCalledWith("[AutoRAG] Retrieval memory is not v4-compatible; starting fresh");
 	});
 
-	it("resets v1-v3 memory instead of migrating", () => {
-		writeFileSync(memoryPath, JSON.stringify({ version: 3, entries: [{ query: "q", method: "posix" }] }), "utf-8");
-		vi.spyOn(console, "warn").mockImplementation(() => {});
+	it("migrates resolved v3 method feedback into v4 signals", () => {
+		writeFileSync(
+			memoryPath,
+			JSON.stringify({
+				version: 3,
+				entries: [
+					{
+						id: "legacy-useful",
+						query: "typescript handbook",
+						method: "posix",
+						outcome: "useful",
+						timestamp: 1234,
+					},
+					{
+						id: "legacy-pending",
+						query: "typescript handbook",
+						method: "minsync",
+						outcome: "pending",
+						timestamp: 1235,
+					},
+				],
+			}),
+			"utf-8",
+		);
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();
 		expect(memory.getSchema().version).toBe(4);
-		expect(memory.getEntries()).toEqual([]);
-		expect(memory.getSignalCount()).toBe(0);
-		expect(memory.getSchema().warnings[0].code).toBe("memory-reset");
+		expect(memory.getSignalCount()).toBe(1);
+		expect(memory.getMethodHints("typescript handbook")[0]).toMatchObject({ method: "posix", score: 1 });
+		expect(memory.getSchema().warnings).toEqual([]);
 	});
 
 	it("records curated result and evidence records for a session", () => {
@@ -433,7 +462,17 @@ describe("RetrievalMemory", () => {
 		expect(schema.curatedResults).toHaveLength(1);
 		expect(schema.evidenceChunks).toHaveLength(1);
 		expect(schema.curatedResults[0].evidenceIds).toEqual([schema.evidenceChunks[0].stableEvidenceId]);
+		expect(schema.curatedResults[0].confidence).toBe(0.91);
 		expect(schema.evidenceChunks[0].method).toBe("posix");
+		expect(schema.evidenceChunks[0]).toMatchObject({
+			retrieverMix: ["bm25", "minsync"],
+			parserType: "markdown",
+			documentType: "handbook",
+			documentArea: "language-guides",
+			evidenceType: "reference",
+			evidenceLocation: "API section",
+			confidence: 0.87,
+		});
 	});
 
 	it("distributes explicit numbered feedback to result and evidence without full-strength double-counting", () => {
@@ -454,6 +493,17 @@ describe("RetrievalMemory", () => {
 		expect(signals[1].target.type).toBe("evidence_chunk");
 		expect(signals[1].weight).toBe(1);
 		expect(memory.getMethodHints("typescript handbook")[0].score).toBe(1);
+		expect(memory.getContextHints("typescript handbook")).toMatchObject({
+			documentAreas: [{ value: "language-guides", score: 1 }],
+			documentTypes: [{ value: "handbook", score: 1 }],
+			evidenceTypes: [{ value: "reference", score: 1 }],
+			evidenceLocations: [{ value: "API section", score: 1 }],
+			parserTypes: [{ value: "markdown", score: 1 }],
+			retrieverMix: [
+				{ value: "bm25", score: 1 },
+				{ value: "minsync", score: 1 },
+			],
+		});
 	});
 
 	it("does not duplicate repeated feedback for the same result and sentiment", () => {

@@ -21,7 +21,17 @@ export interface SignalDefaults {
 	readonly decayHalfLifeMs?: number;
 }
 
-export interface EvidenceChunkRecord extends NormalizedEvidenceRef {
+export interface EvidenceContext {
+	readonly retrieverMix?: readonly string[];
+	readonly parserType?: string;
+	readonly documentType?: string;
+	readonly documentArea?: string;
+	readonly evidenceType?: string;
+	readonly evidenceLocation?: string;
+	readonly confidence?: number;
+}
+
+export interface EvidenceChunkRecord extends NormalizedEvidenceRef, EvidenceContext {
 	readonly excerptHash: string;
 	readonly firstSeenAt: number;
 	readonly lastSeenAt: number;
@@ -37,6 +47,7 @@ export interface CuratedResultRecord {
 	readonly summary: string;
 	readonly resultHash: string;
 	readonly evidenceIds: readonly string[];
+	readonly confidence?: number;
 	readonly createdAt: number;
 }
 
@@ -61,6 +72,21 @@ export interface MethodHint {
 	readonly score: number;
 	readonly confidence: number;
 	readonly reason: string;
+}
+
+export interface ContextValueHint {
+	readonly value: string;
+	readonly score: number;
+	readonly confidence: number;
+}
+
+export interface RetrievalContextHints {
+	readonly documentAreas: readonly ContextValueHint[];
+	readonly documentTypes: readonly ContextValueHint[];
+	readonly evidenceTypes: readonly ContextValueHint[];
+	readonly evidenceLocations: readonly ContextValueHint[];
+	readonly parserTypes: readonly ContextValueHint[];
+	readonly retrieverMix: readonly ContextValueHint[];
 }
 
 export interface RetrievalInsight {
@@ -123,7 +149,7 @@ export interface ResultFeedback {
 	useful: boolean;
 }
 
-export interface SessionEvidenceRef extends NormalizedEvidenceRef {
+export interface SessionEvidenceRef extends NormalizedEvidenceRef, EvidenceContext {
 	readonly metadata?: Record<string, unknown>;
 }
 
@@ -134,6 +160,7 @@ export interface SessionCuratedResultInput {
 	readonly content: string;
 	readonly method: string;
 	readonly source: string;
+	readonly confidence?: number;
 	readonly evidenceRefs: readonly SessionEvidenceRef[];
 }
 
@@ -147,6 +174,11 @@ export interface NumberedFeedbackInput {
 	readonly sessionId: string;
 	readonly query: string;
 	readonly feedback: readonly { readonly number: number; readonly useful: boolean }[];
+}
+
+export interface FeedbackIdInput {
+	readonly feedbackId: string;
+	readonly useful: boolean;
 }
 
 export interface RetrievalMemoryOptions {
@@ -236,6 +268,10 @@ function isV4(data: unknown): data is Omit<MemorySchemaV4, "insights" | "pending
 	);
 }
 
+function isV3(data: unknown): data is { readonly version: 3; readonly entries: readonly unknown[] } {
+	return isRecord(data) && data.version === 3 && Array.isArray(data.entries);
+}
+
 function isInsight(value: unknown): value is RetrievalInsight {
 	return (
 		isRecord(value) &&
@@ -276,6 +312,39 @@ function normalizeV4(
 	};
 }
 
+function migrateV3(data: { readonly entries: readonly unknown[] }): MemorySchemaV4 {
+	const migrated = emptyMemoryV4();
+	for (const value of data.entries) {
+		if (
+			!isRecord(value) ||
+			typeof value.query !== "string" ||
+			typeof value.method !== "string" ||
+			(value.outcome !== "useful" && value.outcome !== "not_useful") ||
+			typeof value.timestamp !== "number"
+		) {
+			continue;
+		}
+		const legacyId =
+			typeof value.id === "string"
+				? value.id
+				: hashText(`${value.query}\0${value.method}\0${value.outcome}\0${value.timestamp}`).slice(0, 24);
+		const useful = value.outcome === "useful";
+		migrated.feedbackSignals.push({
+			id: `v3:${legacyId}`,
+			target: { type: "method", method: value.method },
+			query: value.query,
+			method: value.method,
+			sentiment: value.outcome,
+			source: "explicit",
+			weight: useful ? migrated.signalDefaults.explicitWeight : -migrated.signalDefaults.explicitWeight,
+			confidenceCap: 1,
+			eventId: `v3:${legacyId}`,
+			timestamp: value.timestamp,
+		});
+	}
+	return migrated;
+}
+
 function hashText(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
 }
@@ -292,6 +361,31 @@ function queryMatches(entryQuery: string, query: string): boolean {
 	const a = entryQuery.toLowerCase();
 	const b = query.toLowerCase();
 	return a === b || a.includes(b) || b.includes(a);
+}
+
+type ContextEventScore = {
+	value: string;
+	score: number;
+	signals: number;
+	cap: number;
+};
+
+function contextValues(events: ReadonlyMap<string, ContextEventScore>): ContextValueHint[] {
+	const totals = new Map<string, { score: number; signals: number }>();
+	for (const event of events.values()) {
+		const score = Math.max(-event.cap, Math.min(event.cap, event.score));
+		const current = totals.get(event.value) ?? { score: 0, signals: 0 };
+		current.score += score;
+		current.signals += event.signals;
+		totals.set(event.value, current);
+	}
+	return Array.from(totals.entries())
+		.map(([value, stats]) => ({
+			value,
+			score: stats.score,
+			confidence: Math.min(1, stats.signals / 5),
+		}))
+		.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.value.localeCompare(b.value));
 }
 
 function normalizeInsightDomain(query: string): string {
@@ -461,6 +555,7 @@ export class RetrievalMemory {
 				summary: result.summary,
 				resultHash: resultHash(input.query, result.title, result.summary, evidenceIds),
 				evidenceIds,
+				...(result.confidence !== undefined ? { confidence: result.confidence } : {}),
 				createdAt: now,
 			};
 			const existingIndex = this.data.curatedResults.findIndex((entry) => entry.resultId === id);
@@ -470,14 +565,18 @@ export class RetrievalMemory {
 	}
 
 	recordNumberedFeedback(input: NumberedFeedbackInput): boolean {
+		return this.recordFeedbackByIds(
+			input.feedback.map((item) => ({ feedbackId: resultId(input.sessionId, item.number), useful: item.useful })),
+		);
+	}
+
+	recordFeedbackByIds(feedback: readonly FeedbackIdInput[]): boolean {
 		let changed = false;
-		for (const item of input.feedback) {
-			const curated = this.data.curatedResults.find(
-				(result) => result.sessionId === input.sessionId && result.number === item.number,
-			);
+		for (const item of feedback) {
+			const curated = this.data.curatedResults.find((result) => result.resultId === item.feedbackId);
 			if (!curated) continue;
 			const sentiment: FeedbackSentiment = item.useful ? "useful" : "not_useful";
-			const eventId = `${input.sessionId}:${item.number}:${sentiment}`;
+			const eventId = `${curated.resultId}:${sentiment}`;
 			if (this.data.feedbackSignals.some((signal) => signal.eventId === eventId)) continue;
 			const sign = item.useful ? 1 : -1;
 			const explicitWeight = this.data.signalDefaults.explicitWeight * sign;
@@ -561,6 +660,50 @@ export class RetrievalMemory {
 				reason: `${stats.signals} feedback signal(s) matched this query; advisory only, not a method disable rule`,
 			}))
 			.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.method.localeCompare(b.method));
+	}
+
+	getContextHints(query: string): RetrievalContextHints {
+		const documentAreas = new Map<string, ContextEventScore>();
+		const documentTypes = new Map<string, ContextEventScore>();
+		const evidenceTypes = new Map<string, ContextEventScore>();
+		const evidenceLocations = new Map<string, ContextEventScore>();
+		const parserTypes = new Map<string, ContextEventScore>();
+		const retrieverMix = new Map<string, ContextEventScore>();
+		const add = (events: Map<string, ContextEventScore>, value: string | undefined, signal: FeedbackSignal): void => {
+			const normalized = value?.trim();
+			if (!normalized) return;
+			const key = `${signal.eventId}\0${normalized}`;
+			const current = events.get(key) ?? {
+				value: normalized,
+				score: 0,
+				signals: 0,
+				cap: signal.confidenceCap,
+			};
+			current.score += signal.weight;
+			current.signals++;
+			current.cap = Math.max(current.cap, signal.confidenceCap);
+			events.set(key, current);
+		};
+		for (const signal of this.data.feedbackSignals) {
+			if (!queryMatches(signal.query, query) || signal.target.type !== "evidence_chunk") continue;
+			const stableEvidenceId = signal.target.stableEvidenceId;
+			const evidence = this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === stableEvidenceId);
+			if (!evidence) continue;
+			add(documentAreas, evidence.documentArea, signal);
+			add(documentTypes, evidence.documentType, signal);
+			add(evidenceTypes, evidence.evidenceType, signal);
+			add(evidenceLocations, evidence.evidenceLocation, signal);
+			add(parserTypes, evidence.parserType, signal);
+			for (const retriever of evidence.retrieverMix ?? []) add(retrieverMix, retriever, signal);
+		}
+		return {
+			documentAreas: contextValues(documentAreas),
+			documentTypes: contextValues(documentTypes),
+			evidenceTypes: contextValues(evidenceTypes),
+			evidenceLocations: contextValues(evidenceLocations),
+			parserTypes: contextValues(parserTypes),
+			retrieverMix: contextValues(retrieverMix),
+		};
 	}
 
 	getInsights(query: string): RetrievalInsight[] {
@@ -657,6 +800,7 @@ export class RetrievalMemory {
 		try {
 			const parsed: unknown = JSON.parse(readFileSync(this.storagePath, "utf-8"));
 			if (isV4(parsed)) return normalizeV4(parsed);
+			if (isV3(parsed)) return migrateV3(parsed);
 		} catch (error) {
 			if (!(error instanceof Error)) throw error;
 		}
