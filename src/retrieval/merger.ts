@@ -12,6 +12,15 @@ export interface MergeOptions {
 	dedup: boolean;
 }
 
+const MAX_AGGREGATION_BONUS = 0.3;
+const MAX_SECONDARY_HITS = 3;
+const SECONDARY_HIT_WEIGHT = 0.15;
+
+interface MethodResult {
+	readonly method: string;
+	readonly result: RetrievalResult;
+}
+
 export class ResultMerger {
 	merge(results: Map<string, RetrievalResult[]>, options: MergeOptions): RetrievalResult[] {
 		const { topK, dedup } = options;
@@ -38,26 +47,58 @@ export class ResultMerger {
 		}
 
 		// Merge all results
-		const allResults: RetrievalResult[] = [];
-		for (const methodResults of normalized.values()) {
-			allResults.push(...methodResults);
+		const allResults: MethodResult[] = [];
+		for (const [method, methodResults] of normalized) {
+			allResults.push(...methodResults.map((result) => ({ method, result })));
 		}
 
 		if (dedup) {
-			// Deduplicate by source — keep highest scoring
-			const bySource = new Map<string, RetrievalResult>();
-			for (const r of allResults) {
-				const existing = bySource.get(r.source);
-				if (!existing || r.score > existing.score) {
-					bySource.set(r.source, r);
-				}
-			}
-			const deduped = Array.from(bySource.values());
-			return deduped.sort((a, b) => b.score - a.score).slice(0, topK);
+			return aggregateBySource(allResults).slice(0, topK);
 		}
 
-		return allResults.sort((a, b) => b.score - a.score).slice(0, topK);
+		return allResults
+			.map(({ result }) => result)
+			.sort((a, b) => b.score - a.score)
+			.slice(0, topK);
 	}
+}
+
+function aggregateBySource(results: readonly MethodResult[]): RetrievalResult[] {
+	const bySource = new Map<string, { readonly order: number; readonly hits: [MethodResult, ...MethodResult[]] }>();
+	for (const hit of results) {
+		const group = bySource.get(hit.result.source);
+		if (group) group.hits.push(hit);
+		else bySource.set(hit.result.source, { order: bySource.size, hits: [hit] });
+	}
+	return Array.from(bySource.values())
+		.map(({ order, hits }) => {
+			const ranked = hits
+				.map((hit, index) => ({ ...hit, index }))
+				.sort((a, b) => {
+					return b.result.score - a.result.score || a.index - b.index;
+				});
+			const representative = ranked[0];
+			if (!representative || ranked.length === 1) {
+				return { order, result: representative?.result ?? hits[0].result };
+			}
+			const bonus = ranked
+				.slice(1, MAX_SECONDARY_HITS + 1)
+				.reduce((sum, hit, index) => sum + hit.result.score / (index + 1), 0);
+			return {
+				order,
+				result: {
+					...representative.result,
+					score: representative.result.score + Math.min(MAX_AGGREGATION_BONUS, bonus * SECONDARY_HIT_WEIGHT),
+					metadata: {
+						...representative.result.metadata,
+						aggregateHitCount: ranked.length,
+						aggregateMethods: Array.from(new Set(ranked.map((hit) => hit.method))).sort(),
+					},
+				},
+			};
+		})
+		.sort((a, b) => b.result.score - a.result.score || a.order - b.order)
+		.map(({ result }) => result);
 }
 
 export class ParallelRetriever {
