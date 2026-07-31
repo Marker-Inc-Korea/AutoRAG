@@ -103,6 +103,7 @@ function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionEvidence
 		entry.evidenceRefs.length > 0
 			? entry.evidenceRefs
 			: [{ method: entry.method, source: entry.source, content: entry.content }];
+	const derivedRetrieverMix = Array.from(new Set(rawRefs.map((ref) => ref.method)));
 	return rawRefs.map((ref) => {
 		if (ref.excerpt === undefined && ref.content === undefined) {
 			throw new Error("emit_autorag_results: every evidenceRef must include excerpt or content");
@@ -116,6 +117,13 @@ function normalizeEntryEvidenceRefs(entry: AutoRAGMappingEntry): SessionEvidence
 			...(ref.chunkIndex !== undefined ? { chunkIndex: ref.chunkIndex } : {}),
 			...(ref.lineNumber !== undefined ? { lineNumber: ref.lineNumber } : {}),
 			...(ref.stableEvidenceId !== undefined ? { stableEvidenceId: ref.stableEvidenceId } : {}),
+			retrieverMix: ref.retrieverMix ?? derivedRetrieverMix,
+			...(ref.parserType !== undefined ? { parserType: ref.parserType } : {}),
+			...(ref.documentType !== undefined ? { documentType: ref.documentType } : {}),
+			...(ref.documentArea !== undefined ? { documentArea: ref.documentArea } : {}),
+			...(ref.evidenceType !== undefined ? { evidenceType: ref.evidenceType } : {}),
+			...(ref.evidenceLocation !== undefined ? { evidenceLocation: ref.evidenceLocation } : {}),
+			...(ref.confidence !== undefined ? { confidence: ref.confidence } : {}),
 		});
 	});
 }
@@ -156,6 +164,7 @@ export function recordStructuredResultsSession(
 			content: entry.content,
 			method: entry.method,
 			source: entry.source,
+			...(emittedResult !== undefined ? { confidence: confidenceFrom(emittedResult.confidence) } : {}),
 			evidenceRefs,
 		});
 	}

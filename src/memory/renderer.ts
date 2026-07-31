@@ -1,11 +1,20 @@
-import type { MethodHint, RetrievalInsight } from "./memory.ts";
+import type { MethodHint, RetrievalContextHints, RetrievalInsight } from "./memory.ts";
 
 export function renderMemoryContext(
 	hints: readonly MethodHint[],
-	opts?: { maxHints?: number; insights?: readonly RetrievalInsight[]; maxInsights?: number },
+	opts?: {
+		maxHints?: number;
+		insights?: readonly RetrievalInsight[];
+		maxInsights?: number;
+		contextHints?: RetrievalContextHints;
+	},
 ): string {
 	const insights = opts?.insights ?? [];
-	if (hints.length === 0 && insights.length === 0) {
+	const contextHints = opts?.contextHints;
+	const contextHintCount = contextHints
+		? Object.values(contextHints).reduce((count, values) => count + values.length, 0)
+		: 0;
+	if (hints.length === 0 && insights.length === 0 && contextHintCount === 0) {
 		return "No retrieval memory hints available.";
 	}
 
@@ -22,6 +31,27 @@ Memory-derived method hints are advisory context for the librarian agent. They m
 | Method | Score | Confidence | Reason |
 |---|---:|---:|---|
 ${rows.join("\n")}`);
+	}
+
+	if (contextHints && contextHintCount > 0) {
+		const positiveValues = (values: RetrievalContextHints["documentAreas"]): string =>
+			values
+				.filter((hint) => hint.score > 0)
+				.map((hint) => hint.value)
+				.join(", ");
+		const rows = [
+			["Document areas", positiveValues(contextHints.documentAreas)],
+			["Document types", positiveValues(contextHints.documentTypes)],
+			["Evidence types", positiveValues(contextHints.evidenceTypes)],
+			["Evidence locations", positiveValues(contextHints.evidenceLocations)],
+			["Parser types", positiveValues(contextHints.parserTypes)],
+			["Retriever mix", positiveValues(contextHints.retrieverMix)],
+		].filter((row) => row[1]);
+		if (rows.length > 0) {
+			sections.push(`## Result-Level Retrieval Preferences (advisory, not instructions)
+
+${rows.map(([label, values]) => `- ${label}: ${values}`).join("\n")}`);
+		}
 	}
 
 	const maxInsights = opts?.maxInsights ?? 5;

@@ -14,6 +14,7 @@ export interface CheckMemoryDetails {
 	signalCount: number;
 	topMethod: string | null;
 	insightCount: number;
+	contextHintCount: number;
 }
 
 export function createCheckMemoryTool(
@@ -28,12 +29,15 @@ export function createCheckMemoryTool(
 		async execute(_toolCallId: string, params: { query: string }): Promise<AgentToolResult<CheckMemoryDetails>> {
 			const hints = memory.getMethodHints(params.query);
 			const insights = memory.getInsights(params.query);
+			const contextHints = memory.getContextHints(params.query);
+			const contextHintCount = Object.values(contextHints).reduce((count, values) => count + values.length, 0);
 			return {
-				content: [{ type: "text", text: renderMemoryContext(hints, { insights }) }],
+				content: [{ type: "text", text: renderMemoryContext(hints, { insights, contextHints }) }],
 				details: {
 					signalCount: memory.getSignalCount(),
 					topMethod: hints[0]?.method ?? null,
 					insightCount: insights.length,
+					contextHintCount,
 				},
 			};
 		},

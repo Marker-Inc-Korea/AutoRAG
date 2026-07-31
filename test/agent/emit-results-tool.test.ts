@@ -25,7 +25,28 @@ describe("createEmitResultsTool", () => {
 					confidence: 0.9,
 				},
 			],
-			mapping: [{ number: 1, source: "/data/one.txt", method: "grep", content: "snippet" }],
+			mapping: [
+				{
+					number: 1,
+					source: "/data/one.txt",
+					method: "grep",
+					content: "snippet",
+					evidenceRefs: [
+						{
+							method: "grep",
+							source: "/data/one.txt",
+							content: "snippet",
+							retrieverMix: ["bm25", "minsync"],
+							parserType: "pdf",
+							documentType: "manual",
+							documentArea: "billing",
+							evidenceType: "policy",
+							evidenceLocation: "page 12",
+							confidence: 0.88,
+						},
+					],
+				},
+			],
 			warnings: [],
 		});
 
@@ -37,7 +58,20 @@ describe("createEmitResultsTool", () => {
 			source: "/data/one.txt",
 			method: "grep",
 			content: "snippet",
-			evidenceRefs: [{ method: "grep", source: "/data/one.txt", content: "snippet" }],
+			evidenceRefs: [
+				{
+					method: "grep",
+					source: "/data/one.txt",
+					content: "snippet",
+					retrieverMix: ["bm25", "minsync"],
+					parserType: "pdf",
+					documentType: "manual",
+					documentArea: "billing",
+					evidenceType: "policy",
+					evidenceLocation: "page 12",
+					confidence: 0.88,
+				},
+			],
 		});
 		expect(captured).toBe(result.details);
 	});

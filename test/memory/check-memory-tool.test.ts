@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCheckMemoryTool } from "../../src/memory/check-memory-tool.ts";
-import { RetrievalMemory } from "../../src/memory/memory.ts";
+import { normalizeSessionEvidenceRef, RetrievalMemory } from "../../src/memory/memory.ts";
 
 let tmpDir: string;
 let memoryPath: string;
@@ -83,5 +83,51 @@ describe("createCheckMemoryTool", () => {
 		expect(text).toContain("Long-Term Retrieval Insights");
 		expect(text).toContain("photo archive lookup");
 		expect(result.details!.insightCount).toBe(1);
+	});
+
+	it("renders result-level document and evidence preferences", async () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordCuratedResultsSession({
+			sessionId: "context-session",
+			query: "refund policy",
+			results: [
+				{
+					number: 1,
+					title: "Refunds",
+					summary: "Policy",
+					content: "Refund policy",
+					method: "bm25",
+					source: "/docs/refunds.md",
+					confidence: 0.9,
+					evidenceRefs: [
+						normalizeSessionEvidenceRef({
+							method: "bm25",
+							source: "/docs/refunds.md",
+							content: "Refund policy",
+							documentArea: "billing",
+							documentType: "policy",
+							evidenceType: "rule",
+							evidenceLocation: "section 4",
+							parserType: "markdown",
+							retrieverMix: ["bm25", "minsync"],
+							confidence: 0.8,
+						}),
+					],
+				},
+			],
+		});
+		memory.recordFeedbackByIds([{ feedbackId: "context-session:1", useful: true }]);
+
+		const result = await createCheckMemoryTool(memory).execute("context-call", { query: "refund policy" });
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+
+		expect(text).toContain("Document areas: billing");
+		expect(text).toContain("Document types: policy");
+		expect(text).toContain("Evidence types: rule");
+		expect(text).toContain("Evidence locations: section 4");
+		expect(text).toContain("Parser types: markdown");
+		expect(text).toContain("Retriever mix: bm25, minsync");
+		expect(result.details!.contextHintCount).toBe(7);
 	});
 });
