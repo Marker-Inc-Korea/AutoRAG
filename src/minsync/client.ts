@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { rewriteEmbedderConfig } from "./embedder-config.ts";
+import { join } from "node:path";
+import { minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
@@ -42,24 +43,37 @@ export class MinSyncClient {
 				};
 			}
 		}
-		const initArgs = ["init", "--format", "json"];
-		if (this.embedder?.id) {
-			initArgs.push("--embedder", this.embedder.id);
-		}
 		const spawnOpts = this.embedder?.timeoutMs !== undefined ? { timeoutMs: this.embedder.timeoutMs } : {};
-		const init = await spawnProcess(this.binaryPath, initArgs, this.workspacePath, spawnOpts);
-		if (!init.ok) {
-			return {
-				ok: false,
-				synced: 0,
-				workspacePath: this.workspacePath,
-				reason: sanitizeReason(init.stderr || "init-failed"),
-			};
+		const initialized = existsSync(minSyncConfigPath(this.workspacePath));
+		if (!initialized) {
+			const initArgs = ["init", "--format", "json"];
+			if (this.embedder?.id) {
+				initArgs.push("--embedder", this.embedder.id);
+			}
+			const init = await spawnProcess(this.binaryPath, initArgs, this.workspacePath, spawnOpts);
+			if (!init.ok) {
+				return {
+					ok: false,
+					synced: 0,
+					workspacePath: this.workspacePath,
+					reason: sanitizeReason(init.stderr || "init-failed"),
+				};
+			}
 		}
 		if (this.embedder) {
 			rewriteEmbedderConfig(this.workspacePath, this.embedder);
 		}
-		const result = await spawnProcess(this.binaryPath, ["sync", "--format", "json"], this.workspacePath, spawnOpts);
+		const check = await spawnProcess(this.binaryPath, ["check", "--format", "json"], this.workspacePath, spawnOpts);
+		if (!check.ok) {
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: sanitizeReason(check.stderr || "check-failed"),
+			};
+		}
+		const syncArgs = initialized ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
+		const result = await spawnProcess(this.binaryPath, syncArgs, this.workspacePath, spawnOpts);
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -67,6 +81,9 @@ export class MinSyncClient {
 				workspacePath: this.workspacePath,
 				reason: sanitizeReason(result.stderr || "sync-failed"),
 			};
+		}
+		if (!existsSync(join(this.workspacePath, ".minsync", "cursor.json"))) {
+			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
 		return { ok: true, synced: readSyncedCount(result.stdout), workspacePath: this.workspacePath };
 	}
@@ -84,7 +101,7 @@ export class MinSyncClient {
 }
 
 function sanitizeReason(reason: string): string {
-	return reason.replace(SECRET_PATTERN, "[redacted]");
+	return reason.trim().replace(SECRET_PATTERN, "[redacted]");
 }
 
 function readSyncedCount(stdout: string): number {

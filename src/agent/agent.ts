@@ -131,6 +131,7 @@ export interface AutoRAGRefreshOptions {
 
 export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
 	readonly bm25?: BM25SyncResult;
+	readonly minsync?: MinSyncSyncResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
 }
 
@@ -1126,7 +1127,7 @@ export class AutoRAGAgent {
 				datasources,
 				lastError: undefined,
 			};
-			return { ...(bm25 ? { ...summary, bm25 } : summary), datasources };
+			return { ...(bm25 ? { ...summary, bm25 } : summary), minsync, datasources };
 		} catch (error) {
 			this.refreshState = {
 				...this.refreshState,

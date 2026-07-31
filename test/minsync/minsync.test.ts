@@ -56,17 +56,29 @@ function writeFakeMinSync(queryJson: string): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const args = process.argv.slice(2);
+const config = join(process.cwd(), ".minsync", "config.toml");
+const cursor = join(process.cwd(), ".minsync", "cursor.json");
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, cwd: process.cwd() }) + "\\n");
 
 if (args[0] === "init") {
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
 }
 
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+  process.exit(0);
+}
+
 if (args[0] === "sync") {
+  mkdirSync(dirname(cursor), { recursive: true });
+  writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ files_processed: 1, files_processed_paths: ["files/docs/policy.txt.md"] }));
   process.exit(0);
 }
@@ -115,7 +127,10 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(result).toMatchObject({ synced: 1 });
 		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["init", "--format", "json"], cwd: minSyncCwd() }));
-		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["sync", "--format", "json"], cwd: minSyncCwd() }));
+		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["check", "--format", "json"], cwd: minSyncCwd() }));
+		expect(loggedCalls()).toContainEqual(
+			JSON.stringify({ args: ["sync", "--full", "--format", "json"], cwd: minSyncCwd() }),
+		);
 	});
 
 	it("returns vector results resolved from parsed mirror paths back to virtual paths", async () => {
