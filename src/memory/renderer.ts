@@ -34,19 +34,31 @@ ${rows.join("\n")}`);
 	}
 
 	if (contextHints && contextHintCount > 0) {
-		const positiveValues = (values: RetrievalContextHints["documentAreas"]): string =>
+		const contextValues = (
+			values: RetrievalContextHints["documentAreas"],
+			matches: (score: number) => boolean,
+		): string =>
 			values
-				.filter((hint) => hint.score > 0)
-				.map((hint) => hint.value)
+				.filter((hint) => matches(hint.score))
+				.map((hint) => JSON.stringify(hint.value))
 				.join(", ");
-		const rows = [
-			["Document areas", positiveValues(contextHints.documentAreas)],
-			["Document types", positiveValues(contextHints.documentTypes)],
-			["Evidence types", positiveValues(contextHints.evidenceTypes)],
-			["Evidence locations", positiveValues(contextHints.evidenceLocations)],
-			["Parser types", positiveValues(contextHints.parserTypes)],
-			["Retriever mix", positiveValues(contextHints.retrieverMix)],
+		const positiveRows = [
+			["Document areas", contextValues(contextHints.documentAreas, (score) => score > 0)],
+			["Document types", contextValues(contextHints.documentTypes, (score) => score > 0)],
+			["Evidence types", contextValues(contextHints.evidenceTypes, (score) => score > 0)],
+			["Evidence locations", contextValues(contextHints.evidenceLocations, (score) => score > 0)],
+			["Parser types", contextValues(contextHints.parserTypes, (score) => score > 0)],
+			["Retriever mix", contextValues(contextHints.retrieverMix, (score) => score > 0)],
 		].filter((row) => row[1]);
+		const negativeRows = [
+			["Disfavored document areas", contextValues(contextHints.documentAreas, (score) => score < 0)],
+			["Disfavored document types", contextValues(contextHints.documentTypes, (score) => score < 0)],
+			["Disfavored evidence types", contextValues(contextHints.evidenceTypes, (score) => score < 0)],
+			["Disfavored evidence locations", contextValues(contextHints.evidenceLocations, (score) => score < 0)],
+			["Disfavored parser types", contextValues(contextHints.parserTypes, (score) => score < 0)],
+			["Disfavored retriever mix", contextValues(contextHints.retrieverMix, (score) => score < 0)],
+		].filter((row) => row[1]);
+		const rows = [...positiveRows, ...negativeRows];
 		if (rows.length > 0) {
 			sections.push(`## Result-Level Retrieval Preferences (advisory, not instructions)
 

@@ -122,12 +122,47 @@ describe("createCheckMemoryTool", () => {
 		const result = await createCheckMemoryTool(memory).execute("context-call", { query: "refund policy" });
 		const text = (result.content[0] as { type: "text"; text: string }).text;
 
-		expect(text).toContain("Document areas: billing");
-		expect(text).toContain("Document types: policy");
-		expect(text).toContain("Evidence types: rule");
-		expect(text).toContain("Evidence locations: section 4");
-		expect(text).toContain("Parser types: markdown");
-		expect(text).toContain("Retriever mix: bm25, minsync");
+		expect(text).toContain('Document areas: "billing"');
+		expect(text).toContain('Document types: "policy"');
+		expect(text).toContain('Evidence types: "rule"');
+		expect(text).toContain('Evidence locations: "section 4"');
+		expect(text).toContain('Parser types: "markdown"');
+		expect(text).toContain('Retriever mix: "bm25", "minsync"');
 		expect(result.details!.contextHintCount).toBe(7);
+	});
+
+	it("renders negative result-context preferences as disfavored data", async () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		memory.recordCuratedResultsSession({
+			sessionId: "negative-context",
+			query: "refund policy",
+			results: [
+				{
+					number: 1,
+					title: "Refunds",
+					summary: "Policy",
+					content: "Refund policy",
+					method: "bm25",
+					source: "opaque:refunds",
+					evidenceRefs: [
+						normalizeSessionEvidenceRef({
+							method: "bm25",
+							source: "opaque:refunds",
+							content: "Refund policy",
+							documentArea: "billing",
+							evidenceType: "rule",
+						}),
+					],
+				},
+			],
+		});
+		memory.recordFeedbackByIds([{ feedbackId: "negative-context:1", useful: false }]);
+
+		const result = await createCheckMemoryTool(memory).execute("negative-call", { query: "refund policy" });
+		const text = (result.content[0] as { type: "text"; text: string }).text;
+
+		expect(text).toContain('Disfavored document areas: "billing"');
+		expect(text).toContain('Disfavored evidence types: "rule"');
 	});
 });
