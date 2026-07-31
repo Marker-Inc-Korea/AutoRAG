@@ -1,4 +1,3 @@
-import hashlib
 import pathlib
 from collections.abc import Iterable
 from typing import Any
@@ -8,61 +7,49 @@ import pandas as pd
 from datasets import load_dataset
 
 
-DATASET_ID = "PrimeQA/clapnq"
-TRAIN_FILE = "clapnq_train_answerable.jsonl"
-TEST_FILE = "clapnq_dev_answerable.jsonl"
+PASSAGES_URL = (
+	"https://huggingface.co/datasets/PrimeQA/clapnq_passages/resolve/main/passages.tsv"
+)
+RETRIEVAL_URL = "https://raw.githubusercontent.com/primeqa/clapnq/main/retrieval"
+TRAIN_QUESTIONS_URL = f"{RETRIEVAL_URL}/train/question_train_answerable.tsv"
+TEST_QUESTIONS_URL = f"{RETRIEVAL_URL}/dev/question_dev_answerable.tsv"
 
 
-def _passage_id(title: str, text: str) -> str:
-	value = f"{title}\n{text}".encode("utf-8")
-	return f"clapnq-{hashlib.sha256(value).hexdigest()[:16]}"
+def _load_tsv(url: str):
+	return load_dataset("csv", data_files={"split": url}, delimiter="\t", split="split")
 
 
 def _records_to_dataframes(
-	records: Iterable[dict[str, Any]],
+	passages: Iterable[dict[str, Any]], questions: Iterable[dict[str, Any]]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-	corpus: dict[str, dict[str, Any]] = {}
-	qa_rows: list[dict[str, Any]] = []
-
-	for record in records:
-		passage_ids = []
-		for passage in record["passages"]:
-			title = passage.get("title", "")
-			text = passage["text"].strip()
-			if not text:
-				continue
-			doc_id = _passage_id(title, text)
-			corpus.setdefault(
-				doc_id,
-				{
-					"doc_id": doc_id,
-					"contents": text,
-					"metadata": {"title": title},
-				},
-			)
-			passage_ids.append(doc_id)
-
+	corpus = pd.DataFrame(
+		{
+			"doc_id": passage["id"],
+			"contents": passage["text"],
+			"metadata": {"title": passage.get("title", "")},
+		}
+		for passage in passages
+	)
+	corpus_ids = set(corpus["doc_id"])
+	qa_rows = []
+	for question in questions:
+		doc_id = question.get("doc-id-list")
 		answers = [
-			output["answer"].strip()
-			for output in record.get("output", [])
-			if output.get("answer", "").strip()
+			answer.strip() for answer in (question.get("answers") or "").split("::")
 		]
-		answers = list(dict.fromkeys(answers))
-		if passage_ids and answers:
-			qa_rows.append(
-				{
-					"qid": str(record["id"]),
-					"query": record["input"].strip(),
-					"retrieval_gt": [passage_ids],
-					"generation_gt": answers,
-				}
-			)
+		answers = list(dict.fromkeys(answer for answer in answers if answer))
+		if not doc_id or doc_id not in corpus_ids or not answers:
+			continue
+		qa_rows.append(
+			{
+				"qid": str(question["id"]),
+				"query": question["question"].strip(),
+				"retrieval_gt": [[doc_id]],
+				"generation_gt": answers,
+			}
+		)
 
-	return pd.DataFrame(corpus.values()), pd.DataFrame(qa_rows)
-
-
-def _load_split(filename: str):
-	return load_dataset(DATASET_ID, data_files={"split": filename}, split="split")
+	return corpus, pd.DataFrame(qa_rows)
 
 
 @click.command()
@@ -73,7 +60,7 @@ def _load_split(filename: str):
 	help="Path to save sample ClapNQ dataset.",
 )
 def load_clapnq_dataset(save_path: pathlib.Path):
-	"""Download ClapNQ and write AutoRAG-compatible parquet files."""
+	"""Download the official ClapNQ retrieval corpus and QA splits."""
 	paths = {
 		"corpus": save_path / "corpus.parquet",
 		"train": save_path / "qa_train.parquet",
@@ -83,9 +70,11 @@ def load_clapnq_dataset(save_path: pathlib.Path):
 		raised = next(path for path in paths.values() if path.exists())
 		raise ValueError(f"{raised.name} already exists")
 
-	train_corpus, train_qa = _records_to_dataframes(_load_split(TRAIN_FILE))
-	test_corpus, test_qa = _records_to_dataframes(_load_split(TEST_FILE))
-	corpus = pd.concat([train_corpus, test_corpus]).drop_duplicates("doc_id")
+	passages = _load_tsv(PASSAGES_URL)
+	train_questions = _load_tsv(TRAIN_QUESTIONS_URL)
+	test_questions = _load_tsv(TEST_QUESTIONS_URL)
+	corpus, train_qa = _records_to_dataframes(passages, train_questions)
+	_, test_qa = _records_to_dataframes(passages, test_questions)
 
 	save_path.mkdir(parents=True, exist_ok=True)
 	corpus.to_parquet(paths["corpus"], index=False)

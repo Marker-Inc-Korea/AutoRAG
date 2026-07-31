@@ -23,10 +23,11 @@ If you run the script without the `--save_path` argument, the dataset will be sa
 python ./sample_dataset/triviaqa/load_triviaqa_dataset.py
 ```
 
-ClapNQ is downloaded from the public `PrimeQA/clapnq` dataset. Its answerable
-train and development splits are written to `qa_train.parquet` and
-`qa_test.parquet`; unanswerable examples are omitted because they do not have
-a generation ground truth.
+ClapNQ's official retrieval corpus and answerable train/development question
+files are downloaded from the `PrimeQA/clapnq` repository. The corpus includes
+the complete retrieval collection rather than only gold passages. Questions
+without a gold passage are omitted because they cannot produce AutoRAG
+`retrieval_gt` entries.
 
 To create the ClapNQ sample directly:
 

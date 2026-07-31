@@ -1,51 +1,51 @@
 from sample_dataset.clapnq.load_clapnq_dataset import _records_to_dataframes
 
 
-def test_records_to_dataframes_deduplicates_passages_and_preserves_answers():
-	records = [
+def test_records_to_dataframes_uses_official_passage_ids_and_answers():
+	passages = [
+		{"id": "doc-1", "text": "Evidence.", "title": "Title"},
+		{"id": "doc-2", "text": "Negative context.", "title": "Other"},
+	]
+	questions = [
 		{
 			"id": 1,
-			"input": "What is the answer?",
-			"passages": [{"title": "Title", "text": " Evidence. "}],
-			"output": [{"answer": "Answer"}, {"answer": "Answer"}],
+			"question": "What is the answer?",
+			"doc-id-list": "doc-1",
+			"answers": "Answer::Answer",
 		},
 		{
 			"id": 2,
-			"input": "Another question",
-			"passages": [{"title": "Title", "text": "Evidence."}],
-			"output": [{"answer": "Second answer"}],
+			"question": "Another question",
+			"doc-id-list": "doc-2",
+			"answers": "Second answer",
 		},
 	]
 
-	corpus, qa = _records_to_dataframes(records)
+	corpus, qa = _records_to_dataframes(passages, questions)
 
-	assert len(corpus) == 1
-	assert corpus.iloc[0]["contents"] == "Evidence."
-	assert qa["retrieval_gt"].tolist() == [
-		[[corpus.iloc[0]["doc_id"]]],
-		[[corpus.iloc[0]["doc_id"]]],
-	]
+	assert corpus["doc_id"].tolist() == ["doc-1", "doc-2"]
+	assert qa["retrieval_gt"].tolist() == [[["doc-1"]], [["doc-2"]]]
 	assert qa["generation_gt"].tolist() == [["Answer"], ["Second answer"]]
 
 
-def test_records_to_dataframes_ignores_unanswerable_and_empty_passages():
-	records = [
+def test_records_to_dataframes_ignores_questions_without_gold_passages():
+	passages = [{"id": "doc-1", "text": "Context", "title": "Title"}]
+	questions = [
 		{
-			"id": "unanswerable",
-			"input": "Question",
-			"passages": [{"title": "Title", "text": "Context"}],
-			"output": [{"answer": ""}],
+			"id": "missing-doc",
+			"question": "Question",
+			"doc-id-list": None,
+			"answers": "Answer",
 		},
 		{
-			"id": "empty",
-			"input": "Question",
-			"passages": [{"title": "Title", "text": "  "}],
-			"output": [{"answer": "Answer"}],
+			"id": "unknown-doc",
+			"question": "Question",
+			"doc-id-list": "doc-2",
+			"answers": "Answer",
 		},
 	]
 
-	corpus, qa = _records_to_dataframes(records)
+	corpus, qa = _records_to_dataframes(passages, questions)
 
 	assert len(corpus) == 1
-	assert corpus.iloc[0]["contents"] == "Context"
 	assert qa.empty
