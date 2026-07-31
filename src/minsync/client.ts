@@ -11,7 +11,6 @@ export interface MinSyncClientOptions {
 }
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const SECRET_PATTERN = /sk-[A-Za-z0-9_-]+/g;
 
 export class MinSyncClient {
 	private readonly binaryPath: string;
@@ -57,7 +56,7 @@ export class MinSyncClient {
 					ok: false,
 					synced: 0,
 					workspacePath: this.workspacePath,
-					reason: sanitizeReason(init.stderr || "init-failed"),
+					reason: "init-failed",
 				};
 			}
 		}
@@ -70,7 +69,7 @@ export class MinSyncClient {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason: sanitizeReason(check.stderr || "check-failed"),
+				reason: "check-failed",
 			};
 		}
 		const checkFailure = readCheckFailure(check.stdout);
@@ -84,7 +83,7 @@ export class MinSyncClient {
 				ok: false,
 				synced: 0,
 				workspacePath: this.workspacePath,
-				reason: sanitizeReason(result.stderr || "sync-failed"),
+				reason: "sync-failed",
 			};
 		}
 		if (!existsSync(cursorPath)) {
@@ -103,10 +102,6 @@ export class MinSyncClient {
 		if (!result.ok) return [];
 		return parseQueryHits(result.stdout);
 	}
-}
-
-function sanitizeReason(reason: string): string {
-	return reason.trim().replace(SECRET_PATTERN, "[redacted]");
 }
 
 function readSyncedCount(stdout: string): number {

@@ -29,6 +29,7 @@ afterEach(() => {
 function writeFaithfulMinSync(
 	options: {
 		readonly checkFails?: boolean;
+		readonly checkFailureReason?: string;
 		readonly checkUnhealthyJson?: boolean;
 		readonly checkUnhealthyOnce?: boolean;
 		readonly fullSyncCreatesCursor?: boolean;
@@ -61,7 +62,7 @@ if (args[0] === "init") {
 
 if (args[0] === "check") {
   if (${options.checkFails === true ? "true" : "false"}) {
-    console.error("embedder unavailable");
+    console.error(${JSON.stringify(options.checkFailureReason ?? "embedder unavailable")});
     process.exit(1);
   }
   if (${options.checkUnhealthyOnce === true ? "true" : "false"} && !existsSync(unhealthyOnceMarker)) {
@@ -205,12 +206,14 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 	});
 
 	it("surfaces embedder preflight failure without claiming readiness", async () => {
-		writeFaithfulMinSync({ checkFails: true });
+		const privateFailure = `cannot open ${join(minsyncWorkspace, ".minsync", "config.toml")}`;
+		writeFaithfulMinSync({ checkFails: true, checkFailureReason: privateFailure });
 		const agent = createAgent();
 
 		const refresh = await agent.refresh(true);
 
-		expect(refresh.minsync).toMatchObject({ ok: false, synced: 0, reason: "embedder unavailable" });
+		expect(refresh.minsync).toMatchObject({ ok: false, synced: 0, reason: "check-failed" });
+		expect(JSON.stringify(refresh.minsync)).not.toContain(root);
 		expect(loggedCommands()).toEqual([
 			["init", "--format", "json"],
 			["check", "--format", "json"],

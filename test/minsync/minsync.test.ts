@@ -404,8 +404,8 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 		}
 	});
 
-	it("strips sk- patterns from reason strings", async () => {
-		// Fake binary that emits a secret-looking string on stderr for init
+	it("projects init stderr to a fixed path-opaque reason", async () => {
+		// Fake binary that emits a secret-looking string on stderr for init.
 		writeFileSync(
 			minsyncBinary,
 			`#!/usr/bin/env node
@@ -428,7 +428,7 @@ process.exit(2);
 
 		expect(result.ok).toBe(false);
 		expect(result.reason).not.toContain("sk-abc123def456");
-		expect(result.reason).toContain("[redacted]");
+		expect(result.reason).toBe("init-failed");
 	});
 
 	it("rewrites allowlisted embedder fields into .minsync/config.toml after init", async () => {
