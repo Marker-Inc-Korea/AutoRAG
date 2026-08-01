@@ -129,8 +129,15 @@ export interface AutoRAGRefreshOptions {
 	readonly methods?: readonly RefreshMethod[];
 }
 
+export interface AutoRAGMinSyncRefreshResult {
+	readonly ok: boolean;
+	readonly synced: number;
+	readonly reason?: string;
+}
+
 export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
 	readonly bm25?: BM25SyncResult;
+	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
 }
 
@@ -1138,7 +1145,14 @@ export class AutoRAGAgent {
 				datasources,
 				lastError: undefined,
 			};
-			return { ...(bm25 ? { ...summary, bm25 } : summary), datasources };
+			const publicMinsync = minsync
+				? {
+						ok: minsync.ok,
+						synced: minsync.synced,
+						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+					}
+				: undefined;
+			return { ...(bm25 ? { ...summary, bm25 } : summary), minsync: publicMinsync, datasources };
 		} catch (error) {
 			this.refreshState = {
 				...this.refreshState,
