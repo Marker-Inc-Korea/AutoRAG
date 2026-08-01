@@ -120,7 +120,7 @@ describe("ResultMerger", () => {
 		expect(repeated?.score).toBeLessThanOrEqual(1);
 	});
 
-	it("keeps hit-level behavior unchanged when deduplication is disabled", () => {
+	it("always merges exact sources when deduplication is disabled", () => {
 		const merger = new ResultMerger();
 		const results = new Map([
 			["method1", [makeResult("a", "opaque:same", 0.9), makeResult("b", "opaque:same", 0.8)]],
@@ -128,8 +128,15 @@ describe("ResultMerger", () => {
 
 		const merged = merger.merge(results, { topK: 10, dedup: false });
 
-		expect(merged).toHaveLength(2);
-		expect(merged.every((result) => result.metadata.aggregateHitCount === undefined)).toBe(true);
+		expect(merged).toHaveLength(1);
+		expect(merged[0]).toMatchObject({
+			id: "a",
+			source: "opaque:same",
+			metadata: {
+				aggregateHitCount: 2,
+				aggregateMethods: ["method1"],
+			},
+		});
 	});
 
 	it("enforces topK limit", () => {

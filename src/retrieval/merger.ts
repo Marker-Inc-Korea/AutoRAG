@@ -9,6 +9,7 @@ import type {
 
 export interface MergeOptions {
 	topK: number;
+	/** Retained for API compatibility; exact-source aggregation is always enabled. */
 	dedup: boolean;
 }
 
@@ -23,7 +24,7 @@ interface MethodResult {
 
 export class ResultMerger {
 	merge(results: Map<string, RetrievalResult[]>, options: MergeOptions): RetrievalResult[] {
-		const { topK, dedup } = options;
+		const { topK } = options;
 		if (results.size === 0) return [];
 
 		// Normalize scores per method using min-max normalization
@@ -52,14 +53,7 @@ export class ResultMerger {
 			allResults.push(...methodResults.map((result) => ({ method, result })));
 		}
 
-		if (dedup) {
-			return aggregateBySource(allResults).slice(0, topK);
-		}
-
-		return allResults
-			.map(({ result }) => result)
-			.sort((a, b) => b.score - a.score)
-			.slice(0, topK);
+		return aggregateBySource(allResults).slice(0, topK);
 	}
 }
 
