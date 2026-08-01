@@ -597,6 +597,26 @@ describe("RetrievalMemory", () => {
 		expect(hints.retrieverMix).toMatchObject([{ value: "bm25", score: 1, confidence: 0.2 }]);
 	});
 
+	it("uses persisted structured feedback without matching current query text", () => {
+		const memory = new RetrievalMemory({ storagePath: memoryPath });
+		memory.load();
+		recordSession(memory);
+		memory.recordFeedbackByIds([{ feedbackId: "s1:1", useful: true }]);
+		memory.save();
+
+		const reloaded = new RetrievalMemory({ storagePath: memoryPath });
+		reloaded.load();
+		const methodHints = reloaded.getMethodHints("an unrelated future question");
+		const contextHints = reloaded.getContextHints("an unrelated future question");
+
+		expect(methodHints[0]).toMatchObject({ method: "posix", score: 1 });
+		expect(contextHints.documentAreas).toMatchObject([{ value: "language-guides", score: 1 }]);
+		expect(contextHints.retrieverMix).toMatchObject([
+			{ value: "bm25", score: 1 },
+			{ value: "minsync", score: 1 },
+		]);
+	});
+
 	it("does not duplicate repeated feedback for the same result and sentiment", () => {
 		const memory = new RetrievalMemory({ storagePath: memoryPath });
 		memory.load();

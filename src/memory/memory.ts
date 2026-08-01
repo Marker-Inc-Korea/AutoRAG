@@ -414,12 +414,6 @@ function resultHash(query: string, title: string, summary: string, evidenceIds: 
 	return hashText([query, title, summary, ...evidenceIds].join("\0"));
 }
 
-function queryMatches(entryQuery: string, query: string): boolean {
-	const a = entryQuery.toLowerCase();
-	const b = query.toLowerCase();
-	return a === b || a.includes(b) || b.includes(a);
-}
-
 type ContextEventScore = {
 	value: string;
 	score: number;
@@ -688,10 +682,9 @@ export class RetrievalMemory {
 		});
 	}
 
-	getMethodHints(query: string): MethodHint[] {
+	getMethodHints(_query: string): MethodHint[] {
 		const eventScores = new Map<string, { method: string; score: number; signals: number; cap: number }>();
 		for (const signal of this.data.feedbackSignals) {
-			if (!queryMatches(signal.query, query)) continue;
 			const method = this.methodForSignal(signal);
 			if (!method) continue;
 			const key = `${signal.eventId}\0${method}`;
@@ -714,12 +707,12 @@ export class RetrievalMemory {
 				method,
 				score: stats.score,
 				confidence: Math.min(1, stats.signals / 5),
-				reason: `${stats.signals} feedback signal(s) matched this query; advisory only, not a method disable rule`,
+				reason: `${stats.signals} recorded feedback signal(s); advisory only, not a method disable rule`,
 			}))
 			.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.method.localeCompare(b.method));
 	}
 
-	getContextHints(query: string): RetrievalContextHints {
+	getContextHints(_query: string): RetrievalContextHints {
 		const documentAreas = new Map<string, ContextEventScore>();
 		const documentTypes = new Map<string, ContextEventScore>();
 		const evidenceTypes = new Map<string, ContextEventScore>();
@@ -742,7 +735,7 @@ export class RetrievalMemory {
 			events.set(key, current);
 		};
 		for (const signal of this.data.feedbackSignals) {
-			if (!queryMatches(signal.query, query) || signal.target.type !== "evidence_chunk") continue;
+			if (signal.target.type !== "evidence_chunk") continue;
 			const stableEvidenceId = signal.target.stableEvidenceId;
 			const evidence = this.data.evidenceChunks.find((chunk) => chunk.stableEvidenceId === stableEvidenceId);
 			if (!evidence) continue;
