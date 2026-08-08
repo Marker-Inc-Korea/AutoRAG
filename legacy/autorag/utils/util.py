@@ -661,18 +661,13 @@ def pop_params(func: Callable, kwargs: Dict) -> Dict:
 	:return: The popped parameters.
 	"""
 	ignore_params = ["self", "cls"]
-	signature = inspect.signature(func)
-	target_params = list(signature.parameters.keys())
+	target_params = list(inspect.signature(func).parameters.keys())
 	target_params = list(filter(lambda x: x not in ignore_params, target_params))
-	accepts_extra_params = any(
-		param.kind == inspect.Parameter.VAR_KEYWORD
-		for param in signature.parameters.values()
-	)
 
 	init_params = {}
 	kwargs_keys = list(kwargs.keys())
 	for key in kwargs_keys:
-		if accepts_extra_params or key in target_params:
+		if key in target_params:
 			init_params[key] = kwargs.pop(key)
 	return init_params
 

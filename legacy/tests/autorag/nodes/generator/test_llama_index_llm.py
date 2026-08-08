@@ -23,15 +23,15 @@ from tests.mock import MockLLM
 logger = logging.getLogger("AutoRAG")
 
 
-class KwargsCapturingLLM:
-    received_kwargs = {}
+class PydanticCapturingLLM(BaseModel):
+    model: str
+    is_chat_model: bool
+    api_base: str
+    api_key: str
 
     @classmethod
     def class_name(cls):
         return "OpenAILike"
-
-    def __init__(self, model, **kwargs):
-        type(self).received_kwargs = {"model": model, **kwargs}
 
 
 @pytest.fixture
@@ -40,26 +40,24 @@ def llama_index_llm_instance():
     return LlamaIndexLLM(project_dir=".", llm="mock", temperature=0.5, top_p=0.9)
 
 
-def test_llama_index_llm_forwards_var_keyword_params():
-    generator_models["kwargs_capturing"] = KwargsCapturingLLM
+def test_llama_index_llm_forwards_pydantic_model_fields():
+    generator_models["pydantic_capturing"] = PydanticCapturingLLM
     try:
-        LlamaIndexLLM(
+        instance = LlamaIndexLLM(
             project_dir=".",
-            llm="kwargs_capturing",
+            llm="pydantic_capturing",
             model="qwen-plus",
             is_chat_model=True,
             api_base="https://example.test/v1",
             api_key="secret",
         )
     finally:
-        generator_models.pop("kwargs_capturing")
+        generator_models.pop("pydantic_capturing")
 
-    assert KwargsCapturingLLM.received_kwargs == {
-        "model": "qwen-plus",
-        "is_chat_model": True,
-        "api_base": "https://example.test/v1",
-        "api_key": "secret",
-    }
+    assert instance.llm_instance.model == "qwen-plus"
+    assert instance.llm_instance.is_chat_model is True
+    assert instance.llm_instance.api_base == "https://example.test/v1"
+    assert instance.llm_instance.api_key == "secret"
 
 
 def test_llama_index_llm(llama_index_llm_instance):
