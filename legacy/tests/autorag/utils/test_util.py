@@ -659,10 +659,14 @@ def test_pop_params():
         pass
 
     kwargs = {"param1": "value1", "param2": "value2", "extra_param": "extra_value"}
-    expected = {"param1": "value1", "param2": "value2"}
+    expected = {
+        "param1": "value1",
+        "param2": "value2",
+        "extra_param": "extra_value",
+    }
     result = pop_params(func_mixed, kwargs)
     assert result == expected
-    assert kwargs == {"extra_param": "extra_value"}
+    assert kwargs == {}
 
 
 def test_apply_recursive():
