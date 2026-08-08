@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { type Dir, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { opendir, readFile, stat } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
@@ -141,6 +141,8 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			previousEntry.parserName === parser.name &&
 			existsSync(outputPath);
 
+		let contentSha256 = unchanged ? previousEntry?.contentSha256 : undefined;
+
 		if (!unchanged) {
 			let parsed: ParseOutput;
 			try {
@@ -163,9 +165,18 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				if (sinceCheckpoint >= MIRROR_CHECKPOINT_EVERY) checkpoint();
 				continue;
 			}
-			writeAtomic(outputPath, normalizeMarkdown(parsed.markdown));
+			const markdown = normalizeMarkdown(parsed.markdown);
+			// The digest is taken from the exact string handed to writeAtomic, so it always describes
+			// the bytes now on disk without re-reading them.
+			contentSha256 = sha256Utf8(markdown);
+			writeAtomic(outputPath, markdown);
 			written += 1;
 			sinceCheckpoint += 1;
+		} else if (contentSha256 === undefined) {
+			// One-time backfill for entries written before contentSha256 existed. Costs one read per
+			// legacy entry on the first sync only; afterwards the digest is carried forward and this
+			// branch is never taken again for that entry.
+			contentSha256 = await backfillContentSha256(outputPath);
 		}
 
 		nextEntries[entry.virtualPath] = {
@@ -176,6 +187,7 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 			sourceMtimeNs: entry.mtimeNs,
 			sourceSizeBytes: entry.sizeBytes,
 			updatedAt: unchanged ? (previousEntry?.updatedAt ?? new Date().toISOString()) : new Date().toISOString(),
+			...(contentSha256 === undefined ? {} : { contentSha256 }),
 		};
 		handledPrevious.add(entry.virtualPath);
 
@@ -298,6 +310,25 @@ async function collectFiles(
 			sizeBytes: Number(fileStat.size),
 			mtimeNs: Number(fileStat.mtimeNs),
 		});
+	}
+}
+
+/** SHA-256 of a UTF-8 string, hex encoded. Matches the on-disk bytes written by `writeAtomic`. */
+function sha256Utf8(content: string): string {
+	return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+/**
+ * Read an existing mirror once to recover its digest.
+ *
+ * Returns `undefined` when the mirror cannot be read; the entry then keeps an absent digest and is
+ * retried on the next sync rather than poisoning the index with a wrong value.
+ */
+async function backfillContentSha256(outputPath: string): Promise<string | undefined> {
+	try {
+		return sha256Utf8(await readFile(outputPath, "utf8"));
+	} catch {
+		return undefined;
 	}
 }
 
