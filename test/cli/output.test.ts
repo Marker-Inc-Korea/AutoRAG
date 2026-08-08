@@ -160,6 +160,47 @@ describe("renderSearch", () => {
 	});
 });
 
+describe("renderRefresh busy outcome", () => {
+	/** A refresh that was refused because another process held the lock: no work was done. */
+	function busyResult() {
+		return {
+			scanned: 0,
+			written: 0,
+			deleted: 0,
+			skipped: 0,
+			indexPath: "/tmp/does-not-matter/.autorag/parsed",
+			diagnostics: [],
+			datasources: [],
+			outcome: "busy" as const,
+		};
+	}
+
+	it("human output says busy instead of ok", () => {
+		const out = renderRefresh(busyResult(), {});
+		expect(out).toContain("refresh: busy");
+		expect(out).not.toContain("refresh: ok");
+		// Zero counters must not be presented as a successful no-op run.
+		expect(out).not.toContain("scanned=0");
+	});
+
+	it("json output carries the busy outcome", () => {
+		const parsed = JSON.parse(renderRefresh(busyResult(), { json: true })) as Record<string, unknown>;
+		expect(parsed.outcome).toBe("busy");
+	});
+	it("json output reports ok:false for a busy outcome", () => {
+		const parsed = JSON.parse(renderRefresh(busyResult(), { json: true })) as Record<string, unknown>;
+		expect(parsed.ok).toBe(false);
+		expect(parsed.outcome).toBe("busy");
+	});
+
+	it("a completed refresh carries no outcome field and still reads as ok", () => {
+		const out = renderRefresh(cannedRefreshResult(), {});
+		expect(out).toContain("refresh: ok");
+		const parsed = JSON.parse(renderRefresh(cannedRefreshResult(), { json: true })) as Record<string, unknown>;
+		expect(parsed.outcome).toBeUndefined();
+	});
+});
+
 describe("renderRefresh path opacity", () => {
 	it("human output contains no indexPath, no fake absolute path, and no .autorag/bm25", () => {
 		const out = renderRefresh(cannedRefreshResult(), {});

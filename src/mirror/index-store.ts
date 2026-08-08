@@ -11,6 +11,15 @@ export interface ParsedMirrorEntry {
 	readonly sourceMtimeNs: number;
 	readonly sourceSizeBytes: number;
 	readonly updatedAt: string;
+	/**
+	 * SHA-256 of the normalized parsed markdown written to `outputPath`.
+	 *
+	 * Optional so indexes written before this field existed stay loadable; those entries are
+	 * backfilled by a single mirror read on the next sync. Downstream indexes key their rebuild
+	 * decision on this digest rather than on `updatedAt` or mtime, because an mtime restore or an
+	 * equal-size edit leaves those unchanged while the content differs.
+	 */
+	readonly contentSha256?: string;
 }
 
 export interface ParsedMirrorIndex {
@@ -53,7 +62,8 @@ function isParsedMirrorEntry(value: unknown): value is ParsedMirrorEntry {
 		typeof value.parserName === "string" &&
 		typeof value.sourceMtimeNs === "number" &&
 		typeof value.sourceSizeBytes === "number" &&
-		typeof value.updatedAt === "string"
+		typeof value.updatedAt === "string" &&
+		(value.contentSha256 === undefined || typeof value.contentSha256 === "string")
 	);
 }
 
