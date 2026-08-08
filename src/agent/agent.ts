@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { watch as fsWatch, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
@@ -9,6 +9,7 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import type { FileLockHandle } from "../filesystem/file-lock.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -32,6 +33,7 @@ import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
 import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
+import { acquireRefreshLock } from "../mirror/refresh-lock.ts";
 import {
 	detectMirrorStaleness,
 	type ParsedMirrorDiagnostic,
@@ -41,7 +43,12 @@ import {
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
+import {
+	BM25Method,
+	type BM25MethodOptions,
+	type BM25SyncResult,
+	INDEX_SEMANTICS_VERSION,
+} from "../retrieval/methods/bm25.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import {
@@ -127,6 +134,12 @@ export type RefreshMethod = "parsed" | "bm25" | "minsync" | "datasources" | "jik
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/**
+	 * Externally held refresh lock to run under. `index rebuild` passes its own handle so the
+	 * deletion and the re-indexing stay inside one transaction. The caller keeps ownership:
+	 * refresh() never releases this lock and asserts it is still held before running.
+	 */
+	readonly lock?: FileLockHandle;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
@@ -139,6 +152,12 @@ export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
 	readonly bm25?: BM25SyncResult;
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
+	/**
+	 * `"busy"` when a refresh with different parameters was already in flight and this call
+	 * therefore did no work. Optional so existing result producers stay source-compatible; an
+	 * absent value means the refresh ran to completion.
+	 */
+	readonly outcome?: "completed" | "busy";
 }
 
 export interface AutoRAGRefreshComponentStatus {
@@ -258,6 +277,11 @@ export class AutoRAGAgent {
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
+	/**
+	 * The in-flight refresh transaction, if any. Holds the lock key so a concurrent caller can tell
+	 * "same work, join it" apart from "different work, refuse".
+	 */
+	private refreshInFlight: { readonly key: string; readonly promise: Promise<AutoRAGRefreshResult> } | undefined;
 	private refreshState: RefreshState = {
 		inFlight: false,
 		lastOutcome: "never",
@@ -1091,7 +1115,87 @@ export class AutoRAGAgent {
 		);
 	}
 
+	/**
+	 * Rebuild the local indexes.
+	 *
+	 * The whole pipeline is one transaction. Two refreshes that interleave can otherwise commit a
+	 * BM25 artifact and its fingerprint in different orders, leaving a fingerprint that describes a
+	 * newer mirror than the artifact it points at; the next refresh would then match that
+	 * fingerprint and silently keep the stale artifact. Guarding only the parsed stage is not enough
+	 * because the four downstream stages would still run once per caller.
+	 *
+	 * The guard has two layers because the collisions differ. Within one process, concurrent calls
+	 * with the same parameters join the in-flight run and share its result, and calls with different
+	 * parameters return `outcome: "busy"`. Across processes there is no promise to join, so a
+	 * refresh already running elsewhere makes this call `busy` regardless of parameters. The CLI
+	 * builds a fresh agent per command, so the cross-process layer is the one that matters in
+	 * practice: `autorag watch` in one terminal and `autorag refresh` in another are two processes
+	 * sharing one index directory. `index rebuild` passes an externally held lock via `opts.lock` so
+	 * the deletion and the re-indexing stay one transaction; refresh() then never releases it.
+	 */
 	async refresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
+		const key = this.refreshLockKey(force, opts);
+		const inFlight = this.refreshInFlight;
+		if (inFlight) {
+			// Same parameters: join the running transaction rather than duplicating it.
+			if (inFlight.key === key) return inFlight.promise;
+			return this.busyRefreshResult();
+		}
+
+		const externalLock = opts?.lock;
+		const lock = externalLock ?? acquireRefreshLock(this.workspaceProjectRoot);
+		if (!lock) return this.busyRefreshResult();
+		if (externalLock !== undefined) externalLock.assertOwned();
+
+		const promise = this.runRefresh(force, opts).finally(() => {
+			// Both layers are cleared in `finally` so a rejected refresh cannot wedge either one.
+			// An external lock is owned and released by its caller (index rebuild), never here.
+			if (externalLock === undefined) lock.release();
+			if (this.refreshInFlight?.key === key) this.refreshInFlight = undefined;
+		});
+		this.refreshInFlight = { key, promise };
+		return promise;
+	}
+
+	/**
+	 * Identity of a refresh transaction.
+	 *
+	 * Two calls may share a run only when they would perform the same work. Search paths are sorted
+	 * so ordering does not create a spurious mismatch, and the index semantics version is included
+	 * so a semantics bump can never be absorbed into a run started under the old semantics.
+	 */
+	private refreshLockKey(force: boolean, opts?: AutoRAGRefreshOptions): string {
+		const material = JSON.stringify({
+			root: this.workspaceProjectRoot,
+			searchPaths: [...this.searchPaths].sort(),
+			force,
+			methods: opts?.methods ? [...opts.methods].sort() : null,
+			parserOptions: this.parserOptions ?? null,
+			semantics: INDEX_SEMANTICS_VERSION,
+		});
+		return createHash("sha256").update(material, "utf8").digest("hex");
+	}
+
+	/**
+	 * Result for a call rejected because a different refresh holds the transaction.
+	 *
+	 * Every downstream stage is absent rather than zero-valued, so a caller cannot mistake "did not
+	 * run" for "ran and found nothing". The counters are zero because this call performed no scan.
+	 */
+	private busyRefreshResult(): AutoRAGRefreshResult {
+		return {
+			scanned: 0,
+			written: 0,
+			deleted: 0,
+			skipped: 0,
+			indexPath: join(this.workspaceProjectRoot, PARSED_MIRROR_SUBDIR),
+			diagnostics: [],
+			datasources: [],
+			outcome: "busy",
+		};
+	}
+
+	private async runRefresh(force: boolean, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
@@ -1106,7 +1210,7 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
-			const bm25 = wants("bm25") ? await this.syncBM25() : undefined;
+			const bm25 = wants("bm25") ? await this.syncBM25(force) : undefined;
 			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
 			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
@@ -1140,7 +1244,12 @@ export class AutoRAGAgent {
 						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
 					}
 				: undefined;
-			return { ...(bm25 ? { ...summary, bm25 } : summary), minsync: publicMinsync, datasources };
+			return {
+				...(bm25 ? { ...summary, bm25 } : summary),
+				minsync: publicMinsync,
+				datasources,
+				outcome: "completed",
+			};
 		} catch (error) {
 			this.refreshState = {
 				...this.refreshState,
@@ -1310,8 +1419,9 @@ export class AutoRAGAgent {
 		};
 	}
 
-	async syncBM25(): Promise<BM25SyncResult | undefined> {
-		return this.bm25Method?.sync();
+	/** `force` bypasses the fingerprint skip and rebuilds the lexical index unconditionally. */
+	async syncBM25(force = false): Promise<BM25SyncResult | undefined> {
+		return this.bm25Method?.sync({ force });
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
