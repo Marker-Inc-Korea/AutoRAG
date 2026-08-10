@@ -55,7 +55,12 @@ class LlamaIndexLLM(BaseGenerator):
 						"`model` or `model_name` parameter must be provided for using huggingfacellm."
 					)
 			kwargs["tokenizer_name"] = kwargs["model_name"]
-		self.llm_instance: BaseLLM = llm_class(**pop_params(llm_class.__init__, kwargs))
+		llm_params = pop_params(llm_class.__init__, kwargs)
+		model_fields = getattr(llm_class, "model_fields", {})
+		for key in list(kwargs.keys()):
+			if key in model_fields:
+				llm_params[key] = kwargs.pop(key)
+		self.llm_instance: BaseLLM = llm_class(**llm_params)
 
 	def __del__(self):
 		super().__del__()

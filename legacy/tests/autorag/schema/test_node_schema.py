@@ -1,3 +1,5 @@
+import pytest
+
 from autorag.nodes.hybridretrieval import HybridRRF, HybridCC
 from autorag.nodes.lexicalretrieval.run import run_lexical_retrieval_node
 from autorag.schema import Node
@@ -77,6 +79,31 @@ def test_from_dict():
     assert len(node.modules) == 2
     assert node.modules[0].module_param == {}
     assert node.modules[1].module_param == {"key2": "value2"}
+
+
+def test_hybrid_retrieval_rejects_top_k_list():
+    node_dict = {
+        "node_type": "hybrid_retrieval",
+        "strategy": {"metrics": ["retrieval_f1"]},
+        "top_k": [3, 5],
+        "modules": [{"module_type": "hybrid_rrf"}],
+    }
+
+    with pytest.raises(ValueError, match="hybrid_retrieval top_k must be an integer"):
+        Node.from_dict(node_dict)
+
+
+def test_hybrid_retrieval_accepts_integer_top_k():
+    node = Node.from_dict(
+        {
+            "node_type": "hybrid_retrieval",
+            "strategy": {"metrics": ["retrieval_f1"]},
+            "top_k": 5,
+            "modules": [{"module_type": "hybrid_rrf"}],
+        }
+    )
+
+    assert node.node_params["top_k"] == 5
 
 
 def test_find_embedding_models():

@@ -151,6 +151,9 @@ class Evaluator:
 		)
 		yaml_dict = load_yaml_config(yaml_path)
 		vectordb = yaml_dict.get("vectordb", [])
+		for vectordb_config in vectordb:
+			if "path" in vectordb_config:
+				vectordb_config["path"] = os.path.abspath(vectordb_config["path"])
 
 		vectordb_config_path = os.path.join(
 			self.project_dir, "resources", "vectordb.yaml"
