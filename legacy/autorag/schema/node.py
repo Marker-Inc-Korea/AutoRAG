@@ -22,6 +22,12 @@ class Node:
 	run_node: Callable = field(init=False)
 
 	def __post_init__(self):
+		if self.node_type == "hybrid_retrieval" and isinstance(
+			self.node_params.get("top_k"), list
+		):
+			raise ValueError(
+				"hybrid_retrieval top_k must be an integer, not a list."
+			)
 		self.run_node = get_support_nodes(self.node_type)
 		if self.run_node is None:
 			raise ValueError(f"Node type {self.node_type} is not supported.")
