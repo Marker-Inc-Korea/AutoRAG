@@ -966,7 +966,7 @@ export async function createMandatorySubagentSession(
 			}
 		}
 		for (const [provider, credential] of parentProviderCredentials) {
-			await modelRuntime.setRuntimeApiKey(provider, credential, { allowNetwork: false });
+			await modelRuntime.setRuntimeApiKey(provider, credential);
 		}
 		ensurePiSettingsFile(agentDir);
 		const settingsManager = SettingsManager.create(options.cwd, agentDir);
