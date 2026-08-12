@@ -39,9 +39,9 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.82.1",
-    "@earendil-works/pi-ai": "^0.82.1",
-    "@earendil-works/pi-coding-agent": "0.82.1",
+    "@earendil-works/pi-agent-core": "^0.84.1",
+    "@earendil-works/pi-ai": "^0.84.1",
+    "@earendil-works/pi-coding-agent": "0.84.1",
     "@opendataloader/pdf": "^2.4.7",
     "@pngwasi/node-tantivy-binding": "^0.3.4",
     "@rhwp/core": "0.8.2",
