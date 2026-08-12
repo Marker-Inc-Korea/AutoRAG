@@ -35,6 +35,110 @@ describe("ResultMerger", () => {
 		expect(merged[0].id).toBe("a");
 	});
 
+	it("ranks repeated cross-method evidence above a comparable singleton", () => {
+		const merger = new ResultMerger();
+		const repeatedSource = "opaque:document:repeat-7f9c";
+		const singletonSource = "opaque:document:single-4a2d";
+		const results = new Map([
+			[
+				"bm25",
+				[
+					makeResult("single", singletonSource, 0.95),
+					makeResult("repeat-bm25", repeatedSource, 0.94),
+					makeResult("bm25-floor", "opaque:floor:bm25", 0.1),
+				],
+			],
+			[
+				"minsync",
+				[makeResult("repeat-vector", repeatedSource, 0.9), makeResult("vector-floor", "opaque:floor:vector", 0.1)],
+			],
+		]);
+
+		const merged = merger.merge(results, { topK: 5, dedup: true });
+
+		expect(merged.map((result) => result.source).slice(0, 2)).toEqual([repeatedSource, singletonSource]);
+		expect(merged[0].score).toBeGreaterThan(merged[1].score);
+		expect(merged[0].score).toBeLessThanOrEqual(1);
+		expect(merged[0].source).toBe(repeatedSource);
+		expect(merged[0].metadata).toMatchObject({
+			aggregateHitCount: 2,
+			aggregateMethods: ["bm25", "minsync"],
+		});
+	});
+
+	it("reinforces several same-method chunks with a bounded diminishing bonus", () => {
+		const merger = new ResultMerger();
+		const repeatedSource = "opaque:document:same-method";
+		const results = new Map([
+			[
+				"bm25",
+				[
+					makeResult("single", "opaque:document:single", 0.96),
+					makeResult("repeat-1", repeatedSource, 0.95),
+					makeResult("repeat-2", repeatedSource, 0.94),
+					makeResult("repeat-3", repeatedSource, 0.93),
+					makeResult("repeat-4", repeatedSource, 0.92),
+					makeResult("repeat-5", repeatedSource, 0.91),
+					makeResult("floor", "opaque:floor", 0.1),
+				],
+			],
+		]);
+
+		const merged = merger.merge(results, { topK: 5, dedup: true });
+		const repeated = merged.find((result) => result.source === repeatedSource);
+		const singleton = merged.find((result) => result.source === "opaque:document:single");
+
+		expect(merged[0].source).toBe(repeatedSource);
+		expect(repeated?.score).toBeGreaterThan(singleton?.score ?? Number.POSITIVE_INFINITY);
+		expect(repeated?.score).toBeLessThanOrEqual(1);
+		expect(repeated?.metadata.aggregateHitCount).toBe(5);
+		expect(repeated?.id).toBe("repeat-1");
+	});
+
+	it("does not reward exact duplicate evidence identities", () => {
+		const merger = new ResultMerger();
+		const repeatedSource = "opaque:document:duplicate";
+		const duplicate = makeResult("same-chunk-id", repeatedSource, 0.9);
+		const results = new Map([
+			[
+				"bm25",
+				[
+					makeResult("single", "opaque:document:single", 0.95),
+					duplicate,
+					{ ...duplicate },
+					{ ...duplicate },
+					makeResult("floor", "opaque:floor", 0.1),
+				],
+			],
+		]);
+
+		const merged = merger.merge(results, { topK: 5, dedup: true });
+		const repeated = merged.find((result) => result.source === repeatedSource);
+
+		expect(merged[0].source).toBe("opaque:document:single");
+		expect(repeated?.metadata.aggregateHitCount).toBeUndefined();
+		expect(repeated?.score).toBeLessThanOrEqual(1);
+	});
+
+	it("always merges exact sources when deduplication is disabled", () => {
+		const merger = new ResultMerger();
+		const results = new Map([
+			["method1", [makeResult("a", "opaque:same", 0.9), makeResult("b", "opaque:same", 0.8)]],
+		]);
+
+		const merged = merger.merge(results, { topK: 10, dedup: false });
+
+		expect(merged).toHaveLength(1);
+		expect(merged[0]).toMatchObject({
+			id: "a",
+			source: "opaque:same",
+			metadata: {
+				aggregateHitCount: 2,
+				aggregateMethods: ["method1"],
+			},
+		});
+	});
+
 	it("enforces topK limit", () => {
 		const merger = new ResultMerger();
 		const results = new Map([

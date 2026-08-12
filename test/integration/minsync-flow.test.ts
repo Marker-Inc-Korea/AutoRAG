@@ -26,14 +26,27 @@ function writeFakeMinSync(): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 const args = process.argv.slice(2);
+const cursor = join(process.cwd(), ".minsync", "cursor.json");
 
 if (args[0] === "init") {
+  const config = join(process.cwd(), ".minsync", "config.toml");
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
 }
 
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+  process.exit(0);
+}
+
 if (args[0] === "sync") {
+  mkdirSync(dirname(cursor), { recursive: true });
+  writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ synced: 1 }));
   process.exit(0);
 }
@@ -61,14 +74,27 @@ function writeFakeScopedMinSync(): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 const args = process.argv.slice(2);
+const cursor = join(process.cwd(), ".minsync", "cursor.json");
 
 if (args[0] === "init") {
+  const config = join(process.cwd(), ".minsync", "config.toml");
+  mkdirSync(dirname(config), { recursive: true });
+  writeFileSync(config, "[embedder]\\nid = \\"openai\\"\\n");
   console.log(JSON.stringify({ initialized: true }));
   process.exit(0);
 }
 
+if (args[0] === "check") {
+  console.log(JSON.stringify({ vectorstore_ok: true, embedder_ok: true }));
+  process.exit(0);
+}
+
 if (args[0] === "sync") {
+  mkdirSync(dirname(cursor), { recursive: true });
+  writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ synced: 2 }));
   process.exit(0);
 }
