@@ -10,7 +10,7 @@
         "@earendil-works/pi-coding-agent": "0.82.1",
         "@opendataloader/pdf": "^2.4.7",
         "@pngwasi/node-tantivy-binding": "^0.3.4",
-        "@rhwp/core": "0.7.19",
+        "@rhwp/core": "0.8.2",
         "chardet": "^2.2.0",
         "fast-xml-parser": "^5.9.3",
         "iconv-lite": "^0.7.2",
@@ -403,7 +403,7 @@
 
     "@radix-ui/rect": ["@radix-ui/rect@1.1.2", "", {}, "sha512-xnXE7wG13PI+cxieVssYXlQJuYVRhH9NBoxt3KNwzghDIA69GMm7d4wXRouHIYjE+KvS6U/MsMO73NdS2MH9ZA=="],
 
-    "@rhwp/core": ["@rhwp/core@0.7.19", "", {}, "sha512-rc0sRpYQowavYgteFXkqCkuiXTZJa2C8fl5toq01y20SVtiIRFKGVcATk6+jHOuCjK0l81fGLSZaEIBTwKXkAQ=="],
+    "@rhwp/core": ["@rhwp/core@0.8.2", "", {}, "sha512-TjAw6qk1PcWo9Revat4va7wbDGsV7qBq8JnFxB2/JgUeJaxUsq3xIwuUoBUU8IDJ5CYx66JVfwhxlO416osrgA=="],
 
     "@rollup/rollup-android-arm-eabi": ["@rollup/rollup-android-arm-eabi@4.60.4", "", { "os": "android", "cpu": "arm" }, "sha512-F5QXMSiFebS9hKZj02XhWLLnRpJ3B3AROP0tWbFBSj+6kCbg5m9j5JoHKd4mmSVy5mS/IMQloYgYxCuJC0fxEQ=="],
 
