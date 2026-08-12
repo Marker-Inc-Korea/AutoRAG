@@ -52,7 +52,7 @@ dependencies = [
     "grpcio-tools>=1.66.2,<1.84.0",
     "datasets>=3.5.1",
     # Vector DB
-    "pymilvus>=2.6.0b0,<3",  # for using milvus vectordb (3.x drops milvus-lite)
+    "pymilvus>=2.6.0b0,<4",  # for using milvus vectordb (3.x drops milvus-lite)
     "chromadb>=1.0.0",  # for chroma vectordb
     "weaviate-client>=4.15.2",  # for weaviate vectordb
     "pinecone[grpc]",  # for pinecone vectordb
