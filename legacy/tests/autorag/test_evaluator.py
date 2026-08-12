@@ -7,6 +7,7 @@ from shutil import copytree
 
 import pandas as pd
 import pytest
+import yaml
 from llama_index.core.base.llms.types import CompletionResponse
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
@@ -58,6 +59,38 @@ def test_evaluator_init(evaluator):
     )
     assert evaluator.qa_data.equals(loaded_qa_data)
     assert evaluator.corpus_data.equals(loaded_corpus_data)
+
+
+def test_start_trial_stores_absolute_vectordb_path(evaluator):
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False
+    ) as config_file:
+        yaml.safe_dump(
+            {
+                "vectordb": [
+                    {
+                        "name": "local",
+                        "db_type": "chroma",
+                        "path": "relative/chroma",
+                    }
+                ],
+                "node_lines": [],
+            },
+            config_file,
+        )
+
+    try:
+        evaluator.start_trial(config_file.name, skip_validation=True)
+    finally:
+        os.unlink(config_file.name)
+
+    with open(
+        os.path.join(evaluator.project_dir, "resources", "vectordb.yaml"),
+        encoding="utf-8",
+    ) as vectordb_file:
+        vectordb_config = yaml.safe_load(vectordb_file)
+
+    assert os.path.isabs(vectordb_config["vectordb"][0]["path"])
 
 
 def test_load_node_line(evaluator):
