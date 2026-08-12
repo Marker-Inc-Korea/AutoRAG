@@ -562,7 +562,7 @@ requires-dist = [
     { name = "pinecone", extras = ["grpc"] },
     { name = "pyarrow", specifier = ">=23.0.1" },
     { name = "pydantic", specifier = ">=2.9.2" },
-    { name = "pymilvus", specifier = ">=2.6.0b0,<3" },
+    { name = "pymilvus", specifier = ">=2.6.0b0,<4" },
     { name = "pymupdf", marker = "extra == 'parse'", specifier = ">=1.26.1" },
     { name = "pyngrok", specifier = ">=7.2.11" },
     { name = "pypdf2", marker = "extra == 'parse'", specifier = ">=3.0.1" },
