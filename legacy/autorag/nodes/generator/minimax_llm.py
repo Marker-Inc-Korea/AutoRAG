@@ -8,6 +8,11 @@ from openai import AsyncOpenAI
 from tiktoken import Encoding
 
 from autorag.nodes.generator.base import BaseGenerator
+from autorag.nodes.generator.chat import (
+	count_message_tokens as count_message_tokens_with_encoder,
+	messages_to_string as render_messages_to_string,
+	truncate_prompt_by_token,
+)
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
@@ -186,63 +191,34 @@ class MiniMaxLLM(BaseGenerator):
 def truncate_by_token(
 	prompt: Union[str, List[Dict]], tokenizer: Encoding, max_token_size: int
 ) -> Union[str, List[Dict]]:
-	if isinstance(prompt, list):
-		return truncate_messages_by_token(prompt, tokenizer, max_token_size)
-	tokens = tokenizer.encode(prompt, allowed_special="all")
-	return tokenizer.decode(tokens[:max_token_size])
+	return truncate_prompt_by_token(
+		prompt,
+		lambda text: tokenizer.encode(text, allowed_special="all"),
+		tokenizer.decode,
+		max_token_size,
+	)
 
 
 def truncate_messages_by_token(
 	messages: List[Dict], tokenizer: Encoding, max_token_size: int
 ) -> List[Dict]:
-	truncated_messages = [dict(message) for message in messages]
-	if count_message_tokens(truncated_messages, tokenizer) <= max_token_size:
-		return truncated_messages
-
-	result: List[Dict] = []
-	for message in truncated_messages:
-		candidate = result + [message]
-		if count_message_tokens(candidate, tokenizer) <= max_token_size:
-			result.append(message)
-			continue
-
-		content_tokens = tokenizer.encode(
-			message.get("content", ""), allowed_special="all"
-		)
-		low, high = 0, len(content_tokens)
-		best_content = ""
-		while low <= high:
-			mid = (low + high) // 2
-			truncated_message = {
-				**message,
-				"content": tokenizer.decode(content_tokens[:mid]),
-			}
-			candidate = result + [truncated_message]
-			if count_message_tokens(candidate, tokenizer) <= max_token_size:
-				best_content = truncated_message["content"]
-				low = mid + 1
-			else:
-				high = mid - 1
-
-		if best_content or not result:
-			result.append({**message, "content": best_content})
-		break
-
-	return result
+	return truncate_prompt_by_token(
+		messages,
+		lambda text: tokenizer.encode(text, allowed_special="all"),
+		tokenizer.decode,
+		max_token_size,
+	)
 
 
 def count_message_tokens(messages: List[Dict], tokenizer: Encoding) -> int:
-	return len(tokenizer.encode(messages_to_string(messages), allowed_special="all"))
+	return count_message_tokens_with_encoder(
+		messages, lambda text: tokenizer.encode(text, allowed_special="all")
+	)
 
 
 def messages_to_string(messages: List[Dict[str, str]]) -> str:
-	"""Convert chat messages to string format for token counting."""
-	formatted_parts = [
-		f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>"
-		for message in messages
-	]
-	formatted_parts.append("<|im_start|>assistant")
-	return "\n".join(formatted_parts)
+	"""Convert chat messages to a string for token counting compatibility."""
+	return render_messages_to_string(messages)
 
 
 def strip_think_tags(text: str) -> str:

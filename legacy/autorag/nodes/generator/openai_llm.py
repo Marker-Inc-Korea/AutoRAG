@@ -8,6 +8,7 @@ from openai import AsyncOpenAI
 from tiktoken import Encoding
 
 from autorag.nodes.generator.base import BaseGenerator
+from autorag.nodes.generator.chat import messages_to_string, truncate_prompt_by_token
 from autorag.utils.util import (
 	get_event_loop,
 	process_batch,
@@ -333,16 +334,9 @@ class OpenAILLM(BaseGenerator):
 		if not self.llm.startswith("gpt-5"):
 			raise ValueError("get_result_gpt_5 is only for gpt-5 models.")
 		messages = parse_prompt(prompt)
-		instruction = "\n\n".join(
-			[msg["content"] for msg in messages if msg["role"] == "system"]
-		)
-		user_input = "\n\n".join(
-			[msg["content"] for msg in messages if msg["role"] == "user"]
-		)
 		response = await self.client.responses.create(
 			model=self.llm,
-			instructions=instruction,
-			input=user_input,
+			input=messages,
 			**kwargs,
 		)
 		answer: str = response.output_text
@@ -354,21 +348,17 @@ class OpenAILLM(BaseGenerator):
 def truncate_by_token(
 	prompt: Union[str, List[Dict]], tokenizer: Encoding, max_token_size: int
 ):
-	if isinstance(prompt, list):
-		prompt = tiktoken_messages_to_string(prompt)
-	tokens = tokenizer.encode(prompt, allowed_special="all")
-	return tokenizer.decode(tokens[:max_token_size])
+	return truncate_prompt_by_token(
+		prompt,
+		lambda text: tokenizer.encode(text, allowed_special="all"),
+		tokenizer.decode,
+		max_token_size,
+	)
 
 
 def tiktoken_messages_to_string(messages: List[Dict[str, str]]) -> str:
-	"""Convert chat messages to string format for accurate token counting"""
-	formatted_parts = [
-		f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>"
-		for message in messages
-	]
-	formatted_parts.append("<|im_start|>assistant")
-	full_string = "\n".join(formatted_parts)
-	return full_string
+	"""Convert chat messages to a string for token counting compatibility."""
+	return messages_to_string(messages)
 
 
 def parse_prompt(prompt: Union[str, List[Dict]]) -> List[Dict]:

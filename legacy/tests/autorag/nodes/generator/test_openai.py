@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import openai.resources.chat
 import openai.resources.responses
@@ -11,6 +11,7 @@ from autorag.nodes.generator import OpenAILLM
 from autorag.nodes.generator.openai_llm import (
 	GPT_5_LONG_CONTEXT,
 	get_max_token_size,
+	truncate_by_token,
 )
 from tests.autorag.nodes.generator.test_generator_base import (
 	prompts,
@@ -61,6 +62,24 @@ async def mock_openai_responses_create(*args, **kwargs):
 	return SimpleNamespace(output_text="Why not")
 
 
+class CharacterTokenizer:
+	"""Small deterministic tokenizer for prompt-structure regression tests."""
+
+	def encode(self, text, allowed_special="none"):
+		return list(text)
+
+	def decode(self, tokens):
+		return "".join(tokens)
+
+
+chat_history = [
+	{"role": "system", "content": "Follow the conversation."},
+	{"role": "user", "content": "What is the capital of France?"},
+	{"role": "assistant", "content": "Paris."},
+	{"role": "user", "content": "And Germany?"},
+]
+
+
 @patch.object(
 	openai.resources.responses.AsyncResponses,
 	"create",
@@ -75,6 +94,35 @@ def test_openai_llm_gpt_5(openai_gpt_5_instance):
 	check_generated_texts(answers)
 	check_generated_tokens(tokens)
 	check_generated_log_probs(log_probs)
+
+
+def test_truncate_chat_prompt_preserves_message_roles():
+	result = truncate_by_token(chat_history, CharacterTokenizer(), 10_000)
+
+	assert result == chat_history
+	assert result is not chat_history
+	assert [message["role"] for message in result] == [
+		"system",
+		"user",
+		"assistant",
+		"user",
+	]
+
+
+@pytest.mark.asyncio
+async def test_gpt_5_responses_preserve_full_chat_history():
+	llm = object.__new__(OpenAILLM)
+	llm.llm = "gpt-5.6-pro"
+	llm.tokenizer = CharacterTokenizer()
+	responses_create = AsyncMock(return_value=SimpleNamespace(output_text="Berlin."))
+	llm.client = SimpleNamespace(responses=SimpleNamespace(create=responses_create))
+
+	answer, tokens, log_probs = await llm.get_result_gpt_5(chat_history)
+
+	responses_create.assert_awaited_once_with(model="gpt-5.6-pro", input=chat_history)
+	assert answer == "Berlin."
+	assert tokens == list("Berlin.")
+	assert log_probs == [0.5] * len(tokens)
 
 
 @pytest.mark.parametrize(
