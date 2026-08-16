@@ -120,10 +120,10 @@ export {
 	type RssSkillOptions,
 } from "./skills/rss/index.ts";
 export {
-	SlackConnector,
-	type SlackConnectorOptions,
 	SlackSkill,
 	type SlackSkillOptions,
+	SlacrawlClient,
+	type SlacrawlOptions,
 } from "./skills/slack/index.ts";
 export {
 	SpotlightConnector,

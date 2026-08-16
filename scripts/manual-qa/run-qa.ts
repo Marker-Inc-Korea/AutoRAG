@@ -1,5 +1,5 @@
 /**
- * Manual QA harness for the nine connector-backed datasource skills
+ * Manual QA harness for the eight connector-backed datasource skills
  * (#1300 #1301 #1302 #1303 #1304 #1305 #1311 #1314 #1316).
  *
  * Spins up a local mock of every external API (plus real filesystem
@@ -19,7 +19,6 @@ import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createLoadDatasourceSkillTool } from "../../src/agent/datasource-skill.ts";
 import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
-// @ts-expect-error plain mjs helper without type declarations
 import { startMockServices } from "./mock-services.mjs";
 
 interface CheckResult {
@@ -63,10 +62,9 @@ try {
 	mkdirSync(docsDir, { recursive: true });
 	writeFileSync(join(docsDir, "readme.txt"), "Local corpus placeholder.");
 
-	// --- 1. Setup: build all nine skills from trusted config (factory path) ---
+	// --- 1. Setup: build all seven connector-backed skills from trusted config (factory path) ---
 	const { skills, unknown } = buildDatasourceSkills(
 		{
-			slack: { connector: { baseUrl: `${base}/slack`, token: "qa-slack-token" } },
 			notion: { connector: { baseUrl: `${base}/notion`, token: "qa-notion-token" } },
 			github: { connector: { baseUrl: `${base}/github`, repos: ["qa-org/qa-repo"] } },
 			gdrive: { connector: { baseUrl: `${base}/gdrive`, token: "qa-gdrive-token" } },
@@ -77,7 +75,7 @@ try {
 		},
 		tmpRoot,
 	);
-	check("setup: factory builds all eight HTTP/filesystem skills", skills.length === 8 && unknown.length === 0);
+	check("setup: factory builds all seven HTTP/filesystem skills", skills.length === 7 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
@@ -86,7 +84,7 @@ try {
 		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: {
-			allowedTags: ["slack", "notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
+			allowedTags: ["notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
 			allowedScopes: ["/**"],
 		},
 	});
@@ -104,23 +102,22 @@ try {
 
 	// --- 3. Progressive disclosure: skills announced + loadable ---
 	const prompt = agent.getSystemPrompt();
-	const names = ["slack", "notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
+	const names = ["notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
 	check(
 		"prompt: all authorized skills announced",
 		names.every((name) => prompt.includes(`datasource-${name}`)),
 	);
 	check(
 		"prompt: no fixture paths or tokens leak",
-		!prompt.includes(tmpRoot) && !prompt.includes("qa-slack-token") && !prompt.includes("127.0.0.1"),
+		!prompt.includes(tmpRoot) && !prompt.includes("qa-notion-token") && !prompt.includes("127.0.0.1"),
 	);
 	const loadTool = createLoadDatasourceSkillTool(agent);
-	const loaded = await loadTool.execute("qa-load", { name: "datasource-slack" });
+	const loaded = await loadTool.execute("qa-load", { name: "datasource-notion" });
 	check("skill: load_datasource_skill returns instructions", loaded.details.loaded === true);
 
 	// --- 4. Search via the agent tool per skill ---
 	const searchTool = createSearchDatasourceDocumentsTool(agent);
 	const queries: Record<string, string> = {
-		slack: "payment gateway migration July",
 		notion: "on-call engineer restart cluster",
 		github: "Korean queries tokenized ranking",
 		gdrive: "vendor contract cancellation notice",
@@ -137,7 +134,7 @@ try {
 
 	// --- 5. Scope narrowing (tool arg can only narrow) ---
 	const narrowed = await searchTool.execute("qa-narrow", {
-		query: "payment gateway migration July",
+		query: "on-call engineer restart cluster",
 		scope: "/gmail/**",
 	});
 	check(
@@ -161,9 +158,9 @@ try {
 	check("security: default-deny returns no results", deniedSearch.results.length === 0);
 	check("security: denied prompt hides skills", !denied.getSystemPrompt().includes("datasource-rss"));
 
-	// --- 7. Auth failure diagnostics stay opaque ---
+	// --- 7. REST auth failure diagnostics stay opaque ---
 	const badAuth = buildDatasourceSkills(
-		{ slack: { connector: { baseUrl: `${base}/slack`, token: "wrong-token" } } },
+		{ notion: { connector: { baseUrl: `${base}/notion`, token: "wrong-token" } } },
 		tmpRoot,
 	).skills;
 	const badAgent = new AutoRAGAgent({
@@ -172,7 +169,7 @@ try {
 		minSync: false,
 		bm25: false,
 		datasourceSkills: badAuth,
-		datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/**"] },
+		datasourceAccess: { allowedTags: ["notion"], allowedScopes: ["/notion/**"] },
 	});
 	const badRefresh = await badAgent.refresh(true, { methods: ["datasources"] });
 	const failure = badRefresh.datasources?.[0];

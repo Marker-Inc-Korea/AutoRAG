@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createLoadDatasourceSkillTool } from "../../src/agent/datasource-skill.ts";
 import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
+import type { CrawlerSkillClient } from "../../src/datasource/crawler-skill.ts";
 import { buildDatasourceSkills } from "../../src/datasource/skills/factory.ts";
 import { GitHubSkill } from "../../src/datasource/skills/github/index.ts";
 import { ObsidianSkill } from "../../src/datasource/skills/obsidian/index.ts";
@@ -23,24 +24,34 @@ afterEach(() => {
 });
 
 function slackSkill(): SlackSkill {
-	const mock = createMockFetch([
-		{
-			match: "conversations.list",
-			json: { ok: true, channels: [{ id: "C01", name: "general" }], response_metadata: {} },
-		},
-		{
-			match: "conversations.history",
-			json: {
-				ok: true,
-				messages: [{ ts: "1700000001.000100", user: "U1", text: "Budget approved for the launch" }],
-			},
-		},
-	]);
 	return new SlackSkill({
 		instanceId: "ws-1",
-		workspaceRoot: tmpDir,
-		connectorOptions: { token: "xoxb-secret", fetchImpl: mock.fetchImpl },
+		client: slackClient(),
 	});
+}
+
+function slackClient(failing = false): CrawlerSkillClient {
+	return {
+		sync: async () =>
+			failing
+				? { ok: false, reason: "binary-missing", stdout: "", stderr: "", code: null }
+				: { ok: true, count: 1, stdout: "", stderr: "", code: 0 },
+		search: async () => ({
+			ok: true,
+			hits: [
+				{
+					id: "C01-1700000001-000100",
+					content: "Budget approved for the launch",
+					score: 1,
+					title: "#general",
+					metadata: { channelId: "C01" },
+				},
+			],
+			stdout: "",
+			stderr: "",
+			code: 0,
+		}),
+	};
 }
 
 function githubSkill(): GitHubSkill {
@@ -138,12 +149,10 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		expect(denied.details).toEqual({ skill: "datasource-github", loaded: false });
 	});
 
-	it("degrades to path-opaque diagnostics when a connector fails during refresh", async () => {
-		const mock = createMockFetch([{ match: "conversations.list", status: 401 }]);
+	it("degrades to path-opaque diagnostics when an external crawler fails during refresh", async () => {
 		const failing = new SlackSkill({
 			instanceId: "ws-1",
-			workspaceRoot: tmpDir,
-			connectorOptions: { token: "xoxb-secret", fetchImpl: mock.fetchImpl },
+			client: slackClient(true),
 		});
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
@@ -154,11 +163,10 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		});
 
 		const refresh = await agent.refresh(true, { methods: ["datasources"] });
-		expect(refresh.datasources?.[0]).toMatchObject({ ok: false, code: "datasource-auth-error" });
+		expect(refresh.datasources?.[0]).toMatchObject({ ok: false, code: "datasource-unavailable" });
 		const status = await agent.getRefreshStatus();
 		expect(status.components.datasources).toBe("degraded");
 		const serialized = JSON.stringify(status);
-		expect(serialized).not.toContain("xoxb-secret");
 		expect(serialized).not.toContain(tmpDir);
 	});
 

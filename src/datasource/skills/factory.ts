@@ -19,7 +19,7 @@ import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/
 import { type NotionConnectorOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianConnectorOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
-import { type SlackConnectorOptions, SlackSkill } from "./slack/index.ts";
+import { SlackSkill, type SlacrawlOptions } from "./slack/index.ts";
 import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
 import { type TelecrawlOptions, TelecrawlSkill } from "./telecrawl/index.ts";
 import { type WacrawlOptions, WacrawlSkill } from "./wacrawl/index.ts";
@@ -60,8 +60,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			connectorOptions: config.connector as WacrawlOptions,
 		}),
-	slack: (config, workspaceRoot) =>
-		new SlackSkill({ ...common(config, workspaceRoot), connectorOptions: config.connector as SlackConnectorOptions }),
+	slack: (config) =>
+		new SlackSkill({
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			connectorOptions: config.connector as SlacrawlOptions,
+		}),
 	discord: (config, workspaceRoot) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
 		const clientOptions: DiscrawlOptions = {
