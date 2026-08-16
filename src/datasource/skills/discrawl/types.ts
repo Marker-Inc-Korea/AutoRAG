@@ -50,11 +50,12 @@ export const ENGLISH_ONLY_EMBEDDING_MODELS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Default embedding model AutoRAG configures for discrawl. `bge-m3` covers
- * 100+ languages at 1024 dimensions and supports cross-lingual retrieval, so
- * mixed-language Discord servers work without per-deployment tuning.
+ * Default embedding model AutoRAG configures for discrawl. `embeddinggemma`
+ * (Gemma 3 300M, 768 dimensions) covers 100+ languages and matches the
+ * EmbeddingGemma embedder katok uses for KakaoTalk, so every CLI-backed
+ * datasource shares one local embedding model (served through Ollama).
  */
-export const DEFAULT_DISCRAWL_EMBEDDING_MODEL = "bge-m3";
+export const DEFAULT_DISCRAWL_EMBEDDING_MODEL = "embeddinggemma";
 
 /**
  * Configuration for the discrawl client. All fields optional; defaults mirror

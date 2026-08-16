@@ -7,6 +7,7 @@ import type {
 	DiscrawlSearchResult,
 	DiscrawlSyncResult,
 } from "../../../../src/datasource/skills/discrawl/types.ts";
+import { DEFAULT_DISCRAWL_EMBEDDING_MODEL } from "../../../../src/datasource/skills/discrawl/types.ts";
 
 function okDoctor(overrides: Partial<Record<string, boolean | string>> = {}): DiscrawlDoctorResult {
 	return {
@@ -164,7 +165,9 @@ describe("DiscrawlSkill index", () => {
 			embeddingModel: "nomic-embed-text",
 		}).index();
 		expect(result.ok).toBe(true);
-		expect(result.diagnostics.some((d) => d.message.includes("English-only"))).toBe(true);
+		const warning = result.diagnostics.find((d) => d.message.includes("English-only"));
+		expect(warning).toBeDefined();
+		expect(warning?.message).toContain(DEFAULT_DISCRAWL_EMBEDDING_MODEL);
 	});
 
 	it("does not warn for a multilingual embedding model", async () => {
