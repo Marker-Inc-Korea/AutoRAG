@@ -62,10 +62,9 @@ try {
 	mkdirSync(docsDir, { recursive: true });
 	writeFileSync(join(docsDir, "readme.txt"), "Local corpus placeholder.");
 
-	// --- 1. Setup: build all seven connector-backed skills from trusted config (factory path) ---
+	// --- 1. Setup: build all six connector-backed skills from trusted config (factory path) ---
 	const { skills, unknown } = buildDatasourceSkills(
 		{
-			notion: { connector: { baseUrl: `${base}/notion`, token: "qa-notion-token" } },
 			github: { connector: { baseUrl: `${base}/github`, repos: ["qa-org/qa-repo"] } },
 			gdrive: { connector: { baseUrl: `${base}/gdrive`, token: "qa-gdrive-token" } },
 			gmail: { connector: { baseUrl: `${base}/gmail`, token: "qa-gmail-token" } },
@@ -75,7 +74,7 @@ try {
 		},
 		tmpRoot,
 	);
-	check("setup: factory builds all seven HTTP/filesystem skills", skills.length === 7 && unknown.length === 0);
+	check("setup: factory builds all six HTTP/filesystem skills", skills.length === 6 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
@@ -84,7 +83,7 @@ try {
 		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: {
-			allowedTags: ["notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
+			allowedTags: ["github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
 			allowedScopes: ["/**"],
 		},
 	});
@@ -102,23 +101,22 @@ try {
 
 	// --- 3. Progressive disclosure: skills announced + loadable ---
 	const prompt = agent.getSystemPrompt();
-	const names = ["notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
+	const names = ["github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
 	check(
 		"prompt: all authorized skills announced",
 		names.every((name) => prompt.includes(`datasource-${name}`)),
 	);
 	check(
 		"prompt: no fixture paths or tokens leak",
-		!prompt.includes(tmpRoot) && !prompt.includes("qa-notion-token") && !prompt.includes("127.0.0.1"),
+		!prompt.includes(tmpRoot) && !prompt.includes("qa-gdrive-token") && !prompt.includes("127.0.0.1"),
 	);
 	const loadTool = createLoadDatasourceSkillTool(agent);
-	const loaded = await loadTool.execute("qa-load", { name: "datasource-notion" });
+	const loaded = await loadTool.execute("qa-load", { name: "datasource-github" });
 	check("skill: load_datasource_skill returns instructions", loaded.details.loaded === true);
 
 	// --- 4. Search via the agent tool per skill ---
 	const searchTool = createSearchDatasourceDocumentsTool(agent);
 	const queries: Record<string, string> = {
-		notion: "on-call engineer restart cluster",
 		github: "Korean queries tokenized ranking",
 		gdrive: "vendor contract cancellation notice",
 		gmail: "Gangnam office move September",
@@ -134,7 +132,7 @@ try {
 
 	// --- 5. Scope narrowing (tool arg can only narrow) ---
 	const narrowed = await searchTool.execute("qa-narrow", {
-		query: "on-call engineer restart cluster",
+		query: "Gangnam office move September",
 		scope: "/gmail/**",
 	});
 	check(
@@ -160,7 +158,7 @@ try {
 
 	// --- 7. REST auth failure diagnostics stay opaque ---
 	const badAuth = buildDatasourceSkills(
-		{ notion: { connector: { baseUrl: `${base}/notion`, token: "wrong-token" } } },
+		{ gdrive: { connector: { baseUrl: `${base}/gdrive`, token: "wrong-token" } } },
 		tmpRoot,
 	).skills;
 	const badAgent = new AutoRAGAgent({
@@ -169,7 +167,7 @@ try {
 		minSync: false,
 		bm25: false,
 		datasourceSkills: badAuth,
-		datasourceAccess: { allowedTags: ["notion"], allowedScopes: ["/notion/**"] },
+		datasourceAccess: { allowedTags: ["gdrive"], allowedScopes: ["/gdrive/**"] },
 	});
 	const badRefresh = await badAgent.refresh(true, { methods: ["datasources"] });
 	const failure = badRefresh.datasources?.[0];

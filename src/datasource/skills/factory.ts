@@ -16,7 +16,7 @@ import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { HimalayaConnector, type HimalayaConnectorOptions } from "./gmail/himalaya-connector.ts";
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
-import { type NotionConnectorOptions, NotionSkill } from "./notion/index.ts";
+import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { type ObsidianConnectorOptions, ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill, type SlacrawlOptions } from "./slack/index.ts";
@@ -83,10 +83,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
 		});
 	},
-	notion: (config, workspaceRoot) =>
+	notion: (config) =>
 		new NotionSkill({
-			...common(config, workspaceRoot),
-			connectorOptions: config.connector as NotionConnectorOptions,
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			connectorOptions: config.connector as NotcrawlOptions,
 		}),
 	github: (config, workspaceRoot) =>
 		new GitHubSkill({

@@ -101,8 +101,8 @@ export {
 	type MailExportSkillOptions,
 } from "./skills/mail-export/index.ts";
 export {
-	NotionConnector,
-	type NotionConnectorOptions,
+	NotcrawlClient,
+	type NotcrawlOptions,
 	NotionSkill,
 	type NotionSkillOptions,
 } from "./skills/notion/index.ts";
