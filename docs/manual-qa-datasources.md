@@ -3,8 +3,8 @@
 Covers issues #1300 (Slack), #1301 (Google Drive), #1302 (Notion), #1303
 (GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
 export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
-Issue #1416 adds external-crawler process coverage, beginning with WhatsApp
-through wacrawl.
+Issue #1416 adds external-crawler process coverage for WhatsApp through
+wacrawl and Telegram through telecrawl.
 
 ## Harnesses
 
@@ -15,6 +15,7 @@ through wacrawl.
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
+| `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 
 Skills that need tenant credentials (Slack bot token,
 Notion integration token, Drive/Gmail OAuth tokens) are QA'd against the
@@ -29,6 +30,12 @@ test executable exercises the actual spawn/stdout/stderr contract without
 requiring access to a private WhatsApp archive. For a live macOS check, install
 wacrawl, grant its documented Full Disk Access, configure
 `datasources.whatsapp`, then run `autorag refresh --method datasources`.
+
+Telegram uses the external telecrawl CLI instead of an HTTP mock. Its
+deterministic executable covers the same process boundary without private
+Telegram data. For a live macOS check, install telecrawl, grant its documented
+Full Disk Access, configure `datasources.telegram`, then run
+`autorag refresh --method datasources`.
 
 ## Checklist (all automated by the harnesses)
 
