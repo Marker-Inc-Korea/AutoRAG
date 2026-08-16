@@ -133,6 +133,7 @@ Security defaults are intentionally strict:
 | Datasource | Skill | Connects via | Notes |
 |---|---|---|---|
 | KakaoTalk | `katok` | external [`katok`](https://github.com/NomaDamas/katok) CLI | first datasource skill; AutoRAG never reads KakaoTalk databases directly |
+| WhatsApp | `whatsapp` | external [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | local-first incremental archive + FTS5 search; live desktop ingestion is macOS-only |
 | Slack | `slack` | Slack Web API (bot token) | workspace/channel history; per-channel scope failures degrade to warnings |
 | Discord | `discord` | external [`discrawl`](https://github.com/openclaw/discrawl) CLI | guild/channel/thread/DM archive; FTS5 + semantic + hybrid retrieval, incremental sync |
 | Notion | `notion` | Notion API (integration token) | pages/databases shared with the integration; block-tree text |
@@ -143,13 +144,14 @@ Security defaults are intentionally strict:
 | Obsidian vault | `obsidian` | filesystem (markdown) | frontmatter/inline tags, wiki links `[[...]]`, embeds `![[...]]` |
 | RSS / news | `rss` | HTTP feed polling | RSS 2.0 + Atom, feed/category hierarchy, 24h dedupe window |
 
-All of them share one framework: a trusted connector fetches documents at refresh time, chunks persist under `<workspace>/.autorag/datasources/<skill>/<instance>/`, and queries run against a local BM25 lexical index (Korean-aware prefix matching) through `search_datasource_documents`. Tokens are referenced by environment variable name only (e.g. `SLACK_BOT_TOKEN`), never stored in config. Auth/permission/rate-limit failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
+Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk and WhatsApp leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
 
 Configure them in `config.json` (CLI) or pass `datasourceSkills` programmatically:
 
 ```jsonc
 {
   "datasources": {
+    "whatsapp": { "instanceId": "personal", "connector": { "binaryPath": "wacrawl" } },
     "slack":    { "connector": { "tokenEnv": "SLACK_BOT_TOKEN" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
@@ -158,11 +160,13 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["slack", "github", "gmail", "gdrive", "obsidian", "rss"],
-    "allowedScopes": ["/slack/**", "/github/**", "/gmail/**", "/gdrive/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "slack", "github", "gmail", "gdrive", "obsidian", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/slack/**", "/github/**", "/gmail/**", "/gdrive/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
+
+Install wacrawl with `brew install openclaw/tap/wacrawl`. AutoRAG invokes `wacrawl sync` during datasource refresh and `wacrawl --json --sync never search` during retrieval. Optional trusted connector fields are `binaryPath`, `databasePath`, and `sourcePath`. The child process receives only a restricted environment; unrelated model/provider secrets are not forwarded. Live WhatsApp Desktop discovery requires macOS and the permissions documented by wacrawl, while an existing portable archive can be queried on other supported platforms.
 
 #### KakaoTalk (katok)
 

@@ -68,6 +68,27 @@ describe("CLI config datasources wiring", () => {
 		expect(() => buildAgentOptions(resolveConfig({ flags: { config: configPath } }))).toThrow(ConfigError);
 	});
 
+	it("materializes WhatsApp through the external wacrawl backend", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				whatsapp: { instanceId: "personal", connector: { binaryPath: "/opt/bin/wacrawl" } },
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.describe()).toMatchObject({
+			name: "whatsapp",
+			type: "whatsapp-archive",
+			instanceId: "personal",
+			requiresExternalCli: true,
+		});
+	});
+
 	it("rejects malformed datasources and datasourceAccess sections", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);

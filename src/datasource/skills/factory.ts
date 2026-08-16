@@ -21,6 +21,7 @@ import { type ObsidianConnectorOptions, ObsidianSkill } from "./obsidian/index.t
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { type SlackConnectorOptions, SlackSkill } from "./slack/index.ts";
 import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
+import { type WacrawlOptions, WacrawlSkill } from "./wacrawl/index.ts";
 
 /** One configured datasource entry (the trusted `datasources.<name>` value). */
 export interface DatasourceSkillConfig {
@@ -44,6 +45,13 @@ export interface BuildDatasourceSkillsResult {
 type SkillBuilder = (config: DatasourceSkillConfig, workspaceRoot: string | undefined) => DatasourceSkill;
 
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
+	whatsapp: (config) =>
+		new WacrawlSkill({
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			connectorOptions: config.connector as WacrawlOptions,
+		}),
 	slack: (config, workspaceRoot) =>
 		new SlackSkill({ ...common(config, workspaceRoot), connectorOptions: config.connector as SlackConnectorOptions }),
 	discord: (config, workspaceRoot) => {

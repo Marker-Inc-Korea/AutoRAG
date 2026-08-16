@@ -234,7 +234,7 @@ via the role-specific flags or:
 
 ## Configure datasource skills (optional)
 
-External datasources (Slack, Discord, Notion, GitHub Issues/PRs, Google
+External datasources (WhatsApp, Slack, Discord, Notion, GitHub Issues/PRs, Google
 Drive, Gmail, local mail exports, Obsidian vaults, RSS/news) are configured
 as **datasource skills** in the trusted config file — never via model/tool
 arguments. Add a `datasources` section (skill name → config) plus a trusted
@@ -243,6 +243,7 @@ arguments. Add a `datasources` section (skill name → config) plus a trusted
 ```jsonc
 {
   "datasources": {
+    "whatsapp": { "instanceId": "personal", "connector": { "binaryPath": "wacrawl" } },
     "slack":    { "connector": { "tokenEnv": "SLACK_BOT_TOKEN", "channels": ["eng"] } },
     "discord":  { "connector": { "tokenEnv": "DISCORD_BOT_TOKEN", "guildId": "..." } },
     "notion":   { "connector": { "tokenEnv": "NOTION_TOKEN" } },
@@ -254,8 +255,8 @@ arguments. Add a `datasources` section (skill name → config) plus a trusted
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["slack", "github", "rss"],
-    "allowedScopes": ["/slack/**", "/github/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "slack", "github", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/slack/**", "/github/**", "/rss/**"]
   }
 }
 ```
@@ -273,6 +274,11 @@ Rules:
   any of rclone's 70+ backends) configured via `rclone config` — Docs/Sheets
   are exported as text through `--drive-export-formats`. Auth lives entirely
   in the external tool's own config, matching the katok pattern.
+- `whatsapp` requires the external
+  [wacrawl](https://github.com/openclaw/wacrawl) binary
+  (`brew install openclaw/tap/wacrawl`). Optional trusted connector fields are
+  `binaryPath`, `databasePath`, and `sourcePath`. Live desktop ingestion is
+  macOS-only; the crawler owns Full Disk Access and archive setup.
 - Access is **default-deny**: without `datasourceAccess.allowedTags`, no
   datasource skill is announced or searchable, even when configured.
   `allowedScopes` are opaque slash-hierarchical roots like `/slack/<instance>/**`.

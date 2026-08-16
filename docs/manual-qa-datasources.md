@@ -1,8 +1,10 @@
-# Manual QA — Connector-Backed Datasource Skills
+# Manual QA — Datasource Skills
 
 Covers issues #1300 (Slack), #1301 (Google Drive), #1302 (Notion), #1303
 (GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
 export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
+Issue #1416 adds external-crawler process coverage, beginning with WhatsApp
+through wacrawl.
 
 ## Harnesses
 
@@ -12,6 +14,7 @@ export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
+| `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 
 Skills that need tenant credentials (Slack bot token,
 Notion integration token, Drive/Gmail OAuth tokens) are QA'd against the
@@ -20,6 +23,12 @@ failures (`invalid_auth`, HTTP 401/403/429). To QA against a real tenant,
 point `connector.baseUrl` at the real API base and supply the token via the
 default env var (`SLACK_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `NOTION_TOKEN`,
 `GITHUB_TOKEN`, `GDRIVE_ACCESS_TOKEN`, `GMAIL_ACCESS_TOKEN`).
+
+WhatsApp uses the external wacrawl CLI instead of an HTTP mock. The deterministic
+test executable exercises the actual spawn/stdout/stderr contract without
+requiring access to a private WhatsApp archive. For a live macOS check, install
+wacrawl, grant its documented Full Disk Access, configure
+`datasources.whatsapp`, then run `autorag refresh --method datasources`.
 
 ## Checklist (all automated by the harnesses)
 

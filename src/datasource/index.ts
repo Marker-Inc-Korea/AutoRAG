@@ -131,6 +131,7 @@ export {
 	SpotlightSkill,
 	type SpotlightSkillOptions,
 } from "./skills/spotlight/index.ts";
+export { WacrawlClient, type WacrawlOptions, WacrawlSkill, type WacrawlSkillOptions } from "./skills/wacrawl/index.ts";
 export type {
 	DatasourceAccessible,
 	DatasourceDiagnostic,
