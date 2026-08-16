@@ -107,10 +107,16 @@ export {
 	type NotionSkillOptions,
 } from "./skills/notion/index.ts";
 export {
-	ObsidianConnector,
-	type ObsidianConnectorOptions,
+	ObsidianBm25Method,
+	ObsidianSemanticMethod,
 	ObsidianSkill,
+	type ObsidianSkillClient,
 	type ObsidianSkillOptions,
+	QmdClient,
+	type QmdOptions,
+	type QmdSearchHit,
+	type QmdSearchMode,
+	type QmdSearchResult,
 } from "./skills/obsidian/index.ts";
 export {
 	RssConnector,

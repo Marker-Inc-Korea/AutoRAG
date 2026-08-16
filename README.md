@@ -142,10 +142,10 @@ Security defaults are intentionally strict:
 | Google Drive | `gdrive` | Drive REST v3, or **[`rclone`](https://rclone.org) CLI** (`backend: "rclone"`) | Docs/Sheets exported as text; the rclone backend also opens any of rclone's 70+ remotes |
 | Gmail / IMAP | `gmail` | Gmail REST v1, or **[`himalaya`](https://pimalaya.org) CLI** (`backend: "himalaya"`) | the himalaya backend indexes any IMAP/Maildir account it has configured — no OAuth plumbing |
 | Local mail exports | `mail-export` | filesystem (`.mbox` / `.eml`) | classic `From_` splitting, mailparser-based; count-only warnings |
-| Obsidian vault | `obsidian` | filesystem (markdown) | frontmatter/inline tags, wiki links `[[...]]`, embeds `![[...]]` |
+| Obsidian vault | `obsidian` | external [`qmd`](https://github.com/tobi/qmd) CLI | incremental `qmd update`, BM25 `qmd search`, semantic `qmd vsearch`; vault path via `connector.vaultPath` |
 | RSS / news | `rss` | HTTP feed polling | RSS 2.0 + Atom, feed/category hierarchy, 24h dedupe window |
 
-Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, Telegram, Slack, and Notion leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
+Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, Telegram, Slack, and Notion leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Obsidian uses the external `qmd` CLI (incremental update + BM25 + semantic). Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
 
 Configure them in `config.json` (CLI) or pass `datasourceSkills` programmatically:
 
@@ -256,12 +256,6 @@ A datasource skill should provide polling/cron metadata for routine indexing, so
 AutoRAG is built for **non-code document retrieval**: manuals, legal docs, internal wikis, meeting notes, research literature, knowledge bases, PDFs.
 
 Code repositories work too (the explorer's `grep` is useful), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
-
-#### Legacy HWP5 parsing
-
-AutoRAG supports searchable Markdown extraction from legacy binary `.hwp` (HWP5) files for body paragraphs and top-level table cells. Extraction is powered by the MIT-licensed [`rhwp`](https://github.com/edwardkim/rhwp) WebAssembly parser.
-
-This is scoped text extraction, not full-fidelity document conversion. Headers, footers, notes, text boxes, nested tables, images, equations, and OCR are explicitly deferred and are not currently extracted from HWP5 files.
 
 ## Configuration and state
 

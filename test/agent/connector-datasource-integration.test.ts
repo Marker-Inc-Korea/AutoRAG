@@ -170,7 +170,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		expect(serialized).not.toContain(tmpDir);
 	});
 
-	it("wires factory-built skills end-to-end (config -> setup -> refresh -> search)", async () => {
+	it("wires factory-built Obsidian skill config and qmd-backed retrieval through the agent", async () => {
 		const vault = join(tmpDir, "vault");
 		mkdirSync(join(vault, "notes"), { recursive: true });
 		writeFileSync(join(vault, "notes", "decisions.md"), "# Decisions\nWe chose Postgres over MySQL for the core DB.");
@@ -184,12 +184,62 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		);
 		expect(unknown).toEqual([]);
 		expect(skills.map((skill) => skill.describe().name)).toEqual(["obsidian"]);
+		expect(skills[0]?.describe().capabilities).toEqual(
+			expect.arrayContaining(["bm25", "semantic", "incremental", "external-cli"]),
+		);
+
+		const stubHits = [
+			{
+				chunkId: "decisions",
+				score: 0.95,
+				content: "We chose Postgres over MySQL for the core DB.",
+				file: join(vault, "notes", "decisions.md"),
+			},
+		] as const;
+		const skill = new ObsidianSkill({
+			instanceId: "vault-1",
+			workspaceRoot: tmpDir,
+			vaultPath: vault,
+			client: {
+				async ensureCollection() {
+					return {
+						ok: true as const,
+						data: { collectionName: "vault-1", vaultPath: vault, configDir: tmpDir },
+						stdout: "",
+						stderr: "",
+						code: 0,
+					};
+				},
+				async update() {
+					return {
+						ok: true as const,
+						data: { indexed: 1, updated: 0, unchanged: 0, removed: 0 },
+						stdout: "",
+						stderr: "",
+						code: 0,
+					};
+				},
+				async embed() {
+					return { ok: true as const, data: { embedded: true }, stdout: "", stderr: "", code: 0 };
+				},
+				async search() {
+					return {
+						ok: true as const,
+						hits: stubHits,
+						data: { hits: stubHits },
+						stdout: "",
+						stderr: "",
+						code: 0,
+					};
+				},
+			},
+		});
 
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			minSync: false,
-			datasourceSkills: skills,
+			datasourceSkills: [skill],
 			datasourceAccess: { allowedTags: ["obsidian"], allowedScopes: ["/obsidian/**"] },
 		});
 		await agent.refresh(true, { methods: ["datasources"] });
@@ -199,25 +249,47 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 		expect(results[0]?.metadata?.path).toBe(join(vault, "notes", "decisions.md"));
 	});
 
-	it("keeps chunk stores persistent across agent instances (search without re-index)", async () => {
-		const first = new ObsidianSkill({
+	it("exposes both lexical and semantic Obsidian methods after a successful qmd index", async () => {
+		const skill = new ObsidianSkill({
 			instanceId: "vault-1",
 			workspaceRoot: tmpDir,
-			connectorOptions: { vaultPath: join(tmpDir, "vault") },
+			vaultPath: join(tmpDir, "vault"),
+			client: {
+				async ensureCollection() {
+					return {
+						ok: true as const,
+						data: { collectionName: "vault-1", vaultPath: join(tmpDir, "vault"), configDir: tmpDir },
+						stdout: "",
+						stderr: "",
+						code: 0,
+					};
+				},
+				async update() {
+					return {
+						ok: true as const,
+						data: { indexed: 1, updated: 0, unchanged: 0, removed: 0 },
+						stdout: "",
+						stderr: "",
+						code: 0,
+					};
+				},
+				async embed() {
+					return { ok: true as const, data: { embedded: true }, stdout: "", stderr: "", code: 0 };
+				},
+				async search() {
+					const hits = [
+						{ chunkId: "note", score: 1, content: "Release scheduled for September." },
+					] as const;
+					return { ok: true as const, hits, data: { hits }, stdout: "", stderr: "", code: 0 };
+				},
+			},
 		});
-		mkdirSync(join(tmpDir, "vault"), { recursive: true });
-		writeFileSync(join(tmpDir, "vault", "note.md"), "# Note\nRelease scheduled for September.");
-		expect(await first.index()).toMatchObject({ ok: true, chunkCount: 1 });
-
-		// New skill instance, same workspace: loads persisted chunks lazily.
-		const second = new ObsidianSkill({
-			instanceId: "vault-1",
-			workspaceRoot: tmpDir,
-			connectorOptions: { vaultPath: join(tmpDir, "vault") },
-		});
-		const [method] = second.retrievalMethods();
-		const hits = await method?.retrieve("release September", { topK: 5 });
+		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 1 });
+		const methods = skill.retrievalMethods();
+		expect(methods.map((method) => method.describe().name)).toEqual(["obsidian-bm25", "obsidian-semantic"]);
+		const hits = await methods[0]?.retrieve("release September", { topK: 5 });
 		expect(hits?.length).toBe(1);
+		expect(hits?.[0]?.source).toBe("/obsidian/vault-1/chunks/note");
 	});
 
 	it("keeps rss dedupe window active through the agent refresh path", async () => {
