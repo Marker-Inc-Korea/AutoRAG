@@ -137,7 +137,7 @@ Security defaults are intentionally strict:
 | Telegram | `telegram` | external [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | local-first archive + FTS5 search; live desktop ingestion is macOS-only |
 | Slack | `slack` | external [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | local-first workspace/channel/thread archive + FTS5 search |
 | Discord | `discord` | external [`discrawl`](https://github.com/openclaw/discrawl) CLI | guild/channel/thread/DM archive; FTS5 + semantic + hybrid retrieval, incremental sync |
-| Notion | `notion` | Notion API (integration token) | pages/databases shared with the integration; block-tree text |
+| Notion | `notion` | external [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | local-first page/database/block archive + FTS5 search |
 | GitHub Issues/PRs | `github` | GitHub REST (token optional) | issues + PR bodies per `owner/repo`; public repos work unauthenticated |
 | Google Drive | `gdrive` | Drive REST v3, or **[`rclone`](https://rclone.org) CLI** (`backend: "rclone"`) | Docs/Sheets exported as text; the rclone backend also opens any of rclone's 70+ remotes |
 | Gmail / IMAP | `gmail` | Gmail REST v1, or **[`himalaya`](https://pimalaya.org) CLI** (`backend: "himalaya"`) | the himalaya backend indexes any IMAP/Maildir account it has configured — no OAuth plumbing |
@@ -145,7 +145,7 @@ Security defaults are intentionally strict:
 | Obsidian vault | `obsidian` | filesystem (markdown) | frontmatter/inline tags, wiki links `[[...]]`, embeds `![[...]]` |
 | RSS / news | `rss` | HTTP feed polling | RSS 2.0 + Atom, feed/category hierarchy, 24h dedupe window |
 
-Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, Telegram, and Slack leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
+Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, Telegram, Slack, and Notion leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
 
 Configure them in `config.json` (CLI) or pass `datasourceSkills` programmatically:
 
@@ -155,6 +155,7 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "whatsapp": { "instanceId": "personal", "connector": { "binaryPath": "wacrawl" } },
     "telegram": { "instanceId": "personal", "connector": { "binaryPath": "telecrawl" } },
     "slack":    { "connector": { "binaryPath": "slacrawl", "configPath": "/path/to/slacrawl.yaml", "syncSource": "primary" } },
+    "notion":   { "connector": { "binaryPath": "notcrawl", "configPath": "/path/to/notcrawl.yaml" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
     "gdrive":   { "connector": { "backend": "rclone", "remote": "gdrive:" } },
@@ -162,8 +163,8 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["whatsapp", "telegram", "slack", "github", "gmail", "gdrive", "obsidian", "rss"],
-    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/github/**", "/gmail/**", "/gdrive/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "gdrive", "obsidian", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/gdrive/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -173,6 +174,8 @@ Install wacrawl with `brew install openclaw/tap/wacrawl`. AutoRAG invokes `wacra
 Install telecrawl with `brew install openclaw/tap/telecrawl`. AutoRAG invokes `telecrawl import` during datasource refresh and `telecrawl --json search` during retrieval. It uses the same optional trusted connector fields and restricted child environment as wacrawl. Live Telegram Desktop discovery requires macOS and the permissions documented by telecrawl, while an existing portable archive can be queried on other supported platforms.
 
 Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `slacrawl sync` during datasource refresh and `slacrawl --json search` during retrieval. Optional trusted connector fields are `binaryPath`, `configPath`, and `syncSource`. Slack credentials and source definitions remain in slacrawl's own configuration rather than AutoRAG.
+
+Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search --json` during retrieval. Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
 
 #### KakaoTalk (katok)
 
