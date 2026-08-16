@@ -131,6 +131,12 @@ export {
 	SpotlightSkill,
 	type SpotlightSkillOptions,
 } from "./skills/spotlight/index.ts";
+export {
+	TelecrawlClient,
+	type TelecrawlOptions,
+	TelecrawlSkill,
+	type TelecrawlSkillOptions,
+} from "./skills/telecrawl/index.ts";
 export { WacrawlClient, type WacrawlOptions, WacrawlSkill, type WacrawlSkillOptions } from "./skills/wacrawl/index.ts";
 export type {
 	DatasourceAccessible,

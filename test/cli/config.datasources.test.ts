@@ -89,6 +89,27 @@ describe("CLI config datasources wiring", () => {
 		});
 	});
 
+	it("materializes Telegram through the external telecrawl backend", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				telegram: { instanceId: "personal", connector: { binaryPath: "/opt/bin/telecrawl" } },
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.describe()).toMatchObject({
+			name: "telegram",
+			type: "telegram-archive",
+			instanceId: "personal",
+			requiresExternalCli: true,
+		});
+	});
+
 	it("rejects malformed datasources and datasourceAccess sections", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);

@@ -234,7 +234,7 @@ via the role-specific flags or:
 
 ## Configure datasource skills (optional)
 
-External datasources (WhatsApp, Slack, Discord, Notion, GitHub Issues/PRs, Google
+External datasources (WhatsApp, Telegram, Slack, Discord, Notion, GitHub Issues/PRs, Google
 Drive, Gmail, local mail exports, Obsidian vaults, RSS/news) are configured
 as **datasource skills** in the trusted config file — never via model/tool
 arguments. Add a `datasources` section (skill name → config) plus a trusted
@@ -244,6 +244,7 @@ arguments. Add a `datasources` section (skill name → config) plus a trusted
 {
   "datasources": {
     "whatsapp": { "instanceId": "personal", "connector": { "binaryPath": "wacrawl" } },
+    "telegram": { "instanceId": "personal", "connector": { "binaryPath": "telecrawl" } },
     "slack":    { "connector": { "tokenEnv": "SLACK_BOT_TOKEN", "channels": ["eng"] } },
     "discord":  { "connector": { "tokenEnv": "DISCORD_BOT_TOKEN", "guildId": "..." } },
     "notion":   { "connector": { "tokenEnv": "NOTION_TOKEN" } },
@@ -255,8 +256,8 @@ arguments. Add a `datasources` section (skill name → config) plus a trusted
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["whatsapp", "slack", "github", "rss"],
-    "allowedScopes": ["/whatsapp/**", "/slack/**", "/github/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "telegram", "slack", "github", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/github/**", "/rss/**"]
   }
 }
 ```
@@ -279,6 +280,11 @@ Rules:
   (`brew install openclaw/tap/wacrawl`). Optional trusted connector fields are
   `binaryPath`, `databasePath`, and `sourcePath`. Live desktop ingestion is
   macOS-only; the crawler owns Full Disk Access and archive setup.
+- `telegram` requires the external
+  [telecrawl](https://github.com/openclaw/telecrawl) binary
+  (`brew install openclaw/tap/telecrawl`). Optional trusted connector fields
+  are `binaryPath`, `databasePath`, and `sourcePath`. Live desktop ingestion
+  is macOS-only; the crawler owns Full Disk Access and archive setup.
 - Access is **default-deny**: without `datasourceAccess.allowedTags`, no
   datasource skill is announced or searchable, even when configured.
   `allowedScopes` are opaque slash-hierarchical roots like `/slack/<instance>/**`.
