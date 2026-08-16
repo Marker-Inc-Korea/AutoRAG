@@ -135,7 +135,7 @@ Security defaults are intentionally strict:
 | KakaoTalk | `katok` | external [`katok`](https://github.com/NomaDamas/katok) CLI | first datasource skill; AutoRAG never reads KakaoTalk databases directly |
 | WhatsApp | `whatsapp` | external [`wacrawl`](https://github.com/openclaw/wacrawl) CLI | local-first incremental archive + FTS5 search; live desktop ingestion is macOS-only |
 | Telegram | `telegram` | external [`telecrawl`](https://github.com/openclaw/telecrawl) CLI | local-first archive + FTS5 search; live desktop ingestion is macOS-only |
-| Slack | `slack` | Slack Web API (bot token) | workspace/channel history; per-channel scope failures degrade to warnings |
+| Slack | `slack` | external [`slacrawl`](https://github.com/openclaw/slacrawl) CLI | local-first workspace/channel/thread archive + FTS5 search |
 | Discord | `discord` | external [`discrawl`](https://github.com/openclaw/discrawl) CLI | guild/channel/thread/DM archive; FTS5 + semantic + hybrid retrieval, incremental sync |
 | Notion | `notion` | Notion API (integration token) | pages/databases shared with the integration; block-tree text |
 | GitHub Issues/PRs | `github` | GitHub REST (token optional) | issues + PR bodies per `owner/repo`; public repos work unauthenticated |
@@ -145,7 +145,7 @@ Security defaults are intentionally strict:
 | Obsidian vault | `obsidian` | filesystem (markdown) | frontmatter/inline tags, wiki links `[[...]]`, embeds `![[...]]` |
 | RSS / news | `rss` | HTTP feed polling | RSS 2.0 + Atom, feed/category hierarchy, 24h dedupe window |
 
-Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, and Telegram leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
+Connector-backed skills fetch documents into AutoRAG's local chunk store. External-crawler skills such as KakaoTalk, WhatsApp, Telegram, and Slack leave incremental archive and FTS ownership with their CLI and map query results into the same retrieval pipeline. Tokens are referenced by environment variable name only, never stored in config. Process/API failures surface as path/PII-opaque diagnostics. See [docs/manual-qa-datasources.md](docs/manual-qa-datasources.md) for the QA harnesses.
 
 Configure them in `config.json` (CLI) or pass `datasourceSkills` programmatically:
 
@@ -154,7 +154,7 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
   "datasources": {
     "whatsapp": { "instanceId": "personal", "connector": { "binaryPath": "wacrawl" } },
     "telegram": { "instanceId": "personal", "connector": { "binaryPath": "telecrawl" } },
-    "slack":    { "connector": { "tokenEnv": "SLACK_BOT_TOKEN" } },
+    "slack":    { "connector": { "binaryPath": "slacrawl", "configPath": "/path/to/slacrawl.yaml", "syncSource": "primary" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
     "gdrive":   { "connector": { "backend": "rclone", "remote": "gdrive:" } },
@@ -171,6 +171,8 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
 Install wacrawl with `brew install openclaw/tap/wacrawl`. AutoRAG invokes `wacrawl sync` during datasource refresh and `wacrawl --json --sync never search` during retrieval. Optional trusted connector fields are `binaryPath`, `databasePath`, and `sourcePath`. The child process receives only a restricted environment; unrelated model/provider secrets are not forwarded. Live WhatsApp Desktop discovery requires macOS and the permissions documented by wacrawl, while an existing portable archive can be queried on other supported platforms.
 
 Install telecrawl with `brew install openclaw/tap/telecrawl`. AutoRAG invokes `telecrawl import` during datasource refresh and `telecrawl --json search` during retrieval. It uses the same optional trusted connector fields and restricted child environment as wacrawl. Live Telegram Desktop discovery requires macOS and the permissions documented by telecrawl, while an existing portable archive can be queried on other supported platforms.
+
+Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `slacrawl sync` during datasource refresh and `slacrawl --json search` during retrieval. Optional trusted connector fields are `binaryPath`, `configPath`, and `syncSource`. Slack credentials and source definitions remain in slacrawl's own configuration rather than AutoRAG.
 
 #### KakaoTalk (katok)
 

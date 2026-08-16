@@ -110,6 +110,27 @@ describe("CLI config datasources wiring", () => {
 		});
 	});
 
+	it("materializes Slack through the external slacrawl backend", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				slack: { instanceId: "workspace", connector: { binaryPath: "/opt/bin/slacrawl", syncSource: "primary" } },
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.describe()).toMatchObject({
+			name: "slack",
+			type: "slack-archive",
+			instanceId: "workspace",
+			requiresExternalCli: true,
+		});
+	});
+
 	it("rejects malformed datasources and datasourceAccess sections", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);

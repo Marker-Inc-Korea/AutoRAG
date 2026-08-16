@@ -245,7 +245,7 @@ arguments. Add a `datasources` section (skill name → config) plus a trusted
   "datasources": {
     "whatsapp": { "instanceId": "personal", "connector": { "binaryPath": "wacrawl" } },
     "telegram": { "instanceId": "personal", "connector": { "binaryPath": "telecrawl" } },
-    "slack":    { "connector": { "tokenEnv": "SLACK_BOT_TOKEN", "channels": ["eng"] } },
+    "slack":    { "connector": { "binaryPath": "slacrawl", "configPath": "/path/to/slacrawl.yaml", "syncSource": "primary" } },
     "discord":  { "connector": { "tokenEnv": "DISCORD_BOT_TOKEN", "guildId": "..." } },
     "notion":   { "connector": { "tokenEnv": "NOTION_TOKEN" } },
     "github":   { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
@@ -264,9 +264,9 @@ arguments. Add a `datasources` section (skill name → config) plus a trusted
 
 Rules:
 
-- Tokens are configured as **environment variable names** (`tokenEnv`), never
+- REST connector tokens are configured as **environment variable names** (`tokenEnv`), never
   raw secrets in the file. Each skill has a default env var
-  (`SLACK_BOT_TOKEN`, `DISCORD_BOT_TOKEN`, `NOTION_TOKEN`, `GITHUB_TOKEN`,
+  (`DISCORD_BOT_TOKEN`, `NOTION_TOKEN`, `GITHUB_TOKEN`,
   `GDRIVE_ACCESS_TOKEN`, `GMAIL_ACCESS_TOKEN`).
 - **CLI-bridge backends** (recommended where available): `gmail` accepts
   `"backend": "himalaya"` to index any IMAP/Maildir account the external
@@ -285,6 +285,11 @@ Rules:
   (`brew install openclaw/tap/telecrawl`). Optional trusted connector fields
   are `binaryPath`, `databasePath`, and `sourcePath`. Live desktop ingestion
   is macOS-only; the crawler owns Full Disk Access and archive setup.
+- `slack` requires the external
+  [slacrawl](https://github.com/openclaw/slacrawl) binary
+  (`brew install openclaw/tap/slacrawl`). Optional trusted connector fields
+  are `binaryPath`, `configPath`, and `syncSource`; Slack credentials and
+  remote source definitions stay in slacrawl's own configuration.
 - Access is **default-deny**: without `datasourceAccess.allowedTags`, no
   datasource skill is announced or searchable, even when configured.
   `allowedScopes` are opaque slash-hierarchical roots like `/slack/<instance>/**`.
