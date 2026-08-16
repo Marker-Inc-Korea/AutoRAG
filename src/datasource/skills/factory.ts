@@ -9,7 +9,7 @@
  */
 
 import type { DatasourceSkill } from "../types.ts";
-import { type DiscordConnectorOptions, DiscordSkill } from "./discord/index.ts";
+import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
 import { type GDriveConnectorOptions, GDriveSkill } from "./gdrive/index.ts";
 import { RcloneConnector, type RcloneConnectorOptions } from "./gdrive/rclone-connector.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
@@ -46,11 +46,22 @@ type SkillBuilder = (config: DatasourceSkillConfig, workspaceRoot: string | unde
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 	slack: (config, workspaceRoot) =>
 		new SlackSkill({ ...common(config, workspaceRoot), connectorOptions: config.connector as SlackConnectorOptions }),
-	discord: (config, workspaceRoot) =>
-		new DiscordSkill({
-			...common(config, workspaceRoot),
-			connectorOptions: config.connector as DiscordConnectorOptions,
-		}),
+	discord: (config, workspaceRoot) => {
+		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
+		const clientOptions: DiscrawlOptions = {
+			...connector,
+			...(connector.root === undefined && workspaceRoot !== undefined ? { root: workspaceRoot } : {}),
+		};
+		return new DiscrawlSkill({
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			client: new DiscrawlClient(clientOptions),
+			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
+			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
+			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
+		});
+	},
 	notion: (config, workspaceRoot) =>
 		new NotionSkill({
 			...common(config, workspaceRoot),

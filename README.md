@@ -134,7 +134,7 @@ Security defaults are intentionally strict:
 |---|---|---|---|
 | KakaoTalk | `katok` | external [`katok`](https://github.com/NomaDamas/katok) CLI | first datasource skill; AutoRAG never reads KakaoTalk databases directly |
 | Slack | `slack` | Slack Web API (bot token) | workspace/channel history; per-channel scope failures degrade to warnings |
-| Discord | `discord` | Discord REST v10 (bot token) | guild/channel messages; Hangul channel names work as scopes |
+| Discord | `discord` | external [`discrawl`](https://github.com/openclaw/discrawl) CLI | guild/channel/thread/DM archive; FTS5 + semantic + hybrid retrieval, incremental sync |
 | Notion | `notion` | Notion API (integration token) | pages/databases shared with the integration; block-tree text |
 | GitHub Issues/PRs | `github` | GitHub REST (token optional) | issues + PR bodies per `owner/repo`; public repos work unauthenticated |
 | Google Drive | `gdrive` | Drive REST v3, or **[`rclone`](https://rclone.org) CLI** (`backend: "rclone"`) | Docs/Sheets exported as text; the rclone backend also opens any of rclone's 70+ remotes |
@@ -189,6 +189,52 @@ const agent = new AutoRAGAgent({
 await agent.refresh(); // refreshes parsed mirrors, BM25/MinSync, and datasource indexes
 const results = await agent.searchDatasourceDocuments("meeting with Mina", { topK: 5 });
 ```
+
+#### Discord (discrawl)
+
+Discord uses the external [`discrawl`](https://github.com/openclaw/discrawl) CLI, which owns the SQLite archive, the FTS5 index, and the message vectors. AutoRAG never calls the Discord API itself.
+
+```bash
+brew install openclaw/tap/discrawl
+```
+
+Two archive sources are supported. `wiretap` (the default) reads the local Discord Desktop cache and needs **no token at all**; `discord` uses a bot token, which is the ToS-sanctioned automation path. AutoRAG refuses to spawn the CLI when a Discord *user* token is present in the environment — automating a user account violates Discord's Community Guidelines and can get the account terminated.
+
+```typescript
+import { AutoRAGAgent, DiscrawlClient, DiscrawlSkill } from "@autorag/librarian";
+
+const discord = new DiscrawlSkill({
+  client: new DiscrawlClient({ source: "wiretap", root: process.cwd() }),
+  instanceId: "community",
+});
+
+const agent = new AutoRAGAgent({
+  searchPaths: ["/path/to/documents"],
+  datasourceSkills: [discord],
+  datasourceAccess: {
+    allowedTags: ["discord"],
+    allowedScopes: ["/discord/community/**"],
+  },
+});
+```
+
+Or through the trusted config factory:
+
+```json
+{
+  "datasources": {
+    "discord": {
+      "instanceId": "community",
+      "connector": { "source": "wiretap", "embeddingModel": "bge-m3", "defaultMode": "hybrid" }
+    }
+  }
+}
+```
+
+Two defaults are deliberate and worth keeping:
+
+- **`defaultMode: "hybrid"`** — discrawl's FTS index strips newlines without substituting a space, welding words across line breaks into a single unsearchable token (measured at ~47% of post-newline words on a real archive). Semantic recall covers that gap. See [#1413](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1413).
+- **`embeddingModel: "bge-m3"`** — semantic search requires an embedding provider (`ollama serve && ollama pull bge-m3`). Do **not** use `nomic-embed-text`: it is English-only and collapses non-English text into one narrow similarity band, silently degrading semantic search to noise. AutoRAG emits a diagnostic when an English-only model is configured. See [#1414](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1414).
 
 A datasource skill should provide polling/cron metadata for routine indexing, source descriptions for the agent prompt, slash-hierarchical opaque source paths such as `/kakao/personal/chunks/<chunk-id>`, and permission tags that match your server-side access policy.
 
@@ -257,7 +303,7 @@ bun add github:NomaDamas/AutoRAG-2.0
 ```
 
 Git-based installs build `dist/` via the `prepare` script and require Bun on the installing machine.
-External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** downloads a verified GitHub release asset (on by default; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) stays a manual, optional install. All of them degrade gracefully when missing — core BM25 search works without any of them.
+External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** downloads a verified GitHub release asset (on by default; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) and Discord (`discrawl`) stay manual, optional installs. All of them degrade gracefully when missing — core BM25 search works without any of them.
 
 ## Quick Start
 

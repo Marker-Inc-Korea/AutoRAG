@@ -39,11 +39,25 @@ export {
 	normalizeVirtualPath,
 } from "./scope.ts";
 export {
-	DiscordConnector,
-	type DiscordConnectorOptions,
-	DiscordSkill,
-	type DiscordSkillOptions,
-} from "./skills/discord/index.ts";
+	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
+	DEFAULT_DISCRAWL_MODE,
+	DEFAULT_DISCRAWL_SOURCE,
+	DiscrawlClient,
+	type DiscrawlFailureReason,
+	DiscrawlFtsMethod,
+	DiscrawlHybridMethod,
+	type DiscrawlOptions,
+	type DiscrawlSearchHit,
+	type DiscrawlSearchMode,
+	type DiscrawlSearchOptions,
+	type DiscrawlSearchResult,
+	DiscrawlSemanticMethod,
+	DiscrawlSkill,
+	type DiscrawlSkillClient,
+	type DiscrawlSkillOptions,
+	type DiscrawlSourceKind,
+	ENGLISH_ONLY_EMBEDDING_MODELS,
+} from "./skills/discrawl/index.ts";
 export {
 	BUILTIN_DATASOURCE_SKILL_NAMES,
 	type BuildDatasourceSkillsResult,

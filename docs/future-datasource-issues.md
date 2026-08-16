@@ -9,7 +9,6 @@ Use `.github/ISSUE_TEMPLATE/datasource-skill.md` and labels `datasource-skill`, 
 3. Notion datasource skill — workspace/database/page hierarchy, block tree indexing, integration-token boundaries.
 4. GitHub Issues/PRs datasource skill — owner/repo hierarchy, issue/PR/comment/review indexing, GitHub App scopes.
 5. Gmail/IMAP datasource skill — account/label/folder hierarchy, email/thread/attachment indexing, OAuth or IMAP auth.
-6. Discord datasource skill — guild/channel/thread hierarchy, bot permissions, message history windows.
 7. Linear datasource skill — workspace/team/project hierarchy, issue/comment/document indexing.
 8. Jira datasource skill — site/project/board hierarchy, issue/comment/attachment indexing.
 9. Confluence datasource skill — site/space/page hierarchy, page tree and attachment indexing.

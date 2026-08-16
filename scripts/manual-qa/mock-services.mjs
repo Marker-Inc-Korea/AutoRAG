@@ -1,11 +1,10 @@
 /**
  * Manual-QA mock server emulating the external APIs the datasource skills
- * talk to: Slack, Discord, Notion, GitHub, Google Drive, Gmail, and an RSS
+ * talk to: Slack, Notion, GitHub, Google Drive, Gmail, and an RSS
  * feed. Started by run-qa.ts on an ephemeral port.
  *
  * Auth behavior mirrors the real services closely enough for QA:
  *  - Slack expects  Authorization: Bearer qa-slack-token
- *  - Discord expects Authorization: Bot qa-discord-token
  *  - Notion/GDrive/Gmail expect their Bearer tokens
  *  - wrong/missing tokens produce the service's native auth failure shape
  */
@@ -52,27 +51,6 @@ export function startMockServices() {
 				],
 				response_metadata: { next_cursor: "" },
 			});
-		}
-
-		// ---- Discord ----
-		if (path === "/discord/guilds/qa-guild/channels") {
-			if (auth !== "Bot qa-discord-token") return text("unauthorized", 401);
-			return json([
-				{ id: "D-GEN", name: "general", type: 0 },
-				{ id: "D-VOICE", name: "voice", type: 2 },
-			]);
-		}
-		if (path === "/discord/channels/D-GEN/messages") {
-			if (auth !== "Bot qa-discord-token") return text("unauthorized", 401);
-			if (url.searchParams.has("before")) return json([]);
-			return json([
-				{
-					id: "88001",
-					content: "Community meetup scheduled for August 3rd in Seoul.",
-					timestamp: "2024-07-01T09:00:00.000Z",
-					author: { username: "organizer" },
-				},
-			]);
 		}
 
 		// ---- Notion ----
