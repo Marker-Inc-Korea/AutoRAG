@@ -67,7 +67,6 @@ try {
 	const { skills, unknown } = buildDatasourceSkills(
 		{
 			slack: { connector: { baseUrl: `${base}/slack`, token: "qa-slack-token" } },
-			discord: { connector: { baseUrl: `${base}/discord`, token: "qa-discord-token", guildId: "qa-guild" } },
 			notion: { connector: { baseUrl: `${base}/notion`, token: "qa-notion-token" } },
 			github: { connector: { baseUrl: `${base}/github`, repos: ["qa-org/qa-repo"] } },
 			gdrive: { connector: { baseUrl: `${base}/gdrive`, token: "qa-gdrive-token" } },
@@ -78,7 +77,7 @@ try {
 		},
 		tmpRoot,
 	);
-	check("setup: factory builds all nine skills", skills.length === 9 && unknown.length === 0);
+	check("setup: factory builds all eight HTTP/filesystem skills", skills.length === 8 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
@@ -87,7 +86,7 @@ try {
 		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: {
-			allowedTags: ["slack", "discord", "notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
+			allowedTags: ["slack", "notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
 			allowedScopes: ["/**"],
 		},
 	});
@@ -105,7 +104,7 @@ try {
 
 	// --- 3. Progressive disclosure: skills announced + loadable ---
 	const prompt = agent.getSystemPrompt();
-	const names = ["slack", "discord", "notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
+	const names = ["slack", "notion", "github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
 	check(
 		"prompt: all authorized skills announced",
 		names.every((name) => prompt.includes(`datasource-${name}`)),
@@ -122,7 +121,6 @@ try {
 	const searchTool = createSearchDatasourceDocumentsTool(agent);
 	const queries: Record<string, string> = {
 		slack: "payment gateway migration July",
-		discord: "community meetup Seoul August",
 		notion: "on-call engineer restart cluster",
 		github: "Korean queries tokenized ranking",
 		gdrive: "vendor contract cancellation notice",
