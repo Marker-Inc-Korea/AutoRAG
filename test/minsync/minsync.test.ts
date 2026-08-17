@@ -1,4 +1,15 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	statSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "smol-toml";
@@ -131,6 +142,221 @@ describe("MinSyncVectorMethod", () => {
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({ args: ["sync", "--full", "--format", "json"], cwd: minSyncCwd() }),
 		);
+	});
+
+	it("updates only the changed parsed mirror file", async () => {
+		// Given
+		const guideOutput = join(root, ".autorag", "parsed", "files", "docs", "guide.txt.md");
+		writeFileSync(join(source, "guide.txt"), "raw guide source\n");
+		writeFileSync(guideOutput, "Parsed guide that does not change.\n");
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/guide.txt": {
+					virtualPath: "/docs/guide.txt",
+					sourcePath: join(source, "guide.txt"),
+					outputPath: guideOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 17,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+			},
+		});
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+		await method.sync();
+		const stagedGuide = join(minsyncWorkspace, "files", "docs", "guide.txt.md");
+		const stagedPolicy = join(minsyncWorkspace, "files", "docs", "policy.txt.md");
+		const preservedTime = new Date("2020-01-01T00:00:00.000Z");
+		utimesSync(stagedGuide, preservedTime, preservedTime);
+
+		// When
+		writeFileSync(parsedOutput, "Parsed renewal policy with updated cancellation terms.\n");
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/guide.txt": {
+					virtualPath: "/docs/guide.txt",
+					sourcePath: join(source, "guide.txt"),
+					outputPath: guideOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 17,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 2,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-02T00:00:00.000Z",
+				},
+			},
+		});
+		await method.sync();
+
+		// Then
+		expect(readFileSync(stagedPolicy, "utf8")).toContain("updated cancellation terms");
+		expect(readFileSync(stagedGuide, "utf8")).toBe("Parsed guide that does not change.\n");
+		expect(statSync(stagedGuide).mtimeMs).toBe(preservedTime.getTime());
+	});
+
+	it("adds and removes only corresponding staged mirror files", async () => {
+		// Given
+		const archiveOutput = join(root, ".autorag", "parsed", "files", "docs", "archive.txt.md");
+		writeFileSync(join(source, "archive.txt"), "raw archive source\n");
+		writeFileSync(archiveOutput, "Parsed archive to remove.\n");
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/archive.txt": {
+					virtualPath: "/docs/archive.txt",
+					sourcePath: join(source, "archive.txt"),
+					outputPath: archiveOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 19,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+			},
+		});
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+		await method.sync();
+		const stagedArchive = join(minsyncWorkspace, "files", "docs", "archive.txt.md");
+		const stagedPolicy = join(minsyncWorkspace, "files", "docs", "policy.txt.md");
+		const preservedTime = new Date("2020-01-01T00:00:00.000Z");
+		utimesSync(stagedPolicy, preservedTime, preservedTime);
+		const noticeOutput = join(root, ".autorag", "parsed", "files", "docs", "notice.txt.md");
+		writeFileSync(join(source, "notice.txt"), "raw notice source\n");
+		writeFileSync(noticeOutput, "Parsed new notice.\n");
+		saveMirrorIndex(root, {
+			version: 1,
+			entries: {
+				"/docs/notice.txt": {
+					virtualPath: "/docs/notice.txt",
+					sourcePath: join(source, "notice.txt"),
+					outputPath: noticeOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 2,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-02T00:00:00.000Z",
+				},
+				"/docs/policy.txt": {
+					virtualPath: "/docs/policy.txt",
+					sourcePath: join(source, "policy.txt"),
+					outputPath: parsedOutput,
+					parserName: "plain-text",
+					sourceMtimeNs: 1,
+					sourceSizeBytes: 18,
+					updatedAt: "2026-01-01T00:00:00.000Z",
+				},
+			},
+		});
+
+		// When
+		await method.sync();
+
+		// Then
+		expect(existsSync(stagedArchive)).toBe(false);
+		expect(readFileSync(join(minsyncWorkspace, "files", "docs", "notice.txt.md"), "utf8")).toBe(
+			"Parsed new notice.\n",
+		);
+		expect(statSync(stagedPolicy).mtimeMs).toBe(preservedTime.getTime());
+	});
+
+	it("ignores traversal entries in a corrupt staging state", async () => {
+		// Given
+		const outsidePath = join(root, "outside.md");
+		writeFileSync(outsidePath, "must survive\n");
+		mkdirSync(minsyncWorkspace, { recursive: true });
+		writeFileSync(
+			join(root, ".autorag", ".minsync-autorag-staging.json"),
+			`${JSON.stringify({
+				version: 1,
+				entries: {
+					"/../../../outside": {
+						outputPath: parsedOutput,
+						updatedAt: "2026-01-01T00:00:00.000Z",
+					},
+				},
+			})}\n`,
+		);
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		// When
+		await method.sync();
+
+		// Then
+		expect(readFileSync(outsidePath, "utf8")).toBe("must survive\n");
+	});
+
+	it("removes staged files missing from the persisted staging state", async () => {
+		// Given
+		const stagedPolicy = join(minsyncWorkspace, "files", "docs", "policy.txt.md");
+		const orphanPath = join(minsyncWorkspace, "files", "docs", "orphan.txt.md");
+		mkdirSync(join(minsyncWorkspace, "files", "docs"), { recursive: true });
+		writeFileSync(stagedPolicy, "Parsed renewal policy with cancellation and refund terms.\n");
+		writeFileSync(orphanPath, "orphan from interrupted staging\n");
+		writeFileSync(
+			join(root, ".autorag", ".minsync-autorag-staging.json"),
+			`${JSON.stringify({
+				version: 1,
+				entries: {
+					"/docs/policy.txt": {
+						outputPath: parsedOutput,
+						updatedAt: "2026-01-01T00:00:00.000Z",
+					},
+				},
+			})}\n`,
+		);
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		// When
+		await method.sync();
+
+		// Then
+		expect(existsSync(orphanPath)).toBe(false);
+		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation and refund terms");
 	});
 
 	it("returns vector results resolved from parsed mirror paths back to virtual paths", async () => {
