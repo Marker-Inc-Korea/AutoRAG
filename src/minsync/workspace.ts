@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -9,7 +10,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { normalizeVirtualPath } from "../filesystem/source-paths.ts";
 import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
@@ -45,7 +46,7 @@ export function syncMinSyncWorkspace(
 	const index = loadMirrorIndex(root);
 	const entries = Object.values(index.entries)
 		.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath))
-		.filter((entry) => existsSync(entry.outputPath))
+		.filter((entry) => normalizeVirtualPath(entry.virtualPath) === entry.virtualPath && existsSync(entry.outputPath))
 		.map((entry) => {
 			const minSyncPath = minSyncDocumentPath(workspacePath, entry.virtualPath);
 			return {
@@ -56,10 +57,7 @@ export function syncMinSyncWorkspace(
 			};
 		});
 	const previousState = loadStagingState(workspacePath);
-	if (previousState === undefined) {
-		rmSync(filesRoot, { recursive: true, force: true });
-	}
-	mkdirSync(filesRoot, { recursive: true });
+	ensureManagedFilesRoot(filesRoot, previousState === undefined);
 
 	const currentState: Record<string, MinSyncStagingEntry> = {};
 	const desiredPaths = new Set<string>();
@@ -70,10 +68,10 @@ export function syncMinSyncWorkspace(
 		const unchanged =
 			previousEntry?.outputPath === mirrorEntry.outputPath &&
 			previousEntry.updatedAt === mirrorEntry.updatedAt &&
-			existsSync(entry.minSyncPath);
+			isRegularFile(entry.minSyncPath);
 		if (!unchanged) {
-			mkdirSync(dirname(entry.minSyncPath), { recursive: true });
-			copyFileSync(entry.parsedOutputPath, entry.minSyncPath);
+			ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
+			copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
 		}
 		currentState[entry.virtualPath] = {
 			outputPath: mirrorEntry.outputPath,
@@ -94,7 +92,7 @@ function stagingStatePath(workspacePath: string): string {
 
 function loadStagingState(workspacePath: string): MinSyncStagingState | undefined {
 	const path = stagingStatePath(workspacePath);
-	if (!existsSync(path)) return undefined;
+	if (!isRegularFile(path)) return undefined;
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
 		return isMinSyncStagingState(parsed) ? parsed : undefined;
@@ -119,6 +117,46 @@ function isMinSyncStagingState(value: unknown): value is MinSyncStagingState {
 			typeof entry.outputPath === "string" &&
 			typeof entry.updatedAt === "string",
 	);
+}
+
+function ensureManagedFilesRoot(filesRoot: string, rebuild: boolean): void {
+	const status = lstatSync(filesRoot, { throwIfNoEntry: false });
+	if (status !== undefined && (rebuild || !status.isDirectory())) {
+		rmSync(filesRoot, { recursive: status.isDirectory(), force: true });
+	}
+	mkdirSync(filesRoot, { recursive: true });
+}
+
+function ensureManagedDirectory(filesRoot: string, directory: string): void {
+	const relativeDirectory = relative(filesRoot, directory);
+	if (relativeDirectory === ".." || relativeDirectory.startsWith(`..${sep}`) || isAbsolute(relativeDirectory)) {
+		throw new Error("MinSync staging path escaped its managed files root");
+	}
+	const segments = relativeDirectory.split(sep).filter(Boolean);
+	let current = filesRoot;
+	for (const segment of segments) {
+		current = join(current, segment);
+		const status = lstatSync(current, { throwIfNoEntry: false });
+		if (status?.isDirectory()) continue;
+		if (status !== undefined) {
+			rmSync(current, { force: true });
+		}
+		mkdirSync(current);
+	}
+}
+
+function copyFileAtomically(source: string, destination: string): void {
+	const temporaryPath = join(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
+	try {
+		copyFileSync(source, temporaryPath);
+		renameSync(temporaryPath, destination);
+	} finally {
+		rmSync(temporaryPath, { force: true });
+	}
+}
+
+function isRegularFile(path: string): boolean {
+	return lstatSync(path, { throwIfNoEntry: false })?.isFile() === true;
 }
 
 function removeUnexpectedStagedFiles(directory: string, desiredPaths: ReadonlySet<string>): void {

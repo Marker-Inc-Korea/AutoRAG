@@ -1,12 +1,14 @@
 import {
 	chmodSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	utimesSync,
 	writeFileSync,
 } from "node:fs";
@@ -359,6 +361,58 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation and refund terms");
 	});
 
+	it("rebuilds a symlinked staging root without touching its target", async () => {
+		// Given
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+		await method.sync();
+		const filesRoot = join(minsyncWorkspace, "files");
+		const outsideDirectory = join(root, "outside-staging-target");
+		const outsideFile = join(outsideDirectory, "must-survive.txt");
+		rmSync(filesRoot, { recursive: true, force: true });
+		mkdirSync(outsideDirectory, { recursive: true });
+		writeFileSync(outsideFile, "must survive\n");
+		symlinkSync(outsideDirectory, filesRoot, "dir");
+
+		// When
+		await method.sync();
+
+		// Then
+		expect(readFileSync(outsideFile, "utf8")).toBe("must survive\n");
+		expect(lstatSync(filesRoot).isSymbolicLink()).toBe(false);
+		expect(lstatSync(filesRoot).isDirectory()).toBe(true);
+		expect(readFileSync(join(filesRoot, "docs", "policy.txt.md"), "utf8")).toContain("cancellation terms");
+	});
+
+	it("replaces a staged file symlink without reading or overwriting its target", async () => {
+		// Given
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+		await method.sync();
+		const stagedPolicy = join(minsyncWorkspace, "files", "docs", "policy.txt.md");
+		const outsideFile = join(root, "outside-policy.md");
+		rmSync(stagedPolicy, { force: true });
+		writeFileSync(outsideFile, "must survive\n");
+		symlinkSync(outsideFile, stagedPolicy);
+
+		// When
+		await method.sync();
+
+		// Then
+		expect(readFileSync(outsideFile, "utf8")).toBe("must survive\n");
+		expect(lstatSync(stagedPolicy).isSymbolicLink()).toBe(false);
+		expect(lstatSync(stagedPolicy).isFile()).toBe(true);
+		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
+	});
+
 	it("returns vector results resolved from parsed mirror paths back to virtual paths", async () => {
 		// Given
 		writeFakeMinSync(
@@ -402,15 +456,13 @@ describe("MinSyncVectorMethod", () => {
 	it("maps real MinSync relative file paths back to virtual paths", async () => {
 		// Given
 		writeFakeMinSync(
-			JSON.stringify({
-				results: [
-					{
-						path: "files/docs/policy.txt.md",
-						score: 0.77,
-						text: "Relative path hit from MinSync.",
-					},
-				],
-			}),
+			JSON.stringify([
+				{
+					path: "files/docs/policy.txt.md",
+					score: 0.77,
+					text: "Relative path hit from MinSync.",
+				},
+			]),
 		);
 		const method = new MinSyncVectorMethod({
 			binaryPath: minsyncBinary,
