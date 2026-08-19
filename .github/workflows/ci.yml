@@ -15,10 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # pi-coding-agent's grep tool needs ripgrep; preinstall it so tests
-      # don't depend on its on-demand binary download.
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      # pi-coding-agent's grep/find tools need ripgrep and fd; preinstall
+      # them so tests don't depend on their on-demand binary downloads (which
+      # fail in CI's network-restricted environment). On Ubuntu, the fd binary
+      # is shipped as `fdfind`, which pi-coding-agent recognizes via its
+      # systemBinaryNames fallback.
+      - name: Install ripgrep and fd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep fd-find
 
       - uses: oven-sh/setup-bun@v2
         with:
