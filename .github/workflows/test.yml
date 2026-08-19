@@ -1,5 +1,8 @@
 name: Legacy Unit Test
 
+# Path-filtered: this workflow is not a required check, so skipping it on
+# AutoRAG 2.0-only diffs is safe. The TypeScript required check lives in
+# ci.yml and always reports `build` (heavy steps skip when src/test/etc. are untouched).
 on:
   push:
     branches:

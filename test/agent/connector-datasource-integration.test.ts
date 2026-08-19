@@ -277,9 +277,7 @@ describe("AutoRAGAgent with connector-backed datasource skills", () => {
 					return { ok: true as const, data: { embedded: true }, stdout: "", stderr: "", code: 0 };
 				},
 				async search() {
-					const hits = [
-						{ chunkId: "note", score: 1, content: "Release scheduled for September." },
-					] as const;
+					const hits = [{ chunkId: "note", score: 1, content: "Release scheduled for September." }] as const;
 					return { ok: true as const, hits, data: { hits }, stdout: "", stderr: "", code: 0 };
 				},
 			},

@@ -11,18 +11,9 @@ import type {
 	SourceDescription,
 } from "../../types.ts";
 import { QmdClient } from "./client.ts";
-import {
-	ObsidianBm25Method,
-	type ObsidianSearchClient,
-	ObsidianSemanticMethod,
-} from "./methods.ts";
+import { ObsidianBm25Method, type ObsidianSearchClient, ObsidianSemanticMethod } from "./methods.ts";
 import { toQmdCollectionName } from "./paths.ts";
-import type {
-	QmdEmbedResult,
-	QmdEnsureResult,
-	QmdOptions,
-	QmdUpdateResult,
-} from "./types.ts";
+import type { QmdEmbedResult, QmdEnsureResult, QmdOptions, QmdUpdateResult } from "./types.ts";
 
 export interface ObsidianSkillClient extends ObsidianSearchClient {
 	ensureCollection(): Promise<QmdEnsureResult>;
@@ -213,8 +204,7 @@ export class ObsidianSkill implements DatasourceSkill {
 		code: DatasourceDiagnosticCode,
 		result: { ok: false; reason: string; stdout?: string; stderr: string; code: number | null },
 	): DatasourceIndexResult {
-		const message =
-			result.stderr.length > 0 ? `${result.reason}: ${boundDiagnostic(result.stderr)}` : result.reason;
+		const message = result.stderr.length > 0 ? `${result.reason}: ${boundDiagnostic(result.stderr)}` : result.reason;
 		this.lastError = message;
 		const diagnostic: DatasourceDiagnostic = {
 			code,

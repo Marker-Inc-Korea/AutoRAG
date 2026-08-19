@@ -19,11 +19,7 @@ import type {
 	QmdUpdateInfo,
 	QmdUpdateResult,
 } from "./types.ts";
-import {
-	DEFAULT_QMD_BINARY,
-	DEFAULT_QMD_MAX_BUFFER_BYTES,
-	DEFAULT_QMD_TIMEOUT_MS,
-} from "./types.ts";
+import { DEFAULT_QMD_BINARY, DEFAULT_QMD_MAX_BUFFER_BYTES, DEFAULT_QMD_TIMEOUT_MS } from "./types.ts";
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -317,8 +313,7 @@ function parseUpdateInfo(stdout: string, stderr: string): QmdUpdateInfo {
 				needsEmbedding: typeof parsed.needsEmbedding === "boolean" ? parsed.needsEmbedding : undefined,
 			};
 		}
-	} catch {
-	}
+	} catch {}
 	return { indexed: 0, updated: 0, unchanged: 0, removed: 0 };
 }
 

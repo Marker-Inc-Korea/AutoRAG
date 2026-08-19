@@ -87,7 +87,10 @@ class StubClient implements ObsidianSkillClient {
 	}
 }
 
-function fail(reason: QmdFailureReason, stderr = "failed"): {
+function fail(
+	reason: QmdFailureReason,
+	stderr = "failed",
+): {
 	readonly ok: false;
 	readonly reason: QmdFailureReason;
 	readonly stdout: string;
@@ -149,9 +152,7 @@ describe("ObsidianSkill", () => {
 
 describe("Obsidian retrieval methods", () => {
 	it("maps lexical and semantic hits to opaque sources", async () => {
-		const hits: readonly QmdSearchHit[] = [
-			{ chunkId: "n1", score: 1.2, content: "beta ship", file: "a.md" },
-		];
+		const hits: readonly QmdSearchHit[] = [{ chunkId: "n1", score: 1.2, content: "beta ship", file: "a.md" }];
 		const client = {
 			async search(): Promise<QmdSearchResult> {
 				return { ok: true, hits, data: { hits }, stdout: "", stderr: "", code: 0 };
