@@ -44,7 +44,7 @@
     "@earendil-works/pi-coding-agent": "0.84.1",
     "@opendataloader/pdf": "^2.4.7",
     "@pngwasi/node-tantivy-binding": "^0.3.4",
-    "@rhwp/core": "0.8.2",
+    "@rhwp/core": "0.8.4",
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.9.3",
     "iconv-lite": "^0.7.2",
