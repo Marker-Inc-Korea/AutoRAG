@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { realpath, stat } from "node:fs/promises";
 import {
 	createFindToolDefinition,
 	createGrepToolDefinition,
@@ -117,6 +116,7 @@ export default function registerExplorerTools(pi: ExplorerToolRegistrar): void {
 							text: `Skipped iCloud/File Provider placeholder (not hydrated): ${target}`,
 						},
 					],
+					details: undefined,
 				};
 			}
 			return createReadToolDefinition(root).execute(toolCallId, { ...params, path: target }, signal, onUpdate, ctx);
@@ -168,7 +168,7 @@ async function grepMaterializedOnly(
 	target: string,
 	params: { pattern: string; glob?: string; ignoreCase?: boolean; literal?: boolean; limit?: number },
 	signal: AbortSignal,
-): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+): Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }> {
 	if (await isDatalessPlaceholder(target)) {
 		return {
 			content: [
@@ -177,6 +177,7 @@ async function grepMaterializedOnly(
 					text: `Skipped iCloud/File Provider placeholder (not hydrated): ${target}`,
 				},
 			],
+			details: undefined,
 		};
 	}
 	const walk = await listMaterializedFiles(target, { timeoutMs: GREP_CLOUD_TIMEOUT_MS });
@@ -188,6 +189,7 @@ async function grepMaterializedOnly(
 					text: `No local (materialized) files under ${target}. Skipped ${walk.skippedDataless} iCloud/File Provider placeholders so grep would not download them.`,
 				},
 			],
+			details: undefined,
 		};
 	}
 	const listDir = await mkdtemp(join(tmpdir(), "autorag-grep-"));
@@ -200,10 +202,14 @@ async function grepMaterializedOnly(
 	const limit = params.limit ?? 100;
 	args.push(params.pattern);
 	const stdout = await runRipgrep(args, signal);
-	const lines = stdout.split("\n").filter((line) => line.length > 0).slice(0, limit);
+	const lines = stdout
+		.split("\n")
+		.filter((line) => line.length > 0)
+		.slice(0, limit);
 	const header = `Searched ${walk.materialized.length} local files; skipped ${walk.skippedDataless} iCloud/File Provider placeholders (not opened).`;
 	return {
 		content: [{ type: "text", text: `${header}\n${lines.join("\n")}` }],
+		details: undefined,
 	};
 }
 
