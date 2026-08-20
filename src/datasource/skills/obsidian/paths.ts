@@ -43,12 +43,22 @@ export function parseObsidianSourcePath(
 	return { instanceId, chunkId };
 }
 
+/** Strip leading and trailing ASCII dashes without a quadratic regex. */
+export function stripEdgeDashes(value: string): string {
+	let start = 0;
+	let end = value.length;
+	while (start < end && value[start] === "-") start += 1;
+	while (end > start && value[end - 1] === "-") end -= 1;
+	return value.slice(start, end);
+}
+
 /** Sanitize an instance id into a qmd collection name. */
 export function toQmdCollectionName(instanceId: string): string {
-	const cleaned = instanceId
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9._-]+/g, "-")
-		.replace(/^-+|-+$/g, "");
+	const cleaned = stripEdgeDashes(
+		instanceId
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9._-]+/g, "-"),
+	);
 	return cleaned.length > 0 ? cleaned.slice(0, 64) : "default";
 }

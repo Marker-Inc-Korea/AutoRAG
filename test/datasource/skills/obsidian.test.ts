@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { QmdClient } from "../../../src/datasource/skills/obsidian/client.ts";
 import { ObsidianBm25Method, ObsidianSemanticMethod } from "../../../src/datasource/skills/obsidian/methods.ts";
+import { toQmdCollectionName } from "../../../src/datasource/skills/obsidian/paths.ts";
 import { ObsidianSkill, type ObsidianSkillClient } from "../../../src/datasource/skills/obsidian/skill.ts";
 import type {
 	QmdEmbedResult,
@@ -248,5 +249,15 @@ process.exit(0);
 		const result = await client.update();
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toBe("binary-missing");
+	});
+});
+
+describe("toQmdCollectionName", () => {
+	it("collapses punctuation and strips edge dashes without a quadratic regex", () => {
+		expect(toQmdCollectionName("Vault One")).toBe("vault-one");
+		expect(toQmdCollectionName("---Work---")).toBe("work");
+		const padded = `${"-".repeat(10_000)}ok${"-".repeat(10_000)}`;
+		expect(toQmdCollectionName(padded)).toBe("ok");
+		expect(toQmdCollectionName("---")).toBe("default");
 	});
 });

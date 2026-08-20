@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { obsidianQmdCacheDir, obsidianQmdConfigDir, toQmdCollectionName } from "./paths.ts";
+import { obsidianQmdCacheDir, obsidianQmdConfigDir, stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
 import type {
 	QmdEmbedInfo,
 	QmdEmbedResult,
@@ -375,19 +375,15 @@ function normalizeHit(raw: unknown): QmdSearchHit | undefined {
 function toChunkId(docid: string | undefined, file: string | undefined, title: string | undefined): string {
 	if (docid !== undefined && docid.length > 0) return docid.replace(/^#/, "");
 	if (file !== undefined && file.length > 0) {
-		return file
-			.replace(/^qmd:\/\//, "")
-			.replace(/\\/g, "/")
-			.replace(/[^A-Za-z0-9._/-]+/g, "-")
-			.replace(/^-+|-+$/g, "")
-			.slice(0, 120);
+		return stripEdgeDashes(
+			file
+				.replace(/^qmd:\/\//, "")
+				.replace(/\\/g, "/")
+				.replace(/[^A-Za-z0-9._/-]+/g, "-"),
+		).slice(0, 120);
 	}
 	if (title !== undefined && title.length > 0) {
-		return title
-			.toLowerCase()
-			.replace(/[^a-z0-9._-]+/g, "-")
-			.replace(/^-+|-+$/g, "")
-			.slice(0, 80);
+		return stripEdgeDashes(title.toLowerCase().replace(/[^a-z0-9._-]+/g, "-")).slice(0, 80);
 	}
 	return "";
 }

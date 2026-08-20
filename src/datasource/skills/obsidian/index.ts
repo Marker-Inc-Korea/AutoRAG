@@ -11,6 +11,7 @@ export {
 	obsidianQmdConfigDir,
 	obsidianSourcePath,
 	parseObsidianSourcePath,
+	stripEdgeDashes,
 	toQmdCollectionName,
 } from "./paths.ts";
 export { ObsidianSkill, type ObsidianSkillClient, type ObsidianSkillOptions } from "./skill.ts";
