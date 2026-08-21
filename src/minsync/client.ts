@@ -125,7 +125,7 @@ function readCheckFailure(stdout: string): string | undefined {
 
 function parseQueryHits(stdout: string): readonly MinSyncQueryHit[] {
 	const parsed = parseJson(stdout);
-	const candidates = isRecord(parsed) ? parsed.results : parsed;
+	const candidates = Array.isArray(parsed) ? parsed : isRecord(parsed) ? parsed.results : [];
 	if (!Array.isArray(candidates)) return [];
 	return candidates.filter(isMinSyncQueryHit);
 }
