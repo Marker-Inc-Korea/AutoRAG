@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -114,7 +114,7 @@ function runConfigChild(script: string, env: Readonly<Record<string, string>>): 
 }
 
 function pendingConfigArtifacts(configPath: string): string[] {
-	const base = `.${configPath.slice(configPath.lastIndexOf("/") + 1)}.`;
+	const base = `.${basename(configPath)}.`;
 	return readdirSync(dirname(configPath)).filter(
 		(name) => (name.startsWith(base) && name.endsWith(".tmp")) || name.endsWith(".lock") || name.endsWith(".stale"),
 	);

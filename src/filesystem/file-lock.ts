@@ -267,7 +267,7 @@ function tryCreateOwnerMarker(lockPath: string, owner: FileLockOwner, contents: 
 		try {
 			createLockFile(markerPath, contents);
 		} catch (error) {
-			if (hasAnyErrorCode(error, ["ENOENT", "EEXIST", "ENOTDIR"])) return undefined;
+			if (hasAnyErrorCode(error, ["EINVAL", "ENOENT", "EEXIST", "ENOTDIR"])) return undefined;
 			throw error;
 		}
 
