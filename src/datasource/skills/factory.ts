@@ -17,7 +17,7 @@ import { HimalayaConnector, type HimalayaConnectorOptions } from "./gmail/himala
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
-import { type ObsidianConnectorOptions, ObsidianSkill } from "./obsidian/index.ts";
+import { ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
 import { SlackSkill, type SlacrawlOptions } from "./slack/index.ts";
 import { type SpotlightConnectorOptions, SpotlightSkill } from "./spotlight/index.ts";
@@ -133,11 +133,14 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
-	obsidian: (config, workspaceRoot) =>
-		new ObsidianSkill({
+	obsidian: (config, workspaceRoot) => {
+		const connector = config.connector as { vaultPath?: string; binaryPath?: string } | undefined;
+		return new ObsidianSkill({
 			...common(config, workspaceRoot),
-			connectorOptions: config.connector as ObsidianConnectorOptions,
-		}),
+			...(connector?.vaultPath !== undefined ? { vaultPath: connector.vaultPath } : {}),
+			...(connector?.binaryPath !== undefined ? { binaryPath: connector.binaryPath } : {}),
+		});
+	},
 	rss: (config, workspaceRoot) =>
 		new RssSkill({ ...common(config, workspaceRoot), connectorOptions: config.connector as RssConnectorOptions }),
 	spotlight: (config, workspaceRoot) =>

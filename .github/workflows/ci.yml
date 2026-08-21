@@ -10,10 +10,33 @@ permissions:
 
 jobs:
   # Named "build" to satisfy the repository's required status check.
+  # Do not add workflow-level `paths:` here: GitHub would skip the job entirely
+  # and block merge. Detect AutoRAG 2.0 vs legacy diffs inside the job instead.
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            autorag:
+              - 'src/**'
+              - 'test/**'
+              - 'scripts/**'
+              - 'skills/**'
+              - 'package.json'
+              - 'bun.lock'
+              - 'tsconfig.json'
+              - 'tsconfig.build.json'
+              - 'biome.json'
+              - 'vitest.config.ts'
+              - '.github/workflows/ci.yml'
+
+      - name: Skip TypeScript CI
+        if: steps.filter.outputs.autorag != 'true'
+        run: echo "No AutoRAG 2.0 paths in this diff; succeeding required build check. Legacy workflows (test.yml / sphinx.yml) own legacy/**."
 
       # pi-coding-agent's grep/find tools need ripgrep and fd; preinstall
       # them so tests don't depend on their on-demand binary downloads (which
@@ -21,29 +44,37 @@ jobs:
       # is shipped as `fdfind`, which pi-coding-agent recognizes via its
       # systemBinaryNames fallback.
       - name: Install ripgrep and fd
+        if: steps.filter.outputs.autorag == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ripgrep fd-find
 
       - uses: oven-sh/setup-bun@v2
+        if: steps.filter.outputs.autorag == 'true'
         with:
           bun-version: latest
 
       - uses: actions/setup-node@v4
+        if: steps.filter.outputs.autorag == 'true'
         with:
           node-version: 24
 
       - name: Install dependencies
+        if: steps.filter.outputs.autorag == 'true'
         run: bun install --frozen-lockfile
 
       - name: Lint
+        if: steps.filter.outputs.autorag == 'true'
         run: node_modules/.bin/biome check .
 
       - name: Typecheck
+        if: steps.filter.outputs.autorag == 'true'
         run: node_modules/.bin/tsc --noEmit
 
       - name: Test
+        if: steps.filter.outputs.autorag == 'true'
         run: node_modules/.bin/vitest run
 
       - name: Build
+        if: steps.filter.outputs.autorag == 'true'
         run: bun run build
