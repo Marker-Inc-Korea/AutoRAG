@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -24,6 +24,77 @@ const SEARCH_ROWS = JSON.stringify([
 ]);
 
 describe("DiscrawlClient search", () => {
+	it("creates a workspace config with the multilingual local embedding default", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
+		const binaryPath = stubBinary(`echo "$@" >&2; echo '[]'`);
+		const result = await new DiscrawlClient({ binaryPath, root }).search("hybrid", "q");
+		const configPath = join(root, ".autorag", "datasources", "discrawl", "config.toml");
+
+		expect(result.ok).toBe(true);
+		expect(existsSync(configPath)).toBe(true);
+		const config = readFileSync(configPath, "utf8");
+		expect(config).toContain('provider = "ollama"');
+		expect(config).toContain('model = "embeddinggemma"');
+		expect(config).toContain("enabled = true");
+		expect(result.stderr).toContain(`--config ${configPath}`);
+	});
+
+	it("preserves existing workspace config while applying embedding overrides", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
+		const configDir = join(root, ".autorag", "datasources", "discrawl");
+		const configPath = join(configDir, "config.toml");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			configPath,
+			[
+				'guild_id = "guild-1"',
+				'db_path = "/custom/archive.db"',
+				"",
+				"[search]",
+				'default_mode = "fts"',
+				"",
+				"[search.embeddings]",
+				"enabled = true",
+				'provider = "openai"',
+				'model = "old-model"',
+				"",
+			].join("\n"),
+		);
+		const binaryPath = stubBinary(`echo "$@" >&2; echo '[]'`);
+		const result = await new DiscrawlClient({
+			binaryPath,
+			root,
+			embeddingProvider: "llamacpp",
+			embeddingModel: "custom-model",
+		}).search("hybrid", "q");
+
+		expect(result.ok).toBe(true);
+		const config = readFileSync(configPath, "utf8");
+		expect(config).toContain('guild_id = "guild-1"');
+		expect(config).toContain('db_path = "/custom/archive.db"');
+		expect(config).toContain('default_mode = "fts"');
+		expect(config).toContain('provider = "llamacpp"');
+		expect(config).toContain('model = "custom-model"');
+	});
+
+	it("does not mutate an explicitly supplied config path", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
+		const configPath = join(root, "operator-config.toml");
+		const original = 'guild_id = "guild-1"\n';
+		writeFileSync(configPath, original);
+		const binaryPath = stubBinary(`echo "$@" >&2; echo '[]'`);
+		const result = await new DiscrawlClient({
+			binaryPath,
+			configPath,
+			root,
+			embeddingModel: "custom-model",
+		}).search("hybrid", "q");
+
+		expect(result.ok).toBe(true);
+		expect(readFileSync(configPath, "utf8")).toBe(original);
+		expect(result.stderr).toContain(`--config ${configPath}`);
+	});
+
 	it("parses a bare JSON array of hits", async () => {
 		const binaryPath = stubBinary(`cat <<'EOF'\n${SEARCH_ROWS}\nEOF`);
 		const result = await new DiscrawlClient({ binaryPath }).search("hybrid", "공금");

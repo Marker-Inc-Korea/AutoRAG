@@ -170,6 +170,15 @@ describe("DiscrawlSkill index", () => {
 		expect(warning?.message).toContain(DEFAULT_DISCRAWL_EMBEDDING_MODEL);
 	});
 
+	it("warns for the actual English-only model reported by doctor", async () => {
+		const stub = new StubClient();
+		stub.doctorResult = okDoctor({ embeddingModel: "nomic-embed-text" });
+		const result = await new DiscrawlSkill({ client: asClient(stub) }).index();
+
+		expect(result.ok).toBe(true);
+		expect(result.diagnostics.some((d) => d.message.includes('"nomic-embed-text" is English-only'))).toBe(true);
+	});
+
 	it("does not warn for a multilingual embedding model", async () => {
 		const result = await new DiscrawlSkill({
 			client: asClient(new StubClient()),

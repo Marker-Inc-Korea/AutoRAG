@@ -238,7 +238,12 @@ Or through the trusted config factory:
   "datasources": {
     "discord": {
       "instanceId": "community",
-      "connector": { "source": "wiretap", "embeddingModel": "embeddinggemma", "defaultMode": "hybrid" }
+      "connector": {
+        "source": "wiretap",
+        "embeddingProvider": "ollama",
+        "embeddingModel": "embeddinggemma",
+        "defaultMode": "hybrid"
+      }
     }
   }
 }
@@ -247,7 +252,7 @@ Or through the trusted config factory:
 Two defaults are deliberate and worth keeping:
 
 - **`defaultMode: "hybrid"`** — discrawl's FTS index strips newlines without substituting a space, welding words across line breaks into a single unsearchable token (measured at ~47% of post-newline words on a real archive). Semantic recall covers that gap. See [#1413](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1413).
-- **`embeddingModel: "embeddinggemma"`** — semantic search requires an embedding provider (`ollama serve && ollama pull embeddinggemma`). EmbeddingGemma (Gemma 3 300M, 768-dim, 100+ languages) is the same model family katok uses for KakaoTalk, so all CLI-backed datasources share one local embedder. Do **not** use `nomic-embed-text`: it is English-only and collapses non-English text into one narrow similarity band, silently degrading semantic search to noise. AutoRAG emits a diagnostic when an English-only model is configured. See [#1414](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1414).
+- **`embeddingProvider: "ollama"` + `embeddingModel: "embeddinggemma"`** — semantic search requires an embedding provider (`ollama serve && ollama pull embeddinggemma`). For workspace-managed discrawl state, AutoRAG writes these values to `.autorag/datasources/discrawl/config.toml` while preserving unrelated discrawl settings. An explicit `connector.configPath` remains operator-owned and is never rewritten. EmbeddingGemma (Gemma 3 300M, 768-dim, 100+ languages) is the same model family katok uses for KakaoTalk, so all CLI-backed datasources share one local embedder. Do **not** use `nomic-embed-text`: it is English-only and collapses non-English text into one narrow similarity band, silently degrading semantic search to noise. AutoRAG emits a diagnostic when an English-only model is configured. See [#1414](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1414).
 
 A datasource skill should provide polling/cron metadata for routine indexing, source descriptions for the agent prompt, slash-hierarchical opaque source paths such as `/kakao/personal/chunks/<chunk-id>`, and permission tags that match your server-side access policy.
 
