@@ -1,5 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { ensureManagedDiscrawlConfig } from "./config.ts";
 import { discrawlDatasourceRoot } from "./paths.ts";
 import type {
 	DiscrawlDoctorInfo,
@@ -145,7 +147,24 @@ export class DiscrawlClient {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
 		const env = controlledEnv(this.options.env);
-		return spawnDiscrawl({ options: this.options, args: withConfigFlag(this.options, args), env, signal });
+		const configPath = resolveConfigPath(this.options);
+		try {
+			if (this.options.configPath === undefined && configPath !== undefined) {
+				const workspace = discrawlWorkspace(this.options);
+				if (workspace !== undefined) {
+					ensureManagedDiscrawlConfig(configPath, join(workspace, "discrawl.db"), this.options);
+				}
+			}
+		} catch {
+			return {
+				ok: false,
+				reason: "spawn-error",
+				stdout: "",
+				stderr: "discrawl config could not be prepared",
+				code: null,
+			};
+		}
+		return spawnDiscrawl({ options: this.options, args: withConfigFlag(configPath, args), env, signal });
 	}
 }
 
@@ -154,15 +173,16 @@ export class DiscrawlClient {
  * requires globals before the subcommand, so the flag cannot simply be
  * appended.
  */
-function withConfigFlag(options: DiscrawlOptions, args: readonly string[]): readonly string[] {
-	const configPath = resolveConfigPath(options);
+function withConfigFlag(configPath: string | undefined, args: readonly string[]): readonly string[] {
 	if (configPath === undefined) return args;
 	const leadingGlobals = args[0] === "--json" ? 1 : 0;
 	return [...args.slice(0, leadingGlobals), "--config", configPath, ...args.slice(leadingGlobals)];
 }
 
 function resolveConfigPath(options: DiscrawlOptions): string | undefined {
-	return options.configPath;
+	if (options.configPath !== undefined) return options.configPath;
+	const workspace = discrawlWorkspace(options);
+	return workspace === undefined ? undefined : join(workspace, "config.toml");
 }
 
 export function discrawlWorkspace(options: DiscrawlOptions): string | undefined {

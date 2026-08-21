@@ -50,11 +50,14 @@ export const ENGLISH_ONLY_EMBEDDING_MODELS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Default embedding model AutoRAG configures for discrawl. `bge-m3` covers
- * 100+ languages at 1024 dimensions and supports cross-lingual retrieval, so
- * mixed-language Discord servers work without per-deployment tuning.
+ * Default embedding model AutoRAG configures for workspace-managed discrawl
+ * configs. `embeddinggemma`
+ * (Gemma 3 300M, 768 dimensions) covers 100+ languages and matches the
+ * EmbeddingGemma embedder katok uses for KakaoTalk, so every CLI-backed
+ * datasource shares one local embedding model (served through Ollama).
  */
-export const DEFAULT_DISCRAWL_EMBEDDING_MODEL = "bge-m3";
+export const DEFAULT_DISCRAWL_EMBEDDING_MODEL = "embeddinggemma";
+export const DEFAULT_DISCRAWL_EMBEDDING_PROVIDER = "ollama";
 
 /**
  * Configuration for the discrawl client. All fields optional; defaults mirror
@@ -70,7 +73,10 @@ export interface DiscrawlOptions {
 	readonly maxBufferBytes?: number;
 	/** Archive source for the CLI. Default `wiretap` (no token required). */
 	readonly source?: DiscrawlSourceKind;
-	/** Explicit discrawl config file path passed as `--config`. */
+	/**
+	 * Explicit operator-owned discrawl config file passed as `--config`.
+	 * AutoRAG never rewrites an explicit config.
+	 */
 	readonly configPath?: string;
 	/** Workspace root used to compute the default discrawl workspace path. */
 	readonly root?: string;
@@ -78,6 +84,11 @@ export interface DiscrawlOptions {
 	readonly workspacePath?: string;
 	/** Restrict search and sync to one guild id. */
 	readonly guildId?: string;
+	/**
+	 * Embedding provider written to AutoRAG's workspace-local discrawl config.
+	 * Defaults to `ollama`; explicit operator-owned config files are untouched.
+	 */
+	readonly embeddingProvider?: string;
 	/**
 	 * Embedding model discrawl should use for semantic/hybrid search. Defaults
 	 * to {@link DEFAULT_DISCRAWL_EMBEDDING_MODEL}. English-only models are
