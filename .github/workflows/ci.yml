@@ -139,8 +139,19 @@ jobs:
         run: bun run typecheck
 
       - name: Test
-        if: steps.filter.outputs.autorag == 'true'
+        if: steps.filter.outputs.autorag == 'true' && runner.os != 'Windows'
         run: bun run test
+
+      - name: Test portable core on Windows
+        if: steps.filter.outputs.autorag == 'true' && runner.os == 'Windows'
+        run: >-
+          bun run test --
+          test/smoke.test.ts
+          test/manifest
+          test/memory
+          test/retrieval
+          test/security
+          test/types
 
       - name: Build
         if: steps.filter.outputs.autorag == 'true'
