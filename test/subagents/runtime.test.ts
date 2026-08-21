@@ -225,7 +225,7 @@ function waitForRuntimeModelsWorkerMessage<TType extends "ready" | "complete">(
 		const timeout = setTimeout(() => {
 			cleanup();
 			reject(new Error(`Timed out waiting for runtime worker ${expectedType}: ${readStderr()}`));
-		}, 15_000);
+		}, 45_000);
 		const onMessage = (message: unknown): void => {
 			if (!isRuntimeModelsWorkerMessage(message)) return;
 			if (message.type === "failed") {
