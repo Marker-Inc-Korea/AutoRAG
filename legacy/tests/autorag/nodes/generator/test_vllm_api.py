@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 from autorag.nodes.generator.vllm_api import VllmAPI
 
 
@@ -30,3 +32,25 @@ def test_vllm_api_truncate_preserves_chat_messages():
 		"assistant",
 		"user",
 	]
+
+
+def test_vllm_api_sends_chat_roles_unchanged(monkeypatch):
+	messages = [
+		{"role": "system", "content": "Follow the conversation."},
+		{"role": "user", "content": "Question"},
+		{"role": "assistant", "content": "Earlier answer"},
+		{"role": "user", "content": "Follow-up"},
+	]
+	response = Mock()
+	response.raise_for_status.return_value = None
+	response.json.return_value = {"choices": []}
+	post = Mock(return_value=response)
+	monkeypatch.setattr("autorag.nodes.generator.vllm_api.requests.post", post)
+
+	api = FakeVllmAPI()
+	api.llm = "mock-model"
+	api.uri = "http://localhost:8000"
+	api.max_token_size = 100
+	api.call_vllm_api(messages)
+
+	assert post.call_args.kwargs["json"]["messages"] == messages

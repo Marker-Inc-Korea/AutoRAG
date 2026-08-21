@@ -109,6 +109,44 @@ def test_truncate_chat_prompt_preserves_message_roles():
 	]
 
 
+def test_truncate_chat_prompt_keeps_every_message_role():
+	result = truncate_by_token(chat_history, CharacterTokenizer(), 180)
+
+	assert [message["role"] for message in result] == [
+		"system",
+		"user",
+		"assistant",
+		"user",
+	]
+	assert len(result) == len(chat_history)
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_preserve_full_chat_history():
+	llm = object.__new__(OpenAILLM)
+	llm.llm = "gpt-4o"
+	llm.tokenizer = CharacterTokenizer()
+	chat_create = AsyncMock(
+		return_value=SimpleNamespace(
+			choices=[
+				SimpleNamespace(
+					message=SimpleNamespace(content="Berlin."),
+					logprobs=SimpleNamespace(
+						content=[SimpleNamespace(token="B", logprob=-0.1)]
+					),
+				)
+			]
+		)
+	)
+	llm.client = SimpleNamespace(
+		chat=SimpleNamespace(completions=SimpleNamespace(create=chat_create))
+	)
+
+	await llm.get_result(chat_history)
+
+	assert chat_create.await_args.kwargs["messages"] == chat_history
+
+
 @pytest.mark.asyncio
 async def test_gpt_5_responses_preserve_full_chat_history():
 	llm = object.__new__(OpenAILLM)

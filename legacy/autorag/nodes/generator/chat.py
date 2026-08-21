@@ -32,32 +32,25 @@ def truncate_messages_by_token(
 	if count_message_tokens(truncated_messages, encode) <= max_token_size:
 		return truncated_messages
 
-	result: List[Dict] = []
-	for message in truncated_messages:
-		candidate = result + [message]
-		if count_message_tokens(candidate, encode) <= max_token_size:
-			result.append(message)
-			continue
+	result = [{**message, "content": ""} for message in truncated_messages]
+	if count_message_tokens(result, encode) > max_token_size:
+		return result
 
+	for index, message in enumerate(truncated_messages):
 		content_tokens = encode(message.get("content", ""))
 		low, high = 0, len(content_tokens)
 		best_content = ""
 		while low <= high:
 			mid = (low + high) // 2
-			truncated_message = {
-				**message,
-				"content": decode(content_tokens[:mid]),
-			}
-			candidate = result + [truncated_message]
+			candidate = [dict(item) for item in result]
+			candidate[index]["content"] = decode(content_tokens[:mid])
 			if count_message_tokens(candidate, encode) <= max_token_size:
-				best_content = truncated_message["content"]
+				best_content = candidate[index]["content"]
 				low = mid + 1
 			else:
 				high = mid - 1
 
-		if best_content or not result:
-			result.append({**message, "content": best_content})
-		break
+		result[index]["content"] = best_content
 
 	return result
 
