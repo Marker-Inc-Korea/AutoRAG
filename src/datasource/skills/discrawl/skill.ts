@@ -111,8 +111,6 @@ export class DiscrawlSkill implements DatasourceSkill {
 
 	async index(): Promise<DatasourceIndexResult> {
 		const diagnostics: DatasourceDiagnostic[] = [];
-		const modelWarning = this.englishOnlyModelDiagnostic();
-		if (modelWarning !== undefined) diagnostics.push(modelWarning);
 
 		let doctor: DiscrawlDoctorResult;
 		try {
@@ -121,6 +119,8 @@ export class DiscrawlSkill implements DatasourceSkill {
 			return this.fail("datasource-unavailable", "discrawl doctor failed unexpectedly", diagnostics);
 		}
 		if (!doctor.ok) return this.fail(failureCode(doctor, "datasource-unavailable"), describe(doctor), diagnostics);
+		const modelWarning = this.englishOnlyModelDiagnostic(doctor.data.embeddingModel ?? this.embeddingModel);
+		if (modelWarning !== undefined) diagnostics.push(modelWarning);
 		if (!doctor.data.databaseOk) {
 			return this.fail("datasource-unavailable", "discrawl archive database is not ready", diagnostics);
 		}
@@ -264,12 +264,12 @@ export class DiscrawlSkill implements DatasourceSkill {
 	 * band, so semantic search degrades to noise without ever erroring. Surfacing
 	 * it as a diagnostic keeps that failure visible. See AutoRAG issue #1414.
 	 */
-	private englishOnlyModelDiagnostic(): DatasourceDiagnostic | undefined {
-		if (!ENGLISH_ONLY_EMBEDDING_MODELS.has(this.embeddingModel.toLowerCase())) return undefined;
+	private englishOnlyModelDiagnostic(embeddingModel: string): DatasourceDiagnostic | undefined {
+		if (!ENGLISH_ONLY_EMBEDDING_MODELS.has(embeddingModel.toLowerCase())) return undefined;
 		return {
 			code: "datasource-index-failed",
 			severity: "warning",
-			message: `embedding model "${this.embeddingModel}" is English-only; semantic search will be unreliable for non-English messages (prefer "${DEFAULT_DISCRAWL_EMBEDDING_MODEL}")`,
+			message: `embedding model "${embeddingModel}" is English-only; semantic search will be unreliable for non-English messages (prefer "${DEFAULT_DISCRAWL_EMBEDDING_MODEL}")`,
 			instanceId: this.instanceId,
 			source: DISCORD_DATASOURCE_ID,
 		};

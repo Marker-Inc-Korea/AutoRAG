@@ -5,7 +5,7 @@
  * Setup (wiretap — no token, reads the local Discord Desktop cache):
  *   1. brew install openclaw/tap/discrawl
  *   2. Have the Discord desktop app installed and signed in at least once.
- *   3. (semantic) brew install ollama && ollama serve && ollama pull bge-m3
+ *   3. (semantic) brew install ollama && ollama serve && ollama pull embeddinggemma
  *
  * Setup (bot API — ToS-sanctioned automation):
  *   1. https://discord.com/developers/applications -> New Application -> Bot
