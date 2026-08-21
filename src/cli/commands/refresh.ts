@@ -20,6 +20,11 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 		const methods = parseMethodFlag(ctx.flags.method);
 		const result = await agent.refresh(ctx.flags.force === true, methods ? { methods } : undefined);
 		ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
+		// An explicit refresh that was refused must not read as success: the index was not updated.
+		// Exit 1 (runtime refusal), the same code `index reset` uses for lock contention; exit 2 is
+		// reserved for usage errors, and the user used the command correctly. `watch` ticks treat
+		// busy as backpressure and are unchanged.
+		if (result.outcome === "busy") return 1;
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));

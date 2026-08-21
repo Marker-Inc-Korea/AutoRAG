@@ -1,8 +1,11 @@
 import { detect } from "chardet";
 import iconv from "iconv-lite";
 
+// INDEX_SEMANTIC_REGION_START
 // Text decoding and normalization applied to mirror content before BM25 chunking: the stored
 // artifact contains exactly the text produced here, so a change invalidates every stored index.
+// Guarded by test/bench/index-semantics-guard.test.ts together with the regions in
+// src/retrieval/methods/bm25.ts.
 const WINDOWS_949_LABELS = new Set(["EUC-KR", "ISO-2022-KR", "windows-949", "CP949"]);
 
 export function decodeText(bytes: Uint8Array): string {
@@ -46,3 +49,4 @@ function isPureAscii(bytes: Uint8Array): boolean {
 	}
 	return true;
 }
+// INDEX_SEMANTIC_REGION_END
