@@ -8,7 +8,7 @@ from qdrant_client.models import (
 	PointIdsList,
 	HasIdCondition,
 	Filter,
-	SearchRequest,
+	QueryRequest,
 )
 
 from typing import List, Tuple, Union
@@ -148,18 +148,18 @@ class Qdrant(BaseVectorStore):
 
 		search_queries = list(
 			map(
-				lambda x: SearchRequest(vector=x, limit=top_k, with_vector=True),
+				lambda x: QueryRequest(query=x, limit=top_k, with_vector=True),
 				query_embeddings,
 			)
 		)
 
-		search_result = self.client.search_batch(
+		search_result = self.client.query_batch_points(
 			collection_name=self.collection_name, requests=search_queries
 		)
 
 		# Extract IDs and distances
-		ids = [[str(hit.id) for hit in result] for result in search_result]
-		scores = [[hit.score for hit in result] for result in search_result]
+		ids = [[str(hit.id) for hit in result.points] for result in search_result]
+		scores = [[hit.score for hit in result.points] for result in search_result]
 
 		return ids, scores
 

@@ -51,7 +51,7 @@ jobs:
       - name: Install Venv
         run: uv venv
       - name: Install AutoRAG
-        run: uv sync --all-extras
+        run: uv sync --all-extras --link-mode=copy
       - name: Upgrade pyOpenSSL
         run: |
           uv pip install --upgrade pyOpenSSL
