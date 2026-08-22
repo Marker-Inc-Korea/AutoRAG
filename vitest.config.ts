@@ -11,5 +11,6 @@ export default defineConfig({
 		// process-heavy tests mutate process-global environment variables.
 		pool: "threads",
 		fileParallelism: false,
+		maxWorkers: 1,
 	},
 });
