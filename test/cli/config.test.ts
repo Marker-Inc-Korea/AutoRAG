@@ -77,6 +77,10 @@ let root: string;
 let previousHome: string | undefined;
 let previousUserProfile: string | undefined;
 
+function testHomeEnv(): NodeJS.ProcessEnv {
+	return { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+}
+
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-config-"));
 	previousHome = process.env.HOME;
@@ -167,7 +171,7 @@ describe("resolveConfig defaults", () => {
 			JSON.stringify({ searchPaths: ["/home/docs"], workspacePath: "/home/workspace" }),
 			"utf8",
 		);
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config.searchPaths).toEqual(["/home/docs"]);
 		expect(config.workspacePath).toBe("/home/workspace");
 		expect(config.memoryPath).toBe(join(home, ".autorag", "memory.json"));
@@ -225,7 +229,7 @@ describe("resolveConfig defaults", () => {
 		const home = join(root, "home");
 		const legacyBytes = Buffer.from(JSON.stringify({ searchPaths: ["legacy-docs"], workspacePath: root }));
 		writeFileSync(join(root, "autorag.config.json"), legacyBytes);
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config.searchPaths).toEqual([join(root, "legacy-docs")]);
 		const migratedPath = join(home, ".autorag", "config.json");
 		const migrated = JSON.parse(readFileSync(migratedPath, "utf8"));
@@ -587,7 +591,7 @@ describe("resolveConfig precedence", () => {
 
 		const fileOnly = resolveConfig({
 			flags: {},
-			env: {},
+			env: testHomeEnv(),
 			cwd: root,
 		});
 		const expectedFileWorkspace = resolve("/file/workspace");
@@ -656,7 +660,7 @@ describe("resolveConfig precedence", () => {
 
 	it("file overrides defaults when flag and env are absent", () => {
 		writeConfigFile(root, { workspacePath: "/file/workspace" });
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config.workspacePath).toBe("/file/workspace");
 	});
 });
@@ -925,7 +929,7 @@ describe("resolveAgentModel", () => {
 				explorer: { provider: "test-proxy", id: "gpt-5.6-luna-custom" },
 			},
 		} as Partial<CliConfig>);
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config).toMatchObject({
 			agents: {
 				orchestrator: { provider: "test-proxy", id: "gpt-5.6-sol-custom" },
