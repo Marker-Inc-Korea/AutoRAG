@@ -39,4 +39,17 @@ describe("portableSpawnCommand", () => {
 			args: [script, "arg"],
 		});
 	});
+
+	it("executes extensionless Node shebang fixtures with Node on Windows", () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+		tempDirs.push(root);
+		const script = join(root, "fake-jikji");
+		writeFileSync(script, "#!/usr/bin/env node\nprocess.exit(0);\n", "utf8");
+		chmodSync(script, 0o755);
+
+		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
+			command: process.execPath,
+			args: [script, "find"],
+		});
+	});
 });
