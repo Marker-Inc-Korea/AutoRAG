@@ -75,11 +75,14 @@ vi.mock("node:fs", async () => {
 
 let root: string;
 let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-config-"));
 	previousHome = process.env.HOME;
+	previousUserProfile = process.env.USERPROFILE;
 	process.env.HOME = join(root, "home");
+	process.env.USERPROFILE = process.env.HOME;
 });
 
 afterEach(() => {
@@ -88,6 +91,8 @@ afterEach(() => {
 	fsMock.writeFileSyncHook = undefined;
 	if (previousHome === undefined) delete process.env.HOME;
 	else process.env.HOME = previousHome;
+	if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+	else process.env.USERPROFILE = previousUserProfile;
 	rmSync(root, { recursive: true, force: true });
 });
 

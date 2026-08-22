@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JikjiOptions } from "../../src/jikji/index.ts";
 import { DEFAULT_JIKJI_OPTIONS, JikjiClient } from "../../src/jikji/index.ts";
@@ -80,7 +80,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function pathEnv(): { readonly PATH: string } {
-	return { PATH: `${binDir}:${process.env.PATH ?? ""}` };
+	return { PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}` };
 }
 
 function clientWithPath(): JikjiClient {

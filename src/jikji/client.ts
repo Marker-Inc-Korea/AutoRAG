@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
 import type {
@@ -148,7 +149,8 @@ export class JikjiClient {
 function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const options = request.options;
-		const child = spawn(request.command, request.args, {
+		const portable = portableSpawnCommand(request.command, request.args);
+		const child = spawn(portable.command, [...portable.args], {
 			env: controlledEnv(options.env),
 			stdio: ["ignore", "pipe", "pipe"],
 		});

@@ -315,7 +315,9 @@ afterEach(() => {
 	runtimeFsMock.renameSyncHook = undefined;
 	runtimeFsMock.rmdirSyncHook = undefined;
 	vi.restoreAllMocks();
-	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of tempDirs.splice(0)) {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+	}
 });
 
 describe("mandatory pi-subagents runtime", () => {

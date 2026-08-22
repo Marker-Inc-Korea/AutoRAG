@@ -215,7 +215,7 @@ process.exit(0);
 		expect(ensure.ok).toBe(true);
 		const configPath = join(root, ".autorag", "datasources", "obsidian", "vault-1", "config", "index.yml");
 		expect(existsSync(configPath)).toBe(true);
-		expect(readFileSync(configPath, "utf8")).toContain(vault);
+		expect(readFileSync(configPath, "utf8")).toContain(JSON.stringify(vault));
 		expect(readFileSync(configPath, "utf8")).toContain(".obsidian/**");
 
 		const update = await client.update();
