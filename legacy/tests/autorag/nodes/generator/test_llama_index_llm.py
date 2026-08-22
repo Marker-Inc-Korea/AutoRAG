@@ -141,8 +141,8 @@ Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I 
 
 
 @pytest.mark.skipif(
-    is_github_action(),
-    reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
+    is_github_action() or not os.getenv("OPENAI_API_KEY"),
+    reason="Skipping this test because it uses the real OpenAI API.",
 )
 @pytest.mark.asyncio()
 async def test_llama_index_llm_astream():
