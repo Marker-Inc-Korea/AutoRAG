@@ -12,8 +12,8 @@ help:
 		'make test          Run the complete AutoRAG 2.0 test suite' \
 		'make test-all      Alias for the complete test suite' \
 		'make test-macos    Run the complete suite on a macOS host' \
-		'make test-windows  Run the Windows-compatible suite' \
-		'make test-linux    Run portable Linux CI in a Docker container' \
+		'make test-windows  Run the complete suite on a Windows host' \
+		'make test-linux    Run the complete suite in a Linux container' \
 		'make ci            Run lint, typecheck, tests, and build locally'
 
 install:
@@ -42,7 +42,7 @@ test-macos:
 
 test-windows:
 	@case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) echo "test-windows must run from Git Bash/MSYS2 on Windows"; exit 1;; esac
-	bun run test:windows
+	bun run test
 
 test-linux:
 	docker build --platform linux/amd64 -f scripts/ci/linux.Dockerfile -t autorag-ci-linux-amd64 scripts/ci

@@ -6,8 +6,8 @@ The repository root includes a `Makefile` for AutoRAG 2.0 validation:
 
 - `make test` / `make test-all` — run the complete test suite.
 - `make test-macos` — run the complete suite and require a macOS host.
-- `make test-windows` — run the Windows-compatible suite used by GitHub Actions.
-- `make test-linux` — run lint, typecheck, the portable Linux suite, and build in a Docker container.
+- `make test-windows` — run the complete suite on a Windows host.
+- `make test-linux` — run lint, typecheck, the complete suite, and build in a Docker container.
 - `make lint`, `make typecheck`, `make build` — run individual checks.
 - `make ci` — run the normal local lint, typecheck, complete test, and build sequence.
 
