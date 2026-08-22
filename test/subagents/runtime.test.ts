@@ -316,7 +316,7 @@ afterEach(() => {
 	runtimeFsMock.rmdirSyncHook = undefined;
 	vi.restoreAllMocks();
 	for (const dir of tempDirs.splice(0)) {
-		rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 	}
 });
 

@@ -235,7 +235,11 @@ process.exit(0);
 			.split("\n")
 			.map((line) => JSON.parse(line) as { args: string[]; configDir: string });
 		expect(calls.some((call) => call.args[0] === "update")).toBe(true);
-		expect(calls.every((call) => call.configDir.includes("obsidian/vault-1/config"))).toBe(true);
+		expect(
+			calls.every(
+				(call) => call.configDir === join(root, ".autorag", "datasources", "obsidian", "vault-1", "config"),
+			),
+		).toBe(true);
 	});
 
 	it("returns binary-missing without throwing", async () => {

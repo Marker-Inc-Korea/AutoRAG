@@ -58,8 +58,9 @@ export class JikjiClient {
 	private async resolveCommand(): Promise<string> {
 		if (this.options.binaryPath !== undefined) return commandFor(this.options.binaryPath);
 		if (this.resolvedCommand !== undefined) return this.resolvedCommand;
-		if (lookupExecutableInPath(DEFAULT_BINARY, process.env) !== undefined) {
-			this.resolvedCommand = DEFAULT_BINARY;
+		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, controlledEnv(this.options.env));
+		if (pathCommand !== undefined) {
+			this.resolvedCommand = pathCommand;
 			return this.resolvedCommand;
 		}
 		if (this.options.root !== undefined) {

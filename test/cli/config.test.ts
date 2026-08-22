@@ -573,9 +573,10 @@ describe("resolveConfig precedence", () => {
 			env: {},
 			cwd: root,
 		});
-		expect(fileOnly.searchPaths).toEqual(["/file/workspace/file"]);
-		expect(fileOnly.workspacePath).toBe("/file/workspace");
-		expect(fileOnly.memoryPath).toBe("/file/memory.json");
+		const expectedFileWorkspace = resolve("/file/workspace");
+		expect(fileOnly.searchPaths).toEqual([resolve(expectedFileWorkspace, "file")]);
+		expect(fileOnly.workspacePath).toBe(expectedFileWorkspace);
+		expect(fileOnly.memoryPath).toBe(resolve("/file/memory.json"));
 		expect(fileOnly.model).toEqual({ provider: "fileprov", id: "fileid" });
 
 		const envOnly = resolveConfig({
