@@ -73,7 +73,7 @@ jobs:
 
       - name: Test
         if: steps.filter.outputs.autorag == 'true'
-        run: bun run test
+        run: node ./node_modules/vitest/vitest.mjs run
 
       - name: Build
         if: steps.filter.outputs.autorag == 'true'
@@ -140,7 +140,7 @@ jobs:
 
       - name: Test
         if: steps.filter.outputs.autorag == 'true'
-        run: bun run test
+        run: node ./node_modules/vitest/vitest.mjs run
 
       - name: Build
         if: steps.filter.outputs.autorag == 'true'
