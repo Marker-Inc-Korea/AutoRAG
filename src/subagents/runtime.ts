@@ -425,7 +425,7 @@ interface ChildEnvironmentLease {
 	owners: number;
 }
 
-interface ExplorerChildEnvironment {
+export interface ExplorerChildEnvironment {
 	readonly agentDir: string;
 	readonly piBinary: string;
 	readonly apiKeyName: string;
@@ -463,7 +463,7 @@ function childEnvironmentFromSpawnOptions(args: readonly unknown[]): NodeJS.Proc
 	return options.env as NodeJS.ProcessEnv;
 }
 
-function buildExplorerChildEnvironment(
+export function buildExplorerChildEnvironment(
 	sourceEnvironment: NodeJS.ProcessEnv,
 	context: ExplorerChildEnvironment,
 ): NodeJS.ProcessEnv {

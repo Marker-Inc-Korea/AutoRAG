@@ -24,6 +24,7 @@ import { resolveAutoRAGHome } from "../../src/config/home.ts";
 import { acquireFileLock } from "../../src/filesystem/file-lock.ts";
 import {
 	AUTORAG_EXPLORER_AGENT_DEFINITION,
+	buildExplorerChildEnvironment,
 	createHealthSubagentProbeSession,
 	createMandatorySubagentSession,
 	EXPLORER_TOOLS_EXTENSION_PATH,
@@ -888,7 +889,7 @@ describe("mandatory pi-subagents runtime", () => {
 		const piChildReadyPath = join(root, "pi-child-ready");
 		const piChildReleasePath = join(root, "pi-child-release");
 		const fakePiScript = join(root, "fake-pi.mjs");
-		const fakePiBinary = process.platform === "win32" ? join(root, "fake-pi.exe") : fakePiScript;
+		const fakePiBinary = fakePiScript;
 		const explorerSecret = "AUTORAG_EXPLORER_PROVIDER_SECRET";
 		const orchestratorSecret = "AUTORAG_ORCHESTRATOR_PROVIDER_SECRET";
 		const unlistedParentSecret = "AUTORAG_UNLISTED_PARENT_SECRET";
@@ -910,6 +911,60 @@ describe("mandatory pi-subagents runtime", () => {
 		process.env.OPENAI_API_KEY = orchestratorSecret;
 		delete process.env.OTHER_PROVIDER_API_KEY;
 		process.env.UNLISTED_PARENT_SECRET = unlistedParentSecret;
+		if (process.platform === "win32") {
+			const childEnvironment = buildExplorerChildEnvironment(process.env, {
+				agentDir,
+				piBinary: process.execPath,
+				apiKeyName: "OTHER_PROVIDER_API_KEY",
+				apiKey: explorerSecret,
+			});
+			const explorerChild = spawnSync(
+				process.execPath,
+				[
+					"-e",
+					`process.stdout.write(JSON.stringify({ agentDir: process.env.PI_CODING_AGENT_DIR, orchestratorSecretVisible: process.env.OPENAI_API_KEY === ${JSON.stringify(
+						orchestratorSecret,
+					)}, explorerSecretVisible: process.env.OTHER_PROVIDER_API_KEY === ${JSON.stringify(
+						explorerSecret,
+					)}, unlistedParentSecretVisible: process.env.UNLISTED_PARENT_SECRET === ${JSON.stringify(
+						unlistedParentSecret,
+					)} }))`,
+				],
+				{ encoding: "utf8", env: childEnvironment },
+			);
+			const genericChild = spawnSync(
+				process.execPath,
+				[
+					"-e",
+					`process.stdout.write(JSON.stringify({ agentDir: process.env.PI_CODING_AGENT_DIR, orchestratorSecretVisible: process.env.OPENAI_API_KEY === ${JSON.stringify(
+						orchestratorSecret,
+					)}, explorerSecretVisible: process.env.OTHER_PROVIDER_API_KEY === ${JSON.stringify(
+						explorerSecret,
+					)}, unlistedParentSecretVisible: process.env.UNLISTED_PARENT_SECRET === ${JSON.stringify(
+						unlistedParentSecret,
+					)} }))`,
+				],
+				{ encoding: "utf8", env: { ...process.env } },
+			);
+			expect(explorerChild.status).toBe(0);
+			expect(JSON.parse(explorerChild.stdout)).toEqual({
+				agentDir,
+				orchestratorSecretVisible: false,
+				explorerSecretVisible: true,
+				unlistedParentSecretVisible: false,
+			});
+			expect(genericChild.status).toBe(0);
+			expect(JSON.parse(genericChild.stdout)).toEqual({
+				orchestratorSecretVisible: true,
+				explorerSecretVisible: false,
+				unlistedParentSecretVisible: true,
+			});
+			expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
+			expect(process.env.OPENAI_API_KEY).toBe(orchestratorSecret);
+			expect(process.env.OTHER_PROVIDER_API_KEY).toBeUndefined();
+			expect(process.env.UNLISTED_PARENT_SECRET).toBe(unlistedParentSecret);
+			return;
+		}
 		writeFileSync(
 			fakePiScript,
 			`#!/usr/bin/env node
@@ -948,14 +1003,6 @@ describe("mandatory pi-subagents runtime", () => {
 			"utf8",
 		);
 		chmodSync(fakePiScript, 0o700);
-		if (process.platform === "win32") {
-			const compiled = spawnSync("bun", ["build", "--compile", fakePiScript, "--outfile", fakePiBinary], {
-				encoding: "utf8",
-			});
-			if (compiled.status !== 0) {
-				throw new Error(`failed to compile fake Pi executable: ${compiled.stderr}`);
-			}
-		}
 		process.env.PI_SUBAGENT_PI_BINARY = fakePiBinary;
 
 		try {

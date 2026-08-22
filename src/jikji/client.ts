@@ -56,7 +56,9 @@ export class JikjiClient {
 	 * The result is cached per client so a failed install is not retried.
 	 */
 	private async resolveCommand(): Promise<string> {
-		if (this.options.binaryPath !== undefined) return commandFor(this.options.binaryPath);
+		if (this.options.binaryPath !== undefined && this.options.binaryPath !== DEFAULT_BINARY) {
+			return commandFor(this.options.binaryPath);
+		}
 		if (this.resolvedCommand !== undefined) return this.resolvedCommand;
 		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, controlledEnv(this.options.env));
 		if (pathCommand !== undefined) {
