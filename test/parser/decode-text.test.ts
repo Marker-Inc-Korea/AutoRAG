@@ -90,9 +90,9 @@ describe("decodeText fast path equivalence", () => {
 		// decode ISO-2022-JP); the fast path must not silently change that into a clean string.
 		expect(outcomeOf(referenceDecodeText, Buffer.from("ESC \x1b$B test\n")).kind).toBe("throw");
 		expect(outcomeOf(referenceDecodeText, Buffer.from("\x1b$B")).kind).toBe("throw");
-		// A 2-byte ESC prefix is too short for the ISO-2022-JP detector; UTF-32LE claims the
-		// buffer and iconv drops the incomplete unit, so the legacy output is "".
-		expect(outcomeOf(referenceDecodeText, Buffer.from("\x1b$"))).toEqual({ kind: "ok", value: "" });
+		// Current chardet keeps this short ESC prefix on UTF-8, so iconv emits one replacement
+		// character. The optimized path must continue to follow the same legacy result.
+		expect(outcomeOf(referenceDecodeText, Buffer.from("\x1b$"))).toEqual({ kind: "ok", value: "\uFFFD" });
 	});
 
 	it("keeps Korean UTF-8 identical", () => {

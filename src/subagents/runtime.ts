@@ -555,11 +555,12 @@ async function loadScopedPiSubagentsExtension(
 			const source =
 				options.filename !== undefined && isWithinDirectory(packageRoot, options.filename)
 					? options.source.replace(
-							/(["'])node:child_process\1/g,
-							JSON.stringify(PI_SUBAGENTS_CHILD_PROCESS_MODULE),
+							/(\bfrom\s+|\bimport\s*\()(["'])node:child_process\2/g,
+							(_match, prefix: string) => `${prefix}${JSON.stringify(PI_SUBAGENTS_CHILD_PROCESS_MODULE)}`,
 						)
 					: options.source;
-			return { code: baseJiti.transform({ ...options, source }) };
+			const transformed = baseJiti.transform({ ...options, source });
+			return { code: transformed };
 		},
 	});
 	const factory = await scopedJiti.import<unknown>(extensionPath, { default: true });

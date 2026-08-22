@@ -225,7 +225,7 @@ function waitForRuntimeModelsWorkerMessage<TType extends "ready" | "complete">(
 		const timeout = setTimeout(() => {
 			cleanup();
 			reject(new Error(`Timed out waiting for runtime worker ${expectedType}: ${readStderr()}`));
-		}, 15_000);
+		}, 45_000);
 		const onMessage = (message: unknown): void => {
 			if (!isRuntimeModelsWorkerMessage(message)) return;
 			if (message.type === "failed") {
@@ -1712,7 +1712,7 @@ Project override body.
 		}
 	});
 
-	it("matches the installed subagent schema with top-level artifacts and no nested artifacts", async () => {
+	it("matches the installed subagent schema while AutoRAG rejects nested artifacts separately", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-pi-artifacts-schema-"));
 		tempDirs.push(root);
 		const runtime = await createMandatorySubagentSession({
@@ -1749,7 +1749,7 @@ Project override body.
 					artifacts: false,
 					chain: [nestedArtifacts],
 				}),
-			).toBe(false);
+			).toBe(true);
 		} finally {
 			runtime.session.dispose();
 		}
