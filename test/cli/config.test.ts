@@ -10,7 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -75,11 +75,18 @@ vi.mock("node:fs", async () => {
 
 let root: string;
 let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
+
+function testHomeEnv(): NodeJS.ProcessEnv {
+	return { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+}
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-config-"));
 	previousHome = process.env.HOME;
+	previousUserProfile = process.env.USERPROFILE;
 	process.env.HOME = join(root, "home");
+	process.env.USERPROFILE = process.env.HOME;
 });
 
 afterEach(() => {
@@ -88,7 +95,9 @@ afterEach(() => {
 	fsMock.writeFileSyncHook = undefined;
 	if (previousHome === undefined) delete process.env.HOME;
 	else process.env.HOME = previousHome;
-	rmSync(root, { recursive: true, force: true });
+	if (previousUserProfile === undefined) delete process.env.USERPROFILE;
+	else process.env.USERPROFILE = previousUserProfile;
+	rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 const CONFIG_MODULE_URL = new URL("../../src/cli/config.ts", import.meta.url).href;
@@ -114,7 +123,7 @@ function runConfigChild(script: string, env: Readonly<Record<string, string>>): 
 }
 
 function pendingConfigArtifacts(configPath: string): string[] {
-	const base = `.${configPath.slice(configPath.lastIndexOf("/") + 1)}.`;
+	const base = `.${basename(configPath)}.`;
 	return readdirSync(dirname(configPath)).filter(
 		(name) => (name.startsWith(base) && name.endsWith(".tmp")) || name.endsWith(".lock") || name.endsWith(".stale"),
 	);
@@ -162,7 +171,7 @@ describe("resolveConfig defaults", () => {
 			JSON.stringify({ searchPaths: ["/home/docs"], workspacePath: "/home/workspace" }),
 			"utf8",
 		);
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config.searchPaths).toEqual(["/home/docs"]);
 		expect(config.workspacePath).toBe("/home/workspace");
 		expect(config.memoryPath).toBe(join(home, ".autorag", "memory.json"));
@@ -220,7 +229,7 @@ describe("resolveConfig defaults", () => {
 		const home = join(root, "home");
 		const legacyBytes = Buffer.from(JSON.stringify({ searchPaths: ["legacy-docs"], workspacePath: root }));
 		writeFileSync(join(root, "autorag.config.json"), legacyBytes);
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config.searchPaths).toEqual([join(root, "legacy-docs")]);
 		const migratedPath = join(home, ".autorag", "config.json");
 		const migrated = JSON.parse(readFileSync(migratedPath, "utf8"));
@@ -516,6 +525,23 @@ describe("resolveConfig defaults", () => {
 		expect(pendingConfigArtifacts(path)).toEqual([]);
 	});
 
+	it("retries transient Windows lock-directory removal failures", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		let attempts = 0;
+		fsMock.rmdirSyncHook = (...args) => {
+			attempts++;
+			if (attempts < 3) {
+				throw Object.assign(new Error("resource busy"), { code: "EBUSY" });
+			}
+			return fsMock.realRmdirSync?.(...args);
+		};
+
+		writeDefaultConfig(path, { searchPaths: ["docs"] });
+
+		expect(attempts).toBe(3);
+		expect(pendingConfigArtifacts(path)).toEqual([]);
+	});
+
 	it("times out on a live current-owner lock without deleting it", () => {
 		const path = join(root, DEFAULT_CONFIG_FILENAME);
 		const lockPath = `${path}.lock`;
@@ -565,10 +591,11 @@ describe("resolveConfig precedence", () => {
 
 		const fileOnly = resolveConfig({
 			flags: {},
-			env: {},
+			env: testHomeEnv(),
 			cwd: root,
 		});
-		expect(fileOnly.searchPaths).toEqual(["/file/workspace/file"]);
+		const expectedFileWorkspace = resolve("/file/workspace");
+		expect(fileOnly.searchPaths).toEqual([resolve(expectedFileWorkspace, "file")]);
 		expect(fileOnly.workspacePath).toBe("/file/workspace");
 		expect(fileOnly.memoryPath).toBe("/file/memory.json");
 		expect(fileOnly.model).toEqual({ provider: "fileprov", id: "fileid" });
@@ -633,7 +660,7 @@ describe("resolveConfig precedence", () => {
 
 	it("file overrides defaults when flag and env are absent", () => {
 		writeConfigFile(root, { workspacePath: "/file/workspace" });
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config.workspacePath).toBe("/file/workspace");
 	});
 });
@@ -902,7 +929,7 @@ describe("resolveAgentModel", () => {
 				explorer: { provider: "test-proxy", id: "gpt-5.6-luna-custom" },
 			},
 		} as Partial<CliConfig>);
-		const config = resolveConfig({ flags: {}, env: {}, cwd: root });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
 		expect(config).toMatchObject({
 			agents: {
 				orchestrator: { provider: "test-proxy", id: "gpt-5.6-sol-custom" },

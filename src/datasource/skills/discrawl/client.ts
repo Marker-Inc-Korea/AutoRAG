@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { ensureManagedDiscrawlConfig } from "./config.ts";
 import { discrawlDatasourceRoot } from "./paths.ts";
 import type {
@@ -194,7 +195,8 @@ export function discrawlWorkspace(options: DiscrawlOptions): string | undefined 
 function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const { options, args, env, signal } = request;
-		const child = spawn(options.binaryPath ?? DEFAULT_DISCRAWL_BINARY, args, {
+		const portable = portableSpawnCommand(options.binaryPath ?? DEFAULT_DISCRAWL_BINARY, args);
+		const child = spawn(portable.command, [...portable.args], {
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});

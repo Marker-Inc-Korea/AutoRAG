@@ -13,7 +13,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
@@ -24,6 +24,7 @@ import { resolveAutoRAGHome } from "../../src/config/home.ts";
 import { acquireFileLock } from "../../src/filesystem/file-lock.ts";
 import {
 	AUTORAG_EXPLORER_AGENT_DEFINITION,
+	buildExplorerChildEnvironment,
 	createHealthSubagentProbeSession,
 	createMandatorySubagentSession,
 	EXPLORER_TOOLS_EXTENSION_PATH,
@@ -266,6 +267,7 @@ function spawnRuntimeModelsWorker(
 	workerCount: number,
 ): RuntimeModelsWorker {
 	const child = fork(RUNTIME_MODELS_PROCESS_FIXTURE, [agentDir, cwd, workerId, String(workerCount)], {
+		execPath: "node",
 		execArgv: ["--experimental-strip-types", "--disable-warning=ExperimentalWarning"],
 		silent: true,
 	});
@@ -315,7 +317,9 @@ afterEach(() => {
 	runtimeFsMock.renameSyncHook = undefined;
 	runtimeFsMock.rmdirSyncHook = undefined;
 	vi.restoreAllMocks();
-	for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+	for (const dir of tempDirs.splice(0)) {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+	}
 });
 
 describe("mandatory pi-subagents runtime", () => {
@@ -557,7 +561,7 @@ describe("mandatory pi-subagents runtime", () => {
 			}
 		} finally {
 			await Promise.all(workers.map(stopRuntimeModelsWorker));
-			rmSync(barrierDir, { recursive: true, force: true });
+			rmSync(barrierDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 		}
 
 		expect(
@@ -885,7 +889,8 @@ describe("mandatory pi-subagents runtime", () => {
 		const piChildCapturePath = join(root, "pi-child-env.json");
 		const piChildReadyPath = join(root, "pi-child-ready");
 		const piChildReleasePath = join(root, "pi-child-release");
-		const fakePiBinary = join(root, "fake-pi.mjs");
+		const fakePiScript = join(root, "fake-pi.mjs");
+		const fakePiBinary = fakePiScript;
 		const explorerSecret = "AUTORAG_EXPLORER_PROVIDER_SECRET";
 		const orchestratorSecret = "AUTORAG_ORCHESTRATOR_PROVIDER_SECRET";
 		const unlistedParentSecret = "AUTORAG_UNLISTED_PARENT_SECRET";
@@ -907,8 +912,62 @@ describe("mandatory pi-subagents runtime", () => {
 		process.env.OPENAI_API_KEY = orchestratorSecret;
 		delete process.env.OTHER_PROVIDER_API_KEY;
 		process.env.UNLISTED_PARENT_SECRET = unlistedParentSecret;
+		if (process.platform === "win32") {
+			const childEnvironment = buildExplorerChildEnvironment(process.env, {
+				agentDir,
+				piBinary: process.execPath,
+				apiKeyName: "OTHER_PROVIDER_API_KEY",
+				apiKey: explorerSecret,
+			});
+			const explorerChild = spawnSync(
+				process.execPath,
+				[
+					"-e",
+					`process.stdout.write(JSON.stringify({ agentDir: process.env.PI_CODING_AGENT_DIR, orchestratorSecretVisible: process.env.OPENAI_API_KEY === ${JSON.stringify(
+						orchestratorSecret,
+					)}, explorerSecretVisible: process.env.OTHER_PROVIDER_API_KEY === ${JSON.stringify(
+						explorerSecret,
+					)}, unlistedParentSecretVisible: process.env.UNLISTED_PARENT_SECRET === ${JSON.stringify(
+						unlistedParentSecret,
+					)} }))`,
+				],
+				{ encoding: "utf8", env: childEnvironment },
+			);
+			const genericChild = spawnSync(
+				process.execPath,
+				[
+					"-e",
+					`process.stdout.write(JSON.stringify({ agentDir: process.env.PI_CODING_AGENT_DIR, orchestratorSecretVisible: process.env.OPENAI_API_KEY === ${JSON.stringify(
+						orchestratorSecret,
+					)}, explorerSecretVisible: process.env.OTHER_PROVIDER_API_KEY === ${JSON.stringify(
+						explorerSecret,
+					)}, unlistedParentSecretVisible: process.env.UNLISTED_PARENT_SECRET === ${JSON.stringify(
+						unlistedParentSecret,
+					)} }))`,
+				],
+				{ encoding: "utf8", env: { ...process.env } },
+			);
+			expect(explorerChild.status).toBe(0);
+			expect(JSON.parse(explorerChild.stdout)).toEqual({
+				agentDir,
+				orchestratorSecretVisible: false,
+				explorerSecretVisible: true,
+				unlistedParentSecretVisible: false,
+			});
+			expect(genericChild.status).toBe(0);
+			expect(JSON.parse(genericChild.stdout)).toEqual({
+				orchestratorSecretVisible: true,
+				explorerSecretVisible: false,
+				unlistedParentSecretVisible: true,
+			});
+			expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
+			expect(process.env.OPENAI_API_KEY).toBe(orchestratorSecret);
+			expect(process.env.OTHER_PROVIDER_API_KEY).toBeUndefined();
+			expect(process.env.UNLISTED_PARENT_SECRET).toBe(unlistedParentSecret);
+			return;
+		}
 		writeFileSync(
-			fakePiBinary,
+			fakePiScript,
 			`#!/usr/bin/env node
 	import { existsSync, writeFileSync } from "node:fs";
 
@@ -944,7 +1003,7 @@ describe("mandatory pi-subagents runtime", () => {
 `,
 			"utf8",
 		);
-		chmodSync(fakePiBinary, 0o700);
+		chmodSync(fakePiScript, 0o700);
 		process.env.PI_SUBAGENT_PI_BINARY = fakePiBinary;
 
 		try {
@@ -1444,7 +1503,7 @@ describe("mandatory pi-subagents runtime", () => {
 			expect(runtime.session.getActiveToolNames()).toEqual(
 				expect.arrayContaining(["custom_search", "subagent", "subagent_wait"]),
 			);
-			expect(runtime.extensionPath).toContain("pi-subagents/src/extension/index.ts");
+			expect(normalize(runtime.extensionPath)).toContain(normalize("pi-subagents/src/extension/index.ts"));
 		} finally {
 			runtime.session.dispose();
 		}
@@ -1544,7 +1603,7 @@ try {
 	process.stdout.write(JSON.stringify({ active, disposed }));
 } finally {
 	runtime?.session.dispose();
-	rmSync(root, { recursive: true, force: true });
+rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }`,
 			],
 			{
@@ -1634,7 +1693,7 @@ Project override body.
 		});
 		try {
 			expect(readFileSync(explorerPath, "utf8")).toBe(AUTORAG_EXPLORER_AGENT_DEFINITION);
-			expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
+			if (process.platform !== "win32") expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
 			expect(readdirSync(agentsDir).filter((name) => name.startsWith(".autorag-explorer.")).length).toBe(0);
 		} finally {
 			runtime.session.dispose();
@@ -1665,7 +1724,7 @@ Project override body.
 		});
 		try {
 			expect(readFileSync(explorerPath, "utf8")).toBe(AUTORAG_EXPLORER_AGENT_DEFINITION);
-			expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
+			if (process.platform !== "win32") expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
 			expect(readdirSync(agentsDir).filter((name) => name.startsWith(".autorag-explorer.")).length).toBe(0);
 		} finally {
 			runtime.session.dispose();
@@ -1823,7 +1882,7 @@ describe("createHealthSubagentProbeSession", () => {
 			const toolNames = new Set(probe.session.getAllTools().map((tool) => tool.name));
 			expect(toolNames.has("subagent")).toBe(true);
 			expect(toolNames.has("subagent_wait")).toBe(true);
-			expect(probe.extensionPath).toContain("pi-subagents/src/extension/index.ts");
+			expect(normalize(probe.extensionPath)).toContain(normalize("pi-subagents/src/extension/index.ts"));
 		} finally {
 			probe.dispose();
 		}

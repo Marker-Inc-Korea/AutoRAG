@@ -69,11 +69,78 @@ jobs:
 
       - name: Typecheck
         if: steps.filter.outputs.autorag == 'true'
-        run: node_modules/.bin/tsc --noEmit
+        run: bun run typecheck
 
       - name: Test
         if: steps.filter.outputs.autorag == 'true'
-        run: node_modules/.bin/vitest run
+        run: bun run test
+
+      - name: Build
+        if: steps.filter.outputs.autorag == 'true'
+        run: bun run build
+
+  compatibility:
+    name: compatibility (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            autorag:
+              - 'src/**'
+              - 'test/**'
+              - 'scripts/**'
+              - 'skills/**'
+              - 'package.json'
+              - 'bun.lock'
+              - 'tsconfig.json'
+              - 'tsconfig.build.json'
+              - 'biome.json'
+              - 'vitest.config.ts'
+              - '.github/workflows/ci.yml'
+
+      - name: Skip cross-platform CI
+        if: steps.filter.outputs.autorag != 'true'
+        run: echo "No AutoRAG 2.0 paths in this diff; skipping cross-platform checks."
+
+      - name: Install ripgrep and fd on macOS
+        if: steps.filter.outputs.autorag == 'true' && runner.os == 'macOS'
+        run: brew install ripgrep fd
+
+      - name: Install ripgrep and fd on Windows
+        if: steps.filter.outputs.autorag == 'true' && runner.os == 'Windows'
+        run: choco install ripgrep fd -y --no-progress
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.filter.outputs.autorag == 'true'
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        if: steps.filter.outputs.autorag == 'true'
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        if: steps.filter.outputs.autorag == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        if: steps.filter.outputs.autorag == 'true'
+        run: bun run typecheck
+
+      - name: Test
+        if: steps.filter.outputs.autorag == 'true'
+        run: bun run test
 
       - name: Build
         if: steps.filter.outputs.autorag == 'true'

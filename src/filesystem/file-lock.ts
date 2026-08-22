@@ -13,6 +13,8 @@ import {
 import { join } from "node:path";
 
 const LOCK_WAIT_BUFFER = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+const WINDOWS_FS_RETRY_ATTEMPTS = 20;
+const WINDOWS_FS_RETRY_MS = 10;
 
 interface FileLockOwner {
 	readonly token: string;
@@ -170,25 +172,37 @@ function removeExactSnapshot(snapshot: LockFileSnapshot): boolean {
 		return false;
 	}
 
-	try {
-		unlinkSync(snapshot.path);
-		return true;
-	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return true;
-		if (hasAnyErrorCode(error, ["EISDIR", "EPERM"])) return false;
-		throw error;
+	for (let attempt = 0; attempt < WINDOWS_FS_RETRY_ATTEMPTS; attempt++) {
+		try {
+			unlinkSync(snapshot.path);
+			return true;
+		} catch (error) {
+			if (hasErrorCode(error, "ENOENT")) return true;
+			if (hasErrorCode(error, "EISDIR")) return false;
+			if (!hasAnyErrorCode(error, ["EBUSY", "EPERM"])) throw error;
+			if (attempt + 1 < WINDOWS_FS_RETRY_ATTEMPTS) {
+				Atomics.wait(LOCK_WAIT_BUFFER, 0, 0, WINDOWS_FS_RETRY_MS);
+			}
+		}
 	}
+	return false;
 }
 
 function removeEmptyLockDirectory(lockPath: string): boolean {
-	try {
-		rmdirSync(lockPath);
-		return true;
-	} catch (error) {
-		if (hasErrorCode(error, "ENOENT")) return true;
-		if (hasAnyErrorCode(error, ["ENOTEMPTY", "EEXIST", "ENOTDIR", "EPERM"])) return false;
-		throw error;
+	for (let attempt = 0; attempt < WINDOWS_FS_RETRY_ATTEMPTS; attempt++) {
+		try {
+			rmdirSync(lockPath);
+			return true;
+		} catch (error) {
+			if (hasErrorCode(error, "ENOENT")) return true;
+			if (hasAnyErrorCode(error, ["ENOTEMPTY", "EEXIST", "ENOTDIR"])) return false;
+			if (!hasAnyErrorCode(error, ["EBUSY", "EPERM"])) throw error;
+			if (attempt + 1 < WINDOWS_FS_RETRY_ATTEMPTS) {
+				Atomics.wait(LOCK_WAIT_BUFFER, 0, 0, WINDOWS_FS_RETRY_MS);
+			}
+		}
 	}
+	return false;
 }
 
 function reapStaleLockDirectory(lockPath: string, staleMs: number): boolean {
@@ -267,7 +281,7 @@ function tryCreateOwnerMarker(lockPath: string, owner: FileLockOwner, contents: 
 		try {
 			createLockFile(markerPath, contents);
 		} catch (error) {
-			if (hasAnyErrorCode(error, ["ENOENT", "EEXIST", "ENOTDIR", "EINVAL"])) return undefined;
+			if (hasAnyErrorCode(error, ["EINVAL", "ENOENT", "EEXIST", "ENOTDIR"])) return undefined;
 			throw error;
 		}
 

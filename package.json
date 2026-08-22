@@ -31,8 +31,9 @@
     "build": "bun build src/index.ts src/cli/index.ts src/subagents/explorer-tools-extension.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
-    "test": "vitest run",
+    "test": "node scripts/run-test-files.mjs",
     "check": "biome check --write .",
+    "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

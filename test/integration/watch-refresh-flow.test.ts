@@ -21,22 +21,8 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-// Real recursive fs.watch delivery latency varies under load; poll generously
-// and retry so an occasional delayed/dropped OS event does not flake the suite.
-async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 10000): Promise<boolean> {
-	const start = Date.now();
-	while (Date.now() - start < timeoutMs) {
-		if (await predicate()) return true;
-		await new Promise((resolve) => setTimeout(resolve, 40));
-	}
-	return await predicate();
-}
-
-describe("AutoRAGAgent watch refresh (real fs)", () => {
-	it("updates parsed mirrors when a watched source file is created, then stops cleanly", {
-		retry: 3,
-		timeout: 30000,
-	}, async () => {
+describe("AutoRAGAgent watch refresh", () => {
+	it("updates parsed mirrors when a watched source file is created, then stops cleanly", async () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
@@ -44,24 +30,48 @@ describe("AutoRAGAgent watch refresh (real fs)", () => {
 		});
 		await agent.refresh(true);
 
-		handle = agent.startWatchRefresh({ debounceMs: 30 });
+		let emitChange: ((filename: string | null) => void) | undefined;
+		let resolveRefreshCompleted: (() => void) | undefined;
+		const refreshCompleted = new Promise<void>((resolve) => {
+			resolveRefreshCompleted = resolve;
+		});
+		const originalRefresh = agent.refresh.bind(agent);
+		agent.refresh = async (...args) => {
+			const result = await originalRefresh(...args);
+			resolveRefreshCompleted?.();
+			return result;
+		};
+		handle = agent.startWatchRefresh({
+			debounceMs: 0,
+			watcherFactory: (_dir, onChange) => {
+				emitChange = onChange;
+				return { close: () => {} };
+			},
+		});
 
 		// Create a new source file in the watched directory.
 		writeFileSync(join(docs, "new-note.txt"), "Freshly added note about invoices.\n");
+		emitChange?.("new-note.txt");
 		const mirrorPath = parsedOutputPath(root, "/docs/new-note.txt");
-		const appeared = await waitFor(() => existsSync(mirrorPath));
-		expect(appeared).toBe(true);
+		let timeout: NodeJS.Timeout | undefined;
+		try {
+			await Promise.race([
+				refreshCompleted,
+				new Promise<never>((_resolve, reject) => {
+					timeout = setTimeout(() => reject(new Error("Timed out waiting for watch refresh")), 10_000);
+				}),
+			]);
+		} finally {
+			if (timeout !== undefined) clearTimeout(timeout);
+		}
+		expect(existsSync(mirrorPath)).toBe(true);
 
 		// Stop the watcher; further changes must NOT trigger a refresh.
 		handle.stop();
-
-		// An in-flight refresh may still be completing after stop(). Wait for it
-		// to finish before capturing the baseline timestamp.
-		await waitFor(async () => !(await agent.getRefreshStatus()).inFlight, 10000);
 		const finishedAt = (await agent.getRefreshStatus()).lastFinishedAt;
 
 		writeFileSync(join(docs, "after-stop.txt"), "Should not be indexed by the watcher.\n");
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		emitChange?.("after-stop.txt");
 		const afterStopMirror = parsedOutputPath(root, "/docs/after-stop.txt");
 
 		expect(existsSync(afterStopMirror)).toBe(false);

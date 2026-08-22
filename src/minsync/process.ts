@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { portableSpawnCommand } from "../process/portable-spawn.ts";
 
 export interface ProcessResult {
 	readonly ok: boolean;
@@ -15,7 +16,8 @@ export function spawnProcess(
 	options: { readonly timeoutMs?: number } = {},
 ): Promise<ProcessResult> {
 	return new Promise((resolve) => {
-		const child = spawn(command, [...args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+		const portable = portableSpawnCommand(command, args);
+		const child = spawn(portable.command, [...portable.args], { cwd, stdio: ["ignore", "pipe", "pipe"] });
 		let stdout = "";
 		let stderr = "";
 		let timedOut = false;

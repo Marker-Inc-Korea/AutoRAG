@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { katokDatasourceRoot } from "./paths.ts";
 import type {
 	KatokChunk,
@@ -170,7 +171,8 @@ export class KatokClient {
 function spawnKatok(request: SpawnRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const { options, args, env, signal } = request;
-		const child = spawn(commandFor(options.binaryPath), args, {
+		const portable = portableSpawnCommand(commandFor(options.binaryPath), args);
+		const child = spawn(portable.command, [...portable.args], {
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});

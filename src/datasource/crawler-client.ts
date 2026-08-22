@@ -1,5 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import type {
 	CrawlerCliOptions,
 	CrawlerFailure,
@@ -68,7 +69,8 @@ function spawnCrawler(
 	options: CrawlerCliOptions,
 ): Promise<ProcessResult> {
 	return new Promise((resolve) => {
-		const child = spawn(command, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+		const portable = portableSpawnCommand(command, args);
+		const child = spawn(portable.command, [...portable.args], { env, stdio: ["ignore", "pipe", "pipe"] });
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
 		let stderr: BufferState = { text: "", bytes: 0, capped: false };
 		let settled = false;

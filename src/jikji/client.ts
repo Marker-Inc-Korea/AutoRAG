@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
 import type {
@@ -55,10 +56,13 @@ export class JikjiClient {
 	 * The result is cached per client so a failed install is not retried.
 	 */
 	private async resolveCommand(): Promise<string> {
-		if (this.options.binaryPath !== undefined) return commandFor(this.options.binaryPath);
+		if (this.options.binaryPath !== undefined && this.options.binaryPath !== DEFAULT_BINARY) {
+			return commandFor(this.options.binaryPath);
+		}
 		if (this.resolvedCommand !== undefined) return this.resolvedCommand;
-		if (lookupExecutableInPath(DEFAULT_BINARY, process.env) !== undefined) {
-			this.resolvedCommand = DEFAULT_BINARY;
+		const pathCommand = lookupExecutableInPath(DEFAULT_BINARY, controlledEnv(this.options.env));
+		if (pathCommand !== undefined) {
+			this.resolvedCommand = pathCommand;
 			return this.resolvedCommand;
 		}
 		if (this.options.root !== undefined) {
@@ -148,7 +152,8 @@ export class JikjiClient {
 function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 	return new Promise((resolve) => {
 		const options = request.options;
-		const child = spawn(request.command, request.args, {
+		const portable = portableSpawnCommand(request.command, request.args);
+		const child = spawn(portable.command, [...portable.args], {
 			env: controlledEnv(options.env),
 			stdio: ["ignore", "pipe", "pipe"],
 		});

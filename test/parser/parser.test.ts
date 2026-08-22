@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	createDefaultParserRegistry,
@@ -148,15 +149,7 @@ describe("ParserRegistry", () => {
 			const outputDir = options.outputDir;
 			if (outputDir === undefined) throw new Error("expected parser to provide outputDir");
 			await import("node:fs/promises").then((fs) =>
-				fs.writeFile(
-					`${outputDir}/${
-						inputPath
-							.split("/")
-							.pop()
-							?.replace(/\.pdf$/i, ".md") ?? "scanned.md"
-					}`,
-					"Hybrid OCR marker",
-				),
+				fs.writeFile(join(outputDir, basename(inputPath).replace(/\.pdf$/i, ".md")), "Hybrid OCR marker"),
 			);
 			return "ok";
 		};
