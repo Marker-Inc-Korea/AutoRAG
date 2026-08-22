@@ -7,6 +7,7 @@ import requests
 from asyncio import to_thread
 
 from autorag.nodes.generator.base import BaseGenerator
+from autorag.nodes.generator.chat import truncate_prompt_by_token
 from autorag.utils.util import get_event_loop, process_batch, result_to_dataframe
 
 logger = logging.getLogger("AutoRAG")
@@ -84,15 +85,18 @@ class VllmAPI(BaseGenerator):
 		logprob_result = list(map(lambda x: x[2], results))
 		return answer_result, token_result, logprob_result
 
-	def truncate_by_token(self, prompt: Union[str, List[Dict]]) -> str:
+	def truncate_by_token(
+		self, prompt: Union[str, List[Dict]]
+	) -> Union[str, List[Dict]]:
 		"""
 		Function to truncate prompts to fit within the maximum token limit.
 		"""
-		if not isinstance(prompt, str):
-			content_list = [msg["content"] for msg in prompt]
-			prompt = "\n".join(content_list)
-		tokens = self.encoding_for_model(prompt)["tokens"]  # Simple tokenization
-		return self.decoding_for_model(tokens[: self.max_model_len])["prompt"]
+		return truncate_prompt_by_token(
+			prompt,
+			lambda text: self.encoding_for_model(text)["tokens"],
+			lambda tokens: self.decoding_for_model(list(tokens))["prompt"],
+			self.max_model_len,
+		)
 
 	def call_vllm_api(self, prompt: Union[str, List[Dict]], **kwargs) -> dict:
 		"""

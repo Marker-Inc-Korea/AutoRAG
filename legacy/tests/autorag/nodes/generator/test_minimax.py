@@ -426,6 +426,32 @@ class TestTruncateByToken:
 		assert isinstance(result, list)
 		assert result == messages
 
+	def test_truncate_messages_preserves_roles(self):
+		class CharacterTokenizer:
+			def encode(self, text, allowed_special="none"):
+				return list(text)
+
+			def decode(self, tokens):
+				return "".join(tokens)
+
+		messages = [
+			{"role": "system", "content": "Follow the conversation."},
+			{"role": "user", "content": "What is the capital of France?"},
+			{"role": "assistant", "content": "Paris."},
+			{"role": "user", "content": "And Germany?"},
+		]
+
+		result = truncate_by_token(messages, CharacterTokenizer(), 10_000)
+
+		assert result == messages
+		assert result is not messages
+		assert [message["role"] for message in result] == [
+			"system",
+			"user",
+			"assistant",
+			"user",
+		]
+
 
 class TestThinkTagHelpers:
 	def test_strip_think_tags(self):
