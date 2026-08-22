@@ -275,33 +275,49 @@ describe("exported API — #22 observable refresh status and watch", () => {
 		expect(blob).not.toContain("indexPath");
 	});
 
-	it("keeps parsed mirrors current via the root-exported startWatchRefresh and stops cleanly", {
-		retry: 3,
-		timeout: 30000,
-	}, async () => {
+	it("keeps parsed mirrors current via the root-exported startWatchRefresh and stops cleanly", async () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 		});
 		await agent.refresh(true);
-		const handle = agent.startWatchRefresh({ debounceMs: 30 });
+		let emitChange: ((filename: string | null) => void) | undefined;
+		let resolveRefreshCompleted: (() => void) | undefined;
+		const refreshCompleted = new Promise<void>((resolve) => {
+			resolveRefreshCompleted = resolve;
+		});
+		const originalRefresh = agent.refresh.bind(agent);
+		agent.refresh = async (...args) => {
+			const result = await originalRefresh(...args);
+			resolveRefreshCompleted?.();
+			return result;
+		};
+		const handle = agent.startWatchRefresh({
+			debounceMs: 0,
+			watcherFactory: (_dir, onChange) => {
+				emitChange = onChange;
+				return { close: () => {} };
+			},
+		});
 
-		writeFileSync(join(docs, "watched.txt"), "Watched content about ledgers.\n");
-		const mirror = parsedOutputPath(root, "/docs/watched.txt");
-		const start = Date.now();
-		let updated = false;
-		while (Date.now() - start < 10000) {
-			// The parsed-mirror file appearing is the latching signal that the
-			// watcher re-indexed the new source (the per-refresh `written` counter
-			// resets to 0 on the next no-op refresh, so it is not a stable latch).
-			if (existsSync(mirror)) {
-				updated = true;
-				break;
+		try {
+			writeFileSync(join(docs, "watched.txt"), "Watched content about ledgers.\n");
+			emitChange?.("watched.txt");
+			let timeout: NodeJS.Timeout | undefined;
+			try {
+				await Promise.race([
+					refreshCompleted,
+					new Promise<never>((_resolve, reject) => {
+						timeout = setTimeout(() => reject(new Error("Timed out waiting for watch refresh")), 10_000);
+					}),
+				]);
+			} finally {
+				if (timeout !== undefined) clearTimeout(timeout);
 			}
-			await new Promise((resolve) => setTimeout(resolve, 40));
+			expect(existsSync(parsedOutputPath(root, "/docs/watched.txt"))).toBe(true);
+		} finally {
+			handle.stop();
 		}
-		handle.stop();
-		expect(updated).toBe(true);
 	});
 });
