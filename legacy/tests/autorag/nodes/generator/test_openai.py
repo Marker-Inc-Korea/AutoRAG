@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -299,7 +300,7 @@ def test_openai_llm_truncate(openai_llm_instance):
 	check_generated_log_probs(log_probs)
 
 
-class TestResponse(BaseModel):
+class StructuredResponse(BaseModel):
 	name: str
 	phone_number: str
 	age: int
@@ -308,7 +309,7 @@ class TestResponse(BaseModel):
 
 async def mock_gen_gt_response(*args, **kwargs):
 	return SimpleNamespace(
-		output_parsed=TestResponse(
+		output_parsed=StructuredResponse(
 			name="John Doe",
 			phone_number="1234567890",
 			age=30,
@@ -317,35 +318,39 @@ async def mock_gen_gt_response(*args, **kwargs):
 	)
 
 
-@pytest.mark.skipif(
-	is_github_action(),
-	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
-)
 @patch.object(
 	openai.resources.responses.AsyncResponses,
 	"parse",
 	mock_gen_gt_response,
 )
 def test_openai_llm_structured():
-	llm = OpenAILLM(project_dir=".", llm="gpt-4o-mini-2024-07-18")
+	llm = OpenAILLM(
+		project_dir=".",
+		llm="gpt-4o-mini-2024-07-18",
+		api_key="mock_openai_api_key",
+	)
 	prompt = """You must transform the user introduction to json format. You have to extract four information: name, phone number, age, and is_dead.
 Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I am alive. I am good at soccer."""
 
-	response = llm.structured_output([prompt], TestResponse)
-	assert isinstance(response[0], TestResponse)
+	response = llm.structured_output([prompt], StructuredResponse)
+	assert isinstance(response[0], StructuredResponse)
 	assert response[0].name == "John Doe"
 	assert response[0].phone_number == "1234567890"
 	assert response[0].age == 30
 	assert response[0].is_dead is False
 
-	llm = OpenAILLM(project_dir=".", llm="gpt-3.5-turbo")
+	llm = OpenAILLM(
+		project_dir=".",
+		llm="gpt-3.5-turbo",
+		api_key="mock_openai_api_key",
+	)
 	with pytest.raises(ValueError):
-		llm.structured_output([prompt], TestResponse)
+		llm.structured_output([prompt], StructuredResponse)
 
 
 @pytest.mark.skipif(
-	is_github_action(),
-	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
+	is_github_action() or not os.getenv("OPENAI_API_KEY"),
+	reason="Skipping this test because it uses the real OpenAI API.",
 )
 @pytest.mark.asyncio()
 async def test_openai_llm_astream():
