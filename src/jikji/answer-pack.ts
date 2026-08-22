@@ -129,9 +129,10 @@ export function normalizeJikjiAnswerPath(rawPath: string, sourceRoots: readonly 
 	if (typeof rawPath !== "string") return undefined;
 	const trimmed = rawPath.trim();
 	if (trimmed.length === 0) return undefined;
-	if (DRIVE_PATH_RE.test(trimmed) || URLISH_RE.test(trimmed)) return undefined;
+	const nativeAbsolute = isAbsolute(trimmed);
+	if ((DRIVE_PATH_RE.test(trimmed) && !nativeAbsolute) || URLISH_RE.test(trimmed)) return undefined;
 	const normalized = trimmed.replace(/\\/g, "/");
-	if (URL_SCHEME_RE.test(normalized)) return undefined;
+	if (!nativeAbsolute && URL_SCHEME_RE.test(normalized)) return undefined;
 	if (normalized.includes("\0")) return undefined;
 
 	const seenRealRoots = new Set<string>();

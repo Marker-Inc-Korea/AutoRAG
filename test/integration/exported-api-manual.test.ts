@@ -199,11 +199,12 @@ describe("exported API — #6 curated output path opacity", () => {
 		});
 
 		const response = await agent.searchDocuments("report");
-		const blob = JSON.stringify(response);
-
 		// Real paths flow through verbatim — path opacity is removed.
-		expect(blob).toContain(root);
-		expect(blob).toContain("/docs/report.txt");
+		expect(response.answer).toContain(root);
+		expect(response.results[0]?.title).toContain(root);
+		expect(response.results[0]?.summary).toContain(join(root, ".autorag"));
+		expect(response.results[0]?.evidence[0]?.excerpt).toContain(root);
+		expect(response.answer).toContain("/docs/report.txt");
 		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/docs/report.txt");
 	});
 });

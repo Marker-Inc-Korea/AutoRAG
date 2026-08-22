@@ -138,11 +138,10 @@ export class QmdClient {
 }
 
 function renderIndexYaml(collectionName: string, vaultPath: string): string {
-	const escapedPath = vaultPath.replace(/\\/g, "\\\\");
 	return [
 		"collections:",
 		`  ${collectionName}:`,
-		`    path: ${JSON.stringify(escapedPath)}`,
+		`    path: ${JSON.stringify(vaultPath)}`,
 		'    pattern: "**/*.md"',
 		"    ignore:",
 		'      - ".obsidian/**"',

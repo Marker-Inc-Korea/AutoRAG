@@ -215,7 +215,7 @@ process.exit(0);
 		expect(ensure.ok).toBe(true);
 		const configPath = join(root, ".autorag", "datasources", "obsidian", "vault-1", "config", "index.yml");
 		expect(existsSync(configPath)).toBe(true);
-		expect(readFileSync(configPath, "utf8")).toContain(vault);
+		expect(readFileSync(configPath, "utf8")).toContain(JSON.stringify(vault));
 		expect(readFileSync(configPath, "utf8")).toContain(".obsidian/**");
 
 		const update = await client.update();
@@ -235,7 +235,11 @@ process.exit(0);
 			.split("\n")
 			.map((line) => JSON.parse(line) as { args: string[]; configDir: string });
 		expect(calls.some((call) => call.args[0] === "update")).toBe(true);
-		expect(calls.every((call) => call.configDir.includes("obsidian/vault-1/config"))).toBe(true);
+		expect(
+			calls.every(
+				(call) => call.configDir === join(root, ".autorag", "datasources", "obsidian", "vault-1", "config"),
+			),
+		).toBe(true);
 	});
 
 	it("returns binary-missing without throwing", async () => {

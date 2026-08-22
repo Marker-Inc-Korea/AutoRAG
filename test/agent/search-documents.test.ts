@@ -2302,8 +2302,8 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(explorerExecutions).toBe(0);
 	});
 
-	it("normalizes a lexical /tmp explorer cwd to the pinned canonical root", async () => {
-		const tmpAliasRoot = mkdtempSync(join("/tmp", "autorag-pinned-root-"));
+	it("normalizes a lexical temporary explorer cwd to the pinned canonical root", async () => {
+		const tmpAliasRoot = mkdtempSync(join(tmpdir(), "autorag-pinned-root-"));
 		try {
 			const canonicalRoot = realpathSync(tmpAliasRoot);
 			let dispatchedCwd: unknown;
@@ -2614,12 +2614,13 @@ describe("AutoRAGAgent searchDocuments", () => {
 		const agent = makeAgent(model);
 
 		const response = await agent.searchDocuments("Meeting");
-		const blob = JSON.stringify(response);
-
 		// Real paths flow through verbatim — path opacity is removed.
-		expect(blob).toContain(tmpDir);
-		expect(blob).toContain(home);
-		expect(blob).toContain("/data/notes.txt");
+		expect(response.answer).toContain(tmpDir);
+		expect(response.answer).toContain(home);
+		expect(response.results[0]?.title).toContain(tmpDir);
+		expect(response.results[0]?.summary).toContain(dotAutorag);
+		expect(response.results[0]?.evidence[0]?.excerpt).toContain(tmpDir);
+		expect(response.answer).toContain("/data/notes.txt");
 		// Hidden registry keeps the original source untouched for feedback.
 		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/data/notes.txt");
 	});
@@ -2737,12 +2738,13 @@ describe("AutoRAGAgent searchDocuments", () => {
 		);
 		const agent = makeAgent(model);
 		const response = await agent.searchDocuments("Meeting");
-		const blob = JSON.stringify(response);
-
 		// Real paths are preserved verbatim — path opacity is removed.
-		expect(blob).toContain(tmpDir);
-		expect(blob).toContain(home);
-		expect(blob).toContain("/data/secret.txt");
+		expect(response.answer).toContain(tmpDir);
+		expect(response.answer).toContain(home);
+		expect(response.results[0]?.title).toContain(tmpDir);
+		expect(response.results[0]?.summary).toContain(home);
+		expect(response.results[0]?.evidence[0]?.excerpt).toContain(dot);
+		expect(response.results[0]?.source).toBe("/data/secret.txt");
 		// Benign lookalikes are still preserved.
 		expect(response.answer).toContain("docs/policy");
 		expect(response.answer).toContain("https://ex.com/a");
