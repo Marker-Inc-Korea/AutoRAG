@@ -267,6 +267,7 @@ function spawnRuntimeModelsWorker(
 	workerCount: number,
 ): RuntimeModelsWorker {
 	const child = fork(RUNTIME_MODELS_PROCESS_FIXTURE, [agentDir, cwd, workerId, String(workerCount)], {
+		execPath: "node",
 		execArgv: ["--experimental-strip-types", "--disable-warning=ExperimentalWarning"],
 		silent: true,
 	});
