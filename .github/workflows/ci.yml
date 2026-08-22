@@ -139,12 +139,8 @@ jobs:
         run: bun run typecheck
 
       - name: Test
-        if: steps.filter.outputs.autorag == 'true' && runner.os != 'Windows'
+        if: steps.filter.outputs.autorag == 'true'
         run: bun run test
-
-      - name: Test Windows-compatible suite
-        if: steps.filter.outputs.autorag == 'true' && runner.os == 'Windows'
-        run: bun run test:windows
 
       - name: Build
         if: steps.filter.outputs.autorag == 'true'
