@@ -560,7 +560,7 @@ describe("mandatory pi-subagents runtime", () => {
 			}
 		} finally {
 			await Promise.all(workers.map(stopRuntimeModelsWorker));
-			rmSync(barrierDir, { recursive: true, force: true });
+			rmSync(barrierDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 		}
 
 		expect(
@@ -1602,7 +1602,7 @@ try {
 	process.stdout.write(JSON.stringify({ active, disposed }));
 } finally {
 	runtime?.session.dispose();
-	rmSync(root, { recursive: true, force: true });
+rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }`,
 			],
 			{

@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	rmSync(root, { recursive: true, force: true });
+	rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 function writeFakeJikji(body: string, exitCode = 0): void {
