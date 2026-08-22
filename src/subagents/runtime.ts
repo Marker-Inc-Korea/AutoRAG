@@ -313,9 +313,10 @@ function hasManagedExplorerVersionMarker(definition: string): boolean {
 }
 
 function isRecognizedManagedExplorerDefinition(definition: string): boolean {
+	const normalized = definition.replace(/\r\n/g, "\n");
 	return (
-		definition === INSTALLED_LEGACY_EXPLORER_DEFINITION ||
-		definition === PREVIOUS_MANAGED_EXPLORER_DEFINITION ||
+		normalized === INSTALLED_LEGACY_EXPLORER_DEFINITION.replace(/\r\n/g, "\n") ||
+		normalized === PREVIOUS_MANAGED_EXPLORER_DEFINITION.replace(/\r\n/g, "\n") ||
 		hasManagedExplorerVersionMarker(definition)
 	);
 }
@@ -347,7 +348,7 @@ function ensureMandatoryExplorerAgent(agentDir: string): void {
 		replaceExplorerDefinitionAtomically(explorerPath);
 		if (
 			readFileSync(explorerPath, "utf8") !== AUTORAG_EXPLORER_AGENT_DEFINITION ||
-			(statSync(explorerPath).mode & 0o777) !== 0o600
+			(process.platform !== "win32" && (statSync(explorerPath).mode & 0o777) !== 0o600)
 		) {
 			throw new Error(`AutoRAG persistent explorer definition at ${explorerPath} is not canonical`);
 		}

@@ -13,7 +13,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
@@ -885,7 +885,8 @@ describe("mandatory pi-subagents runtime", () => {
 		const piChildCapturePath = join(root, "pi-child-env.json");
 		const piChildReadyPath = join(root, "pi-child-ready");
 		const piChildReleasePath = join(root, "pi-child-release");
-		const fakePiBinary = join(root, "fake-pi.mjs");
+		const fakePiScript = join(root, "fake-pi.mjs");
+		const fakePiBinary = process.platform === "win32" ? join(root, "fake-pi.exe") : fakePiScript;
 		const explorerSecret = "AUTORAG_EXPLORER_PROVIDER_SECRET";
 		const orchestratorSecret = "AUTORAG_ORCHESTRATOR_PROVIDER_SECRET";
 		const unlistedParentSecret = "AUTORAG_UNLISTED_PARENT_SECRET";
@@ -908,7 +909,7 @@ describe("mandatory pi-subagents runtime", () => {
 		delete process.env.OTHER_PROVIDER_API_KEY;
 		process.env.UNLISTED_PARENT_SECRET = unlistedParentSecret;
 		writeFileSync(
-			fakePiBinary,
+			fakePiScript,
 			`#!/usr/bin/env node
 	import { existsSync, writeFileSync } from "node:fs";
 
@@ -944,7 +945,15 @@ describe("mandatory pi-subagents runtime", () => {
 `,
 			"utf8",
 		);
-		chmodSync(fakePiBinary, 0o700);
+		chmodSync(fakePiScript, 0o700);
+		if (process.platform === "win32") {
+			const compiled = spawnSync("bun", ["build", "--compile", fakePiScript, "--outfile", fakePiBinary], {
+				encoding: "utf8",
+			});
+			if (compiled.status !== 0) {
+				throw new Error(`failed to compile fake Pi executable: ${compiled.stderr}`);
+			}
+		}
 		process.env.PI_SUBAGENT_PI_BINARY = fakePiBinary;
 
 		try {
@@ -1444,7 +1453,7 @@ describe("mandatory pi-subagents runtime", () => {
 			expect(runtime.session.getActiveToolNames()).toEqual(
 				expect.arrayContaining(["custom_search", "subagent", "subagent_wait"]),
 			);
-			expect(runtime.extensionPath).toContain("pi-subagents/src/extension/index.ts");
+			expect(normalize(runtime.extensionPath)).toContain(normalize("pi-subagents/src/extension/index.ts"));
 		} finally {
 			runtime.session.dispose();
 		}
@@ -1634,7 +1643,7 @@ Project override body.
 		});
 		try {
 			expect(readFileSync(explorerPath, "utf8")).toBe(AUTORAG_EXPLORER_AGENT_DEFINITION);
-			expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
+			if (process.platform !== "win32") expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
 			expect(readdirSync(agentsDir).filter((name) => name.startsWith(".autorag-explorer.")).length).toBe(0);
 		} finally {
 			runtime.session.dispose();
@@ -1665,7 +1674,7 @@ Project override body.
 		});
 		try {
 			expect(readFileSync(explorerPath, "utf8")).toBe(AUTORAG_EXPLORER_AGENT_DEFINITION);
-			expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
+			if (process.platform !== "win32") expect(statSync(explorerPath).mode & 0o777).toBe(0o600);
 			expect(readdirSync(agentsDir).filter((name) => name.startsWith(".autorag-explorer.")).length).toBe(0);
 		} finally {
 			runtime.session.dispose();
@@ -1823,7 +1832,7 @@ describe("createHealthSubagentProbeSession", () => {
 			const toolNames = new Set(probe.session.getAllTools().map((tool) => tool.name));
 			expect(toolNames.has("subagent")).toBe(true);
 			expect(toolNames.has("subagent_wait")).toBe(true);
-			expect(probe.extensionPath).toContain("pi-subagents/src/extension/index.ts");
+			expect(normalize(probe.extensionPath)).toContain(normalize("pi-subagents/src/extension/index.ts"));
 		} finally {
 			probe.dispose();
 		}

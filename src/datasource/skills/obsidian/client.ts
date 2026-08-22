@@ -2,6 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { obsidianQmdCacheDir, obsidianQmdConfigDir, stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
 import type {
 	QmdEmbedInfo,
@@ -187,7 +188,8 @@ function spawnQmd(request: {
 	readonly signal?: AbortSignal;
 }): Promise<ProcessResult> {
 	return new Promise((resolveResult) => {
-		const child = spawn(request.binaryPath ?? DEFAULT_QMD_BINARY, [...request.args], {
+		const portable = portableSpawnCommand(request.binaryPath ?? DEFAULT_QMD_BINARY, request.args);
+		const child = spawn(portable.command, [...portable.args], {
 			env: request.env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
