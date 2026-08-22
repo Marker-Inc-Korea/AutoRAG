@@ -1,5 +1,25 @@
 # AutoRAG — Pi-Powered Librarian Agent
 
+## Developer Commands
+
+The repository root includes a `Makefile` for AutoRAG 2.0 validation:
+
+- `make test` / `make test-all` — run the complete test suite.
+- `make test-macos` — run the complete suite and require a macOS host.
+- `make test-windows` — run the Windows-compatible suite used by GitHub Actions.
+- `make test-linux` — run lint, typecheck, the portable Linux suite, and build in a Docker container.
+- `make lint`, `make typecheck`, `make build` — run individual checks.
+- `make ci` — run the normal local lint, typecheck, complete test, and build sequence.
+
+Docker can reproduce the Linux job on macOS, Linux, or Windows hosts. The
+`test-linux` target uses an isolated container volume for `node_modules`, so it
+does not replace host-native dependencies, and pins `linux/amd64` to match
+GitHub's Ubuntu runner and the available Tantivy native binding. Windows
+containers require a Windows kernel, so Windows compatibility is run natively
+from Git Bash/MSYS2 with `make test-windows` (or directly with
+`bun run test:windows`) and verified by the `windows-latest` GitHub-hosted
+runner.
+
 ## Purpose
 
 AutoRAG is an **over-powered librarian agent** for **document collections** — PDFs, wikis, notes, research papers, knowledge bases, and any unstructured text corpus. It is a customized [Pi](https://github.com/earendil-works/pi-mono) agent: the Pi agent loop configured into a librarian, used through one library/programmatic API (and a thin CLI).
