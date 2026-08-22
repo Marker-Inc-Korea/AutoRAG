@@ -32,7 +32,9 @@
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "vitest run",
+    "test:windows": "vitest run test/smoke.test.ts test/manifest test/memory test/process test/retrieval test/security test/types",
     "check": "biome check --write .",
+    "lint": "biome check .",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
