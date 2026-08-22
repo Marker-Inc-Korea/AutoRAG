@@ -1,5 +1,6 @@
+import os
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import openai.resources.chat
 import openai.resources.responses
@@ -11,6 +12,7 @@ from autorag.nodes.generator import OpenAILLM
 from autorag.nodes.generator.openai_llm import (
 	GPT_5_LONG_CONTEXT,
 	get_max_token_size,
+	truncate_by_token,
 )
 from tests.autorag.nodes.generator.test_generator_base import (
 	prompts,
@@ -61,6 +63,24 @@ async def mock_openai_responses_create(*args, **kwargs):
 	return SimpleNamespace(output_text="Why not")
 
 
+class CharacterTokenizer:
+	"""Small deterministic tokenizer for prompt-structure regression tests."""
+
+	def encode(self, text, allowed_special="none"):
+		return list(text)
+
+	def decode(self, tokens):
+		return "".join(tokens)
+
+
+chat_history = [
+	{"role": "system", "content": "Follow the conversation."},
+	{"role": "user", "content": "What is the capital of France?"},
+	{"role": "assistant", "content": "Paris."},
+	{"role": "user", "content": "And Germany?"},
+]
+
+
 @patch.object(
 	openai.resources.responses.AsyncResponses,
 	"create",
@@ -75,6 +95,73 @@ def test_openai_llm_gpt_5(openai_gpt_5_instance):
 	check_generated_texts(answers)
 	check_generated_tokens(tokens)
 	check_generated_log_probs(log_probs)
+
+
+def test_truncate_chat_prompt_preserves_message_roles():
+	result = truncate_by_token(chat_history, CharacterTokenizer(), 10_000)
+
+	assert result == chat_history
+	assert result is not chat_history
+	assert [message["role"] for message in result] == [
+		"system",
+		"user",
+		"assistant",
+		"user",
+	]
+
+
+def test_truncate_chat_prompt_keeps_every_message_role():
+	result = truncate_by_token(chat_history, CharacterTokenizer(), 180)
+
+	assert [message["role"] for message in result] == [
+		"system",
+		"user",
+		"assistant",
+		"user",
+	]
+	assert len(result) == len(chat_history)
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_preserve_full_chat_history():
+	llm = object.__new__(OpenAILLM)
+	llm.llm = "gpt-4o"
+	llm.tokenizer = CharacterTokenizer()
+	chat_create = AsyncMock(
+		return_value=SimpleNamespace(
+			choices=[
+				SimpleNamespace(
+					message=SimpleNamespace(content="Berlin."),
+					logprobs=SimpleNamespace(
+						content=[SimpleNamespace(token="B", logprob=-0.1)]
+					),
+				)
+			]
+		)
+	)
+	llm.client = SimpleNamespace(
+		chat=SimpleNamespace(completions=SimpleNamespace(create=chat_create))
+	)
+
+	await llm.get_result(chat_history)
+
+	assert chat_create.await_args.kwargs["messages"] == chat_history
+
+
+@pytest.mark.asyncio
+async def test_gpt_5_responses_preserve_full_chat_history():
+	llm = object.__new__(OpenAILLM)
+	llm.llm = "gpt-5.6-pro"
+	llm.tokenizer = CharacterTokenizer()
+	responses_create = AsyncMock(return_value=SimpleNamespace(output_text="Berlin."))
+	llm.client = SimpleNamespace(responses=SimpleNamespace(create=responses_create))
+
+	answer, tokens, log_probs = await llm.get_result_gpt_5(chat_history)
+
+	responses_create.assert_awaited_once_with(model="gpt-5.6-pro", input=chat_history)
+	assert answer == "Berlin."
+	assert tokens == list("Berlin.")
+	assert log_probs == [0.5] * len(tokens)
 
 
 @pytest.mark.parametrize(
@@ -213,7 +300,7 @@ def test_openai_llm_truncate(openai_llm_instance):
 	check_generated_log_probs(log_probs)
 
 
-class TestResponse(BaseModel):
+class StructuredResponse(BaseModel):
 	name: str
 	phone_number: str
 	age: int
@@ -222,7 +309,7 @@ class TestResponse(BaseModel):
 
 async def mock_gen_gt_response(*args, **kwargs):
 	return SimpleNamespace(
-		output_parsed=TestResponse(
+		output_parsed=StructuredResponse(
 			name="John Doe",
 			phone_number="1234567890",
 			age=30,
@@ -231,35 +318,39 @@ async def mock_gen_gt_response(*args, **kwargs):
 	)
 
 
-@pytest.mark.skipif(
-	is_github_action(),
-	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
-)
 @patch.object(
 	openai.resources.responses.AsyncResponses,
 	"parse",
 	mock_gen_gt_response,
 )
 def test_openai_llm_structured():
-	llm = OpenAILLM(project_dir=".", llm="gpt-4o-mini-2024-07-18")
+	llm = OpenAILLM(
+		project_dir=".",
+		llm="gpt-4o-mini-2024-07-18",
+		api_key="mock_openai_api_key",
+	)
 	prompt = """You must transform the user introduction to json format. You have to extract four information: name, phone number, age, and is_dead.
 Hello, my name is John Doe. My phone number is 1234567890. I am 30 years old. I am alive. I am good at soccer."""
 
-	response = llm.structured_output([prompt], TestResponse)
-	assert isinstance(response[0], TestResponse)
+	response = llm.structured_output([prompt], StructuredResponse)
+	assert isinstance(response[0], StructuredResponse)
 	assert response[0].name == "John Doe"
 	assert response[0].phone_number == "1234567890"
 	assert response[0].age == 30
 	assert response[0].is_dead is False
 
-	llm = OpenAILLM(project_dir=".", llm="gpt-3.5-turbo")
+	llm = OpenAILLM(
+		project_dir=".",
+		llm="gpt-3.5-turbo",
+		api_key="mock_openai_api_key",
+	)
 	with pytest.raises(ValueError):
-		llm.structured_output([prompt], TestResponse)
+		llm.structured_output([prompt], StructuredResponse)
 
 
 @pytest.mark.skipif(
-	is_github_action(),
-	reason="Skipping this test on GitHub Actions because it uses the real OpenAI API.",
+	is_github_action() or not os.getenv("OPENAI_API_KEY"),
+	reason="Skipping this test because it uses the real OpenAI API.",
 )
 @pytest.mark.asyncio()
 async def test_openai_llm_astream():
