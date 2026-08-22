@@ -93,7 +93,7 @@ afterEach(() => {
 	else process.env.HOME = previousHome;
 	if (previousUserProfile === undefined) delete process.env.USERPROFILE;
 	else process.env.USERPROFILE = previousUserProfile;
-	rmSync(root, { recursive: true, force: true });
+	rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 const CONFIG_MODULE_URL = new URL("../../src/cli/config.ts", import.meta.url).href;
@@ -518,6 +518,23 @@ describe("resolveConfig defaults", () => {
 		expect(staleReaperBlocked).toBe(true);
 		expect(competingOwnerRejected).toBe(true);
 		expect(readFileSync(path)).toEqual(winnerBytes);
+		expect(pendingConfigArtifacts(path)).toEqual([]);
+	});
+
+	it("retries transient Windows lock-directory removal failures", () => {
+		const path = join(root, DEFAULT_CONFIG_FILENAME);
+		let attempts = 0;
+		fsMock.rmdirSyncHook = (...args) => {
+			attempts++;
+			if (attempts < 3) {
+				throw Object.assign(new Error("resource busy"), { code: "EBUSY" });
+			}
+			return fsMock.realRmdirSync?.(...args);
+		};
+
+		writeDefaultConfig(path, { searchPaths: ["docs"] });
+
+		expect(attempts).toBe(3);
 		expect(pendingConfigArtifacts(path)).toEqual([]);
 	});
 
