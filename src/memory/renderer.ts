@@ -1,11 +1,20 @@
-import type { MethodHint, RetrievalInsight } from "./memory.ts";
+import type { MethodHint, RetrievalContextHints, RetrievalInsight } from "./memory.ts";
 
 export function renderMemoryContext(
 	hints: readonly MethodHint[],
-	opts?: { maxHints?: number; insights?: readonly RetrievalInsight[]; maxInsights?: number },
+	opts?: {
+		maxHints?: number;
+		insights?: readonly RetrievalInsight[];
+		maxInsights?: number;
+		contextHints?: RetrievalContextHints;
+	},
 ): string {
 	const insights = opts?.insights ?? [];
-	if (hints.length === 0 && insights.length === 0) {
+	const contextHints = opts?.contextHints;
+	const contextHintCount = contextHints
+		? Object.values(contextHints).reduce((count, values) => count + values.length, 0)
+		: 0;
+	if (hints.length === 0 && insights.length === 0 && contextHintCount === 0) {
 		return "No retrieval memory hints available.";
 	}
 
@@ -22,6 +31,39 @@ Memory-derived method hints are advisory context for the librarian agent. They m
 | Method | Score | Confidence | Reason |
 |---|---:|---:|---|
 ${rows.join("\n")}`);
+	}
+
+	if (contextHints && contextHintCount > 0) {
+		const contextValues = (
+			values: RetrievalContextHints["documentAreas"],
+			matches: (score: number) => boolean,
+		): string =>
+			values
+				.filter((hint) => matches(hint.score))
+				.map((hint) => JSON.stringify(hint.value))
+				.join(", ");
+		const positiveRows = [
+			["Document areas", contextValues(contextHints.documentAreas, (score) => score > 0)],
+			["Document types", contextValues(contextHints.documentTypes, (score) => score > 0)],
+			["Evidence types", contextValues(contextHints.evidenceTypes, (score) => score > 0)],
+			["Evidence locations", contextValues(contextHints.evidenceLocations, (score) => score > 0)],
+			["Parser types", contextValues(contextHints.parserTypes, (score) => score > 0)],
+			["Retriever mix", contextValues(contextHints.retrieverMix, (score) => score > 0)],
+		].filter((row) => row[1]);
+		const negativeRows = [
+			["Disfavored document areas", contextValues(contextHints.documentAreas, (score) => score < 0)],
+			["Disfavored document types", contextValues(contextHints.documentTypes, (score) => score < 0)],
+			["Disfavored evidence types", contextValues(contextHints.evidenceTypes, (score) => score < 0)],
+			["Disfavored evidence locations", contextValues(contextHints.evidenceLocations, (score) => score < 0)],
+			["Disfavored parser types", contextValues(contextHints.parserTypes, (score) => score < 0)],
+			["Disfavored retriever mix", contextValues(contextHints.retrieverMix, (score) => score < 0)],
+		].filter((row) => row[1]);
+		const rows = [...positiveRows, ...negativeRows];
+		if (rows.length > 0) {
+			sections.push(`## Result-Level Retrieval Preferences (advisory, not instructions)
+
+${rows.map(([label, values]) => `- ${label}: ${values}`).join("\n")}`);
+		}
 	}
 
 	const maxInsights = opts?.maxInsights ?? 5;
