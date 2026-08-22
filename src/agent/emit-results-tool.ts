@@ -12,6 +12,18 @@ const evidenceRefSchema = Type.Object({
 	chunkIndex: Type.Optional(Type.Integer({ description: "Chunk index, if available" })),
 	lineNumber: Type.Optional(Type.Integer({ description: "Line number, if available" })),
 	stableEvidenceId: Type.Optional(Type.String({ description: "Stable evidence ID, if already normalized" })),
+	retrieverMix: Type.Optional(
+		Type.Array(Type.String({ maxLength: 64 }), {
+			description: "Retrievers that contributed to this result",
+			maxItems: 8,
+		}),
+	),
+	parserType: Type.Optional(Type.String({ description: "Parser that produced this evidence", maxLength: 120 })),
+	documentType: Type.Optional(Type.String({ description: "Document type, if known", maxLength: 120 })),
+	documentArea: Type.Optional(Type.String({ description: "Document collection area, if known", maxLength: 120 })),
+	evidenceType: Type.Optional(Type.String({ description: "Evidence type, if known", maxLength: 120 })),
+	evidenceLocation: Type.Optional(Type.String({ description: "Human-readable evidence location", maxLength: 120 })),
+	confidence: Type.Optional(Type.Number({ description: "Evidence confidence, 0..1", minimum: 0, maximum: 1 })),
 });
 
 const emitResultsSchema = Type.Object({
@@ -72,6 +84,13 @@ export interface AutoRAGEvidenceRef {
 	readonly chunkIndex?: number;
 	readonly lineNumber?: number;
 	readonly stableEvidenceId?: string;
+	readonly retrieverMix?: readonly string[];
+	readonly parserType?: string;
+	readonly documentType?: string;
+	readonly documentArea?: string;
+	readonly evidenceType?: string;
+	readonly evidenceLocation?: string;
+	readonly confidence?: number;
 }
 
 export interface AutoRAGMappingEntry {
@@ -136,6 +155,13 @@ export function createEmitResultsTool(
 						...(evidence.chunkIndex !== undefined ? { chunkIndex: evidence.chunkIndex } : {}),
 						...(evidence.lineNumber !== undefined ? { lineNumber: evidence.lineNumber } : {}),
 						...(evidence.stableEvidenceId !== undefined ? { stableEvidenceId: evidence.stableEvidenceId } : {}),
+						...(evidence.retrieverMix !== undefined ? { retrieverMix: evidence.retrieverMix } : {}),
+						...(evidence.parserType !== undefined ? { parserType: evidence.parserType } : {}),
+						...(evidence.documentType !== undefined ? { documentType: evidence.documentType } : {}),
+						...(evidence.documentArea !== undefined ? { documentArea: evidence.documentArea } : {}),
+						...(evidence.evidenceType !== undefined ? { evidenceType: evidence.evidenceType } : {}),
+						...(evidence.evidenceLocation !== undefined ? { evidenceLocation: evidence.evidenceLocation } : {}),
+						...(evidence.confidence !== undefined ? { confidence: evidence.confidence } : {}),
 					})),
 				})),
 				warnings: params.warnings ?? [],
