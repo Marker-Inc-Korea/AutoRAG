@@ -61,7 +61,7 @@ describe("portableSpawnCommand", () => {
 		chmodSync(script, 0o755);
 
 		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
-			command: "bash.exe",
+			command: "bash",
 			args: [script, "find"],
 		});
 	});
