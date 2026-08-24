@@ -73,9 +73,9 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 			retrieve: async (query: string, options: RetrievalOptions) => {
 				const originalOptions = {
 					...options,
-					scope: rewriteScope(options.scope, this.originalId, this.alias),
+					scope: rewriteScope(options.scope, this.alias, this.originalId),
 					allowedScopes: options.allowedScopes?.map(
-						(scope) => rewriteScope(scope, this.originalId, this.alias) ?? scope,
+						(scope) => rewriteScope(scope, this.alias, this.originalId) ?? scope,
 					),
 				};
 				const results = await method.retrieve(query, originalOptions);

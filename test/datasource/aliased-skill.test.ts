@@ -62,6 +62,34 @@ function chatSkill(): DatasourceSkill {
 	};
 }
 
+it("rewrites alias scopes before delegating retrieval", async () => {
+	const received: { scope?: string; allowedScopes?: readonly string[] }[] = [];
+	const base = chatSkill();
+	const originalMethod = base.retrievalMethods()[0];
+	base.retrievalMethods = () => [
+		{
+			...originalMethod,
+			retrieve: async (_query, options) => {
+				received.push(options);
+				return originalMethod.retrieve(_query, options);
+			},
+		},
+	];
+
+	const aliased = new AliasedDatasourceSkill(base, { alias: "account-a" });
+	await aliased.retrievalMethods()[0].retrieve("query", {
+		scope: "/account-a/channel-1",
+		allowedScopes: ["/account-a/channel-1/**"],
+	});
+
+	expect(received).toEqual([
+		{
+			scope: "/chat/channel-1",
+			allowedScopes: ["/chat/channel-1/**"],
+		},
+	]);
+});
+
 describe("AliasedDatasourceSkill", () => {
 	it("searches every channel by default", async () => {
 		const skill = new AliasedDatasourceSkill(chatSkill(), { alias: "all-chats" });
