@@ -52,4 +52,17 @@ describe("portableSpawnCommand", () => {
 			args: [script, "find"],
 		});
 	});
+
+	it("executes cached .exe shell fixtures with bash on Windows", () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+		tempDirs.push(root);
+		const script = join(root, "jikji.exe");
+		writeFileSync(script, "#!/bin/sh\nprintf ok\n", "utf8");
+		chmodSync(script, 0o755);
+
+		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
+			command: "bash.exe",
+			args: [script, "find"],
+		});
+	});
 });

@@ -24,7 +24,7 @@ export function portableSpawnCommand(
 	if (NODE_SCRIPT_EXTENSIONS.has(extension) || hasShebang(command, "node")) {
 		return { command: process.execPath, args: [command, ...args] };
 	}
-	if (extension.length === 0 && (hasShebang(command, "/bin/sh") || hasShebang(command, "/usr/bin/env sh"))) {
+	if (hasShebang(command, "/bin/sh") || hasShebang(command, "/usr/bin/env sh")) {
 		return { command: "bash.exe", args: [command, ...args] };
 	}
 	return { command, args };
