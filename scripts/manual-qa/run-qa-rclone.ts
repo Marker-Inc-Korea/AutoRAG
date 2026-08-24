@@ -43,17 +43,19 @@ const runner = async (args: readonly string[]): Promise<RcloneRunResult> => {
 };
 
 try {
-	const connector = new RcloneConnector({
+	const personalConnector = new RcloneConnector({
 		remote: "gdrive:",
-		skillName: "cloud-drive",
+		skillName: "personal-google-drive",
 		workspaceRoot: root,
-		instanceId: "manual",
+		instanceId: "personal",
 		runner,
 	});
 	const skill = new CloudDriveSkill({
-		instanceId: "manual",
+		skillName: "personal-google-drive",
+		instanceId: "personal",
+		provider: "google-drive",
 		workspaceRoot: root,
-		connector,
+		connector: personalConnector,
 	});
 
 	const initial = await skill.index();
@@ -82,12 +84,39 @@ try {
 			return { results, diagnostics: [] };
 		},
 	});
-	const toolResult = await tool.execute("manual-qa", { query: "q3-renamed", scope: "/cloud-drive/manual/**" });
-	check("search_datasource_documents returns scoped cloud-drive hit", toolResult.details.resultCount > 0);
-	check("manifest has stable virtual metadata", readFileSync(join(root, ".autorag", "datasources", "cloud-drive", "manual", "manifest.json"), "utf8").includes("reports"));
+	const toolResult = await tool.execute("manual-qa", {
+		query: "q3-renamed",
+		scope: "/personal-google-drive/personal/**",
+	});
+	check("search_datasource_documents returns scoped personal-drive hit", toolResult.details.resultCount > 0);
+	check(
+		"manifest is isolated under the connection alias",
+		readFileSync(
+			join(root, ".autorag", "datasources", "personal-google-drive", "personal", "manifest.json"),
+			"utf8",
+		).includes("reports"),
+	);
+
+	const company = new CloudDriveSkill({
+		skillName: "company-onedrive",
+		instanceId: "work",
+		provider: "onedrive",
+		workspaceRoot: root,
+		connector: { fetch: async () => ({ ok: true, documents: [{ docId: "policy.md", content: "company policy sentinel" }] }) },
+	});
+	expectDistinctConnection(skill, company);
+	check("multiple connections expose distinct skill manifests", skill.skillManifest().name !== company.skillManifest().name);
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }
 
 console.log(failures === 0 ? "\nRCLONE MANUAL QA PASSED" : `\nRCLONE MANUAL QA: ${failures} failure(s)`);
 if (failures > 0) process.exitCode = 1;
+
+function expectDistinctConnection(first: CloudDriveSkill, second: CloudDriveSkill): void {
+	check("multiple connections expose distinct datasource ids", first.describe().datasourceId !== second.describe().datasourceId);
+	check(
+		"multiple connections expose distinct source roots",
+		first.describeSources()[0]?.source !== second.describeSources()[0]?.source,
+	);
+}

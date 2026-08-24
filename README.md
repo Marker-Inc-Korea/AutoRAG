@@ -158,13 +158,14 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "notion":   { "connector": { "binaryPath": "notcrawl", "configPath": "/path/to/notcrawl.yaml" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
-    "cloud-drive": { "instanceId": "team-docs", "connector": { "provider": "google-drive", "remote": "gdrive:", "include": ["**/*.md"] } },
+    "personal-google-drive": { "type": "cloud-drive", "instanceId": "personal", "connector": { "provider": "google-drive", "remote": "personal-gdrive:", "include": ["**/*.md"] } },
+    "company-onedrive": { "type": "cloud-drive", "instanceId": "work", "connector": { "provider": "onedrive", "remote": "company-onedrive:Documents" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
     "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "cloud-drive", "obsidian", "rss"],
-    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/cloud-drive/**", "/obsidian/**", "/rss/**"]
+    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/personal-google-drive/**", "/company-onedrive/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -179,6 +180,10 @@ Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `not
 
 Install and authenticate rclone separately (`brew install rclone && rclone
 config` on macOS), then configure the provider-neutral `cloud-drive` skill.
+`cloud-drive` is a reusable `type`: each datasource config key is a connection
+alias and becomes a separate agent skill and scope. Multiple Google accounts,
+or Google Drive plus OneDrive/iCloud, can therefore be loaded and searched
+independently.
 AutoRAG inventories with `rclone lsjson`, keeps a workspace-local manifest and
 managed mirror, and downloads only added or changed indexable files. Google
 Drive is Tier-1. OneDrive, Dropbox, SMB/SFTP/WebDAV, and mounted drives share

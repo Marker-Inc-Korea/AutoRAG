@@ -195,4 +195,29 @@ describe("buildSystemPrompt subagent orchestration contract", () => {
 		expect(manifest).toMatch(/iCloud.*experimental/i);
 		expect(manifest).toContain("/cloud-drive/icloud-docs");
 	});
+
+	it("lists multiple drive connections as independently loadable skills", () => {
+		const personal = new CloudDriveSkill({
+			skillName: "personal-google-drive",
+			instanceId: "personal",
+			provider: "google-drive",
+			connector: { fetch: async () => ({ ok: true, documents: [] }) },
+		});
+		const work = new CloudDriveSkill({
+			skillName: "company-onedrive",
+			instanceId: "work",
+			provider: "onedrive",
+			connector: { fetch: async () => ({ ok: true, documents: [] }) },
+		});
+		const prompt = buildSystemPrompt({
+			toolNames: ["search_datasource_documents", "load_datasource_skill"],
+			manifests: [],
+			datasourceSkills: [personal, work].map((skill) => toDatasourceAgentSkill(skill.skillManifest())),
+		});
+
+		expect(prompt).toContain("datasource-personal-google-drive");
+		expect(prompt).toContain("datasource-company-onedrive");
+		expect(personal.skillManifest().content).toContain("/personal-google-drive/personal");
+		expect(work.skillManifest().content).toContain("/company-onedrive/work");
+	});
 });

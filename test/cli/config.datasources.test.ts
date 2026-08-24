@@ -186,6 +186,42 @@ describe("CLI config datasources wiring", () => {
 		expect(skills[0]?.skillManifest().content).toContain("OneDrive");
 	});
 
+	it("registers each rclone connection alias as a distinct datasource skill", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				"personal-google-drive": {
+					type: "cloud-drive",
+					instanceId: "personal",
+					connector: { provider: "google-drive", remote: "personal-gdrive:" },
+				},
+				"company-onedrive": {
+					type: "cloud-drive",
+					instanceId: "work",
+					connector: { provider: "onedrive", remote: "company-onedrive:Documents" },
+				},
+			},
+			datasourceAccess: {
+				allowedTags: ["cloud-drive"],
+				allowedScopes: ["/personal-google-drive/**", "/company-onedrive/**"],
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills.map((skill) => skill.describe().name).sort()).toEqual([
+			"company-onedrive",
+			"personal-google-drive",
+		]);
+		expect(skills.map((skill) => skill.skillManifest().name).sort()).toEqual([
+			"datasource-company-onedrive",
+			"datasource-personal-google-drive",
+		]);
+		expect(skills[0]?.describe().datasourceId).not.toBe(skills[1]?.describe().datasourceId);
+	});
+
 	it("rejects malformed datasources and datasourceAccess sections", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);
