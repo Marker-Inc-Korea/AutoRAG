@@ -122,6 +122,14 @@ The upstream Rust `PrepareArgs` defines reference defaults that AutoRAG does not
 
 Datasource skills let AutoRAG search external, server-configured data sources through the same retrieval pipeline as local documents. A skill describes what it indexes, how it should be refreshed, what source instances exist, and which permission tags/scopes bound access. Retrieval still flows through `RetrievalMethodRegistry` → `ParallelRetriever` → datasource result filtering → `ResultMerger`; datasource skills do not create a parallel search path.
 
+Every datasource can be registered multiple times through a connection alias:
+use the config key as the unique name and set `type` to the reusable backend
+(`gmail`, `github`, `slack`, `discord`, `kakao`, `cloud-drive`, and so on).
+Each alias becomes an independently loadable agent skill with its own source
+scope and workspace namespace. Chat aliases search all channels by default;
+trusted `channels.ids` / `channels.names` allowlists can expose a particular
+channel or group chat as its own datasource.
+
 Security defaults are intentionally strict:
 
 - datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags` and `datasourceAccess.allowedScopes`;

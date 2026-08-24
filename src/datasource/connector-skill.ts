@@ -64,6 +64,8 @@ export interface ConnectorSkillDefinition {
 
 export interface ConnectorSkillOptions {
 	readonly connector: DatasourceConnector;
+	/** Config alias used as the independent datasource/skill identity. */
+	readonly skillName?: string;
 	readonly instanceId?: string;
 	readonly instances?: readonly string[];
 	/** Poll interval in ms. Default 15 minutes; `0` disables polling. */
@@ -100,7 +102,14 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 	private readonly seenDocs = new Map<string, number>();
 
 	constructor(definition: ConnectorSkillDefinition, options: ConnectorSkillOptions) {
-		this.definition = definition;
+		this.definition =
+			options.skillName === undefined
+				? definition
+				: {
+						...definition,
+						skillName: options.skillName,
+						description: `${definition.description} (${options.skillName})`,
+					};
 		this.connector = options.connector;
 		this.instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
 		this.instances =

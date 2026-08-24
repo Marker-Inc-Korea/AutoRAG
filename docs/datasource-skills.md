@@ -21,6 +21,36 @@ RetrievalMethodRegistry
 
 A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
 
+## Universal connection aliases
+
+Every datasource entry can use a reusable template with a connection alias:
+
+```json
+{
+  "datasources": {
+    "personal-gmail": {
+      "type": "gmail",
+      "connector": { "tokenEnv": "PERSONAL_GMAIL_TOKEN" }
+    },
+    "company-slack": {
+      "type": "slack",
+      "connector": { "configPath": "/secure/company-slack.toml" }
+    },
+    "family-kakao": {
+      "type": "kakao",
+      "channels": { "names": ["가족방"] },
+      "connector": { "binaryPath": "katok" }
+    }
+  }
+}
+```
+
+The key is the independent datasource ID and becomes an independently
+loadable `datasource-<alias>` skill. Its source scope, diagnostics, method
+names, local storage/cache namespace, and access policy are rewritten under
+the alias. This supports multiple connections of the same provider as well as
+different providers in one agent.
+
 ## Access model
 
 Datasource access is default-deny. Trusted server/API configuration supplies:
@@ -147,6 +177,42 @@ Before searching, the agent loads the datasource skill with
 natural-language query and, when useful, a narrowing scope such as
 `/company-onedrive/work/**`. It must not invoke `rclone` itself or request
 credentials.
+
+## Chat channel selection
+
+Chat/archive datasources (`kakao`, `discord`, `telegram`, `whatsapp`, and
+`slack`) search all channels, rooms, chats, and DMs by default. To expose a
+restricted datasource, create another alias and use trusted configuration:
+
+```json
+{
+  "datasources": {
+    "all-discord": {
+      "type": "discord",
+      "connector": { "root": "/managed/discrawl" }
+    },
+    "release-channel": {
+      "type": "discord",
+      "connector": { "root": "/managed/discrawl" },
+      "channels": {
+        "ids": ["1234567890"],
+        "names": ["release-engineering"]
+      }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["discord"],
+    "allowedScopes": ["/all-discord/**", "/release-channel/**"]
+  }
+}
+```
+
+The backend archive remains local and shared according to its CLI
+configuration; the alias is the AutoRAG visibility boundary. The restricted
+alias filters returned channel/chat metadata, while the default alias remains
+all-channel. The agent skill manifest states whether it is all-channel or
+allowlisted, so the orchestrator can select the correct datasource before
+searching.
 
 ## KakaoTalk via katok
 
