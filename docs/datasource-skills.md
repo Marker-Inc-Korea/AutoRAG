@@ -61,6 +61,67 @@ A skill can publish `instances`, for example:
 
 Every instance maps to a datasource root like `/kakao/personal` or `/slack/workspace/channel`.
 
+## Cloud drives via rclone
+
+The `cloud-drive` datasource uses the external [`rclone`](https://rclone.org)
+CLI as the provider boundary. Configure OAuth, Apple ID/session, or other
+credentials only in `rclone config`; AutoRAG receives the trusted remote name,
+never provider secrets.
+
+Tier-1 is Google Drive. OneDrive and mounted/network remotes use the same
+provider-neutral contract. iCloud Drive is explicitly experimental because
+its rclone backend is Tier 4 and periodically requires Apple ID/password,
+2FA, and reauthentication.
+
+```json
+{
+  "datasources": {
+    "cloud-drive": {
+      "instanceId": "team-docs",
+      "pollingIntervalMs": 900000,
+      "connector": {
+        "provider": "onedrive",
+        "remote": "onedrive:Team Docs",
+        "include": ["**/*.md", "**/*.pdf"],
+        "exclude": ["Archive/**"],
+        "maxBytesPerFile": 52428800,
+        "concurrency": 4,
+        "bandwidthLimit": "10M",
+        "dryRun": false
+      }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["cloud-drive"],
+    "allowedScopes": ["/cloud-drive/team-docs/**"]
+  }
+}
+```
+
+Run the CLI datasource refresh with:
+
+```bash
+rclone config
+autorag refresh --method datasources --config ./config.json
+autorag search "the renewal terms in the team drive"
+```
+
+Each refresh runs `rclone lsjson --recursive --files-only --hash`, compares
+the result with the workspace-local manifest at
+`.autorag/datasources/cloud-drive/<instance>/manifest.json`, then copies only
+added/changed indexable files into `mirror/`. Deleted and renamed virtual paths
+are removed from the completed snapshot. A no-op refresh downloads zero bodies
+and does not rewrite `chunks.json`. A failed copy leaves the previous manifest
+and mirror available for query-time search. `include`, `exclude`,
+`maxBytesPerFile`, `concurrency`, `bandwidthLimit`, and `dryRun` are trusted
+server configuration; model/tool arguments cannot change them.
+
+Before searching, the agent loads the datasource skill with
+`load_datasource_skill`, then calls `search_datasource_documents` using a
+natural-language query and, when useful, a narrowing scope such as
+`/cloud-drive/team-docs/**`. It must not invoke `rclone` itself or request
+credentials.
+
 ## KakaoTalk via katok
 
 KakaoTalk support is implemented through the external [`katok`](https://github.com/NomaDamas/katok) CLI.

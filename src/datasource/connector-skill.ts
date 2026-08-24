@@ -51,6 +51,7 @@ export interface ConnectorSkillDefinition {
 	readonly description: string;
 	/** Capability tags such as `"chat"`, `"api"`, `"polling"`. */
 	readonly capabilities: readonly string[];
+	readonly requiresExternalCli?: boolean;
 	/** Default authorization tags when the server config supplies none. */
 	readonly defaultTags: readonly string[];
 	/** Content type reported on source descriptions, e.g. `"chat"`. */
@@ -123,6 +124,7 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 			type: this.definition.skillType,
 			description: this.definition.description,
 			capabilities: this.definition.capabilities,
+			...(this.definition.requiresExternalCli === true ? { requiresExternalCli: true } : {}),
 			tags: this.tags,
 			status: "active",
 			datasourceId: this.definition.skillName,
@@ -155,7 +157,13 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 			return this.fail(code, `${fetched.reason}: ${message}`);
 		}
 		const documents = this.applyDedupeWindow(fetched.documents);
-		const chunkCount = this.store.replaceDocuments(documents);
+		const changed = fetched.changed !== false;
+		const incremental = fetched.deletedDocIds !== undefined;
+		const chunkCount = !changed
+			? this.store.chunks().length
+			: incremental
+				? this.store.updateDocuments(documents, fetched.deletedDocIds)
+				: this.store.replaceDocuments(documents);
 		this.lastIndexedAt = Date.now();
 		this.lastError = undefined;
 		const diagnostics: DatasourceDiagnostic[] = (fetched.warnings ?? []).map((warning) => ({

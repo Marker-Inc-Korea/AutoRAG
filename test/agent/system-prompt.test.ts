@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { toDatasourceAgentSkill } from "../../src/agent/datasource-skill.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
+import { CloudDriveSkill } from "../../src/datasource/skills/cloud-drive/skill.ts";
 
 function buildPrompt(
 	options: {
@@ -170,5 +172,27 @@ describe("buildSystemPrompt subagent orchestration contract", () => {
 		]) {
 			expect(prompt).not.toMatch(forbidden);
 		}
+	});
+
+	it("teaches the agent to load and search configured cloud-drive skills", () => {
+		const skill = new CloudDriveSkill({
+			instanceId: "icloud-docs",
+			provider: "icloud",
+			connector: { fetch: async () => ({ ok: true, documents: [] }) },
+		});
+		const prompt = buildSystemPrompt({
+			toolNames: ["search_datasource_documents", "load_datasource_skill"],
+			manifests: [],
+			datasourceSkills: [toDatasourceAgentSkill(skill.skillManifest())],
+		});
+
+		expect(prompt).toContain("datasource-cloud-drive");
+		expect(prompt).toContain("load_datasource_skill");
+		expect(prompt).toContain("search_datasource_documents");
+		const manifest = skill.skillManifest().content;
+		expect(manifest).toContain("Google Drive");
+		expect(manifest).toContain("OneDrive");
+		expect(manifest).toMatch(/iCloud.*experimental/i);
+		expect(manifest).toContain("/cloud-drive/icloud-docs");
 	});
 });

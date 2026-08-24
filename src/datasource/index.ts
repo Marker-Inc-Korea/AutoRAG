@@ -39,6 +39,11 @@ export {
 	normalizeVirtualPath,
 } from "./scope.ts";
 export {
+	CLOUD_DRIVE_SKILL_DEFINITION,
+	CloudDriveSkill,
+	type CloudDriveSkillOptions,
+} from "./skills/cloud-drive/index.ts";
+export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
 	DEFAULT_DISCRAWL_MODE,
 	DEFAULT_DISCRAWL_SOURCE,

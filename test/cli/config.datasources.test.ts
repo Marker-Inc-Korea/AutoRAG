@@ -152,6 +152,40 @@ describe("CLI config datasources wiring", () => {
 		});
 	});
 
+	it("materializes provider-neutral cloud drives through the rclone CLI datasource", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				"cloud-drive": {
+					instanceId: "team-drive",
+					connector: {
+						backend: "rclone",
+						provider: "onedrive",
+						remote: "onedrive:Team Docs",
+						include: ["**/*.pdf", "**/*.md"],
+						exclude: ["Archive/**"],
+						concurrency: 4,
+						bandwidthLimit: "10M",
+					},
+				},
+			},
+			datasourceAccess: { allowedTags: ["cloud-drive"], allowedScopes: ["/cloud-drive/**"] },
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.describe()).toMatchObject({
+			name: "cloud-drive",
+			type: "rclone-drive",
+			instanceId: "team-drive",
+			requiresExternalCli: true,
+		});
+		expect(skills[0]?.skillManifest().content).toContain("OneDrive");
+	});
+
 	it("rejects malformed datasources and datasourceAccess sections", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);

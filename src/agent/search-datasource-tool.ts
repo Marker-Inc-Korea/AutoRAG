@@ -33,7 +33,7 @@ export function createSearchDatasourceDocumentsTool(
 		name: SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 		label: "Search Datasource Documents",
 		description:
-			"Search configured external datasource skills such as KakaoTalk chats. Authority is server-configured; tool arguments can only provide query, topK, and an optional narrowing scope.",
+			"Search configured external datasource skills such as cloud drives and KakaoTalk chats. Load the matching datasource skill first; authority is server-configured and tool arguments can only provide query, topK, and an optional narrowing scope.",
 		parameters: searchDatasourceSchema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchDatasourceDocumentsDetails>> {
 			const query = params.query.trim();

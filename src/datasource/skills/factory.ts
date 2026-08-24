@@ -9,6 +9,7 @@
  */
 
 import type { DatasourceSkill } from "../types.ts";
+import { CloudDriveSkill } from "./cloud-drive/index.ts";
 import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
 import { type GDriveConnectorOptions, GDriveSkill } from "./gdrive/index.ts";
 import { RcloneConnector, type RcloneConnectorOptions } from "./gdrive/rclone-connector.ts";
@@ -105,7 +106,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			const { backend: _backend, ...rcloneOptions } = connector;
 			return new GDriveSkill({
 				...common(config, workspaceRoot),
-				connector: new RcloneConnector(rcloneOptions),
+				connector: new RcloneConnector({
+					...rcloneOptions,
+					skillName: "gdrive",
+					instanceId: config.instanceId,
+					workspaceRoot,
+				}),
 			});
 		}
 		return new GDriveSkill({
@@ -113,6 +119,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: connector as GDriveConnectorOptions,
 		});
 	},
+	"cloud-drive": (config, workspaceRoot) =>
+		new CloudDriveSkill({
+			...common(config, workspaceRoot),
+			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
+			connectorOptions: config.connector as RcloneConnectorOptions,
+		}),
 	gmail: (config, workspaceRoot) => {
 		const connector = config.connector as
 			| (GmailConnectorOptions & HimalayaConnectorOptions & { backend?: string })
