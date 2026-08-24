@@ -62,6 +62,18 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			minSync: false,
 			bm25: false,
+			dupey: {
+				run: async () =>
+					JSON.stringify({
+						dir: docs,
+						files: [
+							{ path: "old.txt", content_hash: "same-content" },
+							{ path: "new.txt", content_hash: "same-content" },
+						],
+						families: [],
+						errors: [],
+					}),
+			},
 		});
 
 		await agent.refresh(true);
