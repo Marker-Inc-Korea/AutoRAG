@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -45,6 +45,51 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 		if (!outputPath) throw new Error("expected parsed mirror output path");
 		expect(existsSync(outputPath)).toBe(true);
 		expect(readFileSync(outputPath, "utf8")).toBe("Mirror me\n");
+	});
+
+	it("excludes older exact duplicates from the initial parsed mirror by default", async () => {
+		const docs = join(root, "docs");
+		mkdirSync(docs, { recursive: true });
+		const oldFile = join(docs, "old.txt");
+		const newFile = join(docs, "new.txt");
+		writeFileSync(oldFile, "same canonical content\n");
+		writeFileSync(newFile, "same canonical content\n");
+		const oldTime = new Date(1_000);
+		const newTime = new Date(2_000);
+		utimesSync(oldFile, oldTime, oldTime);
+		utimesSync(newFile, newTime, newTime);
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: false,
+			bm25: false,
+		});
+
+		await agent.refresh(true);
+		const index = loadMirrorIndex(root);
+		expect(index.entries["/docs/new.txt"]).toBeDefined();
+		expect(index.entries["/docs/old.txt"]).toBeUndefined();
+	});
+
+	it("can disable exact duplicate exclusion", async () => {
+		const docs = join(root, "docs");
+		mkdirSync(docs, { recursive: true });
+		writeFileSync(join(docs, "old.txt"), "same canonical content\n");
+		writeFileSync(join(docs, "new.txt"), "same canonical content\n");
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: false,
+			bm25: false,
+			excludeExactDuplicates: false,
+		});
+
+		await agent.refresh(true);
+		const index = loadMirrorIndex(root);
+		expect(index.entries["/docs/old.txt"]).toBeDefined();
+		expect(index.entries["/docs/new.txt"]).toBeDefined();
 	});
 
 	it("refresh(true) syncs parsed markdown mirrors for PDF files without leaking source paths", async () => {

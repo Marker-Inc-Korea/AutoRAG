@@ -10,7 +10,12 @@ export interface RenderOptions {
 	hint?: SearchHealthHint;
 }
 
-function diagnosticProjection(d: SearchDocumentDiagnostic): {
+function diagnosticProjection(d: {
+	readonly code: string;
+	readonly severity: string;
+	readonly message: string;
+	readonly source?: string;
+}): {
 	code: string;
 	severity: string;
 	message: string;

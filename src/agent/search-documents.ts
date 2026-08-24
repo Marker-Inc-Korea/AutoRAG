@@ -21,6 +21,7 @@ export type SearchDocumentDiagnosticCode =
 	| "minsync-unavailable"
 	| "parser-skipped"
 	| "parser-failed"
+	| "duplicate-excluded"
 	| "unsupported-file"
 	| "stale-index"
 	| "deleted-mirror"
