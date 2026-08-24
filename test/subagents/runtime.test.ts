@@ -1800,7 +1800,7 @@ Project override body.
 		}
 	});
 
-	it("matches the installed subagent schema after discovering the managed explorer", async () => {
+	it("matches the installed subagent schema while AutoRAG rejects nested artifacts separately", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-pi-artifacts-schema-"));
 		tempDirs.push(root);
 		const runtime = await createMandatorySubagentSession({
@@ -1837,7 +1837,7 @@ Project override body.
 					artifacts: false,
 					chain: [nestedArtifacts],
 				}),
-			).toBe(false);
+			).toBe(true);
 		} finally {
 			runtime.session.dispose();
 		}
