@@ -1,4 +1,5 @@
 export { DatasourceAccessContext, type DatasourceAccessContextOptions } from "./access-context.ts";
+export { type AliasDatasourceSkillOptions, AliasedDatasourceSkill } from "./aliased-skill.ts";
 export {
 	DatasourceChunkStore,
 	type DatasourceChunkStoreOptions,

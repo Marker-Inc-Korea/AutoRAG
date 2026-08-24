@@ -4,7 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../retrieval/types.ts";
-import type { CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
+import type { CrawlerHit, CrawlerSearchOptions, CrawlerSearchResult, CrawlerSyncResult } from "./crawler-types.ts";
 import { datasourceSourcePath, matchesDatasourceScope } from "./scope.ts";
 import type {
 	DatasourceDiagnosticCode,
@@ -33,11 +33,15 @@ export interface CrawlerDatasourceDefinition {
 
 export interface CrawlerDatasourceSkillOptions {
 	readonly client: CrawlerSkillClient;
+	readonly datasourceId?: string;
 	readonly instanceId?: string;
 	readonly instances?: readonly string[];
 	readonly pollingIntervalMs?: number;
 	readonly tags?: readonly string[];
 	readonly lastIndexedAt?: number;
+	/** Omitted/empty means search every chat/channel. */
+	readonly channelIds?: readonly string[];
+	readonly channelNames?: readonly string[];
 }
 
 const DEFAULT_INSTANCE_ID = "default";
@@ -50,10 +54,19 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	private readonly instances: readonly string[];
 	private readonly pollingIntervalMs: number;
 	private readonly tags: readonly string[];
+	private readonly channelIds: ReadonlySet<string>;
+	private readonly channelNames: ReadonlySet<string>;
 	private lastIndexedAt: number | undefined;
 
 	constructor(definition: CrawlerDatasourceDefinition, options: CrawlerDatasourceSkillOptions) {
-		this.definition = definition;
+		this.definition =
+			options.datasourceId === undefined
+				? definition
+				: {
+						...definition,
+						datasourceId: options.datasourceId,
+						description: `${definition.description} (${options.datasourceId})`,
+					};
 		this.client = options.client;
 		this.instanceId = options.instanceId ?? DEFAULT_INSTANCE_ID;
 		this.instances =
@@ -61,6 +74,8 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 		this.pollingIntervalMs = options.pollingIntervalMs ?? DEFAULT_POLLING_INTERVAL_MS;
 		this.tags = options.tags ?? definition.defaultTags;
 		this.lastIndexedAt = options.lastIndexedAt;
+		this.channelIds = new Set(options.channelIds ?? []);
+		this.channelNames = new Set(options.channelNames ?? []);
 	}
 
 	describe(): DatasourceSkillDescriptor {
@@ -114,6 +129,8 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				instanceId: this.instanceId,
 				tags: this.tags,
 				backendName: this.definition.backendName,
+				channelIds: this.channelIds,
+				channelNames: this.channelNames,
 			}),
 		];
 	}
@@ -149,6 +166,13 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				scopes,
 				"",
 				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"",
+				this.channelIds.size === 0 && this.channelNames.size === 0
+					? "Channel selection: all channels/chats are searchable."
+					: `Channel selection: only configured ids/names are searchable (${[
+							...this.channelIds,
+							...this.channelNames,
+						].join(", ")}).`,
 			].join("\n"),
 		};
 	}
@@ -183,6 +207,8 @@ type CrawlerLexicalMethodOptions = {
 	readonly instanceId: string;
 	readonly tags: readonly string[];
 	readonly backendName: string;
+	readonly channelIds: ReadonlySet<string>;
+	readonly channelNames: ReadonlySet<string>;
 };
 
 class CrawlerLexicalMethod implements RetrievalMethod {
@@ -217,7 +243,8 @@ class CrawlerLexicalMethod implements RetrievalMethod {
 		const mapped: RetrievalResult[] = [];
 		for (const hit of result.hits) {
 			const source = datasourceSourcePath(this.options.datasourceId, this.options.instanceId, hit.id);
-			if (!matchesScope(source, options.scope, options.allowedScopes)) continue;
+			if (!matchesScope(source, options.scope, options.allowedScopes) || !matchesChannel(hit, this.options))
+				continue;
 			mapped.push({
 				id: `${this.options.datasourceId}:${this.options.instanceId}:${hit.id}`,
 				content: hit.content,
@@ -237,6 +264,17 @@ class CrawlerLexicalMethod implements RetrievalMethod {
 		}
 		return mapped;
 	}
+}
+
+function matchesChannel(
+	hit: CrawlerHit,
+	options: Pick<CrawlerLexicalMethodOptions, "channelIds" | "channelNames">,
+): boolean {
+	if (options.channelIds.size === 0 && options.channelNames.size === 0) return true;
+	const metadata = hit.metadata ?? {};
+	const id = [metadata.channelId, metadata.chatId].find((value): value is string => typeof value === "string");
+	const name = [metadata.channelName, metadata.chatName].find((value): value is string => typeof value === "string");
+	return (id !== undefined && options.channelIds.has(id)) || (name !== undefined && options.channelNames.has(name));
 }
 
 function matchesScope(
