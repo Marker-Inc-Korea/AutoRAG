@@ -97,6 +97,35 @@ const agent = new AutoRAGAgent({
 await agent.prepareJikji();
 ```
 
+### Duplicate document management with dupey
+
+AutoRAG can use the external [`dupey`](https://github.com/NomaDamas/dupey) CLI
+to detect exact, near, and containment document families.
+
+```bash
+autorag duplicates /path/to/documents
+autorag duplicates --json
+```
+
+The command is read-only: it reports exact duplicate groups and review
+guidance, but never moves or deletes source files. The `scan_duplicate_documents`
+Agent tool exposes the same read-only scan to the orchestrator.
+
+Exact duplicate exclusion is enabled by default during parsed-mirror refresh.
+For each exact canonical-text hash, the newest filesystem copy is indexed and
+older copies are omitted. Disable it in `config.json` when both copies must be
+searchable:
+
+```json
+{
+  "dupey": { "enabled": true },
+  "excludeExactDuplicates": false
+}
+```
+
+If `dupey` is not installed or fails, refresh continues without exclusion and
+reports no destructive action; install it with `cargo install dupey`.
+
 The same `.autorag/jikji.json` shape configures Jikji when present:
 
 ```json

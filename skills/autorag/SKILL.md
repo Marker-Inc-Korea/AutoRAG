@@ -78,6 +78,8 @@ numbered knowledge units from that session's search output.
 ## Maintenance
 
 ```bash
+autorag duplicates              # read-only duplicate-family review
+autorag duplicates --json       # machine-readable cleanup planning input
 autorag status
 autorag health
 autorag refresh
@@ -89,6 +91,16 @@ autorag index rebuild --yes
 autorag index reset --method bm25 --yes
 autorag memory inspect
 ```
+
+### Duplicate-file review
+
+Use `autorag duplicates` when the user asks to find duplicate files, choose
+likely latest copies, or reduce corpus/index space. The command and the
+`scan_duplicate_documents` Agent tool are read-only and never delete or move
+source files. Exact means dupey's canonical extracted-text hash matches;
+near/contains families require human review. Exact duplicate exclusion during
+refresh is enabled by default and can be disabled with
+`"excludeExactDuplicates": false` in `config.json`.
 
 Use `refresh` after source documents change (parses sources and resyncs BM25,
 MinSync, Jikji prepare, and datasources). Prefer a full `autorag refresh` so

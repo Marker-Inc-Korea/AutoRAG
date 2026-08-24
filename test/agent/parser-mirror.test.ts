@@ -54,10 +54,8 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 		const newFile = join(docs, "new.txt");
 		writeFileSync(oldFile, "same canonical content\n");
 		writeFileSync(newFile, "same canonical content\n");
-		const oldTime = new Date(1_000);
-		const newTime = new Date(2_000);
-		utimesSync(oldFile, oldTime, oldTime);
-		utimesSync(newFile, newTime, newTime);
+		utimesSync(oldFile, new Date(1_000), new Date(1_000));
+		utimesSync(newFile, new Date(2_000), new Date(2_000));
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),

@@ -290,6 +290,12 @@ external embedding service. Jikji auto-installs `jikji-cli` via cargo when
 `jikji.autoInstall` is not set to `false` and the Rust toolchain is present.
 Do not skip Jikji or MinSync during first-run refresh because they look optional.
 
+Exact duplicate exclusion is also enabled by default. AutoRAG invokes the
+external `dupey` CLI before parsed-mirror indexing, keeps the newest filesystem
+copy for each exact canonical-text hash, and excludes older copies from the
+mirror. Set `"excludeExactDuplicates": false` to index every copy. Missing
+dupey is non-fatal; the refresh continues without this optimization.
+
 ### MinSync embedder flags
 
 `autorag init` accepts non-secret embedder configuration flags that are written

@@ -5,16 +5,11 @@ import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill }
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
-import {
-	type DupeyCliOptions,
-	DupeyCliError,
-	scanWithDupey,
-	selectExactDuplicateExclusions,
-} from "../dupey/index.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -74,15 +69,15 @@ import { EXPLORER_MODEL_ID } from "../subagents/model-policy.ts";
 import { createMandatorySubagentSession, type MandatorySubagentSessionOptions } from "../subagents/runtime.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
-	createScanDuplicateDocumentsTool,
-	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
-	type ScanDuplicateDocumentsDetails,
-} from "./dupey-tool.ts";
-import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
+import {
+	createScanDuplicateDocumentsTool,
+	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+	type ScanDuplicateDocumentsDetails,
+} from "./dupey-tool.ts";
 import {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,

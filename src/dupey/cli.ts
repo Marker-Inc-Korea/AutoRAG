@@ -100,11 +100,14 @@ function spawnDupey(executable: string, args: readonly string[], options: DupeyC
 			if (settled) return;
 			settled = true;
 			if (code !== 0) {
-				reject(new DupeyCliError(`dupey failed with exit code ${code ?? "unknown"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+				reject(
+					new DupeyCliError(
+						`dupey failed with exit code ${code ?? "unknown"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`,
+					),
+				);
 				return;
 			}
 			resolveOutput(stdout);
 		});
 	});
 }
-
