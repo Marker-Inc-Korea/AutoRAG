@@ -9,6 +9,7 @@
  */
 
 import type { DatasourceSkill } from "../types.ts";
+import { CloudDriveSkill } from "./cloud-drive/index.ts";
 import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
 import { type GDriveConnectorOptions, GDriveSkill } from "./gdrive/index.ts";
 import { RcloneConnector, type RcloneConnectorOptions } from "./gdrive/rclone-connector.ts";
@@ -27,6 +28,8 @@ import { type WacrawlOptions, WacrawlSkill } from "./wacrawl/index.ts";
 /** One configured datasource entry (the trusted `datasources.<name>` value). */
 export interface DatasourceSkillConfig {
 	readonly enabled?: boolean;
+	/** Built-in datasource template used when the config key is a connection alias. */
+	readonly type?: string;
 	readonly instanceId?: string;
 	readonly pollingIntervalMs?: number;
 	readonly tags?: readonly string[];
@@ -43,7 +46,11 @@ export interface BuildDatasourceSkillsResult {
 	readonly unknown: readonly string[];
 }
 
-type SkillBuilder = (config: DatasourceSkillConfig, workspaceRoot: string | undefined) => DatasourceSkill;
+type SkillBuilder = (
+	config: DatasourceSkillConfig,
+	workspaceRoot: string | undefined,
+	registrationName: string,
+) => DatasourceSkill;
 
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 	telegram: (config) =>
@@ -105,7 +112,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			const { backend: _backend, ...rcloneOptions } = connector;
 			return new GDriveSkill({
 				...common(config, workspaceRoot),
-				connector: new RcloneConnector(rcloneOptions),
+				connector: new RcloneConnector({
+					...rcloneOptions,
+					skillName: "gdrive",
+					instanceId: config.instanceId,
+					workspaceRoot,
+				}),
 			});
 		}
 		return new GDriveSkill({
@@ -113,6 +125,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: connector as GDriveConnectorOptions,
 		});
 	},
+	"cloud-drive": (config, workspaceRoot, registrationName) =>
+		new CloudDriveSkill({
+			...common(config, workspaceRoot),
+			skillName: registrationName,
+			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
+			connectorOptions: config.connector as RcloneConnectorOptions,
+		}),
 	gmail: (config, workspaceRoot) => {
 		const connector = config.connector as
 			| (GmailConnectorOptions & HimalayaConnectorOptions & { backend?: string })
@@ -178,12 +197,17 @@ export function buildDatasourceSkills(
 		if (raw === false) continue;
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
-		const builder = BUILDERS[name];
+		const templateName = entry.type ?? name;
+		const builder = BUILDERS[templateName];
 		if (builder === undefined) {
 			unknown.push(name);
 			continue;
 		}
-		skills.push(builder(entry, workspaceRoot));
+		if (entry.type !== undefined && entry.type !== "cloud-drive") {
+			unknown.push(name);
+			continue;
+		}
+		skills.push(builder(entry, workspaceRoot, name));
 	}
 	return { skills, unknown };
 }

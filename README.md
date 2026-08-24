@@ -139,7 +139,7 @@ Security defaults are intentionally strict:
 | Discord | `discord` | external [`discrawl`](https://github.com/openclaw/discrawl) CLI | guild/channel/thread/DM archive; FTS5 + semantic + hybrid retrieval, incremental sync |
 | Notion | `notion` | external [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | local-first page/database/block archive + FTS5 search |
 | GitHub Issues/PRs | `github` | GitHub REST (token optional) | issues + PR bodies per `owner/repo`; public repos work unauthenticated |
-| Google Drive | `gdrive` | Drive REST v3, or **[`rclone`](https://rclone.org) CLI** (`backend: "rclone"`) | Docs/Sheets exported as text; the rclone backend also opens any of rclone's 70+ remotes |
+| Cloud drives | `cloud-drive` | **[`rclone`](https://rclone.org) CLI** | Incremental Google Drive Tier-1; OneDrive/network remotes; iCloud experimental |
 | Gmail / IMAP | `gmail` | Gmail REST v1, or **[`himalaya`](https://pimalaya.org) CLI** (`backend: "himalaya"`) | the himalaya backend indexes any IMAP/Maildir account it has configured — no OAuth plumbing |
 | Local mail exports | `mail-export` | filesystem (`.mbox` / `.eml`) | classic `From_` splitting, mailparser-based; count-only warnings |
 | Obsidian vault | `obsidian` | external [`qmd`](https://github.com/tobi/qmd) CLI | incremental `qmd update`, BM25 `qmd search`, semantic `qmd vsearch`; vault path via `connector.vaultPath` |
@@ -158,13 +158,14 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "notion":   { "connector": { "binaryPath": "notcrawl", "configPath": "/path/to/notcrawl.yaml" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
-    "gdrive":   { "connector": { "backend": "rclone", "remote": "gdrive:" } },
+    "personal-google-drive": { "type": "cloud-drive", "instanceId": "personal", "connector": { "provider": "google-drive", "remote": "personal-gdrive:", "include": ["**/*.md"] } },
+    "company-onedrive": { "type": "cloud-drive", "instanceId": "work", "connector": { "provider": "onedrive", "remote": "company-onedrive:Documents" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "gdrive", "obsidian", "rss"],
-    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/gdrive/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "cloud-drive", "obsidian", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/personal-google-drive/**", "/company-onedrive/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -176,6 +177,21 @@ Install telecrawl with `brew install openclaw/tap/telecrawl`. AutoRAG invokes `t
 Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `slacrawl sync` during datasource refresh and `slacrawl --json search` during retrieval. Optional trusted connector fields are `binaryPath`, `configPath`, and `syncSource`. Slack credentials and source definitions remain in slacrawl's own configuration rather than AutoRAG.
 
 Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search --json` during retrieval. Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
+
+Install and authenticate rclone separately (`brew install rclone && rclone
+config` on macOS), then configure the provider-neutral `cloud-drive` skill.
+`cloud-drive` is a reusable `type`: each datasource config key is a connection
+alias and becomes a separate agent skill and scope. Multiple Google accounts,
+or Google Drive plus OneDrive/iCloud, can therefore be loaded and searched
+independently.
+AutoRAG inventories with `rclone lsjson`, keeps a workspace-local manifest and
+managed mirror, and downloads only added or changed indexable files. Google
+Drive is Tier-1. OneDrive, Dropbox, SMB/SFTP/WebDAV, and mounted drives share
+the same manifest contract. iCloud Drive is experimental because rclone marks
+that backend Tier 4 and Apple ID/2FA sessions periodically require
+reauthentication. See [docs/datasource-skills.md](docs/datasource-skills.md)
+for filtering, size, concurrency, bandwidth, dry-run, and agent tool-calling
+details.
 
 #### KakaoTalk (katok)
 

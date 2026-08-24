@@ -15,6 +15,7 @@ through notcrawl.
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
+| `scripts/manual-qa/run-qa-rclone.ts` | Deterministic rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |
@@ -95,6 +96,22 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] Per-item failures (a denied Slack channel, a 404 repo, one bad feed,
       an unparseable mbox message) degrade to warnings without failing the
       whole index run.
+
+### Rclone cloud-drive checklist
+
+- [x] `rclone lsjson --recursive --files-only --hash` is the only inventory
+      seed; provider credentials remain in rclone's own config.
+- [x] The workspace manifest stores stable virtual path, size, modtime,
+      hashes, and provider id when available.
+- [x] Initial sync copies indexable files; a no-op sync copies zero bodies and
+      does not rewrite the chunk store.
+- [x] Updating one file copies/reindexes only that file; delete and rename
+      remove stale mirror entries.
+- [x] A failed copy leaves the previous completed snapshot searchable.
+- [x] Google Drive is Tier-1; OneDrive and other remotes are provider-neutral;
+      iCloud Drive is documented as experimental/Tier 4.
+- [x] Include/exclude, maximum size, concurrency, bandwidth limit, and
+      dry-run are trusted CLI datasource configuration.
 
 ## Last run
 
