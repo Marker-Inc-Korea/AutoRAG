@@ -41,6 +41,7 @@ interface AgentInternals {
 			messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }>; timestamp: number }>,
 		) => Promise<Array<{ role: string; content: Array<{ type: "text"; text: string }>; timestamp: number }>>;
 	};
+	tools: readonly AgentTool[];
 }
 
 function internals(agent: AutoRAGAgent): AgentInternals {
@@ -54,6 +55,23 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent).toBeDefined();
+	});
+
+	it("registers the dupey duplicate scan tool by default", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		expect(internals(agent).tools.map((tool) => tool.name)).toContain("scan_duplicate_documents");
+	});
+
+	it("can disable the dupey duplicate scan tool", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			dupey: false,
+		});
+		expect(internals(agent).tools.map((tool) => tool.name)).not.toContain("scan_duplicate_documents");
 	});
 
 	it("defaults to parent-owned retrieval and explorer tools for library mode", () => {
