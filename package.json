@@ -32,6 +32,7 @@
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",
+    "test:windows": "node scripts/run-test-files.mjs",
     "check": "biome check --write .",
     "lint": "biome check .",
     "typecheck": "tsc --noEmit"

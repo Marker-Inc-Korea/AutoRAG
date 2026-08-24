@@ -422,6 +422,7 @@ interface ChildEnvironmentLease {
 	readonly agentDir: string;
 	readonly registryIdentity: string;
 	readonly environmentIdentity: string;
+	readonly previousPiCodingAgentDir: string | undefined;
 	owners: number;
 }
 
@@ -839,7 +840,12 @@ function acquireChildEnvironment(request: ChildEnvironmentLeaseRequest): () => v
 			released = true;
 			if (childEnvironmentLease === undefined) return;
 			childEnvironmentLease.owners -= 1;
-			if (childEnvironmentLease.owners === 0) childEnvironmentLease = undefined;
+			if (childEnvironmentLease.owners === 0) {
+				const { previousPiCodingAgentDir } = childEnvironmentLease;
+				childEnvironmentLease = undefined;
+				if (previousPiCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+				else process.env.PI_CODING_AGENT_DIR = previousPiCodingAgentDir;
+			}
 		};
 	}
 
@@ -847,15 +853,22 @@ function acquireChildEnvironment(request: ChildEnvironmentLeaseRequest): () => v
 		agentDir: request.agentDir,
 		registryIdentity: request.registryIdentity,
 		environmentIdentity: request.environmentIdentity,
+		previousPiCodingAgentDir: process.env.PI_CODING_AGENT_DIR,
 		owners: 1,
 	};
+	process.env.PI_CODING_AGENT_DIR = request.agentDir;
 	let released = false;
 	return () => {
 		if (released) return;
 		released = true;
 		if (childEnvironmentLease === undefined) return;
 		childEnvironmentLease.owners -= 1;
-		if (childEnvironmentLease.owners === 0) childEnvironmentLease = undefined;
+		if (childEnvironmentLease.owners === 0) {
+			const { previousPiCodingAgentDir } = childEnvironmentLease;
+			childEnvironmentLease = undefined;
+			if (previousPiCodingAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousPiCodingAgentDir;
+		}
 	};
 }
 
@@ -916,10 +929,16 @@ export async function createMandatorySubagentSession(
 		apiKeyName: explorerRoleModel.reference.apiKeyReference,
 		...(explorerCredential === undefined ? {} : { apiKey: explorerCredential }),
 	};
+	const releaseChildEnvironment = acquireChildEnvironment({
+		agentDir,
+		registryIdentity: modelRegistryIdentity(modelsPath, roleModels),
+		environmentIdentity: explorerEnvironmentIdentity(explorerEnvironment),
+	});
 	let extensionFactory: ExtensionFactory;
 	try {
 		extensionFactory = await loadScopedPiSubagentsExtension(extensionPath, explorerEnvironment);
 	} catch (error) {
+		releaseChildEnvironment();
 		throw new Error(`Mandatory pi-subagents extension failed to load: ${(error as Error).message}`, {
 			cause: error,
 		});
@@ -937,6 +956,7 @@ export async function createMandatorySubagentSession(
 	try {
 		await resourceLoader.reload();
 	} catch (error) {
+		releaseChildEnvironment();
 		throw new Error(`Mandatory pi-subagents extension failed to load: ${(error as Error).message}`, {
 			cause: error,
 		});
@@ -944,13 +964,9 @@ export async function createMandatorySubagentSession(
 	const extensionResult = resourceLoader.getExtensions();
 	if (extensionResult.errors.length > 0) {
 		const messages = extensionResult.errors.map((error) => error.error).join("; ");
+		releaseChildEnvironment();
 		throw new Error(`Mandatory pi-subagents extension failed to load: ${messages}`);
 	}
-	const releaseChildEnvironment = acquireChildEnvironment({
-		agentDir,
-		registryIdentity: modelRegistryIdentity(modelsPath, roleModels),
-		environmentIdentity: explorerEnvironmentIdentity(explorerEnvironment),
-	});
 	try {
 		await persistPiModels(modelsPath, roleModels, parentProviderCredentials);
 		const modelRuntime = await ModelRuntime.create({
