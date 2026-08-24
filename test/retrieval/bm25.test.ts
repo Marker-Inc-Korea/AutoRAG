@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -53,9 +53,9 @@ describe("BM25Method", () => {
 		expect(sync.engine).toBe("tantivy");
 		expect(method.describe().type).toBe("bm25");
 		expect(method.describe().status).toBe("active");
-		expect(results.map((result) => result.source)).toEqual(["/docs/many.txt", "/docs/few.txt"]);
+		expect(results.map((result) => result.source)).toEqual([join(docs, "many.txt"), join(docs, "few.txt")]);
 		expect(results[0]?.metadata.method).toBe("bm25");
-		expect(JSON.stringify(results)).not.toContain(root);
+		expect(results[0]?.metadata.virtualPath).toBe("/docs/many.txt");
 	});
 
 	it("continues native Tantivy scanning until scoped hits are found", async () => {
@@ -78,7 +78,7 @@ describe("BM25Method", () => {
 		const results = await method.retrieve("chargeback", { topK: 1, scope: "/docs/sub" });
 
 		expect(results).toHaveLength(1);
-		expect(results[0]?.source).toBe("/docs/sub/target.txt");
+		expect(results[0]?.source).toBe(join(docs, "sub", "target.txt"));
 	});
 
 	it("supports scoped retrieval, folder scope expansion, and stale-index removal", async () => {
@@ -93,7 +93,7 @@ describe("BM25Method", () => {
 		await method.sync();
 
 		const scoped = await method.retrieve("alpha", { topK: 10, scope: "/docs/sub" });
-		expect(scoped.map((result) => result.source)).toEqual(["/docs/sub/nested.txt"]);
+		expect(scoped.map((result) => result.source)).toEqual([join(docs, "sub", "nested.txt")]);
 
 		rmSync(join(docs, "sub", "nested.txt"));
 		await refreshMirrors();
@@ -140,7 +140,7 @@ describe("AutoRAG BM25 integration", () => {
 		const results = await agent.retrieve("chargeback", { topK: 1 });
 
 		expect(agent.getMethodRegistry().getByType("bm25")).toHaveLength(1);
-		expect(results[0]?.source).toBe("/docs/guide.txt");
+		expect(results[0]?.source).toBe(realpathSync(join(docs, "guide.txt")));
 		expect(results[0]?.metadata.method).toBe("bm25");
 		expect(agent.getSystemPrompt()).toContain("search_bm25_documents");
 	});
@@ -160,7 +160,7 @@ describe("AutoRAG BM25 integration", () => {
 		const result = await tool.execute("tool-call", { query: "chargeback", topK: 1, scope: "/docs/sub" });
 
 		expect(result.details).toMatchObject({ method: "bm25", resultCount: 1, readiness: "degraded_fallback" });
-		expect(result.details?.sources).toEqual(["/docs/sub/guide.txt"]);
+		expect(result.details?.sources).toEqual([join(docs, "sub", "guide.txt")]);
 		expect(result.content[0]?.type).toBe("text");
 	});
 
@@ -183,7 +183,7 @@ describe("AutoRAG BM25 integration", () => {
 		const result = await tool.execute("tool-scope", { query: "chargeback", scope: join(docs, "sub") });
 
 		expect(normalizeScope).toHaveBeenCalledWith(join(docs, "sub"));
-		expect(result.details.sources).toEqual(["/docs/sub/guide.txt"]);
+		expect(result.details.sources).toEqual([join(docs, "sub", "guide.txt")]);
 	});
 
 	it("preserves coded scope errors at the BM25 tool boundary", async () => {

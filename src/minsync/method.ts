@@ -1,5 +1,5 @@
 import { accessSync, constants, existsSync } from "node:fs";
-import { basename, delimiter, join } from "node:path";
+import { basename, delimiter, join, normalize } from "node:path";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -114,9 +114,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			results.push({
 				id: `minsync:${entry.virtualPath}:${basename(hit.path)}`,
 				content: hit.text,
-				source: entry.virtualPath,
+				source: normalize(entry.sourcePath),
 				score: hit.score,
-				metadata: { method: "minsync" },
+				metadata: { method: "minsync", virtualPath: entry.virtualPath },
 			});
 			if (results.length >= topK) break;
 		}
