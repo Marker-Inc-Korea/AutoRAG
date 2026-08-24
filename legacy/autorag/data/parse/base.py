@@ -48,6 +48,8 @@ def parser_node(func):
 		)
 
 		if func.__name__ == "langchain_parse":
+			if parse_method is None:
+				raise ValueError("parse_method is required for langchain_parse")
 			parse_method = parse_method.lower()
 			if parse_method == "directory":
 				path_split_list = data_path_glob.split("/")

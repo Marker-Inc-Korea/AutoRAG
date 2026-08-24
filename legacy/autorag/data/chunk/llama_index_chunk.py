@@ -37,6 +37,7 @@ def llama_index_chunk(
 	:param batch: The batch size for chunk texts. Default is 8
 	:return: tuple of lists containing the chunked doc_id, contents, path, start_idx, end_idx and metadata
 	"""
+	metadata_list = metadata_list or [{} for _ in texts]
 	tasks = [
 		llama_index_chunk_pure(text, chunker, file_name_language, meta)
 		for text, meta in zip(texts, metadata_list)
@@ -58,7 +59,7 @@ async def llama_index_chunk_pure(
 	_metadata: Optional[Dict[str, str]] = None,
 ):
 	# set document
-	document = [Document(text=text, metadata=_metadata)]
+	document = [Document(text=text, metadata=_metadata or {})]
 
 	# chunk document
 	chunk_results = await chunker.aget_nodes_from_documents(documents=document)
@@ -72,7 +73,7 @@ async def llama_index_chunk_pure(
 	# make contents and start_end_idx
 	if file_name_language:
 		chunked_file_names = list(map(lambda x: os.path.basename(x), path_lst))
-		chunked_texts = list(map(lambda x: x.text, chunk_results))
+		chunked_texts = list(map(lambda x: x.get_content(), chunk_results))
 		start_end_idx = list(
 			map(
 				lambda x: get_start_end_idx(text, x),
@@ -81,7 +82,7 @@ async def llama_index_chunk_pure(
 		)
 		contents = add_file_name(file_name_language, chunked_file_names, chunked_texts)
 	else:
-		contents = list(map(lambda x: x.text, chunk_results))
+		contents = list(map(lambda x: x.get_content(), chunk_results))
 		start_end_idx = list(map(lambda x: get_start_end_idx(text, x), contents))
 
 	metadata = list(
