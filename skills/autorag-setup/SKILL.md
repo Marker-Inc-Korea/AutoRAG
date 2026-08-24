@@ -1,6 +1,6 @@
 ---
 name: autorag-setup
-description: Configure AutoRAG for first use or repair its setup. Detect the current agent's usable subscription-backed runtime or API provider without exposing private provider identities, select orchestrator and explorer models, propose OS-aware document folders for approval, initialize configuration, and build indexes (parsed mirrors, BM25, MinSync vectors, optional Jikji maps).
+description: Configure AutoRAG for first use or repair its setup. Copy this agent's current LLM provider/model/endpoint/auth-env into ~/.autorag/config.json (orchestrator = current or strongest reasoning model; explorer = fastest-TPS sibling on the same auth), verify with autorag health, propose OS-aware document folders for approval, initialize configuration, and build indexes (parsed mirrors, BM25, MinSync vectors, optional Jikji maps).
 ---
 
 # AutoRAG Setup Skill
@@ -13,54 +13,90 @@ normal searches and feedback.
 ## Safety boundaries
 
 - Inspect only non-secret provider/model metadata and credential availability.
-- Never print, copy, migrate, compare, or persist credential values.
-- Never expose private provider aliases or internal model catalogs in generated
-  configuration, logs, or user-facing explanations.
+- Never print, copy, migrate, compare, or persist credential values. Write only
+  environment-variable *names* (`apiKeyEnv`), never key material.
+- `~/.autorag/config.json` must contain the real `provider`, `id`, `api`, and
+  `baseUrl` AutoRAG will call. Do not dump internal model catalogs or secret
+  payloads in chat, logs, or other files.
 - Do not scan the whole filesystem or home directory without explicit approval.
 - Never move, rename, edit, or delete source documents.
 - Recommend document-dense folders only. Do not index system trees, app bundles,
   caches, or credential stores.
 
-## Detect an authenticated model runtime
+## Copy this agent's LLM setup into AutoRAG
 
-Do not begin by asking the user to manually name a provider. Determine the best
-usable configuration from available evidence.
+AutoRAG does **not** inherit the host agent's session. The parent orchestrator
+and explorer are separate Pi calls. If you omit `agents`, search may fall back
+to a Codex Responses provider in `~/.codex/config.toml` and still default the
+ids to `gpt-5.6-sol` / `gpt-5.6-luna` — not whatever model *you* are running.
+First-time setup must therefore **translate this agent's live LLM setup into
+explicit AutoRAG role models** and write them to `~/.autorag/config.json`.
+
+Do not begin by asking the user to name a provider. Read the runtime you are
+already using.
 
 1. Preserve explicit user choices and a working `~/.autorag/config.json`.
-2. Inspect the current agent's exposed provider/model capabilities.
-3. Inspect compatible non-secret local metadata, including configured model
-   registries and `~/.autorag/pi-agent/models.json`. Provider-specific local
-   configuration may be used only to determine endpoint compatibility, model
-   IDs, credential environment-variable names, and whether credentials exist.
-4. Check Pi authentication entries by provider identity without reading or
-   showing their secret payloads.
-5. Treat ChatGPT, Claude, Gemini, and other consumer subscriptions as usable
-   only when the active runtime can demonstrably delegate that authenticated
-   session to AutoRAG or compatible authentication already exists in AutoRAG's
-   Pi state. A subscription is not automatically an API entitlement.
-6. Do not infer usability from an installed CLI, a config filename, or an
-   environment-variable name alone. Authentication and protocol compatibility
-   must both be established.
+2. Read **this agent's** current provider, model id, wire API, base URL, and
+   credential env-var name from session metadata, advertised models, and the
+   config files this agent already uses. Typical non-secret sources:
+   - the model/provider you were launched with (session, CLI flags, env);
+   - Codex: `~/.codex/config.toml` (`model_provider`, `model_providers.*.base_url`,
+     `wire_api`, `env_key`; the top-level `model` field is the host default, not
+     an AutoRAG role);
+   - Anthropic/Claude Code-style runs: catalog provider `anthropic` plus
+     `ANTHROPIC_API_KEY` presence, current model id, wire `anthropic-messages`;
+   - OpenAI-compatible proxies (OpenRouter, Fireworks, LiteLLM, corp gateways):
+     `baseUrl` + `api` + `apiKeyEnv`;
+   - `~/.autorag/pi-agent/models.json` and Pi auth *identities* (not payloads).
+3. A consumer ChatGPT / Claude / Gemini subscription is usable only when this
+   runtime can actually call that provider as an API (key or delegated session
+   already available to AutoRAG). A subscription is not automatically an API
+   entitlement.
+4. Do not infer usability from an installed CLI or a filename alone.
+   Authentication and protocol compatibility must both be established.
 
-If no compatible authenticated runtime exists, report the exact missing public
-provider/authentication requirement. Do not write a configuration that cannot
-run. Ask one concise question only when multiple equally suitable public
-providers remain and runtime evidence cannot choose between them.
+Map what you find onto AutoRAG's `AgentModelConfig`:
+
+| Host fact | AutoRAG field |
+|---|---|
+| Provider name this agent already calls | `provider` |
+| Model id this agent already sends | `id` (orchestrator; explorer may differ) |
+| Chat Completions / Responses / Anthropic Messages / Codex Responses / Azure | `api` |
+| OpenAI-compatible or custom gateway URL | `baseUrl` (required when the provider is not in the pi-ai catalog) |
+| Env var that already holds the key | `apiKeyEnv` (name only) |
+
+Allowed `api` values: `openai-completions`, `openai-responses`,
+`anthropic-messages`, `openai-codex-responses`, `azure-openai-responses`.
+When `baseUrl` is set and `api` is omitted, AutoRAG defaults to
+`openai-completions`. Codex `wire_api = "responses"` must be written as
+`api: "openai-responses"`.
+
+If nothing compatible is authenticated, report the missing public
+provider/key/protocol. Do not write a config that cannot run. Ask one concise
+question only when two public providers are equally usable and evidence cannot
+choose.
 
 ## Select role models
 
-Select only models actually advertised by the authenticated runtime:
+Write **both** roles explicitly. Same provider, endpoint, `api`, and
+`apiKeyEnv` unless the user asked otherwise.
 
-- `agents.orchestrator`: strongest reliable reasoning and high-context model.
-- `agents.explorer`: faster, cheaper high-recall model with sufficient context.
-- If only one usable model exists, configure it for both roles.
-- Preserve an existing working explicit pair.
-- Never invent model IDs or write a private provider alias into distributed or
-  user-facing configuration.
+- `agents.orchestrator`: this agent's current model when it is a capable
+  reasoning/high-context model; otherwise the strongest reliable sibling the
+  same auth can call.
+- `agents.explorer`: the **fastest tokens-per-second** (lowest-latency / mini /
+  flash / haiku-class) model the same authenticated runtime can actually call,
+  with enough context to read documents. Prefer throughput over flagship
+  quality. Explorers do high-recall `read`/`grep`/`find`/`ls`, not final
+  judgment.
+- If the runtime only exposes one callable model, use it for both roles.
+- Do not leave `agents` unset hoping search-time Codex fallback will "use my
+  model" — it will not.
+- Do not invent ids. Only write models this runtime can already call.
+- Preserve an existing working explicit pair unless the user asked to change
+  models or health fails.
 
-Provider and model ID must always be supplied together for each configured role.
-If role models are intentionally omitted, leave them unset so search-time
-resolution can still pick up an authenticated local runtime when available.
+Provider and id must always be supplied together for each role.
 
 ## Discover and approve document folders
 
@@ -171,7 +207,11 @@ Rules:
 
 ## Initialize
 
-Write the approved paths and selected role models:
+Write approved folders plus the **copied** role models into
+`~/.autorag/config.json` (not the workspace `.autorag/` index dir).
+
+Prefer `autorag init` when provider+id are enough (pi-ai catalog models, or a
+Codex provider whose `baseUrl` already lives in `~/.codex/config.toml`):
 
 ```bash
 autorag init \
@@ -182,8 +222,34 @@ autorag init \
   --explorer-model-id EXPLORER_MODEL
 ```
 
-This writes `~/.autorag/config.json` by default. Use `--config PATH` (or
-`AUTORAG_CONFIG`) for an explicit location. Optional:
+When this agent uses a custom/OpenAI-compatible endpoint, `init` flags only
+store provider+id. After init, add `api`, `baseUrl`, and `apiKeyEnv` on each
+role in `~/.autorag/config.json` so AutoRAG does not need a catalog entry:
+
+```json
+{
+  "searchPaths": ["/path/to/docs"],
+  "agents": {
+    "orchestrator": {
+      "provider": "openrouter",
+      "id": "anthropic/claude-sonnet-4",
+      "api": "openai-completions",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    },
+    "explorer": {
+      "provider": "openrouter",
+      "id": "openai/gpt-4o-mini",
+      "api": "openai-completions",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    }
+  }
+}
+```
+
+That file is the durable model setting. Use `--config PATH` (or `AUTORAG_CONFIG`)
+for a non-default location. Optional:
 
 - `--workspace DIR` for the workspace that owns `.autorag` indexes
 - `--memory-path FILE` for retrieval-memory storage
@@ -220,9 +286,33 @@ accepts the **environment variable name** (e.g. `OPENAI_API_KEY`), never the key
 value itself. `--embedder-dimension` and `--embedder-batch-size` must be positive
 integers.
 
-If role models are intentionally omitted, `autorag init` must leave `agents`
-unset; it must never inject a private provider default. Legacy cwd
-`autorag.config.json` is a migration source only and is never deleted by init.
+Do not omit role models during setup. Leaving `agents` unset is only for an
+explicit user request to rely on search-time resolution; that path does not
+copy this agent's current model ids. `autorag init` must never inject a
+provider default of its own. Legacy cwd `autorag.config.json` is a migration
+source only and is never deleted by init.
+
+## Verify the copied models
+
+This is the model-connection test. Run it after writing `agents`, before
+claiming setup worked and before a long `refresh` when models were just
+changed:
+
+```bash
+autorag health
+autorag health --skip-probes   # resolution + credential presence only, no network
+autorag health --timeout-ms 20000
+```
+
+`health` resolves both roles from `~/.autorag/config.json` (or `--config` /
+`AUTORAG_CONFIG`), checks that each role's API key env is present, then unless
+`--skip-probes` is set issues a real completion per role and a lightweight
+explorer subagent probe. It does not touch indexes.
+
+Pass criteria: both orchestrator and explorer resolve, auth is present, probes
+succeed. On failure, fix `provider` / `id` / `api` / `baseUrl` / `apiKeyEnv`
+(or the env var itself) and re-run `health`. Do not proceed to search, and do
+not tell the user the host LLM was "copied", until this passes.
 
 Per-run overrides (flags and env take precedence over the file) are available
 via the role-specific flags or:
@@ -359,11 +449,8 @@ Interpret results:
   over the parsed mirrors). Example: `autorag refresh --method bm25,minsync`.
 - `status` is model-free and path-opaque: inspect freshness and component
   health only; do not expect absolute source paths in the output.
-- `health` checks model/provider auth and explorer subagent setup: it resolves
-  both role models, verifies credential presence, and (unless `--skip-probes`)
-  probes a completion call per role. Use it to confirm both role models resolve
-  from the authenticated runtime or written config without displaying
-  credentials or private provider details.
+- `health` is the model test (see **Verify the copied models**): both roles
+  must resolve and probe successfully without printing credentials.
 - Do not claim setup succeeded when authentication, indexes, role-model
   resolution, or subagent dispatch remain unverified.
 - Prefer bounded `refresh` over destructive resets. Reserve
