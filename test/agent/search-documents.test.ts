@@ -63,6 +63,59 @@ describe("AutoRAGAgent searchDocuments", () => {
 		expect(agent.getResultRegistry(response.sessionId).get(1)?.source).toBe("/docs/a.txt");
 	});
 
+	it("passes programmatic provider credentials to the model request", async () => {
+		const apiKey = "programmatic-test-api-key";
+		const registration = registerFauxProvider({
+			api: `faux-${randomUUID()}`,
+			provider: `credential-provider-${randomUUID()}`,
+			models: [{ id: "credential-model" }],
+		});
+		registration.setResponses([
+			(_context, options) => {
+				expect(options?.apiKey).toBe(apiKey);
+				return fauxAssistantMessage(
+					[
+						fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+							answer: "[1] authenticated",
+							results: [
+								{
+									number: 1,
+									title: "Authenticated result",
+									summary: "authenticated",
+									evidence: [{ excerpt: "authenticated" }],
+									confidence: 1,
+								},
+							],
+							mapping: [
+								{
+									number: 1,
+									source: "/docs/auth.txt",
+									method: "bash",
+									content: "authenticated",
+								},
+							],
+						}),
+					],
+					{ stopReason: "toolUse" },
+				);
+			},
+		]);
+		registrations.push(registration);
+		const model = registration.getModel();
+		const agent = new AutoRAGAgent({
+			model,
+			apiKey,
+			providerApiKeys: { [model.provider]: apiKey },
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+		});
+
+		await expect(agent.searchDocuments("authenticated search")).resolves.toMatchObject({
+			answer: "[1] authenticated",
+		});
+	});
+
 	it("rejects concurrent searches and recovers after completion", async () => {
 		const agent = new AutoRAGAgent({
 			model: modelFor("first"),

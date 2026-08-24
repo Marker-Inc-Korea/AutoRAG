@@ -454,6 +454,8 @@ export class AutoRAGAgent {
 		const agent = new Agent({
 			initialState: { systemPrompt, model, tools: [...this.tools] },
 			streamFn: streamSimple,
+			getApiKey: (provider) =>
+				this.providerApiKeys?.[provider] ?? (provider === model.provider ? this.apiKey : undefined),
 			convertToLlm: (messages) =>
 				messages.filter(
 					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
