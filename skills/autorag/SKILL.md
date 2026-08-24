@@ -16,6 +16,10 @@ source files and writes indexes under the configured workspace's `.autorag/`
 directory and, when enabled, Jikji's per-source `.jikji/` caches. Never move,
 rename, or delete source files.
 
+AutoRAG is itself the specialized librarian agent. One configured model plans
+the search, calls BM25/MinSync/Jikji/datasource tools, reads source files, and
+curates the final answer. There is no separate model role to configure.
+
 ## Preflight
 
 Confirm that `~/.autorag/config.json` exists (or an explicit `--config` /
@@ -55,6 +59,13 @@ the librarian agent. Search requires a resolvable model from config, flags,
 env, or the authenticated local runtime. When `autorag search` fails for a
 model, provider, auth, or timeout reason, the
 error output includes a hint pointing to `autorag health` for diagnosis.
+
+Interactive latency depends partly on the configured model because a search
+may require several short model turns between retrieval and source-reading
+calls. Prefer reliable tool use, high output TPS, and low first-token latency
+for fast everyday search. Choose a larger reasoning model only when difficult
+synthesis or domain judgment matters more than response time. Model speed does
+not change BM25, MinSync, Jikji, or indexing performance directly.
 
 Record feedback so retrieval memory learns which results were useful:
 

@@ -30,6 +30,26 @@ autorag init \
 
 If the authenticated local runtime already supplies a usable model, the model flags may be omitted.
 
+## Choose one search model
+
+AutoRAG needs only one model. AutoRAG itself is the specialized librarian
+agent: the configured model uses its retrieval tools, reads promising sources,
+judges the evidence, and curates the answer in one loop.
+
+For most collections, prefer a model with:
+
+- reliable tool calling and structured-output behavior
+- high output TPS and low first-token latency
+- enough context for the expected source excerpts
+- acceptable cost for several short search/read turns per query
+
+A faster model usually makes interactive searches feel faster because one
+AutoRAG search can involve several model turns around retrieval and source
+reading. TPS does not make BM25, MinSync, Jikji, or filesystem indexing faster;
+it reduces the model time between those tool calls. Use a larger or more
+reasoning-heavy model only when the collection requires difficult synthesis,
+conflict resolution, or specialized domain judgment.
+
 Optional MinSync embedder flags:
 
 ```bash
@@ -54,7 +74,9 @@ autorag search "summarize the collection" --top-k 3
 - `status` checks corpus and index health without requiring a model.
 - `health` resolves one model, verifies authentication, and optionally runs one completion probe.
 - `refresh` updates parsed mirrors, BM25, MinSync, Jikji, and configured datasource indexes.
-- `search` exercises retrieval, direct source reading, judgment, and structured curation in one agent loop.
+- `search` exercises the complete AutoRAG librarian workflow: retrieval,
+  direct source reading, judgment, and structured curation with the configured
+  model.
 
 Use `--skip-probes` only when network access is intentionally unavailable; it leaves live provider completion unverified.
 

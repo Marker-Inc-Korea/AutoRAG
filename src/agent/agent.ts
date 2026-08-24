@@ -1058,7 +1058,7 @@ export class AutoRAGAgent {
 	 * configured search roots, normalizes answer paths against planned source
 	 * roots, and merges per-root answer packs using least-privilege
 	 * (restrictive-wins) semantics. Jikji policy metadata remains visible to the
-	 * model, but it does not gate the main agent's direct file-reading tools.
+	 * model, but it does not gate the librarian's direct file-reading tools.
 	 */
 	async findJikji(
 		query: string,

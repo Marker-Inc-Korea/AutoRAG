@@ -10,7 +10,11 @@
 
 AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No raw grep dumps. Just answers.
 
-AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. One main agent retrieves candidates, reads source files directly, judges the evidence, and curates the structured answer. Its model and provider come from the user's authenticated runtime; AutoRAG does not ship a private provider default.
+AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. The AutoRAG librarian retrieves candidates, reads source files directly, judges the evidence, and curates the structured answer. Its model and provider come from the user's authenticated runtime; AutoRAG does not ship a private provider default.
+
+AutoRAG itself is the specialized search agent, not a coordinator for other
+model roles. You configure one model, and that model owns the complete
+retrieval, reading, judgment, and curation loop.
 
 ## Why AutoRAG
 
@@ -61,7 +65,7 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The main agent invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication.
+AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication.
 
 BM25 and MinSync are **enabled by default** — no explicit configuration is needed for standard lexical + semantic retrieval. Both can be disabled by setting `"bm25": false` or `"minSync": false` in the config file. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
 
@@ -73,7 +77,7 @@ AutoRAG reads configured source directories directly through its built-in `bash`
 
 AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
 
-When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the main agent. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
+When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
 Programmatic use:
 
@@ -258,13 +262,8 @@ The default home state is kept outside the workspace:
 ~/.autorag/
 ├── config.json
 ├── memory.json
-├── logs/
-│   └── runs.jsonl
-└── pi-agent/
-    ├── auth.json
-    ├── models.json
-    ├── settings.json
-    └── sessions/
+└── logs/
+    └── runs.jsonl
 ```
 
 `config.json` selects sources, the workspace, memory path, retrieval settings, and the agent model. Provider and model IDs must refer to a model available in the user's authenticated runtime:
@@ -280,9 +279,18 @@ The default home state is kept outside the workspace:
 
 `autorag init` leaves `model` unset when no model flags are supplied. At search time AutoRAG resolves an authenticated local provider when possible; otherwise configure the model explicitly.
 
+For fast interactive search, prefer a model with reliable tool calling, high
+output TPS, and low first-token latency. A query can require several short
+model turns while AutoRAG alternates between retrieval tools and direct source
+reading, so model throughput has a visible effect on end-to-end response time.
+It does not accelerate BM25, MinSync, Jikji, filesystem access, or indexing
+itself. Larger reasoning models remain useful for difficult synthesis,
+conflicting evidence, and specialized domain judgment, but they are not a
+requirement for ordinary retrieval.
+
 Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.json`. When the home config is absent and `<cwd>/autorag.config.json` exists, AutoRAG copies the legacy file to `~/.autorag/config.json` without deleting or modifying the legacy file. The legacy cwd file is a migration source, not the default location.
 
-`memory.json` stores retrieval memory, `logs/runs.jsonl` records run events, and durable Pi models, settings, and sessions stay under `~/.autorag/pi-agent`. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
+`memory.json` stores retrieval memory and `logs/runs.jsonl` records run events. Model authentication remains with the user's configured provider or authenticated local runtime. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
 
 `autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method bm25,minsync,parsed`) to scope which indexing methods run or which index directories are removed. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
