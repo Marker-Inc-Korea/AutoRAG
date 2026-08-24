@@ -28,7 +28,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/cli/index.ts src/subagents/explorer-tools-extension.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
+    "build": "bun build src/index.ts src/cli/index.ts --outdir dist --target node --packages external && tsc -p tsconfig.build.json && node scripts/fixup-dts.mjs",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "bun run build",
     "test": "node scripts/run-test-files.mjs",
@@ -52,7 +52,6 @@
     "iconv-lite": "^0.7.3",
     "jszip": "^3.10.1",
     "mailparser": "^3.9.15",
-    "pi-subagents": "0.53.0",
     "slides-grab": "^1.5.0",
     "smol-toml": "1.8.0",
     "tesseract.js": "^7.0.0",

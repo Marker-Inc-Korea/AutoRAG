@@ -2,15 +2,14 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
 	type FauxProviderRegistration,
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";
-import { Type } from "typebox";
+import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
@@ -54,111 +53,11 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function explorerAssignment(originalQuery: string): string {
-	return [
-		`Original query: ${originalQuery}`,
-		"Selected retrieval method: POSIX",
-		`Query variants: ${originalQuery}; ${originalQuery} evidence`,
-		"Required handoff fields: Retrieved at and Temporal metadata.",
-	].join("\n");
-}
-
-function fauxModel(originalQuery: string, ...responses: FauxResponseStep[]) {
+function fauxModel(...responses: FauxResponseStep[]) {
 	const reg = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "faux-model" }] });
-	reg.setResponses([
-		fauxAssistantMessage(
-			[
-				fauxToolCall("subagent", {
-					agent: "autorag-explorer",
-					agentScope: "user",
-					model: "faux/gpt-5.6-luna",
-					task: explorerAssignment(originalQuery),
-					cwd: docs,
-					artifacts: false,
-				}),
-			],
-			{ stopReason: "toolUse" },
-		),
-		...responses,
-	]);
+	reg.setResponses(responses);
 	registrations.push(reg);
 	return reg.getModel();
-}
-
-function fauxSessionFactory(): NonNullable<ConstructorParameters<typeof AutoRAGAgent>[0]["sessionFactory"]> {
-	return async (options) => {
-		const subagentTool: AgentTool = {
-			name: "subagent",
-			label: "Subagent",
-			description: "Test explorer",
-			parameters: Type.Object({
-				agent: Type.String(),
-				agentScope: Type.Literal("user"),
-				model: Type.String(),
-				task: Type.String(),
-				cwd: Type.Optional(Type.String()),
-				artifacts: Type.Optional(Type.Boolean()),
-			}),
-			execute: async () => ({
-				content: [
-					{
-						type: "text",
-						text: "Explorer run completed successfully.",
-					},
-				],
-				details: {
-					mode: "single",
-					runId: "run-live",
-					results: [
-						{
-							agent: "autorag-explorer",
-							task: explorerAssignment("What is the refund approval policy and was it acknowledged?"),
-							exitCode: 0,
-							usage: { input: 120, output: 90, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 },
-							model: "faux/gpt-5.6-luna",
-							structuredOutput: {
-								assignment: {
-									originalQuery: "What is the refund approval policy and was it acknowledged?",
-									method: "posix",
-									queryVariant: "refund director approval",
-									queryVariants: ["refund director approval", "refund exception approval"],
-								},
-								evidenceCandidates: [
-									{
-										source: join(docs, "q3.txt"),
-										method: "posix",
-										evidence: "Refund exceptions now require director approval before payout.",
-										retrievedAt: "2026-07-14T05:30:00.000Z",
-										sourceTemporal: { status: "updatedAt", updatedAt: "2026-07-01T00:00:00.000Z" },
-										locator: "q3.txt:2",
-									},
-								],
-								summary: "The Q3 policy note requires director approval for refund exceptions.",
-							},
-						},
-					],
-				},
-			}),
-		};
-		const agent = new Agent({
-			initialState: {
-				systemPrompt: options.systemPrompt,
-				model: options.model,
-				tools: [subagentTool, ...options.tools],
-			},
-			streamFn: streamSimple,
-			convertToLlm: (messages) =>
-				messages.filter(
-					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
-				),
-		});
-		return {
-			agent,
-			prompt: async (prompt) => agent.prompt(prompt),
-			abort: async () => agent.abort(),
-			dispose: () => {},
-		};
-	};
 }
 
 function emitResults(): FauxResponseStep {
@@ -328,8 +227,8 @@ function toolNames(agent: AutoRAGAgent): string[] {
 	);
 }
 
-describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
-	it("uses mandatory built-ins, retrieval tools, datasource fan-out, Jikji find, and verbatim real paths", async () => {
+describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
+	it("retrieves, reads, and curates directly with every non-subagent feature", async () => {
 		writeFakeJikji();
 		const datasourceRows: RetrievalResult[] = [
 			{
@@ -341,7 +240,6 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 			},
 		];
 		const model = fauxModel(
-			"What is the refund approval policy and was it acknowledged?",
 			fauxAssistantMessage(
 				[
 					fauxToolCall(JIKJI_FIND_TOOL_NAME, { query: "refund director approval" }),
@@ -364,7 +262,6 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 			jikji: { binaryPath },
 			datasourceSkills: [kakaoSkill(datasourceRows)],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
-			sessionFactory: fauxSessionFactory(),
 		});
 
 		for (const name of [
@@ -385,6 +282,7 @@ describe("AutoRAGAgent live searchDocuments orchestration e2e", () => {
 		expect(refresh.datasources?.[0]).toMatchObject({ ok: true, skill: "kakao" });
 		expect(agent.getSystemPrompt()).toContain("## Jikji Local Discovery");
 		expect(agent.getSystemPrompt()).toContain("jikji_find");
+		expect(agent.getSystemPrompt()).not.toMatch(/subagent|explorer|delegat/i);
 		expect(agent.getSystemPrompt()).not.toContain(root);
 
 		const all = await agent.searchAllDocuments("refund director approval finance kakao", { topK: 8 });

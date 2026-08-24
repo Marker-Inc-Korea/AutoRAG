@@ -4,8 +4,7 @@ import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import { parse } from "smol-toml";
 
-const ORCHESTRATOR_MODEL_ID = "gpt-5.6-sol";
-const EXPLORER_MODEL_ID = "gpt-5.6-luna";
+const DEFAULT_MODEL_ID = "gpt-5.6-sol";
 
 interface ProviderConfig {
 	readonly base_url?: unknown;
@@ -13,42 +12,19 @@ interface ProviderConfig {
 	readonly env_key?: unknown;
 }
 
-export interface LocalAutoRAGModels {
+export interface LocalAutoRAGModel {
 	readonly provider: string;
 	readonly apiKey: string;
-	readonly orchestrator: Model<"openai-responses">;
-	readonly explorer: Model<"openai-responses">;
+	readonly model: Model<"openai-responses">;
 }
 
-export interface LoadLocalAutoRAGModelsOptions {
+export interface LoadLocalAutoRAGModelOptions {
 	readonly configPath?: string;
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	readonly orchestratorModelId?: string;
-	readonly explorerModelId?: string;
+	readonly modelId?: string;
 }
 
-function createModel(
-	provider: string,
-	baseUrl: string,
-	id: string,
-	defaultId: string,
-	defaultName: string,
-): Model<"openai-responses"> {
-	return {
-		id,
-		name: id === defaultId ? defaultName : id,
-		api: "openai-responses",
-		provider,
-		baseUrl,
-		reasoning: true,
-		input: ["text", "image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 400_000,
-		maxTokens: 128_000,
-	};
-}
-
-export function loadLocalAutoRAGModels(options: LoadLocalAutoRAGModelsOptions = {}): LocalAutoRAGModels {
+export function loadLocalAutoRAGModel(options: LoadLocalAutoRAGModelOptions = {}): LocalAutoRAGModel {
 	const configPath = options.configPath ?? join(homedir(), ".codex", "config.toml");
 	const config = parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
 	const provider = config.model_provider;
@@ -74,22 +50,21 @@ export function loadLocalAutoRAGModels(options: LoadLocalAutoRAGModelsOptions = 
 	const apiKey = (options.env ?? process.env)[providerConfig.env_key];
 	if (!apiKey) throw new Error(`AutoRAG model credential is missing from ${providerConfig.env_key}`);
 
+	const id = options.modelId ?? DEFAULT_MODEL_ID;
 	return {
 		provider,
 		apiKey,
-		orchestrator: createModel(
+		model: {
+			id,
+			name: id === DEFAULT_MODEL_ID ? "GPT-5.6 Sol" : id,
+			api: "openai-responses",
 			provider,
-			providerConfig.base_url,
-			options.orchestratorModelId ?? ORCHESTRATOR_MODEL_ID,
-			ORCHESTRATOR_MODEL_ID,
-			"GPT-5.6 Sol",
-		),
-		explorer: createModel(
-			provider,
-			providerConfig.base_url,
-			options.explorerModelId ?? EXPLORER_MODEL_ID,
-			EXPLORER_MODEL_ID,
-			"GPT-5.6 Luna",
-		),
+			baseUrl: providerConfig.base_url,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400_000,
+			maxTokens: 128_000,
+		},
 	};
 }

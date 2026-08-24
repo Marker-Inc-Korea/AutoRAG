@@ -20,7 +20,7 @@ rename, or delete source files.
 
 Confirm that `~/.autorag/config.json` exists (or an explicit `--config` /
 `AUTORAG_CONFIG` path). Inspect that non-secret config for usable
-`searchPaths`/`agents` without printing credentials. Then run:
+`searchPaths`/`model` without printing credentials. Then run:
 
 ```bash
 autorag status
@@ -28,12 +28,11 @@ autorag health
 ```
 
 `status` is model-free and path-opaque: it reports corpus freshness and index
-health, not absolute filesystem paths or role-model auth. `health` checks
-model/provider auth and explorer subagent setup: it resolves both role models,
-verifies credential presence, and (unless `--skip-probes`) probes a completion
-call per role. Use `health` to diagnose model, provider, auth, timeout, or
-subagent dispatch failures before searching. If configuration, authentication,
-role models, or indexes are missing or unhealthy, stop this workflow and use
+health, not absolute filesystem paths or model auth. `health` checks
+model/provider auth: it resolves the model, verifies credential presence, and
+(unless `--skip-probes`) probes one completion call. Use `health` to diagnose
+model, provider, auth, or timeout failures before searching. If configuration,
+authentication, the model, or indexes are missing or unhealthy, stop this workflow and use
 `autorag-setup`; do not guess private providers or model IDs.
 
 ## Searching
@@ -52,9 +51,9 @@ AutoRAG returns curated, numbered knowledge units grounded in sources plus a
 - `--debug` only when diagnostics are needed
 
 Do not bypass AutoRAG with ad hoc raw search when the user explicitly requested
-the librarian agent. Search requires a resolvable orchestrator/explorer model
-pair from config, flags, env, or the authenticated local runtime. When `autorag
-search` fails for a model, provider, auth, timeout, or subagent reason, the
+the librarian agent. Search requires a resolvable model from config, flags,
+env, or the authenticated local runtime. When `autorag search` fails for a
+model, provider, auth, or timeout reason, the
 error output includes a hint pointing to `autorag health` for diagnosis.
 
 Record feedback so retrieval memory learns which results were useful:
