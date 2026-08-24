@@ -1,6 +1,6 @@
 ---
 name: autorag-setup
-description: Configure AutoRAG for first use or repair its setup. Detect the current agent's usable subscription-backed runtime or API provider without exposing private provider identities, select orchestrator and explorer models, propose OS-aware document folders for approval, initialize configuration, and build indexes (parsed mirrors, BM25, MinSync vectors, optional Jikji maps).
+description: Configure AutoRAG for first use or repair its setup. Prefer this agent's live LLM provider/model/endpoint/auth-env in ~/.autorag/config.json (orchestrator = current or strongest reasoning model; explorer = fastest-TPS sibling on the same auth); if the runtime cannot yield a callable setup, ask the user to configure it. Reuse Pi-usable ChatGPT/Claude/Gemini subscriptions. Verify with autorag health, always ask before indexing OS-aware folders, then build parsed/BM25/MinSync/Jikji indexes — search without indexes is not a successful setup.
 ---
 
 # AutoRAG Setup Skill
@@ -13,60 +13,114 @@ normal searches and feedback.
 ## Safety boundaries
 
 - Inspect only non-secret provider/model metadata and credential availability.
-- Never print, copy, migrate, compare, or persist credential values.
-- Never expose private provider aliases or internal model catalogs in generated
-  configuration, logs, or user-facing explanations.
+- Never print, copy, migrate, compare, or persist credential values. Write only
+  environment-variable *names* (`apiKeyEnv`), never key material.
+- `~/.autorag/config.json` must contain the real `provider`, `id`, `api`, and
+  `baseUrl` AutoRAG will call. Do not dump internal model catalogs or secret
+  payloads in chat, logs, or other files.
 - Do not scan the whole filesystem or home directory without explicit approval.
 - Never move, rename, edit, or delete source documents.
 - Recommend document-dense folders only. Do not index system trees, app bundles,
   caches, or credential stores.
 
-## Detect an authenticated model runtime
+## Copy this agent's LLM setup into AutoRAG
 
-Do not begin by asking the user to manually name a provider. Determine the best
-usable configuration from available evidence.
+AutoRAG does **not** inherit the host agent's session. The parent orchestrator
+and explorer are separate Pi calls. If you omit `agents`, search may fall back
+to a Codex Responses provider in `~/.codex/config.toml` and still default the
+ids to `gpt-5.6-sol` / `gpt-5.6-luna` — not whatever model *you* are running.
+First-time setup must therefore **translate a callable LLM setup into
+explicit AutoRAG role models** and write them to `~/.autorag/config.json`.
+
+Start from the runtime you are already using. Do **not** lead with a blank
+"which provider?" interview while session metadata, Codex/Claude/Pi identities,
+or env already answer it. If that discovery cannot produce a callable
+provider / model id / wire API / endpoint / auth, **ask the user to configure
+it directly** (provider, model ids, `api`, `baseUrl` if custom, and
+`apiKeyEnv` name — or which already-logged-in subscription/CLI identity to use).
 
 1. Preserve explicit user choices and a working `~/.autorag/config.json`.
-2. Inspect the current agent's exposed provider/model capabilities.
-3. Inspect compatible non-secret local metadata, including configured model
-   registries and `~/.autorag/pi-agent/models.json`. Provider-specific local
-   configuration may be used only to determine endpoint compatibility, model
-   IDs, credential environment-variable names, and whether credentials exist.
-4. Check Pi authentication entries by provider identity without reading or
-   showing their secret payloads.
-5. Treat ChatGPT, Claude, Gemini, and other consumer subscriptions as usable
-   only when the active runtime can demonstrably delegate that authenticated
-   session to AutoRAG or compatible authentication already exists in AutoRAG's
-   Pi state. A subscription is not automatically an API entitlement.
-6. Do not infer usability from an installed CLI, a config filename, or an
-   environment-variable name alone. Authentication and protocol compatibility
-   must both be established.
+2. Read **this agent's** current provider, model id, wire API, base URL, and
+   credential env-var name from session metadata, advertised models, and the
+   config files this agent already uses. Typical non-secret sources:
+   - the model/provider you were launched with (session, CLI flags, env);
+   - Codex: `~/.codex/config.toml` (`model_provider`, `model_providers.*.base_url`,
+     `wire_api`, `env_key`; the top-level `model` field is the host default, not
+     an AutoRAG role);
+   - Anthropic/Claude Code-style runs: catalog provider `anthropic` plus
+     `ANTHROPIC_API_KEY` presence, current model id, wire `anthropic-messages`;
+   - OpenAI-compatible proxies (OpenRouter, Fireworks, LiteLLM, corp gateways):
+     `baseUrl` + `api` + `apiKeyEnv`;
+   - `~/.autorag/pi-agent/models.json` and Pi auth *identities* (not payloads).
+3. **Prefer a subscription Pi can already call.** ChatGPT Plus/Pro/Team via
+   Codex login (`~/.codex/config.toml`, `openai-codex-responses` /
+   `openai-responses`), Claude Pro/Max via Claude Code / Anthropic identity
+   (`anthropic-messages`), Gemini or other providers via Pi auth identities
+   in `~/.autorag/pi-agent` (identities only, never payloads) are first-class.
+   Use that path instead of demanding a separate raw API key. A consumer
+   subscription is still not an entitlement when Pi cannot actually invoke it;
+   when it can, adopt it.
+4. Do not infer usability from an installed CLI or a filename alone.
+   Authentication and protocol compatibility must both be established.
 
-If no compatible authenticated runtime exists, report the exact missing public
-provider/authentication requirement. Do not write a configuration that cannot
-run. Ask one concise question only when multiple equally suitable public
-providers remain and runtime evidence cannot choose between them.
+Map what you find onto AutoRAG's `AgentModelConfig`:
+
+| Host fact | AutoRAG field |
+|---|---|
+| Provider name this agent already calls | `provider` |
+| Model id this agent already sends | `id` (orchestrator; explorer may differ) |
+| Chat Completions / Responses / Anthropic Messages / Codex Responses / Azure | `api` |
+| OpenAI-compatible or custom gateway URL | `baseUrl` (required when the provider is not in the pi-ai catalog) |
+| Env var that already holds the key | `apiKeyEnv` (name only) |
+
+Allowed `api` values: `openai-completions`, `openai-responses`,
+`anthropic-messages`, `openai-codex-responses`, `azure-openai-responses`.
+When `baseUrl` is set and `api` is omitted, AutoRAG defaults to
+`openai-completions`. Codex `wire_api = "responses"` must be written as
+`api: "openai-responses"`.
+
+If discovery finds nothing callable, say what is missing (public provider,
+login/identity, key env, or protocol) and ask the user to set it. Do not write
+a config that cannot run. Ask one concise question when two public providers
+are equally usable and evidence cannot choose.
 
 ## Select role models
 
-Select only models actually advertised by the authenticated runtime:
+Write **both** roles explicitly. Same provider, endpoint, `api`, and
+`apiKeyEnv` unless the user asked otherwise.
 
-- `agents.orchestrator`: strongest reliable reasoning and high-context model.
-- `agents.explorer`: faster, cheaper high-recall model with sufficient context.
-- If only one usable model exists, configure it for both roles.
-- Preserve an existing working explicit pair.
-- Never invent model IDs or write a private provider alias into distributed or
-  user-facing configuration.
+- `agents.orchestrator`: this agent's current model when it is a capable
+  reasoning/high-context model; otherwise the strongest reliable sibling the
+  same auth can call.
+- `agents.explorer`: the **fastest tokens-per-second** (lowest-latency / mini /
+  flash / haiku-class) model the same authenticated runtime can actually call,
+  with enough context to read documents. Prefer throughput over flagship
+  quality. Explorers do high-recall `read`/`grep`/`find`/`ls`, not final
+  judgment.
+- If the runtime only exposes one callable model, use it for both roles.
+- Do not leave `agents` unset hoping search-time Codex fallback will "use my
+  model" — it will not.
+- Do not invent ids. Prefer models this runtime (or a Pi-usable subscription)
+  can already call. If discovery failed, write the provider/id pair the user
+  just supplied — then prove it with `autorag health`.
+- Preserve an existing working explicit pair unless the user asked to change
+  models or health fails.
 
-Provider and model ID must always be supplied together for each configured role.
-If role models are intentionally omitted, leave them unset so search-time
-resolution can still pick up an authenticated local runtime when available.
+Provider and id must always be supplied together for each role.
 
 ## Discover and approve document folders
 
 Propose a **short list of recommended folders** tailored to the user's OS, then
-let the user accept, drop, or replace entries before any indexing. Explicit user
-paths always win. Reuse previously approved folders without re-asking.
+**always ask** whether to index them (`Index these folders?` / keep / drop /
+custom list) before any indexing. Explicit user paths always win. Previously
+approved folders still get a short confirm before a first-run or large refresh
+(“refresh these already-approved roots?”) — do not silently skip indexing, and
+do not re-walk the OS when the user already named paths.
+
+Indexing is the product. `init` + `health` without `refresh` is not a successful
+setup. After the user accepts (or keeps the recommended set), **proceed with
+indexing** unless they explicitly refuse. Bias toward indexing the recommended
+roots rather than stopping at configuration.
 
 ### 1. Detect OS and home roots
 
@@ -148,7 +202,7 @@ Skip generated/vendor directories including `node_modules`, `.git`, `dist`,
 
 ### 4. Present a proposal, then require approval
 
-Summarize a concrete proposal, for example:
+Summarize a concrete proposal and **ask to index it**. For example:
 
 ```text
 Recommended index roots (macOS):
@@ -157,21 +211,28 @@ Recommended index roots (macOS):
   [R] ~/Desktop        (~12 md/pdf)
   [O] ~/Notes          (~80 md) — optional personal vault
 
-Reply with: accept all / keep only Documents+Downloads / custom list
+Index these folders? Reply: yes (recommended) / keep only Documents+Downloads / custom list / skip
 ```
 
 Rules:
 
 1. Prefer an explicit directory already named by the user over any suggestion.
-2. Do not silently index large or sensitive trees.
+2. Do not silently index large or sensitive trees — always ask first.
 3. Keep the first-run set small (typically 1–3 approved roots). Users can add
    more after the initial index build.
 4. Wallpaper/background folders are rarely useful; only suggest Desktop itself
    (where people leave docs), not OS wallpaper asset caches.
+5. After yes / a narrowed keep-list, run `init` then `refresh` in the same
+   setup turn. Do not treat “config written” as done. Skip indexing only if
+   the user clearly refuses.
 
 ## Initialize
 
-Write the approved paths and selected role models:
+Write approved folders plus the **copied** role models into
+`~/.autorag/config.json` (not the workspace `.autorag/` index dir).
+
+Prefer `autorag init` when provider+id are enough (pi-ai catalog models, or a
+Codex provider whose `baseUrl` already lives in `~/.codex/config.toml`):
 
 ```bash
 autorag init \
@@ -182,8 +243,34 @@ autorag init \
   --explorer-model-id EXPLORER_MODEL
 ```
 
-This writes `~/.autorag/config.json` by default. Use `--config PATH` (or
-`AUTORAG_CONFIG`) for an explicit location. Optional:
+When this agent uses a custom/OpenAI-compatible endpoint, `init` flags only
+store provider+id. After init, add `api`, `baseUrl`, and `apiKeyEnv` on each
+role in `~/.autorag/config.json` so AutoRAG does not need a catalog entry:
+
+```json
+{
+  "searchPaths": ["/path/to/docs"],
+  "agents": {
+    "orchestrator": {
+      "provider": "openrouter",
+      "id": "anthropic/claude-sonnet-4",
+      "api": "openai-completions",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    },
+    "explorer": {
+      "provider": "openrouter",
+      "id": "openai/gpt-4o-mini",
+      "api": "openai-completions",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    }
+  }
+}
+```
+
+That file is the durable model setting. Use `--config PATH` (or `AUTORAG_CONFIG`)
+for a non-default location. Optional:
 
 - `--workspace DIR` for the workspace that owns `.autorag` indexes
 - `--memory-path FILE` for retrieval-memory storage
@@ -191,14 +278,17 @@ This writes `~/.autorag/config.json` by default. Use `--config PATH` (or
 
 ### Indexing method defaults
 
-BM25 and MinSync are **enabled by default**. `autorag init` writes
-`bm25: { enabled: true }` and `minSync: { enabled: true, autoInstall: false }`
-into the config even when no method flags are supplied. To disable a method,
-set it to `false` in the config file (`"bm25": false` or `"minSync": false`).
+BM25, MinSync, and Jikji are **enabled by default**. `autorag init` writes
+`bm25: { enabled: true }`, `minSync: { enabled: true, autoInstall: false }`,
+and `jikji: {}` even when no method flags are supplied. Leave them on.
+Disable a method only when the user explicitly asks (`"bm25": false`,
+`"minSync": false`, or omit/disable `jikji`).
 
 MinSync auto-install is off by default (`autoInstall: false`); the binary must
 be pre-installed or available on `PATH`. AutoRAG never forces TEI or any
-external embedding service.
+external embedding service. Jikji auto-installs `jikji-cli` via cargo when
+`jikji.autoInstall` is not set to `false` and the Rust toolchain is present.
+Do not skip Jikji or MinSync during first-run refresh because they look optional.
 
 ### MinSync embedder flags
 
@@ -220,9 +310,33 @@ accepts the **environment variable name** (e.g. `OPENAI_API_KEY`), never the key
 value itself. `--embedder-dimension` and `--embedder-batch-size` must be positive
 integers.
 
-If role models are intentionally omitted, `autorag init` must leave `agents`
-unset; it must never inject a private provider default. Legacy cwd
-`autorag.config.json` is a migration source only and is never deleted by init.
+Do not omit role models during setup. Leaving `agents` unset is only for an
+explicit user request to rely on search-time resolution; that path does not
+copy this agent's current model ids. `autorag init` must never inject a
+provider default of its own. Legacy cwd `autorag.config.json` is a migration
+source only and is never deleted by init.
+
+## Verify the copied models
+
+This is the model-connection test. Run it after writing `agents`, before
+claiming setup worked and before a long `refresh` when models were just
+changed:
+
+```bash
+autorag health
+autorag health --skip-probes   # resolution + credential presence only, no network
+autorag health --timeout-ms 20000
+```
+
+`health` resolves both roles from `~/.autorag/config.json` (or `--config` /
+`AUTORAG_CONFIG`), checks that each role's API key env is present, then unless
+`--skip-probes` is set issues a real completion per role and a lightweight
+explorer subagent probe. It does not touch indexes.
+
+Pass criteria: both orchestrator and explorer resolve, auth is present, probes
+succeed. On failure, fix `provider` / `id` / `api` / `baseUrl` / `apiKeyEnv`
+(or the env var itself) and re-run `health`. Do not proceed to search, and do
+not tell the user the host LLM was "copied", until this passes.
 
 Per-run overrides (flags and env take precedence over the file) are available
 via the role-specific flags or:
@@ -319,11 +433,12 @@ the `autorag` skill.
 1. **Parses** approved source files into workspace-local `.autorag/parsed`
    markdown mirrors.
 2. **Prepares BM25** lexical indexes over those mirrors.
-3. **Embeds into the MinSync vector DB** (semantic index) over the same mirrors
-   when MinSync is configured/available.
-4. **Prepares Jikji maps/caches** under each approved source's `.jikji/` when
-   Jikji is configured (indexing only — find answers come later via
-   `jikji_find` at search time).
+3. **Embeds into the MinSync vector DB** (semantic index) over the same mirrors.
+   MinSync is on by default; treat a missing binary as a setup defect to fix,
+   not a reason to skip semantic indexing.
+4. **Prepares Jikji maps/caches** under each approved source's `.jikji/`.
+   Jikji is on by default for new configs (indexing only — find answers come
+   later via `jikji_find` at search time). Leave it enabled.
 5. **Indexes authorized datasources** when datasource skills are configured.
 
 Order of operations for first-time setup:
@@ -359,11 +474,8 @@ Interpret results:
   over the parsed mirrors). Example: `autorag refresh --method bm25,minsync`.
 - `status` is model-free and path-opaque: inspect freshness and component
   health only; do not expect absolute source paths in the output.
-- `health` checks model/provider auth and explorer subagent setup: it resolves
-  both role models, verifies credential presence, and (unless `--skip-probes`)
-  probes a completion call per role. Use it to confirm both role models resolve
-  from the authenticated runtime or written config without displaying
-  credentials or private provider details.
+- `health` is the model test (see **Verify the copied models**): both roles
+  must resolve and probe successfully without printing credentials.
 - Do not claim setup succeeded when authentication, indexes, role-model
   resolution, or subagent dispatch remain unverified.
 - Prefer bounded `refresh` over destructive resets. Reserve
@@ -454,14 +566,14 @@ Prefer `watch --once`/`refresh` for scheduled ticks. Reserve long-running `watch
 
 Never run reset/rebuild against source document trees. Indexes live under the
 configured workspace's `.autorag/`; Jikji prepare caches live under
-per-source `.jikji/` when enabled.
+per-source `.jikji/` (default on).
 
 ## Hand off
 
 After models authenticate, `autorag health` confirms model/provider auth and
 explorer subagent dispatch, folders are approved, `init` has written the config,
-`refresh` has built parsed + BM25 + MinSync (+ optional Jikji/datasource)
-indexes, and `status` looks healthy:
+`refresh` has built parsed + BM25 + MinSync + Jikji (+ datasource when
+configured) indexes, and `status` looks healthy:
 
 - stop the setup skill
 - use the `autorag` skill for normal queries (`autorag search`, then

@@ -797,7 +797,7 @@ describe("mandatory pi-subagents runtime", () => {
 				);
 				expect(config.providers["test-proxy"]?.apiKey).toBe("$TEST_PROXY_API_KEY");
 				expect(modelsJson).not.toContain(sentinel);
-				expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
+				expect(process.env.PI_CODING_AGENT_DIR).toBe(resolve(agentDir));
 				expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
 
 				const piBinary = join(
@@ -831,6 +831,34 @@ describe("mandatory pi-subagents runtime", () => {
 		} finally {
 			if (previousApiKey === undefined) delete process.env.TEST_PROXY_API_KEY;
 			else process.env.TEST_PROXY_API_KEY = previousApiKey;
+			if (previousPiAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+			else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
+		}
+	});
+
+	it("routes in-process subagent discovery through the active AutoRAG agent directory", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-pi-in-process-discovery-"));
+		tempDirs.push(root);
+		const agentDir = join(root, "agent");
+		const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
+		delete process.env.PI_CODING_AGENT_DIR;
+
+		try {
+			const runtime = await createMandatorySubagentSession({
+				cwd: root,
+				agentDir,
+				model,
+				explorerModel,
+				systemPrompt: "test prompt",
+				tools: [customTool],
+			});
+			try {
+				expect(process.env.PI_CODING_AGENT_DIR).toBe(resolve(agentDir));
+			} finally {
+				runtime.session.dispose();
+			}
+			expect(process.env.PI_CODING_AGENT_DIR).toBeUndefined();
+		} finally {
 			if (previousPiAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 			else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
 		}
@@ -882,7 +910,7 @@ describe("mandatory pi-subagents runtime", () => {
 		}
 	});
 
-	it("gives only the explorer credential to Pi while a concurrent generic child keeps the parent environment", async () => {
+	it("gives only the explorer credential to Pi while generic children inherit discovery routing", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-pi-provider-credentials-"));
 		tempDirs.push(root);
 		const agentDir = join(root, "agent");
@@ -1017,7 +1045,7 @@ describe("mandatory pi-subagents runtime", () => {
 				tools: [customTool],
 			});
 			try {
-				expect(process.env.PI_CODING_AGENT_DIR).toBe(previousPiAgentDir);
+				expect(process.env.PI_CODING_AGENT_DIR).toBe(resolve(agentDir));
 				expect(process.env.OPENAI_API_KEY).toBe(orchestratorSecret);
 				expect(process.env.OTHER_PROVIDER_API_KEY).toBeUndefined();
 				expect(process.env.UNLISTED_PARENT_SECRET).toBe(unlistedParentSecret);
@@ -1066,6 +1094,7 @@ describe("mandatory pi-subagents runtime", () => {
 				);
 				expect(genericChild.status).toBe(0);
 				expect(JSON.parse(genericChild.stdout)).toEqual({
+					agentDir: resolve(agentDir),
 					orchestratorSecretVisible: true,
 					explorerSecretVisible: false,
 					unlistedParentSecretVisible: true,
@@ -1348,7 +1377,7 @@ describe("mandatory pi-subagents runtime", () => {
 		}
 	});
 
-	it("keeps compatible routing leases without changing the parent environment", async () => {
+	it("keeps compatible routing active until the final session releases it", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-pi-compatible-lease-"));
 		tempDirs.push(root);
 		const agentDir = join(root, "agent");
@@ -1380,7 +1409,7 @@ describe("mandatory pi-subagents runtime", () => {
 
 			firstRuntime.session.dispose();
 			firstRuntime = undefined;
-			expect(process.env.PI_CODING_AGENT_DIR).toBe(previousAgentDir);
+			expect(process.env.PI_CODING_AGENT_DIR).toBe(resolve(agentDir));
 			expect(process.env.TEST_PROXY_API_KEY).toBe(previousApiKey);
 
 			secondRuntime.session.dispose();

@@ -13,8 +13,9 @@ use the `autorag-setup` skill instead.
 
 AutoRAG is invoked through the `autorag` CLI. It is non-destructive: it reads
 source files and writes indexes under the configured workspace's `.autorag/`
-directory and, when enabled, Jikji's per-source `.jikji/` caches. Never move,
-rename, or delete source files.
+directory and Jikji's per-source `.jikji/` caches (on by default). Never move,
+rename, or delete source files. Prefer the full retrieval stack — Jikji find-first plus BM25 and MinSync seed
+retrieval (all on by default) — over ad hoc `grep`/`find` of the corpus.
 
 ## Preflight
 
@@ -32,9 +33,14 @@ health, not absolute filesystem paths or role-model auth. `health` checks
 model/provider auth and explorer subagent setup: it resolves both role models,
 verifies credential presence, and (unless `--skip-probes`) probes a completion
 call per role. Use `health` to diagnose model, provider, auth, timeout, or
-subagent dispatch failures before searching. If configuration, authentication,
-role models, or indexes are missing or unhealthy, stop this workflow and use
-`autorag-setup`; do not guess private providers or model IDs.
+subagent dispatch failures before searching.
+
+Expect BM25, MinSync, and Jikji to be healthy. If `status` shows them missing,
+stale, or disabled, run `autorag refresh` (full methods, not a BM25-only
+narrow) or hand off to `autorag-setup` rather than searching on a degraded
+lexical-only path. If configuration, authentication, role models, or indexes
+are missing or unhealthy, stop this workflow and use `autorag-setup`; do not
+guess private providers or model IDs.
 
 ## Searching
 
@@ -51,11 +57,14 @@ AutoRAG returns curated, numbered knowledge units grounded in sources plus a
 - `--json` for structured output (`sessionId`, numbered `results`, `answer`)
 - `--debug` only when diagnostics are needed
 
-Do not bypass AutoRAG with ad hoc raw search when the user explicitly requested
-the librarian agent. Search requires a resolvable orchestrator/explorer model
-pair from config, flags, env, or the authenticated local runtime. When `autorag
-search` fails for a model, provider, auth, timeout, or subagent reason, the
-error output includes a hint pointing to `autorag health` for diagnosis.
+Do not bypass AutoRAG with ad hoc raw search when the user requested the
+librarian agent. `autorag search` is the surface that already runs Jikji find-first and BM25 +
+MinSync seed retrieval before explorer reads — use it, and do not disable or
+skip those methods to “simplify” a query. Search requires a resolvable orchestrator/explorer model pair from
+config, flags, env, or the authenticated local runtime (including a Pi-usable
+ChatGPT/Claude/Gemini subscription). When `autorag search` fails for a model,
+provider, auth, timeout, or subagent reason, the error output includes a hint
+pointing to `autorag health` for diagnosis.
 
 Record feedback so retrieval memory learns which results were useful:
 
@@ -72,7 +81,7 @@ numbered knowledge units from that session's search output.
 autorag status
 autorag health
 autorag refresh
-autorag refresh --method bm25,minsync
+autorag refresh --method bm25,minsync,jikji
 autorag watch --once
 autorag watch
 autorag refresh --force
@@ -81,13 +90,15 @@ autorag index reset --method bm25 --yes
 autorag memory inspect
 ```
 
-Use `refresh` after source documents change (parses sources and resyncs BM25 /
-MinSync / datasources / optional Jikji prepare). Prefer bounded refresh over
-reset. `watch --once` is the preferred single tick for scheduled jobs; long-running
+Use `refresh` after source documents change (parses sources and resyncs BM25,
+MinSync, Jikji prepare, and datasources). Prefer a full `autorag refresh` so
+Jikji maps and MinSync vectors stay current with BM25; do not routinely pass
+`--method bm25` and drop the others. Prefer bounded refresh over reset.
+`watch --once` is the preferred single tick for scheduled jobs; long-running
 `watch` keeps an fs event loop open for interactive sessions.
-`--method <csv>` (e.g. `--method bm25,minsync,parsed`) restricts which methods
-refresh/index run; when omitted all methods run. BM25 and MinSync are enabled
-by default — no explicit configuration is needed for standard lexical + semantic
+`--method <csv>` (e.g. `--method bm25,minsync,jikji,parsed`) restricts which
+methods refresh/index run; when omitted all methods run. BM25, MinSync, and
+Jikji are enabled by default — keep them on for lexical + semantic + find-first
 retrieval. MinSync uses a pre-installed binary (`autoInstall: false`); configure
 `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding.
 
@@ -144,6 +155,7 @@ read-only and path-opaque.
 - Use only configured and approved search paths.
 - Never expose provider credentials or authentication payloads.
 - Never invent or reveal private provider names or model IDs.
-- Never treat a consumer subscription as API access without runtime evidence.
+- Prefer a ChatGPT/Claude/Gemini (or similar) subscription when Pi can already
+  call it; do not invent API access from a subscription Pi cannot invoke.
 - Preserve real source mapping and numbered feedback identifiers.
 - Prefer `--json` when another agent must consume the result programmatically.
