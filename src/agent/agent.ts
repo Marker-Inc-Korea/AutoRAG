@@ -51,21 +51,6 @@ import {
 	resolveRetrievalScope,
 } from "../retrieval/scope.ts";
 import type { CuratedResult, RetrievalDiagnostic, RetrievalOptions, RetrievalResult } from "../retrieval/types.ts";
-import { safeParseExplorerReport } from "../subagents/contracts.ts";
-import { buildDispatchTemplatesPromptSection } from "../subagents/dispatch-templates.ts";
-import {
-	autoragPrepare,
-	classifyDispatch,
-	createDispatchRejectionError,
-	DispatchRejectionError,
-	FORCE_CORRECTABLE_MAP,
-	type PrepareContext,
-	readAutofilled,
-	validateLaunchPostSchema,
-} from "../subagents/dispatch-validation.ts";
-import { loadLocalAutoRAGModels } from "../subagents/local-models.ts";
-import { EXPLORER_MODEL_ID } from "../subagents/model-policy.ts";
-import { createMandatorySubagentSession, type MandatorySubagentSessionOptions } from "../subagents/runtime.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
@@ -84,6 +69,7 @@ import {
 	type JikjiFindProviderResult,
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
+import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
@@ -194,7 +180,6 @@ interface RefreshState {
 
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
-	explorerModel?: Model<Api>;
 	apiKey?: string;
 	providerApiKeys?: Readonly<Record<string, string>>;
 	searchPaths: string[];
@@ -209,7 +194,6 @@ export interface AutoRAGAgentOptions {
 	parserOptions?: DefaultParserRegistryOptions;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
-	sessionFactory?: AutoRAGSessionFactory;
 }
 
 export interface AutoRAGSearchSession {
@@ -218,8 +202,6 @@ export interface AutoRAGSearchSession {
 	abort(): Promise<void> | void;
 	dispose(): void;
 }
-
-export type AutoRAGSessionFactory = (options: MandatorySubagentSessionOptions) => Promise<AutoRAGSearchSession>;
 
 export type AutoRAGJikjiPrepareResult =
 	| {
@@ -238,17 +220,10 @@ export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly tools: readonly AgentTool[];
 	private readonly configuredModel: Model<Api> | undefined;
-	private readonly configuredExplorerModel: Model<Api> | undefined;
 	private readonly apiKey: string | undefined;
 	private readonly providerApiKeys: Readonly<Record<string, string>> | undefined;
-	private readonly sessionFactory: AutoRAGSessionFactory;
 	private readonly listeners = new Set<Parameters<Agent["subscribe"]>[0]>();
 	private activeSession: AutoRAGSearchSession | undefined;
-	private readonly pendingSubagentCalls = new Map<string, { readonly invocation: unknown; readonly query: string }>();
-	private readonly dispatchSequenceBySession = new Map<string, number>();
-	private readonly dispatchArgsTracker = new WeakMap<object, { toolCallId: string; rejected: boolean }>();
-	private dispatchSyntheticCounter = 0;
-	private successfulExplorerCalls = 0;
 	private readonly memory: RetrievalMemory;
 	private readonly runLogger: AutoRAGRunLogger;
 	private lastQuery: string | undefined;
@@ -272,7 +247,6 @@ export class AutoRAGAgent {
 	private readonly configuredSearchPaths: readonly string[];
 	private retrievalScopeBindings: readonly RetrievalScopeBinding[];
 	private readonly datasourceVirtualScopePrefixes: readonly string[];
-	private readonly allowedExplorerRoots: readonly string[];
 	private readonly workspaceProjectRoot: string;
 	private readonly methodRegistry = new RetrievalMethodRegistry();
 	private readonly retriever = new ParallelRetriever();
@@ -287,22 +261,13 @@ export class AutoRAGAgent {
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
-	/** Run-scoped merged Jikji policy, set during searchDocuments; cleared after. */
-	private activeJikjiPolicy: MergedJikjiPolicy | undefined;
-	private activeExplorerModel: string | undefined;
-	/** Run-scoped jikji_find call count for the two-phase raw-fallback gate. */
-	private jikjiFindCallCount = 0;
 	private readonly droppedCallerToolNames: readonly string[];
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
-		this.configuredExplorerModel = options.explorerModel;
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
-		this.sessionFactory =
-			options.sessionFactory ??
-			(async (sessionOptions) => (await createMandatorySubagentSession(sessionOptions)).session);
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
 		this.datasourceSkills = options.datasourceSkills ?? [];
 		this.datasourceVirtualScopePrefixes = this.datasourceSkills.map((skill) =>
@@ -319,7 +284,6 @@ export class AutoRAGAgent {
 			this.searchPaths,
 			this.configuredSearchPaths,
 		);
-		this.allowedExplorerRoots = [...new Set(this.searchPaths)].sort();
 		this.parserOptions = options.parserOptions;
 
 		if (options.minSync !== false) {
@@ -359,7 +323,7 @@ export class AutoRAGAgent {
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
 
-		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot, gate: () => this.bashGate() });
+		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot });
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
@@ -410,8 +374,7 @@ export class AutoRAGAgent {
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
 			toolNames,
-			orchestratorModelId: options.model?.id,
-			explorerModelId: options.explorerModel?.id,
+			modelId: options.model?.id,
 			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
@@ -469,151 +432,45 @@ export class AutoRAGAgent {
 
 	private resolveSessionModel(): {
 		readonly model: Model<Api>;
-		readonly explorerModel: Model<Api>;
 		readonly apiKey?: string;
 		readonly providerApiKeys?: Readonly<Record<string, string>>;
 	} {
 		if (this.configuredModel !== undefined) {
-			const explorerModel =
-				this.configuredExplorerModel ??
-				({ ...this.configuredModel, id: EXPLORER_MODEL_ID, name: "GPT-5.6 Luna" } satisfies Model<Api>);
 			return {
 				model: this.configuredModel,
-				explorerModel,
 				...(this.apiKey !== undefined ? { apiKey: this.apiKey } : {}),
 				...(this.providerApiKeys !== undefined ? { providerApiKeys: this.providerApiKeys } : {}),
 			};
 		}
-		const local = loadLocalAutoRAGModels();
+		const local = loadLocalAutoRAGModel();
 		return {
-			model: local.orchestrator,
-			explorerModel: local.explorer,
+			model: local.model,
 			apiKey: local.apiKey,
 			providerApiKeys: { [local.provider]: local.apiKey },
 		};
 	}
 
+	private createSearchSession(model: Model<Api>, systemPrompt: string): AutoRAGSearchSession {
+		const agent = new Agent({
+			initialState: { systemPrompt, model, tools: [...this.tools] },
+			streamFn: streamSimple,
+			getApiKey: (provider) =>
+				this.providerApiKeys?.[provider] ?? (provider === model.provider ? this.apiKey : undefined),
+			convertToLlm: (messages) =>
+				messages.filter(
+					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
+				),
+			transformContext: async (messages) => this.withMemoryContext(messages),
+		});
+		return {
+			agent,
+			prompt: async (prompt) => agent.prompt(prompt),
+			abort: async () => agent.abort(),
+			dispose: () => {},
+		};
+	}
+
 	private configureSearchSession(session: AutoRAGSearchSession): readonly (() => void)[] {
-		const extensionTransform = session.agent.transformContext;
-		session.agent.transformContext = async (messages, signal) => {
-			const transformed = extensionTransform === undefined ? messages : await extensionTransform(messages, signal);
-			return this.withMemoryContext(transformed);
-		};
-
-		// Shallow-clone the subagent AgentTool with a composed prepareArguments.
-		// The clone has the same name/schema/execute but adds our pre-schema
-		// validation (classify → launch-only defaults → error catalog).
-		// We replace the entry in agent.state.tools so the agent loop calls
-		// our composed prepare before schema validation.
-		const subagentIndex = session.agent.state.tools.findIndex((tool) => tool.name === "subagent");
-		if (subagentIndex !== -1) {
-			const originalTool = session.agent.state.tools[subagentIndex];
-			const prepareCtx: PrepareContext = {
-				configuredModel: this.activeExplorerModel,
-			};
-			const clonedTool: AgentTool = {
-				...originalTool,
-				prepareArguments: (rawArgs: unknown) => {
-					// Track raw args by object identity for correlation.
-					// The tracker keys on the original rawArgs object so that
-					// beforeToolCall and tool_execution_start can resolve the
-					// same correlation entry.
-					if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
-						const existing = this.dispatchArgsTracker.get(rawArgs as object);
-						if (existing === undefined) {
-							const syntheticId = `synthetic-${++this.dispatchSyntheticCounter}`;
-							this.dispatchArgsTracker.set(rawArgs as object, {
-								toolCallId: syntheticId,
-								rejected: false,
-							});
-						}
-					}
-
-					// Compose the original tool's prepareArguments first (if it
-					// exists), then pass its returned args into autoragPrepare.
-					// This preserves any upstream argument preparation while
-					// layering our dispatch validation on top. When the original
-					// has no prepareArguments, fall back to the raw args.
-					const baseArgs =
-						originalTool.prepareArguments !== undefined ? originalTool.prepareArguments(rawArgs) : rawArgs;
-
-					try {
-						const prepared = autoragPrepare(baseArgs, prepareCtx);
-						// Emit dispatch_autofilled if fields changed
-						const autofilled = readAutofilled(prepared);
-						if (autofilled !== undefined) {
-							const changed = autofilled.artifacts || autofilled.agentScope || autofilled.leafModelFillCount > 0;
-							if (changed) {
-								this.emitDispatchAutofilled(rawArgs, autofilled);
-							}
-						}
-						return prepared;
-					} catch (error) {
-						if (error instanceof DispatchRejectionError) {
-							// Mark tracker as rejected so beforeToolCall doesn't duplicate
-							if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
-								const tracker = this.dispatchArgsTracker.get(rawArgs as object);
-								if (tracker !== undefined) {
-									tracker.rejected = true;
-								}
-							}
-							this.emitDispatchRejected(error, rawArgs);
-						}
-						throw error;
-					}
-				},
-			};
-			const newTools = [...session.agent.state.tools];
-			newTools[subagentIndex] = clonedTool;
-			session.agent.state.tools = newTools;
-		}
-
-		const extensionBeforeToolCall = session.agent.beforeToolCall;
-		session.agent.beforeToolCall = async (context, signal) => {
-			if (context.toolCall.name === "subagent") {
-				// Check if prepare already rejected (avoid duplicate reject)
-				const rawArgs = context.toolCall.arguments;
-				let alreadyRejected = false;
-				if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
-					const tracker = this.dispatchArgsTracker.get(rawArgs as object);
-					if (tracker?.rejected) alreadyRejected = true;
-				}
-
-				if (!alreadyRejected) {
-					const args = context.args;
-					if (
-						typeof args === "object" &&
-						args !== null &&
-						!Array.isArray(args) &&
-						classifyDispatch(args as Record<string, unknown>) === "launch"
-					) {
-						const rejection = validateLaunchPostSchema(args as Record<string, unknown>, {
-							configuredModel: this.activeExplorerModel,
-							currentQuery: this.lastQuery,
-							allowedRoots: this.allowedExplorerRoots,
-							workspaceRoot: this.workspaceProjectRoot,
-						});
-						if (rejection !== undefined) {
-							const error = createDispatchRejectionError(rejection, args as Record<string, unknown>);
-							this.emitDispatchRejectedFromRejection(rejection, rawArgs);
-							return { block: true, reason: error.message };
-						}
-
-						// Store normalized pending for success credit (structuredClone + deep-freeze).
-						// Capture the query bound at dispatch time, never a later mutable value.
-						const activeQuery = this.lastQuery;
-						if (activeQuery !== undefined) {
-							const normalizedSnapshot = deepFreeze(structuredClone(args));
-							this.pendingSubagentCalls.set(context.toolCall.id, {
-								invocation: normalizedSnapshot,
-								query: activeQuery,
-							});
-						}
-					}
-				}
-			}
-			return extensionBeforeToolCall?.(context, signal);
-		};
 		const unsubscribers = [...this.listeners].map((listener) => session.agent.subscribe(listener));
 		unsubscribers.push(
 			session.agent.subscribe((event) => {
@@ -624,133 +481,11 @@ export class AutoRAGAgent {
 	}
 
 	private recordSearchToolEvent(event: AgentEvent): void {
-		if (event.type === "tool_execution_start" && event.toolName === "subagent") {
-			// Set the tracker with the real toolCallId from the start event.
-			// This runs before prepareArguments (which looks up the tracker for telemetry).
-			// If the tracker was already set in prepareArguments with a synthetic id,
-			// update it with the real id.
-			const rawArgs = event.args;
-			if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
-				const existing = this.dispatchArgsTracker.get(rawArgs as object);
-				if (existing === undefined) {
-					this.dispatchArgsTracker.set(rawArgs as object, {
-						toolCallId: event.toolCallId,
-						rejected: false,
-					});
-				} else if (existing.toolCallId.startsWith("synthetic-")) {
-					existing.toolCallId = event.toolCallId;
-				}
-			}
-			return;
-		}
-		if (event.type === "tool_execution_end" && event.toolName === "subagent") {
-			const pending = this.pendingSubagentCalls.get(event.toolCallId);
-			this.pendingSubagentCalls.delete(event.toolCallId);
-			// Success credit uses only the frozen normalized snapshot and the
-			// query captured at beforeToolCall, never the mutable `this.lastQuery`.
-			if (
-				!event.isError &&
-				pending !== undefined &&
-				isGroundedExplorerResult(event.result, pending.invocation, pending.query)
-			) {
-				this.successfulExplorerCalls += 1;
-			}
-			return;
-		}
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
 		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
 		const details = event.result.details as { method?: string } | undefined;
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
-	}
-
-	private nextDispatchSequence(): number {
-		const sid = this.lastSessionId ?? "unknown";
-		const next = (this.dispatchSequenceBySession.get(sid) ?? 0) + 1;
-		this.dispatchSequenceBySession.set(sid, next);
-		return next;
-	}
-
-	private resolveToolCallId(rawArgs: unknown): string | null {
-		if (rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs)) {
-			const tracker = this.dispatchArgsTracker.get(rawArgs as object);
-			if (tracker?.toolCallId.startsWith("synthetic-")) return null;
-			return tracker?.toolCallId ?? null;
-		}
-		return null;
-	}
-
-	private emitDispatchAutofilled(
-		rawArgs: unknown,
-		autofilled: { readonly artifacts: boolean; readonly agentScope: boolean; readonly leafModelFillCount: number },
-	): void {
-		try {
-			this.runLogger.write({
-				event: "dispatch_autofilled",
-				schemaVersion: 1,
-				sessionId: this.lastSessionId ?? "unknown",
-				toolCallId: this.resolveToolCallId(rawArgs),
-				sequence: this.nextDispatchSequence(),
-				timestamp: new Date().toISOString(),
-				dispatchKind: "launch",
-				fields: {
-					artifacts: autofilled.artifacts,
-					agentScope: autofilled.agentScope,
-					leafModelFillCount: autofilled.leafModelFillCount,
-				},
-			});
-		} catch {
-			// Logger failures are nonfatal.
-		}
-	}
-
-	private emitDispatchRejected(error: DispatchRejectionError, rawArgs: unknown): void {
-		try {
-			this.runLogger.write({
-				event: "dispatch_rejected",
-				schemaVersion: 1,
-				sessionId: this.lastSessionId ?? "unknown",
-				toolCallId: this.resolveToolCallId(rawArgs),
-				sequence: this.nextDispatchSequence(),
-				timestamp: new Date().toISOString(),
-				dispatchKind: error.dispatchKind,
-				code: error.code,
-				field: error.field,
-				forceCorrectable: error.forceCorrectable,
-			});
-		} catch {
-			// Logger failures are nonfatal.
-		}
-	}
-
-	private emitDispatchRejectedFromRejection(
-		rejection: { readonly code: string; readonly field: string; readonly dispatchKind: string },
-		rawArgs: unknown,
-	): void {
-		const code = rejection.code as keyof typeof FORCE_CORRECTABLE_MAP;
-		try {
-			this.runLogger.write({
-				event: "dispatch_rejected",
-				schemaVersion: 1,
-				sessionId: this.lastSessionId ?? "unknown",
-				toolCallId: this.resolveToolCallId(rawArgs),
-				sequence: this.nextDispatchSequence(),
-				timestamp: new Date().toISOString(),
-				dispatchKind: rejection.dispatchKind as
-					| "launch"
-					| "admin"
-					| "control"
-					| "mutation"
-					| "schedule"
-					| "hybrid"
-					| "unknown",
-				code: rejection.code,
-				field: rejection.field,
-				forceCorrectable: FORCE_CORRECTABLE_MAP[code] ?? false,
-			});
-		} catch {
-			// Logger failures are nonfatal.
-		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
@@ -853,12 +588,6 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 
 		this.activeRun = true;
-		this.activeJikjiPolicy = undefined;
-		this.jikjiFindCallCount = 0;
-		this.pendingSubagentCalls.clear();
-		this.successfulExplorerCalls = 0;
-		this.dispatchSequenceBySession.delete(sessionId);
-		this.activeExplorerModel = undefined;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
@@ -870,41 +599,24 @@ export class AutoRAGAgent {
 		let searchStarted = false;
 		try {
 			const resolved = this.resolveSessionModel();
-			this.activeExplorerModel = modelReference(resolved.explorerModel);
 			this.runLogger.write({
 				event: "search_started",
 				timestamp: new Date().toISOString(),
 				sessionId,
 				queryLength: trimmedQuery.length,
-				orchestratorModel: resolved.model.id,
-				explorerModel: resolved.explorerModel.id,
+				model: resolved.model.id,
 			});
 			searchStarted = true;
-			session = await this.sessionFactory({
-				cwd: this.workspaceProjectRoot,
-				model: resolved.model,
-				systemPrompt: buildSystemPrompt(
-					this.currentSystemPromptConfig({
-						orchestratorModelId: resolved.model.id,
-						explorerModelId: resolved.explorerModel.id,
-					}),
-				),
-				tools: this.tools.filter((tool) => tool.name !== BASH_TOOL_NAME),
-				...(resolved.apiKey !== undefined ? { apiKey: resolved.apiKey } : {}),
-				...(resolved.providerApiKeys !== undefined ? { providerApiKeys: resolved.providerApiKeys } : {}),
-				explorerModel: resolved.explorerModel,
-			});
+			session = this.createSearchSession(
+				resolved.model,
+				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
+			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
-			await session.prompt(this.buildSearchPrompt(trimmedQuery, options, modelReference(resolved.explorerModel)));
+			await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
 
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
-			}
-			if (this.successfulExplorerCalls === 0) {
-				throw new Error(
-					`AutoRAG requires a successful autorag-explorer subagent call using ${modelReference(resolved.explorerModel)} before final curation`,
-				);
 			}
 			const response = recordStructuredResultsSession(
 				sessionId,
@@ -960,9 +672,6 @@ export class AutoRAGAgent {
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
 			this.activeRun = false;
-			this.activeJikjiPolicy = undefined;
-			this.jikjiFindCallCount = 0;
-			this.activeExplorerModel = undefined;
 		}
 	}
 
@@ -1075,29 +784,13 @@ export class AutoRAGAgent {
 		return diagnostics;
 	}
 
-	buildSearchPrompt(query: string, options: RetrievalOptions, explorerModel?: string): string {
+	buildSearchPrompt(query: string, options: RetrievalOptions): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
-		const resolvedExplorerModel =
-			explorerModel ?? `${this.configuredModel?.provider ?? "provider"}/${EXPLORER_MODEL_ID}`;
-		const allowedRoots =
-			this.allowedExplorerRoots.length > 0
-				? this.allowedExplorerRoots.map((root) => `- ${root}`).join("\n")
-				: "- (none configured)";
-		const dispatchTemplates = buildDispatchTemplatesPromptSection(resolvedExplorerModel);
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
-			`${dispatchTemplates}\n\n` +
-			`You must use the subagent tool before judging or emitting results; there is no single-agent fallback. ` +
-			`For process-bound BM25, MinSync, Jikji, or datasource methods, call the matching AutoRAG tool only to create a bounded seed pack, then give that pack to an explorer for document reading; POSIX/bash discovery runs in the explorer. ` +
-			`Dispatch one or more explorer tasks with agent autorag-explorer and model ${resolvedExplorerModel}. Prefer the canonical AUTORAG_ASSIGNMENT_V1 block shown above; the legacy three-label assignment remains compatible. The structured originalQuery must equal the caller query exactly, query variants must cover the intent, and explorers must retain weakly relevant candidates that may explain conflicts or gaps. ` +
-			`Missing or null top-level artifacts, agentScope, and missing explorer models are safely autofilled for launch dispatches only. Explicit wrong values remain rejected. Set artifacts and agentScope only at the top level; nested task items must omit them. Read-only diagnostic actions are validated separately from explorer launches. ` +
-			`Allowed explorer roots (normalized):\n${allowedRoots}\n` +
-			`Every autorag-explorer task must set an explicit cwd to exactly one allowed root above. If multiple roots are needed, dispatch one task per root and set each task's cwd to that root. ` +
-			`Never use the workspace root or any path outside these roots for discovery unless that workspace root is explicitly listed above. ` +
-			`Each explorer must return source-level evidence, location context, retrievedAt, source temporal metadata (or explicit unknown), and uncertainty. ` +
-			`Explorers must not decide sufficiency, resolve conflicts, assign follow-ups, curate the final answer, or call ${EMIT_AUTORAG_RESULTS_TOOL_NAME}. ` +
-			`The orchestrator alone performs final judgment, freshness checks, follow-up decisions, and final curation.\n\n` +
+			`Use the available retrieval tools to find candidates, then use bash to read and verify the relevant source files directly. ` +
+			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);
@@ -1363,12 +1056,9 @@ export class AutoRAGAgent {
 	/**
 	 * Provider method for the jikji_find tool. Runs JikjiClient.find over all
 	 * configured search roots, normalizes answer paths against planned source
-	 * roots, merges per-root answer packs using least-privilege (restrictive-
-	 * wins) semantics, and sets the run-scoped activeJikjiPolicy. Only mutates
-	 * run state (activeJikjiPolicy / jikjiFindCallCount) when a searchDocuments
-	 * run is active; direct out-of-run calls compute and return the result
-	 * without persisting. When jikji is unavailable or all roots fail, returns
-	 * an unavailable result and leaves the policy undefined (bash is allowed).
+	 * roots, and merges per-root answer packs using least-privilege
+	 * (restrictive-wins) semantics. Jikji policy metadata remains visible to the
+	 * model, but it does not gate the librarian's direct file-reading tools.
 	 */
 	async findJikji(
 		query: string,
@@ -1377,17 +1067,6 @@ export class AutoRAGAgent {
 		if (this.jikjiClient === undefined) {
 			return { answerPack: undefined, policy: undefined, diagnostics: [], roots: [], perRoot: [] };
 		}
-		// Run-scoped state: only persist policy/count when a searchDocuments run
-		// is active. Direct (out-of-run) calls compute and return the result
-		// without mutating run state. The call count is incremented on EVERY
-		// find attempt (success or failure) under an active run, so the
-		// find-first bash gate releases after the first jikji_find — even when
-		// all roots fail (policy stays undefined → bash allowed as fallback).
-		const runScoped = this.activeRun === true;
-		if (runScoped) {
-			this.jikjiFindCallCount += 1;
-		}
-		const effectiveCount = this.jikjiFindCallCount;
 		const sourceRoots = planJikjiSourceRoots(this.searchPaths);
 		const findOpts: JikjiFindOptions = {
 			topK: opts?.topK,
@@ -1418,14 +1097,8 @@ export class AutoRAGAgent {
 			agentShouldNotRerank: entry.pack.agentShouldNotRerank,
 		}));
 
-		const policy = this.mergePolicy(
-			okPacks.map((entry) => entry.pack),
-			effectiveCount,
-		);
+		const policy = this.mergePolicy(okPacks.map((entry) => entry.pack));
 		const merged = this.mergeAnswerPacks(okPacks, sourceRoots, policy);
-		if (runScoped) {
-			this.activeJikjiPolicy = policy;
-		}
 		return { answerPack: merged, policy, diagnostics, roots: this.searchPaths, perRoot };
 	}
 
@@ -1508,9 +1181,9 @@ export class AutoRAGAgent {
 	 * - stopAfterFind: OR
 	 * - agentShouldNotRerank: OR
 	 * - handoffAction: MOST RESTRICTIVE (direct_use < jikji_retry < raw_fallback_after_retry)
-	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry AND callCount>=2
+	 * - rawFallbackAllowed: handoffAction===raw_fallback_after_retry
 	 */
-	private mergePolicy(packs: readonly JikjiAnswerPack[], callCount: number): MergedJikjiPolicy {
+	private mergePolicy(packs: readonly JikjiAnswerPack[]): MergedJikjiPolicy {
 		const HANDOFF_RANK: Record<JikjiHandoffAction, number> = {
 			direct_use: 0,
 			jikji_retry: 1,
@@ -1538,7 +1211,7 @@ export class AutoRAGAgent {
 				allowedFollowups = next;
 			}
 		}
-		const rawFallbackAllowed = handoff === "raw_fallback_after_retry" && callCount >= 2;
+		const rawFallbackAllowed = handoff === "raw_fallback_after_retry";
 		return {
 			handoffAction: handoff,
 			stopAfterFind,
@@ -1546,65 +1219,6 @@ export class AutoRAGAgent {
 			allowedFollowups: allowedFollowups ? [...allowedFollowups] : [],
 			agentShouldNotRerank,
 			rawFallbackAllowed,
-		};
-	}
-
-	/**
-	 * Deny-by-default bash gate. When jikji is configured but no jikji_find has
-	 * run yet this run (count===0), bash is blocked so the agent discovers local
-	 * files via jikji_find first. After a find, the run-scoped activeJikjiPolicy
-	 * applies: when no policy is active, bash behaves exactly as before
-	 * (allowed). Under an active policy, bash is denied unless handoffAction is
-	 * raw_fallback_after_retry AND rawFallbackAllowed is true (after a second
-	 * jikji_find). When jikji is not configured, the find-first branch is
-	 * skipped entirely (bash unchanged).
-	 */
-	private bashGate(): { allowed: boolean; message: string } {
-		// Find-first: when jikji is configured but no jikji_find has run this run,
-		// bash is blocked so the agent uses jikji_find for local discovery first.
-		// After a jikji_find (success or failure), count>0 and the policy checks
-		// below apply. If jikji was unavailable/all-failed, policy stays undefined
-		// and the "no policy → allowed" path lets bash run (fallback). When jikji
-		// is not configured, this branch is skipped (bash unchanged).
-		if (this.jikjiClient !== undefined && this.jikjiFindCallCount === 0) {
-			return {
-				allowed: false,
-				message:
-					"Call jikji_find first for local file discovery (jikji is configured). Use bash only after jikji_find, per its policy.",
-			};
-		}
-		const policy = this.activeJikjiPolicy;
-		if (policy === undefined) return { allowed: true, message: "" };
-		if (policy.forbiddenTools.includes("bash")) {
-			return {
-				allowed: false,
-				message:
-					"Bash is forbidden by the active Jikji policy (forbidden_tools includes bash). Use jikji_find answer_paths to answer directly.",
-			};
-		}
-		if (policy.stopAfterFind) {
-			return {
-				allowed: false,
-				message: "stop_after_find is active — answer from the jikji_find answer_paths. Raw shell is disallowed.",
-			};
-		}
-		if (policy.handoffAction === "direct_use") {
-			return {
-				allowed: false,
-				message: "Jikji policy is direct_use — use the jikji_find answer_paths directly. Raw shell is disallowed.",
-			};
-		}
-		if (policy.handoffAction === "jikji_retry") {
-			return {
-				allowed: false,
-				message: "Jikji policy is jikji_retry — retry jikji_find with a refined query. Raw shell is disallowed.",
-			};
-		}
-		// handoffAction === "raw_fallback_after_retry"
-		if (policy.rawFallbackAllowed) return { allowed: true, message: "" };
-		return {
-			allowed: false,
-			message: "Raw fallback is allowed only after a second jikji_find. Retry jikji_find first before using bash.",
 		};
 	}
 
@@ -1797,589 +1411,4 @@ function pinSearchRoot(searchPath: string): string {
 
 function hasFileSystemErrorCode(error: unknown, code: string): boolean {
 	return error instanceof Error && "code" in error && error.code === code;
-}
-
-function collectSubagentTasks(value: unknown): {
-	readonly tasks: Record<string, unknown>[];
-	readonly malformed: boolean;
-} {
-	const tasks: Record<string, unknown>[] = [];
-	let malformed = false;
-	const collectTasks = (valueToInspect: unknown, isInvocationRoot = false): void => {
-		if (typeof valueToInspect !== "object" || valueToInspect === null || Array.isArray(valueToInspect)) {
-			malformed = true;
-			return;
-		}
-		const record = valueToInspect as Record<string, unknown>;
-		const hasAgent = Object.hasOwn(record, "agent");
-		const nestedValues = ["tasks", "chain", "parallel"]
-			.map((key) => record[key])
-			.filter((nested) => nested !== undefined);
-		if (hasAgent) tasks.push(record);
-		for (const nested of nestedValues) {
-			if (Array.isArray(nested)) {
-				if (nested.length === 0) malformed = true;
-				for (const task of nested) collectTasks(task);
-				continue;
-			}
-			if (typeof nested === "object" && nested !== null) {
-				collectTasks(nested);
-				continue;
-			}
-			malformed = true;
-		}
-		if (!hasAgent && nestedValues.length === 0) {
-			if (isInvocationRoot) malformed = true;
-			else tasks.push(record);
-		}
-	};
-	collectTasks(value, true);
-	return { tasks, malformed };
-}
-
-function isPlaceholderOriginalQuery(value: string): boolean {
-	const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-	if (!isSubstantiveTextValue(normalized)) return true;
-	return (
-		/^(?:<|\[|\{)?(?:the )?(?:(?:original|user|active|current|caller|search) )?query(?: here)?(?:>|\]|\})?$/.test(
-			normalized,
-		) ||
-		/^(?:the )?(?:(?:original|user|active|current|caller|search) )?query(?:\s+(?:goes?\s+(?:here|below)|placeholder|template|value|text|pending|missing|to be (?:provided|filled(?: in)?|inserted|added|included|supplied)))?$/.test(
-			normalized,
-		) ||
-		/^(?:placeholder|tbd|todo|same query|same as above|not provided|omitted)$/.test(normalized)
-	);
-}
-
-function modelReference(model: Model<Api>): string {
-	return `${model.provider}/${model.id}`;
-}
-
-function isGroundedExplorerResult(value: unknown, invocation: unknown, currentQuery: string): boolean {
-	if (!isRecord(value) || !isRecord(value.details) || !Array.isArray(value.details.results)) return false;
-	const childSet = collectSubagentTasks(invocation);
-	if (childSet.malformed || childSet.tasks.length === 0) return false;
-	return value.details.results.some(
-		(child, index) => childSet.tasks[index] !== undefined && isGroundedExplorerChild(child, currentQuery),
-	);
-}
-
-function isGroundedExplorerChild(value: unknown, currentQuery: string): boolean {
-	if (!isRecord(value) || value.agent !== "autorag-explorer" || value.exitCode !== 0) return false;
-	const structuredReport = classifyExplorerReportGrounding(value.structuredOutput, currentQuery);
-	if (structuredReport !== "absent") return structuredReport === "grounded";
-	return typeof value.finalOutput === "string" && hasGroundedFinalOutput(value.finalOutput, currentQuery);
-}
-
-type ExplorerReportGrounding = "absent" | "grounded" | "rejected";
-
-function classifyExplorerReportGrounding(value: unknown, currentQuery: string): ExplorerReportGrounding {
-	const parsedValue = typeof value === "string" ? parseJsonValue(value) : value;
-	if (!isRecord(parsedValue)) return "absent";
-	if (
-		!Object.hasOwn(parsedValue, "assignment") &&
-		!Object.hasOwn(parsedValue, "evidenceCandidates") &&
-		!Object.hasOwn(parsedValue, "candidates")
-	) {
-		return "absent";
-	}
-	const report = safeParseExplorerReport(parsedValue);
-	if (report === undefined) return "rejected";
-	const grounded =
-		report.assignment.originalQuery === currentQuery &&
-		isSubstantiveTextValue(report.assignment.method) &&
-		isSubstantiveTextValue(report.assignment.queryVariant) &&
-		report.evidenceCandidates.some(
-			(candidate) =>
-				isSubstantiveTextValue(candidate.source) &&
-				isSubstantiveTextValue(candidate.method) &&
-				isSubstantiveTextValue(candidate.evidence) &&
-				isTimestampTextValue(candidate.retrievedAt),
-		);
-	return grounded ? "grounded" : "rejected";
-}
-
-function parseJsonValue(value: string): unknown | undefined {
-	try {
-		const parsed: unknown = JSON.parse(value);
-		return parsed;
-	} catch (error) {
-		if (error instanceof SyntaxError) return undefined;
-		throw error;
-	}
-}
-
-function hasGroundedFinalOutput(value: string, currentQuery: string): boolean {
-	const directReport = classifyExplorerReportGrounding(value, currentQuery);
-	if (directReport !== "absent") return directReport === "grounded";
-	let rejectedCanonicalReport = false;
-	let start = value.indexOf("{");
-	while (start >= 0) {
-		const end = findJsonObjectEnd(value, start);
-		if (end === undefined) {
-			start = value.indexOf("{", start + 1);
-			continue;
-		}
-		const embeddedReport = classifyExplorerReportGrounding(value.slice(start, end + 1), currentQuery);
-		if (embeddedReport === "grounded") return true;
-		if (embeddedReport === "rejected") rejectedCanonicalReport = true;
-		start = value.indexOf("{", end + 1);
-	}
-	return !rejectedCanonicalReport && hasGroundedTextHandoff(value, currentQuery);
-}
-
-function findJsonObjectEnd(value: string, start: number): number | undefined {
-	if (value[start] !== "{") return undefined;
-	let depth = 0;
-	let inString = false;
-	let escaped = false;
-	for (let index = start; index < value.length; index += 1) {
-		const character = value[index];
-		if (inString) {
-			if (escaped) {
-				escaped = false;
-			} else if (character === "\\") {
-				escaped = true;
-			} else if (character === '"') {
-				inString = false;
-			}
-			continue;
-		}
-		if (character === '"') {
-			inString = true;
-		} else if (character === "{") {
-			depth += 1;
-		} else if (character === "}") {
-			depth -= 1;
-			if (depth === 0) return index;
-			if (depth < 0) return undefined;
-		}
-	}
-	return undefined;
-}
-
-type GroundingTextField = "source" | "evidence" | "retrievedAt" | "temporalMetadata";
-
-const GROUNDING_TEXT_FIELD_PATTERN =
-	/(?:^|[|\n]|\s)(source\s*temporal\s*metadata|temporal\s*metadata|retrieval\s*timestamp|retrieved\s*at|exact\s+source\s+path|exact\s+supporting\s+excerpt|verbatim\s+evidence|evidence\s*(?:excerpt|items?)?|sources?(?:\s*(?:path|id))?|as\s*of)\s*(?::|=|-|\|)\s*(.*?)(?=\s+(?:source\s*temporal\s*metadata|temporal\s*metadata|retrieval\s*timestamp|retrieved\s*at|exact\s+source\s+path|exact\s+supporting\s+excerpt|verbatim\s+evidence|evidence\s*(?:excerpt|items?)?|sources?(?:\s*(?:path|id))?|as\s*of)\s*(?::|=|-|\|)|\s*[|\n]|$)/gim;
-
-function hasGroundedTextHandoff(value: string, currentQuery: string): boolean {
-	const handoffBody = textBeforeDiagnosticsSection(value);
-	if (handoffBody.trim().length === 0 || hasExplicitNoHandoffContext(handoffBody)) return false;
-	// Real Luna prose handoffs may omit Original query; the invocation-bound currentQuery is the governing binding.
-	if (hasInvalidDeclaredOriginalQuery(handoffBody, currentQuery)) return false;
-	if (
-		hasGroundedMarkdownTable(handoffBody) ||
-		hasGroundedFieldValueTable(handoffBody) ||
-		hasGroundedProseCandidateHandoff(handoffBody)
-	) {
-		return true;
-	}
-
-	let fields = createGroundingTextFields();
-	for (const line of handoffBody.split(/\r?\n/)) {
-		const lineFields = collectGroundingTextFields(line);
-		if (lineFields === undefined) {
-			if (isDocumentedHandoffMetadataLine(line)) continue;
-			fields = createGroundingTextFields();
-			continue;
-		}
-		for (const field of Object.keys(lineFields) as GroundingTextField[]) {
-			fields[field].push(...lineFields[field]);
-		}
-		if (hasSubstantiveGroundingTextFields(fields)) return true;
-	}
-	return false;
-}
-
-function textBeforeDiagnosticsSection(value: string): string {
-	const lines: string[] = [];
-	for (const line of value.split(/\r?\n/)) {
-		if (/^\s*(?:#{1,6}\s*)?diagnostics?\b/i.test(normalizeGroundingTextLine(line))) break;
-		lines.push(line);
-	}
-	return lines.join("\n");
-}
-
-function hasInvalidDeclaredOriginalQuery(value: string, currentQuery: string): boolean {
-	for (const line of value.split(/\r?\n/)) {
-		const declaredQuery = parseDeclaredOriginalQuery(line);
-		if (declaredQuery === undefined) continue;
-		if (isPlaceholderOriginalQuery(declaredQuery) || declaredQuery !== currentQuery) return true;
-	}
-	return false;
-}
-
-function parseDeclaredOriginalQuery(line: string): string | undefined {
-	const normalizedLine = normalizeGroundingTextLine(line);
-	const markdownRow =
-		/^\s*\|\s*(?:\*\*|__)?original[\s_]query(?:\*\*|__)?\s*:?\s*(?:\*\*|__)?\s*\|\s*(.*?)\s*\|?\s*$/i.exec(
-			normalizedLine,
-		);
-	if (markdownRow !== null) return unwrapDeclaredQuery(markdownRow[1] ?? "");
-	const proseDeclaration = /^\s*(?:\*\*|__)?original[\s_]query(?:\*\*|__)?\s*(?::|=|-|\|)\s*(.*?)\s*$/i.exec(
-		normalizedLine,
-	);
-	if (proseDeclaration === null) return undefined;
-	return unwrapDeclaredQuery(proseDeclaration[1] ?? "");
-}
-
-function unwrapDeclaredQuery(value: string): string {
-	const trimmed = value.trim();
-	const unquoted = trimmed
-		.replace(/^`+|`+$/g, "")
-		.replace(/^"+|"+$/g, "")
-		.replace(/^'+|'+$/g, "")
-		.trim();
-	return unquoted;
-}
-
-function isDocumentedHandoffMetadataLine(value: string): boolean {
-	return /^\s*(?:original[\s_]query|(?:selected[\s_]+)?(?:retrieval[\s_]+)?method|query[\s_]+variants?(?:[\s_]+used)?|relevance|location[\s_]context|locator|temporal[\s_]basis|uncertainty|discovery[\s_]result)\s*(?::|=|-|\|)\s*\S.*$/i.test(
-		normalizeGroundingTextLine(value),
-	);
-}
-
-function createGroundingTextFields(): Record<GroundingTextField, string[]> {
-	return { source: [], evidence: [], retrievedAt: [], temporalMetadata: [] };
-}
-
-function collectGroundingTextFields(value: string): Record<GroundingTextField, string[]> | undefined {
-	const fields = createGroundingTextFields();
-	let matched = false;
-	for (const match of normalizeGroundingTextLine(value).matchAll(GROUNDING_TEXT_FIELD_PATTERN)) {
-		const label = match[1];
-		const fieldValue = match[2];
-		if (typeof label !== "string" || typeof fieldValue !== "string") continue;
-		const field = classifyGroundingTextLabel(label);
-		if (field === undefined) continue;
-		fields[field].push(fieldValue);
-		matched = true;
-	}
-	return matched ? fields : undefined;
-}
-
-function hasSubstantiveGroundingTextFields(fields: Record<GroundingTextField, string[]>): boolean {
-	return (
-		fields.source.some((fieldValue) => isSubstantiveTextValue(fieldValue)) &&
-		fields.evidence.some((fieldValue) => isSubstantiveTextValue(fieldValue)) &&
-		fields.retrievedAt.some(isTimestampTextValue) &&
-		fields.temporalMetadata.some((fieldValue) => isSubstantiveTextValue(fieldValue, true))
-	);
-}
-
-function hasExplicitNoHandoffContext(value: string): boolean {
-	const normalizedValue = value.split(/\r?\n/).map(normalizeGroundingTextLine).join("\n");
-	return (
-		/^\s*diagnostics?\b/im.test(normalizedValue) ||
-		/\b(?:no|without)\s+(?:(?:an?|the)\s+)?(?:(?:explorer|source|evidence)\s+)?handoff\b/i.test(normalizedValue) ||
-		/\bhandoff\s+(?:was\s+)?(?:not|never)\s+(?:returned|provided)\b/i.test(normalizedValue)
-	);
-}
-
-function hasGroundedMarkdownTable(value: string): boolean {
-	const lines = value.split(/\r?\n/);
-	for (let headerIndex = 0; headerIndex < lines.length; headerIndex += 1) {
-		const headers = splitMarkdownRow(lines[headerIndex]);
-		if (headers.length === 0) continue;
-		const indexes = {
-			source: headers.findIndex((header) => classifyGroundingTextLabel(header) === "source"),
-			evidence: headers.findIndex((header) => classifyGroundingTextLabel(header) === "evidence"),
-			retrievedAt: headers.findIndex((header) => classifyGroundingTextLabel(header) === "retrievedAt"),
-			temporalMetadata: headers.findIndex((header) => classifyGroundingTextLabel(header) === "temporalMetadata"),
-		};
-		if (Object.values(indexes).some((index) => index < 0)) continue;
-		const requiredColumn = Math.max(...Object.values(indexes));
-		const delimiter = splitMarkdownRow(lines[headerIndex + 1] ?? "");
-		if (delimiter.length !== headers.length || !delimiter.every(isMarkdownSeparatorCell)) continue;
-		const cells = splitMarkdownRow(lines[headerIndex + 2] ?? "");
-		if (cells.length !== headers.length || cells.length <= requiredColumn) continue;
-		if (
-			isSubstantiveTextValue(cells[indexes.source], false) &&
-			isSubstantiveTextValue(cells[indexes.evidence], false) &&
-			isTimestampTextValue(cells[indexes.retrievedAt]) &&
-			isSubstantiveTextValue(cells[indexes.temporalMetadata], true)
-		) {
-			return true;
-		}
-	}
-	return false;
-}
-function hasGroundedFieldValueTable(value: string): boolean {
-	const lines = value.split(/\r?\n/);
-	// Document-level RetrievedAt / temporal lines can complete Field/Value tables that omit them.
-	const preamble = createGroundingTextFields();
-	for (const line of lines) {
-		const lineFields = collectGroundingTextFields(line);
-		if (lineFields === undefined) continue;
-		for (const field of Object.keys(lineFields) as GroundingTextField[]) {
-			preamble[field].push(...lineFields[field]);
-		}
-	}
-
-	let fields = createGroundingTextFields();
-	let inFieldValueTable = false;
-	for (let index = 0; index < lines.length; index += 1) {
-		const headers = splitMarkdownRow(lines[index] ?? "").map((header) =>
-			header
-				.replace(/\*\*|__/g, "")
-				.toLowerCase()
-				.trim(),
-		);
-		if (headers.length >= 2 && headers[0] === "field" && headers[1] === "value") {
-			const delimiter = splitMarkdownRow(lines[index + 1] ?? "");
-			if (delimiter.length >= 2 && delimiter.every(isMarkdownSeparatorCell)) {
-				inFieldValueTable = true;
-				fields = createGroundingTextFields();
-				for (const field of Object.keys(preamble) as GroundingTextField[]) {
-					fields[field].push(...preamble[field]);
-				}
-				index += 1; // skip delimiter row
-				continue;
-			}
-		}
-		if (!inFieldValueTable) continue;
-		const cells = splitMarkdownRow(lines[index] ?? "").map((cell) => cell.replace(/\*\*|__/g, "").trim());
-		if (cells.length < 2) {
-			if (hasSubstantiveGroundingTextFields(fields)) return true;
-			inFieldValueTable = false;
-			continue;
-		}
-		const field = classifyGroundingTextLabel(cells[0] ?? "");
-		if (field === undefined) continue;
-		fields[field].push(cells.slice(1).join(" | "));
-		if (hasSubstantiveGroundingTextFields(fields)) return true;
-	}
-	return hasSubstantiveGroundingTextFields(fields);
-}
-function hasGroundedProseCandidateHandoff(value: string): boolean {
-	// Real explorers often emit bullet/prose candidate blocks rather than a single
-	// field-complete line or wide markdown table. Accept a handoff when it has a
-	// real source path, temporal status, and non-trivial evidence. retrievedAt is
-	// preferred but document-internal dates in temporal metadata are accepted when
-	// explorers omit an explicit retrieval timestamp.
-	const body = value;
-	const sourceMatch =
-		/(?:^|\n)\s*(?:[-*+]\s+)?(?:\*\*|__|`)?source(?:\s*path)?(?:\*\*|__|`)?\s*(?::|=|-|\|)\s*`?(\/[^`\n|]+)`?/im.exec(
-			body,
-		) ??
-		/(?:^|\n)\s*(?:[-*+]\s+)?(?:\*\*|__)?(?:file|path|document)(?:\*\*|__)?\s*(?::|=|-|\|)\s*`?(\/[^`\n|]+)`?/im.exec(
-			body,
-		) ??
-		/`(\/(?:Users|home|docs)\/[^`\n]+)`/.exec(body) ??
-		/(?:^|\n)\s*[-*+]\s+(\/(?:Users|home|docs)\/[^\n]+)/.exec(body);
-	const source = sourceMatch?.[1]?.trim();
-	if (!isSubstantiveTextValue(source, false) || !source?.startsWith("/")) return false;
-
-	const retrievedMatch =
-		/(?:retrieved\s*at|retrievedat|retrieval\s*timestamp)(?:\s*\([^)]*\))?\s*(?::|=|-|\|)\s*`?\**([0-9]{4}-[0-9]{2}-[0-9]{2}[^`\n|]*)/im.exec(
-			body,
-		);
-	const temporalDateMatch =
-		/(?:source\s*temporal(?:\s*metadata)?|temporal\s*metadata|temporal\s*basis|as\s*of|사업기간|참여기간)\s*(?::|=|-|\|)\s*[^\n]*?(\d{4}[./-]\d{2}(?:[./-]\d{2})?)/im.exec(
-			body,
-		);
-	const retrievedCandidate =
-		retrievedMatch?.[1] ??
-		(temporalDateMatch?.[1] !== undefined
-			? temporalDateMatch[1].replace(/\./g, "-").replace(/(\d{4}-\d{2})$/, "$1-01")
-			: undefined);
-	if (!isTimestampTextValue(retrievedCandidate)) return false;
-
-	const temporalMatch =
-		/(?:source\s*temporal(?:\s*metadata)?|temporal\s*metadata|temporal\s*basis|as\s*of|사업기간|참여기간)\s*(?::|=|-|\|)\s*(.+)/im.exec(
-			body,
-		);
-	const temporal = temporalMatch?.[1]?.trim() ?? (/\bunknown\b/i.test(body) ? "unknown" : undefined);
-	if (!isSubstantiveTextValue(temporal, true)) return false;
-
-	const evidenceMatch =
-		/(?:evidence(?:\s*\/\s*location)?|evidence\s*excerpt|verbatim\s*evidence|excerpt)\s*(?::|=|-|\|)\s*(.+)/im.exec(
-			body,
-		);
-	const evidence = evidenceMatch?.[1]?.trim() ?? "";
-	const evidenceBlock =
-		evidence.length > 0
-			? evidence
-			: (/(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{20,800})/im.exec(body)?.[1]?.trim() ??
-				"");
-	if (isSubstantiveTextValue(evidenceBlock, false)) return true;
-	const multiLineEvidence =
-		/(?:evidence(?:\s*\/\s*location)?|excerpt)\s*(?::|=|-|\|)\s*\n([\s\S]{40,1200})/im.exec(body)?.[1]?.trim() ?? "";
-	if (isSubstantiveTextValue(multiLineEvidence, false)) return true;
-	const nearSource =
-		body.includes(source) &&
-		/(?:pdf|docx|pptx|xlsx|html|md|hwp|filename|grep|read|invoice|receipt|청구서|영수증|채용|참여|인건비)/i.test(
-			body,
-		) &&
-		body.length >= 200 &&
-		!GROUNDING_TEXT_PLACEHOLDER_PATTERN.test(evidenceBlock.toLowerCase().replace(/\s+/g, " "));
-	return nearSource;
-}
-
-function splitMarkdownRow(value: string): string[] {
-	if (!value.includes("|")) return [];
-	const row = value.trim().replace(/^\|/, "").replace(/\|$/, "");
-	return row.split("|").map((cell) => cell.trim());
-}
-
-function isMarkdownSeparatorCell(value: string): boolean {
-	return /^:?-{3,}:?$/.test(value.trim());
-}
-
-function classifyGroundingTextLabel(label: string): GroundingTextField | undefined {
-	const normalized = label.toLowerCase().replace(/[_/]+/g, " ").replace(/\s+/g, " ").trim();
-	if (
-		[
-			"source",
-			"sources",
-			"source path",
-			"source id",
-			"sourcepath",
-			"sourceid",
-			"exact source path",
-			"path",
-			"file",
-			"document",
-		].includes(normalized)
-	) {
-		return "source";
-	}
-	if (
-		[
-			"evidence",
-			"evidence excerpt",
-			"evidence item",
-			"evidence items",
-			"evidence / location",
-			"evidence location",
-			"exact supporting excerpt",
-			"verbatim evidence",
-		].includes(normalized)
-	) {
-		return "evidence";
-	}
-	if (["retrieved at", "retrievedat", "retrieval timestamp", "retrievaltimestamp"].includes(normalized)) {
-		return "retrievedAt";
-	}
-	if (
-		[
-			"source temporal metadata",
-			"source temporalmetadata",
-			"sourcetemporalmetadata",
-			"source temporal",
-			"temporal metadata",
-			"temporalmetadata",
-			"temporal",
-			"as of",
-			"asof",
-		].includes(normalized)
-	) {
-		return "temporalMetadata";
-	}
-	return undefined;
-}
-
-function normalizeGroundingTextLine(value: string): string {
-	return value
-		.replace(/^\s*[-+*]\s+/, "")
-		.replace(/^(\s*(?:#{1,6}\s+)?)(?:\*\*|__)([^*_|\n]+?)(?:\*\*|__)\s*:\s*/, "$1$2: ")
-		.replace(/^(\s*(?:#{1,6}\s+)?)(?:\*\*|__)([^*_|\n]+?)\s*:\s*(?:\*\*|__)\s*/, "$1$2: ")
-		.replace(/^(\s*(?:#{1,6}\s+)?)(?:\*\*|__)([^*_|\n]+?)(?:\*\*|__)\s*$/, "$1$2")
-		.trim();
-}
-
-function cleanTextValue(value: string): string {
-	return value
-		.trim()
-		.replace(/^[|`*_"' ]+|[|`*_"'.,; ]+$/g, "")
-		.trim();
-}
-
-function isSubstantiveTextValue(value: string | undefined, allowUnknown = false): boolean {
-	if (value === undefined) return false;
-	const cleaned = cleanTextValue(value);
-	if (cleaned.length === 0) return false;
-	if (cleaned.toLowerCase() === "unknown") return allowUnknown;
-	if (/^(?:none|n\/a|na|null|undefined|true|false|-|—|\?)$/i.test(cleaned)) return false;
-	const normalized = cleaned.toLowerCase().replace(/\s+/g, " ");
-	if (
-		(/^(?:<[^>]+>|\[[^\]]+\]|\{[^}]+\})$/.test(normalized) &&
-			/\b(?:source|evidence|excerpt|path|id)\b/.test(normalized)) ||
-		/^(?:the )?(?:source|evidence|exact supporting excerpt)(?:\s+(?:path|id|excerpt|here|placeholder|goes here|goes below))?$/.test(
-			normalized,
-		) ||
-		/^(?:(?:source|evidence)(?:\s+(?:path|id|excerpt))?|(?:path|excerpt)|exact supporting excerpt|verbatim evidence)\s+(?:here|below)$/i.test(
-			normalized,
-		) ||
-		GROUNDING_TEXT_PLACEHOLDER_PATTERN.test(normalized)
-	) {
-		return false;
-	}
-	return !/^-?\d+(?:\.\d+)?$/.test(cleaned);
-}
-
-const GROUNDING_TEXT_PLACEHOLDER_SUBJECT =
-	"(?:the )?(?:source(?: (?:path|id))?|evidence(?: (?:excerpt|item(?:s)?))?|exact supporting excerpt|verbatim evidence|excerpt)";
-const GROUNDING_TEXT_PLACEHOLDER_LOCATION =
-	"(?:here|below|above|provided|filled(?: in)?|inserted|added|included|supplied|quoted|located)(?: (?:here|below|above))?";
-const GROUNDING_TEXT_PLACEHOLDER_PATTERN = new RegExp(
-	`^(?:${GROUNDING_TEXT_PLACEHOLDER_SUBJECT}\\s+(?:(?:goes?|belongs|is|will be|should be|must be|needs to be|to be)\\s+${GROUNDING_TEXT_PLACEHOLDER_LOCATION}|(?:should|must|needs to) go\\s+${GROUNDING_TEXT_PLACEHOLDER_LOCATION}|(?:placeholder|template|value|text|pending|missing)|to\\s+(?:provide|fill(?: in)?|insert|add|include|supply|quote))|(?:provide|insert|add|include|quote|supply)\\s+${GROUNDING_TEXT_PLACEHOLDER_SUBJECT}(?:\\s+${GROUNDING_TEXT_PLACEHOLDER_LOCATION})?)$`,
-	"i",
-);
-
-const TIMESTAMP_TEXT_PATTERN =
-	/^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)(?:\s*;\s*.+)?$/;
-
-function isTimestampTextValue(value: string | undefined): boolean {
-	if (value === undefined) return false;
-	const cleaned = cleanTextValue(value);
-	// Explorers often append parenthetical notes: `2026-07-16 (session clock; ...)`.
-	const leading =
-		/^(\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)/.exec(cleaned)?.[1] ??
-		undefined;
-	const match = TIMESTAMP_TEXT_PATTERN.exec(cleaned);
-	const timestamp = match?.[1] ?? leading;
-	if (timestamp === undefined) return false;
-	const dateMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(timestamp);
-	if (dateMatch === null) return false;
-	const year = Number(dateMatch[1]);
-	const month = Number(dateMatch[2]);
-	const day = Number(dateMatch[3]);
-	const calendarDate = new Date(Date.UTC(year, month - 1, day));
-	if (
-		calendarDate.getUTCFullYear() !== year ||
-		calendarDate.getUTCMonth() !== month - 1 ||
-		calendarDate.getUTCDate() !== day
-	) {
-		return false;
-	}
-	const timeMatch = /[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?/.exec(timestamp);
-	if (timeMatch !== null) {
-		const hours = Number(timeMatch[1]);
-		const minutes = Number(timeMatch[2]);
-		const seconds = timeMatch[3] === undefined ? 0 : Number(timeMatch[3]);
-		if (hours > 23 || minutes > 59 || seconds > 59) return false;
-	}
-	const timezoneMatch = /([+-])(\d{2}):?(\d{2})$/.exec(timestamp);
-	if (timezoneMatch !== null && (Number(timezoneMatch[2]) > 23 || Number(timezoneMatch[3]) > 59)) return false;
-	return Number.isFinite(Date.parse(timestamp));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function deepFreeze<T>(value: T): T {
-	if (value !== null && typeof value === "object") {
-		if (Array.isArray(value)) {
-			for (const item of value) deepFreeze(item);
-		} else {
-			for (const key of Object.keys(value)) {
-				deepFreeze((value as Record<string, unknown>)[key]);
-			}
-		}
-		Object.freeze(value);
-	}
-	return value;
 }

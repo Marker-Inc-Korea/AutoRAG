@@ -7,8 +7,7 @@ export type AutoRAGRunEvent =
 			timestamp: string;
 			sessionId: string;
 			queryLength: number;
-			orchestratorModel: string;
-			explorerModel: string;
+			model: string;
 	  }
 	| {
 			event: "search_completed";
@@ -28,32 +27,6 @@ export type AutoRAGRunEvent =
 			sessionId: string;
 			failureCount: number;
 			errorTypes: string[];
-	  }
-	| {
-			event: "dispatch_rejected";
-			schemaVersion: 1;
-			sessionId: string;
-			toolCallId: string | null;
-			sequence: number;
-			timestamp: string;
-			dispatchKind: "launch" | "admin" | "control" | "mutation" | "schedule" | "hybrid" | "unknown";
-			code: string;
-			field: string;
-			forceCorrectable: boolean;
-	  }
-	| {
-			event: "dispatch_autofilled";
-			schemaVersion: 1;
-			sessionId: string;
-			toolCallId: string | null;
-			sequence: number;
-			timestamp: string;
-			dispatchKind: "launch";
-			fields: {
-				artifacts: boolean;
-				agentScope: boolean;
-				leafModelFillCount: number;
-			};
 	  };
 
 export class AutoRAGRunLogger {

@@ -25,7 +25,7 @@ export function portableSpawnCommand(
 		return { command: process.execPath, args: [command, ...args] };
 	}
 	if (extension.length === 0 && (hasShebang(command, "/bin/sh") || hasShebang(command, "/usr/bin/env sh"))) {
-		return { command: "bash.exe", args: [command, ...args] };
+		return { command: "bash", args: [command, ...args] };
 	}
 	return { command, args };
 }

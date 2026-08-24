@@ -99,7 +99,7 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 		expect(names).toContain("search_custom");
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("search_custom");
-		expect(prompt).toContain("caller-provided retrieval tool");
+		expect(prompt).toContain("caller-provided tool");
 	});
 
 	it("a caller-provided reserved search tool (search_all_documents) is dropped", () => {
