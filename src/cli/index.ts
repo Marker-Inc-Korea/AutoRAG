@@ -35,7 +35,18 @@ const VALUE_FLAGS = new Set([
 	"timeout-ms",
 ]);
 
-const COMMANDS = ["init", "refresh", "status", "search", "feedback", "memory", "index", "watch", "health"] as const;
+const COMMANDS = [
+	"init",
+	"refresh",
+	"status",
+	"search",
+	"feedback",
+	"memory",
+	"index",
+	"watch",
+	"health",
+	"duplicates",
+] as const;
 type CommandName = (typeof COMMANDS)[number];
 
 interface ParsedArgs {
@@ -63,6 +74,7 @@ Commands:
   index reset          Remove parsed/bm25/minsync indexes under .autorag (--method)
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
   health               Check model/provider auth and subagent preflight (no index check)
+  duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -172,6 +184,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "health": {
 			const { runHealth } = await import("./commands/health.ts");
 			return runHealth(ctx);
+		}
+		case "duplicates": {
+			const { runDuplicates } = await import("./commands/duplicates.ts");
+			return runDuplicates(ctx);
 		}
 	}
 }

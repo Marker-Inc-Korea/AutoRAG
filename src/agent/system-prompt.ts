@@ -52,6 +52,13 @@ function seedRetrievalGuidance(config: SystemPromptConfig): string {
 	return lines.join("\n");
 }
 
+function corpusManagementGuidance(config: SystemPromptConfig): string {
+	if (!toolAvailable(config, "scan_duplicate_documents")) return "";
+	return `## Local Corpus Management
+
+\`scan_duplicate_documents\` is a parent-owned, read-only dupey scan over configured local roots. Use it when the user asks about duplicate files, revisions, cleanup, or index-space optimization. Exact means canonical extracted text matches; near and contains require review. Never claim that this tool moved or deleted files.`;
+}
+
 export function buildSystemPrompt(config: SystemPromptConfig): string {
 	const orchestratorModelId = config.orchestratorModelId ?? "gpt-5.6-sol";
 	const explorerModelId = config.explorerModelId ?? "gpt-5.6-luna";
@@ -107,6 +114,7 @@ Use parallel explorer fan-out for broad or multi-part questions when it improves
 The parent orchestrator owns \`check_memory\`, Jikji, datasource, and \`search_*\` tools. BM25, MinSync, Jikji, datasource, and \`search_*\` tools are parent-owned process-bound seed tools: invoke them only in the parent process to produce bounded seed packs, then delegate the seed paths or results to an explorer for document reading. Explorers do not invoke these tools, and the parent must not read and answer from a seed pack without explorer evidence.
 
 ${seedRetrievalGuidance(config)}`;
+	const corpusManagementSection = corpusManagementGuidance(config);
 
 	const explorerToolsSection = `## Explorer Tools
 
@@ -244,6 +252,7 @@ ${toolRows}`;
 		dispatchTemplatesSection,
 		workflowSection,
 		retrievalSection,
+		corpusManagementSection,
 		explorerToolsSection,
 		storesSection,
 		strategySection,

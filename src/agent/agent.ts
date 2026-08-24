@@ -5,6 +5,12 @@ import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill }
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import {
+	type DupeyCliOptions,
+	DupeyCliError,
+	scanWithDupey,
+	selectExactDuplicateExclusions,
+} from "../dupey/index.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
@@ -67,6 +73,11 @@ import { loadLocalAutoRAGModels } from "../subagents/local-models.ts";
 import { EXPLORER_MODEL_ID } from "../subagents/model-policy.ts";
 import { createMandatorySubagentSession, type MandatorySubagentSessionOptions } from "../subagents/runtime.ts";
 import { BASH_TOOL_NAME, createBashTool } from "./bash-tool.ts";
+import {
+	createScanDuplicateDocumentsTool,
+	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+	type ScanDuplicateDocumentsDetails,
+} from "./dupey-tool.ts";
 import {
 	createLoadDatasourceSkillTool,
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
@@ -207,6 +218,8 @@ export interface AutoRAGAgentOptions {
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
+	dupey?: DupeyCliOptions | false;
+	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	sessionFactory?: AutoRAGSessionFactory;
@@ -286,6 +299,8 @@ export class AutoRAGAgent {
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
+	private readonly dupeyOptions: DupeyCliOptions | false;
+	private readonly excludeExactDuplicates: boolean;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	/** Run-scoped merged Jikji policy, set during searchDocuments; cleared after. */
 	private activeJikjiPolicy: MergedJikjiPolicy | undefined;
@@ -321,6 +336,8 @@ export class AutoRAGAgent {
 		);
 		this.allowedExplorerRoots = [...new Set(this.searchPaths)].sort();
 		this.parserOptions = options.parserOptions;
+		this.dupeyOptions = options.dupey ?? {};
+		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
@@ -358,6 +375,8 @@ export class AutoRAGAgent {
 		const searchAllTool = createSearchAllDocumentsTool(this);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
+		const scanDuplicateDocumentsTool =
+			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
 		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot, gate: () => this.bashGate() });
 
@@ -375,6 +394,7 @@ export class AutoRAGAgent {
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
+			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -398,6 +418,7 @@ export class AutoRAGAgent {
 			searchDatasourceTool,
 			loadDatasourceSkillTool,
 			emitResultsTool,
+			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 		];
 		const seenToolNames = new Set<string>();
@@ -446,6 +467,25 @@ export class AutoRAGAgent {
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
 		}
+	}
+
+	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {
+		if (this.dupeyOptions === false) {
+			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
+		}
+		const scans = await Promise.all(
+			this.searchPaths.map((searchPath) => scanWithDupey(searchPath, this.dupeyOptions || {})),
+		);
+		const familyCount = scans.reduce((count, scan) => count + scan.families.length, 0);
+		const exactDuplicateCount = scans.reduce((count, scan) => {
+			const hashes = new Map<string, number>();
+			for (const file of scan.files) {
+				if (typeof file.content_hash !== "string") continue;
+				hashes.set(file.content_hash, (hashes.get(file.content_hash) ?? 0) + 1);
+			}
+			return count + [...hashes.values()].reduce((sum, size) => sum + Math.max(0, size - 1), 0);
+		}, 0);
+		return { scans, familyCount, exactDuplicateCount };
 	}
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
@@ -1292,11 +1332,13 @@ export class AutoRAGAgent {
 	}
 
 	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
+		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			force,
 			parserOptions: this.parserOptions,
+			excludeSourcePaths: duplicateFilter.excluded,
 		});
 	}
 
@@ -1307,10 +1349,12 @@ export class AutoRAGAgent {
 	 * so the refresh result and status remain consistent.
 	 */
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
+		const duplicateFilter = await this.exactDuplicateExclusions();
 		const diagnostics = await detectMirrorStaleness({
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,
+			excludeSourcePaths: duplicateFilter.excluded,
 		});
 		return {
 			scanned: 0,
@@ -1320,6 +1364,22 @@ export class AutoRAGAgent {
 			indexPath: join(this.workspaceProjectRoot, PARSED_MIRROR_SUBDIR),
 			diagnostics,
 		};
+	}
+
+	private async exactDuplicateExclusions(): Promise<{ readonly excluded: ReadonlySet<string> }> {
+		if (!this.excludeExactDuplicates || this.dupeyOptions === false) return { excluded: new Set() };
+		const excluded = new Set<string>();
+		for (const searchPath of this.searchPaths) {
+			try {
+				const scan = await scanWithDupey(searchPath, this.dupeyOptions || {});
+				const selected = await selectExactDuplicateExclusions(searchPath, scan);
+				for (const path of selected.excluded) excluded.add(path);
+			} catch (error) {
+				if (!(error instanceof DupeyCliError)) throw error;
+				// Optional optimizer: missing/broken dupey must not make the corpus unavailable.
+			}
+		}
+		return { excluded };
 	}
 
 	async syncBM25(): Promise<BM25SyncResult | undefined> {

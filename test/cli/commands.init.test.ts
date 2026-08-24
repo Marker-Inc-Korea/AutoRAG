@@ -64,6 +64,7 @@ describe("runInit", () => {
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.agents).toBeUndefined();
+		expect(config.excludeExactDuplicates).toBe(true);
 	});
 
 	it("preserves migrated legacy roles while applying explicit role overrides", async () => {

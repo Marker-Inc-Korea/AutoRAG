@@ -15,6 +15,12 @@ export type {
 	AutoRAGMappingEntry,
 	AutoRAGResultsDetails,
 } from "./emit-results-tool.ts";
+export {
+	createScanDuplicateDocumentsTool,
+	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+	type ScanDuplicateDocumentsDetails,
+	type ScanDuplicateDocumentsProvider,
+} from "./dupey-tool.ts";
 export { createEmitResultsTool, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "./emit-results-tool.ts";
 export {
 	createJikjiFindTool,

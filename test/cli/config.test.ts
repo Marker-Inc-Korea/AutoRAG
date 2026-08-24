@@ -571,6 +571,14 @@ describe("resolveConfig defaults", () => {
 		expect(config.workspacePath).toBe(root);
 		expect(config.memoryPath).toBe(join(process.env.HOME as string, ".autorag", "memory.json"));
 		expect(config.model).toBeUndefined();
+		expect(config.excludeExactDuplicates).toBe(true);
+	});
+
+	it("allows exact duplicate exclusion to be disabled in config", () => {
+		writeConfigFile(root, { excludeExactDuplicates: false });
+		const config = resolveConfig({ flags: {}, env: testHomeEnv(), cwd: root });
+		expect(config.excludeExactDuplicates).toBe(false);
+		expect(buildAgentOptions(config).excludeExactDuplicates).toBe(false);
 	});
 
 	it("does not require a config file to exist at cwd", () => {
