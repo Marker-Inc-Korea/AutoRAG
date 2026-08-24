@@ -33,6 +33,7 @@ export interface DiscrawlSkillClient extends DiscrawlSearchClient {
 
 export interface DiscrawlSkillOptions {
 	readonly client: DiscrawlSkillClient;
+	readonly datasourceId?: string;
 	readonly instanceId?: string;
 	readonly instances?: readonly string[];
 	readonly pollingIntervalMs?: number;
@@ -42,6 +43,8 @@ export interface DiscrawlSkillOptions {
 	readonly defaultMode?: DiscrawlSearchMode;
 	/** Max messages embedded per index pass. Undefined drains the whole backlog. */
 	readonly embedLimit?: number;
+	readonly channelIds?: readonly string[];
+	readonly channelNames?: readonly string[];
 }
 
 const DISCORD_DATASOURCE_ID = "discord";

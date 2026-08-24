@@ -10,7 +10,11 @@
 
 AutoRAG searches your PDFs, wikis, notes, research papers, and knowledge bases — then curates the results into clean, numbered knowledge units. No raw grep dumps. Just answers.
 
-AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. Searches use a two-tier workflow: a parent orchestrator delegates exploration to explorer agents. The roles and providers are independently configured from the models available in the user's authenticated runtime; AutoRAG does not ship a private provider default.
+AutoRAG is a customized [Pi](https://github.com/earendil-works/pi-mono) agent — the Pi agent loop configured into a librarian. The AutoRAG librarian retrieves candidates, reads source files directly, judges the evidence, and curates the structured answer. Its model and provider come from the user's authenticated runtime; AutoRAG does not ship a private provider default.
+
+AutoRAG itself is the specialized search agent, not a coordinator for other
+model roles. You configure one model, and that model owns the complete
+retrieval, reading, judgment, and curation loop.
 
 ## Why AutoRAG
 
@@ -61,31 +65,19 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The parent orchestrator owns process-bound retrieval tools and gives bounded seed packs to explorers; explorers use read-only `read`/`grep`/`find`/`ls` tools to inspect the underlying documents. The `ResultMerger` handles cross-method score normalization and deduplication — you get one unified result set regardless of how many methods contributed.
+AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication.
 
 BM25 and MinSync are **enabled by default** — no explicit configuration is needed for standard lexical + semantic retrieval. Both can be disabled by setting `"bm25": false` or `"minSync": false` in the config file. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
 
 ### Real directory access
 
-AutoRAG reads configured source directories through delegated explorer tasks. Each explorer is assigned exactly one normalized configured search root as its `cwd`; the top-level `subagent` invocation sets `agentScope: "user"` and `artifacts: false` exactly once for single, `tasks`, `chain`, or `parallel` dispatch, and nested explorer task items omit both fields. Project-local `.pi-subagents` debug artifacts are disabled. Explorers use read-only `read`/`grep`/`find`/`ls`; the parent orchestrator owns retrieval seed tools and must delegate document reading before curating. Curated answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
-
-Each explorer `task` contains an Assignment V1 block — a sentinel-wrapped JSON body with `originalQuery` (the caller query verbatim), `method` (the selected retrieval path), and `queryVariants` (a nonempty array), followed by canonical role lines requiring `retrievedAt` and temporal metadata:
-
-```text
-<<<AUTORAG_ASSIGNMENT_V1>>>
-{"originalQuery":"<caller query verbatim>","method":"<selected retrieval method>","queryVariants":["<variant 1>","<variant 2>"]}
-<<<END_AUTORAG_ASSIGNMENT_V1>>>
-Required handoff: include retrievedAt.
-Required handoff: include temporal metadata.
-```
-
-A legacy labeled format (`Original query:`, `Selected retrieval method:`, `Query variants:`) is accepted for compatibility. Missing or null top-level `artifacts`, `agentScope`, and leaf `model` fields are safely autofilled before validation; explicit wrong values (`artifacts: true`, `agentScope: "project"`, a non-configured model) remain rejected. There is no single-agent fallback. See [docs/subagent-orchestration.md](docs/subagent-orchestration.md) for the full dispatch contract, templates, anti-examples, and stable coded dispatch errors.
+AutoRAG reads configured source directories directly through its built-in `bash` tool. Retrieval tools can supply candidate paths, but the same agent opens the source material before curating. Answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
 
 ### Optional Jikji discovery and indexing
 
 AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
 
-When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via a policy-aware `jikji_find` tool as the first local-discovery action. The tool parses and validates the upstream answer-pack and honors its `handoff_action` (`direct_use` / `jikji_retry` / `raw_fallback_after_retry`), `tool_call_policy` (`stop_after_find`, `forbidden_tools`, `allowed_followups`), and `agent_should_not_rerank`. Explorer `read`/`grep`/`find`/`ls` discovery is the fallback only when the answer-pack permits raw fallback (`raw_fallback_after_retry`, after the required retry) or when Jikji is unavailable/unconfigured. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
+When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
 
 Programmatic use:
 
@@ -151,6 +143,14 @@ The upstream Rust `PrepareArgs` defines reference defaults that AutoRAG does not
 
 Datasource skills let AutoRAG search external, server-configured data sources through the same retrieval pipeline as local documents. A skill describes what it indexes, how it should be refreshed, what source instances exist, and which permission tags/scopes bound access. Retrieval still flows through `RetrievalMethodRegistry` → `ParallelRetriever` → datasource result filtering → `ResultMerger`; datasource skills do not create a parallel search path.
 
+Every datasource can be registered multiple times through a connection alias:
+use the config key as the unique name and set `type` to the reusable backend
+(`gmail`, `github`, `slack`, `discord`, `kakao`, `cloud-drive`, and so on).
+Each alias becomes an independently loadable agent skill with its own source
+scope and workspace namespace. Chat aliases search all channels by default;
+trusted `channels.ids` / `channels.names` allowlists can expose a particular
+channel or group chat as its own datasource.
+
 Security defaults are intentionally strict:
 
 - datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags` and `datasourceAccess.allowedScopes`;
@@ -168,7 +168,7 @@ Security defaults are intentionally strict:
 | Discord | `discord` | external [`discrawl`](https://github.com/openclaw/discrawl) CLI | guild/channel/thread/DM archive; FTS5 + semantic + hybrid retrieval, incremental sync |
 | Notion | `notion` | external [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | local-first page/database/block archive + FTS5 search |
 | GitHub Issues/PRs | `github` | GitHub REST (token optional) | issues + PR bodies per `owner/repo`; public repos work unauthenticated |
-| Google Drive | `gdrive` | Drive REST v3, or **[`rclone`](https://rclone.org) CLI** (`backend: "rclone"`) | Docs/Sheets exported as text; the rclone backend also opens any of rclone's 70+ remotes |
+| Cloud drives | `cloud-drive` | **[`rclone`](https://rclone.org) CLI** | Incremental Google Drive Tier-1; OneDrive/network remotes; iCloud experimental |
 | Gmail / IMAP | `gmail` | Gmail REST v1, or **[`himalaya`](https://pimalaya.org) CLI** (`backend: "himalaya"`) | the himalaya backend indexes any IMAP/Maildir account it has configured — no OAuth plumbing |
 | Local mail exports | `mail-export` | filesystem (`.mbox` / `.eml`) | classic `From_` splitting, mailparser-based; count-only warnings |
 | Obsidian vault | `obsidian` | external [`qmd`](https://github.com/tobi/qmd) CLI | incremental `qmd update`, BM25 `qmd search`, semantic `qmd vsearch`; vault path via `connector.vaultPath` |
@@ -187,13 +187,14 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "notion":   { "connector": { "binaryPath": "notcrawl", "configPath": "/path/to/notcrawl.yaml" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
-    "gdrive":   { "connector": { "backend": "rclone", "remote": "gdrive:" } },
+    "personal-google-drive": { "type": "cloud-drive", "instanceId": "personal", "connector": { "provider": "google-drive", "remote": "personal-gdrive:", "include": ["**/*.md"] } },
+    "company-onedrive": { "type": "cloud-drive", "instanceId": "work", "connector": { "provider": "onedrive", "remote": "company-onedrive:Documents" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "gdrive", "obsidian", "rss"],
-    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/gdrive/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "cloud-drive", "obsidian", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/personal-google-drive/**", "/company-onedrive/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -205,6 +206,21 @@ Install telecrawl with `brew install openclaw/tap/telecrawl`. AutoRAG invokes `t
 Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `slacrawl sync` during datasource refresh and `slacrawl --json search` during retrieval. Optional trusted connector fields are `binaryPath`, `configPath`, and `syncSource`. Slack credentials and source definitions remain in slacrawl's own configuration rather than AutoRAG.
 
 Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search --json` during retrieval. Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
+
+Install and authenticate rclone separately (`brew install rclone && rclone
+config` on macOS), then configure the provider-neutral `cloud-drive` skill.
+`cloud-drive` is a reusable `type`: each datasource config key is a connection
+alias and becomes a separate agent skill and scope. Multiple Google accounts,
+or Google Drive plus OneDrive/iCloud, can therefore be loaded and searched
+independently.
+AutoRAG inventories with `rclone lsjson`, keeps a workspace-local manifest and
+managed mirror, and downloads only added or changed indexable files. Google
+Drive is Tier-1. OneDrive, Dropbox, SMB/SFTP/WebDAV, and mounted drives share
+the same manifest contract. iCloud Drive is experimental because rclone marks
+that backend Tier 4 and Apple ID/2FA sessions periodically require
+reauthentication. See [docs/datasource-skills.md](docs/datasource-skills.md)
+for filtering, size, concurrency, bandwidth, dry-run, and agent tool-calling
+details.
 
 #### KakaoTalk (katok)
 
@@ -289,7 +305,7 @@ A datasource skill should provide polling/cron metadata for routine indexing, so
 
 AutoRAG is built for **non-code document retrieval**: manuals, legal docs, internal wikis, meeting notes, research literature, knowledge bases, PDFs.
 
-Code repositories work too (the explorer's `grep` is useful), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
+Code repositories work too (direct `grep` is useful), but AutoRAG's real value shows on unstructured text where simple pattern matching isn't enough.
 
 ## Configuration and state
 
@@ -299,38 +315,39 @@ The default home state is kept outside the workspace:
 ~/.autorag/
 ├── config.json
 ├── memory.json
-├── logs/
-│   └── runs.jsonl
-└── pi-agent/
-    ├── auth.json
-    ├── models.json
-    ├── settings.json
-    └── sessions/
+└── logs/
+    └── runs.jsonl
 ```
 
-`config.json` selects sources, the workspace, memory path, retrieval settings, and the two agent models. Configure the roles independently with `agents.orchestrator` and `agents.explorer`. Provider and model IDs must refer to models available in the user's authenticated runtime:
+`config.json` selects sources, the workspace, memory path, retrieval settings, and the agent model. Provider and model IDs must refer to a model available in the user's authenticated runtime:
 
 ```json
 {
   "searchPaths": ["/path/to/documents"],
   "workspacePath": "/path/to/workspace",
   "memoryPath": "/Users/you/.autorag/memory.json",
-  "agents": {
-    "orchestrator": { "provider": "provider-name", "id": "reasoning-model" },
-    "explorer": { "provider": "provider-name", "id": "exploration-model" }
-  }
+  "model": { "provider": "provider-name", "id": "reasoning-model" }
 }
 ```
 
-`autorag init` leaves `agents` unset when no role-model flags are supplied. At search time AutoRAG resolves an authenticated local provider when possible; otherwise configure both roles explicitly.
+`autorag init` leaves `model` unset when no model flags are supplied. At search time AutoRAG resolves an authenticated local provider when possible; otherwise configure the model explicitly.
+
+For fast interactive search, prefer a model with reliable tool calling, high
+output TPS, and low first-token latency. A query can require several short
+model turns while AutoRAG alternates between retrieval tools and direct source
+reading, so model throughput has a visible effect on end-to-end response time.
+It does not accelerate BM25, MinSync, Jikji, filesystem access, or indexing
+itself. Larger reasoning models remain useful for difficult synthesis,
+conflicting evidence, and specialized domain judgment, but they are not a
+requirement for ordinary retrieval.
 
 Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.json`. When the home config is absent and `<cwd>/autorag.config.json` exists, AutoRAG copies the legacy file to `~/.autorag/config.json` without deleting or modifying the legacy file. The legacy cwd file is a migration source, not the default location.
 
-`memory.json` stores retrieval memory, `logs/runs.jsonl` records run events, and durable Pi models, settings, and sessions stay under `~/.autorag/pi-agent`. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
+`memory.json` stores retrieval memory and `logs/runs.jsonl` records run events. Model authentication remains with the user's configured provider or authenticated local runtime. Corpus indexes remain workspace-local: refresh keeps parsed mirrors and BM25/MinSync indexes under `<workspace>/.autorag`.
 
 `autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method bm25,minsync,parsed`) to scope which indexing methods run or which index directories are removed. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
-`autorag health` checks model/provider auth and explorer subagent setup before a search — it resolves both role models, verifies credential presence, and optionally probes a completion call per role. Use it to diagnose model, provider, auth, timeout, or subagent dispatch failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness); it does not check models or subagent dispatch. When `autorag search` fails for a model/provider/subagent reason, the error output includes a hint pointing to `autorag health`.
+`autorag health` checks model/provider auth before a search — it resolves the model, verifies credential presence, and optionally probes one completion call. Use it to diagnose model, provider, auth, or timeout failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness). When `autorag search` fails for a model/provider reason, the error output includes a hint pointing to `autorag health`.
 
 ## Installation
 
@@ -374,15 +391,11 @@ agent.recordFeedbackByNumbers(response.sessionId, [1, 3], [2]);
            │
            ▼
     ┌──────────────┐
-    │ Plan + seed  │ ← parent check_memory, Jikji, and retrieval tools
+    │ Plan + search│ ← check_memory, Jikji, and retrieval tools
     └──────┬───────┘
            ▼
     ┌──────────────┐
-    │ Delegate     │ ← pi-subagents → gpt-5.6-luna explorer
-    └──────┬───────┘
-           ▼
-    ┌──────────────┐
-    │ Search + read│ ← explorer read/grep/find/ls
+    │ Direct read  │ ← bash find/grep/cat
     └──────┬──────┘
            ▼
     ┌─────────────┐

@@ -39,42 +39,34 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 }
 
 describe("runInit", () => {
-	it("writes separate orchestrator and explorer model settings", async () => {
+	it("writes one model setting", async () => {
 		const code = await runInit(
 			makeCtx({
 				flags: {
-					"orchestrator-model-provider": "test-provider",
-					"orchestrator-model-id": "gpt-5.6-sol-custom",
-					"explorer-model-provider": "test-provider",
-					"explorer-model-id": "gpt-5.6-luna-custom",
+					"model-provider": "test-provider",
+					"model-id": "single-agent",
 				},
 			}),
 		);
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
-		expect(config.agents).toEqual({
-			orchestrator: { provider: "test-provider", id: "gpt-5.6-sol-custom" },
-			explorer: { provider: "test-provider", id: "gpt-5.6-luna-custom" },
-		});
+		expect(config.model).toEqual({ provider: "test-provider", id: "single-agent" });
 	});
 
-	it("does not write private role-model defaults without model flags", async () => {
+	it("does not write private model defaults without model flags", async () => {
 		const code = await runInit(makeCtx());
 
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
-		expect(config.agents).toBeUndefined();
+		expect(config.model).toBeUndefined();
 		expect(config.excludeExactDuplicates).toBe(true);
 	});
 
-	it("preserves migrated legacy roles while applying explicit role overrides", async () => {
+	it("preserves a migrated legacy model unless explicitly overridden", async () => {
 		writeFileSync(
 			join(root, "autorag.config.json"),
 			JSON.stringify({
-				agents: {
-					orchestrator: { provider: "legacy-provider", id: "legacy-orchestrator" },
-					explorer: { provider: "legacy-provider", id: "legacy-explorer" },
-				},
+				model: { provider: "legacy-provider", id: "legacy-model" },
 			}),
 			"utf8",
 		);
@@ -82,18 +74,15 @@ describe("runInit", () => {
 		const code = await runInit(
 			makeCtx({
 				flags: {
-					"explorer-model-provider": "override-provider",
-					"explorer-model-id": "override-explorer",
+					"model-provider": "override-provider",
+					"model-id": "override-model",
 				},
 			}),
 		);
 
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
-		expect(config.agents).toEqual({
-			orchestrator: { provider: "legacy-provider", id: "legacy-orchestrator" },
-			explorer: { provider: "override-provider", id: "override-explorer" },
-		});
+		expect(config.model).toEqual({ provider: "override-provider", id: "override-model" });
 	});
 
 	it("writes the default config under ~/.autorag and reports its absolute path", async () => {
@@ -215,7 +204,7 @@ describe("runInit", () => {
 		expect(config.searchPaths).toEqual([join(root, "docs"), join(root, "notes")]);
 		expect(config.workspacePath).toBe(root);
 		expect(config.memoryPath).toBe(join(root, "memory.json"));
-		expect(config.agents.orchestrator).toEqual({ provider: "openai", id: "gpt-4o" });
+		expect(config.model).toEqual({ provider: "openai", id: "gpt-4o" });
 	});
 
 	it("returns 2 and writes an error when the config already exists without --force", async () => {

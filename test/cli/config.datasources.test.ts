@@ -152,6 +152,122 @@ describe("CLI config datasources wiring", () => {
 		});
 	});
 
+	it("materializes provider-neutral cloud drives through the rclone CLI datasource", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				"cloud-drive": {
+					instanceId: "team-drive",
+					connector: {
+						backend: "rclone",
+						provider: "onedrive",
+						remote: "onedrive:Team Docs",
+						include: ["**/*.pdf", "**/*.md"],
+						exclude: ["Archive/**"],
+						concurrency: 4,
+						bandwidthLimit: "10M",
+					},
+				},
+			},
+			datasourceAccess: { allowedTags: ["cloud-drive"], allowedScopes: ["/cloud-drive/**"] },
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.describe()).toMatchObject({
+			name: "cloud-drive",
+			type: "rclone-drive",
+			instanceId: "team-drive",
+			requiresExternalCli: true,
+		});
+		expect(skills[0]?.skillManifest().content).toContain("OneDrive");
+	});
+
+	it("registers each rclone connection alias as a distinct datasource skill", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				"personal-google-drive": {
+					type: "cloud-drive",
+					instanceId: "personal",
+					connector: { provider: "google-drive", remote: "personal-gdrive:" },
+				},
+				"company-onedrive": {
+					type: "cloud-drive",
+					instanceId: "work",
+					connector: { provider: "onedrive", remote: "company-onedrive:Documents" },
+				},
+			},
+			datasourceAccess: {
+				allowedTags: ["cloud-drive"],
+				allowedScopes: ["/personal-google-drive/**", "/company-onedrive/**"],
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills.map((skill) => skill.describe().name).sort()).toEqual([
+			"company-onedrive",
+			"personal-google-drive",
+		]);
+		expect(skills.map((skill) => skill.skillManifest().name).sort()).toEqual([
+			"datasource-company-onedrive",
+			"datasource-personal-google-drive",
+		]);
+		expect(skills[0]?.describe().datasourceId).not.toBe(skills[1]?.describe().datasourceId);
+	});
+
+	it("registers connector and crawler aliases through their datasource type", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				"personal-mail": {
+					type: "gmail",
+					connector: { backend: "himalaya", account: "personal" },
+				},
+				"company-github": {
+					type: "github",
+					connector: { repos: ["acme/docs"] },
+				},
+				"engineering-slack": {
+					type: "slack",
+					connector: { binaryPath: "/missing/slacrawl" },
+				},
+				"family-kakao": {
+					type: "kakao",
+					channels: { names: ["가족방"] },
+					connector: { binaryPath: "/missing/katok" },
+				},
+			},
+			datasourceAccess: {
+				allowedTags: ["gmail", "github", "slack", "kakaotalk"],
+				allowedScopes: ["/personal-mail/**", "/company-github/**", "/engineering-slack/**", "/family-kakao/**"],
+			},
+		});
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills.map((skill) => skill.describe().name).sort()).toEqual([
+			"company-github",
+			"engineering-slack",
+			"family-kakao",
+			"personal-mail",
+		]);
+		for (const skill of skills) {
+			expect(skill.skillManifest().name).toBe(`datasource-${skill.describe().name}`);
+			expect(skill.describeSources()[0]?.source).toContain(`/${skill.describe().name}/`);
+		}
+		expect(skills.find((skill) => skill.describe().name === "family-kakao")?.skillManifest().content).toContain(
+			"가족방",
+		);
+	});
+
 	it("rejects malformed datasources and datasourceAccess sections", () => {
 		const badDatasources = writeConfig({ searchPaths: [tmpRoot], datasources: ["rss"] });
 		expect(() => resolveConfig({ flags: { config: badDatasources } })).toThrow(ConfigError);

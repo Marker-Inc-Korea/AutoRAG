@@ -22,6 +22,7 @@ export interface ObsidianSkillClient extends ObsidianSearchClient {
 }
 
 export interface ObsidianSkillOptions {
+	readonly datasourceId?: string;
 	readonly client?: ObsidianSkillClient;
 	readonly vaultPath?: string;
 	readonly binaryPath?: string;

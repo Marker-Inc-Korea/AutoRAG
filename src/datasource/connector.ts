@@ -49,6 +49,10 @@ export interface ConnectorDocument {
 export interface ConnectorFetchOk {
 	readonly ok: true;
 	readonly documents: readonly ConnectorDocument[];
+	/** True when the completed datasource snapshot changed since the last fetch. */
+	readonly changed?: boolean;
+	/** Stable ids removed from an incremental datasource snapshot. */
+	readonly deletedDocIds?: readonly string[];
 	/** Sanitized, path/PII-opaque warning strings. */
 	readonly warnings?: readonly string[];
 }

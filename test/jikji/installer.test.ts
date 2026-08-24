@@ -112,7 +112,12 @@ describe("JikjiClient binary resolution", () => {
 	it("uses the cached .autorag/bin binary when PATH has no jikji", async () => {
 		const cached = cachedJikjiBinaryPath(root);
 		mkdirSync(join(root, ".autorag", "bin"), { recursive: true });
-		writeFileSync(cached, '#!/bin/sh\nprintf \'{"not":"a pack"}\\n\'\n');
+		writeFileSync(
+			cached,
+			process.platform === "win32"
+				? '#!/usr/bin/env node\nconsole.log(JSON.stringify({ not: "a pack" }));\n'
+				: '#!/bin/sh\nprintf \'{"not":"a pack"}\\n\'\n',
+		);
 		chmodSync(cached, 0o755);
 		const client = new JikjiClient({ root, autoInstall: false, timeoutMs: 5_000, env: { PATH: "" } });
 		const result = await client.find(root, "query");

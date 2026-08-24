@@ -74,15 +74,15 @@ describe("AutoRAGAgent", () => {
 		expect(internals(agent).tools.map((tool) => tool.name)).not.toContain("scan_duplicate_documents");
 	});
 
-	it("defaults to parent-owned retrieval and explorer tools for library mode", () => {
+	it("defaults to direct retrieval and reading tools for library mode", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
 		expect(prompt).toContain("librarian");
-		expect(prompt).toContain("The parent orchestrator owns `check_memory`, Jikji, datasource, and `search_*` tools.");
-		expect(prompt).toContain("Explorer tasks use only read-only `read`/`grep`/`find`/`ls` tools");
+		expect(prompt).toContain("read the relevant source material directly");
+		expect(prompt).toContain("Use `bash` to open and verify relevant local files");
 		expect(prompt).toContain("check_memory");
 		for (const name of [
 			"search_bm25_documents",
@@ -131,20 +131,15 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).not.toContain("read_file");
 	});
 
-	it("system prompt exposes contained explorer tools and rejects bash/read_file", () => {
+	it("system prompt exposes bash and omits removed read_file", () => {
 		const prompt = buildSystemPrompt({
 			toolNames: ["check_memory"],
 			memoryEntries: [],
 			manifests: [],
 		});
-		expect(prompt).not.toContain("bash");
+		expect(prompt).toContain("bash");
 		expect(prompt).not.toContain("read_file");
-		expect(prompt).toContain(
-			"contained discovery and document reading within exactly one normalized assigned search root",
-		);
-		for (const name of ["read", "grep", "find", "ls"]) {
-			expect(prompt).toContain(`\`${name}\``);
-		}
+		expect(prompt).toContain("find/grep");
 	});
 
 	it("submitFeedback resolves pending entries and saves to disk", () => {
@@ -218,8 +213,7 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const prompt = agent.getSystemPrompt();
-		const toolRefSection = prompt.split("Tool Ownership Quick Reference")[1];
-		expect(toolRefSection).toContain("check_memory");
+		expect(prompt).toContain("check_memory");
 	});
 
 	it("submitFeedback resolves all pending entries for the query", () => {

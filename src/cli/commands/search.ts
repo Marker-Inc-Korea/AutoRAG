@@ -18,24 +18,16 @@ import type { CommandContext } from "./types.ts";
 /**
  * A recoverable health hint surfaced when `autorag search` fails for a reason
  * that `autorag health` can diagnose. The classifier only produces hints for
- * model/provider/subagent failures — never for retrieval, index, datasource,
+ * model/provider failures — never for retrieval, index, datasource,
  * or empty-query errors.
  */
 export interface SearchHealthHint {
 	command: "autorag health";
-	reason: "model_resolution" | "subagent_failed" | "auth_missing" | "provider_unreachable" | "timeout";
+	reason: "model_resolution" | "auth_missing" | "provider_unreachable" | "timeout";
 	message: string;
 }
 
-const HEALTH_HINT_MESSAGE = "Run autorag health to diagnose model/provider and explorer subagent setup.";
-
-/** Substring patterns that map a runtime error to a {@link SearchHealthHint} reason. */
-const SUBAGENT_PATTERNS: readonly string[] = [
-	"pi-subagents",
-	"autorag-explorer",
-	"concurrent pi sessions",
-	"concurrent autorag session busy",
-];
+const HEALTH_HINT_MESSAGE = "Run autorag health to diagnose model/provider setup.";
 
 const AUTH_PATTERNS: readonly string[] = [
 	"api key",
@@ -74,21 +66,14 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
 		return { command: "autorag health", reason: "model_resolution", message: HEALTH_HINT_MESSAGE };
 	}
 
-	// 2. Subagent-related failures → subagent_failed.
-	for (const pattern of SUBAGENT_PATTERNS) {
-		if (message.includes(pattern)) {
-			return { command: "autorag health", reason: "subagent_failed", message: HEALTH_HINT_MESSAGE };
-		}
-	}
-
-	// 3. Auth / API key / 401 / 403 → auth_missing.
+	// 2. Auth / API key / 401 / 403 → auth_missing.
 	for (const pattern of AUTH_PATTERNS) {
 		if (message.includes(pattern)) {
 			return { command: "autorag health", reason: "auth_missing", message: HEALTH_HINT_MESSAGE };
 		}
 	}
 
-	// 4. Network / provider unreachable → provider_unreachable.
+	// 3. Network / provider unreachable → provider_unreachable.
 	if (typeof error === "object" && error !== null && "code" in error) {
 		const code = (error as { code?: unknown }).code;
 		if (code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "ETIMEDOUT") {
@@ -101,7 +86,7 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
 		}
 	}
 
-	// 5. AbortError / timeout → timeout.
+	// 4. AbortError / timeout → timeout.
 	if (
 		name === "AbortError" ||
 		message.includes("abort") ||
@@ -195,7 +180,6 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		const agentOptions: AutoRAGAgentOptions = {
 			...buildAgentOptions(config),
 			model: resolvedModel.model,
-			explorerModel: resolvedModel.explorerModel,
 			...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 			...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 		};

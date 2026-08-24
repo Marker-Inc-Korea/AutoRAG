@@ -13,10 +13,6 @@ const VALUE_FLAGS = new Set([
 	"memory-path",
 	"model-provider",
 	"model-id",
-	"orchestrator-model-provider",
-	"orchestrator-model-id",
-	"explorer-model-provider",
-	"explorer-model-id",
 	"top-k",
 	"scope",
 	"tags",
@@ -61,8 +57,7 @@ Usage: autorag <command> [args] [flags]
 Commands:
   init                 Write ~/.autorag/config.json for a local collection
 	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
-	                        --orchestrator-model-provider P  --orchestrator-model-id ID
-	                        --explorer-model-provider P  --explorer-model-id ID
+	                        --model-provider P  --model-id ID
 	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
 	                        --embedder-dimension N --embedder-batch-size N  --force)
   refresh              Parse sources and refresh indexes (--method bm25,minsync,parsed)
@@ -73,7 +68,7 @@ Commands:
   memory inspect       Inspect the retrieval memory snapshot
   index reset          Remove parsed/bm25/minsync indexes under .autorag (--method)
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
-  health               Check model/provider auth and subagent preflight (no index check)
+  health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
 
 Setup:
@@ -87,15 +82,13 @@ Global flags:
   --debug              Reveal opaque internal diagnostics (never filesystem paths)
   --config <path>      Use a specific config file
   --search-paths <csv> Folders to index/search (also AUTORAG_SEARCH_PATHS)
-  --orchestrator-model-provider <name>  Override the orchestrator provider
-  --orchestrator-model-id <id>          Override the orchestrator model
-  --explorer-model-provider <name>      Override the explorer provider
-  --explorer-model-id <id>              Override the explorer model
+  --model-provider <name>  Override the model provider
+  --model-id <id>          Override the model
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
   --method <csv>       For refresh/index: bm25,minsync,parsed,datasources,jikji,all
-  --skip-probes        For health: skip network/subagent probes (auth checks still run)
+  --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --help, -h           Show this help
 `;

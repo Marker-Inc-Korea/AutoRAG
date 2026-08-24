@@ -12,7 +12,7 @@ import type { CommandContext } from "./types.ts";
 
 /**
  * `autorag init` writes the default config to `~/.autorag/config.json`.
- * Role-specific model flags are folded into the generated config. A legacy
+ * Model flags are folded into the generated config. A legacy
  * `autorag.config.json` in the current working directory may be migrated
  * non-destructively. An existing home config is not overwritten without
  * `--force`.
@@ -31,37 +31,13 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];
 
-	const orchestratorProvider =
-		typeof flags["orchestrator-model-provider"] === "string"
-			? flags["orchestrator-model-provider"]
-			: typeof flags["model-provider"] === "string"
-				? flags["model-provider"]
-				: undefined;
-	const orchestratorId =
-		typeof flags["orchestrator-model-id"] === "string"
-			? flags["orchestrator-model-id"]
-			: typeof flags["model-id"] === "string"
-				? flags["model-id"]
-				: undefined;
-	const explorerProvider =
-		typeof flags["explorer-model-provider"] === "string" ? flags["explorer-model-provider"] : undefined;
-	const explorerId = typeof flags["explorer-model-id"] === "string" ? flags["explorer-model-id"] : undefined;
-	if ((orchestratorProvider && !orchestratorId) || (!orchestratorProvider && orchestratorId)) {
-		ctx.stderr(renderError(new ConfigError("orchestrator model requires both provider and id"), { json: ctx.json }));
+	const modelProvider = typeof flags["model-provider"] === "string" ? flags["model-provider"] : undefined;
+	const modelId = typeof flags["model-id"] === "string" ? flags["model-id"] : undefined;
+	if ((modelProvider && !modelId) || (!modelProvider && modelId)) {
+		ctx.stderr(renderError(new ConfigError("model requires both provider and id"), { json: ctx.json }));
 		return 2;
 	}
-	if ((explorerProvider && !explorerId) || (!explorerProvider && explorerId)) {
-		ctx.stderr(renderError(new ConfigError("explorer model requires both provider and id"), { json: ctx.json }));
-		return 2;
-	}
-	if (orchestratorProvider || explorerProvider) {
-		partial.agents = {
-			...(orchestratorProvider && orchestratorId
-				? { orchestrator: { provider: orchestratorProvider, id: orchestratorId } }
-				: {}),
-			...(explorerProvider && explorerId ? { explorer: { provider: explorerProvider, id: explorerId } } : {}),
-		};
-	}
+	if (modelProvider && modelId) partial.model = { provider: modelProvider, id: modelId };
 
 	// Embedder flags → minSync.embedder. Only non-secret fields: id, baseUrl,
 	// apiKeyEnv (the env-var *name*, never the key value), dimension, prefixes,
@@ -99,12 +75,6 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			partial.workspacePath ??= normalizedLegacy.workspacePath;
 			partial.memoryPath ??= normalizedLegacy.memoryPath;
 			partial.model ??= legacy.model;
-			if (legacy.agents !== undefined || partial.agents !== undefined) {
-				partial.agents = {
-					...(legacy.agents ?? {}),
-					...(partial.agents ?? {}),
-				};
-			}
 			partial.minSync ??= legacy.minSync;
 			partial.bm25 ??= legacy.bm25;
 			partial.jikji ??= legacy.jikji;
