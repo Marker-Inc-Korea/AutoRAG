@@ -1,5 +1,5 @@
 import type { AutoRAGRefreshResult, AutoRAGRefreshStatus } from "../agent/agent.ts";
-import type { SearchDocumentDiagnostic, SearchDocumentsResponse } from "../agent/search-documents.ts";
+import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { MemorySchemaV4 } from "../memory/memory.ts";
 import type { HealthReportV1 } from "./commands/health.ts";
 import type { SearchHealthHint } from "./commands/search.ts";
@@ -10,7 +10,12 @@ export interface RenderOptions {
 	hint?: SearchHealthHint;
 }
 
-function diagnosticProjection(d: SearchDocumentDiagnostic): {
+function diagnosticProjection(d: {
+	readonly code: string;
+	readonly severity: string;
+	readonly message: string;
+	readonly source?: string;
+}): {
 	code: string;
 	severity: string;
 	message: string;

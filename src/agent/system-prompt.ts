@@ -38,6 +38,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"search authorized external datasources; scope may only narrow access",
 		),
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
+		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
 		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
 		...config.toolNames
@@ -51,6 +52,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"search_minsync_documents",
 						"search_datasource_documents",
 						"load_datasource_skill",
+						"scan_duplicate_documents",
 						"check_memory",
 						"emit_autorag_results",
 					].includes(name),
@@ -73,6 +75,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		? `## Jikji Local Discovery
 
 \`jikji_find\` is an optional local-discovery aid. Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`.
+`
+		: "";
+	const duplicateManagement = toolAvailable(config, "scan_duplicate_documents")
+		? `## Local Corpus Management
+
+\`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files.
 `
 		: "";
 
@@ -102,6 +110,7 @@ ${noSearchTools}
 - If results are empty, follow this Fallback Chain: simplify the query, broaden file discovery, try synonyms, then inspect likely directories.
 - Cross-check important claims against the original source and preserve real source paths.
 
+${duplicateManagement}
 ## External Datasource Skills
 
 Datasource access is default-deny and server-bound. Model arguments cannot grant \`allowedTags\` or \`allowedScopes\`; a requested scope can only narrow trusted access.

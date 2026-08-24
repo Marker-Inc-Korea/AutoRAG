@@ -48,12 +48,15 @@ export interface ParsedMirrorSyncOptions {
 	readonly force?: boolean;
 	/** Override max source size for parse attempts (bytes). */
 	readonly maxSourceBytes?: number;
+	/** Absolute source paths omitted from parsed mirrors (for example exact duplicate copies). */
+	readonly excludeSourcePaths?: ReadonlySet<string>;
 }
 
 export type ParsedMirrorDiagnosticCode =
 	| "unsupported-file"
 	| "parser-skipped"
 	| "parser-failed"
+	| "duplicate-excluded"
 	| "deleted-mirror"
 	| "stale-index";
 
@@ -108,6 +111,18 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 	};
 
 	for (const entry of current) {
+		if (options.excludeSourcePaths?.has(entry.sourcePath)) {
+			deleted += removePrevious(options.root, previous, entry.virtualPath);
+			handledPrevious.add(entry.virtualPath);
+			skipped += 1;
+			diagnostics.push({
+				code: "duplicate-excluded",
+				severity: "info",
+				message: "An older exact duplicate was excluded from indexing; the newest copy remains indexed.",
+				source: entry.virtualPath,
+			});
+			continue;
+		}
 		const parser = registry.getForVirtualPath(entry.virtualPath);
 		if (!parser) {
 			// Collect only filters to known extensions, so this is rare (double-check safety).
@@ -223,6 +238,7 @@ export async function detectMirrorStaleness(options: ParsedMirrorSyncOptions): P
 	const previous = loadMirrorIndex(options.root);
 	const diagnostics: ParsedMirrorDiagnostic[] = [];
 	for (const entry of current) {
+		if (options.excludeSourcePaths?.has(entry.sourcePath)) continue;
 		if (!registry.getForVirtualPath(entry.virtualPath)) continue;
 		const prev = previous.entries[entry.virtualPath];
 		if (!prev || prev.sourceMtimeNs !== entry.mtimeNs || prev.sourceSizeBytes !== entry.sizeBytes) {

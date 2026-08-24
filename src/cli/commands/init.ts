@@ -79,6 +79,8 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			partial.bm25 ??= legacy.bm25;
 			partial.jikji ??= legacy.jikji;
 			partial.parserOptions ??= legacy.parserOptions;
+			partial.dupey ??= legacy.dupey;
+			partial.excludeExactDuplicates ??= legacy.excludeExactDuplicates;
 		} catch (error) {
 			ctx.stderr(
 				renderError(new ConfigError(`Failed to migrate legacy config: ${(error as Error).message}`), {
