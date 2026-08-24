@@ -85,31 +85,23 @@ export class DatasourceChunkStore {
 	 * (in-memory contents stay authoritative for this process).
 	 */
 	replaceDocuments(documents: readonly ConnectorDocument[]): number {
-		const chunks: StoredChunk[] = [];
-		const seenIds = new Set<string>();
-		for (const document of documents) {
-			const docSegment = sanitizeIdSegment(document.docId);
-			const hierarchy = (document.hierarchy ?? []).map(sanitizeIdSegment).filter((segment) => segment.length > 0);
-			const parts = splitContent(document.content, this.maxChunkChars);
-			for (const [index, part] of parts.entries()) {
-				let chunkId = parts.length === 1 ? docSegment : `${docSegment}-p${index + 1}`;
-				while (seenIds.has(chunkId)) chunkId = `${chunkId}x`;
-				seenIds.add(chunkId);
-				chunks.push({
-					chunkId,
-					docId: document.docId,
-					hierarchy,
-					...(document.title !== undefined ? { title: document.title } : {}),
-					content: part,
-					...(document.publishedAt !== undefined ? { publishedAt: document.publishedAt } : {}),
-					metadata: { ...(document.metadata ?? {}) },
-				});
-			}
-		}
-		this.chunkList = chunks;
+		this.chunkList = buildChunks(documents, this.maxChunkChars);
 		this.loaded = true;
 		this.persist();
-		return chunks.length;
+		return this.chunkList.length;
+	}
+
+	/** Apply file-level additions/updates/deletions without rebuilding unchanged chunks. */
+	updateDocuments(documents: readonly ConnectorDocument[], deletedDocIds: readonly string[] = []): number {
+		this.ensureLoaded();
+		const replaced = new Set(documents.map((document) => document.docId));
+		const deleted = new Set(deletedDocIds);
+		const unchanged = this.chunkList.filter((chunk) => !replaced.has(chunk.docId) && !deleted.has(chunk.docId));
+		const additions = buildChunks(documents, this.maxChunkChars, new Set(unchanged.map((chunk) => chunk.chunkId)));
+		this.chunkList = [...unchanged, ...additions];
+		this.loaded = true;
+		this.persist();
+		return this.chunkList.length;
 	}
 
 	/** Load persisted chunks when present. Returns true when data was loaded. */
@@ -218,6 +210,34 @@ export class DatasourceChunkStore {
 			// Persistence is best-effort; in-memory contents stay authoritative.
 		}
 	}
+}
+
+function buildChunks(
+	documents: readonly ConnectorDocument[],
+	maxChunkChars: number,
+	seenIds = new Set<string>(),
+): StoredChunk[] {
+	const chunks: StoredChunk[] = [];
+	for (const document of documents) {
+		const docSegment = sanitizeIdSegment(document.docId);
+		const hierarchy = (document.hierarchy ?? []).map(sanitizeIdSegment).filter((segment) => segment.length > 0);
+		const parts = splitContent(document.content, maxChunkChars);
+		for (const [index, part] of parts.entries()) {
+			let chunkId = parts.length === 1 ? docSegment : `${docSegment}-p${index + 1}`;
+			while (seenIds.has(chunkId)) chunkId = `${chunkId}x`;
+			seenIds.add(chunkId);
+			chunks.push({
+				chunkId,
+				docId: document.docId,
+				hierarchy,
+				...(document.title !== undefined ? { title: document.title } : {}),
+				content: part,
+				...(document.publishedAt !== undefined ? { publishedAt: document.publishedAt } : {}),
+				metadata: { ...(document.metadata ?? {}) },
+			});
+		}
+	}
+	return chunks;
 }
 
 function splitContent(content: string, maxChars: number): readonly string[] {
