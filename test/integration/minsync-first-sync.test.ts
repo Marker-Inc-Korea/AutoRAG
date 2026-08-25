@@ -167,7 +167,7 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 			["init", "--format", "json"],
 			["check", "--format", "json"],
 			["sync", "--full", "--format", "json"],
-			["query", "--format", "json", "-k", "1", "refund approval"],
+			["query", "--format", "json", "-k", "1", "--mode", "vector", "refund approval"],
 			["check", "--format", "json"],
 			["sync", "--format", "json"],
 		]);

@@ -15,9 +15,11 @@ export type BM25ReadinessState =
 	| "degraded_fallback"
 	| "error";
 
-export type BM25Engine = "tantivy" | "typescript-fallback" | "none";
+/** @deprecated Use MinSyncBM25Method from `src/minsync/method.ts`. */
+export type BM25Engine = "tantivy" | "typescript-fallback" | "minsync" | "none";
 export type BM25FallbackMode = "typescript" | "disabled";
 
+/** @deprecated Use MinSyncBM25MethodOptions from `src/minsync/method.ts`. */
 export interface BM25MethodOptions {
 	readonly root: string;
 	readonly indexPath?: string;
@@ -70,6 +72,7 @@ export class BM25UnavailableError extends Error {
 	}
 }
 
+/** @deprecated BM25 is now indexed and searched through MinSync 0.4.0. */
 export class BM25Method implements RetrievalMethod {
 	private readonly root: string;
 	private readonly indexPath: string;

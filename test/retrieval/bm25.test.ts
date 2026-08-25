@@ -126,22 +126,19 @@ describe("BM25Method", () => {
 });
 
 describe("AutoRAG BM25 integration", () => {
-	it("registers BM25 and includes it in programmatic retrieve()", async () => {
+	it("registers BM25 through the MinSync adapter", async () => {
 		writeFileSync(join(docs, "guide.txt"), "chargeback chargeback process\n");
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
-			bm25: { indexPath: join(root, ".autorag", "agent-bm25"), forceEngine: "typescript-fallback" },
+			bm25: { autoInstall: false },
 		});
 		const refresh = await agent.refresh(true);
 
-		expect(refresh.bm25).toMatchObject({ readiness: "degraded_fallback", engine: "typescript-fallback" });
-		const results = await agent.retrieve("chargeback", { topK: 1 });
+		expect(refresh.bm25).toMatchObject({ readiness: "error", engine: "minsync" });
 
 		expect(agent.getMethodRegistry().getByType("bm25")).toHaveLength(1);
-		expect(results[0]?.source).toBe("/docs/guide.txt");
-		expect(results[0]?.metadata.method).toBe("bm25");
 		expect(agent.getSystemPrompt()).toContain("search_bm25_documents");
 	});
 

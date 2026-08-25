@@ -118,7 +118,7 @@ describe("runIndex", () => {
 		expect(stderr.join("\n")).toContain("Usage");
 	});
 
-	it("reset --yes removes parsed/bm25/minsync and preserves bin/datasources/memory", async () => {
+	it("reset --yes removes parsed/minsync and preserves bin/datasources/memory", async () => {
 		const fx = seedWorkspace();
 		const { ctx, stdout } = makeCtx({
 			positionals: ["reset"],
@@ -131,7 +131,7 @@ describe("runIndex", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.parsed)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(false);
 
 		expect(existsSync(fx.bin)).toBe(true);
@@ -141,7 +141,7 @@ describe("runIndex", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.action).toBe("reset");
-		expect(parsed.removed).toEqual(["parsed", "bm25", "minsync"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 	});
 
 	it("declined reset returns exit 2 and removes nothing", async () => {
@@ -248,7 +248,7 @@ describe("runIndex", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.action).toBe("rebuild");
-		expect(parsed.removed).toEqual(["parsed", "bm25", "minsync"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });
@@ -266,13 +266,13 @@ describe("runIndex --method scoped reset", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(0);
 
-		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.parsed)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.action).toBe("reset");
-		expect(parsed.removed).toEqual(["bm25"]);
+		expect(parsed.removed).toEqual([]);
 	});
 
 	it("reset --method minsync removes only the minsync index", async () => {
@@ -295,7 +295,7 @@ describe("runIndex --method scoped reset", () => {
 		expect(parsed.removed).toEqual(["minsync"]);
 	});
 
-	it("reset --method bm25,minsync removes both but not parsed", async () => {
+	it("reset --method bm25,minsync removes the shared MinSync index but not parsed", async () => {
 		const fx = seedWorkspace();
 		const { ctx, stdout } = makeCtx({
 			positionals: ["reset"],
@@ -307,15 +307,15 @@ describe("runIndex --method scoped reset", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(0);
 
-		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(false);
 		expect(existsSync(fx.parsed)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["bm25", "minsync"]);
+		expect(parsed.removed).toEqual(["minsync"]);
 	});
 
-	it("reset --method all removes all three targets", async () => {
+	it("reset --method all removes the parsed mirror and shared MinSync index", async () => {
 		const fx = seedWorkspace();
 		const { ctx, stdout } = makeCtx({
 			positionals: ["reset"],
@@ -328,11 +328,11 @@ describe("runIndex --method scoped reset", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.parsed)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(false);
+		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(false);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["parsed", "bm25", "minsync"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 	});
 
 	it("rebuild --method bm25 removes and rebuilds only bm25", async () => {
@@ -351,15 +351,14 @@ describe("runIndex --method scoped reset", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(0);
 
-		// Only bm25 was reset; refresh re-creates the bm25 index dir.
-		// Parsed and minsync were not reset and survive from seed.
+		// BM25 uses the shared MinSync index; only parsed content is preserved.
 		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.parsed)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.action).toBe("rebuild");
-		expect(parsed.removed).toEqual(["bm25"]);
+		expect(parsed.removed).toEqual([]);
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });
