@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -44,7 +44,7 @@ describe("AutoRAG retrieval scope flow", () => {
 		expect(throughLink).toHaveLength(1);
 		expect(throughCanonicalRoot).toHaveLength(1);
 		expect(merged.results).toHaveLength(1);
-		expect(throughLink[0]?.source).toBe("/real-docs/chargebacks.txt");
+		expect(throughLink[0]?.source).toBe(realpathSync(join(source, "chargebacks.txt")));
 	});
 
 	it("keeps the prepared virtual root after a single-root workspace relocation", async () => {
@@ -72,7 +72,7 @@ describe("AutoRAG retrieval scope flow", () => {
 		const results = await relocatedAgent.retrieve("retention policy", { scope: relocated });
 
 		expect(results).toHaveLength(1);
-		expect(results[0]?.source).toBe("/organized/policy.txt");
+		expect(results[0]?.source).toBe(realpathSync(join(prepared, "policy.txt")));
 	});
 
 	it("rejects an unknown physical root before retrieval", async () => {

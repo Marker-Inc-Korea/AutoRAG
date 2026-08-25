@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -60,7 +60,7 @@ function fauxModel(...responses: FauxResponseStep[]) {
 	return reg.getModel();
 }
 
-function emitResults(): FauxResponseStep {
+function emitResults(localSource: string): FauxResponseStep {
 	return fauxAssistantMessage(
 		[
 			fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
@@ -87,17 +87,17 @@ function emitResults(): FauxResponseStep {
 				mapping: [
 					{
 						number: 1,
-						source: "/docs/q3.txt",
+						source: localSource,
 						method: "search_all_documents",
 						content: "Refund exceptions now require director approval before payout.",
 						evidenceRefs: [
-							{ method: "grep", source: "/docs/q3.txt", excerpt: "director approval" },
+							{ method: "grep", source: localSource, excerpt: "director approval" },
 							{
 								method: "posix",
-								source: "/docs/q3.txt",
+								source: localSource,
 								content: "Refund exceptions now require director approval",
 							},
-							{ method: "bm25", source: "/docs/q3.txt", content: "refund director approval" },
+							{ method: "bm25", source: localSource, content: "refund director approval" },
 						],
 					},
 					{
@@ -250,7 +250,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 				],
 				{ stopReason: "toolUse" },
 			),
-			emitResults(),
+			emitResults(realpathSync(join(docs, "q3.txt"))),
 		);
 		const agent = new AutoRAGAgent({
 			model,
@@ -286,7 +286,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		expect(agent.getSystemPrompt()).not.toContain(root);
 
 		const all = await agent.searchAllDocuments("refund director approval finance kakao", { topK: 8 });
-		expect(all.results.some((result) => result.source === "/docs/q3.txt")).toBe(true);
+		expect(all.results.some((result) => result.source === realpathSync(join(docs, "q3.txt")))).toBe(true);
 		expect(all.results.some((result) => result.source === "/kakao/acct-1/chunks/refund-policy")).toBe(true);
 		expect(all.diagnostics.some((diagnostic) => diagnostic.code === "minsync-unavailable")).toBe(true);
 
@@ -303,7 +303,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		// the internal registry (below); the public response is not scrubbed.
 
 		const registry = agent.getResultRegistry(response.sessionId);
-		expect(registry.get(1)?.source).toBe("/docs/q3.txt");
+		expect(registry.get(1)?.source).toBe(realpathSync(join(docs, "q3.txt")));
 		expect(registry.get(2)?.source).toBe("/kakao/acct-1/chunks/refund-policy");
 	});
 });

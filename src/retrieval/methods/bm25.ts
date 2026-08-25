@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { loadMirrorIndex } from "../../mirror/index-store.ts";
 import { normalizeMarkdown } from "../../parser/text.ts";
 import { matchesVirtualPathScope } from "../scope.ts";
@@ -238,10 +238,11 @@ export class BM25Method implements RetrievalMethod {
 				results.push({
 					id: `bm25:${virtualPath}:${chunkId}`,
 					content,
-					source: virtualPath,
+					source: sourcePathForVirtual(this.root, virtualPath),
 					score: hit.score ?? 0,
 					metadata: {
 						method: "bm25",
+						virtualPath,
 						chunkIndex: Number(chunkId),
 						readiness: this.status.readiness,
 						engine: "tantivy",
@@ -283,10 +284,11 @@ export class BM25Method implements RetrievalMethod {
 			.map(({ chunk, score }) => ({
 				id: chunk.id,
 				content: chunk.content,
-				source: chunk.virtualPath,
+				source: sourcePathForVirtual(this.root, chunk.virtualPath),
 				score,
 				metadata: {
 					method: "bm25",
+					virtualPath: chunk.virtualPath,
 					chunkIndex: chunk.chunkIndex,
 					readiness: this.status.readiness,
 					engine: "typescript-fallback",
@@ -390,6 +392,11 @@ function bm25Score(
 function firstString(values: unknown[] | undefined): string | undefined {
 	const first = values?.[0];
 	return typeof first === "string" ? first : undefined;
+}
+
+function sourcePathForVirtual(root: string, virtualPath: string): string {
+	const entry = loadMirrorIndex(root).entries[virtualPath];
+	return entry === undefined ? virtualPath : normalize(entry.sourcePath);
 }
 
 function hash(value: string): string {
