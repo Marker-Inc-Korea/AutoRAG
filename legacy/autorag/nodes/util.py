@@ -4,6 +4,7 @@ from autorag.support import get_support_modules
 
 
 def make_generator_callable_param(generator_dict: Optional[Dict]):
+	generator_dict = generator_dict or {}
 	if "generator_module_type" not in generator_dict.keys():
 		generator_dict = {
 			"generator_module_type": "llama_index_llm",
