@@ -173,7 +173,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			return new GmailSkill({
 				...common(config, workspaceRoot),
 				skillName: registrationName,
-				connector: new HimalayaConnector(himalayaOptions),
+				connector: new HimalayaConnector({
+					...himalayaOptions,
+					...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
+				}),
 			});
 		}
 		return new GmailSkill({

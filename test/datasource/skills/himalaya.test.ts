@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { HimalayaConnector, type HimalayaRunResult } from "../../../src/datasource/skills/gmail/himalaya-connector.ts";
 import { GmailSkill } from "../../../src/datasource/skills/gmail/skill.ts";
 
@@ -15,7 +18,8 @@ const ENVELOPES = JSON.stringify([
 
 function runnerFrom(map: Record<string, HimalayaRunResult>): (args: readonly string[]) => Promise<HimalayaRunResult> {
 	return async (args) => {
-		const key = args.slice(0, 2).join(" ");
+		const commandIndex = args.findIndex((arg) => arg === "envelope" || arg === "message");
+		const key = args.slice(commandIndex, commandIndex + 2).join(" ");
 		return map[key] ?? { ok: false, stdout: "", stderr: "unexpected", code: 1 };
 	};
 }
@@ -72,6 +76,52 @@ describe("HimalayaConnector", () => {
 			expect(result.message).not.toContain("bob@example.com");
 			expect(result.message).not.toContain("/Users/");
 		}
+	});
+
+	it("uses Himalaya v2 mailbox/json flags and preserves bounded actionable diagnostics", async () => {
+		const calls: string[][] = [];
+		const runner = async (args: readonly string[]) => {
+			calls.push([...args]);
+			return {
+				ok: false,
+				stdout: "",
+				stderr: "No backend matching auto is configured for this account.",
+				code: 2,
+			};
+		};
+		const result = await new HimalayaConnector({ account: "gmail", folder: "INBOX", runner }).fetch();
+		expect(result).toMatchObject({ ok: false, reason: "api-error" });
+		if (!result.ok) expect(result.message).toContain("No backend matching auto");
+		expect(calls[0]).toEqual([
+			"--account",
+			"gmail",
+			"--json",
+			"envelope",
+			"list",
+			"--mailbox",
+			"INBOX",
+			"--page-size",
+			"100",
+		]);
+	});
+
+	it("fetches unchanged envelopes only once with workspace state", async () => {
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "autorag-himalaya-"));
+		const calls: string[][] = [];
+		const runner = async (args: readonly string[]) => {
+			calls.push([...args]);
+			const commandIndex = args.findIndex((arg) => arg === "envelope" || arg === "message");
+			return commandIndex >= 0 && args[commandIndex] === "envelope"
+				? ok(ENVELOPES)
+				: ok("The Q2 report is attached and revenue grew 12%.");
+		};
+		const first = new HimalayaConnector({ account: "gmail", workspaceRoot, runner });
+		expect((await first.fetch()).ok).toBe(true);
+		const second = new HimalayaConnector({ account: "gmail", workspaceRoot, runner });
+		const result = await second.fetch();
+		expect(result).toMatchObject({ ok: true, changed: false });
+		expect(calls.filter((args) => args.includes("message")).length).toBe(2);
+		rmSync(workspaceRoot, { recursive: true, force: true });
 	});
 
 	it("returns unavailable when the binary cannot spawn", async () => {
