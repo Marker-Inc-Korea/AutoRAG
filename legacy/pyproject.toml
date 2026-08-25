@@ -120,7 +120,6 @@ dev = [
     "pytest-mock",
     "aioresponses>=0.7.9",
     "asyncstdlib",
-    "vllm-mock>=0.0.3; sys_platform == 'linux'",
     "ty",
     "deptry",
 ]

@@ -1,14 +1,11 @@
-import pytest
+import sys
+import types
+from dataclasses import dataclass
+from types import SimpleNamespace
+
 import pandas as pd
 
-pytest.importorskip("vllm", reason="vllm not installed")
-try:
-	import vllm_mock
-	from vllm_mock import LLM
-except Exception as exc:  # noqa: BLE001 - skip when mock is incompatible with installed vllm
-	pytest.skip(f"vllm_mock not compatible with installed vllm: {exc}", allow_module_level=True)
-
-from autorag.nodes.generator import Vllm  # noqa: E402
+from autorag.nodes.generator import Vllm
 from tests.autorag.nodes.generator.test_generator_base import (  # noqa: E402
 	prompts,
 	chat_prompts,
@@ -20,9 +17,68 @@ from tests.autorag.nodes.generator.test_generator_base import (  # noqa: E402
 	check_generated_log_probs_chat,
 )
 
-def test_vllm(mocker):
-	mock_class = mocker.patch("vllm.LLM")
-	mock_class.return_value = LLM(model="mock-model")
+
+@dataclass
+class FakeLogProb:
+	logprob: float
+
+
+class FakeSamplingParams:
+	@classmethod
+	def from_optional(cls, **kwargs):
+		return kwargs
+
+	def __init__(self, **kwargs):
+		self.kwargs = kwargs
+
+
+class FakeLLM:
+	def __init__(self, model, **kwargs):
+		self.model = model
+		self.kwargs = kwargs
+
+	def _outputs(self, prompts):
+		return [
+			SimpleNamespace(
+				outputs=[
+					SimpleNamespace(
+						text=f"generated: {prompt}",
+						token_ids=[1, 2, 3],
+						logprobs=[
+							{1: FakeLogProb(-0.1)},
+							{2: FakeLogProb(-0.2)},
+							{3: FakeLogProb(-0.3)},
+						],
+					)
+				]
+			)
+			for prompt in prompts
+		]
+
+	def generate(self, prompts, sampling_params, **kwargs):
+		return self._outputs(prompts)
+
+	def chat(self, prompts, sampling_params, **kwargs):
+		return self._outputs(
+			[message["content"] for prompt in prompts for message in prompt[-1:]]
+		)
+
+
+def install_fake_vllm(monkeypatch):
+	fake_vllm = types.ModuleType("vllm")
+	fake_outputs = types.ModuleType("vllm.outputs")
+	fake_logprobs = types.ModuleType("vllm.logprobs")
+	setattr(fake_vllm, "LLM", FakeLLM)
+	setattr(fake_vllm, "SamplingParams", FakeSamplingParams)
+	setattr(fake_outputs, "RequestOutput", SimpleNamespace)
+	setattr(fake_logprobs, "SampleLogprobs", dict)
+	monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+	monkeypatch.setitem(sys.modules, "vllm.outputs", fake_outputs)
+	monkeypatch.setitem(sys.modules, "vllm.logprobs", fake_logprobs)
+
+
+def test_vllm(monkeypatch):
+	install_fake_vllm(monkeypatch)
 
 	previous_result = pd.DataFrame(
 		{"prompts": prompts, "qid": ["id-1", "id-2", "id-3"]}
@@ -43,9 +99,8 @@ def test_vllm(mocker):
 	assert all(len(tokens[i]) == len(log_probs[i]) for i in range(len(tokens)))
 
 
-def test_vllm_chat_prompt(mocker):
-	mock_class = mocker.patch("vllm.LLM")
-	mock_class.return_value = LLM(model="mock-model")
+def test_vllm_chat_prompt(monkeypatch):
+	install_fake_vllm(monkeypatch)
 
 	previous_result = pd.DataFrame(
 		{"prompts": chat_prompts, "qid": ["id-1", "id-2", "id-3"]}
@@ -66,9 +121,8 @@ def test_vllm_chat_prompt(mocker):
 	assert all(len(tokens[i]) == len(log_probs[i]) for i in range(len(tokens)))
 
 
-def test_vllm_chat_prompt_think(mocker):
-	mock_class = mocker.patch("vllm.LLM")
-	mock_class.return_value = LLM(model="mock-model")
+def test_vllm_chat_prompt_think(monkeypatch):
+	install_fake_vllm(monkeypatch)
 
 	previous_result = pd.DataFrame(
 		{"prompts": chat_prompts, "qid": ["id-1", "id-2", "id-3"]}
