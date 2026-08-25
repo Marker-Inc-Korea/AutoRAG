@@ -4,6 +4,10 @@ Legacy AutoRAG uses `ty` for static type checking. The checks are intentionally
 introduced in small product-code scopes so optional integrations and third-party
 stub limitations do not hide errors in the core modules.
 
+`legacy/tests` is intentionally excluded from `ty`. Tests and test doubles are
+validated with pytest and ruff instead; they are not part of the product-code
+typing contract.
+
 ## Reproducible commands
 
 From `legacy/`:
@@ -18,7 +22,9 @@ uv run --locked pytest -q tests/autorag/data/chunk \
   tests/autorag/data/parse/test_clova.py
 ```
 
-The focused `ty` scope above is clean and runs in CI. The complete
-`uv run --locked ty check autorag tests` command remains broader than this
-initial scope because it includes optional integrations and third-party
-library APIs that are being migrated in subsequent issue-sized changes.
+The focused product-code `ty` scope above is clean and runs in CI. Do not
+replace it with `ty check autorag tests`: tests are intentionally excluded.
+The complete product-code command, `uv run --locked ty check autorag`, remains
+broader than this initial scope because it includes optional integrations and
+third-party library APIs that are being migrated in subsequent issue-sized
+changes.
