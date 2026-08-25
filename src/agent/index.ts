@@ -10,6 +10,12 @@ export {
 	type LoadDatasourceSkillDetails,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
+export {
+	createScanDuplicateDocumentsTool,
+	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+	type ScanDuplicateDocumentsDetails,
+	type ScanDuplicateDocumentsProvider,
+} from "./dupey-tool.ts";
 export type {
 	AutoRAGEmittedResult,
 	AutoRAGMappingEntry,

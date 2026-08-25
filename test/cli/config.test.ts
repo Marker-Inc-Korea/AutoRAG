@@ -39,6 +39,7 @@ describe("single-model CLI config", () => {
 		expect(config.searchPaths).toEqual(["docs", "notes"]);
 		expect(config.bm25?.enabled).toBe(true);
 		expect(config.minSync?.enabled).toBe(true);
+		expect(config.excludeExactDuplicates).toBe(true);
 	});
 
 	it("rejects partial model flags", () => {
@@ -77,11 +78,15 @@ describe("single-model CLI config", () => {
 			minSync: { enabled: false },
 			jikji: {},
 			parserOptions: { pdf: true },
+			dupey: { enabled: false },
+			excludeExactDuplicates: false,
 		});
 		expect(opts.bm25).toEqual({ forceEngine: "typescript-fallback" });
 		expect(opts.minSync).toBe(false);
 		expect(opts.jikji).toEqual({});
 		expect(opts.parserOptions).toEqual({ pdf: true });
+		expect(opts.dupey).toBe(false);
+		expect(opts.excludeExactDuplicates).toBe(false);
 	});
 
 	it("resolves a configured catalog model without local runtime config", () => {

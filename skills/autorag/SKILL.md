@@ -24,9 +24,21 @@ Confirm `~/.autorag/config.json`, an explicit `--config`, or `AUTORAG_CONFIG`
 exists. Inspect only non-secret `searchPaths` and `model` metadata, then run:
 
 ```bash
+autorag duplicates              # read-only duplicate-family review
+autorag duplicates --json       # machine-readable cleanup planning input
 autorag status
 autorag health
 ```
+
+### Duplicate-file review
+
+Use `autorag duplicates` when the user asks to find duplicate files, choose
+likely latest copies, or reduce corpus/index space. The command and the
+`scan_duplicate_documents` Agent tool are read-only and never delete or move
+source files. Exact means dupey's canonical extracted-text hash matches;
+near/contains families require human review. Exact duplicate exclusion during
+refresh is enabled by default and can be disabled with
+`"excludeExactDuplicates": false` in `config.json`.
 
 `status` is model-free and path-opaque. `health` resolves the single model,
 checks credential presence, and normally probes one live completion. If the

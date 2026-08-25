@@ -63,3 +63,8 @@ jobs:
       - name: Run AutoRAG tests
         run: |
           uv run python -m pytest -o log_cli=true --log-cli-level=INFO -n auto tests
+      - name: Check clean legacy ty scope
+        run: |
+          # Tests are intentionally excluded; pytest and ruff validate tests.
+          uv run --locked ty check autorag/data/chunk autorag/data/parse/base.py \
+            autorag/data/parse/clova.py autorag/nodes/util.py

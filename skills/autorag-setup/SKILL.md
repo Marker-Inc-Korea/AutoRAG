@@ -118,6 +118,12 @@ user explicitly asks otherwise. MinSync auto-install is off by default and its
 binary must already be installed or on `PATH`; Jikji can install `jikji-cli`
 through cargo when enabled and allowed.
 
+Exact duplicate exclusion is enabled by default. AutoRAG invokes the external
+`dupey` CLI before parsed-mirror indexing, keeps the newest filesystem copy for
+each exact canonical-text hash, and excludes older copies from the mirror. Set
+`"excludeExactDuplicates": false` to index every copy. Missing dupey is
+non-fatal; refresh continues without this optimization.
+
 Optional MinSync embedder settings:
 
 ```bash

@@ -2,13 +2,19 @@ import base64
 import itertools
 import json
 import os
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TypedDict
 
 import aiohttp
 import fitz  # PyMuPDF
 
 from autorag.data.parse.base import parser_node
 from autorag.utils.util import process_batch, get_event_loop
+
+
+class TableCell(TypedDict):
+	text: str
+	rowSpan: int
+	colSpan: int
 
 
 @parser_node
@@ -152,7 +158,9 @@ def json_to_html_table(json_data):
 	max_row = max(cell["rowIndex"] + cell["rowSpan"] for cell in json_data)
 	max_col = max(cell["columnIndex"] + cell["columnSpan"] for cell in json_data)
 	# Create a 2D array to keep track of merged cells
-	table = [["" for _ in range(max_col)] for _ in range(max_row)]
+	table: list[list[TableCell | None | str]] = [
+		["" for _ in range(max_col)] for _ in range(max_row)
+	]
 	# Fill the table with cell data
 	for cell in json_data:
 		row = cell["rowIndex"]
@@ -182,6 +190,8 @@ def json_to_html_table(json_data):
 			if cell == "":
 				html += "    <td></td>\n"
 			else:
+				if not isinstance(cell, dict):
+					raise TypeError(f"Unexpected table cell value: {cell!r}")
 				row_span_attr = (
 					f' rowspan="{cell["rowSpan"]}"' if cell["rowSpan"] > 1 else ""
 				)

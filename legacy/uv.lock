@@ -586,10 +586,10 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.51.3" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'parse'", specifier = ">=0.17.2" },
-    { name = "vllm", marker = "extra == 'gpu'", specifier = ">=0.11.0,<0.21.0" },
+    { name = "vllm", marker = "extra == 'gpu'", specifier = ">=0.11.0,<0.28.0" },
     { name = "voyageai", specifier = ">=0.3.2" },
     { name = "weaviate-client", specifier = ">=4.15.2" },
-    { name = "xgrammar", marker = "extra == 'gpu'", specifier = ">=0.1.32,<0.2.0" },
+    { name = "xgrammar", marker = "extra == 'gpu'", specifier = ">=0.1.32,<0.3.0" },
 ]
 provides-extras = ["ko", "parse", "ja", "gpu", "all"]
 

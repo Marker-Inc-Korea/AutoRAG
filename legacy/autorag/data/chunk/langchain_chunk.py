@@ -31,6 +31,7 @@ def langchain_chunk(
 	:param metadata_list: The list of dict of metadata from the parsed result
 	:return: tuple of lists containing the chunked doc_id, contents, path, start_idx, end_idx and metadata
 	"""
+	metadata_list = metadata_list or [{} for _ in texts]
 	results = [
 		langchain_chunk_pure(text, chunker, file_name_language, meta)
 		for text, meta in zip(texts, metadata_list)
@@ -50,7 +51,9 @@ def langchain_chunk_pure(
 	_metadata: Optional[Dict[str, str]] = None,
 ):
 	# chunk
-	chunk_results = chunker.create_documents([text], metadatas=[_metadata])
+	chunk_results = chunker.create_documents(
+		[text], metadatas=[_metadata or {}]
+	)
 
 	# make doc_id
 	doc_id = list(str(uuid.uuid4()) for _ in range(len(chunk_results)))
