@@ -59,7 +59,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.9",
+    "@biomejs/biome": "2.5.10",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2",
