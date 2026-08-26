@@ -310,7 +310,7 @@ export class AutoRAGAgent {
 			this.methodRegistry.register(this.minSyncMethod);
 		}
 		if (options.bm25 !== false) {
-			const bm25Opts = options.bm25 ?? { autoInstall: false };
+			const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
 			this.bm25Method =
 				options.minSync === false || hasLegacyBM25Options(bm25Opts)
 					? new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as BM25MethodOptions)
