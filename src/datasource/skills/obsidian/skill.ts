@@ -34,6 +34,7 @@ export interface ObsidianSkillOptions {
 	readonly workspaceRoot?: string;
 	readonly collectionName?: string;
 	readonly timeoutMs?: number;
+	readonly configPath?: string;
 	readonly connectorOptions?: { readonly vaultPath?: string };
 }
 
@@ -68,6 +69,7 @@ export class ObsidianSkill implements DatasourceSkill {
 			instanceId: this.instanceId,
 			collectionName: options.collectionName ?? toQmdCollectionName(this.instanceId),
 			...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+			...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
 		};
 		this.client = options.client ?? new QmdClient(clientOptions);
 	}

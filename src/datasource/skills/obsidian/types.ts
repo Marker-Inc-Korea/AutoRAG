@@ -1,3 +1,4 @@
+import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 /**
@@ -29,6 +30,10 @@ export interface QmdOptions {
 	readonly collectionName?: string;
 	/** Environment overrides merged on top of a restricted process env. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/** Parent-owned managed CLI configuration boundary. */
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
+	/** Explicit operator-owned qmd config directory, never rewritten. */
+	readonly configPath?: string;
 }
 
 export const DEFAULT_QMD_BINARY = "qmd";

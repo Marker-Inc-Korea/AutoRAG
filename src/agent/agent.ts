@@ -12,6 +12,7 @@ import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
 import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
+import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
@@ -315,6 +316,13 @@ export class AutoRAGAgent {
 			if (!this.datasourceSkills.some((skill) => skill.describe().name === datasource)) continue;
 			try {
 				this.managedCliRegistry.register(createCrawlerManagedCliProvider(binary));
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "obsidian")) {
+			try {
+				this.managedCliRegistry.register(createQmdManagedCliProvider());
 			} catch (error) {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}

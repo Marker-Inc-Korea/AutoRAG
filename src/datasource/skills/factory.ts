@@ -204,12 +204,16 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
 	obsidian: (config, workspaceRoot, registrationName) => {
-		const connector = config.connector as { vaultPath?: string; binaryPath?: string } | undefined;
+		const connector = config.connector as
+			| { vaultPath?: string; binaryPath?: string; configPath?: string }
+			| undefined;
 		return new ObsidianSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
 			...(connector?.vaultPath !== undefined ? { vaultPath: connector.vaultPath } : {}),
 			...(connector?.binaryPath !== undefined ? { binaryPath: connector.binaryPath } : {}),
+			...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
+			...(connector?.configPath !== undefined ? { configPath: connector.configPath } : {}),
 		});
 	},
 	rss: (config, workspaceRoot, registrationName) =>
