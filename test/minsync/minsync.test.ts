@@ -709,6 +709,38 @@ process.exit(2);
 		expect(result.reason).toBe("init-failed");
 	});
 
+	it("materializes the managed CLI boundary before native commands", async () => {
+		const workspace = mkdtempSync(join(tmpdir(), "autorag-minsync-managed-"));
+		const binary = join(workspace, "minsync");
+		const callsPath = join(workspace, "managed-calls.jsonl");
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify({ cwd: process.cwd(), args }) + "\\n");
+const config = join(process.cwd(), ".minsync", "config.toml");
+const cursor = join(process.cwd(), ".minsync", "cursor.json");
+if (args[0] === "init") { mkdirSync(dirname(config), { recursive: true }); writeFileSync(config, "[embedder]\\n"); }
+if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
+if (args[0] === "sync") { mkdirSync(dirname(cursor), { recursive: true }); writeFileSync(cursor, "{}"); process.stdout.write('{"synced":1}'); }
+`,
+		);
+		chmodSync(binary, 0o755);
+
+		const result = await new MinSyncClient({ binaryPath: binary, workspacePath: workspace }).sync();
+
+		expect(result).toMatchObject({ ok: true, synced: 1 });
+		const calls = readFileSync(callsPath, "utf8")
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { cwd: string; args: string[] });
+		expect(calls.every((call) => call.cwd === realpathSync(workspace))).toBe(true);
+		expect(calls.map((call) => call.args[0])).toEqual(["init", "check", "sync"]);
+		rmSync(workspace, { recursive: true, force: true });
+	});
+
 	it("rewrites allowlisted embedder fields into .minsync/config.toml after init", async () => {
 		// Create a minimal config.toml that init would have produced
 		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
