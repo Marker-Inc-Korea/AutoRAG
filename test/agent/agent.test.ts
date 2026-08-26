@@ -60,6 +60,17 @@ describe("AutoRAGAgent", () => {
 		).toThrow("searchTimeoutMs must be a positive finite number");
 	});
 
+	it("rejects a non-positive tool-call limit", () => {
+		expect(
+			() =>
+				new AutoRAGAgent({
+					searchPaths: [FIXTURE_DIR],
+					memoryPath: join(tmpDir, "memory.json"),
+					maxSearchToolCalls: 1.5,
+				}),
+		).toThrow("maxSearchToolCalls must be a positive integer");
+	});
+
 	it("creates with default config", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
