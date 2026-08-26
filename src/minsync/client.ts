@@ -10,6 +10,8 @@ export interface MinSyncClientOptions {
 	readonly embedder?: MinSyncEmbedderConfig;
 }
 
+export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
+
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export class MinSyncClient {
@@ -92,11 +94,11 @@ export class MinSyncClient {
 		return { ok: true, synced: readSyncedCount(result.stdout), workspacePath: this.workspacePath };
 	}
 
-	async query(text: string, topK: number): Promise<readonly MinSyncQueryHit[]> {
+	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
 		const result = await spawnProcess(
 			this.binaryPath,
-			["query", "--format", "json", "-k", String(topK), text],
+			["query", "--format", "json", "-k", String(topK), "--mode", mode, text],
 			this.workspacePath,
 		);
 		if (!result.ok) return [];
