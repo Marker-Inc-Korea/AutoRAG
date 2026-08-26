@@ -37,6 +37,7 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
+import { createMinSyncManagedCliProvider } from "../minsync/managed-config.ts";
 import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
@@ -323,6 +324,20 @@ export class AutoRAGAgent {
 		if (this.datasourceSkills.some((skill) => skill.describe().name === "obsidian")) {
 			try {
 				this.managedCliRegistry.register(createQmdManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (options.minSync !== false) {
+			try {
+				this.managedCliRegistry.register(createMinSyncManagedCliProvider(options.minSync?.binaryPath));
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (options.minSync !== false) {
+			try {
+				this.managedCliRegistry.register(createMinSyncManagedCliProvider(options.minSync?.binaryPath));
 			} catch (error) {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
