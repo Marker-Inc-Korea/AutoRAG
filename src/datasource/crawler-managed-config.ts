@@ -1,18 +1,11 @@
 import { join } from "node:path";
-import type {
-	ManagedCliConfigProvider,
-	ManagedCliContext,
-	ManagedCliLaunchContext,
-} from "../cli/managed-cli-config.ts";
+import type { ManagedCliConfigProvider, ManagedCliLaunchContext } from "../cli/managed-cli-config.ts";
 
 /**
  * Configuration transport for crawler CLIs. The crawler command language is
  * deliberately absent; only workspace/archive transport is provided.
  */
-export function createCrawlerManagedCliProvider(
-	tool: string,
-	binaryPath?: string,
-): ManagedCliConfigProvider {
+export function createCrawlerManagedCliProvider(tool: string, binaryPath?: string): ManagedCliConfigProvider {
 	return {
 		tool,
 		...(binaryPath === undefined ? {} : { binaryPaths: [binaryPath] }),
