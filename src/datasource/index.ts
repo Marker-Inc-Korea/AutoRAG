@@ -28,6 +28,7 @@ export { mapDatasourceDiagnostic, mapDatasourceDiagnostics } from "./diagnostics
 export { type CronParseResult, isDue, parseCronExpr } from "./polling.ts";
 export { DatasourceSkillRegistry, type RegisteredDatasourceSkill } from "./registry.ts";
 export { DatasourceResultFilter, type ResultsByMethod } from "./result-filter.ts";
+export { createCrawlerManagedCliProvider } from "./crawler-managed-config.ts";
 export {
 	buildDatasourceChunkSource,
 	buildDatasourceInstanceSource,

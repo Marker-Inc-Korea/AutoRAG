@@ -7,6 +7,8 @@ import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
+import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
+import { createCrawlerManagedCliProvider } from "../datasource/crawler-managed-config.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
@@ -293,6 +295,25 @@ export class AutoRAGAgent {
 		if (this.datasourceSkills.some((skill) => skill.describe().name === "discord")) {
 			try {
 				this.managedCliRegistry.register(createDiscrawlManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "kakao")) {
+			try {
+				this.managedCliRegistry.register(createKatokManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		for (const [datasource, binary] of [
+			["whatsapp", "wacrawl"],
+			["telegram", "telecrawl"],
+			["slack", "slacrawl"],
+		] as const) {
+			if (!this.datasourceSkills.some((skill) => skill.describe().name === datasource)) continue;
+			try {
+				this.managedCliRegistry.register(createCrawlerManagedCliProvider(binary));
 			} catch (error) {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
