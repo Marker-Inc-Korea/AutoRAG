@@ -310,6 +310,7 @@ export class AutoRAGAgent {
 			["whatsapp", "wacrawl"],
 			["telegram", "telecrawl"],
 			["slack", "slacrawl"],
+			["notion", "notcrawl"],
 		] as const) {
 			if (!this.datasourceSkills.some((skill) => skill.describe().name === datasource)) continue;
 			try {

@@ -118,13 +118,16 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
 		});
 	},
-	notion: (config, _workspaceRoot, registrationName) =>
+	notion: (config, workspaceRoot, registrationName) =>
 		new NotionSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
-			connectorOptions: config.connector as NotcrawlOptions,
+			connectorOptions: {
+				...(config.connector as NotcrawlOptions),
+				...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
+			},
 		}),
 	kakao: (config) =>
 		new KatokSkill({
