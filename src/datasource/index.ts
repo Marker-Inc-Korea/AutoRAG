@@ -99,7 +99,13 @@ export type {
 	KatokSkillClient,
 	KatokSkillOptions,
 } from "./skills/katok/index.ts";
-export { KatokBm25Method, KatokClient, KatokSemanticMethod, KatokSkill } from "./skills/katok/index.ts";
+export {
+	KatokBm25Method,
+	KatokClient,
+	KatokSemanticMethod,
+	KatokSkill,
+	createKatokManagedCliProvider,
+} from "./skills/katok/index.ts";
 export {
 	MailExportConnector,
 	type MailExportConnectorOptions,
