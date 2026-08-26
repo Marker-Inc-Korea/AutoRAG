@@ -158,6 +158,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 					skillName: registrationName,
 					instanceId: config.instanceId,
 					workspaceRoot,
+					...(rcloneOptions.configPath === undefined ? {} : { configPath: rcloneOptions.configPath }),
 				}),
 			});
 		}
