@@ -312,7 +312,7 @@ export class AutoRAGAgent {
 		if (options.bm25 !== false) {
 			const bm25Opts = options.bm25 ?? {};
 			this.bm25Method =
-				options.minSync === false
+				options.minSync === false || hasLegacyBM25Options(bm25Opts)
 					? new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as BM25MethodOptions)
 					: new MinSyncBM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as MinSyncBM25MethodOptions);
 			this.methodRegistry.register(this.bm25Method);
@@ -1437,6 +1437,10 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+function hasLegacyBM25Options(options: object): boolean {
+	return ["indexPath", "fallback", "forceEngine", "importBinding"].some((key) => Object.hasOwn(options, key));
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

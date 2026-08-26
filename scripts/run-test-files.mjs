@@ -18,15 +18,11 @@ function collectTestFiles(directory) {
 }
 
 const testFiles = collectTestFiles(testRoot).sort();
-for (const testFile of testFiles) {
-	const displayPath = relative(root, testFile);
-	console.log(`\n=== ${displayPath} ===`);
-	const result = spawnSync(process.execPath, [vitest, "run", testFile], {
-		cwd: root,
-		stdio: "inherit",
-	});
-	if (result.error) throw result.error;
-	if (result.status !== 0) process.exit(result.status ?? 1);
-}
+const result = spawnSync(process.platform === "win32" ? "bun.exe" : "bun", [vitest, "run", ...testFiles], {
+	cwd: root,
+	stdio: "inherit",
+});
+if (result.error) throw result.error;
+if (result.status !== 0) process.exit(result.status ?? 1);
 
 console.log(`\nAll ${testFiles.length} test files passed.`);
