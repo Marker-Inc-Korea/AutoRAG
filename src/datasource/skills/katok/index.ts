@@ -7,6 +7,7 @@
  */
 
 export { KatokClient } from "./client.ts";
+export { createKatokManagedCliProvider } from "./config.ts";
 export { KatokBm25Method, type KatokMethodOptions, type KatokSearchClient, KatokSemanticMethod } from "./methods.ts";
 export { KatokSkill, type KatokSkillClient, type KatokSkillOptions } from "./skill.ts";
 export type {

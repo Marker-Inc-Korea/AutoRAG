@@ -2,6 +2,8 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { katokDatasourceRoot } from "./paths.ts";
+import { createKatokManagedCliProvider } from "./config.ts";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import type {
 	KatokChunk,
 	KatokChunkResult,
@@ -61,6 +63,7 @@ type SpawnRequest = {
 	readonly args: readonly string[];
 	readonly env: NodeJS.ProcessEnv;
 	readonly signal?: AbortSignal;
+	readonly cwd?: string;
 };
 
 interface RemoteEmbeddingViolation {
@@ -79,9 +82,20 @@ interface RemoteEmbeddingViolation {
  */
 export class KatokClient {
 	private readonly options: KatokOptions;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: KatokOptions = {}) {
 		this.options = options;
+		if (options.managedCliConfigManager) {
+			this.managedCliConfigManager = options.managedCliConfigManager;
+		} else if (options.root !== undefined || options.workspacePath !== undefined || options.configPath !== undefined) {
+			const registry = new ManagedCliRegistry();
+			registry.register(createKatokManagedCliProvider(options.binaryPath));
+			this.managedCliConfigManager = new ManagedCliConfigManager({
+				workspace: options.root ?? process.cwd(),
+				registry,
+			});
+		}
 	}
 
 	async doctor(signal?: AbortSignal): Promise<KatokDoctorResult> {
@@ -164,7 +178,32 @@ export class KatokClient {
 			};
 		}
 		const env = controlledEnv(this.options.env);
-		return spawnKatok({ options: this.options, args: [...args, ...commonArgs(this.options)], env, signal });
+		let launchContext:
+			| {
+					readonly prefixArgs: readonly string[];
+					readonly cwd?: string;
+					readonly env: Readonly<Record<string, string>>;
+			  }
+			| undefined;
+		try {
+			launchContext = await this.managedCliConfigManager?.materialize("katok", {
+				...(this.options.configPath === undefined ? {} : { ownership: "external", configPath: this.options.configPath }),
+				config: { source: this.options.source ?? DEFAULT_KATOK_SOURCE },
+			});
+		} catch {
+			return { ok: false, reason: "spawn-error", stdout: "", stderr: "", code: null };
+		}
+		return spawnKatok({
+			options: this.options,
+			args: [
+				...(launchContext?.prefixArgs ?? []),
+				...args,
+				...(launchContext === undefined ? commonArgs(this.options) : commonArgsWithoutWorkspace(this.options)),
+			],
+			env: { ...env, ...(launchContext?.env ?? {}) },
+			signal,
+			...(launchContext?.cwd === undefined ? {} : { cwd: launchContext.cwd }),
+		});
 	}
 }
 
@@ -174,6 +213,7 @@ function spawnKatok(request: SpawnRequest): Promise<ProcessResult> {
 		const portable = portableSpawnCommand(commandFor(options.binaryPath), args);
 		const child = spawn(portable.command, [...portable.args], {
 			env,
+			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
@@ -252,6 +292,16 @@ function commonArgs(options: KatokOptions): readonly string[] {
 	return args;
 }
 
+function commonArgsWithoutWorkspace(options: KatokOptions): readonly string[] {
+	const args: string[] = [];
+	const source = options.source ?? DEFAULT_KATOK_SOURCE;
+	args.push("--source", source);
+	if (source === "fixture" && options.fixturePath !== undefined) {
+		args.push("--fixture-path", options.fixturePath);
+	}
+	return args;
+}
+
 function resolveWorkspace(options: KatokOptions): string | undefined {
 	if (options.workspacePath !== undefined) return options.workspacePath;
 	const root = options.root ?? process.cwd();
@@ -301,7 +351,14 @@ function searchOk(hits: readonly KatokSearchHit[], result: ProcessResult): Katok
 	return { ok: true, hits, data: { hits }, stdout: result.stdout, stderr: result.stderr, code: result.code ?? 0 };
 }
 function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
+	if (child.killed) return;
+	if (process.platform !== "win32" && child.pid !== undefined) {
+		try {
+			process.kill(-child.pid, "SIGKILL");
+			return;
+		} catch {}
+	}
+	child.kill("SIGKILL");
 }
 
 /** Path-opaque stderr replacement for spawn failures (the raw Node error leaks the binary path). */
