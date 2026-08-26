@@ -1,7 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
+import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { createCrawlerManagedCliProvider } from "./crawler-managed-config.ts";
 import type {
 	CrawlerCliOptions,
@@ -68,7 +68,11 @@ export class CrawlerCliClient {
 		const env = controlledEnv(this.profile.allowedEnvPrefixes, this.options.env);
 		env.CRAWLKIT_NO_UPDATE_CHECK = "1";
 		let launch:
-			| { readonly prefixArgs: readonly string[]; readonly cwd?: string; readonly env: Readonly<Record<string, string>> }
+			| {
+					readonly prefixArgs: readonly string[];
+					readonly cwd?: string;
+					readonly env: Readonly<Record<string, string>>;
+			  }
 			| undefined;
 		try {
 			if (this.managedCliConfigManager) {
