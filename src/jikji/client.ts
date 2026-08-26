@@ -1,9 +1,11 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
 import { parseJikjiAnswerPack } from "./answer-pack.ts";
 import { cachedJikjiBinaryPath, ensureJikjiBinary, lookupExecutableInPath } from "./installer.ts";
+import { createJikjiManagedCliProvider } from "./managed-config.ts";
 import type {
 	JikjiFailureReason,
 	JikjiFindOptions,
@@ -36,14 +38,22 @@ type SpawnJikjiRequest = {
 	readonly options: JikjiOptions;
 	readonly args: readonly string[];
 	readonly signal?: AbortSignal;
+	readonly cwd?: string;
 };
 
 export class JikjiClient {
 	private readonly options: JikjiOptions;
 	private resolvedCommand: string | undefined;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: JikjiOptions = {}) {
 		this.options = options;
+		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
+		else if (options.root !== undefined) {
+			const registry = new ManagedCliRegistry();
+			registry.register(createJikjiManagedCliProvider(options.binaryPath));
+			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.root, registry });
+		}
 	}
 
 	/**
@@ -84,9 +94,8 @@ export class JikjiClient {
 	}
 
 	async prepare(root: string, options: JikjiPrepareOptions = {}): Promise<JikjiPrepareResult> {
-		const result = await spawnJikji({
+		const result = await this.spawn({
 			command: await this.resolveCommand(),
-			options: this.options,
 			args: buildPrepareArgs(this.options, root),
 			signal: options.signal,
 		});
@@ -108,9 +117,8 @@ export class JikjiClient {
 	}
 
 	async find(root: string, query: string, options: JikjiFindOptions = {}): Promise<JikjiFindResult> {
-		const result = await spawnJikji({
+		const result = await this.spawn({
 			command: await this.resolveCommand(),
-			options: this.options,
 			args: buildFindArgs(root, query, options),
 			signal: options.signal,
 		});
@@ -141,6 +149,15 @@ export class JikjiClient {
 			code: result.code ?? 0,
 		};
 	}
+
+	private async spawn(request: Omit<SpawnJikjiRequest, "options">): Promise<ProcessResult> {
+		const launch = await this.managedCliConfigManager?.materialize("jikji", { config: {} });
+		return spawnJikji({
+			...request,
+			options: this.options,
+			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
+		});
+	}
 }
 
 /**
@@ -155,6 +172,7 @@ function spawnJikji(request: SpawnJikjiRequest): Promise<ProcessResult> {
 		const portable = portableSpawnCommand(request.command, request.args);
 		const child = spawn(portable.command, [...portable.args], {
 			env: controlledEnv(options.env),
+			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };

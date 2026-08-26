@@ -19,6 +19,7 @@ export {
 	jikjiExecutableName,
 	lookupExecutableInPath,
 } from "./installer.ts";
+export { createJikjiManagedCliProvider } from "./managed-config.ts";
 export type { JikjiSourceRoot } from "./path-map.ts";
 export { mapJikjiPath, planJikjiSourceRoots, resolveReturnedPath } from "./path-map.ts";
 export type {
