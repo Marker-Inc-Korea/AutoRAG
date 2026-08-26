@@ -63,6 +63,7 @@ async function installMinSyncFromCargo(
 	destination: string,
 ): Promise<InstalledMinSyncBinary> {
 	const cargoRoot = join(options.root, ".autorag", "minsync-cargo");
+	mkdirSync(dirname(destination), { recursive: true });
 	mkdirSync(cargoRoot, { recursive: true });
 	const result = await spawnProcess(
 		"cargo",
