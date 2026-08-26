@@ -1,4 +1,5 @@
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
+import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
 
 /**
  * Search modes accepted by the external `discrawl search --mode` flag.
@@ -105,6 +106,8 @@ export interface DiscrawlOptions {
 	readonly defaultMode?: DiscrawlSearchMode;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/** Shared manager supplied by the parent datasource execution boundary. */
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export const DEFAULT_DISCRAWL_BINARY = "discrawl";

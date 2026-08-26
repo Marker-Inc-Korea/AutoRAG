@@ -5,6 +5,8 @@ import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill }
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
+import { ManagedCliRegistry } from "../cli/managed-cli-config.ts";
+import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
@@ -202,6 +204,7 @@ export interface AutoRAGAgentOptions {
 	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	managedCliRegistry?: ManagedCliRegistry;
 }
 
 export interface AutoRAGSearchSession {
@@ -265,6 +268,7 @@ export class AutoRAGAgent {
 	private readonly bm25Method: BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	private readonly managedCliRegistry: ManagedCliRegistry;
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
@@ -285,6 +289,14 @@ export class AutoRAGAgent {
 		);
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
+		this.managedCliRegistry = options.managedCliRegistry ?? new ManagedCliRegistry();
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "discord")) {
+			try {
+				this.managedCliRegistry.register(createDiscrawlManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
 
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
@@ -337,7 +349,10 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
-		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot });
+		const bashTool = createBashTool({
+			cwd: this.workspaceProjectRoot,
+			managedCliRegistry: this.managedCliRegistry,
+		});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
