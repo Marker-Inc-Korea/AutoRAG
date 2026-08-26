@@ -89,7 +89,14 @@ describe("SlacrawlClient", () => {
 			hits: [{ id: "C1-1700000001-000100", content: "Release starts at seven", title: "#deployments" }],
 		});
 
-		expect(calls()[0]?.args).toEqual(["--config", join(root, "slacrawl.yaml"), "sync", "--source", "primary"]);
+		expect(calls()[0]?.args).toEqual([
+			"--config",
+			join(root, "slacrawl.yaml"),
+			"--json",
+			"sync",
+			"--source",
+			"primary",
+		]);
 		expect(calls()[1]?.args).toEqual(["--json", "search", "--limit", "5", "release"]);
 		expect(calls().every((call) => call.openai === null)).toBe(true);
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
