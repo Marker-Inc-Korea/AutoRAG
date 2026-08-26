@@ -1,4 +1,5 @@
 import type { RetrievalOptions } from "../retrieval/types.ts";
+import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
 
 export type CrawlerFailureReason =
 	| "binary-missing"
@@ -57,6 +58,10 @@ export interface CrawlerCliOptions {
 	readonly timeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/** Workspace root for the shared managed CLI boundary. */
+	readonly workspacePath?: string;
+	/** Parent-owned managed configuration manager. */
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export interface CrawlerProfile {

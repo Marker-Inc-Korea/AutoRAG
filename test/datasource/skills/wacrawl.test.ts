@@ -101,6 +101,21 @@ describe("WacrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
+	it("routes configured workspace execution through the managed launch context", async () => {
+		writeFakeWacrawl();
+		const client = new WacrawlClient({
+			binaryPath,
+			workspacePath: root,
+			env: { WACRAWL_FAKE_OUTPUT: JSON.stringify({ messages: 1 }) },
+		});
+
+		expect(await client.sync()).toMatchObject({ ok: true, count: 1 });
+		expect(calls()[0]?.args.slice(0, 2)).toEqual([
+			"--db",
+			join(root, ".autorag", "datasources", "wacrawl", "archive.db"),
+		]);
+	});
+
 	it("maps a missing binary and malformed output without throwing", async () => {
 		const missing = new WacrawlClient({ binaryPath: join(root, "missing") });
 		expect(await missing.sync()).toMatchObject({ ok: false, reason: "binary-missing" });

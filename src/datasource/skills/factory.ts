@@ -68,7 +68,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
-			connectorOptions: config.connector as TelecrawlOptions,
+			connectorOptions: {
+				...(config.connector as TelecrawlOptions),
+				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
+			},
 		}),
 	whatsapp: (config, _workspaceRoot, registrationName) =>
 		new WacrawlSkill({
@@ -78,7 +81,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
-			connectorOptions: config.connector as WacrawlOptions,
+			connectorOptions: {
+				...(config.connector as WacrawlOptions),
+				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
+			},
 		}),
 	slack: (config, _workspaceRoot, registrationName) =>
 		new SlackSkill({
@@ -88,7 +94,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(config.tags !== undefined ? { tags: config.tags } : {}),
 			channelIds: config.channels?.ids,
 			channelNames: config.channels?.names,
-			connectorOptions: config.connector as SlacrawlOptions,
+			connectorOptions: {
+				...(config.connector as SlacrawlOptions),
+				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
+			},
 		}),
 	discord: (config, workspaceRoot, registrationName) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
