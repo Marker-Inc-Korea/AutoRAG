@@ -15,15 +15,18 @@ export function createCrawlerManagedCliProvider(tool: string, binaryPath?: strin
 			ownership: context.ownership,
 			cwd: context.workspace,
 			env: {},
-			prefixArgs: [
-				"--db",
-				typeof (context.config as Record<string, unknown>).databasePath === "string"
-					? (context.config as Record<string, string>).databasePath
-					: join(context.workspace, ".autorag", "datasources", tool, "archive.db"),
-				...(typeof (context.config as Record<string, unknown>).sourcePath === "string"
-					? ["--source", (context.config as Record<string, string>).sourcePath]
-					: []),
-			],
+			prefixArgs:
+				context.ownership === "external"
+					? ["--config", context.configPath]
+					: [
+							"--db",
+							typeof (context.config as Record<string, unknown>).databasePath === "string"
+								? (context.config as Record<string, string>).databasePath
+								: join(context.workspace, ".autorag", "datasources", tool, "archive.db"),
+							...(typeof (context.config as Record<string, unknown>).sourcePath === "string"
+								? ["--source", (context.config as Record<string, string>).sourcePath]
+								: []),
+						],
 			configPath: context.configPath,
 		}),
 		inspect: async (context) => ({
