@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { loadMirrorIndex } from "../../mirror/index-store.ts";
 import { normalizeMarkdown } from "../../parser/text.ts";
@@ -399,7 +399,7 @@ function firstString(values: unknown[] | undefined): string | undefined {
 
 function sourcePathForVirtual(root: string, virtualPath: string): string {
 	const entry = loadMirrorIndex(root).entries[virtualPath];
-	return entry === undefined ? virtualPath : normalize(entry.sourcePath);
+	return entry === undefined ? virtualPath : realpathSync(normalize(entry.sourcePath));
 }
 
 function hash(value: string): string {

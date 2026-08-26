@@ -438,7 +438,7 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "first vector result");
-		expect(result.source).toBe(join(source, "policy.txt"));
+		expect(result.source).toBe(realpathSync(join(source, "policy.txt")));
 		expect(result.content).toBe("Parsed renewal policy with cancellation terms.");
 		expect(result.score).toBe(0.91);
 		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
@@ -503,7 +503,7 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "relative path result");
-		expect(result.source).toBe(join(source, "policy.txt"));
+		expect(result.source).toBe(realpathSync(join(source, "policy.txt")));
 		expect(result.metadata.virtualPath).toBe("/docs/policy.txt");
 		expect(result.content).toBe("Relative path hit from MinSync.");
 	});
