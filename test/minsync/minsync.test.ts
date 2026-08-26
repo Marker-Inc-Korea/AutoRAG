@@ -413,7 +413,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
 	});
 
-	it("returns vector results resolved from parsed mirror paths back to virtual paths", async () => {
+	it("returns vector results resolved to the original source file path", async () => {
 		// Given
 		writeFakeMinSync(
 			JSON.stringify({
@@ -438,13 +438,10 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "first vector result");
-		expect(result.source).toBe("/docs/policy.txt");
+		expect(result.source).toBe(join(source, "policy.txt"));
 		expect(result.content).toBe("Parsed renewal policy with cancellation terms.");
 		expect(result.score).toBe(0.91);
-		expect(result.metadata.method).toBe("minsync");
-		expect(Object.keys(result.metadata)).toEqual(["method"]);
-		expect(JSON.stringify(results)).not.toContain(source);
-		expect(JSON.stringify(results)).not.toContain(root);
+		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
 				args: ["query", "--format", "json", "-k", "2", "--mode", "vector", "renewal cancellation"],
@@ -483,7 +480,7 @@ describe("MinSyncVectorMethod", () => {
 		);
 	});
 
-	it("maps real MinSync relative file paths back to virtual paths", async () => {
+	it("maps real MinSync relative file paths to original source files", async () => {
 		// Given
 		writeFakeMinSync(
 			JSON.stringify([
@@ -506,7 +503,8 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "relative path result");
-		expect(result.source).toBe("/docs/policy.txt");
+		expect(result.source).toBe(join(source, "policy.txt"));
+		expect(result.metadata.virtualPath).toBe("/docs/policy.txt");
 		expect(result.content).toBe("Relative path hit from MinSync.");
 	});
 

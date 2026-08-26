@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -131,7 +131,7 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("AutoRAGAgent MinSync integration", () => {
-	it("includes MinSync vector results in retrieve() and exposes only virtual paths", async () => {
+	it("includes MinSync vector results in retrieve() with original source paths", async () => {
 		// Given
 		writeFileSync(join(docs, "handbook.txt"), "Refund decisions require manager review.\n");
 		writeFakeMinSync();
@@ -153,10 +153,10 @@ describe("AutoRAGAgent MinSync integration", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "first retrieval result");
-		expect(result.source).toBe("/docs/handbook.txt");
+		expect(result.source).toBe(realpathSync(join(docs, "handbook.txt")));
+		expect(readFileSync(result.source, "utf8")).toBe("Refund decisions require manager review.\n");
 		expect(result.content).toContain("refunds are approved");
-		expect(result.metadata.method).toBe("minsync");
-		expect(JSON.stringify(results)).not.toContain(docs);
+		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/handbook.txt" });
 	});
 
 	it("over-queries before filtering scoped vector results", async () => {
@@ -179,7 +179,7 @@ describe("AutoRAGAgent MinSync integration", () => {
 		const results = await agent.retrieve("semantic marker", { topK: 1, scope: "/docs/sub" });
 
 		expect(results).toHaveLength(1);
-		expect(results[0]?.source).toBe("/docs/sub/inside.txt");
+		expect(results[0]?.source).toBe(realpathSync(join(docs, "sub", "inside.txt")));
 		expect(results[0]?.content).toContain("Scoped semantic hit");
 	});
 	it("surfaces a path-free minsync-unavailable diagnostic when the binary is missing (#21)", async () => {

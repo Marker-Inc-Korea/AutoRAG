@@ -496,7 +496,6 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "vllm-mock", marker = "sys_platform == 'linux'" },
 ]
 
 [package.metadata]
@@ -606,7 +605,6 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "ty" },
-    { name = "vllm-mock", marker = "sys_platform == 'linux'", specifier = ">=0.0.3" },
 ]
 
 [[package]]
@@ -9395,19 +9393,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/cd/23/4a5dc23600be07407
 wheels = [
     { url = "https://files.pythonhosted.org/packages/19/d9/7bef6cf9d7508b4313237602e96e10054c7491f12f48403813c9c2d6f6f1/vllm-0.20.2-cp38-abi3-manylinux_2_35_aarch64.whl", hash = "sha256:76ccf4c0554556c06f6b0fb1643742d4cf97dcc69f6ef3f04556d0764126035a", size = 235788487 },
     { url = "https://files.pythonhosted.org/packages/c5/aa/4488d49c481a2184e6e285b8d3f937905205f52cd5ac30fb348770494b6e/vllm-0.20.2-cp38-abi3-manylinux_2_35_x86_64.whl", hash = "sha256:22a7dd06eb03371298e13d6100f3dedbf307352342aaf08e87c929c60aae9b4d", size = 244425988 },
-]
-
-[[package]]
-name = "vllm-mock"
-version = "0.0.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tqdm", marker = "(python_full_version < '3.12' and sys_platform == 'win32') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "vllm", marker = "(python_full_version < '3.12' and sys_platform == 'win32') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7e/6f/a74e1dfd605665fb8b3efbc5d347bf6c40f17c29b8cee3e9f87e9084fd13/vllm_mock-0.0.3.tar.gz", hash = "sha256:948634eca0f8cf49dfcaca5d4f7be64cc3c9d5d07a7da4a3eb00f3b3f73f254c", size = 301628 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/f7/bcd0e755a9b56b3172ee20e87165445d276927cd4dc11840187059b61979/vllm_mock-0.0.3-py3-none-any.whl", hash = "sha256:a8a824313913457719f87be392783ca14a4032832a7aa0a1f8f56f33a7bf68a1", size = 6549 },
 ]
 
 [[package]]
