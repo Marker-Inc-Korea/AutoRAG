@@ -1,5 +1,5 @@
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type ManagedCliOwnership = "managed" | "external";
 
@@ -125,9 +125,16 @@ export class ManagedCliConfigManager {
 		const instance = request.instance ?? "default";
 		const ownership = request.ownership ?? "managed";
 		const managedDir = join(this.workspace, ".autorag", "tools", provider.tool, instance);
-		const configPath = ownership === "external" ? this.requireExternalPath(request.configPath, managedDir) : join(managedDir, "config.json");
+		const configPath =
+			ownership === "external"
+				? this.requireExternalPath(request.configPath, managedDir)
+				: join(managedDir, "config.json");
 		return provider.inspect({
-			workspace: this.workspace, tool: provider.tool, instance, ownership, configPath,
+			workspace: this.workspace,
+			tool: provider.tool,
+			instance,
+			ownership,
+			configPath,
 			config: request.config ?? withoutControlFields(request),
 		});
 	}

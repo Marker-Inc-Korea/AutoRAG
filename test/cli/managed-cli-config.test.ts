@@ -1,13 +1,13 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	ManagedCliRegistry,
 	ManagedCliConfigManager,
 	type ManagedCliConfigProvider,
 	type ManagedCliConfigStatus,
 	type ManagedCliLaunchContext,
+	ManagedCliRegistry,
 } from "../../src/cli/managed-cli-config.ts";
 
 let workspace: string;
@@ -24,7 +24,8 @@ function provider(overrides: Partial<ManagedCliConfigProvider> = {}): ManagedCli
 	return {
 		tool: "fixture",
 		aliases: ["fixture-cli"],
-		managedConfigPath: (context) => join(context.workspace, ".autorag", "tools", "fixture", "default", "fixture.conf"),
+		managedConfigPath: (context) =>
+			join(context.workspace, ".autorag", "tools", "fixture", "default", "fixture.conf"),
 		readConfig: (path) => JSON.parse(readFileSync(path, "utf8")),
 		renderConfig: (config, existing) =>
 			JSON.stringify({

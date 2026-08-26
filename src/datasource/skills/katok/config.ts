@@ -1,9 +1,5 @@
 import { join } from "node:path";
-import type {
-	ManagedCliConfigProvider,
-	ManagedCliContext,
-	ManagedCliLaunchContext,
-} from "../../../cli/managed-cli-config.ts";
+import type { ManagedCliConfigProvider, ManagedCliLaunchContext } from "../../../cli/managed-cli-config.ts";
 
 /**
  * Katok uses a workspace flag rather than a config-file flag. The provider
@@ -20,7 +16,12 @@ export function createKatokManagedCliProvider(binaryPath?: string): ManagedCliCo
 			ownership: context.ownership,
 			cwd: context.workspace,
 			env: {},
-			prefixArgs: ["--workspace", context.ownership === "external" ? context.configPath : join(context.workspace, ".autorag", "datasources", "katok")],
+			prefixArgs: [
+				"--workspace",
+				context.ownership === "external"
+					? context.configPath
+					: join(context.workspace, ".autorag", "datasources", "katok"),
+			],
 			configPath: context.configPath,
 		}),
 		inspect: async (context) => ({

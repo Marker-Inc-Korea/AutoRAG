@@ -1,5 +1,5 @@
-import type { RetrievalOptions } from "../../../retrieval/types.ts";
 import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
+import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 /**
  * Search modes accepted by the external `katok search` subcommand.

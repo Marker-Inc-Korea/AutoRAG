@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BASH_TOOL_NAME, createBashTool, isManagedCliDirectInvocation } from "../../src/agent/bash-tool.ts";
-import { ManagedCliRegistry, type ManagedCliConfigProvider } from "../../src/cli/managed-cli-config.ts";
+import { type ManagedCliConfigProvider, ManagedCliRegistry } from "../../src/cli/managed-cli-config.ts";
 
 let tmpDir: string;
 

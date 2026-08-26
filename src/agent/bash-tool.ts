@@ -111,7 +111,15 @@ export function isManagedCliDirectInvocation(command: string, registry: ManagedC
 	let commandStart = true;
 	let envWrapper = false;
 	for (const token of tokens) {
-		if (token === ";" || token === "||" || token === "&&" || token === "|" || token === "\n" || token === "(" || token === ")") {
+		if (
+			token === ";" ||
+			token === "||" ||
+			token === "&&" ||
+			token === "|" ||
+			token === "\n" ||
+			token === "(" ||
+			token === ")"
+		) {
 			commandStart = true;
 			envWrapper = false;
 			continue;
@@ -132,10 +140,12 @@ export function isManagedCliDirectInvocation(command: string, registry: ManagedC
 }
 
 function shellWords(command: string): string[] {
-	return command.match(/(?:[^\s"'`|;&()]+|'[^']*'|"[^"]*"|`[^`]*`|[|;&()])/g)?.map((token) => {
-		if (/^'.*'$|^".*"$|^`.*`$/.test(token)) return token.slice(1, -1);
-		return token;
-	}) ?? [];
+	return (
+		command.match(/(?:[^\s"'`|;&()]+|'[^']*'|"[^"]*"|`[^`]*`|[|;&()])/g)?.map((token) => {
+			if (/^'.*'$|^".*"$|^`.*`$/.test(token)) return token.slice(1, -1);
+			return token;
+		}) ?? []
+	);
 }
 
 /**
@@ -163,10 +173,12 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 			const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : options.cwd;
 			if (options.managedCliRegistry && isManagedCliDirectInvocation(command, options.managedCliRegistry)) {
 				return {
-					content: [{
-						type: "text",
-						text: "AUTORAG_MANAGED_CLI_BLOCKED: run this datasource CLI through its managed datasource tool or managed CLI execution surface.",
-					}],
+					content: [
+						{
+							type: "text",
+							text: "AUTORAG_MANAGED_CLI_BLOCKED: run this datasource CLI through its managed datasource tool or managed CLI execution surface.",
+						},
+					],
 					details: { method: "bash", command, exitCode: undefined, timedOut: false, truncated: false },
 				};
 			}

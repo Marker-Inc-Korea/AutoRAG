@@ -1,10 +1,13 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import {
+	ManagedCliConfigManager,
+	type ManagedCliLaunchContext,
+	ManagedCliRegistry,
+} from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { ensureManagedDiscrawlConfig } from "./config.ts";
 import { createDiscrawlManagedCliProvider } from "./config.ts";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { discrawlDatasourceRoot } from "./paths.ts";
 import type {
 	DiscrawlDoctorInfo,
@@ -69,6 +72,8 @@ type SpawnRequest = {
 	readonly signal?: AbortSignal;
 	readonly cwd?: string;
 };
+
+type DiscrawlLaunchContext = Pick<ManagedCliLaunchContext, "prefixArgs" | "cwd" | "env" | "configPath">;
 
 /**
  * Thin external `discrawl` CLI wrapper. Every method spawns the `discrawl`
@@ -162,12 +167,14 @@ export class DiscrawlClient {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
 		const env = controlledEnv(this.options.env);
-		let launchContext: { readonly prefixArgs: readonly string[]; readonly cwd?: string; readonly env: Readonly<Record<string, string>>; readonly configPath: string } | undefined;
+		let launchContext: DiscrawlLaunchContext | undefined;
 		try {
 			if (this.managedCliConfigManager !== undefined) {
 				const workspace = discrawlWorkspace(this.options) ?? process.cwd();
 				launchContext = await this.managedCliConfigManager.materialize("discrawl", {
-					...(this.options.configPath === undefined ? {} : { ownership: "external", configPath: this.options.configPath }),
+					...(this.options.configPath === undefined
+						? {}
+						: { ownership: "external", configPath: this.options.configPath }),
 					config: { databasePath: join(workspace, "discrawl.db") },
 				});
 			}
@@ -188,23 +195,6 @@ export class DiscrawlClient {
 			...(launchContext?.cwd === undefined ? {} : { cwd: launchContext.cwd }),
 		});
 	}
-}
-
-/**
- * Inserts `--config <path>` directly after the leading global flags. discrawl
- * requires globals before the subcommand, so the flag cannot simply be
- * appended.
- */
-function withConfigFlag(configPath: string | undefined, args: readonly string[]): readonly string[] {
-	if (configPath === undefined) return args;
-	const leadingGlobals = args[0] === "--json" ? 1 : 0;
-	return [...args.slice(0, leadingGlobals), "--config", configPath, ...args.slice(leadingGlobals)];
-}
-
-function resolveConfigPath(options: DiscrawlOptions): string | undefined {
-	if (options.configPath !== undefined) return options.configPath;
-	const workspace = discrawlWorkspace(options);
-	return workspace === undefined ? undefined : join(workspace, "config.toml");
 }
 
 export function discrawlWorkspace(options: DiscrawlOptions): string | undefined {

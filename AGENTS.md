@@ -36,6 +36,32 @@ operations faster.
 **Primary target**: non-code document retrieval (manuals, legal docs, internal wikis, meeting notes, research literature).
 Code repositories work too. AutoRAG's value is in the exploration + retrieval methods + curation layer that sit *on top* of raw search.
 
+## New CLI-backed datasource
+
+Every external CLI used by a datasource must be integrated through the shared
+managed CLI configuration boundary documented in
+[`docs/managed-cli-configuration.md`](docs/managed-cli-configuration.md).
+Contributors and agents adding a CLI-backed datasource must:
+
+- register the CLI, every supported alias, and explicit binary path in the
+  shared managed CLI registry;
+- implement a configuration-only provider with explicit ownership and secret
+  policy;
+- route every process launch through the materialized managed launch context;
+- rely on the registry-driven `bash` direct-execution gate rather than a
+  duplicated binary list;
+- provide a datasource skill with native command examples and `<binary>
+  --help` guidance;
+- never add shared `sync`, `search`, `doctor`, or other native command enums;
+- never standardize or assume the upstream CLI's config format in shared code;
+- never rely on prompt text alone to apply configuration or prevent execution;
+- add focused tests, diagnostics, documentation, migration notes, and manual
+  QA before registering the datasource.
+
+Secrets must remain external: store only environment-variable, keychain, or
+profile references and never tokens, cookies, passwords, or refresh
+credentials in managed files, logs, argv snapshots, or diagnostics.
+
 ## Why AutoRAG Exists
 
 Raw search tools return file paths and matching lines. A human still has to open each file, read the context, decide what's relevant, and synthesize an answer. AutoRAG eliminates that entire workflow:

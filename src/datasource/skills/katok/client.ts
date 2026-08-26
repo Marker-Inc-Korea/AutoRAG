@@ -1,9 +1,9 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { katokDatasourceRoot } from "./paths.ts";
-import { createKatokManagedCliProvider } from "./config.ts";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
+import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { createKatokManagedCliProvider } from "./config.ts";
+import { katokDatasourceRoot } from "./paths.ts";
 import type {
 	KatokChunk,
 	KatokChunkResult,
@@ -88,7 +88,11 @@ export class KatokClient {
 		this.options = options;
 		if (options.managedCliConfigManager) {
 			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (options.root !== undefined || options.workspacePath !== undefined || options.configPath !== undefined) {
+		} else if (
+			options.root !== undefined ||
+			options.workspacePath !== undefined ||
+			options.configPath !== undefined
+		) {
 			const registry = new ManagedCliRegistry();
 			registry.register(createKatokManagedCliProvider(options.binaryPath));
 			this.managedCliConfigManager = new ManagedCliConfigManager({
@@ -187,7 +191,9 @@ export class KatokClient {
 			| undefined;
 		try {
 			launchContext = await this.managedCliConfigManager?.materialize("katok", {
-				...(this.options.configPath === undefined ? {} : { ownership: "external", configPath: this.options.configPath }),
+				...(this.options.configPath === undefined
+					? {}
+					: { ownership: "external", configPath: this.options.configPath }),
 				config: { source: this.options.source ?? DEFAULT_KATOK_SOURCE },
 			});
 		} catch {

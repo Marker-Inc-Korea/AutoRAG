@@ -2,13 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse, stringify } from "smol-toml";
+import type { ManagedCliConfigProvider, ManagedCliLaunchContext } from "../../../cli/managed-cli-config.ts";
 import type { DiscrawlOptions } from "./types.ts";
 import { DEFAULT_DISCRAWL_EMBEDDING_MODEL, DEFAULT_DISCRAWL_EMBEDDING_PROVIDER } from "./types.ts";
-import type {
-	ManagedCliConfigProvider,
-	ManagedCliContext,
-	ManagedCliLaunchContext,
-} from "../../../cli/managed-cli-config.ts";
 
 type TomlRecord = Record<string, unknown>;
 
@@ -37,9 +33,7 @@ export function createDiscrawlManagedCliProvider(
 					: DEFAULT_DISCRAWL_EMBEDDING_PROVIDER);
 			embeddings.model =
 				options.embeddingModel ??
-				(typeof parsed.embeddingModel === "string"
-					? parsed.embeddingModel
-					: DEFAULT_DISCRAWL_EMBEDDING_MODEL);
+				(typeof parsed.embeddingModel === "string" ? parsed.embeddingModel : DEFAULT_DISCRAWL_EMBEDDING_MODEL);
 			delete parsed.embeddingProvider;
 			delete parsed.embeddingModel;
 			return stringify(parsed);
