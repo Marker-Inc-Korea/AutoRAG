@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { basename, delimiter, join } from "node:path";
+import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -20,6 +21,7 @@ export interface MinSyncVectorMethodOptions {
 	readonly installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 /** Degrade result returned when no binary can be resolved. */
@@ -52,6 +54,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly installer: Omit<EnsureMinSyncBinaryOptions, "root"> | undefined;
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -60,6 +63,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.installer = options.installer;
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
+		this.managedCliConfigManager = options.managedCliConfigManager;
 	}
 
 	describe(): RetrievalMethodDescriptor {
@@ -83,6 +87,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				binaryPath: binaryResult,
 				workspacePath: this.workspacePath,
 				embedder: this.embedder,
+				...(this.managedCliConfigManager === undefined
+					? {}
+					: { managedCliConfigManager: this.managedCliConfigManager }),
 			});
 			return client.sync();
 		}
@@ -105,6 +112,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			binaryPath: binaryResult,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
+			...(this.managedCliConfigManager === undefined
+				? {}
+				: { managedCliConfigManager: this.managedCliConfigManager }),
 		});
 		const hits = await client.query(query, queryK);
 		const results: RetrievalResult[] = [];

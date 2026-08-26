@@ -22,6 +22,7 @@ export {
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
 export * from "./cli/managed-cli-config.ts";
+export * from "./cli/managed-cli-runtime.ts";
 export * from "./datasource/index.ts";
 export * from "./dupey/index.ts";
 export * from "./jikji/index.ts";

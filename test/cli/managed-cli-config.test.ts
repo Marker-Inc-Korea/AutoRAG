@@ -9,6 +9,12 @@ import {
 	type ManagedCliLaunchContext,
 	ManagedCliRegistry,
 } from "../../src/cli/managed-cli-config.ts";
+import { createCrawlerManagedCliProvider } from "../../src/datasource/crawler-managed-config.ts";
+import { createRcloneManagedCliProvider } from "../../src/datasource/skills/gdrive/rclone-managed-config.ts";
+import { createHimalayaManagedCliProvider } from "../../src/datasource/skills/gmail/himalaya-managed-config.ts";
+import { createQmdManagedCliProvider } from "../../src/datasource/skills/obsidian/config.ts";
+import { createJikjiManagedCliProvider } from "../../src/jikji/managed-config.ts";
+import { createMinSyncManagedCliProvider } from "../../src/minsync/managed-config.ts";
 
 let workspace: string;
 
@@ -59,6 +65,36 @@ describe("ManagedCliRegistry", () => {
 
 		expect(registry.resolve("fixture-cli")?.tool).toBe("fixture");
 		expect(() => registry.register(provider())).toThrow(/already registered/);
+	});
+
+	it("resolves every managed CLI integration and its binary aliases", () => {
+		const registry = new ManagedCliRegistry();
+		const providers = ["discrawl", "katok", "wacrawl", "telecrawl", "slacrawl", "notcrawl"].map((tool) =>
+			createCrawlerManagedCliProvider(tool),
+		);
+		providers.push(
+			createQmdManagedCliProvider(),
+			createMinSyncManagedCliProvider(),
+			createJikjiManagedCliProvider(),
+			createRcloneManagedCliProvider(),
+			createHimalayaManagedCliProvider(),
+		);
+		for (const provider of providers) registry.register(provider);
+		for (const tool of [
+			"discrawl",
+			"katok",
+			"wacrawl",
+			"telecrawl",
+			"slacrawl",
+			"notcrawl",
+			"qmd",
+			"minsync",
+			"jikji",
+			"rclone",
+			"himalaya",
+		]) {
+			expect(registry.resolve(tool)?.tool).toBe(tool);
+		}
 	});
 });
 

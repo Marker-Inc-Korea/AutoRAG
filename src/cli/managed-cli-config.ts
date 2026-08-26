@@ -75,15 +75,15 @@ export interface ManagedCliConfigRequest {
 
 export class ManagedCliConfigManager {
 	private readonly workspace: string;
-	private readonly registry: ManagedCliRegistry;
+	private readonly cliRegistry: ManagedCliRegistry;
 
 	constructor(options: { workspace: string; registry: ManagedCliRegistry }) {
 		this.workspace = resolve(options.workspace);
-		this.registry = options.registry;
+		this.cliRegistry = options.registry;
 	}
 
 	async materialize(tool: string, request: ManagedCliConfigRequest = {}): Promise<ManagedCliLaunchContext> {
-		const provider = this.registry.resolve(tool);
+		const provider = this.cliRegistry.resolve(tool);
 		if (!provider) throw new Error(`Managed CLI "${tool}" is not registered`);
 		const instance = request.instance ?? "default";
 		const ownership = request.ownership ?? "managed";
@@ -120,7 +120,7 @@ export class ManagedCliConfigManager {
 	}
 
 	async inspect(tool: string, request: ManagedCliConfigRequest = {}): Promise<ManagedCliConfigStatus> {
-		const provider = this.registry.resolve(tool);
+		const provider = this.cliRegistry.resolve(tool);
 		if (!provider) throw new Error(`Managed CLI "${tool}" is not registered`);
 		const instance = request.instance ?? "default";
 		const ownership = request.ownership ?? "managed";

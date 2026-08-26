@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
-import { ManagedCliRegistry } from "../cli/managed-cli-config.ts";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { createCrawlerManagedCliProvider } from "../datasource/crawler-managed-config.ts";
@@ -212,6 +212,7 @@ export interface AutoRAGAgentOptions {
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
 	managedCliRegistry?: ManagedCliRegistry;
+	managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export interface AutoRAGSearchSession {
@@ -276,6 +277,7 @@ export class AutoRAGAgent {
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly managedCliRegistry: ManagedCliRegistry;
+	private readonly managedCliConfigManager: ManagedCliConfigManager;
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
@@ -362,6 +364,9 @@ export class AutoRAGAgent {
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
+		this.managedCliConfigManager =
+			options.managedCliConfigManager ??
+			new ManagedCliConfigManager({ workspace: this.workspaceProjectRoot, registry: this.managedCliRegistry });
 		this.retrievalScopeBindings = buildRetrievalScopeBindings(
 			this.workspaceProjectRoot,
 			this.searchPaths,
@@ -373,7 +378,11 @@ export class AutoRAGAgent {
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: true };
-			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
+			this.minSyncMethod = new MinSyncVectorMethod({
+				...minSyncOpts,
+				root: this.workspaceProjectRoot,
+				managedCliConfigManager: this.managedCliConfigManager,
+			});
 			this.methodRegistry.register(this.minSyncMethod);
 		}
 		if (options.bm25 !== false) {
@@ -385,7 +394,11 @@ export class AutoRAGAgent {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
 		if (options.jikji) {
-			this.jikjiClient = new JikjiClient({ ...options.jikji, root: this.workspaceProjectRoot });
+			this.jikjiClient = new JikjiClient({
+				...options.jikji,
+				root: this.workspaceProjectRoot,
+				managedCliConfigManager: this.managedCliConfigManager,
+			});
 		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");

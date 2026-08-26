@@ -15,6 +15,7 @@ import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/ski
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import type { BM25Engine, BM25FallbackMode } from "../retrieval/methods/bm25.ts";
+import { createManagedCliRuntime } from "./managed-cli-runtime.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
@@ -706,8 +707,11 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
+	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd());
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
+		managedCliRegistry: managedCliRuntime.registry,
+		managedCliConfigManager: managedCliRuntime.manager,
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;
@@ -735,7 +739,11 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
+		const { skills, unknown } = buildDatasourceSkills(
+			config.datasources,
+			config.workspacePath,
+			managedCliRuntime.manager,
+		);
 		if (unknown.length > 0) {
 			throw new ConfigError(`Unknown datasource skill(s) in config: ${unknown.join(", ")}`);
 		}
