@@ -222,6 +222,25 @@ describe("CLI config datasources wiring", () => {
 		expect(skills[0]?.describe().datasourceId).not.toBe(skills[1]?.describe().datasourceId);
 	});
 
+	it("includes operator-authored datasource descriptions in the agent skill", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				"personal-drive": {
+					type: "cloud-drive",
+					description: "보통 프로젝트 문서와 계약서 검색에 사용하는 개인 Google Drive입니다.",
+					connector: { provider: "google-drive", remote: "personal:" },
+				},
+			},
+		});
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skill = (options.datasourceSkills ?? [])[0];
+		expect(skill?.describe().description).toContain("개인 Google Drive");
+		expect(skill?.skillManifest().description).toContain("개인 Google Drive");
+		expect(skill?.skillManifest().content).toContain("계약서 검색");
+	});
+
 	it("registers connector and crawler aliases through their datasource type", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
