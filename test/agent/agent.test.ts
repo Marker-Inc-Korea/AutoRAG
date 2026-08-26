@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
@@ -48,6 +48,10 @@ function internals(agent: AutoRAGAgent): AgentInternals {
 	return agent as unknown as AgentInternals;
 }
 
+function fakeModel() {
+	return { id: "test-model", provider: "test-provider", api: "test-api" } as never;
+}
+
 describe("AutoRAGAgent", () => {
 	it("rejects a non-positive search timeout", () => {
 		expect(
@@ -69,6 +73,70 @@ describe("AutoRAGAgent", () => {
 					maxSearchToolCalls: 1.5,
 				}),
 		).toThrow("maxSearchToolCalls must be a positive integer");
+	});
+
+	it("aborts and rejects when a search exceeds its timeout", async () => {
+		vi.useFakeTimers();
+		try {
+			let abortCalls = 0;
+			const session = {
+				agent: { subscribe: () => () => {} },
+				prompt: async () => await new Promise<void>(() => {}),
+				abort: async () => {
+					abortCalls += 1;
+				},
+				dispose: () => {},
+			};
+			const agent = new AutoRAGAgent({
+				model: fakeModel(),
+				searchPaths: [FIXTURE_DIR],
+				memoryPath: join(tmpDir, "memory.json"),
+				searchTimeoutMs: 100,
+			});
+			(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
+
+			const search = agent.searchDocuments("timeout query");
+			const rejection = expect(search).rejects.toThrow("search timed out after 100ms");
+			await vi.advanceTimersByTimeAsync(100);
+
+			await rejection;
+			expect(abortCalls).toBe(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("aborts a search after the configured retrieval tool-call limit", async () => {
+		let abortCalls = 0;
+		const session = {
+			agent: {
+				subscribe: (listener: (event: unknown) => void) => {
+					listener({
+						type: "tool_execution_end",
+						toolName: "search_bm25_documents",
+						result: { details: { method: "bm25" } },
+					});
+					return () => {};
+				},
+			},
+			prompt: async () => {},
+			abort: async () => {
+				abortCalls += 1;
+			},
+			dispose: () => {},
+		};
+		const agent = new AutoRAGAgent({
+			model: fakeModel(),
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			maxSearchToolCalls: 1,
+		});
+		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
+
+		await expect(agent.searchDocuments("cap query")).rejects.toThrow(
+			"AutoRAG agent completed without emitting structured results",
+		);
+		expect(abortCalls).toBe(1);
 	});
 
 	it("creates with default config", () => {
