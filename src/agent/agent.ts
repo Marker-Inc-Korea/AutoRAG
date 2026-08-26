@@ -305,7 +305,7 @@ export class AutoRAGAgent {
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 
 		if (options.minSync !== false) {
-			const minSyncOpts = options.minSync ?? { autoInstall: true };
+			const minSyncOpts = options.minSync ?? { autoInstall: false };
 			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
 		}

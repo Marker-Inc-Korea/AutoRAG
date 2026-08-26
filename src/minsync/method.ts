@@ -168,6 +168,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		if (this.binaryPath && existsSync(this.binaryPath)) {
 			return this.binaryPath;
 		}
+		if (this.binaryPath !== undefined) return undefined;
 		// 2. PATH lookup
 		const pathBinary = lookupInPath(process.env);
 		if (pathBinary) return pathBinary;
