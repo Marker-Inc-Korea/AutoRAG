@@ -26,7 +26,11 @@ function provider(overrides: Partial<ManagedCliConfigProvider> = {}): ManagedCli
 		aliases: ["fixture-cli"],
 		managedConfigPath: (context) => join(context.workspace, ".autorag", "tools", "fixture", "default", "fixture.conf"),
 		readConfig: (path) => JSON.parse(readFileSync(path, "utf8")),
-		renderConfig: (config) => JSON.stringify(config),
+		renderConfig: (config, existing) =>
+			JSON.stringify({
+				...(existing && typeof existing === "object" ? existing : {}),
+				...(config && typeof config === "object" ? config : {}),
+			}),
 		materialize: async (context): Promise<ManagedCliLaunchContext> => ({
 			ownership: context.ownership,
 			cwd: context.workspace,

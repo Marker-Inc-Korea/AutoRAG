@@ -103,7 +103,7 @@ export class ManagedCliConfigManager {
 		const existingConfig = ownership === "external" ? undefined : readConfig(configPath, provider, ownership);
 		if (ownership === "managed") {
 			mkdirSync(dirname(configPath), { recursive: true });
-			const rendered = provider.renderConfig?.(mergeObjects(existingConfig, config), existingConfig);
+			const rendered = provider.renderConfig?.(config, existingConfig);
 			if (rendered === undefined) throw new Error(`Managed CLI "${provider.tool}" has no config renderer`);
 			atomicWrite(configPath, rendered);
 		}
@@ -151,12 +151,6 @@ function readConfig(path: string, provider: ManagedCliConfigProvider, ownership:
 	} catch {
 		throw new Error(`Managed CLI "${provider.tool}" configuration is not valid JSON`);
 	}
-}
-
-function mergeObjects(existing: unknown, next: unknown): unknown {
-	if (!existing || typeof existing !== "object" || Array.isArray(existing)) return next;
-	if (!next || typeof next !== "object" || Array.isArray(next)) return next;
-	return { ...(existing as Record<string, unknown>), ...(next as Record<string, unknown>) };
 }
 
 function withoutControlFields(request: ManagedCliConfigRequest): Record<string, unknown> {
