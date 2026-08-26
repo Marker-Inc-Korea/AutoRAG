@@ -7,7 +7,10 @@ export function createMinSyncManagedCliProvider(binaryPath?: string): ManagedCli
 		renderConfig: (config) => JSON.stringify(config),
 		materialize: async (context): Promise<ManagedCliLaunchContext> => ({
 			ownership: context.ownership,
-			cwd: context.workspace,
+			cwd:
+				typeof (context.config as Record<string, unknown>).workspacePath === "string"
+					? (context.config as Record<string, string>).workspacePath
+					: context.workspace,
 			env: {},
 			prefixArgs: [],
 			configPath: context.configPath,
