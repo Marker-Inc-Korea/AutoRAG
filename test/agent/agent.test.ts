@@ -49,6 +49,17 @@ function internals(agent: AutoRAGAgent): AgentInternals {
 }
 
 describe("AutoRAGAgent", () => {
+	it("rejects a non-positive search timeout", () => {
+		expect(
+			() =>
+				new AutoRAGAgent({
+					searchPaths: [FIXTURE_DIR],
+					memoryPath: join(tmpDir, "memory.json"),
+					searchTimeoutMs: 0,
+				}),
+		).toThrow("searchTimeoutMs must be a positive finite number");
+	});
+
 	it("creates with default config", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

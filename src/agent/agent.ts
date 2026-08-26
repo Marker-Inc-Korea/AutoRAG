@@ -202,6 +202,8 @@ export interface AutoRAGAgentOptions {
 	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	/** Maximum time a model/tool search may run before it is aborted. */
+	searchTimeoutMs?: number;
 }
 
 export interface AutoRAGSearchSession {
@@ -272,10 +274,15 @@ export class AutoRAGAgent {
 	private readonly excludeExactDuplicates: boolean;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	private readonly droppedCallerToolNames: readonly string[];
+	private readonly searchTimeoutMs: number;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
+		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
+		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
+			throw new Error("searchTimeoutMs must be a positive finite number");
+		}
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
@@ -648,7 +655,21 @@ export class AutoRAGAgent {
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
-			await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
+			let timeout: NodeJS.Timeout | undefined;
+			try {
+				await Promise.race([
+					session.prompt(this.buildSearchPrompt(trimmedQuery, options)),
+					new Promise<never>((_, reject) => {
+						timeout = setTimeout(() => {
+							void Promise.resolve(session?.abort());
+							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
+						}, this.searchTimeoutMs);
+						timeout.unref();
+					}),
+				]);
+			} finally {
+				if (timeout !== undefined) clearTimeout(timeout);
+			}
 
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
