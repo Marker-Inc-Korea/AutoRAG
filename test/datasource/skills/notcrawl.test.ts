@@ -92,6 +92,22 @@ describe("NotcrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
+	it("routes configured workspace execution through the managed launch context", async () => {
+		writeFakeNotcrawl();
+		const client = new NotcrawlClient({
+			binaryPath,
+			workspacePath: root,
+			env: { NOTCRAWL_FAKE_OUTPUT: JSON.stringify({ synced: 2 }) },
+		});
+
+		expect(await client.sync()).toMatchObject({ ok: true, count: 2 });
+		expect(calls()[0]?.args.slice(0, 2)).toEqual([
+			"--db",
+			join(root, ".autorag", "datasources", "notcrawl", "archive.db"),
+		]);
+		expect(calls()[0]?.args).toContain("sync");
+	});
+
 	it("maps a missing binary and malformed output without throwing", async () => {
 		const missing = new NotcrawlClient({ binaryPath: join(root, "missing") });
 		expect(await missing.sync()).toMatchObject({ ok: false, reason: "binary-missing" });
