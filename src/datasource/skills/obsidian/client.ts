@@ -2,7 +2,9 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
+import { createQmdManagedCliProvider } from "./config.ts";
 import { obsidianQmdCacheDir, obsidianQmdConfigDir, stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
 import type {
 	QmdEmbedInfo,
@@ -64,9 +66,17 @@ const SAFE_QMD_ENV_PREFIX = "QMD_";
  */
 export class QmdClient {
 	private readonly options: QmdOptions;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: QmdOptions = {}) {
 		this.options = options;
+		if (options.managedCliConfigManager) {
+			this.managedCliConfigManager = options.managedCliConfigManager;
+		} else if (options.workspaceRoot !== undefined) {
+			const registry = new ManagedCliRegistry();
+			registry.register(createQmdManagedCliProvider(options.binaryPath));
+			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
+		}
 	}
 
 	async ensureCollection(signal?: AbortSignal): Promise<QmdEnsureResult> {
@@ -77,12 +87,14 @@ export class QmdClient {
 		const instanceId = this.options.instanceId ?? "default";
 		const workspaceRoot = this.options.workspaceRoot ?? process.cwd();
 		const collectionName = this.options.collectionName ?? toQmdCollectionName(instanceId);
-		const configDir = obsidianQmdConfigDir(workspaceRoot, instanceId);
+		const configDir = this.options.configPath ?? obsidianQmdConfigDir(workspaceRoot, instanceId);
 		const cacheDir = obsidianQmdCacheDir(workspaceRoot, instanceId);
 		try {
-			mkdirSync(configDir, { recursive: true });
+			if (this.options.configPath === undefined) {
+				mkdirSync(configDir, { recursive: true });
+				writeFileSync(resolve(configDir, "index.yml"), renderIndexYaml(collectionName, vaultPath), "utf8");
+			}
 			mkdirSync(cacheDir, { recursive: true });
-			writeFileSync(resolve(configDir, "index.yml"), renderIndexYaml(collectionName, vaultPath), "utf8");
 		} catch (error) {
 			return failure("spawn-error", error instanceof Error ? error.message : "failed to write qmd config");
 		}
@@ -125,7 +137,27 @@ export class QmdClient {
 	}
 
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
-		const env = controlledEnv(this.options);
+		let launch: { readonly env: Readonly<Record<string, string>>; readonly cwd?: string } | undefined;
+		if (this.managedCliConfigManager) {
+			try {
+				launch = await this.managedCliConfigManager.materialize("qmd", {
+					instance: this.options.instanceId,
+					...(this.options.configPath === undefined
+						? {}
+						: { ownership: "external", configPath: this.options.configPath }),
+					config: {},
+				});
+			} catch {
+				return {
+					ok: false,
+					reason: "spawn-error",
+					stdout: "",
+					stderr: "qmd managed configuration failed",
+					code: null,
+				};
+			}
+		}
+		const env = { ...controlledEnv(this.options), ...(launch?.env ?? {}) };
 		return spawnQmd({
 			binaryPath: this.options.binaryPath,
 			args,
@@ -133,6 +165,7 @@ export class QmdClient {
 			timeoutMs: this.options.timeoutMs ?? DEFAULT_QMD_TIMEOUT_MS,
 			maxBufferBytes: this.options.maxBufferBytes ?? DEFAULT_QMD_MAX_BUFFER_BYTES,
 			signal,
+			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
 		});
 	}
 }
@@ -185,11 +218,13 @@ function spawnQmd(request: {
 	readonly timeoutMs: number;
 	readonly maxBufferBytes: number;
 	readonly signal?: AbortSignal;
+	readonly cwd?: string;
 }): Promise<ProcessResult> {
 	return new Promise((resolveResult) => {
 		const portable = portableSpawnCommand(request.binaryPath ?? DEFAULT_QMD_BINARY, request.args);
 		const child = spawn(portable.command, [...portable.args], {
 			env: request.env,
+			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };

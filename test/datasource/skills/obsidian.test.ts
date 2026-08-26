@@ -242,6 +242,39 @@ process.exit(0);
 		).toBe(true);
 	});
 
+	it("uses the managed qmd environment transport for configured workspaces", async () => {
+		const binDir = join(root, "managed-bin");
+		const binaryPath = join(binDir, "qmd");
+		const logPath = join(root, "managed-calls.jsonl");
+		mkdirSync(binDir, { recursive: true });
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
+  configDir: process.env.QMD_CONFIG_DIR,
+  cache: process.env.XDG_CACHE_HOME,
+  args: process.argv.slice(2),
+}) + "\\n");
+process.stdout.write("{}");
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const vault = join(root, "vault-managed");
+		mkdirSync(vault, { recursive: true });
+		const client = new QmdClient({ binaryPath, workspaceRoot: root, vaultPath: vault, instanceId: "notes" });
+
+		expect(await client.ensureCollection()).toMatchObject({ ok: true });
+		const call = JSON.parse(readFileSync(logPath, "utf8").trim()) as {
+			configDir: string;
+			cache: string;
+			args: string[];
+		};
+		expect(call.configDir).toBe(join(root, ".autorag", "datasources", "obsidian", "notes", "config"));
+		expect(call.cache).toBe(join(root, ".autorag", "datasources", "obsidian", "notes", "cache"));
+		expect(call.args).toEqual(["status"]);
+	});
+
 	it("returns binary-missing without throwing", async () => {
 		const client = new QmdClient({
 			binaryPath: join(root, "no-such-qmd"),
