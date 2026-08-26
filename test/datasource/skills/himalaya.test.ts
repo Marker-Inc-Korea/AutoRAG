@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import { HimalayaConnector, type HimalayaRunResult } from "../../../src/datasource/skills/gmail/himalaya-connector.ts";
 import { GmailSkill } from "../../../src/datasource/skills/gmail/skill.ts";
 
@@ -128,6 +128,33 @@ describe("HimalayaConnector", () => {
 		const connector = new HimalayaConnector({ binaryPath: "/nonexistent/himalaya-qa" });
 		const result = await connector.fetch();
 		expect(result).toMatchObject({ ok: false });
+	});
+
+	it("applies the managed HIMALAYA_CONFIG and workspace cwd to real CLI runs", async () => {
+		const workspace = mkdtempSync(join(tmpdir(), "autorag-himalaya-managed-"));
+		const binary = join(workspace, "himalaya");
+		const envPath = join(workspace, "himalaya-env.json");
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(envPath)}, JSON.stringify({
+  config: process.env.HIMALAYA_CONFIG,
+  cwd: process.cwd(),
+}));
+const args = process.argv.slice(2);
+if (args.includes("envelope")) process.stdout.write('[{"id":"1","subject":"QA","date":"2026-07-20"}]');
+else process.stdout.write("managed body");
+`,
+		);
+		chmodSync(binary, 0o755);
+		const result = await new HimalayaConnector({ binaryPath: binary, workspaceRoot: workspace }).fetch();
+		expect(result).toMatchObject({ ok: true });
+		expect(JSON.parse(readFileSync(envPath, "utf8"))).toEqual({
+			config: join(workspace, ".autorag", "datasources", "himalaya", "default", "config.toml"),
+			cwd: realpathSync(workspace),
+		});
+		rmSync(workspace, { recursive: true, force: true });
 	});
 
 	it("plugs into GmailSkill for indexing and opaque-source search", async () => {

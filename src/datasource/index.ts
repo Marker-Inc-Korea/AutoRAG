@@ -85,6 +85,7 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
+export { createHimalayaManagedCliProvider } from "./skills/gmail/himalaya-managed-config.ts";
 export {
 	GmailConnector,
 	type GmailConnectorOptions,

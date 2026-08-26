@@ -12,6 +12,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import {
 	boundDiagnosticText,
 	type ConnectorDocument,
@@ -20,6 +21,7 @@ import {
 	sanitizeIdSegment,
 } from "../../connector.ts";
 import { asArray, asRecord, asString } from "../../http.ts";
+import { createHimalayaManagedCliProvider } from "./himalaya-managed-config.ts";
 
 export interface HimalayaRunResult {
 	readonly ok: boolean;
@@ -51,6 +53,9 @@ export interface HimalayaConnectorOptions {
 	readonly timeoutMs?: number;
 	/** Injectable process runner for tests. */
 	readonly runner?: HimalayaRunner;
+	/** Explicit operator-owned config path, passed read-only to Himalaya. */
+	readonly configPath?: string;
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 const DEFAULT_BINARY = "himalaya";
@@ -68,11 +73,25 @@ interface HimalayaState {
 export class HimalayaConnector implements DatasourceConnector {
 	private readonly options: HimalayaConnectorOptions;
 	private readonly runner: HimalayaRunner;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: HimalayaConnectorOptions = {}) {
 		this.options = options;
+		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
+		else if (options.workspaceRoot !== undefined && options.runner === undefined) {
+			const registry = new ManagedCliRegistry();
+			registry.register(createHimalayaManagedCliProvider(options.binaryPath));
+			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
+		}
 		this.runner =
-			options.runner ?? ((args, timeoutMs) => runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs));
+			options.runner ??
+			(async (args, timeoutMs) => {
+				const launch = await this.managedCliConfigManager?.materialize("himalaya", {
+					...(options.configPath === undefined ? {} : { ownership: "external", configPath: options.configPath }),
+					config: { account: options.account ?? "default", folder: options.folder ?? "INBOX" },
+				});
+				return runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, launch?.env, launch?.cwd);
+			});
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {
@@ -143,8 +162,7 @@ export class HimalayaConnector implements DatasourceConnector {
 				if (readResult.ok) {
 					body = readResult.stdout.trim().slice(0, MAX_BODY_CHARS);
 					bodyRead = true;
-				}
-				else readFailures += 1;
+				} else readFailures += 1;
 			} catch {
 				readFailures += 1;
 			}
@@ -189,7 +207,8 @@ export class HimalayaConnector implements DatasourceConnector {
 		return {
 			ok: true,
 			documents,
-			changed: Object.keys(nextFingerprints).length !== Object.keys(state.fingerprints).length || documents.length > 0,
+			changed:
+				Object.keys(nextFingerprints).length !== Object.keys(state.fingerprints).length || documents.length > 0,
 			...(deletedDocIds.length > 0 ? { deletedDocIds } : {}),
 			...(warnings !== undefined ? { warnings } : {}),
 		};
@@ -277,9 +296,19 @@ function envelopeFingerprint(envelope: Record<string, unknown>): string {
 	});
 }
 
-function runBinary(binary: string, args: readonly string[], timeoutMs: number): Promise<HimalayaRunResult> {
+function runBinary(
+	binary: string,
+	args: readonly string[],
+	timeoutMs: number,
+	env?: Readonly<Record<string, string>>,
+	cwd?: string,
+): Promise<HimalayaRunResult> {
 	return new Promise((resolvePromise) => {
-		const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+		const child = spawn(binary, args, {
+			...(env === undefined ? {} : { env: { ...process.env, ...env } }),
+			...(cwd === undefined ? {} : { cwd }),
+			stdio: ["ignore", "pipe", "pipe"],
+		});
 		let stdout = "";
 		let stderr = "";
 		const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
