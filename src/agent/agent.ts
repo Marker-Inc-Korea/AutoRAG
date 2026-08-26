@@ -31,6 +31,7 @@ import {
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
+import { createJikjiManagedCliProvider } from "../jikji/managed-config.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
@@ -335,14 +336,13 @@ export class AutoRAGAgent {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
 		}
-		if (options.minSync !== false) {
+		if (options.jikji) {
 			try {
-				this.managedCliRegistry.register(createMinSyncManagedCliProvider(options.minSync?.binaryPath));
+				this.managedCliRegistry.register(createJikjiManagedCliProvider(options.jikji.binaryPath));
 			} catch (error) {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
 		}
-
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
