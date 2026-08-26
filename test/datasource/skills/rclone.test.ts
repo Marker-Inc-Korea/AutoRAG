@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,6 +49,34 @@ function workspace(): string {
 describe("RcloneConnector", () => {
 	it("returns not-configured without a remote", async () => {
 		expect(await new RcloneConnector({}).fetch()).toMatchObject({ ok: false, reason: "not-configured" });
+	});
+
+	it("applies the managed RCLONE_CONFIG and workspace cwd to real CLI runs", async () => {
+		const root = workspace();
+		const binary = join(root, "rclone");
+		const log = join(root, "rclone-env.json");
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(log)}, JSON.stringify({
+  config: process.env.RCLONE_CONFIG,
+  cwd: process.cwd(),
+}));
+process.stdout.write("[]");
+`,
+		);
+		chmodSync(binary, 0o755);
+		const result = await new RcloneConnector({
+			binaryPath: binary,
+			remote: "drive:",
+			workspaceRoot: root,
+		}).fetch();
+		expect(result.ok).toBe(true);
+		expect(JSON.parse(readFileSync(log, "utf8"))).toEqual({
+			config: join(root, ".autorag", "datasources", "rclone", "default", "rclone.conf"),
+			cwd: realpathSync(root),
+		});
 	});
 
 	it("inventories recursively, mirrors indexable files, and preserves folder hierarchy", async () => {

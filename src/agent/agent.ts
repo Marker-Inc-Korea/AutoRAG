@@ -11,6 +11,7 @@ import { createCrawlerManagedCliProvider } from "../datasource/crawler-managed-c
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
+import { createRcloneManagedCliProvider } from "../datasource/skills/gdrive/rclone-managed-config.ts";
 import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
@@ -339,6 +340,13 @@ export class AutoRAGAgent {
 		if (options.jikji) {
 			try {
 				this.managedCliRegistry.register(createJikjiManagedCliProvider(options.jikji.binaryPath));
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => ["gdrive", "cloud-drive"].includes(skill.describe().name))) {
+			try {
+				this.managedCliRegistry.register(createRcloneManagedCliProvider());
 			} catch (error) {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
