@@ -95,6 +95,22 @@ describe("SlacrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
+	it("routes configured workspace execution through the managed launch context", async () => {
+		writeFakeSlacrawl();
+		const client = new SlacrawlClient({
+			binaryPath,
+			workspacePath: root,
+			env: { SLACRAWL_FAKE_OUTPUT: JSON.stringify({ synced: 2 }) },
+		});
+
+		expect(await client.sync()).toMatchObject({ ok: true, count: 2 });
+		expect(calls()[0]?.args.slice(0, 2)).toEqual([
+			"--db",
+			join(root, ".autorag", "datasources", "slacrawl", "archive.db"),
+		]);
+		expect(calls()[0]?.args).toContain("sync");
+	});
+
 	it("maps a missing binary and malformed output without throwing", async () => {
 		const missing = new SlacrawlClient({ binaryPath: join(root, "missing") });
 		expect(await missing.sync()).toMatchObject({ ok: false, reason: "binary-missing" });

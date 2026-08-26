@@ -40,10 +40,13 @@ export class CrawlerCliClient {
 		this.options = options;
 		if (options.managedCliConfigManager) {
 			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (options.workspacePath !== undefined) {
+		} else if (options.workspacePath !== undefined || options.configPath !== undefined) {
 			const registry = new ManagedCliRegistry();
 			registry.register(createCrawlerManagedCliProvider(profile.binaryName, options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspacePath, registry });
+			this.managedCliConfigManager = new ManagedCliConfigManager({
+				workspace: options.workspacePath ?? process.cwd(),
+				registry,
+			});
 		}
 	}
 
@@ -77,6 +80,9 @@ export class CrawlerCliClient {
 		try {
 			if (this.managedCliConfigManager) {
 				launch = await this.managedCliConfigManager.materialize(this.profile.binaryName, {
+					...(this.options.configPath === undefined
+						? {}
+						: { ownership: "external", configPath: this.options.configPath }),
 					config: {
 						...(this.options.databasePath === undefined ? {} : { databasePath: this.options.databasePath }),
 						...(this.options.sourcePath === undefined ? {} : { sourcePath: this.options.sourcePath }),
@@ -101,7 +107,7 @@ function stripTransportArgs(args: readonly string[], managed: boolean): readonly
 	if (!managed) return args;
 	const result: string[] = [];
 	for (let index = 0; index < args.length; index += 1) {
-		if (args[index] === "--db" || args[index] === "--source") {
+		if (args[index] === "--db" || args[index] === "--config") {
 			index += 1;
 			continue;
 		}
