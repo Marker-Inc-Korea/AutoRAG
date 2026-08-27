@@ -3,18 +3,19 @@ import { join, resolve, sep } from "node:path";
 import { AutoRAGAgent, type AutoRAGRefreshResult, type RefreshMethod } from "../../agent/agent.ts";
 import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
 import { PARSED_MIRROR_SUBDIR } from "../../mirror/paths.ts";
+import { BM25_SUBDIR } from "../../retrieval/methods/bm25.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
 import { parseMethodFlag } from "./refresh.ts";
 import type { CommandContext } from "./types.ts";
 
-const ALL_RESET_TARGETS = [PARSED_MIRROR_SUBDIR, MINSYNC_SUBDIR] as const;
-const ALL_RESET_TARGET_NAMES = ["parsed", "minsync"] as const;
+const ALL_RESET_TARGETS = [PARSED_MIRROR_SUBDIR, MINSYNC_SUBDIR, BM25_SUBDIR] as const;
+const ALL_RESET_TARGET_NAMES = ["parsed", "minsync", "bm25"] as const;
 
 /**
  * Run the `autorag index` command. `reset` removes the parsed mirror
- * and MinSync index directories under `.autorag` (preserving `bin`,
- * `datasources`, and the memory file). `rebuild` resets then re-runs a forced
+ * MinSync, and leftover legacy BM25 index directories under `.autorag`
+ * (preserving `bin`, `datasources`, and the memory file). `rebuild` resets then re-runs a forced
  * refresh. Returns 0 on success, 2 for usage/decline errors, 1 for runtime
  * errors including path-escape guard violations.
  */
@@ -132,16 +133,20 @@ function resolveResetScope(methods: readonly RefreshMethod[] | undefined): {
 	const subdirs: string[] = [];
 	const names: string[] = [];
 	const refresh: RefreshMethod[] = [];
+	const addTarget = (name: string, subdir: string): void => {
+		if (names.includes(name)) return;
+		names.push(name);
+		subdirs.push(subdir);
+	};
 	for (const m of methods) {
 		refresh.push(m);
 		if (m === "parsed") {
-			subdirs.push(PARSED_MIRROR_SUBDIR);
-			names.push("parsed");
+			addTarget("parsed", PARSED_MIRROR_SUBDIR);
 		} else if (m === "bm25") {
-			// BM25 is a MinSync mode and has no separate index directory.
+			addTarget("bm25", BM25_SUBDIR);
 		} else if (m === "minsync") {
-			subdirs.push(MINSYNC_SUBDIR);
-			names.push("minsync");
+			addTarget("minsync", MINSYNC_SUBDIR);
+			addTarget("bm25", BM25_SUBDIR);
 		}
 		// datasources/jikji have no reset dir but are valid refresh methods.
 	}

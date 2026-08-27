@@ -53,7 +53,7 @@ function writeConfig(bm25: unknown, minSync?: unknown): void {
 
 describe("runRefresh + runStatus (cli)", () => {
 	it("refresh then status emits JSON with counts and no leaked paths", async () => {
-		writeConfig({ forceEngine: "typescript-fallback" });
+		writeConfig({ enabled: true });
 
 		const refreshOut: string[] = [];
 		const refreshCode = await runRefresh(makeCtx({ stdout: (line) => refreshOut.push(line) }));
@@ -92,7 +92,7 @@ describe("runRefresh + runStatus (cli)", () => {
 
 	it("surfaces minsync-unavailable without throwing when the minsync binary is absent", async () => {
 		writeConfig(
-			{ forceEngine: "typescript-fallback" },
+			{ enabled: true },
 			{
 				binaryPath: join(root, "missing-minsync"),
 				workspacePath: join(root, ".autorag", "minsync"),
@@ -121,7 +121,7 @@ describe("runRefresh + runStatus (cli)", () => {
 	});
 
 	it("reports idle and stale before any refresh has run", async () => {
-		writeConfig({ forceEngine: "typescript-fallback" });
+		writeConfig({ enabled: true });
 
 		const statusOut: string[] = [];
 		const code = await runStatus(makeCtx({ stdout: (line) => statusOut.push(line) }));
@@ -136,7 +136,7 @@ describe("runRefresh + runStatus (cli)", () => {
 
 describe("runRefresh --method", () => {
 	it("refreshes only bm25 when --method bm25 is given", async () => {
-		writeConfig({ forceEngine: "typescript-fallback" });
+		writeConfig({ enabled: true });
 
 		const out: string[] = [];
 		const code = await runRefresh(makeCtx({ flags: { method: "bm25" }, stdout: (line) => out.push(line) }));
@@ -152,7 +152,7 @@ describe("runRefresh --method", () => {
 	});
 
 	it("refreshes with all methods when --method all is given", async () => {
-		writeConfig({ forceEngine: "typescript-fallback" });
+		writeConfig({ enabled: true });
 
 		const out: string[] = [];
 		const code = await runRefresh(makeCtx({ flags: { method: "all" }, stdout: (line) => out.push(line) }));
@@ -162,7 +162,7 @@ describe("runRefresh --method", () => {
 	});
 
 	it("rejects an unknown --method value", async () => {
-		writeConfig({ forceEngine: "typescript-fallback" });
+		writeConfig({ enabled: true });
 
 		const err: string[] = [];
 		const code = await runRefresh(makeCtx({ flags: { method: "bogus" }, stderr: (line) => err.push(line) }));

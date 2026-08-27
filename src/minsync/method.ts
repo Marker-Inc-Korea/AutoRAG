@@ -1,6 +1,6 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
-import type { BM25Status, BM25SyncResult } from "../retrieval/methods/bm25.ts";
+import { type BM25Status, type BM25SyncResult, BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -25,16 +25,8 @@ export interface MinSyncVectorMethodOptions {
 	readonly mode?: MinSyncQueryMode;
 }
 
-export interface MinSyncBM25MethodOptions extends Omit<MinSyncVectorMethodOptions, "mode"> {
-	/** @deprecated Ignored; MinSync owns the index location. */
-	readonly indexPath?: string;
-	/** @deprecated Ignored; MinSync owns fallback behavior. */
-	readonly fallback?: "typescript" | "disabled";
-	/** @deprecated Ignored; MinSync owns the search engine. */
-	readonly forceEngine?: "tantivy" | "typescript-fallback";
-	/** @deprecated Ignored; native Tantivy injection is no longer supported. */
-	readonly importBinding?: () => Promise<unknown>;
-}
+export type MinSyncBM25MethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
+export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
 
 /** Degrade result returned when no binary can be resolved. */
 function degrade(workspacePath: string, reason: string): MinSyncSyncResult {
@@ -137,14 +129,17 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
 			if (!entry || !matchesVirtualPathScope(entry.virtualPath, options.scope)) continue;
+			const chunkId = `minsync:${entry.virtualPath}:${basename(hit.path)}`;
 			results.push({
-				id: `minsync:${entry.virtualPath}:${basename(hit.path)}`,
+				id: chunkId,
 				content: hit.text,
 				source: realpathSync(normalize(entry.sourcePath)),
 				score: hit.score,
 				metadata: {
 					method: this.mode === "vector" ? "minsync" : `minsync-${this.mode}`,
 					virtualPath: entry.virtualPath,
+					minsyncChunkId: chunkId,
+					minsyncPath: hit.path,
 				},
 			});
 			if (results.length >= topK) break;
@@ -163,7 +158,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	 * Returns: string path on success, undefined for missing-binary, or a MinSyncSyncResult
 	 * for install-failed.
 	 */
-	private async resolveBinary(): Promise<string | undefined | MinSyncSyncResult> {
+	protected async resolveBinary(): Promise<string | undefined | MinSyncSyncResult> {
 		// 1. explicit binaryPath
 		if (this.binaryPath && existsSync(this.binaryPath)) {
 			return this.binaryPath;
@@ -212,10 +207,26 @@ export class MinSyncBM25Method extends MinSyncVectorMethod {
 		};
 	}
 
+	override async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
+		const binaryResult = await this.resolveBinaryForRetrieve();
+		if (binaryResult === undefined) {
+			const readiness = this.status.readiness === "ready" ? "dependency_unavailable" : this.status.readiness;
+			throw new BM25UnavailableError(
+				readiness === "index_missing" ? "dependency_unavailable" : readiness,
+				this.status.message ?? "MinSync BM25 is unavailable",
+			);
+		}
+		return super.retrieve(query, options);
+	}
+
 	syncFromMinSync(result: MinSyncSyncResult): BM25SyncResult {
 		this.status = result.ok
 			? { readiness: "ready", engine: "minsync" }
-			: { readiness: "error", engine: "minsync", message: result.reason };
+			: {
+					readiness: result.reason === "missing-binary" ? "dependency_unavailable" : "error",
+					engine: "minsync",
+					message: result.reason,
+				};
 		return {
 			indexPath: result.workspacePath,
 			indexedChunks: result.synced,
@@ -226,5 +237,26 @@ export class MinSyncBM25Method extends MinSyncVectorMethod {
 
 	getStatus(): BM25Status {
 		return this.status;
+	}
+
+	private async resolveBinaryForRetrieve(): Promise<string | undefined> {
+		const binaryResult = await this.resolveBinary();
+		return typeof binaryResult === "string" ? binaryResult : undefined;
+	}
+}
+
+export class MinSyncHybridMethod extends MinSyncVectorMethod {
+	constructor(options: MinSyncHybridMethodOptions) {
+		super({ ...options, mode: "hybrid" });
+	}
+
+	override describe(): RetrievalMethodDescriptor {
+		return {
+			name: "hybrid",
+			type: "hybrid",
+			description: "MinSync-backed hybrid BM25+vector retrieval over shared CDC chunks",
+			status: "active",
+			capabilities: ["semantic", "lexical", "incremental", "parsed-mirrors", "virtual-paths"],
+		};
 	}
 }

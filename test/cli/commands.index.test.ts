@@ -131,7 +131,7 @@ describe("runIndex", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.parsed)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.minsync)).toBe(false);
 
 		expect(existsSync(fx.bin)).toBe(true);
@@ -141,7 +141,7 @@ describe("runIndex", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.action).toBe("reset");
-		expect(parsed.removed).toEqual(["parsed", "minsync"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync", "bm25"]);
 	});
 
 	it("declined reset returns exit 2 and removes nothing", async () => {
@@ -248,7 +248,7 @@ describe("runIndex", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.action).toBe("rebuild");
-		expect(parsed.removed).toEqual(["parsed", "minsync"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync", "bm25"]);
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });
@@ -266,13 +266,13 @@ describe("runIndex --method scoped reset", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(0);
 
-		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.parsed)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.action).toBe("reset");
-		expect(parsed.removed).toEqual([]);
+		expect(parsed.removed).toEqual(["bm25"]);
 	});
 
 	it("reset --method minsync removes only the minsync index", async () => {
@@ -288,11 +288,11 @@ describe("runIndex --method scoped reset", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.minsync)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.parsed)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["minsync"]);
+		expect(parsed.removed).toEqual(["minsync", "bm25"]);
 	});
 
 	it("reset --method bm25,minsync removes the shared MinSync index but not parsed", async () => {
@@ -307,12 +307,12 @@ describe("runIndex --method scoped reset", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(0);
 
-		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.minsync)).toBe(false);
 		expect(existsSync(fx.parsed)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["minsync"]);
+		expect(parsed.removed).toEqual(["bm25", "minsync"]);
 	});
 
 	it("reset --method all removes the parsed mirror and shared MinSync index", async () => {
@@ -328,11 +328,11 @@ describe("runIndex --method scoped reset", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.parsed)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(true);
+		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.minsync)).toBe(false);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["parsed", "minsync"]);
+		expect(parsed.removed).toEqual(["parsed", "bm25", "minsync"]);
 	});
 
 	it("rebuild --method bm25 removes and rebuilds only bm25", async () => {
@@ -351,14 +351,14 @@ describe("runIndex --method scoped reset", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(0);
 
-		// BM25 uses the shared MinSync index; only parsed content is preserved.
-		expect(existsSync(fx.bm25)).toBe(true);
+		// Legacy BM25 artifacts are removed; parsed/MinSync remain unless also selected.
+		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.parsed)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.action).toBe("rebuild");
-		expect(parsed.removed).toEqual([]);
+		expect(parsed.removed).toEqual(["bm25"]);
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });

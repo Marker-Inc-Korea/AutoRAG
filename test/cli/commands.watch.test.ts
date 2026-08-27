@@ -42,7 +42,7 @@ function writeConfig(): void {
 		searchPaths: ["docs"],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		bm25: { forceEngine: "typescript-fallback" },
+		bm25: { enabled: true },
 	};
 	const configDir = join(process.env.HOME as string, ".autorag");
 	mkdirSync(configDir, { recursive: true });

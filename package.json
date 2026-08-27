@@ -45,7 +45,6 @@
     "@earendil-works/pi-ai": "^0.84.2",
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@opendataloader/pdf": "^2.5.2",
-    "@pngwasi/node-tantivy-binding": "^0.3.4",
     "@rhwp/core": "0.8.4",
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.11.0",

@@ -82,7 +82,7 @@ the exact blocking command and do not claim live MinSync verification.
 Docker can reproduce the Linux job on macOS, Linux, or Windows hosts. The
 `test-linux` target uses an isolated container volume for `node_modules`, so it
 does not replace host-native dependencies, and pins `linux/amd64` to match
-GitHub's Ubuntu runner and the available Tantivy native binding. Windows
+GitHub's Ubuntu runner. Windows
 containers require a Windows kernel, so Windows compatibility is run natively
 from Git Bash/MSYS2 with `make test-windows` (or directly with
 `bun run test:windows`) and verified by the `windows-latest` GitHub-hosted
@@ -151,11 +151,11 @@ AutoRAG is designed for **multi-method retrieval** — different methods for dif
 
 | Method | Status | Best for |
 |--------|--------|----------|
-| BM25 (keyword) | Active | Keyword-heavy search, term frequency ranking over parsed mirrors |
-| MinSync vector (semantic) | Active | Incrementally indexed semantic retrieval over parsed document mirrors |
+| BM25 (keyword) | Active | MinSync lexical ranking over shared CDC chunks from parsed mirrors |
+| MinSync vector (semantic) | Active | Incrementally indexed semantic retrieval over the same MinSync chunks |
+| Hybrid (vector+BM25) | Active | MinSync hybrid mode over the same canonical chunk IDs |
 | Datasource skills | Active | External server-configured sources (e.g. KakaoTalk via `katok`) |
 | Vector (other backends) | Planned | Other dense-document backends, "find similar to X" |
-| Hybrid (vector+BM25) | Planned | Best-of-both fusion with score normalization |
 
 The `RetrievalMethodRegistry` and `ResultMerger` are live: configured methods are registered and routed through `ParallelRetriever` + `ResultMerger`. New methods implement the `RetrievalMethod` interface and plug into the same pipeline. Plain-directory content search is handled directly through the agent's `bash` tool.
 

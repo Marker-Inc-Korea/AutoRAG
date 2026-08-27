@@ -81,7 +81,6 @@ describe("getRefreshStatus", () => {
 
 	it("reports component status for bm25 and minsync without leaking paths", async () => {
 		const agent = makeAgent({
-			bm25: { forceEngine: "typescript-fallback" },
 			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },
 		});
 		await agent.refresh(true);

@@ -57,14 +57,14 @@ describe("single-model CLI config", () => {
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
 				model: { provider: "openai", id: "gpt-4o" },
-				bm25: { enabled: true, forceEngine: "typescript-fallback" },
+				bm25: { enabled: true },
 				minSync: { enabled: false },
 			},
 			{ cwd: root },
 		);
 		const written = JSON.parse(readFileSync(path, "utf8")) as CliConfig;
 		expect(written.model).toEqual({ provider: "openai", id: "gpt-4o" });
-		expect(written.bm25?.forceEngine).toBe("typescript-fallback");
+		expect(written.bm25).toEqual({ enabled: true });
 		expect(written.minSync?.enabled).toBe(false);
 		expect(JSON.stringify(written)).not.toMatch(/explorer|orchestrator/i);
 	});
@@ -74,14 +74,14 @@ describe("single-model CLI config", () => {
 			searchPaths: ["."],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			bm25: { enabled: true, forceEngine: "typescript-fallback" },
+			bm25: { enabled: true },
 			minSync: { enabled: false },
 			jikji: {},
 			parserOptions: { pdf: true },
 			dupey: { enabled: false },
 			excludeExactDuplicates: false,
 		});
-		expect(opts.bm25).toEqual({ forceEngine: "typescript-fallback" });
+		expect(opts.bm25).toEqual({});
 		expect(opts.minSync).toBe(false);
 		expect(opts.jikji).toEqual({});
 		expect(opts.parserOptions).toEqual({ pdf: true });

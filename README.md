@@ -65,13 +65,13 @@ Different documents need different search strategies:
 | Legal documents, specifications | BM25 (keyword ranking) | Handles domain terminology well |
 | Mixed collections | Hybrid (vector + BM25) | Combines precision and recall |
 
-AutoRAG supports **pluggable retrieval methods**. It ships with lexical **BM25** and semantic **MinSync** methods wired through the `RetrievalMethodRegistry`, and the architecture is ready for additional vector and hybrid backends. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication.
+AutoRAG supports **pluggable retrieval methods**. Local lexical BM25, semantic vector, and hybrid retrieval all go through **MinSync** over one shared CDC chunk lifecycle, wired through the `RetrievalMethodRegistry`. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication. External datasources keep their own archive/index lifecycle.
 
-BM25 and MinSync are **enabled by default** — no explicit configuration is needed for standard lexical + semantic retrieval. Both can be disabled by setting `"bm25": false` or `"minSync": false` in the config file. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
+BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
 
 ### Real directory access
 
-AutoRAG reads configured source directories directly through its built-in `bash` tool. Retrieval tools can supply candidate paths, but the same agent opens the source material before curating. Answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. BM25 and MinSync index parsed markdown mirrors under `.autorag`.
+AutoRAG reads configured source directories directly through its built-in `bash` tool. Retrieval tools can supply candidate paths, but the same agent opens the source material before curating. Answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. MinSync indexes parsed markdown mirrors under `.autorag` for BM25, vector, and hybrid retrieval.
 
 ### Optional Jikji discovery and indexing
 

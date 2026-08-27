@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.js";
+import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
 
 const temporaryRoots: string[] = [];
 
@@ -29,11 +30,12 @@ describe("AutoRAG retrieval scope flow", () => {
 		writeFileSync(join(source, "chargebacks.txt"), "Chargeback evidence requires the payment receipt.");
 		symlinkSync(source, link, process.platform === "win32" ? "junction" : "dir");
 
+		const fake = join(workspace, "fake-minsync.mjs");
+		writeFakeMinSync(fake);
 		const agent = new AutoRAGAgent({
 			searchPaths: [link],
 			workspacePath: workspace,
-			bm25: { forceEngine: "typescript-fallback" },
-			minSync: false,
+			minSync: { binaryPath: fake, autoInstall: false },
 		});
 		await agent.refresh();
 
@@ -54,20 +56,22 @@ describe("AutoRAG retrieval scope flow", () => {
 		mkdirSync(prepared, { recursive: true });
 		writeFileSync(join(prepared, "policy.txt"), "The retention policy is seven years.");
 
+		const fake = join(prepared, "fake-minsync.mjs");
+		writeFakeMinSync(fake);
 		const preparingAgent = new AutoRAGAgent({
 			searchPaths: [prepared],
 			workspacePath: prepared,
-			bm25: { forceEngine: "typescript-fallback" },
-			minSync: false,
+			minSync: { binaryPath: fake, autoInstall: false },
 		});
 		await preparingAgent.refresh();
 		cpSync(prepared, relocated, { recursive: true });
 
+		const relocatedFake = join(relocated, "fake-minsync.mjs");
+		writeFakeMinSync(relocatedFake);
 		const relocatedAgent = new AutoRAGAgent({
 			searchPaths: [relocated],
 			workspacePath: relocated,
-			bm25: { forceEngine: "typescript-fallback" },
-			minSync: false,
+			minSync: { binaryPath: relocatedFake, autoInstall: false },
 		});
 		const results = await relocatedAgent.retrieve("retention policy", { scope: relocated });
 
@@ -85,11 +89,12 @@ describe("AutoRAG retrieval scope flow", () => {
 		mkdirSync(unknown, { recursive: true });
 		writeFileSync(join(source, "policy.txt"), "The retention policy is seven years.");
 
+		const fake = join(workspace, "fake-minsync.mjs");
+		writeFakeMinSync(fake);
 		const agent = new AutoRAGAgent({
 			searchPaths: [source],
 			workspacePath: workspace,
-			bm25: { forceEngine: "typescript-fallback" },
-			minSync: false,
+			minSync: { binaryPath: fake, autoInstall: false },
 		});
 		await agent.refresh();
 

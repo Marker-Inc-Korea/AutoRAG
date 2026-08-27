@@ -426,7 +426,7 @@ describe("AutoRAGAgent default method registration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
-			bm25: { forceEngine: "typescript-fallback" },
+			bm25: { autoInstall: false },
 		});
 		expect(internals(agent).bm25Method).toBeDefined();
 		expect(internals(agent).bm25Method?.describe().name).toBe("bm25");
