@@ -83,6 +83,7 @@ Also, feel free to ask your question at our `github issue <https://github.com/Ma
    azure_openai.md
    migration.md
    test_your_rag.md
+   ty.md
 
 .. toctree::
     :maxdepth: 1

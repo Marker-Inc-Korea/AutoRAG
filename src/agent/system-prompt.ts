@@ -30,7 +30,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "jikji_find", "optional local discovery through Jikji answer packs"),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
-		toolLine(config, "search_bm25_documents", "lexical BM25 search over parsed document mirrors"),
+		toolLine(config, "search_bm25_documents", "MinSync-backed lexical BM25 search over parsed document mirrors"),
 		toolLine(config, "search_minsync_documents", "semantic MinSync search over parsed document mirrors"),
 		toolLine(
 			config,
@@ -38,6 +38,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"search authorized external datasources; scope may only narrow access",
 		),
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
+		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
 		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
 		...config.toolNames
@@ -51,6 +52,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"search_minsync_documents",
 						"search_datasource_documents",
 						"load_datasource_skill",
+						"scan_duplicate_documents",
 						"check_memory",
 						"emit_autorag_results",
 					].includes(name),
@@ -75,6 +77,12 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 \`jikji_find\` is an optional local-discovery aid. Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`.
 `
 		: "";
+	const duplicateManagement = toolAvailable(config, "scan_duplicate_documents")
+		? `## Local Corpus Management
+
+\`scan_duplicate_documents\` performs a read-only dupey scan over configured local roots. Use it for duplicate-file, revision, cleanup, and index-space questions. Exact means canonical extracted text matches; near and contains require review. Never claim that the tool moved or deleted files.
+`
+		: "";
 
 	return `You are AutoRAG, a ${modelId} librarian agent for codebases and document collections.
 
@@ -83,7 +91,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 ## Workflow
 
 1. **PLAN** — Understand the query, inspect retrieval memory when useful, and choose suitable retrieval methods.
-2. **RETRIEVE** — Use BM25, MinSync, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
+2. **RETRIEVE** — Use MinSync BM25, MinSync vector, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
 3. **READ** — Use \`bash\` to open and verify relevant local files. Do not curate from search snippets alone when source files are available.
 4. **JUDGE** — Evaluate relevance, sufficiency, conflicts, uncertainty, and temporal context.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
@@ -97,11 +105,12 @@ ${noSearchTools}
 
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
-- Use BM25 for exact terminology and MinSync for semantic similarity.
+- Use MinSync-backed BM25 for exact terminology and MinSync vector search for semantic similarity.
 - Use \`bash\` with find/grep to discover files and cat/head/sed to read enough surrounding context.
 - If results are empty, follow this Fallback Chain: simplify the query, broaden file discovery, try synonyms, then inspect likely directories.
 - Cross-check important claims against the original source and preserve real source paths.
 
+${duplicateManagement}
 ## External Datasource Skills
 
 Datasource access is default-deny and server-bound. Model arguments cannot grant \`allowedTags\` or \`allowedScopes\`; a requested scope can only narrow trusted access.

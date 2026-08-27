@@ -9,6 +9,7 @@
  */
 
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
+import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import { CloudDriveSkill } from "./cloud-drive/index.ts";
@@ -31,6 +32,8 @@ import { type WacrawlOptions, WacrawlSkill } from "./wacrawl/index.ts";
 /** One configured datasource entry (the trusted `datasources.<name>` value). */
 export interface DatasourceSkillConfig {
 	readonly enabled?: boolean;
+	/** Operator-authored context shown to the agent for this connection. */
+	readonly description?: string;
 	/** Built-in datasource template used when the config key is a connection alias. */
 	readonly type?: string;
 	readonly instanceId?: string;
@@ -268,14 +271,18 @@ export function buildDatasourceSkills(
 			entry.instanceId === undefined && entry.type !== undefined ? { ...entry, instanceId: name } : entry;
 		const skill = builder(normalizedEntry, workspaceRoot, name);
 		const hasChannelFilter = (entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0;
-		skills.push(
+		const aliased =
 			name !== templateName || hasChannelFilter
 				? new AliasedDatasourceSkill(skill, {
 						alias: name,
 						...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
 						...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
 					})
-				: skill,
+				: skill;
+		skills.push(
+			typeof entry.description === "string" && entry.description.trim().length > 0
+				? new DescribedDatasourceSkill(aliased, entry.description.trim())
+				: aliased,
 		);
 	}
 	return { skills, unknown };

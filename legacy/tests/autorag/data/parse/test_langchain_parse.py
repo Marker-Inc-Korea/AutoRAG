@@ -1,3 +1,5 @@
+import pytest
+
 from autorag.data.parse import langchain_parse
 
 from tests.autorag.data.parse.test_parse_base import (
@@ -28,6 +30,16 @@ def test_langchain_parse_single_pdf():
     )
     check_parse_result(texts, path, "single_pdf")
     assert pages == [-1]
+
+
+def test_langchain_parse_requires_parse_method():
+    with pytest.raises(ValueError, match="parse_method is required"):
+        langchain_parse(
+            single_pdf_path_list[0].replace(
+                single_pdf_path_list[0].split("/")[-1], "*"
+            ),
+            file_type="pdf",
+        )
 
 
 def test_langchain_parse_single_pdf_node():

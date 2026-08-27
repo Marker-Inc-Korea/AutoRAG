@@ -106,6 +106,12 @@ export interface CliConfig {
 	bm25?: Bm25MethodConfig;
 	jikji?: Record<string, unknown>;
 	parserOptions?: Record<string, unknown>;
+	dupey?: {
+		enabled?: boolean;
+		binaryPath?: string;
+		timeoutMs?: number;
+	};
+	excludeExactDuplicates?: boolean;
 	/** Trusted datasource skill configuration (skill name → config). */
 	datasources?: DatasourcesConfig;
 	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
@@ -661,6 +667,16 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	config.minSync = normalized.minSync;
 	if (file.jikji) config.jikji = file.jikji;
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
+	if (file.dupey !== undefined) {
+		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
+			throw new ConfigError("Config field 'dupey' must be an object");
+		}
+		config.dupey = file.dupey as CliConfig["dupey"];
+	}
+	if (file.excludeExactDuplicates !== undefined && typeof file.excludeExactDuplicates !== "boolean") {
+		throw new ConfigError("Config field 'excludeExactDuplicates' must be a boolean");
+	}
+	config.excludeExactDuplicates = file.excludeExactDuplicates ?? true;
 	if (file.datasources !== undefined) {
 		if (typeof file.datasources !== "object" || file.datasources === null || Array.isArray(file.datasources)) {
 			throw new ConfigError("Config field 'datasources' must be an object mapping skill names to their config");
@@ -709,6 +725,15 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	if (config.jikji) opts.jikji = config.jikji;
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
+	if (config.dupey?.enabled === false) {
+		opts.dupey = false;
+	} else {
+		opts.dupey = {
+			...(config.dupey?.binaryPath ? { executable: config.dupey.binaryPath } : {}),
+			...(config.dupey?.timeoutMs ? { timeoutMs: config.dupey.timeoutMs } : {}),
+		};
+	}
+	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (unknown.length > 0) {
@@ -1058,6 +1083,8 @@ export function writeDefaultConfig(
 	// Jikji find-first discovery is enabled by default for new configs; the CLI
 	// auto-installs the jikji binary on first use when cargo is available.
 	full.jikji = partial.jikji ?? {};
+	full.dupey = partial.dupey ?? { enabled: true };
+	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;

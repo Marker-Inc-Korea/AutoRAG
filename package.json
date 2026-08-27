@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "MIT",
   "repository": {
@@ -59,7 +59,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.9",
+    "@biomejs/biome": "2.5.10",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2",

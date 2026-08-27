@@ -9,6 +9,7 @@ import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "..
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
+import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -30,7 +31,13 @@ import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
-import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
+import {
+	MinSyncBM25Method,
+	type MinSyncBM25MethodOptions,
+	type MinSyncSyncResult,
+	MinSyncVectorMethod,
+	type MinSyncVectorMethodOptions,
+} from "../minsync/index.ts";
 import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
@@ -57,6 +64,11 @@ import {
 	LOAD_DATASOURCE_SKILL_TOOL_NAME,
 	toDatasourceAgentSkill,
 } from "./datasource-skill.ts";
+import {
+	createScanDuplicateDocumentsTool,
+	SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+	type ScanDuplicateDocumentsDetails,
+} from "./dupey-tool.ts";
 import {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,
@@ -188,12 +200,18 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
-	bm25?: Omit<BM25MethodOptions, "root"> | false;
+	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | Omit<BM25MethodOptions, "root"> | false;
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
+	dupey?: DupeyCliOptions | false;
+	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	/** Maximum time a model/tool search may run before it is aborted. */
+	searchTimeoutMs?: number;
+	/** Maximum number of retrieval/tool executions allowed in one search. */
+	maxSearchToolCalls?: number;
 }
 
 export interface AutoRAGSearchSession {
@@ -254,18 +272,31 @@ export class AutoRAGAgent {
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
-	private readonly bm25Method: BM25Method | undefined;
+	private readonly bm25Method: MinSyncBM25Method | BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
+	private readonly dupeyOptions: DupeyCliOptions | false;
+	private readonly excludeExactDuplicates: boolean;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	private readonly droppedCallerToolNames: readonly string[];
+	private readonly searchTimeoutMs: number;
+	private readonly maxSearchToolCalls: number;
+	private searchToolCallCount = 0;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
+		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
+		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
+		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
+			throw new Error("searchTimeoutMs must be a positive finite number");
+		}
+		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
+			throw new Error("maxSearchToolCalls must be a positive integer");
+		}
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
@@ -285,15 +316,20 @@ export class AutoRAGAgent {
 			this.configuredSearchPaths,
 		);
 		this.parserOptions = options.parserOptions;
+		this.dupeyOptions = options.dupey ?? {};
+		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 
 		if (options.minSync !== false) {
-			const minSyncOpts = options.minSync ?? { autoInstall: true };
+			const minSyncOpts = options.minSync ?? { autoInstall: false };
 			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
 		}
 		if (options.bm25 !== false) {
-			const bm25Opts = options.bm25 ?? {};
-			this.bm25Method = new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot });
+			const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
+			this.bm25Method =
+				options.minSync === false || hasLegacyBM25Options(bm25Opts)
+					? new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as BM25MethodOptions)
+					: new MinSyncBM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as MinSyncBM25MethodOptions);
 			this.methodRegistry.register(this.bm25Method);
 		}
 		for (const skill of this.datasourceSkills) {
@@ -322,6 +358,8 @@ export class AutoRAGAgent {
 		const searchAllTool = createSearchAllDocumentsTool(this);
 		const loadDatasourceSkillTool = createLoadDatasourceSkillTool(this);
 		const emitResultsTool = createEmitResultsTool((details) => this.resultCapture?.(details));
+		const scanDuplicateDocumentsTool =
+			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
 		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot });
 
@@ -339,6 +377,7 @@ export class AutoRAGAgent {
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
+			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -362,6 +401,7 @@ export class AutoRAGAgent {
 			searchDatasourceTool,
 			loadDatasourceSkillTool,
 			emitResultsTool,
+			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
 		];
 		const seenToolNames = new Set<string>();
@@ -409,6 +449,25 @@ export class AutoRAGAgent {
 		if (options.autoRefresh) {
 			this.startAutoRefresh(options.autoRefresh.intervalMs, { immediate: options.autoRefresh.immediate });
 		}
+	}
+
+	async scanDuplicateDocuments(): Promise<ScanDuplicateDocumentsDetails> {
+		if (this.dupeyOptions === false) {
+			return { scans: [], familyCount: 0, exactDuplicateCount: 0 };
+		}
+		const scans = await Promise.all(
+			this.searchPaths.map((searchPath) => scanWithDupey(searchPath, this.dupeyOptions || {})),
+		);
+		const familyCount = scans.reduce((count, scan) => count + scan.families.length, 0);
+		const exactDuplicateCount = scans.reduce((count, scan) => {
+			const hashes = new Map<string, number>();
+			for (const file of scan.files) {
+				if (typeof file.content_hash !== "string") continue;
+				hashes.set(file.content_hash, (hashes.get(file.content_hash) ?? 0) + 1);
+			}
+			return count + [...hashes.values()].reduce((sum, size) => sum + Math.max(0, size - 1), 0);
+		}, 0);
+		return { scans, familyCount, exactDuplicateCount };
 	}
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
@@ -483,6 +542,10 @@ export class AutoRAGAgent {
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
 		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
+		this.searchToolCallCount += 1;
+		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
+			void this.activeSession?.abort();
+		}
 		const details = event.result.details as { method?: string } | undefined;
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
@@ -588,6 +651,7 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 
 		this.activeRun = true;
+		this.searchToolCallCount = 0;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
@@ -613,7 +677,21 @@ export class AutoRAGAgent {
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
-			await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
+			let timeout: NodeJS.Timeout | undefined;
+			try {
+				await Promise.race([
+					session.prompt(this.buildSearchPrompt(trimmedQuery, options)),
+					new Promise<never>((_, reject) => {
+						timeout = setTimeout(() => {
+							void Promise.resolve(session?.abort());
+							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
+						}, this.searchTimeoutMs);
+						timeout.unref();
+					}),
+				]);
+			} finally {
+				if (timeout !== undefined) clearTimeout(timeout);
+			}
 
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
@@ -811,8 +889,8 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
-			const bm25 = wants("bm25") ? await this.syncBM25() : undefined;
 			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
+			const bm25 = wants("bm25") ? await this.syncBM25(minsync) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
 			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -985,11 +1063,13 @@ export class AutoRAGAgent {
 	}
 
 	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
+		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			force,
 			parserOptions: this.parserOptions,
+			excludeSourcePaths: duplicateFilter.excluded,
 		});
 	}
 
@@ -1000,10 +1080,12 @@ export class AutoRAGAgent {
 	 * so the refresh result and status remain consistent.
 	 */
 	private async scanMirrorStaleness(): Promise<ParsedMirrorSyncResult> {
+		const duplicateFilter = await this.exactDuplicateExclusions();
 		const diagnostics = await detectMirrorStaleness({
 			root: this.workspaceProjectRoot,
 			searchPaths: this.searchPaths,
 			parserOptions: this.parserOptions,
+			excludeSourcePaths: duplicateFilter.excluded,
 		});
 		return {
 			scanned: 0,
@@ -1015,8 +1097,28 @@ export class AutoRAGAgent {
 		};
 	}
 
-	async syncBM25(): Promise<BM25SyncResult | undefined> {
-		return this.bm25Method?.sync();
+	private async exactDuplicateExclusions(): Promise<{ readonly excluded: ReadonlySet<string> }> {
+		if (!this.excludeExactDuplicates || this.dupeyOptions === false) return { excluded: new Set() };
+		const excluded = new Set<string>();
+		for (const searchPath of this.searchPaths) {
+			try {
+				const scan = await scanWithDupey(searchPath, this.dupeyOptions || {});
+				const selected = await selectExactDuplicateExclusions(searchPath, scan);
+				for (const path of selected.excluded) excluded.add(path);
+			} catch (error) {
+				if (!(error instanceof DupeyCliError)) throw error;
+				// Optional optimizer: missing/broken dupey must not make the corpus unavailable.
+			}
+		}
+		return { excluded };
+	}
+
+	async syncBM25(minsync?: MinSyncSyncResult): Promise<BM25SyncResult | undefined> {
+		if (this.bm25Method === undefined) return undefined;
+		if (this.bm25Method instanceof MinSyncBM25Method) {
+			return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
+		}
+		return this.bm25Method.sync();
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
@@ -1369,6 +1471,10 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+function hasLegacyBM25Options(options: object): boolean {
+	return ["indexPath", "fallback", "forceEngine", "importBinding"].some((key) => Object.hasOwn(options, key));
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

@@ -1,4 +1,13 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -162,12 +171,12 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(firstRefresh.minsync).not.toHaveProperty("workspacePath");
 		expect(secondRefresh.minsync).toMatchObject({ ok: true, synced: 0 });
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
-		expect(hits.map((hit) => hit.source)).toEqual(["/docs/handbook.txt"]);
+		expect(hits.map((hit) => hit.source)).toEqual([realpathSync(join(docs, "handbook.txt"))]);
 		expect(loggedCommands()).toEqual([
 			["init", "--format", "json"],
 			["check", "--format", "json"],
 			["sync", "--full", "--format", "json"],
-			["query", "--format", "json", "-k", "1", "refund approval"],
+			["query", "--format", "json", "-k", "1", "--mode", "vector", "refund approval"],
 			["check", "--format", "json"],
 			["sync", "--format", "json"],
 		]);
