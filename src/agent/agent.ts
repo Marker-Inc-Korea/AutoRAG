@@ -208,6 +208,10 @@ export interface AutoRAGAgentOptions {
 	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	/** Maximum time a model/tool search may run before it is aborted. */
+	searchTimeoutMs?: number;
+	/** Maximum number of retrieval/tool executions allowed in one search. */
+	maxSearchToolCalls?: number;
 }
 
 export interface AutoRAGSearchSession {
@@ -278,10 +282,21 @@ export class AutoRAGAgent {
 	private readonly excludeExactDuplicates: boolean;
 	private readonly baseSystemPromptConfig: SystemPromptConfig;
 	private readonly droppedCallerToolNames: readonly string[];
+	private readonly searchTimeoutMs: number;
+	private readonly maxSearchToolCalls: number;
+	private searchToolCallCount = 0;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
+		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
+		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
+		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
+			throw new Error("searchTimeoutMs must be a positive finite number");
+		}
+		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
+			throw new Error("maxSearchToolCalls must be a positive integer");
+		}
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
@@ -527,6 +542,10 @@ export class AutoRAGAgent {
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
 		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
+		this.searchToolCallCount += 1;
+		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
+			void this.activeSession?.abort();
+		}
 		const details = event.result.details as { method?: string } | undefined;
 		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 		this.memory.save();
@@ -632,6 +651,7 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 
 		this.activeRun = true;
+		this.searchToolCallCount = 0;
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
@@ -657,7 +677,21 @@ export class AutoRAGAgent {
 			);
 			this.activeSession = session;
 			unsubscribers = this.configureSearchSession(session);
-			await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
+			let timeout: NodeJS.Timeout | undefined;
+			try {
+				await Promise.race([
+					session.prompt(this.buildSearchPrompt(trimmedQuery, options)),
+					new Promise<never>((_, reject) => {
+						timeout = setTimeout(() => {
+							void Promise.resolve(session?.abort());
+							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
+						}, this.searchTimeoutMs);
+						timeout.unref();
+					}),
+				]);
+			} finally {
+				if (timeout !== undefined) clearTimeout(timeout);
+			}
 
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
