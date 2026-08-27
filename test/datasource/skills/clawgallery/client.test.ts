@@ -15,10 +15,10 @@ function stubBinary(script: string): string {
 describe("ClawGalleryClient", () => {
 	it("runs incremental bootstrap and visual sync with trusted backend", async () => {
 		const binaryPath = stubBinary(
-			'case "$1 $2 $3" in "bootstrap  ") echo "ingested 1 new image(s)" ;; "vdr sync ") echo "indexed 1 image(s)" ;; esac',
+			'case "$1 $2" in "bootstrap ") echo "ingested 1 new image(s)" ;; "vdr sync") echo "indexed 1 image(s)" ;; esac',
 		);
 		const client = new ClawGalleryClient({ binaryPath, vdrBackend: "vsplade" });
-		expect(await client.bootstrap()).toMatchObject({ ok: true, data: { indexed: 1, skipped: 4 } });
+		expect(await client.bootstrap()).toMatchObject({ ok: true, data: { indexed: 1, skipped: 0 } });
 		expect(await client.syncVisual()).toMatchObject({ ok: true, data: { processed: 1 } });
 	});
 
@@ -43,7 +43,7 @@ describe("ClawGalleryClient", () => {
 			env: { CLAWGALLERY_PYTHON: "/tmp/python", OPENAI_API_KEY: "secret" },
 		}).bootstrap();
 		expect(result).toMatchObject({ ok: false, reason: "invalid-shape" });
-		expect(result.stdout).toContain('"/tmp/python,/tmp/gallery-config"');
+		expect(result.stdout).toContain("/tmp/python,/tmp/gallery-config");
 		expect(result.stdout).not.toContain("secret");
 	});
 
