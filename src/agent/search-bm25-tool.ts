@@ -1,6 +1,6 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import type { BM25Method, BM25Status } from "../retrieval/methods/bm25.ts";
+import type { BM25Status } from "../retrieval/methods/bm25.ts";
 import { BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
 
@@ -20,15 +20,20 @@ export interface SearchBM25DocumentsDetails {
 	readonly engine: BM25Status["engine"];
 }
 
+export interface BM25SearchMethod {
+	getStatus(): BM25Status;
+	retrieve(query: string, options: { topK?: number; scope?: string }): Promise<RetrievalResult[]>;
+}
+
 export function createSearchBM25DocumentsTool(
-	getMethod: () => BM25Method | undefined,
+	getMethod: () => BM25SearchMethod | undefined,
 	resolveScope: (scope: string | undefined) => string | undefined = (scope) => scope,
 ): AgentTool<typeof searchBM25Schema, SearchBM25DocumentsDetails> {
 	return {
 		name: SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 		label: "Search BM25 Documents",
 		description:
-			"Search parsed document mirrors with lexical BM25 ranking. Use for exact terms, repeated terms, headings, identifiers, and folder-scoped document search.",
+			"Search parsed document mirrors with MinSync 0.4.0 lexical BM25 ranking. Use for exact terms, repeated terms, headings, identifiers, and folder-scoped document search.",
 		parameters: searchBM25Schema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchBM25DocumentsDetails>> {
 			const method = getMethod();

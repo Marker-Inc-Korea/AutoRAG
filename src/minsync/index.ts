@@ -1,4 +1,4 @@
-export { MinSyncClient, type MinSyncClientOptions } from "./client.ts";
+export { MinSyncClient, type MinSyncClientOptions, type MinSyncQueryMode } from "./client.ts";
 export {
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
@@ -11,12 +11,18 @@ export {
 	executableName,
 	fetchLatestMinSyncRelease,
 	type InstalledMinSyncBinary,
+	MINSYNC_VERSION,
 	type MinSyncRelease,
 	type MinSyncReleaseAsset,
 	MinSyncReleaseError,
 	selectReleaseAsset,
 } from "./installer.ts";
-export { MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "./method.ts";
+export {
+	MinSyncBM25Method,
+	type MinSyncBM25MethodOptions,
+	MinSyncVectorMethod,
+	type MinSyncVectorMethodOptions,
+} from "./method.ts";
 export { MINSYNC_FILES_SUBDIR, MINSYNC_SUBDIR, minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
 export type { MinSyncEmbedderConfig, MinSyncOptions, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 export {

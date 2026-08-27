@@ -3,17 +3,16 @@ import { join, resolve, sep } from "node:path";
 import { AutoRAGAgent, type AutoRAGRefreshResult, type RefreshMethod } from "../../agent/agent.ts";
 import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
 import { PARSED_MIRROR_SUBDIR } from "../../mirror/paths.ts";
-import { BM25_SUBDIR } from "../../retrieval/methods/bm25.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
 import { parseMethodFlag } from "./refresh.ts";
 import type { CommandContext } from "./types.ts";
 
-const ALL_RESET_TARGETS = [PARSED_MIRROR_SUBDIR, BM25_SUBDIR, MINSYNC_SUBDIR] as const;
-const ALL_RESET_TARGET_NAMES = ["parsed", "bm25", "minsync"] as const;
+const ALL_RESET_TARGETS = [PARSED_MIRROR_SUBDIR, MINSYNC_SUBDIR] as const;
+const ALL_RESET_TARGET_NAMES = ["parsed", "minsync"] as const;
 
 /**
- * Run the `autorag index` command. `reset` removes the parsed mirror, BM25,
+ * Run the `autorag index` command. `reset` removes the parsed mirror
  * and MinSync index directories under `.autorag` (preserving `bin`,
  * `datasources`, and the memory file). `rebuild` resets then re-runs a forced
  * refresh. Returns 0 on success, 2 for usage/decline errors, 1 for runtime
@@ -112,7 +111,7 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
  * all three index dirs are reset and a full refresh runs.
  *
  * Mapping:
- * - `bm25` → reset BM25_SUBDIR, refresh with bm25 (+ parsed, since bm25 needs it)
+ * - `bm25` → refresh with bm25 (+ parsed, since MinSync BM25 needs it)
  * - `minsync` → reset MINSYNC_SUBDIR, refresh with minsync (+ parsed)
  * - `parsed` → reset PARSED_MIRROR_SUBDIR, refresh with parsed only
  * - `all` or undefined → all three dirs + full refresh
@@ -139,8 +138,7 @@ function resolveResetScope(methods: readonly RefreshMethod[] | undefined): {
 			subdirs.push(PARSED_MIRROR_SUBDIR);
 			names.push("parsed");
 		} else if (m === "bm25") {
-			subdirs.push(BM25_SUBDIR);
-			names.push("bm25");
+			// BM25 is a MinSync mode and has no separate index directory.
 		} else if (m === "minsync") {
 			subdirs.push(MINSYNC_SUBDIR);
 			names.push("minsync");
@@ -148,8 +146,8 @@ function resolveResetScope(methods: readonly RefreshMethod[] | undefined): {
 		// datasources/jikji have no reset dir but are valid refresh methods.
 	}
 	return {
-		targetNames: names.length > 0 ? names : ALL_RESET_TARGET_NAMES,
-		targetSubdirs: subdirs.length > 0 ? subdirs : ALL_RESET_TARGETS,
+		targetNames: names,
+		targetSubdirs: subdirs,
 		refreshMethods: refresh,
 	};
 }
