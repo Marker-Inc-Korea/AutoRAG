@@ -56,8 +56,9 @@ mapping. Configure credentials in notcrawl itself, then set
 
 ### Setup & wiring
 - [x] `buildDatasourceSkills` materializes every configured skill from the
-      trusted `datasources` config section; unknown names are rejected at
-      `buildAgentOptions` with a `ConfigError`.
+      trusted `datasources` config section; unknown names are skipped at
+      `buildAgentOptions` with an `unknown-datasource-skill` diagnostic so
+      unrelated search/status commands still run.
 - [x] Skills register their retrieval methods through the existing
       `RetrievalMethodRegistry` pipeline on agent construction.
 

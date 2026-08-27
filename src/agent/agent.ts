@@ -208,6 +208,8 @@ export interface AutoRAGAgentOptions {
 	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
+	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
 	/** Maximum time a model/tool search may run before it is aborted. */
 	searchTimeoutMs?: number;
 	/** Maximum number of retrieval/tool executions allowed in one search. */
@@ -276,6 +278,7 @@ export class AutoRAGAgent {
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
+	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
 	private readonly dupeyOptions: DupeyCliOptions | false;
@@ -305,6 +308,7 @@ export class AutoRAGAgent {
 			normalizeVirtualPath(`/${skill.describe().name}`),
 		);
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
+		this.startupDiagnostics = options.startupDiagnostics ?? [];
 		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
 
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
@@ -816,7 +820,7 @@ export class AutoRAGAgent {
 
 	/** Path-opaque component diagnostics (e.g. BM25 readiness) for the search response. */
 	private collectComponentDiagnostics(): SearchDocumentDiagnostic[] {
-		const diagnostics: SearchDocumentDiagnostic[] = [];
+		const diagnostics: SearchDocumentDiagnostic[] = [...this.startupDiagnostics];
 		if (this.droppedCallerToolNames.length > 0) {
 			diagnostics.push({
 				code: "caller-tool-dropped",
@@ -951,6 +955,7 @@ export class AutoRAGAgent {
 			parserOptions: this.parserOptions,
 		});
 		const diagnostics: SearchDocumentDiagnostic[] = [
+			...this.startupDiagnostics,
 			...this.refreshState.mirrorDiagnostics.map(toSearchDiagnostic),
 			...staleDiagnostics.map(toSearchDiagnostic),
 			...this.refreshState.jikjiDiagnostics.map((d) => ({
