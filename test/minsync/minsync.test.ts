@@ -438,13 +438,43 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "first vector result");
-		expect(result.source).toBe(join(source, "policy.txt"));
+		expect(result.source).toBe(realpathSync(join(source, "policy.txt")));
 		expect(result.content).toBe("Parsed renewal policy with cancellation terms.");
 		expect(result.score).toBe(0.91);
 		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "renewal cancellation"],
+				args: ["query", "--format", "json", "-k", "2", "--mode", "vector", "renewal cancellation"],
+				cwd: minSyncCwd(),
+			}),
+		);
+	});
+
+	it("routes lexical retrieval through MinSync BM25 mode", async () => {
+		writeFakeMinSync(
+			JSON.stringify({
+				results: [
+					{
+						path: "files/docs/policy.txt.md",
+						score: 0.88,
+						text: "BM25 lexical hit from MinSync.",
+					},
+				],
+			}),
+		);
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			mode: "bm25",
+		});
+
+		const results = await method.retrieve("renewal cancellation", { topK: 2 });
+
+		expect(results[0]?.metadata.method).toBe("minsync-bm25");
+		expect(loggedCalls()).toContainEqual(
+			JSON.stringify({
+				args: ["query", "--format", "json", "-k", "2", "--mode", "bm25", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -473,7 +503,7 @@ describe("MinSyncVectorMethod", () => {
 		// Then
 		expect(results).toHaveLength(1);
 		const result = requireValue(results[0], "relative path result");
-		expect(result.source).toBe(join(source, "policy.txt"));
+		expect(result.source).toBe(realpathSync(join(source, "policy.txt")));
 		expect(result.metadata.virtualPath).toBe("/docs/policy.txt");
 		expect(result.content).toBe("Relative path hit from MinSync.");
 	});

@@ -31,7 +31,13 @@ import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
-import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
+import {
+	MinSyncBM25Method,
+	type MinSyncBM25MethodOptions,
+	type MinSyncSyncResult,
+	MinSyncVectorMethod,
+	type MinSyncVectorMethodOptions,
+} from "../minsync/index.ts";
 import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
@@ -194,7 +200,7 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
-	bm25?: Omit<BM25MethodOptions, "root"> | false;
+	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | Omit<BM25MethodOptions, "root"> | false;
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
@@ -262,7 +268,7 @@ export class AutoRAGAgent {
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
-	private readonly bm25Method: BM25Method | undefined;
+	private readonly bm25Method: MinSyncBM25Method | BM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
@@ -299,13 +305,16 @@ export class AutoRAGAgent {
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 
 		if (options.minSync !== false) {
-			const minSyncOpts = options.minSync ?? { autoInstall: true };
+			const minSyncOpts = options.minSync ?? { autoInstall: false };
 			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
 		}
 		if (options.bm25 !== false) {
-			const bm25Opts = options.bm25 ?? {};
-			this.bm25Method = new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot });
+			const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
+			this.bm25Method =
+				options.minSync === false || hasLegacyBM25Options(bm25Opts)
+					? new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as BM25MethodOptions)
+					: new MinSyncBM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as MinSyncBM25MethodOptions);
 			this.methodRegistry.register(this.bm25Method);
 		}
 		for (const skill of this.datasourceSkills) {
@@ -846,8 +855,8 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
-			const bm25 = wants("bm25") ? await this.syncBM25() : undefined;
 			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
+			const bm25 = wants("bm25") ? await this.syncBM25(minsync) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
 			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -1070,8 +1079,12 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncBM25(): Promise<BM25SyncResult | undefined> {
-		return this.bm25Method?.sync();
+	async syncBM25(minsync?: MinSyncSyncResult): Promise<BM25SyncResult | undefined> {
+		if (this.bm25Method === undefined) return undefined;
+		if (this.bm25Method instanceof MinSyncBM25Method) {
+			return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
+		}
+		return this.bm25Method.sync();
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
@@ -1424,6 +1437,10 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+function hasLegacyBM25Options(options: object): boolean {
+	return ["indexPath", "fallback", "forceEngine", "importBinding"].some((key) => Object.hasOwn(options, key));
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

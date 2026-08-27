@@ -30,7 +30,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "jikji_find", "optional local discovery through Jikji answer packs"),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
-		toolLine(config, "search_bm25_documents", "lexical BM25 search over parsed document mirrors"),
+		toolLine(config, "search_bm25_documents", "MinSync-backed lexical BM25 search over parsed document mirrors"),
 		toolLine(config, "search_minsync_documents", "semantic MinSync search over parsed document mirrors"),
 		toolLine(
 			config,
@@ -91,7 +91,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 ## Workflow
 
 1. **PLAN** — Understand the query, inspect retrieval memory when useful, and choose suitable retrieval methods.
-2. **RETRIEVE** — Use BM25, MinSync, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
+2. **RETRIEVE** — Use MinSync BM25, MinSync vector, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
 3. **READ** — Use \`bash\` to open and verify relevant local files. Do not curate from search snippets alone when source files are available.
 4. **JUDGE** — Evaluate relevance, sufficiency, conflicts, uncertainty, and temporal context.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
@@ -105,7 +105,7 @@ ${noSearchTools}
 
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
-- Use BM25 for exact terminology and MinSync for semantic similarity.
+- Use MinSync-backed BM25 for exact terminology and MinSync vector search for semantic similarity.
 - Use \`bash\` with find/grep to discover files and cat/head/sed to read enough surrounding context.
 - If results are empty, follow this Fallback Chain: simplify the query, broaden file discovery, try synonyms, then inspect likely directories.
 - Cross-check important claims against the original source and preserve real source paths.

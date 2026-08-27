@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { loadMirrorIndex } from "../../mirror/index-store.ts";
 import { normalizeMarkdown } from "../../parser/text.ts";
@@ -15,9 +15,11 @@ export type BM25ReadinessState =
 	| "degraded_fallback"
 	| "error";
 
-export type BM25Engine = "tantivy" | "typescript-fallback" | "none";
+/** @deprecated Use MinSyncBM25Method from `src/minsync/method.ts`. */
+export type BM25Engine = "tantivy" | "typescript-fallback" | "minsync" | "none";
 export type BM25FallbackMode = "typescript" | "disabled";
 
+/** @deprecated Use MinSyncBM25MethodOptions from `src/minsync/method.ts`. */
 export interface BM25MethodOptions {
 	readonly root: string;
 	readonly indexPath?: string;
@@ -70,6 +72,7 @@ export class BM25UnavailableError extends Error {
 	}
 }
 
+/** @deprecated BM25 is now indexed and searched through MinSync 0.4.0. */
 export class BM25Method implements RetrievalMethod {
 	private readonly root: string;
 	private readonly indexPath: string;
@@ -396,7 +399,7 @@ function firstString(values: unknown[] | undefined): string | undefined {
 
 function sourcePathForVirtual(root: string, virtualPath: string): string {
 	const entry = loadMirrorIndex(root).entries[virtualPath];
-	return entry === undefined ? virtualPath : normalize(entry.sourcePath);
+	return entry === undefined ? virtualPath : realpathSync(normalize(entry.sourcePath));
 }
 
 function hash(value: string): string {
