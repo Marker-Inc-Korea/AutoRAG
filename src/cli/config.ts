@@ -1067,6 +1067,27 @@ export function resolveAgentModelDetailed(
 	};
 }
 
+export function readRawConfigObject(path: string): Record<string, unknown> {
+	const parsed = readConfigFile(path, true);
+	if (parsed === undefined) throw new ConfigError(`Config file not found: ${path}`);
+	return { ...(parsed as Record<string, unknown>) };
+}
+
+/** Atomically replace a config file, preserving the caller's JSON object. */
+export function writeConfigObject(path: string, config: unknown): void {
+	if (config === null || typeof config !== "object" || Array.isArray(config)) {
+		throw new ConfigError("Config file must be a JSON object");
+	}
+	mkdirSync(dirname(path), { recursive: true });
+	const contents = `${JSON.stringify(config, null, 2)}\n`;
+	const lock = acquireConfigWriteLock(path);
+	try {
+		replaceFileAtomically(path, contents, lock.assertOwned);
+	} finally {
+		lock.release();
+	}
+}
+
 export function writeDefaultConfig(
 	path: string,
 	partial: Partial<CliConfig>,

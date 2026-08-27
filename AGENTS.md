@@ -267,3 +267,5 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: katok, discrawl (Discord), slack, notion, github, cloud-drive, gmail, mail-export, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |
+| `src/cli/commands/ui.ts` | `autorag ui` loopback dashboard for connecting and managing datasource skills |
+| `src/ui/` | Local datasource UI catalog, config store, probes, HTML, and 127.0.0.1 HTTP server |

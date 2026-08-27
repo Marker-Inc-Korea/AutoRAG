@@ -56,6 +56,8 @@ RetrievalMethodRegistry
 
 A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
 
+Operators can add, test, enable, and remove connections from `autorag ui` instead of editing `config.json`. The UI is a local loopback control plane: it uses the same factory, never grants access from model tool arguments, and never writes token values into config.
+
 ## Universal connection aliases
 
 Every datasource entry can use a reusable template with a connection alias:

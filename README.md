@@ -349,6 +349,8 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 
 `autorag health` checks model/provider auth before a search — it resolves the model, verifies credential presence, and optionally probes one completion call. Use it to diagnose model, provider, auth, or timeout failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness). When `autorag search` fails for a model/provider reason, the error output includes a hint pointing to `autorag health`.
 
+`autorag ui` opens a loopback-only page (`127.0.0.1`) to connect local folders and datasource skills without editing JSON. It writes the same trusted `datasources` / `datasourceAccess` fields as a hand-edited config, stores env-var *names* rather than secrets, and refuses non-loopback binds. Use `--no-open` to print the URL without launching a browser.
+
 ## Installation
 
 Published as `@autorag/librarian` (dist bundled with Bun, runtime Node ≥ 24 or Bun):
