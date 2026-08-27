@@ -284,7 +284,7 @@ export class AutoRAGAgent {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
 		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
-		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
+		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 128;
 		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
 			throw new Error("searchTimeoutMs must be a positive finite number");
 		}

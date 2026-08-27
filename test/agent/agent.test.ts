@@ -36,6 +36,7 @@ interface AgentInternals {
 	memory: RetrievalMemory;
 	bm25Method: { describe(): { name: string } } | undefined;
 	minSyncMethod: { describe(): { name: string } } | undefined;
+	maxSearchToolCalls: number;
 	innerAgent: {
 		transformContext?: (
 			messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }>; timestamp: number }>,
@@ -145,6 +146,7 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent).toBeDefined();
+		expect(internals(agent).maxSearchToolCalls).toBe(128);
 	});
 
 	it("registers the dupey duplicate scan tool by default", () => {
