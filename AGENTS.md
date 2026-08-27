@@ -11,6 +11,74 @@ The repository root includes a `Makefile` for AutoRAG 2.0 validation:
 - `make lint`, `make typecheck`, `make build` — run individual checks.
 - `make ci` — run the normal local lint, typecheck, complete test, and build sequence.
 
+## Required MinSync Live QA
+
+When validating local-file retrieval changes, run a real `minsync sync --full`
+and a semantic query with a local EmbeddingGemma model. Do not use OpenAI
+credentials or send corpus text to a remote embedding service.
+
+The MinSync release binary currently exposes a TEI-compatible embedder adapter
+(`tei:<model>`) while Ollama exposes `/api/embeddings` and
+`/v1/embeddings`. Start Ollama and make the local-only adapter available before
+the experiment:
+
+```bash
+ollama pull embeddinggemma:latest
+ollama serve
+```
+
+Start the repository adapter, which translates MinSync's `POST /embed` request
+to Ollama's `POST /api/embeddings` request and returns the TEI response shape
+(a bare JSON array of embedding arrays):
+
+```json
+[[0.1, 0.2, "..."]]
+```
+
+```bash
+python3 scripts/manual-qa/ollama-tei-adapter.py
+```
+
+Run the isolated experiment with an EmbeddingGemma dimension of 768:
+
+```bash
+WORKSPACE="$(mktemp -d)"
+mkdir -p "$WORKSPACE/docs"
+printf '%s\n' \
+  'Refund exceptions require director approval before payout.' \
+  'Finance acknowledged the policy in the July review.' \
+  > "$WORKSPACE/docs/refund-policy.txt"
+
+cd "$WORKSPACE"
+minsync init --force --format json --embedder tei:embeddinggemma:latest
+python3 - <<'PY'
+from pathlib import Path
+
+config = Path(".minsync/config.toml")
+text = config.read_text()
+text = text.replace(
+    "[embedder]\n",
+    '[embedder]\nbase_url = "http://127.0.0.1:18080"\n',
+)
+text = text.replace("dimension = 1536", "dimension = 768")
+config.write_text(text)
+PY
+minsync sync --full --format json
+minsync query --format json -k 5 'semantic question about refund approval'
+minsync status --format json
+```
+
+The QA gate is not complete until all of the following are observed:
+
+1. `sync --full` exits successfully and creates `.minsync/cursor.json`.
+2. The semantic query returns a hit for the fixture document.
+3. AutoRAG maps that hit to an OS-absolute original `source` path.
+4. `fs.existsSync(source)` and reading `source` succeed.
+5. `OPENAI_API_KEY` is unset and no request leaves the local machine.
+
+If Ollama, `embeddinggemma:latest`, or the local adapter is unavailable, report
+the exact blocking command and do not claim live MinSync verification.
+
 Docker can reproduce the Linux job on macOS, Linux, or Windows hosts. The
 `test-linux` target uses an isolated container volume for `node_modules`, so it
 does not replace host-native dependencies, and pins `linux/amd64` to match

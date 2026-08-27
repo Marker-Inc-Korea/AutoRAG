@@ -49,6 +49,32 @@ Every datasource entry can use a reusable template with a connection alias:
 }
 ```
 
+### Operator-authored datasource descriptions
+
+Each configured connection may include an optional `description`. This text is
+trusted operator context shown in the datasource descriptor and progressive
+disclosure skill manifest. It helps the librarian understand how a connection
+is normally used without changing its access policy.
+
+```json
+{
+  "datasources": {
+    "personal-google-drive": {
+      "type": "cloud-drive",
+      "instanceId": "personal",
+      "description": "Project contracts and government-support documents. Prefer this connection for current agreements; treat Archive/ as historical.",
+      "connector": {
+        "provider": "google-drive",
+        "remote": "personal-gdrive:"
+      }
+    }
+  }
+}
+```
+
+Descriptions are user-supplied, are not inferred automatically, and cannot
+grant access or widen `datasourceAccess.allowedScopes`.
+
 The key is the independent datasource ID and becomes an independently
 loadable `datasource-<alias>` skill. Its source scope, diagnostics, method
 names, local storage/cache namespace, and access policy are rewritten under
@@ -94,6 +120,42 @@ A skill can publish `instances`, for example:
 - Notion workspace -> database/page tree
 
 Every instance maps to a datasource root like `/kakao/personal` or `/slack/workspace/channel`.
+
+## Slack via slacrawl
+
+Slack can use the local Slack Desktop cache through `slacrawl`'s `wiretap`
+source; this path does not require a Slack token. API/bot/user tokens are only
+needed for server-side history, missing cache data, broader thread coverage,
+or DM/MPIM access.
+
+```json
+{
+  "datasources": {
+    "slack-local": {
+      "type": "slack",
+      "instanceId": "local",
+      "description": "Recent work conversations available in this Mac's Slack Desktop cache.",
+      "connector": {
+        "configPath": "~/.slacrawl/config.toml",
+        "syncSource": "wiretap",
+        "timeoutMs": 120000
+      }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["slack", "chat"],
+    "allowedScopes": ["/slack-local/local/**"]
+  }
+}
+```
+
+Initialize and refresh the local mirror with:
+
+```bash
+slacrawl init -db ~/.slacrawl/slacrawl.db -workspace local
+slacrawl sync --source wiretap
+autorag refresh --method datasources
+```
 
 ## Cloud drives via rclone
 

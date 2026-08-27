@@ -13,6 +13,7 @@ const SLACRAWL_PROFILE: CrawlerProfile = {
 	allowedEnvPrefixes: ["SLACRAWL_"],
 	syncArgs: (options) => [
 		...globalArgs(options),
+		"--json",
 		"sync",
 		...(options.syncSource !== undefined ? ["--source", options.syncSource] : []),
 	],

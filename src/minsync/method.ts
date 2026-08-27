@@ -1,6 +1,7 @@
-import { accessSync, constants, existsSync } from "node:fs";
-import { basename, delimiter, join } from "node:path";
+import { accessSync, constants, existsSync, realpathSync } from "node:fs";
+import { basename, delimiter, join, normalize } from "node:path";
 import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
+import type { BM25Status, BM25SyncResult } from "../retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -8,6 +9,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../retrieval/types.ts";
+import type { MinSyncQueryMode } from "./client.ts";
 import { MinSyncClient } from "./client.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
@@ -22,6 +24,18 @@ export interface MinSyncVectorMethodOptions {
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly managedCliConfigManager?: ManagedCliConfigManager;
+	readonly mode?: MinSyncQueryMode;
+}
+
+export interface MinSyncBM25MethodOptions extends Omit<MinSyncVectorMethodOptions, "mode"> {
+	/** @deprecated Ignored; MinSync owns the index location. */
+	readonly indexPath?: string;
+	/** @deprecated Ignored; MinSync owns fallback behavior. */
+	readonly fallback?: "typescript" | "disabled";
+	/** @deprecated Ignored; MinSync owns the search engine. */
+	readonly forceEngine?: "tantivy" | "typescript-fallback";
+	/** @deprecated Ignored; native Tantivy injection is no longer supported. */
+	readonly importBinding?: () => Promise<unknown>;
 }
 
 /** Degrade result returned when no binary can be resolved. */
@@ -55,6 +69,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
+	private readonly mode: MinSyncQueryMode;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -64,15 +79,26 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
 		this.managedCliConfigManager = options.managedCliConfigManager;
+		this.mode = options.mode ?? "vector";
 	}
 
 	describe(): RetrievalMethodDescriptor {
 		return {
 			name: "minsync",
-			type: "vector",
-			description: "MinSync-backed semantic vector retrieval over parsed markdown mirrors",
+			type: this.mode === "bm25" ? "bm25" : this.mode === "hybrid" ? "hybrid" : "vector",
+			description:
+				this.mode === "bm25"
+					? "MinSync-backed BM25 lexical retrieval over parsed markdown mirrors"
+					: this.mode === "hybrid"
+						? "MinSync-backed hybrid retrieval over parsed markdown mirrors"
+						: "MinSync-backed semantic vector retrieval over parsed markdown mirrors",
 			status: "active",
-			capabilities: ["semantic", "incremental", "parsed-mirrors", "virtual-paths"],
+			capabilities: [
+				...(this.mode === "bm25" ? ["lexical"] : this.mode === "hybrid" ? ["semantic", "lexical"] : ["semantic"]),
+				"incremental",
+				"parsed-mirrors",
+				"virtual-paths",
+			],
 		};
 	}
 
@@ -116,7 +142,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				? {}
 				: { managedCliConfigManager: this.managedCliConfigManager }),
 		});
-		const hits = await client.query(query, queryK);
+		const hits = await client.query(query, queryK, this.mode);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
@@ -124,9 +150,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			results.push({
 				id: `minsync:${entry.virtualPath}:${basename(hit.path)}`,
 				content: hit.text,
-				source: entry.virtualPath,
+				source: realpathSync(normalize(entry.sourcePath)),
 				score: hit.score,
-				metadata: { method: "minsync" },
+				metadata: {
+					method: this.mode === "vector" ? "minsync" : `minsync-${this.mode}`,
+					virtualPath: entry.virtualPath,
+				},
 			});
 			if (results.length >= topK) break;
 		}
@@ -149,6 +178,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		if (this.binaryPath && existsSync(this.binaryPath)) {
 			return this.binaryPath;
 		}
+		if (this.binaryPath !== undefined) return undefined;
 		// 2. PATH lookup
 		const pathBinary = lookupInPath(process.env);
 		if (pathBinary) return pathBinary;
@@ -166,5 +196,45 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		}
 		// 5. missing-binary
 		return undefined;
+	}
+}
+
+export class MinSyncBM25Method extends MinSyncVectorMethod {
+	private status: BM25Status = { readiness: "index_missing", engine: "minsync" };
+
+	constructor(options: MinSyncBM25MethodOptions) {
+		super({ ...options, mode: "bm25" });
+	}
+
+	override describe(): RetrievalMethodDescriptor {
+		return {
+			name: "bm25",
+			type: "bm25",
+			description: "MinSync 0.4.0 BM25 lexical retrieval over parsed markdown mirror chunks",
+			status: this.status.readiness === "ready" ? "active" : "stub",
+			capabilities: [
+				"lexical",
+				"incremental",
+				"parsed-mirrors",
+				"virtual-paths",
+				`readiness:${this.status.readiness}`,
+			],
+		};
+	}
+
+	syncFromMinSync(result: MinSyncSyncResult): BM25SyncResult {
+		this.status = result.ok
+			? { readiness: "ready", engine: "minsync" }
+			: { readiness: "error", engine: "minsync", message: result.reason };
+		return {
+			indexPath: result.workspacePath,
+			indexedChunks: result.synced,
+			readiness: this.status.readiness,
+			engine: this.status.engine,
+		};
+	}
+
+	getStatus(): BM25Status {
+		return this.status;
 	}
 }
