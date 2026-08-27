@@ -9,12 +9,14 @@ import {
 	type ManagedCliLaunchContext,
 	ManagedCliRegistry,
 } from "../../src/cli/managed-cli-config.ts";
+import { createManagedCliRuntime } from "../../src/cli/managed-cli-runtime.ts";
 import { createCrawlerManagedCliProvider } from "../../src/datasource/crawler-managed-config.ts";
 import { createRcloneManagedCliProvider } from "../../src/datasource/skills/gdrive/rclone-managed-config.ts";
 import { createHimalayaManagedCliProvider } from "../../src/datasource/skills/gmail/himalaya-managed-config.ts";
 import { createQmdManagedCliProvider } from "../../src/datasource/skills/obsidian/config.ts";
 import { createJikjiManagedCliProvider } from "../../src/jikji/managed-config.ts";
 import { createMinSyncManagedCliProvider } from "../../src/minsync/managed-config.ts";
+import { createManagedRetrievalRuntime } from "../../src/retrieval/managed-runtime.ts";
 
 let workspace: string;
 
@@ -65,6 +67,16 @@ describe("ManagedCliRegistry", () => {
 
 		expect(registry.resolve("fixture-cli")?.tool).toBe("fixture");
 		expect(() => registry.register(provider())).toThrow(/already registered/);
+	});
+
+	it("keeps datasource CLI and retrieval CLI registries separate", () => {
+		const datasource = createManagedCliRuntime(workspace);
+		const retrieval = createManagedRetrievalRuntime(workspace, { jikji: true });
+
+		expect(datasource.registry.resolve("minsync")).toBeUndefined();
+		expect(datasource.registry.resolve("jikji")).toBeUndefined();
+		expect(retrieval.registry.resolve("minsync")?.tool).toBe("minsync");
+		expect(retrieval.registry.resolve("jikji")?.tool).toBe("jikji");
 	});
 
 	it("resolves every managed CLI integration and its binary aliases", () => {

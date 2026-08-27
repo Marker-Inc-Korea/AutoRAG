@@ -33,14 +33,12 @@ import {
 	normalizeJikjiAnswerPath,
 	planJikjiSourceRoots,
 } from "../jikji/index.ts";
-import { createJikjiManagedCliProvider } from "../jikji/managed-config.ts";
 import { loadManifests } from "../manifest/loader.ts";
 import { createCheckMemoryTool } from "../memory/check-memory-tool.ts";
 import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import { type MinSyncSyncResult, MinSyncVectorMethod, type MinSyncVectorMethodOptions } from "../minsync/index.ts";
-import { createMinSyncManagedCliProvider } from "../minsync/managed-config.ts";
 import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
@@ -50,6 +48,7 @@ import {
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
+import { ManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
 
@@ -213,6 +212,7 @@ export interface AutoRAGAgentOptions {
 	datasourceAccess?: DatasourceAccessContextOptions;
 	managedCliRegistry?: ManagedCliRegistry;
 	managedCliConfigManager?: ManagedCliConfigManager;
+	managedRetrievalRuntime?: ManagedRetrievalRuntime;
 }
 
 export interface AutoRAGSearchSession {
@@ -278,6 +278,7 @@ export class AutoRAGAgent {
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly managedCliRegistry: ManagedCliRegistry;
 	private readonly managedCliConfigManager: ManagedCliConfigManager;
+	private readonly managedRetrievalRuntime: ManagedRetrievalRuntime;
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly datasourceAgentSkills: readonly Skill[];
 	private readonly parserOptions: DefaultParserRegistryOptions | undefined;
@@ -333,20 +334,6 @@ export class AutoRAGAgent {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
 		}
-		if (options.minSync !== false) {
-			try {
-				this.managedCliRegistry.register(createMinSyncManagedCliProvider(options.minSync?.binaryPath));
-			} catch (error) {
-				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
-			}
-		}
-		if (options.jikji) {
-			try {
-				this.managedCliRegistry.register(createJikjiManagedCliProvider(options.jikji.binaryPath));
-			} catch (error) {
-				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
-			}
-		}
 		if (this.datasourceSkills.some((skill) => ["gdrive", "cloud-drive"].includes(skill.describe().name))) {
 			try {
 				this.managedCliRegistry.register(createRcloneManagedCliProvider());
@@ -367,6 +354,14 @@ export class AutoRAGAgent {
 		this.managedCliConfigManager =
 			options.managedCliConfigManager ??
 			new ManagedCliConfigManager({ workspace: this.workspaceProjectRoot, registry: this.managedCliRegistry });
+		this.managedRetrievalRuntime =
+			options.managedRetrievalRuntime ??
+			new ManagedRetrievalRuntime(this.workspaceProjectRoot, {
+				minSync: options.minSync !== false,
+				minSyncBinaryPath: options.minSync !== false ? options.minSync?.binaryPath : undefined,
+				jikji: options.jikji !== undefined,
+				jikjiBinaryPath: options.jikji?.binaryPath,
+			});
 		this.retrievalScopeBindings = buildRetrievalScopeBindings(
 			this.workspaceProjectRoot,
 			this.searchPaths,
@@ -381,7 +376,7 @@ export class AutoRAGAgent {
 			this.minSyncMethod = new MinSyncVectorMethod({
 				...minSyncOpts,
 				root: this.workspaceProjectRoot,
-				managedCliConfigManager: this.managedCliConfigManager,
+				managedCliConfigManager: this.managedRetrievalRuntime.manager,
 			});
 			this.methodRegistry.register(this.minSyncMethod);
 		}
@@ -397,7 +392,7 @@ export class AutoRAGAgent {
 			this.jikjiClient = new JikjiClient({
 				...options.jikji,
 				root: this.workspaceProjectRoot,
-				managedCliConfigManager: this.managedCliConfigManager,
+				managedCliConfigManager: this.managedRetrievalRuntime.manager,
 			});
 		}
 
@@ -426,6 +421,7 @@ export class AutoRAGAgent {
 		const bashTool = createBashTool({
 			cwd: this.workspaceProjectRoot,
 			managedCliRegistry: this.managedCliRegistry,
+			managedCliRegistries: [this.managedRetrievalRuntime.registry],
 		});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;

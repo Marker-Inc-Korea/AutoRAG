@@ -1,9 +1,16 @@
 # Managed CLI configuration and execution
 
 This is the normative design and contributor guide for CLI-backed
-datasources. It defines how AutoRAG transports configuration and enforces
+integrations. It defines how AutoRAG transports configuration and enforces
 process boundaries without replacing the native command language of an
 upstream CLI.
+
+Datasource CLIs and retrieval-owned CLIs use the same low-level provider
+contract, but different registries and managers. The datasource registry
+contains source connectors such as crawlers, qmd, rclone, and himalaya. The
+retrieval runtime contains engines that own local indexes or discovery state:
+currently MinSync and optional Jikji. They are not datasource skills and do not
+participate in datasource access filtering or datasource result curation.
 
 ## Boundary and trust model
 
@@ -124,7 +131,8 @@ AUTORAG_MANAGED_CLI_BLOCKED
 
 The diagnostic tells the caller to use the datasource tool or the
 configuration-enforcing managed execution surface. Prompt instructions are
-not a security boundary.
+not a security boundary. The bash tool checks both the datasource registry and
+the retrieval registry, while each domain retains its own launch manager.
 
 ## Native command access
 
@@ -146,8 +154,8 @@ pass `args` unchanged. It must not turn native commands into an AutoRAG
 | `slacrawl` | Slack | managed database or external `--config` | `.autorag/datasources/slacrawl/` |
 | `notcrawl` | Notion | managed database or external `--config` | `.autorag/datasources/notcrawl/` |
 | `qmd` | Obsidian | `QMD_CONFIG_DIR` / `XDG_CACHE_HOME` | `.autorag/datasources/obsidian/` |
-| `minsync` | local vectors | managed cwd; native `.minsync` | `.autorag/tools/minsync/` + `.minsync/` |
-| `jikji` | local discovery | managed cwd | `.autorag/tools/jikji/` + root-scoped state |
+| `minsync` | retrieval engine, not datasource | managed cwd; native `.minsync` | `.autorag/tools/minsync/` + `.minsync/` |
+| `jikji` | retrieval discovery layer, not datasource | managed cwd | `.autorag/tools/jikji/` + root-scoped state |
 | `rclone` | Google Drive / remote | `RCLONE_CONFIG` | `.autorag/datasources/rclone/` |
 | `himalaya` | Gmail / IMAP | `HIMALAYA_CONFIG` | `.autorag/datasources/himalaya/` |
 

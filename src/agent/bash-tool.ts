@@ -27,6 +27,8 @@ export interface BashToolOptions {
 	readonly maxOutputBytes?: number;
 	/** Registry used to prevent datasource CLIs bypassing managed execution. */
 	readonly managedCliRegistry?: ManagedCliRegistry;
+	/** Additional registry used to prevent retrieval CLIs bypassing managed execution. */
+	readonly managedCliRegistries?: readonly ManagedCliRegistry[];
 }
 
 export interface BashToolDetails {
@@ -171,7 +173,11 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 				};
 			}
 			const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : options.cwd;
-			if (options.managedCliRegistry && isManagedCliDirectInvocation(command, options.managedCliRegistry)) {
+			const managedCliRegistries = [
+				...(options.managedCliRegistry === undefined ? [] : [options.managedCliRegistry]),
+				...(options.managedCliRegistries ?? []),
+			];
+			if (managedCliRegistries.some((registry) => isManagedCliDirectInvocation(command, registry))) {
 				return {
 					content: [
 						{

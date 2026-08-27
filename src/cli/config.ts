@@ -14,6 +14,7 @@ import type { DatasourceAccessContextOptions } from "../datasource/access-contex
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
+import { createManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
 import type { BM25Engine, BM25FallbackMode } from "../retrieval/methods/bm25.ts";
 import { createManagedCliRuntime } from "./managed-cli-runtime.ts";
 
@@ -708,10 +709,18 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
 	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd());
+	const minSyncConfig = config.minSync;
+	const managedRetrievalRuntime = createManagedRetrievalRuntime(config.workspacePath ?? process.cwd(), {
+		minSync: minSyncConfig?.enabled !== false,
+		minSyncBinaryPath: minSyncConfig?.binaryPath,
+		jikji: config.jikji !== undefined,
+		jikjiBinaryPath: typeof config.jikji?.binaryPath === "string" ? config.jikji.binaryPath : undefined,
+	});
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
 		managedCliRegistry: managedCliRuntime.registry,
 		managedCliConfigManager: managedCliRuntime.manager,
+		managedRetrievalRuntime,
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;

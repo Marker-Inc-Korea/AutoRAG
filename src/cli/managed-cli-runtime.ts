@@ -4,8 +4,6 @@ import { createRcloneManagedCliProvider } from "../datasource/skills/gdrive/rclo
 import { createHimalayaManagedCliProvider } from "../datasource/skills/gmail/himalaya-managed-config.ts";
 import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
-import { createJikjiManagedCliProvider } from "../jikji/managed-config.ts";
-import { createMinSyncManagedCliProvider } from "../minsync/managed-config.ts";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "./managed-cli-config.ts";
 
 export function createManagedCliRuntime(workspace: string): {
@@ -21,8 +19,6 @@ export function createManagedCliRuntime(workspace: string): {
 		createCrawlerManagedCliProvider("slacrawl"),
 		createCrawlerManagedCliProvider("notcrawl"),
 		createQmdManagedCliProvider(),
-		createMinSyncManagedCliProvider(),
-		createJikjiManagedCliProvider(),
 		createRcloneManagedCliProvider(),
 		createHimalayaManagedCliProvider(),
 	]) {
