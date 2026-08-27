@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatDatasourceSkillInvocation } from "../../../../src/agent/datasource-skill.ts";
 import { ClawGallerySkill, type ClawGallerySkillClient } from "../../../../src/datasource/skills/clawgallery/skill.ts";
 import type {
 	ClawGalleryIndexResult,
@@ -56,5 +57,20 @@ describe("ClawGallerySkill", () => {
 		const result = await new ClawGallerySkill({ client }).index();
 		expect(result).toMatchObject({ ok: true });
 		expect(result.diagnostics[0]?.severity).toBe("warning");
+	});
+
+	it("documents sparse, dense, and hybrid mode selection for the agent", () => {
+		const skill = new ClawGallerySkill({ client: new StubClient() });
+		const manifest = skill.skillManifest();
+		expect(manifest.content).toContain("Never use `embedding` just because a V-SPLADE index exists");
+		expect(manifest.content).toContain("`hybrid` is the default");
+		expect(
+			formatDatasourceSkillInvocation({
+				name: manifest.name,
+				description: manifest.description,
+				content: manifest.content,
+				filePath: "datasource://datasource-clawgallery",
+			}),
+		).toContain("V-SPLADE is sparse lexical retrieval");
 	});
 });
