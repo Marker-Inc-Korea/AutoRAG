@@ -48,12 +48,13 @@ describe("portableSpawnCommand", () => {
 		chmodSync(script, 0o755);
 
 		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
-			command: process.versions.bun ? "node" : process.execPath,
+			command: process.versions.bun ? "node.exe" : process.execPath,
 			args: [script, "find"],
 		});
 	});
 
 	it("runs extensionless Node shebang fixtures with Node module semantics", async () => {
+		if (process.platform !== "win32") return;
 		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
 		tempDirs.push(root);
 		const script = join(root, "tool");

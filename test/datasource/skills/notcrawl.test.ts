@@ -65,9 +65,7 @@ describe("NotcrawlClient", () => {
 			},
 		});
 
-		const sync = await client.sync();
-		if (!sync.ok) throw new Error(`sync failed: ${JSON.stringify(sync)}`);
-		expect(sync).toMatchObject({ ok: true, count: 7 });
+		expect(await client.sync()).toMatchObject({ ok: true, count: 7 });
 		const searchClient = new NotcrawlClient({
 			binaryPath,
 			env: {

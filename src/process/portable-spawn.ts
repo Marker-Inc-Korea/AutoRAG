@@ -24,12 +24,12 @@ export function portableSpawnCommand(
 	if (NODE_SCRIPT_EXTENSIONS.has(extension) || hasShebang(command, "node")) {
 		if (hasShebang(command, "node") && extension.length === 0) {
 			return {
-				command: process.versions.bun ? "node" : process.execPath,
+				command: process.versions.bun ? "node.exe" : process.execPath,
 				args: [command, ...args],
 			};
 		}
 		if (hasShebang(command, "node") && process.versions.bun) {
-			return { command: process.execPath, args: [command, ...args] };
+			return { command: "node.exe", args: [command, ...args] };
 		}
 		return { command: process.execPath, args: [command, ...args] };
 	}
