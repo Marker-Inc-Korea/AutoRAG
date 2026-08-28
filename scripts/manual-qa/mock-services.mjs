@@ -1,6 +1,6 @@
 /**
  * Manual-QA mock server emulating the external APIs the datasource skills
- * talk to: Slack, Notion, GitHub, Google Drive, Gmail, and an RSS
+ * talk to: Slack, Notion, GitHub, Gmail, and an RSS
  * feed. Started by run-qa.ts on an ephemeral port.
  *
  * Auth behavior mirrors the real services closely enough for QA:
