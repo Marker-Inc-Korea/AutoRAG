@@ -772,7 +772,10 @@ export class AutoRAGAgent {
 			let timeout: NodeJS.Timeout | undefined;
 			try {
 				await Promise.race([
-					session.prompt(this.buildSearchPrompt(trimmedQuery, options)),
+					(async () => {
+						const initialRetrievalContext = await this.prefetchInitialRetrievalContext(trimmedQuery, options);
+						await session.prompt(this.buildSearchPrompt(trimmedQuery, options, initialRetrievalContext));
+					})(),
 					new Promise<never>((_, reject) => {
 						timeout = setTimeout(() => {
 							void Promise.resolve(session?.abort());
@@ -946,11 +949,52 @@ export class AutoRAGAgent {
 		return diagnostics;
 	}
 
-	buildSearchPrompt(query: string, options: RetrievalOptions): string {
+	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
+		const vectorMethod = this.methodRegistry
+			.getByType("vector")
+			.find((method) => method.describe().name === "minsync");
+		const bm25Method = this.methodRegistry.getByType("bm25").find((method) => method.describe().name === "bm25");
+		const [jikji, vector, bm25] = await Promise.all([
+			this.jikjiClient === undefined ? Promise.resolve(undefined) : this.findJikji(query, { topK: 5 }),
+			vectorMethod?.retrieve(query, { topK: 5, scope: options.scope }).catch(() => []),
+			bm25Method?.retrieve(query, { topK: 5, scope: options.scope }).catch(() => []),
+		]);
+		const sections: string[] = [];
+		if (jikji?.answerPack !== undefined) {
+			sections.push(
+				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
+					.slice(0, 5)
+					.map((path, index) => `[${index + 1}] ${path}`)
+					.join("\n")}`,
+			);
+		}
+		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
+			if (!results || results.length === 0) return;
+			sections.push(
+				`${label} initial candidates:\n${results
+					.slice(0, 5)
+					.map(
+						(result, index) =>
+							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
+					)
+					.join("\n")}`,
+			);
+		};
+		formatResults("MinSync semantic", vector);
+		formatResults("MinSync lexical BM25", bm25);
+		return sections.length === 0
+			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
+			: sections.join("\n\n");
+	}
+
+	buildSearchPrompt(query: string, options: RetrievalOptions, initialRetrievalContext?: string): string {
 		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
+			`Initial retrieval context (Jikji, MinSync semantic, and MinSync lexical searches were run in parallel before this turn):\n` +
+			`${initialRetrievalContext ?? "Not preloaded; use the available retrieval tools."}\n\n` +
+			`Treat this as candidate evidence, verify important claims against source files, and use additional tools when needed. ` +
 			`Use the available retrieval tools to find candidates, then use bash to read and verify the relevant source files directly. ` +
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
