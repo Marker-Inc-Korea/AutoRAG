@@ -28,8 +28,8 @@ export function portableSpawnCommand(
 				args: [command, ...args],
 			};
 		}
-		if (hasShebang(command, "node") && process.versions.bun) {
-			return { command: "node.exe", args: [command, ...args] };
+		if (process.versions.bun) {
+			return { command: process.execPath, args: [command, ...args] };
 		}
 		return { command: process.execPath, args: [command, ...args] };
 	}
