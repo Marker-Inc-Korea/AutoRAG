@@ -143,7 +143,7 @@ export class ManagedCliConfigManager {
 		if (!path || !isAbsolute(path)) throw new Error("External managed CLI configuration requires an absolute path");
 		const resolved = resolve(path);
 		const rel = relative(resolve(managedDir), resolved);
-		if (rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..")) {
+		if (rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) {
 			throw new Error("External configuration cannot be inside managed CLI state; ownership conflict");
 		}
 		return resolved;

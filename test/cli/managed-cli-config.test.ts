@@ -160,4 +160,21 @@ describe("ManagedCliConfigManager", () => {
 			}),
 		).rejects.toThrow(/ownership|external/i);
 	});
+
+	it("accepts external configuration on a different Windows drive", async () => {
+		const registry = new ManagedCliRegistry();
+		registry.register(provider());
+		const manager = new ManagedCliConfigManager({ workspace: "D:\\workspace", registry });
+		const configPath =
+			process.platform === "win32"
+				? "C:\\Users\\runner\\AppData\\Local\\Temp\\fixture.conf"
+				: join(workspace, "fixture.conf");
+
+		await expect(
+			manager.materialize("fixture", {
+				ownership: "external",
+				configPath,
+			}),
+		).resolves.toBeDefined();
+	});
 });
