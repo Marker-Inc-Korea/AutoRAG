@@ -120,6 +120,46 @@ describe("runRefresh + runStatus (cli)", () => {
 		expect(statusOut[0]).not.toContain("indexPath");
 	});
 
+	it("skips unknown datasource entries and reports a non-fatal diagnostic", async () => {
+		const configDir = join(process.env.HOME as string, ".autorag");
+		mkdirSync(configDir, { recursive: true });
+		writeFileSync(
+			join(configDir, "config.json"),
+			`${JSON.stringify(
+				{
+					searchPaths: ["docs"],
+					workspacePath: root,
+					memoryPath: join(root, "memory.json"),
+					bm25: { forceEngine: "typescript-fallback" },
+					minSync: false,
+					datasources: {
+						"discord-nomadamas": {},
+						"slack-local": {},
+					},
+				},
+				null,
+				2,
+			)}\n`,
+		);
+
+		const stderr: string[] = [];
+		const statusOut: string[] = [];
+		const code = await runStatus(
+			makeCtx({
+				stdout: (line) => statusOut.push(line),
+				stderr: (line) => stderr.push(line),
+			}),
+		);
+		expect(code).toBe(0);
+		expect(stderr.join("\n")).not.toContain("Unknown datasource skill");
+		expect(statusOut).toHaveLength(1);
+		const status = JSON.parse(statusOut[0]) as { diagnostics: Array<{ code: string; message: string }> };
+		expect(status.diagnostics.some((diagnostic) => diagnostic.code === "unknown-datasource-skill")).toBe(true);
+		expect(statusOut[0]).toContain("discord-nomadamas");
+		expect(statusOut[0]).toContain("slack-local");
+		expect(statusOut[0]).not.toContain(root);
+	});
+
 	it("reports idle and stale before any refresh has run", async () => {
 		writeConfig({ forceEngine: "typescript-fallback" });
 
