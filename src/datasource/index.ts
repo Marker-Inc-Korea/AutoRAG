@@ -43,6 +43,10 @@ export {
 	CLOUD_DRIVE_SKILL_DEFINITION,
 	CloudDriveSkill,
 	type CloudDriveSkillOptions,
+	RcloneConnector,
+	type RcloneConnectorOptions,
+	type RcloneRunner,
+	type RcloneRunResult,
 } from "./skills/cloud-drive/index.ts";
 export {
 	DEFAULT_DISCRAWL_EMBEDDING_MODEL,
@@ -71,12 +75,6 @@ export {
 	type DatasourceSkillConfig,
 	type DatasourcesConfig,
 } from "./skills/factory.ts";
-export {
-	GDriveConnector,
-	type GDriveConnectorOptions,
-	GDriveSkill,
-	type GDriveSkillOptions,
-} from "./skills/gdrive/index.ts";
 export {
 	GitHubConnector,
 	type GitHubConnectorOptions,

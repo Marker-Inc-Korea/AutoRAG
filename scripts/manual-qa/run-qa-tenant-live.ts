@@ -35,7 +35,6 @@ const queries = process.argv.slice(2);
 const available: Record<string, boolean> = {
 	slack: Boolean(process.env.SLACK_BOT_TOKEN),
 	notion: Boolean(process.env.NOTION_TOKEN),
-	gdrive: Boolean(process.env.GDRIVE_ACCESS_TOKEN),
 	gmail: Boolean(process.env.GMAIL_ACCESS_TOKEN),
 };
 const enabled = Object.entries(available).filter(([, ok]) => ok).map(([name]) => name);
@@ -58,7 +57,6 @@ writeFileSync(join(docs, "placeholder.txt"), "placeholder");
 const config: Record<string, { connector: Record<string, unknown> }> = {
 	slack: { connector: { tokenEnv: "SLACK_BOT_TOKEN" } },
 	notion: { connector: { tokenEnv: "NOTION_TOKEN" } },
-	gdrive: { connector: { tokenEnv: "GDRIVE_ACCESS_TOKEN" } },
 	gmail: { connector: { tokenEnv: "GMAIL_ACCESS_TOKEN", labelIds: ["INBOX"] } },
 };
 const datasources = Object.fromEntries(enabled.map((name) => [name, config[name]])) as DatasourcesConfig;

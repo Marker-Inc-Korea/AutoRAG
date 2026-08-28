@@ -239,5 +239,5 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/datasource/connector.ts` | Connector contract + opaque-text/id sanitizers for connector-backed skills |
 | `src/datasource/chunk-store.ts` | Persistent chunk store with BM25-style lexical search per skill instance |
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
-| `src/datasource/skills/` | Built-in skills: katok, discrawl (Discord), slack, notion, github, gdrive, gmail, mail-export, obsidian, rss, spotlight (+ config factory) |
+| `src/datasource/skills/` | Built-in skills: katok, discrawl (Discord), slack, notion, github, cloud-drive, gmail, mail-export, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |

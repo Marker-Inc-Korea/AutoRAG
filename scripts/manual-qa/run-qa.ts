@@ -1,5 +1,5 @@
 /**
- * Manual QA harness for the eight connector-backed datasource skills
+ * Manual QA harness for the five connector-backed datasource skills
  * (#1300 #1301 #1302 #1303 #1304 #1305 #1311 #1314 #1316).
  *
  * Spins up a local mock of every external API (plus real filesystem
@@ -7,7 +7,7 @@
  * trusted config factory, registers them on a real AutoRAGAgent, then walks
  * the checklist in docs/manual-qa-datasources.md: setup -> refresh/index ->
  * skill announcement -> load_datasource_skill -> search_datasource_documents
- * -> scope narrowing -> default-deny -> diagnostic opacity.
+ * -> scope narrowing -> default-deny.
  *
  * Run: npx tsx scripts/manual-qa/run-qa.ts  (or bun scripts/manual-qa/run-qa.ts)
  */
@@ -62,11 +62,10 @@ try {
 	mkdirSync(docsDir, { recursive: true });
 	writeFileSync(join(docsDir, "readme.txt"), "Local corpus placeholder.");
 
-	// --- 1. Setup: build all six connector-backed skills from trusted config (factory path) ---
+	// --- 1. Setup: build all five connector-backed skills from trusted config (factory path) ---
 	const { skills, unknown } = buildDatasourceSkills(
 		{
 			github: { connector: { baseUrl: `${base}/github`, repos: ["qa-org/qa-repo"] } },
-			gdrive: { connector: { baseUrl: `${base}/gdrive`, token: "qa-gdrive-token" } },
 			gmail: { connector: { baseUrl: `${base}/gmail`, token: "qa-gmail-token" } },
 			"mail-export": { connector: { paths: [mailDir] } },
 			obsidian: { connector: { vaultPath: vault } },
@@ -74,7 +73,7 @@ try {
 		},
 		tmpRoot,
 	);
-	check("setup: factory builds all six HTTP/filesystem skills", skills.length === 6 && unknown.length === 0);
+	check("setup: factory builds all five HTTP/filesystem skills", skills.length === 5 && unknown.length === 0);
 
 	const agent = new AutoRAGAgent({
 		searchPaths: [docsDir],
@@ -83,7 +82,7 @@ try {
 		bm25: false,
 		datasourceSkills: skills,
 		datasourceAccess: {
-			allowedTags: ["github", "gdrive", "gmail", "mail-export", "obsidian", "rss"],
+			allowedTags: ["github", "gmail", "mail-export", "obsidian", "rss"],
 			allowedScopes: ["/**"],
 		},
 	});
@@ -101,14 +100,14 @@ try {
 
 	// --- 3. Progressive disclosure: skills announced + loadable ---
 	const prompt = agent.getSystemPrompt();
-	const names = ["github", "gdrive", "gmail", "mail-export", "obsidian", "rss"];
+	const names = ["github", "gmail", "mail-export", "obsidian", "rss"];
 	check(
 		"prompt: all authorized skills announced",
 		names.every((name) => prompt.includes(`datasource-${name}`)),
 	);
 	check(
 		"prompt: no fixture paths or tokens leak",
-		!prompt.includes(tmpRoot) && !prompt.includes("qa-gdrive-token") && !prompt.includes("127.0.0.1"),
+		!prompt.includes(tmpRoot) && !prompt.includes("127.0.0.1"),
 	);
 	const loadTool = createLoadDatasourceSkillTool(agent);
 	const loaded = await loadTool.execute("qa-load", { name: "datasource-github" });
@@ -118,7 +117,6 @@ try {
 	const searchTool = createSearchDatasourceDocumentsTool(agent);
 	const queries: Record<string, string> = {
 		github: "Korean queries tokenized ranking",
-		gdrive: "vendor contract cancellation notice",
 		gmail: "Gangnam office move September",
 		"mail-export": "hiring frozen budget approved",
 		obsidian: "mobile app beta October",
@@ -155,30 +153,6 @@ try {
 	const deniedSearch = await denied.searchDatasourceDocuments("release incremental indexing");
 	check("security: default-deny returns no results", deniedSearch.results.length === 0);
 	check("security: denied prompt hides skills", !denied.getSystemPrompt().includes("datasource-rss"));
-
-	// --- 7. REST auth failure diagnostics stay opaque ---
-	const badAuth = buildDatasourceSkills(
-		{ gdrive: { connector: { baseUrl: `${base}/gdrive`, token: "wrong-token" } } },
-		tmpRoot,
-	).skills;
-	const badAgent = new AutoRAGAgent({
-		searchPaths: [docsDir],
-		workspacePath: tmpRoot,
-		minSync: false,
-		bm25: false,
-		datasourceSkills: badAuth,
-		datasourceAccess: { allowedTags: ["gdrive"], allowedScopes: ["/gdrive/**"] },
-	});
-	const badRefresh = await badAgent.refresh(true, { methods: ["datasources"] });
-	const failure = badRefresh.datasources?.[0];
-	const serializedFailure = JSON.stringify(failure);
-	check("diagnostics: wrong token maps to auth error", failure?.ok === false && failure.code === "datasource-auth-error");
-	check(
-		"diagnostics: failure payload is path/PII-opaque",
-		!serializedFailure.includes("wrong-token") &&
-			!serializedFailure.includes(tmpRoot) &&
-			!serializedFailure.includes("127.0.0.1"),
-	);
 
 	// --- summary ---
 	const failed = results.filter((result) => !result.pass);
