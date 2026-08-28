@@ -259,10 +259,14 @@ export function buildDatasourceSkills(
 	const unknown: string[] = [];
 	for (const [name, raw] of Object.entries(config ?? {})) {
 		if (raw === false) continue;
+		if (raw !== true && (typeof raw !== "object" || raw === null || Array.isArray(raw))) {
+			unknown.push(name);
+			continue;
+		}
 		const entry: DatasourceSkillConfig = raw === true ? {} : raw;
 		if (entry.enabled === false) continue;
 		const templateName = entry.type ?? name;
-		const builder = BUILDERS[templateName];
+		const builder = Object.hasOwn(BUILDERS, templateName) ? BUILDERS[templateName] : undefined;
 		if (builder === undefined) {
 			unknown.push(name);
 			continue;

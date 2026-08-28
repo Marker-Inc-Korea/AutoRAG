@@ -87,6 +87,7 @@ export function createEmptySearchDocumentsResponse(
 	sessionId: string,
 	query: string,
 	sessions: SearchSessions,
+	diagnostics: readonly SearchDocumentDiagnostic[] = [],
 ): SearchDocumentsResponse {
 	sessions.set(sessionId, { query, registry: new Map() });
 	return {
@@ -96,7 +97,7 @@ export function createEmptySearchDocumentsResponse(
 		answer: "",
 		searched: 0,
 		warnings: ["empty-query"],
-		diagnostics: [],
+		diagnostics: [...diagnostics],
 	};
 }
 

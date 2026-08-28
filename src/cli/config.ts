@@ -726,10 +726,11 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {
+			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
 			const diagnostic: SearchDocumentDiagnostic = {
 				code: "unknown-datasource-skill",
 				severity: "warning",
-				message: `Unknown datasource skill(s) in config were skipped: ${unknown.join(", ")}`,
+				message: `Unknown datasource skill(s) in config were skipped: ${safeNames.join(", ")}`,
 				source: "datasources",
 			};
 			opts.startupDiagnostics = [diagnostic];
