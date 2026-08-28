@@ -49,7 +49,7 @@ describe("portableSpawnCommand", () => {
 
 		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
 			command: process.execPath,
-			args: [script, "find"],
+			args: process.versions.bun ? ["run", script, "find"] : [script, "find"],
 		});
 	});
 });
