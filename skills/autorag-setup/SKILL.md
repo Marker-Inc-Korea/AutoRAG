@@ -108,6 +108,30 @@ flags may be omitted. For a custom endpoint, add `api`, `baseUrl`, and
 }
 ```
 
+Other OpenAI-compatible meta-routers work the same way. For example,
+[OrcaRouter](https://www.orcarouter.ai) exposes many models and a routing layer
+behind one endpoint, so it is configured as a named provider:
+
+```json
+{
+  "searchPaths": ["/path/to/documents"],
+  "model": {
+    "provider": "orcarouter",
+    "id": "openai/gpt-5.5",
+    "api": "openai-completions",
+    "baseUrl": "https://api.orcarouter.ai/v1",
+    "apiKeyEnv": "ORCAROUTER_API_KEY"
+  }
+}
+```
+
+OrcaRouter API keys start with `sk-orca-`. Keep the provider prefix in the
+model id (`openai/gpt-5.5`, `anthropic/claude-sonnet-5`, or `orcarouter/auto`):
+the gateway routes on the fully namespaced id. Because the AutoRAG librarian
+loop depends on tool calling, prefer a pinned model known to support tools
+(such as `openai/gpt-5.5`) over the `orcarouter/auto` router, whose routed
+upstream can vary per request.
+
 Use `--force` only when intentionally replacing an existing config. Legacy cwd
 `autorag.config.json` is a migration source only and is never deleted by init.
 
