@@ -72,6 +72,7 @@ process.stdout.write("[]");
 			remote: "drive:",
 			workspaceRoot: root,
 		}).fetch();
+		if (!result.ok) throw new Error(`rclone failed: ${JSON.stringify(result)}`);
 		expect(result.ok).toBe(true);
 		expect(JSON.parse(readFileSync(log, "utf8"))).toEqual({
 			config: join(root, ".autorag", "datasources", "rclone", "default", "rclone.conf"),

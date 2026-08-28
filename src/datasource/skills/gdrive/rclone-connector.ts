@@ -13,6 +13,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
+import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
 import { asArray, asRecord, asString, parseEpochMs } from "../../http.ts";
 import { createRcloneManagedCliProvider } from "./rclone-managed-config.ts";
@@ -470,7 +471,8 @@ function runBinary(
 	cwd?: string,
 ): Promise<RcloneRunResult> {
 	return new Promise((resolvePromise) => {
-		const child = spawn(binary, args, {
+		const portable = portableSpawnCommand(binary, args);
+		const child = spawn(portable.command, [...portable.args], {
 			...(env === undefined ? {} : { env: { ...process.env, ...env } }),
 			...(cwd === undefined ? {} : { cwd }),
 			stdio: ["ignore", "pipe", "pipe"],
