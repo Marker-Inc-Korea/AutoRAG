@@ -173,6 +173,44 @@ describe("ParallelRetriever", () => {
 		expect(results.get("m2")).toHaveLength(1);
 	});
 
+	it("keeps method insertion order even when a later method finishes first", async () => {
+		const retriever = new ParallelRetriever();
+		let releaseSlow: (() => void) | undefined;
+		const slowGate = new Promise<void>((resolve) => {
+			releaseSlow = resolve;
+		});
+		const slow: RetrievalMethod = {
+			describe: () => ({
+				name: "slow",
+				type: "vector",
+				description: "",
+				status: "active",
+				capabilities: [],
+			}),
+			retrieve: async () => {
+				await slowGate;
+				return [makeResult("a", "shared.ts", 1)];
+			},
+		};
+		const fast: RetrievalMethod = {
+			describe: () => ({
+				name: "fast",
+				type: "hybrid",
+				description: "",
+				status: "active",
+				capabilities: [],
+			}),
+			retrieve: async () => {
+				releaseSlow?.();
+				return [makeResult("b", "shared.ts", 1)];
+			},
+		};
+		const results = await retriever.retrieveWithDiagnostics([slow, fast], "test", {});
+		expect([...results.results.keys()]).toEqual(["slow", "fast"]);
+		const merged = new ResultMerger().merge(results.results, { topK: 1, dedup: true });
+		expect(merged[0]?.id).toBe("a");
+	});
+
 	it("isolates errors — one failure does not affect others", async () => {
 		const retriever = new ParallelRetriever();
 		const goodMethod = makeMockMethod("good", [makeResult("a", "f1.ts", 1.0)]);

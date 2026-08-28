@@ -41,6 +41,7 @@ import { renderMemoryContext } from "../memory/renderer.ts";
 import {
 	MinSyncBM25Method,
 	type MinSyncBM25MethodOptions,
+	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
@@ -56,7 +57,7 @@ import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-import { BM25Method, type BM25MethodOptions, type BM25SyncResult } from "../retrieval/methods/bm25.ts";
+import { type BM25SyncResult, removeLegacyBm25Artifacts } from "../retrieval/methods/bm25.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import {
@@ -141,7 +142,8 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly reason?: string;
 }
 
-export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
+export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
+	readonly diagnostics: readonly SearchDocumentDiagnostic[];
 	readonly bm25?: BM25SyncResult;
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
@@ -208,7 +210,7 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
-	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | Omit<BM25MethodOptions, "root"> | false;
+	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | false;
 	jikji?: JikjiOptions;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
@@ -285,7 +287,7 @@ export class AutoRAGAgent {
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
-	private readonly bm25Method: MinSyncBM25Method | BM25Method | undefined;
+	private readonly bm25Method: MinSyncBM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly managedCliRegistry: ManagedCliRegistry;
@@ -404,14 +406,15 @@ export class AutoRAGAgent {
 				managedCliConfigManager: this.managedRetrievalRuntime.manager,
 			});
 			this.methodRegistry.register(this.minSyncMethod);
-		}
-		if (options.bm25 !== false) {
-			const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
-			this.bm25Method =
-				options.minSync === false || hasLegacyBM25Options(bm25Opts)
-					? new BM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as BM25MethodOptions)
-					: new MinSyncBM25Method({ ...bm25Opts, root: this.workspaceProjectRoot } as MinSyncBM25MethodOptions);
-			this.methodRegistry.register(this.bm25Method);
+			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
+			if (options.bm25 !== false) {
+				const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
+				this.bm25Method = new MinSyncBM25Method({
+					...bm25Opts,
+					root: this.workspaceProjectRoot,
+				});
+				this.methodRegistry.register(this.bm25Method);
+			}
 		}
 		for (const skill of this.datasourceSkills) {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
@@ -735,7 +738,7 @@ export class AutoRAGAgent {
 		if (trimmedQuery.length === 0) {
 			this.lastQuery = trimmedQuery;
 			this.lastSessionId = sessionId;
-			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions);
+			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions, this.startupDiagnostics);
 		}
 		options = this.normalizeRetrievalOptions(options);
 
@@ -916,14 +919,7 @@ export class AutoRAGAgent {
 		}
 		const bm25 = this.bm25Method?.getStatus();
 		if (bm25 !== undefined) {
-			if (bm25.readiness === "degraded_fallback") {
-				diagnostics.push({
-					code: "bm25-degraded-fallback",
-					severity: "warning",
-					message: "BM25 is running in the TypeScript fallback engine; lexical ranking may be lower quality.",
-					source: "bm25",
-				});
-			} else if (
+			if (
 				bm25.readiness === "dependency_unavailable" ||
 				bm25.readiness === "index_missing" ||
 				bm25.readiness === "error"
@@ -977,6 +973,9 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
+			if (wants("bm25") || wants("minsync") || allMethods) {
+				removeLegacyBm25Artifacts(this.workspaceProjectRoot);
+			}
 			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
 			const bm25 = wants("bm25") ? await this.syncBM25(minsync) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
@@ -1011,7 +1010,13 @@ export class AutoRAGAgent {
 						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
 					}
 				: undefined;
-			return { ...(bm25 ? { ...summary, bm25 } : summary), minsync: publicMinsync, datasources };
+			return {
+				...(bm25 ? { ...summary } : summary),
+				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
+				...(bm25 ? { bm25 } : {}),
+				minsync: publicMinsync,
+				datasources,
+			};
 		} catch (error) {
 			this.refreshState = {
 				...this.refreshState,
@@ -1204,10 +1209,7 @@ export class AutoRAGAgent {
 
 	async syncBM25(minsync?: MinSyncSyncResult): Promise<BM25SyncResult | undefined> {
 		if (this.bm25Method === undefined) return undefined;
-		if (this.bm25Method instanceof MinSyncBM25Method) {
-			return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
-		}
-		return this.bm25Method.sync();
+		return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
 	}
 
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
@@ -1560,10 +1562,6 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
-}
-
-function hasLegacyBM25Options(options: object): boolean {
-	return ["indexPath", "fallback", "forceEngine", "importBinding"].some((key) => Object.hasOwn(options, key));
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {

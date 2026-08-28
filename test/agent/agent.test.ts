@@ -394,6 +394,7 @@ describe("AutoRAGAgent default method registration", () => {
 		expect(internal.bm25Method?.describe().name).toBe("bm25");
 		expect(internal.minSyncMethod).toBeDefined();
 		expect(internal.minSyncMethod?.describe().name).toBe("minsync");
+		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
 	});
 
 	it("does not register BM25 when bm25: false is passed", () => {
@@ -403,6 +404,7 @@ describe("AutoRAGAgent default method registration", () => {
 			bm25: false,
 		});
 		expect(internals(agent).bm25Method).toBeUndefined();
+		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
 	});
 
 	it("does not register MinSync when minSync: false is passed", () => {
@@ -412,13 +414,15 @@ describe("AutoRAGAgent default method registration", () => {
 			minSync: false,
 		});
 		expect(internals(agent).minSyncMethod).toBeUndefined();
+		expect(internals(agent).bm25Method).toBeUndefined();
+		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(0);
 	});
 
 	it("registers BM25 with provided options when an object is passed", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
-			bm25: { forceEngine: "typescript-fallback" },
+			bm25: { autoInstall: false },
 		});
 		expect(internals(agent).bm25Method).toBeDefined();
 		expect(internals(agent).bm25Method?.describe().name).toBe("bm25");

@@ -81,7 +81,6 @@ describe("getRefreshStatus", () => {
 
 	it("reports component status for bm25 and minsync without leaking paths", async () => {
 		const agent = makeAgent({
-			bm25: { forceEngine: "typescript-fallback" },
 			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },
 		});
 		await agent.refresh(true);
@@ -112,6 +111,31 @@ describe("getRefreshStatus", () => {
 					message: "Unknown datasource skill(s) in config were skipped: dropbox",
 					source: "datasources",
 				},
+			]),
+		);
+	});
+
+	it("includes startup diagnostics in refresh results", async () => {
+		const agent = makeAgent({
+			startupDiagnostics: [
+				{
+					code: "unknown-datasource-skill",
+					severity: "warning",
+					message: "Unknown datasource skill(s) in config were skipped: dropbox",
+					source: "datasources",
+				},
+			],
+		});
+
+		const result = await agent.refresh(true);
+
+		expect(result.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "unknown-datasource-skill",
+					severity: "warning",
+					source: "datasources",
+				}),
 			]),
 		);
 	});

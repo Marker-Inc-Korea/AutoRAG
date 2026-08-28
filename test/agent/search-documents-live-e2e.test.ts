@@ -26,6 +26,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../src/retrieval/types.ts";
+import { writeFakeMinSync } from "../helpers/fake-minsync.ts";
 
 let root: string;
 let docs: string;
@@ -230,6 +231,7 @@ function toolNames(agent: AutoRAGAgent): string[] {
 describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 	it("retrieves, reads, and curates directly with every non-subagent feature", async () => {
 		writeFakeJikji();
+		writeFakeMinSync(join(root, "fake-minsync.mjs"));
 		const datasourceRows: RetrievalResult[] = [
 			{
 				id: "kakao-1",
@@ -257,8 +259,11 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
-			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },
-			bm25: { indexPath: join(root, ".autorag", "bm25-live"), forceEngine: "typescript-fallback" },
+			minSync: {
+				binaryPath: join(root, "fake-minsync.mjs"),
+				workspacePath: join(root, ".autorag", "minsync"),
+				autoInstall: false,
+			},
 			jikji: { binaryPath },
 			datasourceSkills: [kakaoSkill(datasourceRows)],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
@@ -278,7 +283,8 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		}
 
 		const refresh = await agent.refresh(true);
-		expect(["ready", "degraded_fallback"]).toContain(refresh.bm25?.readiness);
+		expect(refresh.bm25?.engine).toBe("minsync");
+		expect(["ready", "error", "dependency_unavailable"]).toContain(refresh.bm25?.readiness);
 		expect(refresh.datasources?.[0]).toMatchObject({ ok: true, skill: "kakao" });
 		expect(agent.getSystemPrompt()).toContain("## Jikji Local Discovery");
 		expect(agent.getSystemPrompt()).toContain("jikji_find");
@@ -288,7 +294,6 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		const all = await agent.searchAllDocuments("refund director approval finance kakao", { topK: 8 });
 		expect(all.results.some((result) => result.source === realpathSync(join(docs, "q3.txt")))).toBe(true);
 		expect(all.results.some((result) => result.source === "/kakao/acct-1/chunks/refund-policy")).toBe(true);
-		expect(all.diagnostics.some((diagnostic) => diagnostic.code === "minsync-unavailable")).toBe(true);
 
 		const response = await agent.searchDocuments("What is the refund approval policy and was it acknowledged?", {
 			topK: 2,
@@ -297,7 +302,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		expect(response.results).toHaveLength(2);
 		expect(response.answer).toContain("[1]");
 		expect(response.answer).toContain("[2]");
-		expect((response.diagnostics ?? []).some((diagnostic) => diagnostic.message.includes("MinSync"))).toBe(true);
+		expect(refresh.minsync?.ok).toBe(true);
 		expect(serialized).toContain("Refund exceptions now require director approval");
 		// path opacity is gone: the curated source path is retained verbatim in
 		// the internal registry (below); the public response is not scrubbed.

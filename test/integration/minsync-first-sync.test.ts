@@ -172,11 +172,21 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(secondRefresh.minsync).toMatchObject({ ok: true, synced: 0 });
 		expect(existsSync(join(minsyncWorkspace, ".minsync", "cursor.json"))).toBe(true);
 		expect(hits.map((hit) => hit.source)).toEqual([realpathSync(join(docs, "handbook.txt"))]);
-		expect(loggedCommands()).toEqual([
+		const commands = loggedCommands();
+		expect(commands.slice(0, 3)).toEqual([
 			["init", "--format", "json"],
 			["check", "--format", "json"],
 			["sync", "--full", "--format", "json"],
-			["query", "--format", "json", "-k", "1", "--mode", "vector", "refund approval"],
+		]);
+		const queries = commands.filter((args) => args[0] === "query");
+		expect(queries).toHaveLength(2);
+		expect(queries).toEqual(
+			expect.arrayContaining([
+				["query", "--format", "json", "-k", "1", "--mode", "vector", "refund approval"],
+				["query", "--format", "json", "-k", "1", "--mode", "hybrid", "refund approval"],
+			]),
+		);
+		expect(commands.slice(-2)).toEqual([
 			["check", "--format", "json"],
 			["sync", "--format", "json"],
 		]);

@@ -66,7 +66,7 @@ Commands:
   search <query>       Search and curate documents (requires a configured model)
   feedback <session>   Record numbered feedback (--useful 1,3 --not-useful 2)
   memory inspect       Inspect the retrieval memory snapshot
-  index reset          Remove parsed/bm25/minsync indexes under .autorag (--method)
+  index reset          Remove parsed/minsync indexes and leftover .autorag/bm25 (--method)
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
   health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files

@@ -16,7 +16,6 @@ import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/ski
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
 import { createManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
-import type { BM25Engine, BM25FallbackMode } from "../retrieval/methods/bm25.ts";
 import { createManagedCliRuntime } from "./managed-cli-runtime.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
@@ -40,10 +39,6 @@ export class ConfigError extends Error {
  */
 export interface Bm25MethodConfig {
 	enabled?: boolean;
-	indexPath?: string;
-	fallback?: BM25FallbackMode;
-	forceEngine?: Exclude<BM25Engine, "none">;
-	importBinding?: () => Promise<typeof import("@pngwasi/node-tantivy-binding")>;
 }
 
 /**
@@ -531,7 +526,8 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 	}
 	return out;
 }
-const BM25_ALLOWLIST = new Set<string>(["enabled", "indexPath", "fallback", "forceEngine", "importBinding"]);
+const BM25_ALLOWLIST = new Set<string>(["enabled"]);
+const BM25_LEGACY_IGNORED = new Set<string>(["indexPath", "fallback", "forceEngine", "importBinding"]);
 const MINSYNC_ALLOWLIST = new Set<string>([
 	"enabled",
 	"autoInstall",
@@ -549,21 +545,12 @@ function normalizeBm25Method(raw: Bm25MethodConfig | false | undefined): Bm25Met
 	}
 	const record = raw as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
+		if (BM25_LEGACY_IGNORED.has(key)) continue;
 		if (!BM25_ALLOWLIST.has(key)) {
 			throw new ConfigError(`bm25.${key} is not a recognized field`);
 		}
 	}
-	const enabled = record.enabled !== false;
-	const out: Bm25MethodConfig = { enabled };
-	if (typeof record.indexPath === "string" && record.indexPath.length > 0) out.indexPath = record.indexPath;
-	if (record.fallback === "typescript" || record.fallback === "disabled") out.fallback = record.fallback;
-	if (record.forceEngine === "tantivy" || record.forceEngine === "typescript-fallback") {
-		out.forceEngine = record.forceEngine;
-	}
-	if (typeof record.importBinding === "function") {
-		out.importBinding = record.importBinding as Bm25MethodConfig["importBinding"];
-	}
-	return out;
+	return { enabled: record.enabled !== false };
 }
 
 function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): MinSyncMethodConfig {
@@ -756,10 +743,11 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		);
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {
+			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
 			const diagnostic: SearchDocumentDiagnostic = {
 				code: "unknown-datasource-skill",
 				severity: "warning",
-				message: `Unknown datasource skill(s) in config were skipped: ${unknown.join(", ")}`,
+				message: `Unknown datasource skill(s) in config were skipped: ${safeNames.join(", ")}`,
 				source: "datasources",
 			};
 			opts.startupDiagnostics = [diagnostic];
