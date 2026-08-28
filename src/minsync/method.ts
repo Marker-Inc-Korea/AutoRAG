@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
+import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
 import { type BM25Status, type BM25SyncResult, BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
@@ -22,6 +23,7 @@ export interface MinSyncVectorMethodOptions {
 	readonly installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 	readonly mode?: MinSyncQueryMode;
 }
 
@@ -58,6 +60,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly installer: Omit<EnsureMinSyncBinaryOptions, "root"> | undefined;
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 	private readonly mode: MinSyncQueryMode;
 
 	constructor(options: MinSyncVectorMethodOptions) {
@@ -67,6 +70,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.installer = options.installer;
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
+		this.managedCliConfigManager = options.managedCliConfigManager;
 		this.mode = options.mode ?? "vector";
 	}
 
@@ -101,6 +105,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				binaryPath: binaryResult,
 				workspacePath: this.workspacePath,
 				embedder: this.embedder,
+				...(this.managedCliConfigManager === undefined
+					? {}
+					: { managedCliConfigManager: this.managedCliConfigManager }),
 			});
 			return client.sync();
 		}
@@ -123,6 +130,9 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			binaryPath: binaryResult,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
+			...(this.managedCliConfigManager === undefined
+				? {}
+				: { managedCliConfigManager: this.managedCliConfigManager }),
 		});
 		const hits = await client.query(query, queryK, this.mode);
 		const results: RetrievalResult[] = [];

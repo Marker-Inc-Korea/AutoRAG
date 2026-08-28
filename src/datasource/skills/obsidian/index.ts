@@ -1,4 +1,5 @@
 export { QmdClient } from "./client.ts";
+export { createQmdManagedCliProvider } from "./config.ts";
 export {
 	ObsidianBm25Method,
 	type ObsidianMethodOptions,

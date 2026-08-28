@@ -1,4 +1,5 @@
 export { DiscrawlClient, discrawlWorkspace } from "./client.ts";
+export { createDiscrawlManagedCliProvider } from "./config.ts";
 export {
 	DiscrawlFtsMethod,
 	DiscrawlHybridMethod,

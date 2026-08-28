@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
+import { createMinSyncManagedCliProvider } from "./managed-config.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
@@ -8,6 +10,7 @@ export interface MinSyncClientOptions {
 	readonly binaryPath: string;
 	readonly workspacePath: string;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
@@ -18,11 +21,18 @@ export class MinSyncClient {
 	private readonly binaryPath: string;
 	private readonly workspacePath: string;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
 		this.embedder = options.embedder;
+		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
+		else {
+			const registry = new ManagedCliRegistry();
+			registry.register(createMinSyncManagedCliProvider(options.binaryPath));
+			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspacePath, registry });
+		}
 	}
 
 	async sync(): Promise<MinSyncSyncResult> {
@@ -52,7 +62,7 @@ export class MinSyncClient {
 			if (this.embedder?.id) {
 				initArgs.push("--embedder", this.embedder.id);
 			}
-			const init = await spawnProcess(this.binaryPath, initArgs, this.workspacePath, spawnOpts);
+			const init = await this.spawn(initArgs, spawnOpts);
 			if (!init.ok) {
 				return {
 					ok: false,
@@ -65,7 +75,7 @@ export class MinSyncClient {
 		if (this.embedder) {
 			rewriteEmbedderConfig(this.workspacePath, this.embedder);
 		}
-		const check = await spawnProcess(this.binaryPath, ["check", "--format", "json"], this.workspacePath, spawnOpts);
+		const check = await this.spawn(["check", "--format", "json"], spawnOpts);
 		if (!check.ok) {
 			return {
 				ok: false,
@@ -79,7 +89,7 @@ export class MinSyncClient {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
 		}
 		const syncArgs = existsSync(cursorPath) ? ["sync", "--format", "json"] : ["sync", "--full", "--format", "json"];
-		const result = await spawnProcess(this.binaryPath, syncArgs, this.workspacePath, spawnOpts);
+		const result = await this.spawn(syncArgs, spawnOpts);
 		if (!result.ok) {
 			return {
 				ok: false,
@@ -96,13 +106,19 @@ export class MinSyncClient {
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
-		const result = await spawnProcess(
-			this.binaryPath,
-			["query", "--format", "json", "-k", String(topK), "--mode", mode, text],
-			this.workspacePath,
-		);
+		const result = await this.spawn(["query", "--format", "json", "-k", String(topK), "--mode", mode, text]);
 		if (!result.ok) return [];
 		return parseQueryHits(result.stdout);
+	}
+
+	private async spawn(
+		args: readonly string[],
+		options: { readonly timeoutMs?: number } = {},
+	): Promise<ReturnType<typeof spawnProcess> extends Promise<infer T> ? T : never> {
+		const launch = await this.managedCliConfigManager?.materialize("minsync", {
+			config: { workspacePath: this.workspacePath },
+		});
+		return spawnProcess(this.binaryPath, args, launch?.cwd ?? this.workspacePath, options);
 	}
 }
 

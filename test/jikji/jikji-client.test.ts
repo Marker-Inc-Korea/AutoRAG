@@ -174,6 +174,16 @@ describe("JikjiClient", () => {
 		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json", "--no-agent-rules"]);
 	});
 
+	it("runs native commands from the managed workspace boundary", async () => {
+		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
+		const client = new JikjiClient({ binaryPath, root });
+
+		const result = await client.prepare(corpusRoot);
+
+		expect(result.ok).toBe(true);
+		expect(argsOfFirstCall()).toEqual(["prepare", corpusRoot, "--json", "--no-agent-rules"]);
+	});
+
 	it("emits --no-agent-rules by default and suppresses hidden/sensitive/media flags", async () => {
 		writeFakeJikji("console.log(JSON.stringify({ prepared: true }));");
 		const client = clientWithPath();

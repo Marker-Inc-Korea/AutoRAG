@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { buildSystemPrompt } from "../../src/agent/system-prompt.ts";
 import { RetrievalMemory } from "../../src/memory/memory.ts";
@@ -76,34 +76,26 @@ describe("AutoRAGAgent", () => {
 	});
 
 	it("aborts and rejects when a search exceeds its timeout", async () => {
-		vi.useFakeTimers();
-		try {
-			let abortCalls = 0;
-			const session = {
-				agent: { subscribe: () => () => {} },
-				prompt: async () => await new Promise<void>(() => {}),
-				abort: async () => {
-					abortCalls += 1;
-				},
-				dispose: () => {},
-			};
-			const agent = new AutoRAGAgent({
-				model: fakeModel(),
-				searchPaths: [FIXTURE_DIR],
-				memoryPath: join(tmpDir, "memory.json"),
-				searchTimeoutMs: 100,
-			});
-			(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
+		let abortCalls = 0;
+		const session = {
+			agent: { subscribe: () => () => {} },
+			prompt: async () => await new Promise<void>(() => {}),
+			abort: async () => {
+				abortCalls += 1;
+			},
+			dispose: () => {},
+		};
+		const agent = new AutoRAGAgent({
+			model: fakeModel(),
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			searchTimeoutMs: 10,
+		});
+		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
-			const search = agent.searchDocuments("timeout query");
-			const rejection = expect(search).rejects.toThrow("search timed out after 100ms");
-			await vi.advanceTimersByTimeAsync(100);
-
-			await rejection;
-			expect(abortCalls).toBe(1);
-		} finally {
-			vi.useRealTimers();
-		}
+		const search = agent.searchDocuments("timeout query");
+		await expect(search).rejects.toThrow("search timed out after 10ms");
+		expect(abortCalls).toBe(1);
 	});
 
 	it("aborts a search after the configured retrieval tool-call limit", async () => {

@@ -1,3 +1,4 @@
+import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 /**
@@ -42,8 +43,12 @@ export interface KatokOptions {
 	readonly workspacePath?: string;
 	/** Workspace root used to compute the default katok workspace path. */
 	readonly root?: string;
+	/** Explicit operator-owned configuration/workspace transport. */
+	readonly configPath?: string;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
+	/** Parent-owned managed configuration boundary. */
+	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export const DEFAULT_KATOK_BINARY = "katok";

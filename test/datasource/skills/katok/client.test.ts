@@ -131,6 +131,23 @@ describe("KatokClient", () => {
 		expect(call?.args).toEqual(["doctor", "--json", "--source", "macos", "--workspace", expect.any(String)]);
 	});
 
+	it("uses the shared managed workspace transport when a workspace root is configured", async () => {
+		writeFakeKatok();
+		const client = new KatokClient({
+			binaryPath,
+			root,
+			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }) },
+		});
+
+		const result = await client.doctor();
+
+		expect(result.ok).toBe(true);
+		const args = loggedCalls()[0]?.args ?? [];
+		expect(args.slice(0, 2)).toEqual(["--workspace", join(root, ".autorag", "datasources", "katok")]);
+		expect(args).toContain("doctor");
+		expect(args).toContain("--source");
+	});
+
 	it("parses search hits in returned order", async () => {
 		writeFakeKatok();
 		const payload = {

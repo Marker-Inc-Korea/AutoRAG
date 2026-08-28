@@ -12,7 +12,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-notcrawl-"));
 	const binDir = join(root, "bin");
 	mkdirSync(binDir, { recursive: true });
-	binaryPath = join(binDir, "notcrawl");
+	binaryPath = join(binDir, process.platform === "win32" ? "notcrawl.mjs" : "notcrawl");
 	logPath = join(root, "calls.jsonl");
 });
 
@@ -65,7 +65,9 @@ describe("NotcrawlClient", () => {
 			},
 		});
 
-		expect(await client.sync()).toMatchObject({ ok: true, count: 7 });
+		const sync = await client.sync();
+		if (!sync.ok) throw new Error(`sync failed: ${JSON.stringify(sync)}`);
+		expect(sync).toMatchObject({ ok: true, count: 7 });
 		const searchClient = new NotcrawlClient({
 			binaryPath,
 			env: {
@@ -90,6 +92,22 @@ describe("NotcrawlClient", () => {
 		expect(calls()[1]?.args).toEqual(["search", "onboarding", "--limit", "5", "--json"]);
 		expect(calls().every((call) => call.openai === null)).toBe(true);
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
+	});
+
+	it("routes configured workspace execution through the managed launch context", async () => {
+		writeFakeNotcrawl();
+		const client = new NotcrawlClient({
+			binaryPath,
+			workspacePath: root,
+			env: { NOTCRAWL_FAKE_OUTPUT: JSON.stringify({ synced: 2 }) },
+		});
+
+		expect(await client.sync()).toMatchObject({ ok: true, count: 2 });
+		expect(calls()[0]?.args.slice(0, 2)).toEqual([
+			"--db",
+			join(root, ".autorag", "datasources", "notcrawl", "archive.db"),
+		]);
+		expect(calls()[0]?.args).toContain("sync");
 	});
 
 	it("maps a missing binary and malformed output without throwing", async () => {

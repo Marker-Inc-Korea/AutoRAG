@@ -4,10 +4,17 @@ import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
+import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
+import { createCrawlerManagedCliProvider } from "../datasource/crawler-managed-config.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
+import { createRcloneManagedCliProvider } from "../datasource/skills/cloud-drive/rclone-managed-config.ts";
+import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
+import { createHimalayaManagedCliProvider } from "../datasource/skills/gmail/himalaya-managed-config.ts";
+import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
+import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
@@ -48,6 +55,7 @@ import {
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
+import { ManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { type BM25SyncResult, removeLegacyBm25Artifacts } from "../retrieval/methods/bm25.ts";
 
@@ -210,6 +218,9 @@ export interface AutoRAGAgentOptions {
 	excludeExactDuplicates?: boolean;
 	datasourceSkills?: readonly DatasourceSkill[];
 	datasourceAccess?: DatasourceAccessContextOptions;
+	managedCliRegistry?: ManagedCliRegistry;
+	managedCliConfigManager?: ManagedCliConfigManager;
+	managedRetrievalRuntime?: ManagedRetrievalRuntime;
 	/** Non-fatal diagnostics from config/agent construction (e.g. skipped unknown datasources). */
 	startupDiagnostics?: readonly SearchDocumentDiagnostic[];
 	/** Maximum time a model/tool search may run before it is aborted. */
@@ -279,6 +290,9 @@ export class AutoRAGAgent {
 	private readonly bm25Method: MinSyncBM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
+	private readonly managedCliRegistry: ManagedCliRegistry;
+	private readonly managedCliConfigManager: ManagedCliConfigManager;
+	private readonly managedRetrievalRuntime: ManagedRetrievalRuntime;
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
 	private readonly startupDiagnostics: readonly SearchDocumentDiagnostic[];
 	private readonly datasourceAgentSkills: readonly Skill[];
@@ -312,10 +326,69 @@ export class AutoRAGAgent {
 		this.datasourceAccessOptions = options.datasourceAccess ?? {};
 		this.startupDiagnostics = options.startupDiagnostics ?? [];
 		this.datasourceAgentSkills = this.buildAuthorizedDatasourceSkills();
-
+		this.managedCliRegistry = options.managedCliRegistry ?? new ManagedCliRegistry();
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "discord")) {
+			try {
+				this.managedCliRegistry.register(createDiscrawlManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "kakao")) {
+			try {
+				this.managedCliRegistry.register(createKatokManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		for (const [datasource, binary] of [
+			["whatsapp", "wacrawl"],
+			["telegram", "telecrawl"],
+			["slack", "slacrawl"],
+			["notion", "notcrawl"],
+		] as const) {
+			if (!this.datasourceSkills.some((skill) => skill.describe().name === datasource)) continue;
+			try {
+				this.managedCliRegistry.register(createCrawlerManagedCliProvider(binary));
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "obsidian")) {
+			try {
+				this.managedCliRegistry.register(createQmdManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "cloud-drive")) {
+			try {
+				this.managedCliRegistry.register(createRcloneManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "gmail")) {
+			try {
+				this.managedCliRegistry.register(createHimalayaManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
 		this.configuredSearchPaths = options.searchPaths.map((searchPath) => resolve(searchPath));
 		this.searchPaths = options.searchPaths.map(pinSearchRoot);
 		this.workspaceProjectRoot = options.workspacePath ?? process.cwd();
+		this.managedCliConfigManager =
+			options.managedCliConfigManager ??
+			new ManagedCliConfigManager({ workspace: this.workspaceProjectRoot, registry: this.managedCliRegistry });
+		this.managedRetrievalRuntime =
+			options.managedRetrievalRuntime ??
+			new ManagedRetrievalRuntime(this.workspaceProjectRoot, {
+				minSync: options.minSync !== false,
+				minSyncBinaryPath: options.minSync !== false ? options.minSync?.binaryPath : undefined,
+				jikji: options.jikji !== undefined,
+				jikjiBinaryPath: options.jikji?.binaryPath,
+			});
 		this.retrievalScopeBindings = buildRetrievalScopeBindings(
 			this.workspaceProjectRoot,
 			this.searchPaths,
@@ -327,7 +400,11 @@ export class AutoRAGAgent {
 
 		if (options.minSync !== false) {
 			const minSyncOpts = options.minSync ?? { autoInstall: false };
-			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
+			this.minSyncMethod = new MinSyncVectorMethod({
+				...minSyncOpts,
+				root: this.workspaceProjectRoot,
+				managedCliConfigManager: this.managedRetrievalRuntime.manager,
+			});
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
 			if (options.bm25 !== false) {
@@ -343,7 +420,11 @@ export class AutoRAGAgent {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
 		if (options.jikji) {
-			this.jikjiClient = new JikjiClient({ ...options.jikji, root: this.workspaceProjectRoot });
+			this.jikjiClient = new JikjiClient({
+				...options.jikji,
+				root: this.workspaceProjectRoot,
+				managedCliConfigManager: this.managedRetrievalRuntime.manager,
+			});
 		}
 
 		const memPath = memoryPath ?? join(resolveAutoRAGHome(), "memory.json");
@@ -368,7 +449,11 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
-		const bashTool = createBashTool({ cwd: this.workspaceProjectRoot });
+		const bashTool = createBashTool({
+			cwd: this.workspaceProjectRoot,
+			managedCliRegistry: this.managedCliRegistry,
+			managedCliRegistries: [this.managedRetrievalRuntime.registry],
+		});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
@@ -693,7 +778,6 @@ export class AutoRAGAgent {
 							void Promise.resolve(session?.abort());
 							reject(new Error(`search timed out after ${this.searchTimeoutMs}ms`));
 						}, this.searchTimeoutMs);
-						timeout.unref();
 					}),
 				]);
 			} finally {

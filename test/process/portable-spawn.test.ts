@@ -36,7 +36,7 @@ describe("portableSpawnCommand", () => {
 
 		expect(portableSpawnCommand(script, ["arg"], "win32")).toEqual({
 			command: process.execPath,
-			args: [script, "arg"],
+			args: process.versions.bun ? ["run", script, "--", "arg"] : [script, "arg"],
 		});
 	});
 
@@ -48,8 +48,24 @@ describe("portableSpawnCommand", () => {
 		chmodSync(script, 0o755);
 
 		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
-			command: process.execPath,
+			command: process.versions.bun ? "node.exe" : process.execPath,
 			args: [script, "find"],
 		});
+	});
+
+	it("runs extensionless Node shebang fixtures with Node module semantics", async () => {
+		if (process.platform !== "win32") return;
+		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+		tempDirs.push(root);
+		const script = join(root, "tool");
+		writeFileSync(script, "#!/usr/bin/env node\nprocess.stdout.write('ok');\n", "utf8");
+		chmodSync(script, 0o755);
+
+		const portable = portableSpawnCommand(script, [], "win32");
+		const { spawnSync } = await import("node:child_process");
+		const result = spawnSync(portable.command, [...portable.args], { encoding: "utf8" });
+
+		expect(result.status).toBe(0);
+		expect(result.stdout).toBe("ok");
 	});
 });

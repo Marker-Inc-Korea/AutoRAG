@@ -1,8 +1,13 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import {
+	ManagedCliConfigManager,
+	type ManagedCliLaunchContext,
+	ManagedCliRegistry,
+} from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { ensureManagedDiscrawlConfig } from "./config.ts";
+import { createDiscrawlManagedCliProvider } from "./config.ts";
 import { discrawlDatasourceRoot } from "./paths.ts";
 import type {
 	DiscrawlDoctorInfo,
@@ -65,7 +70,10 @@ type SpawnRequest = {
 	readonly args: readonly string[];
 	readonly env: NodeJS.ProcessEnv;
 	readonly signal?: AbortSignal;
+	readonly cwd?: string;
 };
+
+type DiscrawlLaunchContext = Pick<ManagedCliLaunchContext, "prefixArgs" | "cwd" | "env" | "configPath">;
 
 /**
  * Thin external `discrawl` CLI wrapper. Every method spawns the `discrawl`
@@ -79,9 +87,20 @@ type SpawnRequest = {
  */
 export class DiscrawlClient {
 	private readonly options: DiscrawlOptions;
+	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: DiscrawlOptions = {}) {
 		this.options = options;
+		if (options.managedCliConfigManager) {
+			this.managedCliConfigManager = options.managedCliConfigManager;
+		} else if (discrawlWorkspace(options) !== undefined) {
+			const registry = new ManagedCliRegistry();
+			registry.register(createDiscrawlManagedCliProvider(options));
+			this.managedCliConfigManager = new ManagedCliConfigManager({
+				workspace: options.root ?? options.workspacePath ?? process.cwd(),
+				registry,
+			});
+		}
 	}
 
 	async doctor(signal?: AbortSignal): Promise<DiscrawlDoctorResult> {
@@ -148,13 +167,16 @@ export class DiscrawlClient {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
 		const env = controlledEnv(this.options.env);
-		const configPath = resolveConfigPath(this.options);
+		let launchContext: DiscrawlLaunchContext | undefined;
 		try {
-			if (this.options.configPath === undefined && configPath !== undefined) {
-				const workspace = discrawlWorkspace(this.options);
-				if (workspace !== undefined) {
-					ensureManagedDiscrawlConfig(configPath, join(workspace, "discrawl.db"), this.options);
-				}
+			if (this.managedCliConfigManager !== undefined) {
+				const workspace = discrawlWorkspace(this.options) ?? process.cwd();
+				launchContext = await this.managedCliConfigManager.materialize("discrawl", {
+					...(this.options.configPath === undefined
+						? {}
+						: { ownership: "external", configPath: this.options.configPath }),
+					config: { databasePath: join(workspace, "discrawl.db") },
+				});
 			}
 		} catch {
 			return {
@@ -165,25 +187,14 @@ export class DiscrawlClient {
 				code: null,
 			};
 		}
-		return spawnDiscrawl({ options: this.options, args: withConfigFlag(configPath, args), env, signal });
+		return spawnDiscrawl({
+			options: this.options,
+			args: [...(launchContext?.prefixArgs ?? []), ...args],
+			env: { ...env, ...(launchContext?.env ?? {}) },
+			signal,
+			...(launchContext?.cwd === undefined ? {} : { cwd: launchContext.cwd }),
+		});
 	}
-}
-
-/**
- * Inserts `--config <path>` directly after the leading global flags. discrawl
- * requires globals before the subcommand, so the flag cannot simply be
- * appended.
- */
-function withConfigFlag(configPath: string | undefined, args: readonly string[]): readonly string[] {
-	if (configPath === undefined) return args;
-	const leadingGlobals = args[0] === "--json" ? 1 : 0;
-	return [...args.slice(0, leadingGlobals), "--config", configPath, ...args.slice(leadingGlobals)];
-}
-
-function resolveConfigPath(options: DiscrawlOptions): string | undefined {
-	if (options.configPath !== undefined) return options.configPath;
-	const workspace = discrawlWorkspace(options);
-	return workspace === undefined ? undefined : join(workspace, "config.toml");
 }
 
 export function discrawlWorkspace(options: DiscrawlOptions): string | undefined {
@@ -198,6 +209,8 @@ function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {
 		const portable = portableSpawnCommand(options.binaryPath ?? DEFAULT_DISCRAWL_BINARY, args);
 		const child = spawn(portable.command, [...portable.args], {
 			env,
+			...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+			detached: process.platform !== "win32",
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout: BufferState = { text: "", bytes: 0, capped: false };
@@ -289,7 +302,14 @@ function findUserTokenKey(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 function terminate(child: ChildProcess): void {
-	if (!child.killed) child.kill("SIGTERM");
+	if (child.killed) return;
+	if (process.platform !== "win32" && child.pid !== undefined) {
+		try {
+			process.kill(-child.pid, "SIGKILL");
+			return;
+		} catch {}
+	}
+	child.kill("SIGKILL");
 }
 
 /** Path-opaque stderr replacement (the raw Node error leaks the binary path). */

@@ -17,6 +17,7 @@ export {
 	MinSyncReleaseError,
 	selectReleaseAsset,
 } from "./installer.ts";
+export { createMinSyncManagedCliProvider } from "./managed-config.ts";
 export {
 	MinSyncBM25Method,
 	type MinSyncBM25MethodOptions,
