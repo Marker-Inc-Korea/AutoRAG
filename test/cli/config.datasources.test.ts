@@ -110,6 +110,25 @@ describe("CLI config datasources wiring", () => {
 		});
 	});
 
+	it("materializes ClawGallery through the external CLI backend", () => {
+		const configPath = writeConfig({
+			datasources: {
+				screenshots: {
+					type: "clawgallery",
+					instanceId: "personal",
+					connector: { binaryPath: "/tmp/clawgallery", syncVisual: true, vdrBackend: "vsplade" },
+				},
+			},
+		});
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		expect(options.datasourceSkills).toHaveLength(1);
+		expect(options.datasourceSkills?.[0]?.describe()).toMatchObject({
+			id: "screenshots",
+			type: "clawgallery",
+			instanceId: "personal",
+		});
+	});
+
 	it("materializes Slack through the external slacrawl backend", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
