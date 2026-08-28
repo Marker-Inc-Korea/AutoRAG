@@ -45,9 +45,12 @@ describe("datasource UI catalog", () => {
 			),
 		).toBe(true);
 		expect(
-			SOURCE_PICKER.find((entry) => entry.type === "gdrive")?.extras.some(
+			SOURCE_PICKER.find((entry) => entry.type === "cloud-drive")?.extras.some(
 				(extra) => extra.choices === "rclone-remotes",
 			),
+		).toBe(true);
+		expect(
+			SOURCE_PICKER.find((entry) => entry.type === "clawgallery")?.extras.some((extra) => extra.key === "path"),
 		).toBe(true);
 	});
 
@@ -56,7 +59,8 @@ describe("datasource UI catalog", () => {
 		expect(github?.fields.map((field) => field.key)).toEqual(
 			expect.arrayContaining(["connector.tokenEnv", "connector.repos"]),
 		);
-		expect(getDatasourceType("gdrive")?.fields.some((field) => field.key === "connector.tokenEnv")).toBe(true);
+		expect(getDatasourceType("cloud-drive")?.fields.some((field) => field.key === "connector.remote")).toBe(true);
+		expect(getDatasourceType("clawgallery")?.fields.some((field) => field.key === "connector.path")).toBe(true);
 		expect(getDatasourceType("rss")?.fields.some((field) => field.key === "connector.feeds")).toBe(true);
 		expect(getDatasourceType("obsidian")?.fields.some((field) => field.key === "connector.vaultPath")).toBe(true);
 		expect(getDatasourceType("kakao")?.binaryName).toBe("katok");

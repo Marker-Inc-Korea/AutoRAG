@@ -91,20 +91,6 @@ export function probeConnection(input: ProbeConnectionInput, deps: ProbeDeps = {
 		return ok("Queries saved.");
 	}
 
-	if (input.type === "gdrive") {
-		if (connector.backend === "rclone") {
-			const remote = asString(connector.remote);
-			if (remote === undefined) return fail("not-configured", "Enter an rclone remote (for example gdrive:).");
-			if (!binaryExists("rclone", asString(connector.binaryPath))) {
-				return fail("binary-missing", "rclone is not installed.");
-			}
-			return ok("rclone remote saved. Authenticate with `rclone config` if needed.");
-		}
-		const tokenEnv = envName(connector.tokenEnv, "GDRIVE_ACCESS_TOKEN");
-		if (!envHas(env, tokenEnv)) return fail("auth-missing", `${tokenEnv} is not set in the environment.`);
-		return ok("Drive token will be read from the environment.");
-	}
-
 	if (input.type === "gmail") {
 		if (connector.backend === "himalaya") {
 			if (!binaryExists("himalaya", asString(connector.binaryPath))) {

@@ -71,12 +71,52 @@ describe("datasource UI config store", () => {
 		expect(saved.dupey).toEqual({ enabled: true });
 	});
 
-	it("rejects an invalid alias or unknown type", () => {
+	it("writes canonical cloud-drive and ClawGallery configs", () => {
+		upsertConnection(configPath, {
+			alias: "personal-drive",
+			type: "cloud-drive",
+			connector: { provider: "google-drive", remote: "personal:" },
+		});
+		upsertConnection(configPath, {
+			alias: "screenshots",
+			type: "clawgallery",
+			connector: { path: join(root, "screenshots"), binaryPath: "clawgallery" },
+		});
+
+		const saved = readConfig();
+		const datasources = saved.datasources as Record<string, Record<string, unknown>>;
+		expect(datasources["personal-drive"]).toMatchObject({
+			type: "cloud-drive",
+			connector: { provider: "google-drive", remote: "personal:" },
+		});
+		expect(datasources.screenshots).toMatchObject({
+			type: "clawgallery",
+			connector: { path: join(root, "screenshots"), binaryPath: "clawgallery" },
+		});
+		expect(saved.datasourceAccess).toEqual({
+			allowedTags: [
+				"cloud-drive",
+				"rclone",
+				"documents",
+				"pii",
+				"google-drive",
+				"clawgallery",
+				"screenshots",
+				"images",
+			],
+			allowedScopes: ["/personal-drive/**", "/screenshots/**"],
+		});
+	});
+
+	it("rejects an invalid alias, unknown type, or removed legacy gdrive type", () => {
 		expect(() =>
 			upsertConnection(configPath, { alias: "../etc", type: "github", enabled: true, connector: {} }),
 		).toThrow(ConfigError);
 		expect(() =>
 			upsertConnection(configPath, { alias: "dropbox", type: "dropbox", enabled: true, connector: {} }),
+		).toThrow(ConfigError);
+		expect(() =>
+			upsertConnection(configPath, { alias: "personal-drive", type: "gdrive", enabled: true, connector: {} }),
 		).toThrow(ConfigError);
 	});
 

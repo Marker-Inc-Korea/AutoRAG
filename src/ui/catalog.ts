@@ -137,43 +137,22 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 		],
 	},
 	{
-		type: "gdrive",
-		title: "Google Drive",
-		summary: "Drive files via an access-token env var, or rclone if you already use it.",
-		defaultTags: ["gdrive", "documents", "pii"],
-		binaryName: "rclone",
+		type: "clawgallery",
+		title: "ClawGallery",
+		summary: "Search local screenshots and photos through the clawgallery CLI.",
+		defaultTags: ["clawgallery", "screenshots", "images"],
+		binaryName: "clawgallery",
+		installHint: "cargo install clawgallery",
 		fields: [
 			INSTANCE,
 			{
-				key: "connector.backend",
-				label: "Backend",
-				kind: "select",
-				options: [
-					{ value: "", label: "Google Drive API (token env)" },
-					{ value: "rclone", label: "rclone" },
-				],
+				key: "connector.path",
+				label: "Image folder",
+				kind: "path",
+				required: true,
+				help: "Folder containing screenshots or photos.",
 			},
-			{
-				key: "connector.tokenEnv",
-				label: "Access token environment variable",
-				kind: "env",
-				placeholder: "GDRIVE_ACCESS_TOKEN",
-				help: "Used for the Drive API backend. Never paste the token here.",
-			},
-			{
-				key: "connector.folderId",
-				label: "Folder id",
-				kind: "text",
-				help: "Optional. Restrict to one Drive folder.",
-			},
-			{ key: "connector.includeSharedDrives", label: "Include shared drives", kind: "checkbox" },
-			{
-				key: "connector.remote",
-				label: "rclone remote",
-				kind: "text",
-				placeholder: "gdrive:",
-				help: "Used when backend is rclone.",
-			},
+			BINARY,
 		],
 	},
 	{
@@ -384,22 +363,12 @@ const EXTRAS_BY_TYPE: Readonly<Record<string, readonly PickerExtra[]>> = {
 			question: "Which GitHub repositories (owner/repo) should this connection index?",
 		},
 	],
-	gdrive: [
+	clawgallery: [
 		{
-			key: "remote",
-			label: "Drive / rclone remote",
-			kind: "select",
-			choices: "rclone-remotes",
-			allowOther: true,
-			question:
-				"Which Google Drive account or rclone remote should this connection use, and which folder if not the whole drive?",
-		},
-		{
-			key: "folder",
-			label: "Folder (optional)",
-			kind: "text",
-			placeholder: "folder id or path",
-			question: "If not the whole Drive, which folder should be indexed?",
+			key: "path",
+			label: "Image folder",
+			kind: "path",
+			question: "Which local screenshot or photo folder should this connection use?",
 		},
 	],
 	"cloud-drive": [

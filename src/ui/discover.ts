@@ -61,7 +61,7 @@ export async function choicesForType(
 	type: string,
 	run: DiscoverRun = runCli,
 ): Promise<{ rcloneRemotes: readonly Choice[]; mailAccounts: readonly Choice[] }> {
-	if (type === "gdrive" || type === "cloud-drive") {
+	if (type === "cloud-drive") {
 		return { rcloneRemotes: await listRcloneRemotes(run), mailAccounts: [] };
 	}
 	if (type === "gmail") {
