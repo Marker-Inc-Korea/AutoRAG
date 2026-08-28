@@ -6,6 +6,7 @@ export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
 Issue #1416 adds external-crawler process coverage for WhatsApp through
 wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
+Issue #1477 adds the live ClawGallery CLI path.
 
 ## Harnesses
 
@@ -13,6 +14,7 @@ through notcrawl.
 |---|---|---|
 | `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub/Drive/Gmail APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
+| `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
