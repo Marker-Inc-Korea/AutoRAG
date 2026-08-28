@@ -29,7 +29,7 @@ export function portableSpawnCommand(
 			};
 		}
 		if (hasShebang(command, "node") && process.versions.bun) {
-			return { command: "node", args: [command, ...args] };
+			return { command: process.execPath, args: [command, ...args] };
 		}
 		return { command: process.execPath, args: [command, ...args] };
 	}
