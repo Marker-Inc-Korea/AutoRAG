@@ -2,8 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { extname } from "node:path";
 
 const NODE_SCRIPT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
-const NODE_SHEBANG_RUNNER =
-	"const fs=require('node:fs');const source=fs.readFileSync(process.argv[1],'utf8').replace(/^#![^\\n]*\\n/,'');import('data:text/javascript,'+encodeURIComponent(source));";
 
 export interface PortableSpawnCommand {
 	readonly command: string;
@@ -27,7 +25,7 @@ export function portableSpawnCommand(
 		if (hasShebang(command, "node") && extension.length === 0) {
 			return {
 				command: process.versions.bun ? "node" : process.execPath,
-				args: ["-e", NODE_SHEBANG_RUNNER, command, ...args],
+				args: [command, ...args],
 			};
 		}
 		if (hasShebang(command, "node") && process.versions.bun) {

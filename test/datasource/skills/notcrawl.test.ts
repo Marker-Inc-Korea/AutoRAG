@@ -12,7 +12,7 @@ beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-notcrawl-"));
 	const binDir = join(root, "bin");
 	mkdirSync(binDir, { recursive: true });
-	binaryPath = join(binDir, "notcrawl");
+	binaryPath = join(binDir, process.platform === "win32" ? "notcrawl.mjs" : "notcrawl");
 	logPath = join(root, "calls.jsonl");
 });
 
