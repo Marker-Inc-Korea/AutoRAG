@@ -70,7 +70,30 @@ describe("datasource UI server", () => {
 		const page = await request(server, `/?token=${server.token}`, { token: null });
 		expect(page.status).toBe(200);
 		expect(page.text).toContain("Data sources");
+		expect(page.text).toContain("Copy for coding agent");
+		expect(page.text).toContain("KakaoTalk");
+		expect(page.text).toContain('data-type="kakao"');
+		expect(page.text).not.toContain('type="radio"');
+		expect(page.text).not.toContain('data-type="minsync"');
+		expect(page.text).not.toContain('data-type="jikji"');
+		expect(page.text).not.toContain("CLI path");
 		expect(page.headers.get("set-cookie") ?? "").toContain("autorag_ui=");
+
+		const prompt = await request(server, "/api/prompt?type=kakao&alias=family-kakao", { token: server.token });
+		expect(prompt.status).toBe(200);
+		expect(String((prompt.json as { prompt?: string }).prompt)).toContain("katok");
+
+		const github = await request(
+			server,
+			`/api/prompt?type=github&alias=work-github&extras=${encodeURIComponent(JSON.stringify({ repos: "acme/repo" }))}`,
+			{ token: server.token },
+		);
+		expect(github.status).toBe(200);
+		expect(String((github.json as { prompt?: string }).prompt)).toContain("acme/repo");
+
+		const choices = await request(server, "/api/choices?type=gmail", { token: server.token });
+		expect(choices.status).toBe(200);
+		expect(JSON.stringify(choices.json)).toContain("gmail");
 
 		const created = await request(server, "/api/connections", {
 			method: "POST",

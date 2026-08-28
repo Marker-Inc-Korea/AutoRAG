@@ -11,8 +11,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ConfigError } from "../cli/config.ts";
 import { browseDirectory } from "./browse.ts";
 import { listUiState, removeConnection, setSearchPaths, toggleConnection, upsertConnection } from "./config-store.ts";
+import { choicesForType } from "./discover.ts";
 import { renderUiPage } from "./html.ts";
 import { probeConnection } from "./probe.ts";
+import { buildRegistrationPrompt } from "./prompt.ts";
 
 export interface StartUiServerOptions {
 	readonly configPath: string;
@@ -139,6 +141,26 @@ async function handleRequest(
 			return;
 		}
 
+		if (url.pathname === "/api/prompt" && req.method === "GET") {
+			send(
+				res,
+				200,
+				buildRegistrationPrompt({
+					type: url.searchParams.get("type") ?? "",
+					...(url.searchParams.get("alias") ? { alias: url.searchParams.get("alias") ?? undefined } : {}),
+					...(url.searchParams.get("note") ? { note: url.searchParams.get("note") ?? undefined } : {}),
+					extras: parseExtras(url.searchParams.get("extras")),
+				}),
+			);
+			return;
+		}
+
+		if (url.pathname === "/api/choices" && req.method === "GET") {
+			const type = url.searchParams.get("type") ?? "";
+			send(res, 200, await choicesForType(type));
+			return;
+		}
+
 		const connectionMatch = /^\/api\/connections\/([^/]+)(?:\/(test|toggle))?$/.exec(url.pathname);
 		if (connectionMatch) {
 			const alias = decodeURIComponent(connectionMatch[1] ?? "");
@@ -185,6 +207,7 @@ function publicState(state: ReturnType<typeof listUiState>): Record<string, unkn
 			fields: entry.fields,
 			defaultTags: entry.defaultTags,
 		})),
+		picker: state.picker,
 		access: state.access,
 	};
 }
@@ -238,6 +261,21 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseExtras(raw: string | null): Record<string, string> {
+	if (raw === null || raw.trim().length === 0) return {};
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		if (!isRecord(parsed)) return {};
+		const extras: Record<string, string> = {};
+		for (const [key, value] of Object.entries(parsed)) {
+			if (typeof value === "string") extras[key] = value;
+		}
+		return extras;
+	} catch {
+		return {};
+	}
 }
 
 function listen(server: Server, port: number, host: string): Promise<void> {

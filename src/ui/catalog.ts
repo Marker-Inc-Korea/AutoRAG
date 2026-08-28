@@ -300,6 +300,179 @@ export function getDatasourceType(type: string): DatasourceTypeCatalog | undefin
 	return BY_TYPE.get(type);
 }
 
+export type SourcePickerKind = "folders" | "index" | "datasource";
+
+export interface SourcePickerEntry {
+	readonly type: string;
+	readonly title: string;
+	readonly summary: string;
+	readonly kind: SourcePickerKind;
+	readonly binaryName?: string;
+	readonly installHint?: string;
+	/** False for sources that cannot attach a second account (KakaoTalk). */
+	readonly supportsMultiple: boolean;
+	readonly extras: readonly PickerExtra[];
+}
+
+export type PickerExtraKind = "text" | "textarea" | "select" | "path";
+
+export interface PickerExtra {
+	readonly key: string;
+	readonly label: string;
+	readonly kind: PickerExtraKind;
+	readonly placeholder?: string;
+	readonly help?: string;
+	readonly choices?: "rclone-remotes" | "mail-accounts";
+	readonly allowOther?: boolean;
+	/** Asked in the coding-agent prompt when this extra is left blank. */
+	readonly question: string;
+}
+
+const EXTRAS_BY_TYPE: Readonly<Record<string, readonly PickerExtra[]>> = {
+	kakao: [],
+	whatsapp: [
+		{
+			key: "account",
+			label: "Account or archive",
+			kind: "text",
+			placeholder: "personal",
+			question: "Which WhatsApp account or archive should this connection use?",
+		},
+	],
+	telegram: [
+		{
+			key: "account",
+			label: "Account or archive",
+			kind: "text",
+			placeholder: "personal",
+			question: "Which Telegram account or archive should this connection use?",
+		},
+	],
+	slack: [
+		{
+			key: "workspace",
+			label: "Workspace",
+			kind: "text",
+			placeholder: "company",
+			question: "Which Slack workspace (and optional slacrawl sync source) should this connection use?",
+		},
+	],
+	discord: [
+		{
+			key: "guildId",
+			label: "Server / guild",
+			kind: "text",
+			placeholder: "guild id or name",
+			question: "Which Discord server/guild should this connection index?",
+		},
+	],
+	notion: [
+		{
+			key: "workspace",
+			label: "Workspace",
+			kind: "text",
+			question: "Which Notion workspace should this connection use?",
+		},
+	],
+	github: [
+		{
+			key: "repos",
+			label: "Repositories",
+			kind: "textarea",
+			placeholder: "owner/repo",
+			help: "One owner/repo per line.",
+			question: "Which GitHub repositories (owner/repo) should this connection index?",
+		},
+	],
+	gdrive: [
+		{
+			key: "remote",
+			label: "Drive / rclone remote",
+			kind: "select",
+			choices: "rclone-remotes",
+			allowOther: true,
+			question:
+				"Which Google Drive account or rclone remote should this connection use, and which folder if not the whole drive?",
+		},
+		{
+			key: "folder",
+			label: "Folder (optional)",
+			kind: "text",
+			placeholder: "folder id or path",
+			question: "If not the whole Drive, which folder should be indexed?",
+		},
+	],
+	"cloud-drive": [
+		{
+			key: "remote",
+			label: "rclone remote",
+			kind: "select",
+			choices: "rclone-remotes",
+			allowOther: true,
+			question: "Which rclone remote (Google Drive, OneDrive, …) should this connection use?",
+		},
+	],
+	gmail: [
+		{
+			key: "account",
+			label: "Mailbox",
+			kind: "select",
+			choices: "mail-accounts",
+			allowOther: true,
+			question: "Which email account should this connection use (Gmail, Outlook, iCloud, or another IMAP mailbox)?",
+		},
+	],
+	"mail-export": [
+		{
+			key: "paths",
+			label: "Export files or folders",
+			kind: "textarea",
+			placeholder: "/path/to/export.mbox",
+			question: "Where are the .eml or .mbox files for this mailbox?",
+		},
+	],
+	obsidian: [
+		{
+			key: "vaultPath",
+			label: "Vault folder",
+			kind: "path",
+			question: "Which Obsidian vault folder should this connection use?",
+		},
+	],
+	rss: [
+		{
+			key: "feeds",
+			label: "Feed URLs",
+			kind: "textarea",
+			placeholder: "https://example.com/feed.xml",
+			question: "Which RSS/Atom feed URLs should this connection index?",
+		},
+	],
+	spotlight: [
+		{
+			key: "onlyIn",
+			label: "Folder (optional)",
+			kind: "path",
+			question: "Which folder should Spotlight search be limited to, if any?",
+		},
+	],
+};
+
+export const SOURCE_PICKER: readonly SourcePickerEntry[] = DATASOURCE_TYPE_CATALOG.map((entry) => ({
+	type: entry.type,
+	title: entry.title,
+	summary: entry.summary,
+	kind: "datasource" as const,
+	supportsMultiple: entry.type !== "kakao",
+	extras: EXTRAS_BY_TYPE[entry.type] ?? [],
+	...(entry.binaryName !== undefined ? { binaryName: entry.binaryName } : {}),
+	...(entry.installHint !== undefined ? { installHint: entry.installHint } : {}),
+}));
+
+export function getPickerEntry(type: string): SourcePickerEntry | undefined {
+	return SOURCE_PICKER.find((entry) => entry.type === type);
+}
+
 export function assertCatalogCoversBuiltins(): void {
 	for (const name of BUILTIN_DATASOURCE_SKILL_NAMES) {
 		if (!BY_TYPE.has(name)) throw new Error(`UI catalog missing built-in datasource type: ${name}`);

@@ -24,8 +24,11 @@ export function renderUiPage(state: UiState): string {
 		})
 		.join("\n");
 
-	const typeOptions = state.catalog
-		.map((entry) => `<option value="${escapeHtml(entry.type)}">${escapeHtml(entry.title)}</option>`)
+	const pickerButtons = state.picker
+		.map(
+			(entry) =>
+				`<button type="button" class="pick" data-type="${escapeHtml(entry.type)}" aria-pressed="false"><strong>${escapeHtml(entry.title)}</strong><small>${escapeHtml(entry.summary)}</small></button>`,
+		)
 		.join("");
 
 	return `<!DOCTYPE html>
@@ -49,6 +52,7 @@ export function renderUiPage(state: UiState): string {
     .actions { margin-top: 12px; }
     button, select, input, textarea { font: inherit; }
     button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+    button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
     button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
     button.danger { color: var(--danger); }
     .pill { font-size: 12px; border-radius: 999px; padding: 3px 8px; border: 1px solid var(--line); }
@@ -64,6 +68,14 @@ export function renderUiPage(state: UiState): string {
     .browse { font-size: 13px; max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; background: #fff; }
     .browse button { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; padding: 6px 10px; }
     .empty { color: var(--muted); padding: 8px 0; }
+    .picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    button.pick { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; background: #fff; }
+    button.pick strong { display: block; font-size: 14px; font-weight: 650; }
+    button.pick small { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; font-weight: 400; }
+    button.pick.on, button.pick[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); background: #fafaf9; }
+    #handoff[hidden] { display: none; }
+    #prompt { min-height: 140px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    @media (max-width: 640px) { .picker { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -77,7 +89,7 @@ export function renderUiPage(state: UiState): string {
   <section class="card">
     <label for="folders">Folders to search</label>
     <textarea id="folders">${folders}</textarea>
-    <p class="help">One absolute path per line.</p>
+    <p class="help">BM25, MinSync, and Jikji index these folders by default. One absolute path per line.</p>
     <div class="row actions"><button type="button" class="primary" id="save-folders">Save folders</button></div>
   </section>
 
@@ -85,27 +97,28 @@ export function renderUiPage(state: UiState): string {
   ${cards || '<p class="empty">Nothing connected yet.</p>'}
 
   <h2>Add a source</h2>
-  <form class="card" id="add">
-    <label for="alias">Name</label>
-    <input id="alias" name="alias" placeholder="work-github" required>
-    <label for="type">Type</label>
-    <select id="type" name="type">${typeOptions}</select>
-    <p id="type-help" class="help"></p>
-    <div id="fields"></div>
-    <div class="row actions">
-      <button type="submit" class="primary">Save connection</button>
-      <button type="button" id="test-new">Test</button>
+  <section class="card">
+    <p class="muted">Choose the app or source. Then give it a name and say what’s in it.</p>
+    <div class="picker" id="picker">${pickerButtons}</div>
+    <div id="handoff" hidden>
+      <label for="alias">Name</label>
+      <input id="alias" placeholder="family-kakao">
+      <label for="note">Description</label>
+      <input id="note" placeholder="Family group chat — travel plans and reimbursements">
+      <div id="extras"></div>
+      <label for="prompt">Copy this into your coding agent</label>
+      <textarea id="prompt" readonly></textarea>
+      <p class="help">Paste it into the coding agent you use for setup. It will register the connection in AutoRAG config.</p>
+      <div class="row actions">
+        <button type="button" class="primary" id="copy-prompt">Copy for coding agent</button>
+      </div>
     </div>
-  </form>
+  </section>
 </main>
 <script>
-const catalog = ${JSON.stringify(state.catalog)};
 const token = new URLSearchParams(location.search).get("token") || "";
-function esc(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[char]));
-}
+const picker = ${JSON.stringify(state.picker)};
+let selectedType = "";
 
 function flash(message, bad) {
   const el = document.getElementById("flash");
@@ -123,79 +136,107 @@ async function api(path, opts) {
   return data;
 }
 
-function fieldValue(field) {
-  const el = document.getElementById("f-" + field.key);
-  if (!el) return undefined;
-  if (field.kind === "checkbox") return el.checked;
-  return el.value;
+function extraValues() {
+  const extras = {};
+  document.querySelectorAll("[data-extra]").forEach((el) => {
+    extras[el.getAttribute("data-extra")] = el.value.trim();
+  });
+  return extras;
 }
 
-function connectorFromForm() {
-  const type = document.getElementById("type").value;
-  const entry = catalog.find((item) => item.type === type);
-  const connector = {};
-  let instanceId;
-  for (const field of entry.fields) {
-    const value = fieldValue(field);
-    if (field.key === "instanceId") { instanceId = value; continue; }
-    const key = field.key.startsWith("connector.") ? field.key.slice(10) : field.key;
-    connector[key] = value;
+async function refreshPrompt() {
+  if (!selectedType) return;
+  const params = new URLSearchParams({ type: selectedType });
+  const alias = document.getElementById("alias").value.trim();
+  const note = document.getElementById("note").value.trim();
+  if (alias) params.set("alias", alias);
+  if (note) params.set("note", note);
+  const extras = extraValues();
+  if (Object.keys(extras).length > 0) params.set("extras", JSON.stringify(extras));
+  try {
+    const data = await api("/api/prompt?" + params.toString());
+    document.getElementById("prompt").value = data.prompt || "";
+  } catch (error) { flash(error.message, true); }
+}
+
+function attr(value) {
+  return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+async function renderExtras(type) {
+  const entry = picker.find((item) => item.type === type);
+  const root = document.getElementById('extras');
+  if (!entry || !entry.extras || entry.extras.length === 0) {
+    root.innerHTML = '';
+    return;
   }
-  return { type, alias: document.getElementById("alias").value, instanceId, connector, enabled: true };
+  let choices = { rcloneRemotes: [], mailAccounts: [] };
+  try { choices = await api('/api/choices?type=' + encodeURIComponent(type)); } catch (error) { /* keep empty */ }
+  root.innerHTML = entry.extras.map((extra) => {
+    const id = 'extra-' + extra.key;
+    const label = '<label for="' + id + '">' + extra.label + '</label>';
+    if (extra.kind === 'textarea') {
+      return label + '<textarea id="' + id + '" data-extra="' + extra.key + '" placeholder="' + attr(extra.placeholder) + '"></textarea>' + (extra.help ? '<p class="help">' + extra.help + '</p>' : '');
+    }
+    if (extra.kind === 'select') {
+      const list = extra.choices === 'rclone-remotes' ? (choices.rcloneRemotes || []) : extra.choices === 'mail-accounts' ? (choices.mailAccounts || []) : [];
+      const opts = ['<option value="">Skip for now</option>'].concat(list.map((item) => '<option value="' + attr(item.value) + '">' + item.label + '</option>'));
+      if (extra.allowOther && !list.some((item) => item.value === 'other')) opts.push('<option value="other">Other</option>');
+      return label + '<select id="' + id + '" data-extra="' + extra.key + '">' + opts.join('') + '</select><input id="' + id + '-other" data-extra="' + extra.key + 'Other" placeholder="Other" hidden>';
+    }
+    return label + '<input id="' + id + '" data-extra="' + extra.key + '" placeholder="' + attr(extra.placeholder) + '">';
+  }).join('');
+  root.querySelectorAll('[data-extra]').forEach((el) => el.addEventListener('input', refreshPrompt));
+  root.querySelectorAll('select[data-extra]').forEach((el) => {
+    el.addEventListener('change', () => {
+      const other = document.getElementById(el.id + '-other');
+      if (other) other.hidden = el.value !== 'other';
+      refreshPrompt();
+    });
+  });
 }
 
-function renderFields() {
-  const type = document.getElementById("type").value;
-  const entry = catalog.find((item) => item.type === type);
-  document.getElementById("type-help").textContent = [entry.summary, entry.installHint].filter(Boolean).join(" ");
-  document.getElementById("fields").innerHTML = entry.fields.map((field) => {
-    const id = "f-" + field.key;
-    if (field.kind === "textarea" || field.kind === "path-list") {
-      return label(field, '<textarea id="' + id + '" placeholder="' + (field.placeholder || "") + '"></textarea>');
-    }
-    if (field.kind === "select") {
-      const opts = (field.options || []).map((opt) => '<option value="' + opt.value + '">' + opt.label + "</option>").join("");
-      return label(field, '<select id="' + id + '">' + opts + "</select>");
-    }
-    if (field.kind === "checkbox") {
-      return '<label><input id="' + id + '" type="checkbox"> ' + field.label + "</label>";
-    }
-    const extra = field.kind === "path" || field.kind === "path-list"
-      ? ' <button type="button" data-browse="' + id + '">Browse</button><div class="browse" id="b-' + id + '" hidden></div>'
-      : "";
-    return label(field, '<input id="' + id + '" placeholder="' + (field.placeholder || "") + '">' + extra);
-  }).join("");
+async function selectType(type, button) {
+  if (!type) return;
+  selectedType = type;
+  document.querySelectorAll("button.pick").forEach((el) => {
+    const on = el === button;
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  document.getElementById("handoff").hidden = false;
+  const alias = document.getElementById("alias");
+  if (!alias.value.trim()) alias.placeholder = type;
+  await renderExtras(type);
+  refreshPrompt();
 }
 
-function label(field, control) {
-  return "<label for=\\"f-" + field.key + "\\">" + field.label + "</label>" + control + (field.help ? '<p class="help">' + field.help + "</p>" : "");
-}
+document.getElementById("picker").addEventListener("click", (event) => {
+  const pick = event.target.closest("button.pick");
+  if (!pick) return;
+  selectType(pick.getAttribute("data-type") || "", pick);
+});
 
-document.getElementById("type").addEventListener("change", renderFields);
-renderFields();
+document.getElementById("alias").addEventListener("input", refreshPrompt);
+document.getElementById("note").addEventListener("input", refreshPrompt);
+
+document.getElementById("copy-prompt").addEventListener("click", async () => {
+  const text = document.getElementById("prompt").value;
+  if (!text) { flash("Pick a source type first.", true); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    flash("Prompt copied.");
+  } catch {
+    document.getElementById("prompt").select();
+    flash("Select the prompt and copy it.", true);
+  }
+});
 
 document.getElementById("save-folders").addEventListener("click", async () => {
   try {
-    const searchPaths = document.getElementById("folders").value.split(/\\n/).map((line) => line.trim()).filter(Boolean);
+    const searchPaths = document.getElementById("folders").value.split(String.fromCharCode(10)).map((line) => line.trim()).filter(Boolean);
     await api("/api/folders", { method: "POST", body: { searchPaths } });
     location.reload();
-  } catch (error) { flash(error.message, true); }
-});
-
-document.getElementById("add").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    await api("/api/connections", { method: "POST", body: connectorFromForm() });
-    location.reload();
-  } catch (error) { flash(error.message, true); }
-});
-
-document.getElementById("test-new").addEventListener("click", async () => {
-  try {
-    const created = await api("/api/connections", { method: "POST", body: connectorFromForm() });
-    const alias = created.connection && created.connection.alias || connectorFromForm().alias;
-    const result = await api("/api/connections/" + encodeURIComponent(alias) + "/test", { method: "POST" });
-    flash(result.detail || "Checked.", !result.ok);
   } catch (error) { flash(error.message, true); }
 });
 
@@ -217,29 +258,6 @@ document.querySelectorAll("article.card").forEach((card) => {
       }
     } catch (error) { flash(error.message, true); }
   });
-});
-
-document.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-browse]");
-  if (!button) return;
-  const id = button.getAttribute("data-browse");
-  const input = document.getElementById(id);
-  const box = document.getElementById("b-" + id);
-  box.hidden = false;
-  const path = input.value;
-  try {
-    const data = await api("/api/browse?path=" + encodeURIComponent(path || ""));
-    const parent = data.parent ? '<button type="button" data-path="' + esc(data.parent) + '">..</button>' : "";
-    box.innerHTML = parent + data.entries.filter((entry) => entry.directory).map((entry) =>
-      '<button type="button" data-path="' + esc(entry.path) + '">' + esc(entry.name) + "</button>"
-    ).join("");
-    box.onclick = (inside) => {
-      const next = inside.target.closest("[data-path]");
-      if (!next) return;
-      input.value = next.getAttribute("data-path");
-      button.click();
-    };
-  } catch (error) { flash(error.message, true); }
 });
 </script>
 </body>

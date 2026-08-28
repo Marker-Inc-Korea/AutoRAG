@@ -8,7 +8,7 @@
 
 import { ConfigError, readRawConfigObject, writeConfigObject } from "../cli/config.ts";
 import { BUILTIN_DATASOURCE_SKILL_NAMES, type DatasourceSkillConfig } from "../datasource/skills/factory.ts";
-import { DATASOURCE_TYPE_CATALOG, getDatasourceType } from "./catalog.ts";
+import { DATASOURCE_TYPE_CATALOG, getDatasourceType, SOURCE_PICKER } from "./catalog.ts";
 import { type ProbeResult, probeConnection } from "./probe.ts";
 
 const ALIAS_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
@@ -38,6 +38,7 @@ export interface UiState {
 	readonly searchPaths: readonly string[];
 	readonly connections: readonly UiConnection[];
 	readonly catalog: typeof DATASOURCE_TYPE_CATALOG;
+	readonly picker: typeof SOURCE_PICKER;
 	readonly access: { readonly allowedTags: readonly string[]; readonly allowedScopes: readonly string[] };
 }
 
@@ -49,7 +50,7 @@ export function listUiState(configPath: string, env: NodeJS.ProcessEnv = process
 		probe: probeConnection(connection, { env }),
 	}));
 	const access = accessFromEnabled(connections.filter((item) => item.enabled));
-	return { searchPaths, connections, catalog: DATASOURCE_TYPE_CATALOG, access };
+	return { searchPaths, connections, catalog: DATASOURCE_TYPE_CATALOG, picker: SOURCE_PICKER, access };
 }
 
 export function upsertConnection(configPath: string, input: ConnectionInput): UiState {
