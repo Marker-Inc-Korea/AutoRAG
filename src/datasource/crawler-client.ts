@@ -14,7 +14,24 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_BUFFER_BYTES = 1_048_576;
-const SAFE_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP", "NO_COLOR"]);
+const SAFE_ENV_KEYS = new Set([
+	"HOME",
+	"LANG",
+	"LC_ALL",
+	"PATH",
+	"TMPDIR",
+	"TMP",
+	"TEMP",
+	"NO_COLOR",
+	"APPDATA",
+	"ComSpec",
+	"LOCALAPPDATA",
+	"PATHEXT",
+	"SystemDrive",
+	"SystemRoot",
+	"USERPROFILE",
+	"WINDIR",
+]);
 
 type ProcessResult = {
 	readonly ok: boolean;
@@ -212,7 +229,11 @@ function controlledEnv(
 
 function isAllowedEnvKey(key: string, allowedPrefixes: readonly string[]): boolean {
 	return (
-		SAFE_ENV_KEYS.has(key) || key.startsWith("CRAWLKIT_") || allowedPrefixes.some((prefix) => key.startsWith(prefix))
+		SAFE_ENV_KEYS.has(key) ||
+		(process.platform === "win32" &&
+			[...SAFE_ENV_KEYS].some((safeKey) => safeKey.toUpperCase() === key.toUpperCase())) ||
+		key.startsWith("CRAWLKIT_") ||
+		allowedPrefixes.some((prefix) => key.startsWith(prefix))
 	);
 }
 
