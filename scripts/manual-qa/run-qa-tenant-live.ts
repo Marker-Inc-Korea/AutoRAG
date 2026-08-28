@@ -1,6 +1,6 @@
 /**
  * Live tenant QA for the credential-gated skills: Slack (#1300),
- * Notion (#1302), Google Drive (#1301), Gmail (#1304).
+ * Notion (#1302), Gmail (#1304).
  *
  * Detects which tokens are present in the environment and live-tests each
  * available skill against the REAL service through the full agent path
@@ -15,9 +15,6 @@
  *  - NOTION_TOKEN        https://www.notion.so/my-integrations → New
  *    integration → copy secret. Then share ≥1 page with the integration
  *    (page ⋯ menu → Connections → your integration).
- *  - GDRIVE_ACCESS_TOKEN OAuth2 access token with drive.readonly scope
- *    (e.g. https://developers.google.com/oauthplayground → Drive API v3 →
- *    authorize → copy access token; expires ~1h).
  *  - GMAIL_ACCESS_TOKEN  Same playground flow with gmail.readonly scope.
  *
  * Run:  bun scripts/manual-qa/run-qa-tenant-live.ts ["query1" "query2" ...]
@@ -35,7 +32,6 @@ const queries = process.argv.slice(2);
 const available: Record<string, boolean> = {
 	slack: Boolean(process.env.SLACK_BOT_TOKEN),
 	notion: Boolean(process.env.NOTION_TOKEN),
-	gdrive: Boolean(process.env.GDRIVE_ACCESS_TOKEN),
 	gmail: Boolean(process.env.GMAIL_ACCESS_TOKEN),
 };
 const enabled = Object.entries(available).filter(([, ok]) => ok).map(([name]) => name);
@@ -58,7 +54,6 @@ writeFileSync(join(docs, "placeholder.txt"), "placeholder");
 const config: Record<string, { connector: Record<string, unknown> }> = {
 	slack: { connector: { tokenEnv: "SLACK_BOT_TOKEN" } },
 	notion: { connector: { tokenEnv: "NOTION_TOKEN" } },
-	gdrive: { connector: { tokenEnv: "GDRIVE_ACCESS_TOKEN" } },
 	gmail: { connector: { tokenEnv: "GMAIL_ACCESS_TOKEN", labelIds: ["INBOX"] } },
 };
 const datasources = Object.fromEntries(enabled.map((name) => [name, config[name]])) as DatasourcesConfig;

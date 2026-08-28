@@ -149,15 +149,15 @@ Obsidian, RSS/news, and Spotlight.
 {
   "datasources": {
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
-    "gdrive": { "connector": { "backend": "rclone", "remote": "gdrive:" } },
-    "cloud-drive": { "connector": { "backend": "rclone", "remote": "archive:" } },
+    "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
+    "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
     "gmail": { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["github", "gdrive", "cloud-drive", "gmail", "obsidian", "rss"],
-    "allowedScopes": ["/github/**", "/gdrive/**", "/cloud-drive/**", "/gmail/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["github", "cloud-drive", "gmail", "obsidian", "rss"],
+    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/gmail/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```

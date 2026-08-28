@@ -251,7 +251,6 @@ describe("CLI config datasources wiring", () => {
 				"cloud-drive": {
 					instanceId: "team-drive",
 					connector: {
-						backend: "rclone",
 						provider: "onedrive",
 						remote: "onedrive:Team Docs",
 						include: ["**/*.pdf", "**/*.md"],

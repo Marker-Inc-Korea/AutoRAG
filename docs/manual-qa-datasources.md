@@ -1,6 +1,6 @@
 # Manual QA — Datasource Skills
 
-Covers issues #1300 (Slack), #1301 (Google Drive), #1302 (Notion), #1303
+Covers issues #1300 (Slack), #1302 (Notion), #1303
 (GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
 export), #1314 (Obsidian vault), #1316 (RSS/news), #1350 (macOS Spotlight).
 Issue #1416 adds external-crawler process coverage for WhatsApp through
@@ -12,23 +12,26 @@ Issue #1477 adds the live ClawGallery CLI path.
 
 | Harness | Target systems | Command |
 |---|---|---|
-| `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub/Drive/Gmail APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
+| `scripts/manual-qa/run-qa.ts` | Protocol-accurate local mocks of GitHub/Gmail APIs + real filesystem fixtures (Obsidian vault, mbox/eml exports) + local RSS feed | `bun scripts/manual-qa/run-qa.ts` |
 | `scripts/manual-qa/run-qa-discrawl-live.ts` | Real Discord archive through the external `discrawl` CLI (FTS + semantic + hybrid, incremental re-sync) | `bun scripts/manual-qa/run-qa-discrawl-live.ts` |
 | `scripts/manual-qa/run-qa-clawgallery-live.ts` | Real ClawGallery CLI plus a local image folder (incremental bootstrap + hybrid search) | `bun scripts/manual-qa/run-qa-clawgallery-live.ts /path/to/images "query"` |
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
-| `scripts/manual-qa/run-qa-rclone.ts` | Deterministic rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
+| `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
 | `test/datasource/skills/telecrawl.test.ts` | Real child-process boundary with a deterministic fake telecrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/telecrawl.test.ts` |
 | `test/datasource/skills/slacrawl.test.ts` | Real child-process boundary with a deterministic fake slacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/slacrawl.test.ts` |
 | `test/datasource/skills/notcrawl.test.ts` | Real child-process boundary with a deterministic fake notcrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/notcrawl.test.ts` |
 
-Skills that need tenant credentials (Drive/Gmail OAuth tokens) are QA'd against the
+Skills that need tenant credentials (Gmail OAuth tokens) are QA'd against the
 mock services, which reproduce each API's envelope shapes and native auth
-failures (`invalid_auth`, HTTP 401/403/429). To QA against a real tenant,
+failures (`invalid_auth`, HTTP 401/403/429). Google Drive is tested through the
+provider-neutral `cloud-drive` skill and the external `rclone` CLI; configure
+and authenticate the remote with `rclone config`, then run
+`bun scripts/manual-qa/run-qa-rclone.ts`. To QA Gmail against a real tenant,
 point `connector.baseUrl` at the real API base and supply the token via the
-default env var (`GITHUB_TOKEN`, `GDRIVE_ACCESS_TOKEN`, `GMAIL_ACCESS_TOKEN`).
+default env var (`GITHUB_TOKEN`, `GMAIL_ACCESS_TOKEN`).
 
 WhatsApp uses the external wacrawl CLI instead of an HTTP mock. The deterministic
 test executable exercises the actual spawn/stdout/stderr contract without

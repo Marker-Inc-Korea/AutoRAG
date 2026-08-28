@@ -2,8 +2,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { RcloneConnector, type RcloneRunResult } from "../../../src/datasource/skills/gdrive/rclone-connector.ts";
-import { GDriveSkill } from "../../../src/datasource/skills/gdrive/skill.ts";
+import { RcloneConnector, type RcloneRunResult } from "../../../src/datasource/skills/cloud-drive/rclone-connector.ts";
+import { CloudDriveSkill } from "../../../src/datasource/skills/cloud-drive/skill.ts";
 
 const LISTING = JSON.stringify([
 	{
@@ -70,7 +70,7 @@ describe("RcloneConnector", () => {
 			expect(vendor).toMatchObject({ title: "vendor.txt", hierarchy: ["files", "contracts"] });
 			expect(vendor?.content).toContain("renews annually");
 			expect(vendor?.metadata).toMatchObject({
-				virtualPath: "/gdrive/drive-1/files/contracts/vendor.txt",
+				virtualPath: "/cloud-drive/drive-1/files/contracts/vendor.txt",
 				remoteId: "drive-file-1",
 				hashes: { md5: "vendor-v1" },
 			});
@@ -125,7 +125,7 @@ describe("RcloneConnector", () => {
 			runner,
 		}).fetch();
 		const manifest = readFileSync(
-			join(root, ".autorag", "datasources", "gdrive", "drive-1", "manifest.json"),
+			join(root, ".autorag", "datasources", "cloud-drive", "drive-1", "manifest.json"),
 			"utf8",
 		);
 		expect(manifest).toContain('"remoteName":"gdrive"');
@@ -152,7 +152,7 @@ describe("RcloneConnector", () => {
 			runner,
 		});
 		await connector.fetch();
-		const mirrorRoot = join(root, ".autorag", "datasources", "gdrive", "drive-1", "mirror");
+		const mirrorRoot = join(root, ".autorag", "datasources", "cloud-drive", "drive-1", "mirror");
 		expect(existsSync(join(mirrorRoot, "contracts", "vendor.txt"))).toBe(true);
 
 		listing = [
@@ -192,7 +192,7 @@ describe("RcloneConnector", () => {
 			instanceId: "drive-1",
 			runner,
 		});
-		const skill = new GDriveSkill({ instanceId: "drive-1", workspaceRoot: root, connector });
+		const skill = new CloudDriveSkill({ instanceId: "drive-1", workspaceRoot: root, connector });
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 2 });
 		listing = listing.map((entry) =>
 			entry.Path === "contracts/vendor.txt"
@@ -207,7 +207,7 @@ describe("RcloneConnector", () => {
 			}
 			return { ok: false, stdout: "", stderr: "unexpected", code: 1 };
 		});
-		const updatedSkill = new GDriveSkill({
+		const updatedSkill = new CloudDriveSkill({
 			instanceId: "drive-1",
 			workspaceRoot: root,
 			connector: new RcloneConnector({
@@ -330,7 +330,7 @@ describe("RcloneConnector", () => {
 			instanceId: "drive-1",
 			runner,
 		});
-		const skill = new GDriveSkill({ instanceId: "drive-1", workspaceRoot: root, connector });
+		const skill = new CloudDriveSkill({ instanceId: "drive-1", workspaceRoot: root, connector });
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 1 });
 		version = 2;
 		const slowSync = skill.index();
@@ -375,7 +375,7 @@ describe("RcloneConnector", () => {
 		}
 	});
 
-	it("plugs into GDriveSkill for indexing and opaque-source search", async () => {
+	it("plugs into CloudDriveSkill for indexing and opaque-source search", async () => {
 		const root = workspace();
 		const runner = runnerFrom((args) =>
 			args[0] === "lsjson"
@@ -385,18 +385,18 @@ describe("RcloneConnector", () => {
 						return ok("");
 					})(),
 		);
-		const skill = new GDriveSkill({
+		const skill = new CloudDriveSkill({
 			instanceId: "drive-1",
 			workspaceRoot: root,
 			connector: new RcloneConnector({ remote: "gdrive:", workspaceRoot: root, instanceId: "drive-1", runner }),
 		});
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 2 });
-		const chunksPath = join(root, ".autorag", "datasources", "gdrive", "drive-1", "chunks.json");
+		const chunksPath = join(root, ".autorag", "datasources", "cloud-drive", "drive-1", "chunks.json");
 		const firstMtime = statSync(chunksPath).mtimeMs;
 		expect(await skill.index()).toMatchObject({ ok: true, chunkCount: 2 });
 		expect(statSync(chunksPath).mtimeMs).toBe(firstMtime);
 		const [method] = skill.retrievalMethods();
 		const hits = await method?.retrieve("contract cancellation notice", { topK: 3 });
-		expect(hits?.[0]?.source).toMatch(/^\/gdrive\/drive-1\/chunks\//);
+		expect(hits?.[0]?.source).toMatch(/^\/cloud-drive\/drive-1\/chunks\//);
 	});
 });

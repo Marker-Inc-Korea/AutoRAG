@@ -5,7 +5,7 @@ Use `.github/ISSUE_TEMPLATE/datasource-skill.md` and labels `datasource-skill`, 
 ## Proposed issues
 
 1. Slack datasource skill — workspace/channel hierarchy, bot/user token scopes, message/thread indexing, file attachments.
-2. Google Drive datasource skill — account/folder hierarchy, Docs/Sheets/PDF export parsing, shared-drive permissions.
+2. Cloud-drive datasource skill — provider-neutral account/folder hierarchy, file parsing, and shared-drive permissions.
 3. Notion datasource skill — workspace/database/page hierarchy, block tree indexing, integration-token boundaries.
 4. GitHub Issues/PRs datasource skill — owner/repo hierarchy, issue/PR/comment/review indexing, GitHub App scopes.
 5. Gmail/IMAP datasource skill — account/label/folder hierarchy, email/thread/attachment indexing, OAuth or IMAP auth.

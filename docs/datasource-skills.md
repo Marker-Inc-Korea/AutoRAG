@@ -247,6 +247,30 @@ This lets one process connect multiple accounts from the same provider as well
 as different providers. For example, `personal-google-drive` and
 `client-google-drive` may both use Google Drive but different rclone remotes.
 
+### Migrating from the legacy `gdrive` datasource
+
+The former REST-backed `gdrive` datasource and its `backend: "rclone"`
+compatibility mode are removed. Configure every Google Drive connection as a
+named `cloud-drive` alias and authenticate the remote with `rclone config`:
+
+```json
+{
+  "datasources": {
+    "google-drive": {
+      "type": "cloud-drive",
+      "instanceId": "default",
+      "connector": {
+        "provider": "google-drive",
+        "remote": "my-google-drive:"
+      }
+    }
+  }
+}
+```
+
+Existing `gdrive` configurations must be renamed and converted before the next
+refresh; the old REST token settings and `/gdrive/**` scopes are not read.
+
 Run the CLI datasource refresh with:
 
 ```bash
