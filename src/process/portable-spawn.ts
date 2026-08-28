@@ -29,7 +29,7 @@ export function portableSpawnCommand(
 			};
 		}
 		if (process.versions.bun) {
-			return { command: process.execPath, args: [command, ...args] };
+			return { command: process.execPath, args: ["run", command, "--", ...args] };
 		}
 		return { command: process.execPath, args: [command, ...args] };
 	}
