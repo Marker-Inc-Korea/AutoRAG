@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
@@ -102,6 +102,40 @@ describe("runSearch", () => {
 			}),
 		});
 		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
+	});
+
+	it("does not fail agent construction for unknown datasource names", async () => {
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [root],
+				workspacePath: root,
+				datasources: { "discord-nomadamas": {}, "slack-local": {} },
+			}),
+		);
+		let received: { startupDiagnostics?: unknown; datasourceSkills?: unknown } = {};
+		const { ctx, stdout, stderr } = context(["find a local document"], { config: configPath });
+		const code = await runSearch(ctx, {
+			agentFactory: (options) => {
+				received = {
+					startupDiagnostics: options.startupDiagnostics,
+					datasourceSkills: options.datasourceSkills,
+				};
+				return { searchDocuments: async () => response };
+			},
+		});
+		expect(code).toBe(0);
+		expect(stderr.join("\n")).not.toMatch(/Unknown datasource/);
+		expect(received.datasourceSkills ?? []).toEqual([]);
+		expect(received.startupDiagnostics).toEqual([
+			expect.objectContaining({
+				code: "unknown-datasource-skill",
+				severity: "warning",
+				source: "datasources",
+			}),
+		]);
+		expect(JSON.parse(stdout[0]).answer).toBe("[1] answer");
 	});
 });
 

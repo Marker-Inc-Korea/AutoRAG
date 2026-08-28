@@ -9,6 +9,7 @@ import {
 	type LocalAutoRAGModel,
 	loadLocalAutoRAGModel,
 } from "../agent/local-model.ts";
+import type { SearchDocumentDiagnostic } from "../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import type { DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
@@ -723,10 +724,16 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.datasources !== undefined) {
 		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
-		if (unknown.length > 0) {
-			throw new ConfigError(`Unknown datasource skill(s) in config: ${unknown.join(", ")}`);
-		}
 		if (skills.length > 0) opts.datasourceSkills = skills;
+		if (unknown.length > 0) {
+			const diagnostic: SearchDocumentDiagnostic = {
+				code: "unknown-datasource-skill",
+				severity: "warning",
+				message: `Unknown datasource skill(s) in config were skipped: ${unknown.join(", ")}`,
+				source: "datasources",
+			};
+			opts.startupDiagnostics = [diagnostic];
+		}
 	}
 	if (config.datasourceAccess !== undefined) opts.datasourceAccess = config.datasourceAccess;
 	return opts as Omit<AutoRAGAgentOptions, "model">;

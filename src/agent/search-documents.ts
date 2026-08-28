@@ -31,7 +31,8 @@ export type SearchDocumentDiagnosticCode =
 	| "jikji-find-failed"
 	| "refresh-failed"
 	| "watch-failed"
-	| "watch-limited";
+	| "watch-limited"
+	| "unknown-datasource-skill";
 
 export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
