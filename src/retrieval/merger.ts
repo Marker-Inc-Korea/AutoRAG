@@ -113,12 +113,12 @@ export class ParallelRetriever {
 		options: RetrievalOptions,
 	): Promise<Map<string, RetrievalResult[]>> {
 		const results = new Map<string, RetrievalResult[]>();
+		for (const method of methods) results.set(method.describe().name, []);
 		await Promise.all(
 			methods.map(async (method) => {
 				const name = method.describe().name;
 				try {
-					const methodResults = await method.retrieve(query, options);
-					results.set(name, methodResults);
+					results.set(name, await method.retrieve(query, options));
 				} catch {
 					results.set(name, []);
 				}
@@ -139,6 +139,7 @@ export class ParallelRetriever {
 		options: RetrievalOptions,
 	): Promise<RetrievalWithDiagnostics> {
 		const results = new Map<string, RetrievalResult[]>();
+		for (const method of methods) results.set(method.describe().name, []);
 		const diagnostics: RetrievalDiagnostic[] = [];
 		await Promise.all(
 			methods.map(async (method) => {
