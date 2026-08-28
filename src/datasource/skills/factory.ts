@@ -13,10 +13,8 @@ import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { DatasourceSkill } from "../types.ts";
 import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
-import { CloudDriveSkill } from "./cloud-drive/index.ts";
+import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
-import { type GDriveConnectorOptions, GDriveSkill } from "./gdrive/index.ts";
-import { RcloneConnector, type RcloneConnectorOptions } from "./gdrive/rclone-connector.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
 import { HimalayaConnector, type HimalayaConnectorOptions } from "./gmail/himalaya-connector.ts";
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
@@ -176,39 +174,15 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as GitHubConnectorOptions,
 		}),
-	gdrive: (config, workspaceRoot, registrationName, managedCliConfigManager) => {
-		const connector = config.connector as
-			| (GDriveConnectorOptions & RcloneConnectorOptions & { backend?: string })
-			| undefined;
-		// `backend: "rclone"` routes through the external rclone CLI (Google
-		// Drive or any rclone remote) instead of the Drive REST API.
-		if (connector?.backend === "rclone") {
-			const { backend: _backend, ...rcloneOptions } = connector;
-			return new GDriveSkill({
-				...common(config, workspaceRoot),
-				skillName: registrationName,
-				connector: new RcloneConnector({
-					...rcloneOptions,
-					skillName: registrationName,
-					instanceId: config.instanceId,
-					workspaceRoot,
-					...(rcloneOptions.configPath === undefined ? {} : { configPath: rcloneOptions.configPath }),
-					...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
-				}),
-			});
-		}
-		return new GDriveSkill({
-			...common(config, workspaceRoot),
-			skillName: registrationName,
-			connectorOptions: connector as GDriveConnectorOptions,
-		});
-	},
-	"cloud-drive": (config, workspaceRoot, registrationName) =>
+	"cloud-drive": (config, workspaceRoot, registrationName, managedCliConfigManager) =>
 		new CloudDriveSkill({
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
-			connectorOptions: config.connector as RcloneConnectorOptions,
+			connectorOptions: {
+				...(config.connector as RcloneConnectorOptions),
+				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
+			},
 		}),
 	gmail: (config, workspaceRoot, registrationName, managedCliConfigManager) => {
 		const connector = config.connector as

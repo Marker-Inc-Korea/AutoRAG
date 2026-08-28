@@ -4,7 +4,7 @@ import {
 	type ConnectorSkillDefinition,
 	type ConnectorSkillOptions,
 } from "../../connector-skill.ts";
-import { RcloneConnector, type RcloneConnectorOptions } from "../gdrive/rclone-connector.ts";
+import { RcloneConnector, type RcloneConnectorOptions } from "./rclone-connector.ts";
 
 export const CLOUD_DRIVE_SKILL_DEFINITION = createCloudDriveSkillDefinition("cloud-drive");
 

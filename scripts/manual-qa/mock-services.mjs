@@ -1,11 +1,11 @@
 /**
  * Manual-QA mock server emulating the external APIs the datasource skills
- * talk to: Slack, Notion, GitHub, Google Drive, Gmail, and an RSS
+ * talk to: Slack, Notion, GitHub, Gmail, and an RSS
  * feed. Started by run-qa.ts on an ephemeral port.
  *
  * Auth behavior mirrors the real services closely enough for QA:
  *  - Slack expects  Authorization: Bearer qa-slack-token
- *  - Notion/GDrive/Gmail expect their Bearer tokens
+ *  - Notion/Gmail expect their Bearer tokens
  *  - wrong/missing tokens produce the service's native auth failure shape
  */
 
@@ -92,24 +92,6 @@ export function startMockServices() {
 					labels: [{ name: "bug" }],
 				},
 			]);
-		}
-
-		// ---- Google Drive ----
-		if (path === "/gdrive/files") {
-			if (auth !== "Bearer qa-gdrive-token") return text("unauthorized", 401);
-			return json({
-				files: [
-					{
-						id: "qa-doc-1",
-						name: "Vendor contract summary",
-						mimeType: "application/vnd.google-apps.document",
-						modifiedTime: "2024-05-20T00:00:00.000Z",
-					},
-				],
-			});
-		}
-		if (path === "/gdrive/files/qa-doc-1/export") {
-			return text("The vendor contract renews annually with a 60-day cancellation notice.");
 		}
 
 		// ---- Gmail ----

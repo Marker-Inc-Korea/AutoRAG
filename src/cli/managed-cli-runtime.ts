@@ -1,6 +1,6 @@
 import { createCrawlerManagedCliProvider } from "../datasource/crawler-managed-config.ts";
 import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
-import { createRcloneManagedCliProvider } from "../datasource/skills/gdrive/rclone-managed-config.ts";
+import { createRcloneManagedCliProvider } from "../datasource/skills/cloud-drive/rclone-managed-config.ts";
 import { createHimalayaManagedCliProvider } from "../datasource/skills/gmail/himalaya-managed-config.ts";
 import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";

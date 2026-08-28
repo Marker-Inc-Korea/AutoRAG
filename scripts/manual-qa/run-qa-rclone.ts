@@ -10,8 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createSearchDatasourceDocumentsTool } from "../../src/agent/search-datasource-tool.ts";
 import { CloudDriveSkill } from "../../src/datasource/skills/cloud-drive/skill.ts";
-import type { RcloneRunResult } from "../../src/datasource/skills/gdrive/rclone-connector.ts";
-import { RcloneConnector } from "../../src/datasource/skills/gdrive/rclone-connector.ts";
+import type { RcloneRunResult } from "../../src/datasource/skills/cloud-drive/rclone-connector.ts";
+import { RcloneConnector } from "../../src/datasource/skills/cloud-drive/rclone-connector.ts";
 
 const root = mkdtempSync(join(tmpdir(), "autorag-rclone-manual-qa-"));
 let failures = 0;

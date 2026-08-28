@@ -161,7 +161,7 @@ export class RcloneConnector implements DatasourceConnector {
 		skipped: number,
 	): Promise<ConnectorFetchResult> {
 		const instanceId = this.options.instanceId ?? "default";
-		const skillName = this.options.skillName ?? "gdrive";
+		const skillName = this.options.skillName ?? "cloud-drive";
 		const paths = mirrorPaths(this.options.workspaceRoot as string, skillName, instanceId);
 		const previous = loadManifest(paths.manifestPath);
 		const previousByPath = new Map((previous?.entries ?? []).map((entry) => [entry.path, entry]));
@@ -272,7 +272,7 @@ export class RcloneConnector implements DatasourceConnector {
 					documentFromEntry(
 						entry,
 						content,
-						this.options.skillName ?? "gdrive",
+						this.options.skillName ?? "cloud-drive",
 						this.options.instanceId ?? "default",
 						remote,
 					),

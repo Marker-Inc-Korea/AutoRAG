@@ -11,7 +11,7 @@ import {
 } from "../../src/cli/managed-cli-config.ts";
 import { createManagedCliRuntime } from "../../src/cli/managed-cli-runtime.ts";
 import { createCrawlerManagedCliProvider } from "../../src/datasource/crawler-managed-config.ts";
-import { createRcloneManagedCliProvider } from "../../src/datasource/skills/gdrive/rclone-managed-config.ts";
+import { createRcloneManagedCliProvider } from "../../src/datasource/skills/cloud-drive/rclone-managed-config.ts";
 import { createHimalayaManagedCliProvider } from "../../src/datasource/skills/gmail/himalaya-managed-config.ts";
 import { createQmdManagedCliProvider } from "../../src/datasource/skills/obsidian/config.ts";
 import { createJikjiManagedCliProvider } from "../../src/jikji/managed-config.ts";
