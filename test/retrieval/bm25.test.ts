@@ -181,6 +181,7 @@ describe("AutoRAG BM25 integration", () => {
 		expect(refresh.bm25).toMatchObject({ engine: "minsync" });
 		expect(agent.getMethodRegistry().getByType("bm25")).toHaveLength(1);
 		expect(agent.getMethodRegistry().getByType("vector")).toHaveLength(1);
+		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
 		expect(agent.getSystemPrompt()).toContain("search_bm25_documents");
 		expect(existsSync(join(root, BM25_SUBDIR))).toBe(false);
 		expect(readFileSync(new URL("../../src/retrieval/methods/bm25.ts", import.meta.url), "utf8")).not.toContain(

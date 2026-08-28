@@ -34,6 +34,7 @@ import { renderMemoryContext } from "../memory/renderer.ts";
 import {
 	MinSyncBM25Method,
 	type MinSyncBM25MethodOptions,
+	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
@@ -323,6 +324,7 @@ export class AutoRAGAgent {
 			const minSyncOpts = options.minSync ?? { autoInstall: false };
 			this.minSyncMethod = new MinSyncVectorMethod({ ...minSyncOpts, root: this.workspaceProjectRoot });
 			this.methodRegistry.register(this.minSyncMethod);
+			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
 			if (options.bm25 !== false) {
 				const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
 				this.bm25Method = new MinSyncBM25Method({
