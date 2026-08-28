@@ -116,6 +116,31 @@ describe("getRefreshStatus", () => {
 		);
 	});
 
+	it("includes startup diagnostics in refresh results", async () => {
+		const agent = makeAgent({
+			startupDiagnostics: [
+				{
+					code: "unknown-datasource-skill",
+					severity: "warning",
+					message: "Unknown datasource skill(s) in config were skipped: dropbox",
+					source: "datasources",
+				},
+			],
+		});
+
+		const result = await agent.refresh(true);
+
+		expect(result.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "unknown-datasource-skill",
+					severity: "warning",
+					source: "datasources",
+				}),
+			]),
+		);
+	});
+
 	it("emits a watch-limited diagnostic when startWatchRefresh exceeds the watcher cap", async () => {
 		const agent = makeAgent();
 		const handle = agent.startWatchRefresh({

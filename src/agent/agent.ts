@@ -133,7 +133,8 @@ export interface AutoRAGMinSyncRefreshResult {
 	readonly reason?: string;
 }
 
-export interface AutoRAGRefreshResult extends ParsedMirrorSyncResult {
+export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
+	readonly diagnostics: readonly SearchDocumentDiagnostic[];
 	readonly bm25?: BM25SyncResult;
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
@@ -650,7 +651,7 @@ export class AutoRAGAgent {
 		if (trimmedQuery.length === 0) {
 			this.lastQuery = trimmedQuery;
 			this.lastSessionId = sessionId;
-			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions);
+			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions, this.startupDiagnostics);
 		}
 		options = this.normalizeRetrievalOptions(options);
 
@@ -927,7 +928,13 @@ export class AutoRAGAgent {
 						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
 					}
 				: undefined;
-			return { ...(bm25 ? { ...summary, bm25 } : summary), minsync: publicMinsync, datasources };
+			return {
+				...(bm25 ? { ...summary } : summary),
+				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
+				...(bm25 ? { bm25 } : {}),
+				minsync: publicMinsync,
+				datasources,
+			};
 		} catch (error) {
 			this.refreshState = {
 				...this.refreshState,

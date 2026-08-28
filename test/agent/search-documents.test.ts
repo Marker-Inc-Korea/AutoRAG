@@ -139,4 +139,31 @@ describe("AutoRAGAgent searchDocuments", () => {
 
 		await expect(agent.searchDocuments("  ")).resolves.toMatchObject({ query: "", answer: "", results: [] });
 	});
+
+	it("preserves startup diagnostics for blank queries", async () => {
+		const agent = new AutoRAGAgent({
+			model: modelFor(),
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			startupDiagnostics: [
+				{
+					code: "unknown-datasource-skill",
+					severity: "warning",
+					message: "Unknown datasource skill(s) in config were skipped: dropbox",
+					source: "datasources",
+				},
+			],
+		});
+
+		await expect(agent.searchDocuments("  ")).resolves.toMatchObject({
+			diagnostics: [
+				expect.objectContaining({
+					code: "unknown-datasource-skill",
+					severity: "warning",
+					source: "datasources",
+				}),
+			],
+		});
+	});
 });

@@ -82,6 +82,64 @@ describe("CLI config datasources wiring", () => {
 		]);
 	});
 
+	it("skips malformed datasource entries without constructing connectors", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				rss: 0,
+				dropbox: null,
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+
+		expect(options.datasourceSkills ?? []).toEqual([]);
+		expect(options.startupDiagnostics).toEqual([
+			expect.objectContaining({
+				code: "unknown-datasource-skill",
+				message: "Unknown datasource skill(s) in config were skipped: rss, dropbox",
+			}),
+		]);
+	});
+
+	it("treats inherited object properties as unknown datasource names", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				toString: {},
+				alias: { type: "constructor" },
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+
+		expect(options.datasourceSkills ?? []).toEqual([]);
+		expect(options.startupDiagnostics).toEqual([
+			expect.objectContaining({
+				message: "Unknown datasource skill(s) in config were skipped: toString, alias",
+			}),
+		]);
+	});
+
+	it("sanitizes unknown datasource names before exposing diagnostics", () => {
+		const unsafeName = "/private/var/tmp/secret\n\u001b[31m";
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: { [unsafeName]: {} },
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const diagnostics = JSON.stringify(options.startupDiagnostics);
+
+		expect(diagnostics).not.toContain("/private/var/tmp");
+		expect(diagnostics).not.toContain("\n");
+		expect(diagnostics).not.toContain("\u001b");
+		expect(diagnostics).toContain("?private?var?tmp?secret");
+	});
+
 	it("materializes WhatsApp through the external wacrawl backend", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
