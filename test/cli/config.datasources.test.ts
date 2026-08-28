@@ -59,13 +59,27 @@ describe("CLI config datasources wiring", () => {
 		expect(options.datasourceAccess).toBeUndefined();
 	});
 
-	it("rejects unknown datasource skill names with a ConfigError", () => {
+	it("skips unknown datasource skill names and keeps known skills", () => {
 		const configPath = writeConfig({
 			searchPaths: [tmpRoot],
 			workspacePath: tmpRoot,
-			datasources: { dropbox: {} },
+			datasources: {
+				rss: { connector: { feeds: [{ url: "https://feeds.example.com/a.xml" }] } },
+				"discord-nomadamas": {},
+				"slack-local": {},
+			},
 		});
-		expect(() => buildAgentOptions(resolveConfig({ flags: { config: configPath } }))).toThrow(ConfigError);
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+		expect(skills.map((skill) => skill.describe().name)).toEqual(["rss"]);
+		expect(options.startupDiagnostics).toEqual([
+			{
+				code: "unknown-datasource-skill",
+				severity: "warning",
+				message: "Unknown datasource skill(s) in config were skipped: discord-nomadamas, slack-local",
+				source: "datasources",
+			},
+		]);
 	});
 
 	it("materializes WhatsApp through the external wacrawl backend", () => {
@@ -107,6 +121,25 @@ describe("CLI config datasources wiring", () => {
 			type: "telegram-archive",
 			instanceId: "personal",
 			requiresExternalCli: true,
+		});
+	});
+
+	it("materializes ClawGallery through the external CLI backend", () => {
+		const configPath = writeConfig({
+			datasources: {
+				screenshots: {
+					type: "clawgallery",
+					instanceId: "personal",
+					connector: { binaryPath: "/tmp/clawgallery", syncVisual: true, vdrBackend: "vsplade" },
+				},
+			},
+		});
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		expect(options.datasourceSkills).toHaveLength(1);
+		expect(options.datasourceSkills?.[0]?.describe()).toMatchObject({
+			id: "screenshots",
+			type: "clawgallery",
+			instanceId: "personal",
 		});
 	});
 

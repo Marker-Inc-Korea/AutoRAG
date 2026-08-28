@@ -6,6 +6,37 @@ contributor requirements, see the normative
 
 Datasource skills let AutoRAG search external, server-configured sources while preserving the same retrieval and curation model used for local document collections.
 
+### ClawGallery
+
+ClawGallery is a CLI-backed datasource for local screenshots and photos. Install
+the upstream CLI with `cargo install clawgallery`, then configure a trusted
+connection:
+
+```json
+{
+  "datasources": {
+    "screenshots": {
+      "type": "clawgallery",
+      "instanceId": "personal",
+      "connector": {
+        "binaryPath": "clawgallery",
+        "syncVisual": true,
+        "vdrBackend": "vsplade"
+      }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["clawgallery"],
+    "allowedScopes": ["/screenshots/personal/**"]
+  }
+}
+```
+
+Refresh runs ClawGallery's incremental `bootstrap` and, when enabled, its
+trusted `vdr sync`. Keyword, V-SPLADE lexical, dense embedding, and hybrid
+search are delegated to `clawgallery search --json`; AutoRAG never reads
+`images.jsonl` or `vdr.sqlite3`, and does not trigger captioning or renaming.
+
 ## Contract
 
 A datasource skill is both:

@@ -12,6 +12,7 @@ import type { ManagedCliConfigManager } from "../../cli/managed-cli-config.ts";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { DatasourceSkill } from "../types.ts";
+import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./clawgallery/index.ts";
 import { CloudDriveSkill } from "./cloud-drive/index.ts";
 import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
 import { type GDriveConnectorOptions, GDriveSkill } from "./gdrive/index.ts";
@@ -127,6 +128,24 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
+		});
+	},
+	clawgallery: (config, workspaceRoot, registrationName) => {
+		const connector = (config.connector ?? {}) as ClawGalleryOptions;
+		const clientOptions: ClawGalleryOptions = {
+			...connector,
+			...(connector.configDir === undefined && workspaceRoot !== undefined
+				? { configDir: `${workspaceRoot}/.autorag/datasources/clawgallery/${registrationName}` }
+				: {}),
+		};
+		return new ClawGallerySkill({
+			client: new ClawGalleryClient(clientOptions),
+			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
+			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
+			...(config.tags !== undefined ? { tags: config.tags } : {}),
+			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
+			...(connector.syncVisual !== undefined ? { syncVisual: connector.syncVisual } : {}),
+			...(connector.vdrBackend !== undefined ? { vdrBackend: connector.vdrBackend } : {}),
 		});
 	},
 	notion: (config, workspaceRoot, registrationName, managedCliConfigManager) =>
