@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
+import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import {
 	boundDiagnosticText,
 	type ConnectorDocument,
@@ -304,7 +305,8 @@ function runBinary(
 	cwd?: string,
 ): Promise<HimalayaRunResult> {
 	return new Promise((resolvePromise) => {
-		const child = spawn(binary, args, {
+		const command = portableSpawnCommand(binary, args);
+		const child = spawn(command.command, command.args, {
 			...(env === undefined ? {} : { env: { ...process.env, ...env } }),
 			...(cwd === undefined ? {} : { cwd }),
 			stdio: ["ignore", "pipe", "pipe"],
