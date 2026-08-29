@@ -186,10 +186,8 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 				["query", "--format", "json", "-k", "1", "--mode", "hybrid", "refund approval"],
 			]),
 		);
-		expect(commands.slice(-2)).toEqual([
-			["check", "--format", "json"],
-			["sync", "--format", "json"],
-		]);
+		expect(commands.filter((args) => args[0] === "sync")).toHaveLength(1);
+		expect(commands.filter((args) => args[0] === "check")).toHaveLength(1);
 	});
 
 	it("recovers a config-only workspace with a full sync", async () => {

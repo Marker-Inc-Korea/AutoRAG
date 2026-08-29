@@ -3,6 +3,7 @@ import { join, resolve, sep } from "node:path";
 import { AutoRAGAgent, type AutoRAGRefreshResult, type RefreshMethod } from "../../agent/agent.ts";
 import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
 import { PARSED_MIRROR_SUBDIR } from "../../mirror/paths.ts";
+import { acquireRefreshLock } from "../../mirror/refresh-lock.ts";
 import { BM25_SUBDIR } from "../../retrieval/methods/bm25.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
@@ -82,28 +83,48 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 		}
 	}
 
-	// Remove each existing target. force:true makes this idempotent.
-	for (const target of targets) {
-		rmSync(target, { recursive: true, force: true });
-	}
-
-	if (sub === "reset") {
-		ctx.stdout(renderIndex({ action: "reset", removed: [...targetNames] }, { json: ctx.json }));
-		return 0;
-	}
-
-	// rebuild: re-run a forced refresh with a model-free agent, scoped to methods.
-	let rebuilt: AutoRAGRefreshResult;
-	try {
-		const agent = new AutoRAGAgent(buildAgentOptions(config));
-		rebuilt = await agent.refresh(true, refreshMethods ? { methods: refreshMethods } : undefined);
-	} catch (error) {
-		ctx.stderr(renderError(error, { json: ctx.json }));
+	const lock = acquireRefreshLock(config.workspacePath);
+	if (!lock) {
+		ctx.stderr(
+			renderError(new Error("A refresh is already running for this workspace; nothing was reset."), {
+				json: ctx.json,
+			}),
+		);
 		return 1;
 	}
+	try {
+		// Remove each existing target. force:true makes this idempotent.
+		for (const target of targets) {
+			rmSync(target, { recursive: true, force: true });
+		}
 
-	ctx.stdout(renderIndex({ action: "rebuild", removed: [...targetNames], rebuilt }, { json: ctx.json }));
-	return 0;
+		if (sub === "reset") {
+			ctx.stdout(renderIndex({ action: "reset", removed: [...targetNames] }, { json: ctx.json }));
+			return 0;
+		}
+
+		// rebuild: re-run a forced refresh with a model-free agent, scoped to methods, under the same lock.
+		let rebuilt: AutoRAGRefreshResult;
+		try {
+			const agent = new AutoRAGAgent(buildAgentOptions(config));
+			rebuilt = await agent.refresh(true, {
+				lock,
+				...(refreshMethods ? { methods: refreshMethods } : {}),
+			});
+		} catch (error) {
+			ctx.stderr(renderError(error, { json: ctx.json }));
+			return 1;
+		}
+
+		if (rebuilt.outcome === "busy") {
+			ctx.stderr(renderError(new Error("Rebuild was refused before re-indexing ran."), { json: ctx.json }));
+			return 1;
+		}
+		ctx.stdout(renderIndex({ action: "rebuild", removed: [...targetNames], rebuilt }, { json: ctx.json }));
+		return 0;
+	} finally {
+		lock.release();
+	}
 }
 
 /**

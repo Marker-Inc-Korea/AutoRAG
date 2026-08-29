@@ -20,7 +20,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 		const methods = parseMethodFlag(ctx.flags.method);
 		const result = await agent.refresh(ctx.flags.force === true, methods ? { methods } : undefined);
 		ctx.stdout(renderRefresh(result, { json: ctx.json, debug: ctx.debug }));
-		return 0;
+		return result.outcome === "busy" ? 1 : 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 1;

@@ -17,6 +17,7 @@ export interface BM25SyncResult {
 	readonly indexedChunks: number;
 	readonly readiness: BM25ReadinessState;
 	readonly engine: BM25Engine;
+	readonly skipped?: boolean;
 }
 
 export interface BM25Status {

@@ -23,6 +23,7 @@ export {
 	type MinSyncBM25MethodOptions,
 	MinSyncHybridMethod,
 	type MinSyncHybridMethodOptions,
+	type MinSyncSyncOptions,
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "./method.ts";

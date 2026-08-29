@@ -32,7 +32,7 @@ function diagnosticProjection(d: {
 
 function refreshEnvelope(result: AutoRAGRefreshResult) {
 	const envelope: Record<string, unknown> = {
-		ok: true,
+		ok: result.outcome !== "busy",
 		counts: {
 			scanned: result.scanned,
 			written: result.written,
@@ -41,6 +41,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
+	if (result.outcome === "busy") envelope.outcome = "busy";
 	if (result.bm25) {
 		envelope.bm25 = {
 			indexedChunks: result.bm25.indexedChunks,
@@ -66,6 +67,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 }
 
 function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): string {
+	if (result.outcome === "busy") return "refresh: busy (another refresh is already running)";
 	const lines: string[] = [];
 	lines.push("refresh: ok");
 	lines.push(

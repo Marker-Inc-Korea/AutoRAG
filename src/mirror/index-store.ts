@@ -11,6 +11,8 @@ export interface ParsedMirrorEntry {
 	readonly sourceMtimeNs: number;
 	readonly sourceSizeBytes: number;
 	readonly updatedAt: string;
+	/** SHA-256 of the normalized parsed markdown written to `outputPath`. */
+	readonly contentSha256?: string;
 }
 
 export interface ParsedMirrorIndex {
@@ -53,7 +55,8 @@ function isParsedMirrorEntry(value: unknown): value is ParsedMirrorEntry {
 		typeof value.parserName === "string" &&
 		typeof value.sourceMtimeNs === "number" &&
 		typeof value.sourceSizeBytes === "number" &&
-		typeof value.updatedAt === "string"
+		typeof value.updatedAt === "string" &&
+		(value.contentSha256 === undefined || typeof value.contentSha256 === "string")
 	);
 }
 
