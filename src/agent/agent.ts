@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
@@ -10,6 +10,7 @@ import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
 import { DatasourceResultFilter } from "../datasource/result-filter.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
+import type { FileLockHandle } from "../filesystem/file-lock.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -39,6 +40,7 @@ import {
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
 import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
+import { acquireRefreshLock } from "../mirror/refresh-lock.ts";
 import {
 	detectMirrorStaleness,
 	type ParsedMirrorDiagnostic,
@@ -155,11 +157,14 @@ export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji";
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/** External refresh lock held by the caller (e.g. `autorag index rebuild`). */
+	readonly lock?: FileLockHandle;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
+	readonly skipped?: boolean;
 	readonly reason?: string;
 	/** Count of parsed documents excluded from the MinSync index by file name. */
 	readonly stagingExcludedCount?: number;
@@ -170,6 +175,7 @@ export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diag
 	readonly diagnostics: readonly SearchDocumentDiagnostic[];
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
+	readonly outcome?: "completed" | "busy";
 }
 
 export interface AutoRAGRefreshComponentStatus {
@@ -316,16 +322,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-			readonly ok: true;
-			readonly code: number;
-			readonly diagnostics: readonly string[];
-	  }
+		readonly ok: true;
+		readonly code: number;
+		readonly diagnostics: readonly string[];
+	}
 	| {
-			readonly ok: false;
-			readonly reason: JikjiFailureReason;
-			readonly code: number | null;
-			readonly diagnostics: readonly string[];
-	  };
+		readonly ok: false;
+		readonly reason: JikjiFailureReason;
+		readonly code: number | null;
+		readonly diagnostics: readonly string[];
+	};
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -353,6 +359,7 @@ export class AutoRAGAgent {
 	private readonly finalThinkingLevel: AutoRAGThinkingLevel | undefined;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
+	private refreshInFlight: { readonly key: string; readonly promise: Promise<AutoRAGRefreshResult> } | undefined;
 	private jikjiPrepareInFlight: Promise<void> | undefined;
 	private jikjiReady = false;
 	private minSyncPrepareInFlight: Promise<MinSyncSyncResult | undefined> | undefined;
@@ -671,7 +678,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => {},
+			dispose: () => { },
 		};
 	}
 
@@ -694,11 +701,11 @@ export class AutoRAGAgent {
 		}
 		const details = event.result.details as
 			| {
-					method?: string;
-					sources?: readonly string[];
-					resultCount?: number;
-					results?: readonly SearchDocumentRetrievalTraceResult[];
-			  }
+				method?: string;
+				sources?: readonly string[];
+				resultCount?: number;
+				results?: readonly SearchDocumentRetrievalTraceResult[];
+			}
 			| undefined;
 		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
 			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
@@ -1405,6 +1412,52 @@ export class AutoRAGAgent {
 	}
 
 	async refresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
+		const key = this.refreshLockKey(force, opts);
+		const inFlight = this.refreshInFlight;
+		if (inFlight) {
+			if (inFlight.key === key) return inFlight.promise;
+			return this.busyRefreshResult();
+		}
+		const externalLock = opts?.lock;
+		const lock = externalLock ?? acquireRefreshLock(this.workspaceProjectRoot);
+		if (!lock) return this.busyRefreshResult();
+		if (externalLock !== undefined) externalLock.assertOwned();
+		const promise = this.runRefresh(force, opts).finally(() => {
+			if (externalLock === undefined) lock.release();
+			if (this.refreshInFlight?.key === key) this.refreshInFlight = undefined;
+		});
+		this.refreshInFlight = { key, promise };
+		return promise;
+	}
+
+	private refreshLockKey(force: boolean, opts?: AutoRAGRefreshOptions): string {
+		return createHash("sha256")
+			.update(
+				JSON.stringify({
+					root: this.workspaceProjectRoot,
+					searchPaths: [...this.searchPaths].sort(),
+					force,
+					methods: opts?.methods ?? null,
+				}),
+				"utf8",
+			)
+			.digest("hex");
+	}
+
+	private busyRefreshResult(): AutoRAGRefreshResult {
+		return {
+			scanned: 0,
+			written: 0,
+			deleted: 0,
+			skipped: 0,
+			indexPath: join(this.workspaceProjectRoot, PARSED_MIRROR_SUBDIR),
+			diagnostics: [],
+			datasources: [],
+			outcome: "busy",
+		};
+	}
+
+	private async runRefresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
@@ -1457,14 +1510,15 @@ export class AutoRAGAgent {
 			const minsyncDiagnostics = minSyncRefreshDiagnostics(minsync);
 			const publicMinsync: AutoRAGMinSyncRefreshResult | undefined = minsync
 				? {
-						ok: minsync.ok,
-						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
-						...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
-						...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
-							? { stagingExcludedCount: minsync.stagingExcluded.length }
-							: {}),
-					}
+					ok: minsync.ok,
+					synced: minsync.synced,
+					...(minsync.skipped === undefined ? {} : { skipped: minsync.skipped }),
+					...(minsync.reason !== undefined ? { reason: sanitizeDiagnosticMessage(minsync.reason) } : {}),
+					...(minsyncDiagnostics.length > 0 ? { diagnostics: minsyncDiagnostics } : {}),
+					...(minsync.stagingExcluded !== undefined && minsync.stagingExcluded.length > 0
+						? { stagingExcludedCount: minsync.stagingExcluded.length }
+						: {}),
+				}
 				: undefined;
 			return {
 				...summary,
@@ -1476,6 +1530,7 @@ export class AutoRAGAgent {
 				],
 				minsync: publicMinsync,
 				datasources,
+				outcome: "completed",
 			};
 		} catch (error) {
 			this.refreshState = {
@@ -1626,7 +1681,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => {} };
+				return { close: () => { } };
 			}
 		};
 	}

@@ -45,7 +45,7 @@ function refreshOk(result: AutoRAGRefreshResult): boolean {
 
 function refreshEnvelope(result: AutoRAGRefreshResult) {
 	const envelope: Record<string, unknown> = {
-		ok: refreshOk(result),
+		ok: result.outcome !== "busy" && refreshOk(result),
 		counts: {
 			scanned: result.scanned,
 			written: result.written,
@@ -54,6 +54,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
+	if (result.outcome === "busy") envelope.outcome = "busy";
 	if (result.minsync !== undefined) {
 		const minsyncObj: Record<string, unknown> = {
 			ok: result.minsync.ok,
@@ -70,6 +71,9 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		if (result.minsync.stagingExcludedCount !== undefined) {
 			minsyncObj.stagingExcludedCount = result.minsync.stagingExcludedCount;
 		}
+		if (result.minsync.skipped !== undefined) {
+			minsyncObj.skipped = result.minsync.skipped;
+		}
 		envelope.minsync = minsyncObj;
 	}
 	if (result.datasources && result.datasources.length > 0) {
@@ -85,6 +89,7 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 }
 
 function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): string {
+	if (result.outcome === "busy") return "refresh: busy (another refresh is already running)";
 	const lines: string[] = [];
 	const ok = refreshOk(result);
 
@@ -94,6 +99,7 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	);
 	if (result.minsync !== undefined) {
 		const parts = [`ok=${result.minsync.ok}`, `synced=${result.minsync.synced}`];
+		if (result.minsync.skipped === true) parts.push("skipped=true");
 		if (result.minsync.reason !== undefined) {
 			parts.push(`reason=${result.minsync.reason}`);
 		}

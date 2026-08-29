@@ -1,6 +1,17 @@
-import { accessSync, constants, existsSync, realpathSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	accessSync,
+	constants,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	realpathSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
 import { ensureRuntime } from "../embedding-runtime/index.ts";
+import { loadMirrorIndex } from "../mirror/index-store.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -13,7 +24,7 @@ import { MinSyncClient, type MinSyncRuntime } from "./client.ts";
 import { type EnsureMinSyncBinaryOptions, ensureMinSyncBinary, executableName } from "./installer.ts";
 import { minSyncWorkspaceRoot } from "./paths.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
-import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
+import { buildMinSyncPathMap, minSyncMirrorFingerprint, syncMinSyncWorkspace } from "./workspace.ts";
 
 export interface MinSyncVectorMethodOptions {
 	readonly root: string;
@@ -84,6 +95,8 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly maxChunkSize: number | undefined;
 	private readonly mode: MinSyncQueryMode;
 	private readonly runtime: MinSyncRuntime | undefined;
+	private readonly queryCache = new Map<string, readonly MinSyncQueryHit[]>();
+	private readonly queryCacheLimit = 128;
 	private installFailed = false;
 
 	constructor(options: MinSyncVectorMethodOptions) {
@@ -127,7 +140,10 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	private async syncUnlocked(force: boolean): Promise<MinSyncSyncResult> {
-		const staging = syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
+		const staging = syncMinSyncWorkspace(this.root, {
+			workspacePath: this.workspacePath,
+			configurationFingerprint: this.configurationFingerprint(),
+		});
 		const withExcluded = (result: MinSyncSyncResult): MinSyncSyncResult =>
 			staging.excluded.length === 0 ? result : { ...result, stagingExcluded: staging.excluded };
 		const binaryResult = await this.resolveBinary();
@@ -135,6 +151,19 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			return withExcluded(degrade(this.workspacePath, "missing-binary"));
 		}
 		if (typeof binaryResult === "string") {
+			if (
+				!force &&
+				!staging.changed &&
+				readCommittedFingerprint(this.workspacePath) === staging.fingerprint &&
+				this.isReady()
+			) {
+				return withExcluded({
+					ok: true,
+					synced: 0,
+					workspacePath: this.workspacePath,
+					skipped: true,
+				});
+			}
 			const client = new MinSyncClient({
 				binaryPath: binaryResult,
 				workspacePath: this.workspacePath,
@@ -142,7 +171,12 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				maxChunkSize: this.maxChunkSize,
 				runtime: this.runtime,
 			});
-			return withExcluded(await client.sync(force));
+			const result = await client.sync(force);
+			if (result.ok) {
+				commitFingerprint(this.workspacePath, staging.fingerprint);
+				this.queryCache.clear();
+			}
+			return withExcluded(result);
 		}
 		// install-failed degrade result
 		return withExcluded(binaryResult);
@@ -174,9 +208,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private async retrieveUnlocked(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? 50;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;
-		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		const binaryResult = await this.resolveBinary();
 		if (binaryResult === undefined || typeof binaryResult !== "string") return [];
+		const mirrorFingerprint = minSyncMirrorFingerprint(loadMirrorIndex(this.root), this.configurationFingerprint());
+		const committedFingerprint = readCommittedFingerprint(this.workspacePath);
+		const cacheKey = `${committedFingerprint ?? "-"}\u0000${this.mode}\u0000${query}\u0000${queryK}`;
+		const cached = committedFingerprint === mirrorFingerprint ? this.queryCache.get(cacheKey) : undefined;
+		if (cached !== undefined) return this.mapHits(cached, options);
 		const client = new MinSyncClient({
 			binaryPath: binaryResult,
 			workspacePath: this.workspacePath,
@@ -191,6 +229,17 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			if (this.mode !== "hybrid") throw error;
 			hits = await client.query(query, queryK, "bm25");
 		}
+		if (this.queryCache.size >= this.queryCacheLimit) {
+			const oldest = this.queryCache.keys().next().value;
+			if (typeof oldest === "string") this.queryCache.delete(oldest);
+		}
+		if (committedFingerprint === mirrorFingerprint) this.queryCache.set(cacheKey, hits);
+		return this.mapHits(hits, options);
+	}
+
+	private mapHits(hits: readonly MinSyncQueryHit[], options: RetrievalOptions): RetrievalResult[] {
+		const topK = options.topK ?? 50;
+		const byPath = buildMinSyncPathMap(this.root, this.workspacePath);
 		const results: RetrievalResult[] = [];
 		for (const hit of hits) {
 			const entry = byPath.get(hit.path);
@@ -218,6 +267,13 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		return results;
 	}
 
+	private configurationFingerprint(): string {
+		return JSON.stringify({
+			embedder: this.embedder ?? null,
+			maxChunkSize: this.maxChunkSize ?? null,
+		});
+	}
+
 	/**
 	 * Resolve the MinSync CLI from the user's global PATH first, then the
 	 * workspace cache, and finally the verified auto-install fallback.
@@ -243,6 +299,29 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		}
 		return undefined;
 	}
+}
+
+function fingerprintPath(workspacePath: string): string {
+	return join(workspacePath, ".minsync", "autorag-fingerprint.json");
+}
+
+function readCommittedFingerprint(workspacePath: string): string | undefined {
+	try {
+		const parsed: unknown = JSON.parse(readFileSync(fingerprintPath(workspacePath), "utf8"));
+		if (typeof parsed !== "object" || parsed === null) return undefined;
+		const fingerprint = (parsed as Record<string, unknown>).fingerprint;
+		return typeof fingerprint === "string" ? fingerprint : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function commitFingerprint(workspacePath: string, fingerprint: string): void {
+	const path = fingerprintPath(workspacePath);
+	mkdirSync(join(workspacePath, ".minsync"), { recursive: true });
+	const temporaryPath = `${path}.${randomUUID()}.tmp`;
+	writeFileSync(temporaryPath, `${JSON.stringify({ version: 1, fingerprint })}\n`);
+	renameSync(temporaryPath, path);
 }
 
 export class MinSyncHybridMethod extends MinSyncVectorMethod {

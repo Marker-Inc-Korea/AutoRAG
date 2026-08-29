@@ -35,6 +35,8 @@ export interface MinSyncSyncResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly workspacePath: string;
+	/** True when the unchanged workspace fingerprint avoided an external MinSync sync. */
+	readonly skipped?: boolean;
 	readonly reason?: string;
 	readonly diagnostic?: MinSyncDiagnostic;
 	/**
