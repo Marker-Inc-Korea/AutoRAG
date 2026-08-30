@@ -27,7 +27,11 @@ export function minSyncConfigPath(workspacePath: string): string {
  *
  * Returns true if the file was rewritten, false if the file does not exist.
  */
-export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEmbedderConfig): boolean {
+export function rewriteEmbedderConfig(
+	workspacePath: string,
+	embedder: MinSyncEmbedderConfig,
+	chunkerConfig: { readonly maxChunkSize?: number } = {},
+): boolean {
 	const configPath = minSyncConfigPath(workspacePath);
 	let raw: string;
 	try {
@@ -46,6 +50,16 @@ export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEm
 			? (vectorstore.options as Record<string, unknown>)
 			: {};
 	vectorstore.options = options;
+	const chunker =
+		typeof parsed.chunker === "object" && parsed.chunker !== null && !Array.isArray(parsed.chunker)
+			? (parsed.chunker as Record<string, unknown>)
+			: {};
+	parsed.chunker = chunker;
+	const chunkerOptions =
+		typeof chunker.options === "object" && chunker.options !== null && !Array.isArray(chunker.options)
+			? (chunker.options as Record<string, unknown>)
+			: {};
+	chunker.options = chunkerOptions;
 
 	if (embedder.id !== undefined) embedderSection.id = embedder.id;
 	if (embedder.baseUrl !== undefined) embedderSection.base_url = embedder.baseUrl;
@@ -58,6 +72,7 @@ export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEm
 		embedderSection.timeout_seconds = Math.ceil(embedder.timeoutMs / 1000);
 	}
 	if (embedder.dimension !== undefined) options.dimension = embedder.dimension;
+	if (chunkerConfig.maxChunkSize !== undefined) chunkerOptions.max_chunk_size = chunkerConfig.maxChunkSize;
 
 	writeFileSync(configPath, stringify(parsed));
 	return true;

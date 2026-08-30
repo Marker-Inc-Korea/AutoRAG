@@ -327,6 +327,13 @@ describe("runInit embedder flags", () => {
 		});
 	});
 
+	it("writes the MinSync chunk size into method config", async () => {
+		const code = await runInit(makeCtx({ flags: { "search-paths": "docs", "minsync-max-chunk-size": "1000" } }));
+		expect(code).toBe(0);
+		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
+		expect(config.minSync.maxChunkSize).toBe(1000);
+	});
+
 	it("does not write minSync.embedder when no embedder flags are given", async () => {
 		const code = await runInit(
 			makeCtx({

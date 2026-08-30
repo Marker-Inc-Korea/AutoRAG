@@ -23,6 +23,7 @@ export interface MinSyncVectorMethodOptions {
 	readonly installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly maxChunkSize?: number;
 	readonly managedCliConfigManager?: ManagedCliConfigManager;
 	readonly mode?: MinSyncQueryMode;
 }
@@ -60,6 +61,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly installer: Omit<EnsureMinSyncBinaryOptions, "root"> | undefined;
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly maxChunkSize: number | undefined;
 	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 	private readonly mode: MinSyncQueryMode;
 
@@ -70,6 +72,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.installer = options.installer;
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
+		this.maxChunkSize = options.maxChunkSize;
 		this.managedCliConfigManager = options.managedCliConfigManager;
 		this.mode = options.mode ?? "vector";
 	}
@@ -108,6 +111,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				...(this.managedCliConfigManager === undefined
 					? {}
 					: { managedCliConfigManager: this.managedCliConfigManager }),
+				maxChunkSize: this.maxChunkSize,
 			});
 			return client.sync();
 		}
@@ -130,6 +134,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			binaryPath: binaryResult,
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
+			maxChunkSize: this.maxChunkSize,
 			...(this.managedCliConfigManager === undefined
 				? {}
 				: { managedCliConfigManager: this.managedCliConfigManager }),

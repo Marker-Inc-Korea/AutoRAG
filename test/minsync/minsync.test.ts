@@ -802,6 +802,7 @@ dimension = 1536
 				maxConcurrent: 4,
 				timeoutMs: 30_000,
 			},
+			maxChunkSize: 1000,
 		});
 
 		const result = await method.sync();
@@ -821,6 +822,7 @@ dimension = 1536
 		expect(rewritten.embedder?.max_concurrent).toBe(4);
 		expect(rewritten.embedder?.timeout_seconds).toBe(30);
 		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(3072);
+		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
 	});
 
 	it("does not throw on missing binary during sync; returns ok:false degrade result", async () => {

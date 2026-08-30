@@ -67,7 +67,7 @@ Different documents need different search strategies:
 
 AutoRAG supports **pluggable retrieval methods**. Local lexical BM25, semantic vector, and hybrid retrieval all go through **MinSync** over one shared CDC chunk lifecycle, wired through the `RetrievalMethodRegistry`. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication. External datasources keep their own archive/index lifecycle.
 
-BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
+BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints, and set `minSync.maxChunkSize` (or `--minsync-max-chunk-size`) when a local embedder has a smaller context window. AutoRAG never forces TEI or any external embedding service.
 
 ### Real directory access
 

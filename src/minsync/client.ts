@@ -10,6 +10,7 @@ export interface MinSyncClientOptions {
 	readonly binaryPath: string;
 	readonly workspacePath: string;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly maxChunkSize?: number;
 	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
@@ -21,12 +22,14 @@ export class MinSyncClient {
 	private readonly binaryPath: string;
 	private readonly workspacePath: string;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
+	private readonly maxChunkSize: number | undefined;
 	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
 		this.embedder = options.embedder;
+		this.maxChunkSize = options.maxChunkSize;
 		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
 		else {
 			const registry = new ManagedCliRegistry();
@@ -72,8 +75,8 @@ export class MinSyncClient {
 				};
 			}
 		}
-		if (this.embedder) {
-			rewriteEmbedderConfig(this.workspacePath, this.embedder);
+		if (this.embedder || this.maxChunkSize !== undefined) {
+			rewriteEmbedderConfig(this.workspacePath, this.embedder ?? {}, { maxChunkSize: this.maxChunkSize });
 		}
 		const check = await this.spawn(["check", "--format", "json"], spawnOpts);
 		if (!check.ok) {

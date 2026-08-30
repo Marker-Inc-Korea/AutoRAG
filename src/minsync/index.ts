@@ -27,7 +27,13 @@ export {
 	type MinSyncVectorMethodOptions,
 } from "./method.ts";
 export { MINSYNC_FILES_SUBDIR, MINSYNC_SUBDIR, minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
-export type { MinSyncEmbedderConfig, MinSyncOptions, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
+export type {
+	MinSyncChunkerConfig,
+	MinSyncEmbedderConfig,
+	MinSyncOptions,
+	MinSyncQueryHit,
+	MinSyncSyncResult,
+} from "./types.ts";
 export {
 	buildMinSyncPathMap,
 	type MinSyncWorkspaceEntry,

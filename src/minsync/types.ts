@@ -16,12 +16,18 @@ export interface MinSyncEmbedderConfig {
 	readonly maxConcurrent?: number;
 }
 
+/** MinSync chunker settings exposed by AutoRAG's public configuration. */
+export interface MinSyncChunkerConfig {
+	readonly maxChunkSize?: number;
+}
+
 export interface MinSyncOptions {
 	readonly root: string;
 	readonly binaryPath?: string;
 	readonly workspacePath?: string;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
+	readonly maxChunkSize?: number;
 	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 

@@ -7,6 +7,7 @@ import {
 	type CliConfig,
 	ConfigError,
 	normalizeEmbedder,
+	normalizeIndexingConfig,
 	resolveAgentModel,
 	resolveConfig,
 	writeDefaultConfig,
@@ -108,6 +109,11 @@ describe("single-model CLI config", () => {
 			dimension: 3,
 		});
 		expect(() => normalizeEmbedder({ dimension: 0 }, "minSync.embedder")).toThrow(ConfigError);
+	});
+
+	it("validates the MinSync chunk size", () => {
+		expect(normalizeIndexingConfig({ minSync: { maxChunkSize: 1000 } }).minSync.maxChunkSize).toBe(1000);
+		expect(() => normalizeIndexingConfig({ minSync: { maxChunkSize: 0 } })).toThrow(ConfigError);
 	});
 
 	it("rejects malformed JSON config", () => {
