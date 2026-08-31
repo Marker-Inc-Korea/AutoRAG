@@ -4,7 +4,6 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
-import { matchesDatasourceScope } from "../../scope.ts";
 import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
 
 /**
@@ -27,8 +26,9 @@ const DEFAULT_TOP_K = 20;
 
 /**
  * Lexical (BM25) retrieval over a KakaoTalk datasource via the external
- * `katok` CLI in keyword mode. All client failures collapse to an empty
- * result set; retrieval never throws.
+ * `katok` CLI in keyword mode. Katok does not expose source scopes; access is
+ * controlled at the datasource/tag level. All client failures collapse to an
+ * empty result set; retrieval never throws.
  */
 export class KatokBm25Method implements RetrievalMethod {
 	private readonly client: KatokSearchClient;
@@ -47,7 +47,7 @@ export class KatokBm25Method implements RetrievalMethod {
 			type: "bm25",
 			description: "BM25 lexical retrieval over KakaoTalk chat chunks via the external katok CLI",
 			status: "active",
-			capabilities: ["lexical", "keyword-mode", "scoped", "external-cli", "path-opaque-sources"],
+			capabilities: ["lexical", "keyword-mode", "external-cli", "path-opaque-sources"],
 			datasourceId: KAKAO_DATASOURCE_ID,
 			tags: this.tags,
 		};
@@ -60,8 +60,9 @@ export class KatokBm25Method implements RetrievalMethod {
 
 /**
  * Semantic (vector) retrieval over a KakaoTalk datasource via the external
- * `katok` CLI in semantic mode. All client failures collapse to an empty
- * result set; retrieval never throws.
+ * `katok` CLI in semantic mode. Katok does not expose source scopes; access is
+ * controlled at the datasource/tag level. All client failures collapse to an
+ * empty result set; retrieval never throws.
  */
 export class KatokSemanticMethod implements RetrievalMethod {
 	private readonly client: KatokSearchClient;
@@ -80,7 +81,7 @@ export class KatokSemanticMethod implements RetrievalMethod {
 			type: "vector",
 			description: "Semantic vector retrieval over KakaoTalk chat chunks via the external katok CLI",
 			status: "active",
-			capabilities: ["semantic", "vector-mode", "scoped", "external-cli", "path-opaque-sources"],
+			capabilities: ["semantic", "vector-mode", "external-cli", "path-opaque-sources"],
 			datasourceId: KAKAO_DATASOURCE_ID,
 			tags: this.tags,
 		};
@@ -112,9 +113,6 @@ async function retrieveKatok(
 	}
 	if (!result.ok) return [];
 
-	const scope = options.scope;
-	const allowedScopes = options.allowedScopes;
-	if (!matchesScope("", scope, allowedScopes, instanceId)) return [];
 	const mapped: RetrievalResult[] = [];
 	for (const hit of result.hits) {
 		const source = katokSource(instanceId, hit);
@@ -136,23 +134,6 @@ function katokSource(instanceId: string, hit: KatokHit): string {
 	const room = chatName ?? instanceId;
 	const segments = [room, sender, hit.chunkId].filter((segment) => segment !== undefined && segment.length > 0);
 	return `kakao:${segments.join("/")}`;
-}
-
-/**
- * Scope gating stays on the legacy virtual form (`/kakao/<instance>`) that
- * callers pass in, independent of the human-readable result source. Scope
- * can only narrow to this datasource's own instance tree.
- */
-function matchesScope(
-	source: string,
-	scope: string | undefined,
-	allowedScopes: readonly string[] | undefined,
-	instanceId: string,
-): boolean {
-	const virtualSource = `/kakao/${instanceId}`;
-	if (!matchesDatasourceScope(virtualSource, scope)) return false;
-	if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-	return allowedScopes.some((entry) => matchesDatasourceScope(virtualSource, entry));
 }
 
 function toRetrievalResult(

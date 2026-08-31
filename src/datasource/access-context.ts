@@ -2,8 +2,8 @@
  * Trusted, server-bound access context for the datasource layer.
  *
  * Constructed from server-supplied allow-tags and allow-scopes ONLY — never
- * from model or tool arguments. Enforces default-deny semantics and uses
- * explicit boolean `false` for every deny decision (never `undefined`).
+ * from model or tool arguments. Tags authorize datasource skills; scopes are
+ * applied only to skills that advertise the `scoped` capability.
  */
 
 import { matchesVirtualPathScope, normalizeVirtualPath } from "../retrieval/scope.ts";
@@ -59,12 +59,20 @@ export class DatasourceAccessContext {
 	}
 
 	/**
-	 * Datasource access is decided at the skill level by trusted allow-tags.
-	 * Result sources are datasource identities (e.g. `kakao:<chat>/<chunk>`),
-	 * not slash-hierarchical virtual paths, so no per-source path gate exists.
+	 * Scope-capable datasource results are filtered by trusted and user scopes.
+	 * Datasources without the `scoped` capability bypass this predicate and
+	 * are authorized only at the skill/tag level.
 	 */
 	allowedSourcesPredicate(_userScope?: string): (source: string) => boolean {
 		if (this.denyAll) return () => false;
-		return () => true;
+		const trustedScopes = this.allowedScopes;
+		const normalizedUserScope = _userScope === undefined ? undefined : normalizeVirtualPath(_userScope);
+		return (source: string): boolean => {
+			if (source.includes("#")) return false;
+			const inTrusted =
+				trustedScopes.length === 0 ? true : trustedScopes.some((scope) => matchesVirtualPathScope(source, scope));
+			if (!inTrusted) return false;
+			return normalizedUserScope === undefined ? true : matchesVirtualPathScope(source, normalizedUserScope);
+		};
 	}
 }

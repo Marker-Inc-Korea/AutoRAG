@@ -781,7 +781,6 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
-	const minSyncConfig = config.minSync;
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
 	};

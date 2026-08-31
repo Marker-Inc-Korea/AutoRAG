@@ -11,15 +11,20 @@ const result = (source: string, score = 1): RetrievalResult => ({
 	metadata: {},
 });
 
-const dsMethod = (name: string, datasourceId: string, tags: readonly string[]): RetrievalMethod => ({
+const dsMethod = (
+	name: string,
+	datasourceId: string,
+	tags: readonly string[],
+	capabilities: readonly string[] = ["scoped"],
+): RetrievalMethod => ({
 	describe: (): RetrievalMethodDescriptor => ({
 		name,
 		type: "vector",
 		description: "datasource method",
 		status: "active",
-		capabilities: ["chat"],
+		capabilities: [...capabilities],
 		datasourceId,
-		tags,
+		tags: [...tags],
 	}),
 	retrieve: async () => [],
 });
@@ -59,7 +64,6 @@ describe("DatasourceResultFilter", () => {
 			expect(out.get("kakao")?.map((r) => r.source)).toEqual([
 				"/kakao/acct-1/chunks/c-1",
 				"/kakao/acct-1/chunks/c-2",
-				"/kakao/acct-3/chunks/c-9",
 			]);
 		});
 	});
@@ -85,7 +89,6 @@ describe("DatasourceResultFilter", () => {
 			expect(out.get("kakao")?.map((r) => r.source)).toEqual([
 				"/kakao/acct-1/chunks/c-1",
 				"/kakao/acct-2/chunks/c-7",
-				"/kakao/acct-3/chunks/c-x",
 			]);
 		});
 	});
@@ -101,17 +104,11 @@ describe("DatasourceResultFilter", () => {
 				["kakao", [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-2/chunks/c-7")]],
 			]);
 			const out = filter.filter(byMethod, [method], ctx, "/kakao/acct-1");
-			expect(out.get("kakao")?.map((r) => r.source)).toEqual([
-				"/kakao/acct-1/chunks/c-1",
-				"/kakao/acct-2/chunks/c-7",
-			]);
+			expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1"]);
 		});
 
 		it("keeps all trusted-scope results when userScope is undefined", () => {
-			const ctx = new DatasourceAccessContext({
-				allowedTags: ["kakao"],
-				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
-			});
+			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
 			const method = dsMethod("kakao", "kakao:acct-1", ["kakao"]);
 			const byMethod = new Map<string, RetrievalResult[]>([
 				["kakao", [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-2/chunks/c-7")]],
@@ -152,6 +149,18 @@ describe("DatasourceResultFilter", () => {
 			const out = filter.filter(byMethod, [method], ctx);
 			expect(out.has("kakao")).toBe(true);
 			expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1"]);
+		});
+	});
+
+	describe("datasource capability handling", () => {
+		it("does not apply path scopes to datasources without scoped capability", () => {
+			const ctx = new DatasourceAccessContext({
+				allowedTags: ["kakao"],
+				allowedScopes: ["/kakao/personal"],
+			});
+			const method = dsMethod("kakao", "kakao", ["kakao"], ["chat"]);
+			const byMethod = new Map<string, RetrievalResult[]>([["kakao", [result("/kakao/work/chunks/c-1")]]]);
+			expect(filter.filter(byMethod, [method], ctx).get("kakao")).toHaveLength(1);
 		});
 	});
 

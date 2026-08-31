@@ -21,12 +21,7 @@ import type {
 	KatokSyncInfo,
 	KatokSyncResult,
 } from "./types.ts";
-import {
-	DEFAULT_KATOK_BINARY,
-	DEFAULT_KATOK_MAX_BUFFER_BYTES,
-	DEFAULT_KATOK_SOURCE,
-	DEFAULT_KATOK_TIMEOUT_MS,
-} from "./types.ts";
+import { DEFAULT_KATOK_BINARY, DEFAULT_KATOK_MAX_BUFFER_BYTES, DEFAULT_KATOK_TIMEOUT_MS } from "./types.ts";
 
 /**
  * Environment keys whose mere presence (any value) enables remote embeddings

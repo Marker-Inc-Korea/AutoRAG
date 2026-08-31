@@ -1,6 +1,5 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type {
 	DiscrawlDoctorInfo,

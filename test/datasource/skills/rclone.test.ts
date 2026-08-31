@@ -1,13 +1,4 @@
-import {
-	chmodSync,
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	realpathSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -75,6 +66,25 @@ process.stdout.write("[]");
 		if (!result.ok) throw new Error(`rclone failed: ${JSON.stringify(result)}`);
 		expect(result.ok).toBe(true);
 		expect(JSON.parse(readFileSync(log, "utf8")).config).toBeUndefined();
+	});
+
+	it("passes an explicit operator config through RCLONE_CONFIG", async () => {
+		const root = workspace();
+		const binary = join(root, "rclone");
+		const log = join(root, "rclone-config.json");
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(log)}, JSON.stringify({ config: process.env.RCLONE_CONFIG }));
+process.stdout.write("[]");
+`,
+		);
+		chmodSync(binary, 0o755);
+		const configPath = join(root, "operator-rclone.conf");
+		const result = await new RcloneConnector({ binaryPath: binary, remote: "drive:", configPath }).fetch();
+		expect(result.ok).toBe(true);
+		expect(JSON.parse(readFileSync(log, "utf8")).config).toBe(configPath);
 	});
 
 	it("inventories recursively, mirrors indexable files, and preserves folder hierarchy", async () => {

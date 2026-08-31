@@ -34,19 +34,14 @@ export interface KatokOptions {
 	readonly source?: KatokSourceKind;
 	/** Path to a fixture directory; required when `source === "fixture"`. */
 	readonly fixturePath?: string;
-	/**
-	 * Explicit katok workspace directory (the `.autorag/datasources/katok`
-	 * root). When omitted, computed from {@link KatokOptions.root} (or
-	 * `process.cwd()`) via the paths helper.
-	 */
+	/** Explicit native katok data directory, passed as `--data-dir`. */
 	readonly workspacePath?: string;
-	/** Workspace root used to compute the default katok workspace path. */
+	/** Retained for source compatibility; native katok defaults are used. */
 	readonly root?: string;
 	/** Explicit operator-owned configuration/workspace transport. */
 	readonly configPath?: string;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	/** Parent-owned managed configuration boundary. */
 }
 
 export const DEFAULT_KATOK_BINARY = "katok";
@@ -166,7 +161,7 @@ export type KatokParentResult = KatokOk<KatokChunk> | KatokFailure;
 /**
  * Search-specific options. Reuses the shared {@link RetrievalOptions} so the
  * KatokSkill retrieval method can pass its options straight through. The
- * client maps `topK` and `scope` to CLI flags; other fields are accepted but
- * not currently forwarded.
+ * client maps `topK` to the native CLI limit flag; other fields are handled
+ * by the retrieval layer or are not supported by katok.
  */
 export type KatokSearchOptions = RetrievalOptions;

@@ -75,7 +75,11 @@ export class HimalayaConnector implements DatasourceConnector {
 	constructor(options: HimalayaConnectorOptions = {}) {
 		this.options = options;
 		this.runner =
-			options.runner ?? ((args, timeoutMs) => runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs));
+			options.runner ??
+			((args, timeoutMs) =>
+				runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, {
+					...(options.configPath === undefined ? {} : { HIMALAYA_CONFIG: options.configPath }),
+				}));
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {

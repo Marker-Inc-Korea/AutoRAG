@@ -185,7 +185,7 @@ channel or group chat as its own datasource.
 
 Security defaults are intentionally strict:
 
-- datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags` and `datasourceAccess.allowedScopes`;
+- datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags`; `allowedScopes` applies only to datasource methods that advertise the `scoped` capability;
 - model/tool arguments never grant datasource tags or scopes;
 - `search_datasource_documents` accepts only `{ query, topK?, scope? }`, and `scope` can only narrow trusted access.
 
@@ -272,7 +272,6 @@ const agent = new AutoRAGAgent({
   datasourceSkills: [kakao],
   datasourceAccess: {
     allowedTags: ["kakaotalk"],
-    allowedScopes: ["/kakao/personal/**"],
   },
 });
 
@@ -303,7 +302,6 @@ const agent = new AutoRAGAgent({
   datasourceSkills: [discord],
   datasourceAccess: {
     allowedTags: ["discord"],
-    allowedScopes: ["/discord/community/**"],
   },
 });
 ```

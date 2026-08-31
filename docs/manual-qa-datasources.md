@@ -88,7 +88,7 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] `search_datasource_documents` returns hits for each skill with opaque
       slash-hierarchical sources (`/<skill>/<instance>/chunks/<id>`); no `#`
       fragments, no real filesystem paths.
-- [x] `scope` narrows results (e.g. `/gmail/**` excludes Slack hits) and can
+- [x] `scope` narrows results for scope-capable datasources (e.g. `/gmail/**` excludes Slack hits) and can
       never widen access.
 
 ### Security

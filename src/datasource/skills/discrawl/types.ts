@@ -78,21 +78,17 @@ export interface DiscrawlOptions {
 	 * AutoRAG never rewrites an explicit config.
 	 */
 	readonly configPath?: string;
-	/** Workspace root used to compute the default discrawl workspace path. */
+	/** Retained for source compatibility; native discrawl defaults are used. */
 	readonly root?: string;
 	/** Explicit workspace directory overriding the computed default. */
 	readonly workspacePath?: string;
 	/** Restrict search and sync to one guild id. */
 	readonly guildId?: string;
-	/**
-	 * Embedding provider written to AutoRAG's workspace-local discrawl config.
-	 * Defaults to `ollama`; explicit operator-owned config files are untouched.
-	 */
+	/** Embedding provider understood by the native discrawl configuration. */
 	readonly embeddingProvider?: string;
 	/**
-	 * Embedding model discrawl should use for semantic/hybrid search. Defaults
-	 * to {@link DEFAULT_DISCRAWL_EMBEDDING_MODEL}. English-only models are
-	 * accepted but reported through a diagnostic.
+	 * Embedding model understood by the native discrawl configuration.
+	 * English-only models are accepted but reported through a diagnostic.
 	 */
 	readonly embeddingModel?: string;
 	/**
@@ -105,7 +101,6 @@ export interface DiscrawlOptions {
 	readonly defaultMode?: DiscrawlSearchMode;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	/** Shared manager supplied by the parent datasource execution boundary. */
 }
 
 export const DEFAULT_DISCRAWL_BINARY = "discrawl";

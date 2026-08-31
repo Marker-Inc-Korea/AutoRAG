@@ -73,12 +73,8 @@ describe("DatasourceAccessContext", () => {
 		});
 	});
 
-	describe("allowedSourcesPredicate — tag-level gating only", () => {
-		// Datasource result sources are datasource identities, not
-		// slash-hierarchical virtual paths, so no per-source path gate exists.
-		// Access is decided per skill via allow-tags (see isAccessible).
-
-		it("allows every source when tags are granted", () => {
+	describe("allowedSourcesPredicate — scope-capable methods", () => {
+		it("keeps only sources within configured trusted scopes", () => {
 			const ctx = new DatasourceAccessContext({
 				allowedTags: ["kakao"],
 				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
@@ -86,21 +82,35 @@ describe("DatasourceAccessContext", () => {
 			const predicate = ctx.allowedSourcesPredicate();
 			expect(predicate("/kakao/acct-1/chunks/c-1")).toBe(true);
 			expect(predicate("/kakao/acct-2/chunks/c-9")).toBe(true);
-			expect(predicate("kakao:오픈소스 개발과제/chunk_58b3")).toBe(true);
-			expect(predicate("/slack/workspace-1/channels/general")).toBe(true);
+			expect(predicate("/kakao/acct-3/chunks/c-1")).toBe(false);
 		});
 
-		it("userScope never restricts sources (no virtual-path gate)", () => {
-			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
+		it("intersects trusted scopes with the requested user scope", () => {
+			const ctx = new DatasourceAccessContext({
+				allowedTags: ["kakao"],
+				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
+			});
 			const predicate = ctx.allowedSourcesPredicate("/kakao/acct-1");
-			expect(predicate("/kakao/acct-2/chunks/c-1")).toBe(true);
-			expect(predicate("kakao:other-room/chunk-9")).toBe(true);
+			expect(predicate("/kakao/acct-1/chunks/c-1")).toBe(true);
+			expect(predicate("/kakao/acct-2/chunks/c-1")).toBe(false);
 		});
 
-		it("empty trusted scopes with allow-tags set still allow sources", () => {
+		it("empty trusted scopes with allow-tags set allow every source", () => {
 			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
 			expect(ctx.isDenyAll).toBe(false);
 			expect(ctx.allowedSourcesPredicate()("/kakao/acct-1/chunks/c-1")).toBe(true);
+		});
+	});
+
+	describe("capability-aware source gating", () => {
+		it("keeps configured scopes available to scope-capable methods", () => {
+			const ctx = new DatasourceAccessContext({
+				allowedTags: ["discord"],
+				allowedScopes: ["/discord/work"],
+			});
+			const predicate = ctx.allowedSourcesPredicate();
+			expect(predicate("/discord/work/chunks/1")).toBe(true);
+			expect(predicate("/discord/personal/chunks/1")).toBe(false);
 		});
 	});
 });

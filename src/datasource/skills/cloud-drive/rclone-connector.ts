@@ -80,7 +80,11 @@ export class RcloneConnector implements DatasourceConnector {
 	constructor(options: RcloneConnectorOptions = {}) {
 		this.options = options;
 		this.runner =
-			options.runner ?? ((args, timeoutMs) => runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs));
+			options.runner ??
+			((args, timeoutMs) =>
+				runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, {
+					...(options.configPath === undefined ? {} : { RCLONE_CONFIG: options.configPath }),
+				}));
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {

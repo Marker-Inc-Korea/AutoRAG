@@ -183,13 +183,13 @@ describe("KatokBm25Method retrieve", () => {
 		expect(results).toHaveLength(3);
 	});
 
-	it("returns [] when scope targets a different datasource", async () => {
+	it("ignores source scope because katok has no scope capability", async () => {
 		const client = makeClient();
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10, scope: "/kakao/other" });
 
-		expect(results).toEqual([]);
+		expect(results).toHaveLength(3);
 	});
 
 	it("returns [] without throwing when search yields a failed result", async () => {

@@ -134,7 +134,7 @@ Model-controlled tool arguments cannot grant access. The LLM-visible `search_dat
 { query: string; topK?: number; scope?: string }
 ```
 
-`scope` is only a user-requested narrowing filter. A result must match both the trusted allow-scopes and the requested scope to survive. Datasource paths are slash-hierarchical IDs such as `/kakao/personal/chunks/abc123`; fragment-style paths with `#` are denied.
+`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, katok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
 
 ## Security responsibility
 
@@ -380,6 +380,6 @@ const hits = await agent.searchDatasourceDocuments("contract renewal", { topK: 5
 - Emit slash-hierarchical `source` values.
 - Include polling/cron metadata.
 - Provide source descriptions that explain the data content.
-- Add default-deny, multi-scope, and user-scope intersection tests.
+- Add default-deny and capability-specific scope tests; only scope-capable datasources need multi-scope and user-scope intersection tests.
 - Add no-throw diagnostics for missing credentials/binaries/permissions.
 - Add issue labels `datasource-skill`, `integration`, and a source-specific label.
