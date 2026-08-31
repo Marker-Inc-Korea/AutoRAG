@@ -8,6 +8,7 @@ import { main, parseArgs } from "../../src/cli/index.ts";
 
 let root: string;
 let configPath: string;
+const noop = (): void => undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-cli-ui-"));
@@ -34,8 +35,8 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 		json: false,
 		debug: false,
 		cwd: root,
-		stdout: () => {},
-		stderr: () => {},
+		stdout: noop,
+		stderr: noop,
 		...overrides,
 	};
 }
@@ -96,5 +97,68 @@ describe("autorag ui", () => {
 		);
 		expect(code).toBe(2);
 		expect(stderr.join("\n")).toMatch(/loopback/i);
+	});
+
+	it("uses configured deployment settings and requires the configured token", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				ui: {
+					host: "127.0.0.1",
+					port: 0,
+					allowRemote: true,
+					publicOrigin: "https://admin.example.test",
+					corsOrigins: ["https://admin.example.test"],
+					tokenEnv: "TEST_AUTORAG_UI_TOKEN",
+				},
+			}),
+		);
+		vi.stubEnv("TEST_AUTORAG_UI_TOKEN", "deployment-token-123456");
+		const started: Array<{
+			host?: string;
+			port?: number;
+			allowRemote?: boolean;
+			publicOrigin?: string;
+			corsOrigins?: readonly string[];
+			token: string;
+		}> = [];
+
+		const code = await runUi(
+			makeCtx({
+				json: true,
+				flags: { config: configPath, "no-open": true },
+				stdout: noop,
+			}),
+			{
+				startServer: async (options) => {
+					started.push(options);
+					return {
+						url: "https://admin.example.test/?token=deployment-token-123456",
+						origin: "https://admin.example.test",
+						host: "127.0.0.1",
+						port: 0,
+						token: options.token,
+						close: async () => undefined,
+					};
+				},
+				waitUntilStopped: async () => undefined,
+			},
+		);
+		vi.unstubAllEnvs();
+
+		expect(code).toBe(0);
+		expect(started).toEqual([
+			expect.objectContaining({
+				host: "127.0.0.1",
+				port: 0,
+				allowRemote: true,
+				publicOrigin: "https://admin.example.test",
+				corsOrigins: ["https://admin.example.test"],
+				token: "deployment-token-123456",
+			}),
+		]);
 	});
 });

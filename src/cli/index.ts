@@ -5,7 +5,18 @@ import { fileURLToPath } from "node:url";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 
-const BOOLEAN_FLAGS = new Set(["json", "debug", "help", "force", "yes", "once", "immediate", "skip-probes", "no-open"]);
+const BOOLEAN_FLAGS = new Set([
+	"json",
+	"debug",
+	"help",
+	"force",
+	"yes",
+	"once",
+	"immediate",
+	"skip-probes",
+	"no-open",
+	"allow-remote",
+]);
 const VALUE_FLAGS = new Set([
 	"config",
 	"search-paths",
@@ -74,7 +85,7 @@ Commands:
   health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   ui                   Open a local loopback page to connect and manage data sources
-                       (--port N  --host 127.0.0.1  --no-open)
+                       (--port N  --host 127.0.0.1  --no-open  --allow-remote)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { isLoopbackHost, startUiServer, type UiServer } from "../../ui/server.ts";
-import { ConfigError, resolveConfigPath } from "../config.ts";
+import { ConfigError, resolveConfig, resolveConfigPath } from "../config.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -18,24 +18,6 @@ export interface UiCommandDeps {
  */
 export async function runUi(ctx: CommandContext, deps: UiCommandDeps = {}): Promise<number> {
 	const flags = ctx.flags;
-	const host = typeof flags.host === "string" && flags.host.length > 0 ? flags.host : "127.0.0.1";
-	if (!isLoopbackHost(host)) {
-		ctx.stderr(
-			renderError(new ConfigError("UI host must be a loopback address (127.0.0.1 or ::1)."), { json: ctx.json }),
-		);
-		return 2;
-	}
-
-	let port = 8787;
-	if (typeof flags.port === "string" && flags.port.length > 0) {
-		const parsed = Number(flags.port);
-		if (!Number.isInteger(parsed) || parsed < 0) {
-			ctx.stderr(renderError(new ConfigError("--port must be a non-negative integer."), { json: ctx.json }));
-			return 2;
-		}
-		port = parsed;
-	}
-
 	const resolved = resolveConfigPath({ flags, cwd: ctx.cwd });
 	if (!existsSync(resolved.configPath)) {
 		ctx.stderr(
@@ -46,11 +28,58 @@ export async function runUi(ctx: CommandContext, deps: UiCommandDeps = {}): Prom
 		return 2;
 	}
 
-	const token = deps.createToken?.() ?? randomBytes(24).toString("hex");
+	let config: ReturnType<typeof resolveConfig>;
+	try {
+		config = resolveConfig({ flags, cwd: ctx.cwd });
+	} catch (error) {
+		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		return 2;
+	}
+	const ui = config.ui ?? {};
+	const host = typeof flags.host === "string" && flags.host.length > 0 ? flags.host : (ui.host ?? "127.0.0.1");
+	const allowRemote = ui.allowRemote === true || flags["allow-remote"] === true;
+	if (!isLoopbackHost(host) && !allowRemote) {
+		ctx.stderr(
+			renderError(new ConfigError("UI host must be a loopback address unless ui.allowRemote is true."), {
+				json: ctx.json,
+			}),
+		);
+		return 2;
+	}
+
+	let port = ui.port ?? 8787;
+	if (typeof flags.port === "string" && flags.port.length > 0) {
+		const parsed = Number(flags.port);
+		if (!Number.isInteger(parsed) || parsed < 0) {
+			ctx.stderr(renderError(new ConfigError("--port must be a non-negative integer."), { json: ctx.json }));
+			return 2;
+		}
+		port = parsed;
+	}
+
+	const tokenEnv = ui.tokenEnv ?? "AUTORAG_UI_TOKEN";
+	const configuredToken = process.env[tokenEnv];
+	if (allowRemote && (configuredToken === undefined || configuredToken.length < 16)) {
+		ctx.stderr(
+			renderError(new ConfigError(`Remote UI requires ${tokenEnv} with at least 16 characters.`), {
+				json: ctx.json,
+			}),
+		);
+		return 2;
+	}
+	const token = configuredToken ?? deps.createToken?.() ?? randomBytes(24).toString("hex");
 	const start = deps.startServer ?? startUiServer;
 	let server: UiServer;
 	try {
-		server = await start({ configPath: resolved.configPath, host, port, token });
+		server = await start({
+			configPath: resolved.configPath,
+			host,
+			port,
+			token,
+			allowRemote,
+			...(ui.publicOrigin !== undefined ? { publicOrigin: ui.publicOrigin } : {}),
+			...(ui.corsOrigins !== undefined ? { corsOrigins: ui.corsOrigins } : {}),
+		});
 	} catch (error) {
 		const status = error instanceof ConfigError ? 2 : 1;
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));

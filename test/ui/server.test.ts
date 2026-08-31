@@ -31,11 +31,12 @@ afterEach(async () => {
 async function request(
 	target: UiServer,
 	path: string,
-	init: { method?: string; token?: string | null; body?: unknown } = {},
+	init: { method?: string; token?: string | null; origin?: string; body?: unknown } = {},
 ): Promise<{ status: number; text: string; json: unknown; headers: Headers }> {
 	const url = new URL(path, target.origin);
 	const headers: Record<string, string> = {};
 	if (init.token) headers["x-autorag-token"] = init.token;
+	if (init.origin) headers.origin = init.origin;
 	if (init.body !== undefined) headers["content-type"] = "application/json";
 	const response = await fetch(url, {
 		method: init.method ?? "GET",
@@ -57,6 +58,51 @@ describe("datasource UI server", () => {
 		await expect(startUiServer({ configPath, host: "0.0.0.0", port: 0, token: "t".repeat(32) })).rejects.toThrow(
 			/loopback/i,
 		);
+	});
+
+	it("requires a public origin for remote wildcard binds", async () => {
+		await expect(
+			startUiServer({ configPath, host: "0.0.0.0", port: 0, token: "r".repeat(32), allowRemote: true }),
+		).rejects.toThrow(/publicOrigin/i);
+	});
+
+	it("advertises a working localhost origin when the host resolves to IPv6", async () => {
+		server = await startUiServer({ configPath, host: "localhost", port: 0, token: "l".repeat(32) });
+
+		expect(server.origin).toMatch(/^http:\/\/localhost:\d+$/);
+		const response = await request(server, "/api/state", { token: server.token });
+		expect(response.status).toBe(200);
+	});
+
+	it("allows configured cross-origin browser requests and rejects unconfigured origins", async () => {
+		server = await startUiServer({
+			configPath,
+			host: "127.0.0.1",
+			port: 0,
+			token: "c".repeat(32),
+			corsOrigins: ["https://admin.example.test"],
+		});
+
+		const allowed = await request(server, "/api/state", {
+			token: server.token,
+			origin: "https://admin.example.test",
+		});
+		expect(allowed.status).toBe(200);
+		expect(allowed.headers.get("access-control-allow-origin")).toBe("https://admin.example.test");
+		expect(allowed.headers.get("access-control-allow-credentials")).toBe("true");
+
+		const preflight = await request(server, "/api/state", {
+			method: "OPTIONS",
+			origin: "https://admin.example.test",
+		});
+		expect(preflight.status).toBe(204);
+		expect(preflight.headers.get("access-control-allow-methods")).toContain("POST");
+
+		const denied = await request(server, "/api/state", {
+			token: server.token,
+			origin: "https://untrusted.example.test",
+		});
+		expect(denied.status).toBe(403);
 	});
 
 	it("requires the session token and never echoes connector secrets", async () => {

@@ -58,6 +58,13 @@ A skill must also provide `describeSources()` entries so the librarian prompt ca
 
 Operators can add, test, enable, and remove connections from `autorag ui` instead of editing `config.json`. The UI is a local loopback control plane: it uses the same factory, never grants access from model tool arguments, and never writes token values into config.
 
+The UI can also be deployed behind an explicitly configured reverse proxy. Set
+`ui.allowRemote` to `true`, keep `ui.tokenEnv` in the process environment, and
+list the exact browser origins in `ui.corsOrigins`; wildcard CORS is not
+supported because the UI uses credentialed requests. `ui.publicOrigin` is the
+URL printed for operators and used when opening the browser. Without
+`allowRemote`, non-loopback binds are rejected.
+
 ## Universal connection aliases
 
 Every datasource entry can use a reusable template with a connection alias:

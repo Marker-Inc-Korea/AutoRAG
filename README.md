@@ -351,6 +351,28 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 
 `autorag ui` opens a loopback-only page (`127.0.0.1`) to connect local folders and datasource skills without editing JSON. It writes the same trusted `datasources` / `datasourceAccess` fields as a hand-edited config, stores env-var *names* rather than secrets, and refuses non-loopback binds. Use `--no-open` to print the URL without launching a browser.
 
+For a deliberately deployed UI, opt in explicitly in `config.json`. Keep the
+session token in the environment, set the public URL used by the browser, and
+allow only the frontend origins that should make credentialed API requests:
+
+```json
+{
+  "ui": {
+    "host": "0.0.0.0",
+    "port": 8787,
+    "allowRemote": true,
+    "publicOrigin": "https://autorag.example.com",
+    "corsOrigins": ["https://autorag.example.com"],
+    "tokenEnv": "AUTORAG_UI_TOKEN"
+  }
+}
+```
+
+Start it with `AUTORAG_UI_TOKEN` set to a random value of at least 16
+characters. Local use remains the safe default: omit `ui` (or leave
+`allowRemote` false) and AutoRAG binds to loopback, including a working
+`localhost` URL on systems that resolve it to IPv6.
+
 ## Installation
 
 Published as `@autorag/librarian` (dist bundled with Bun, runtime Node ≥ 24 or Bun):

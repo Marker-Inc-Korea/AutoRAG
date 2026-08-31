@@ -22,6 +22,9 @@ export interface StartUiServerOptions {
 	readonly port?: number;
 	readonly token: string;
 	readonly env?: NodeJS.ProcessEnv;
+	readonly allowRemote?: boolean;
+	readonly publicOrigin?: string;
+	readonly corsOrigins?: readonly string[];
 }
 
 export interface UiServer {
@@ -47,16 +50,29 @@ export function isLoopbackAddress(address: string | undefined): boolean {
 
 export async function startUiServer(options: StartUiServerOptions): Promise<UiServer> {
 	const host = options.host ?? "127.0.0.1";
-	if (!isLoopbackHost(host)) {
+	const allowRemote = options.allowRemote === true;
+	if (!isLoopbackHost(host) && !allowRemote) {
 		throw new ConfigError("UI host must be a loopback address (127.0.0.1 or ::1).");
 	}
 	const port = options.port ?? 8787;
 	const env = options.env ?? process.env;
 	const token = options.token;
 	if (token.length < 16) throw new ConfigError("UI session token is too short.");
+	const publicOrigin = options.publicOrigin === undefined ? undefined : normalizeOrigin(options.publicOrigin);
+	const corsOrigins = normalizeOrigins(options.corsOrigins ?? []);
+	if (allowRemote && isWildcardHost(host) && publicOrigin === undefined) {
+		throw new ConfigError("Remote wildcard binds require ui.publicOrigin.");
+	}
 
 	const httpServer = createServer((req, res) => {
-		void handleRequest(req, res, { configPath: options.configPath, token, env });
+		void handleRequest(req, res, {
+			configPath: options.configPath,
+			token,
+			env,
+			allowRemote,
+			publicOrigin,
+			corsOrigins,
+		});
 	});
 
 	await listen(httpServer, port, host);
@@ -65,8 +81,8 @@ export async function startUiServer(options: StartUiServerOptions): Promise<UiSe
 		httpServer.close();
 		throw new ConfigError("UI server failed to bind a loopback port.");
 	}
-	const boundHost = host === "localhost" ? "127.0.0.1" : host.includes(":") && host !== "::1" ? `[${host}]` : host;
-	const origin = `http://${boundHost === "::1" ? "[::1]" : boundHost}:${address.port}`;
+	const boundHost = formatHost(host);
+	const origin = publicOrigin ?? `http://${boundHost}:${address.port}`;
 	return {
 		origin,
 		url: `${origin}/?token=${encodeURIComponent(token)}`,
@@ -83,10 +99,38 @@ export async function startUiServer(options: StartUiServerOptions): Promise<UiSe
 async function handleRequest(
 	req: IncomingMessage,
 	res: ServerResponse,
-	ctx: { configPath: string; token: string; env: NodeJS.ProcessEnv },
+	ctx: {
+		configPath: string;
+		token: string;
+		env: NodeJS.ProcessEnv;
+		allowRemote: boolean;
+		publicOrigin: string | undefined;
+		corsOrigins: readonly string[];
+	},
 ): Promise<void> {
 	try {
-		if (!isLoopbackAddress(req.socket.remoteAddress)) {
+		const requestOrigin = typeof req.headers.origin === "string" ? normalizeOrigin(req.headers.origin) : undefined;
+		const sameOrigin = requestOrigin !== undefined && requestOrigin === `http://${req.headers.host ?? "127.0.0.1"}`;
+		const allowedOrigin =
+			requestOrigin === undefined ||
+			sameOrigin ||
+			requestOrigin === ctx.publicOrigin ||
+			ctx.corsOrigins.includes(requestOrigin);
+		if (!allowedOrigin) {
+			send(res, 403, { error: "Origin is not allowed." });
+			return;
+		}
+		applyCorsHeaders(res, requestOrigin, sameOrigin);
+		if (req.method === "OPTIONS") {
+			if (requestOrigin === undefined) {
+				send(res, 400, { error: "CORS preflight requires an Origin header." });
+				return;
+			}
+			res.statusCode = 204;
+			res.end();
+			return;
+		}
+		if (!ctx.allowRemote && !isLoopbackAddress(req.socket.remoteAddress)) {
 			send(res, 403, { error: "Loopback only." });
 			return;
 		}
@@ -239,6 +283,45 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 	res.setHeader("content-type", "application/json; charset=utf-8");
 	res.setHeader("cache-control", "no-store");
 	res.end(JSON.stringify(body));
+}
+
+function applyCorsHeaders(res: ServerResponse, origin: string | undefined, sameOrigin: boolean): void {
+	res.setHeader("vary", "Origin");
+	if (origin === undefined || sameOrigin) return;
+	res.setHeader("access-control-allow-origin", origin);
+	res.setHeader("access-control-allow-credentials", "true");
+	res.setHeader("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
+	res.setHeader("access-control-allow-headers", "content-type, x-autorag-token");
+}
+
+function normalizeOrigins(origins: readonly string[]): string[] {
+	const normalized: string[] = [];
+	for (const origin of origins) {
+		const value = normalizeOrigin(origin);
+		if (!normalized.includes(value)) normalized.push(value);
+	}
+	return normalized;
+}
+
+function normalizeOrigin(value: string): string {
+	let origin: URL;
+	try {
+		origin = new URL(value);
+	} catch {
+		throw new ConfigError("UI origins must be valid http(s) origins.");
+	}
+	if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/" || origin.search || origin.hash) {
+		throw new ConfigError("UI origins must be valid http(s) origins.");
+	}
+	return origin.origin;
+}
+
+function formatHost(host: string): string {
+	return host.includes(":") ? `[${host}]` : host;
+}
+
+function isWildcardHost(host: string): boolean {
+	return host === "0.0.0.0" || host === "::";
 }
 
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
