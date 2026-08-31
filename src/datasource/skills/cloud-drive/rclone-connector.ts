@@ -12,6 +12,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
+import type { DefaultParserRegistryOptions } from "../../../parser/defaults.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
@@ -48,6 +49,7 @@ export interface RcloneConnectorOptions {
 	/** Explicit operator-owned rclone.conf path, passed read-only. */
 	readonly configPath?: string;
 	readonly managedCliConfigManager?: ManagedCliConfigManager;
+	readonly parserOptions?: DefaultParserRegistryOptions;
 }
 
 interface ManifestEntry {
@@ -174,13 +176,14 @@ export class RcloneConnector implements DatasourceConnector {
 			return {
 				ok: true,
 				changed: false,
-				documents: await loadMirroredDocuments(
+				...(await loadMirroredDocuments(
 					paths.mirrorRoot,
 					previous?.entries ?? [],
 					skillName,
 					instanceId,
 					remote,
-				),
+					this.options.parserOptions,
+				)),
 				warnings: [`dry-run: ${changedEntries.length} download(s), ${deletedEntries.length} deletion(s) planned`],
 			};
 		}
@@ -230,13 +233,24 @@ export class RcloneConnector implements DatasourceConnector {
 		for (const entry of deletedEntries) rmSync(mirrorFilePath(paths.mirrorRoot, entry.path), { force: true });
 		saveManifest(paths.manifestPath, { version: 1, remoteName: remoteName(remote), entries: inventory });
 
-		const warnings = skipped > 0 ? [`${skipped} file(s) skipped (filtered, non-text, or oversized)`] : undefined;
+		const mirrorWarnings = await loadMirroredDocuments(
+			paths.mirrorRoot,
+			changedEntries,
+			skillName,
+			instanceId,
+			remote,
+			this.options.parserOptions,
+		);
+		const warnings = [
+			...(skipped > 0 ? [`${skipped} file(s) skipped (filtered, non-text, or oversized)`] : []),
+			...(mirrorWarnings.warnings ?? []),
+		];
 		return {
 			ok: true,
 			changed,
-			documents: await loadMirroredDocuments(paths.mirrorRoot, changedEntries, skillName, instanceId, remote),
+			documents: mirrorWarnings.documents,
 			deletedDocIds: deletedEntries.map((entry) => entry.path),
-			...(warnings !== undefined ? { warnings } : {}),
+			...(warnings.length > 0 ? { warnings } : {}),
 		};
 	}
 
@@ -393,9 +407,12 @@ async function loadMirroredDocuments(
 	skillName: string,
 	instanceId: string,
 	remote: string,
-): Promise<ConnectorDocument[]> {
+	parserOptions?: DefaultParserRegistryOptions,
+): Promise<{ readonly documents: readonly ConnectorDocument[]; readonly warnings?: readonly string[] }> {
 	const documents: ConnectorDocument[] = [];
-	const registry = createDefaultParserRegistry();
+	const warnings: string[] = [];
+	let failures = 0;
+	const registry = createDefaultParserRegistry(parserOptions);
 	for (const entry of entries) {
 		try {
 			const sourcePath = mirrorFilePath(root, entry.path);
@@ -403,13 +420,17 @@ async function loadMirroredDocuments(
 			if (parser === undefined) continue;
 			const bytes = await readFile(sourcePath);
 			const parsed = await parser.parse({ virtualPath: entry.path, sourcePath, bytes });
+			for (const diagnostic of parsed.diagnostics ?? []) {
+				warnings.push(`${diagnostic.code}: ${diagnostic.message}`);
+			}
 			const content = parsed.markdown.trim().slice(0, MAX_CONTENT_CHARS);
 			if (content.length > 0) documents.push(documentFromEntry(entry, content, skillName, instanceId, remote));
 		} catch {
-			// Missing/corrupt completed mirror entries are omitted and repaired on the next changed inventory.
+			failures += 1;
 		}
 	}
-	return documents;
+	if (failures > 0) warnings.push(`${failures} mirrored document(s) failed to parse`);
+	return { documents, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 function defaultParserExtensions(): readonly string[] {

@@ -73,6 +73,38 @@ BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled.
 
 AutoRAG reads configured source directories directly through its built-in `bash` tool. Retrieval tools can supply candidate paths, but the same agent opens the source material before curating. Answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. MinSync indexes parsed markdown mirrors under `.autorag` for BM25, vector, and hybrid retrieval.
 
+### Thin PDF extraction retry
+
+The default PDF parser performs a cheap quality check for multi-page PDFs.
+When local markdown is unusually sparse (fewer than 800 characters or fewer
+than 40 characters per detected page, for at least three pages), it retries
+through OpenDataLoader's `docling-fast` hybrid backend with `hybridMode:
+"auto"` and a 30-second timeout. Dense PDFs are not retried, and hybrid is
+never used for single-page PDFs or as the first path for images.
+
+The gate is parser-owned and can be tuned through trusted programmatic
+`parserOptions`:
+
+```typescript
+new AutoRAGAgent({
+  searchPaths: ["/path/to/documents"],
+  parserOptions: {
+    thinExtract: {
+      minPages: 3,
+      minChars: 800,
+      minCharsPerPage: 40,
+      timeoutMs: 30_000,
+      hybrid: "docling-fast",
+      hybridMode: "auto",
+    },
+  },
+});
+```
+
+If the hybrid sidecar is missing, times out, or fails, AutoRAG keeps the local
+markdown and emits `pdf-extract-thin` plus `pdf-hybrid-unavailable`
+diagnostics; refresh remains successful.
+
 ### Optional Jikji discovery and indexing
 
 AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
