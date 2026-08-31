@@ -57,8 +57,8 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 		// the always-present search_* + structural tools are registered
 		for (const name of [
 			"check_memory",
-			"search_bm25_documents",
-			"search_minsync_documents",
+			"lexical_search_local_docs",
+			"semantic_search_local_docs",
 			"search_all_documents",
 			"search_datasource_documents",
 			"emit_autorag_results",
@@ -123,7 +123,7 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 				makeTool("check_memory"),
 				makeTool("emit_autorag_results"),
 				makeTool("search_all_documents"),
-				makeTool("search_minsync_documents"),
+				makeTool("semantic_search_local_docs"),
 				makeTool("search_custom"),
 			],
 		});
@@ -139,7 +139,7 @@ describe("AutoRAGAgent bash-based tool surface", () => {
 			"check_memory",
 			"emit_autorag_results",
 			"search_all_documents",
-			"search_minsync_documents",
+			"semantic_search_local_docs",
 		]) {
 			expect(names.filter((n) => n === reserved)).toHaveLength(1);
 		}

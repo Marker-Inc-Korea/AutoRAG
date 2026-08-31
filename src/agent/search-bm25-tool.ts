@@ -4,7 +4,7 @@ import type { BM25Status } from "../retrieval/methods/bm25.ts";
 import { BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
 
-export const SEARCH_BM25_DOCUMENTS_TOOL_NAME = "search_bm25_documents";
+export const SEARCH_BM25_DOCUMENTS_TOOL_NAME = "lexical_search_local_docs";
 
 const searchBM25Schema = Type.Object({
 	query: Type.String({ description: "Lexical query to search in parsed document mirrors with BM25." }),
