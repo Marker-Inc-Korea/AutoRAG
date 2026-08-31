@@ -73,83 +73,34 @@ describe("DatasourceAccessContext", () => {
 		});
 	});
 
-	describe("allowedSourcesPredicate — multi-scope source matching", () => {
-		const ctx = new DatasourceAccessContext({
-			allowedTags: ["kakao"],
-			allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
-		});
+	describe("allowedSourcesPredicate — tag-level gating only", () => {
+		// Datasource result sources are datasource identities, not
+		// slash-hierarchical virtual paths, so no per-source path gate exists.
+		// Access is decided per skill via allow-tags (see isAccessible).
 
-		it("matches a source under the first trusted scope", () => {
+		it("allows every source when tags are granted", () => {
+			const ctx = new DatasourceAccessContext({
+				allowedTags: ["kakao"],
+				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
+			});
 			const predicate = ctx.allowedSourcesPredicate();
 			expect(predicate("/kakao/acct-1/chunks/c-1")).toBe(true);
-		});
-
-		it("matches a source under the second trusted scope", () => {
-			const predicate = ctx.allowedSourcesPredicate();
 			expect(predicate("/kakao/acct-2/chunks/c-9")).toBe(true);
+			expect(predicate("kakao:오픈소스 개발과제/chunk_58b3")).toBe(true);
+			expect(predicate("/slack/workspace-1/channels/general")).toBe(true);
 		});
 
-		it("matches the instance root itself", () => {
-			const predicate = ctx.allowedSourcesPredicate();
-			expect(predicate("/kakao/acct-1")).toBe(true);
-		});
-
-		it("denies a source under neither trusted scope", () => {
-			const predicate = ctx.allowedSourcesPredicate();
-			expect(predicate("/kakao/acct-3/chunks/c-1")).toBe(false);
-		});
-
-		it("denies a source under a different skill entirely", () => {
-			const predicate = ctx.allowedSourcesPredicate();
-			expect(predicate("/slack/workspace-1/channels/general")).toBe(false);
-		});
-
-		it("denies sources containing a '#' fragment", () => {
-			const predicate = ctx.allowedSourcesPredicate();
-			expect(predicate("/kakao/acct-1/chunks/c-1#meta")).toBe(false);
-		});
-	});
-
-	describe("allowedSourcesPredicate — userScope intersection", () => {
-		const ctx = new DatasourceAccessContext({
-			allowedTags: ["kakao"],
-			allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
-		});
-
-		it("allows when source is in trusted scope AND userScope", () => {
+		it("userScope never restricts sources (no virtual-path gate)", () => {
+			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
 			const predicate = ctx.allowedSourcesPredicate("/kakao/acct-1");
-			expect(predicate("/kakao/acct-1/chunks/c-1")).toBe(true);
+			expect(predicate("/kakao/acct-2/chunks/c-1")).toBe(true);
+			expect(predicate("kakao:other-room/chunk-9")).toBe(true);
 		});
 
-		it("denies when source is in trusted scope but outside userScope", () => {
-			const predicate = ctx.allowedSourcesPredicate("/kakao/acct-1");
-			expect(predicate("/kakao/acct-2/chunks/c-1")).toBe(false);
-		});
-
-		it("denies when source is outside trusted scope but inside userScope", () => {
-			const predicate = ctx.allowedSourcesPredicate("/kakao/acct-3");
-			expect(predicate("/kakao/acct-3/chunks/c-1")).toBe(false);
-		});
-
-		it("treats undefined userScope as no extra restriction", () => {
-			const predicate = ctx.allowedSourcesPredicate();
-			expect(predicate("/kakao/acct-2/chunks/c-7")).toBe(true);
-		});
-
-		it("supports glob userScope intersecting a trusted scope", () => {
-			const predicate = ctx.allowedSourcesPredicate("/kakao/acct-1/chunks/*");
-			expect(predicate("/kakao/acct-1/chunks/c-1")).toBe(true);
-			expect(predicate("/kakao/acct-1/chunks/c-2")).toBe(true);
-			expect(predicate("/kakao/acct-1/index")).toBe(false);
-		});
-	});
-
-	describe("allowedSourcesPredicate — empty trusted scopes with allow-tags set", () => {
-		it("denies every source explicitly (not deny-all, but no trusted scope)", () => {
+		it("empty trusted scopes with allow-tags set still allow sources", () => {
 			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
 			expect(ctx.isDenyAll).toBe(false);
-			const predicate = ctx.allowedSourcesPredicate();
-			expect(predicate("/kakao/acct-1/chunks/c-1")).toBe(false);
+			expect(ctx.allowedSourcesPredicate()("/kakao/acct-1/chunks/c-1")).toBe(true);
 		});
 	});
 });

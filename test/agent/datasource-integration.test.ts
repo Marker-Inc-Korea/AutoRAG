@@ -121,23 +121,22 @@ function result(id: string, source: string): RetrievalResult {
 }
 
 describe("AutoRAGAgent datasource integration", () => {
-	it("filters datasource method results before merge using trusted tags and scopes", async () => {
+	it("passes datasource results of a tag-authorized skill through to merge", async () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			datasourceSkills: [
 				makeSkill([
-					result("a", "/kakao/acct-1/chunks/a"),
-					result("b", "/kakao/acct-2/chunks/b"),
-					result("c", "/kakao/acct-1#fragment"),
+					result("a", "kakao:오픈소스 개발과제/chunks/a"),
+					result("b", "kakao:다른방/chunks/b"),
 				]),
 			],
-			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },
+			datasourceAccess: { allowedTags: ["kakao"] },
 		});
 
 		const { results } = await agent.searchDatasourceDocuments("message");
 
-		expect(results.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/a"]);
+		expect(results.map((r) => r.source)).toEqual(["kakao:오픈소스 개발과제/chunks/a", "kakao:다른방/chunks/b"]);
 	});
 
 	it("keeps datasource default-deny even when tool args try to grant tags or scopes", async () => {
@@ -278,7 +277,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		});
 		const authorizedResult = await authorized.searchAllDocuments("message", { topK: 10 });
 		expect(authorizedResult.results.map((r) => r.source)).toContain("/kakao/acct-1/chunks/a");
-		expect(authorizedResult.results.map((r) => r.source)).not.toContain("/kakao/acct-2/chunks/b");
+		expect(authorizedResult.results.map((r) => r.source)).toContain("/kakao/acct-2/chunks/b");
 		expect(JSON.stringify(authorizedResult)).not.toContain(tmpDir);
 	});
 });

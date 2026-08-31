@@ -109,19 +109,20 @@ describe("KatokSemanticMethod descriptor", () => {
 });
 
 describe("KatokBm25Method retrieve", () => {
-	it("maps hits to slash-hierarchical /kakao/<instance>/chunks/<chunk-id> sources", async () => {
+	it("maps hits to human-readable kakao: sources, never OS-file-looking paths", async () => {
 		const client = makeClient();
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10 });
 
 		expect(results.map((r) => r.source)).toEqual([
-			"/kakao/default/chunks/chunk-001",
-			"/kakao/default/chunks/chunk-002",
-			"/kakao/default/chunks/chunk-003",
+			"kakao:default/chunk-001",
+			"kakao:default/chunk-002",
+			"kakao:default/chunk-003",
 		]);
 		for (const result of results) {
-			expect(result.source).toMatch(/^\/kakao\/default\/chunks\/[^/]+$/u);
+			expect(result.source.startsWith("/")).toBe(false);
+			expect(result.source.startsWith("kakao:")).toBe(true);
 			expect(result.id).toBe(`kakao:${INSTANCE_ID}:${result.metadata.chunkId}`);
 		}
 	});
@@ -173,7 +174,7 @@ describe("KatokBm25Method retrieve", () => {
 		expect(client.calls).toHaveLength(0);
 	});
 
-	it("filters by folder scope", async () => {
+	it("keeps hits for the kakao instance scope", async () => {
 		const client = makeClient();
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
@@ -182,40 +183,13 @@ describe("KatokBm25Method retrieve", () => {
 		expect(results).toHaveLength(3);
 	});
 
-	it("filters to a single chunk scope", async () => {
-		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
-
-		const results = await method.retrieve("refund", {
-			topK: 10,
-			scope: "/kakao/default/chunks/chunk-002",
-		});
-
-		expect(results.map((r) => r.source)).toEqual(["/kakao/default/chunks/chunk-002"]);
-	});
-
-	it("returns [] when scope targets a different instance", async () => {
+	it("returns [] when scope targets a different datasource", async () => {
 		const client = makeClient();
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10, scope: "/kakao/other" });
 
 		expect(results).toEqual([]);
-	});
-
-	it("intersects allowedScopes against each source", async () => {
-		const client = makeClient();
-		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
-
-		const results = await method.retrieve("refund", {
-			topK: 10,
-			allowedScopes: ["/kakao/default/chunks/chunk-001", "/kakao/default/chunks/chunk-003"],
-		});
-
-		expect(results.map((r) => r.source)).toEqual([
-			"/kakao/default/chunks/chunk-001",
-			"/kakao/default/chunks/chunk-003",
-		]);
 	});
 
 	it("returns [] without throwing when search yields a failed result", async () => {

@@ -59,28 +59,12 @@ export class DatasourceAccessContext {
 	}
 
 	/**
-	 * Build a predicate that filters source paths by trusted allow-scopes,
-	 * intersected with an optional user-supplied scope (the model/tool view).
-	 *
-	 * The predicate always returns an explicit boolean. On default-deny it
-	 * returns `() => false`. Sources containing a `#` fragment are denied
-	 * (datasource sources are slash-hierarchical only).
-	 *
-	 * @param userScope Optional user/model-requested scope; when provided a
-	 *   source must match BOTH a trusted allow-scope AND the user scope.
+	 * Datasource access is decided at the skill level by trusted allow-tags.
+	 * Result sources are datasource identities (e.g. `kakao:<chat>/<chunk>`),
+	 * not slash-hierarchical virtual paths, so no per-source path gate exists.
 	 */
-	allowedSourcesPredicate(userScope?: string): (source: string) => boolean {
+	allowedSourcesPredicate(_userScope?: string): (source: string) => boolean {
 		if (this.denyAll) return () => false;
-		const trustedScopes = this.allowedScopes;
-		const normalizedUserScope = userScope === undefined ? undefined : normalizeVirtualPath(userScope);
-		return (source: string): boolean => {
-			// Datasource sources are slash-hierarchical; reject fragments.
-			if (source.includes("#")) return false;
-			const inTrusted =
-				trustedScopes.length === 0 ? false : trustedScopes.some((scope) => matchesVirtualPathScope(source, scope));
-			if (!inTrusted) return false;
-			if (normalizedUserScope === undefined) return true;
-			return matchesVirtualPathScope(source, normalizedUserScope);
-		};
+		return () => true;
 	}
 }

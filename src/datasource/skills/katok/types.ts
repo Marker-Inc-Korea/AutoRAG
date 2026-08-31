@@ -1,4 +1,3 @@
-import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 /**
@@ -27,7 +26,7 @@ export type KatokSourceKind = "macos" | "fixture";
 export interface KatokOptions {
 	/** Explicit path to the `katok` binary. Defaults to a bare `katok` PATH lookup. */
 	readonly binaryPath?: string;
-	/** Spawn timeout in milliseconds. Default 10_000. */
+	/** Spawn timeout in milliseconds. Default 60_000 (sync/index over large archives can be slow). */
 	readonly timeoutMs?: number;
 	/** Max stdout/stderr bytes retained. Default 1_048_576 (1 MiB). */
 	readonly maxBufferBytes?: number;
@@ -48,11 +47,10 @@ export interface KatokOptions {
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	/** Parent-owned managed configuration boundary. */
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export const DEFAULT_KATOK_BINARY = "katok";
-export const DEFAULT_KATOK_TIMEOUT_MS = 10_000;
+export const DEFAULT_KATOK_TIMEOUT_MS = 60_000;
 export const DEFAULT_KATOK_MAX_BUFFER_BYTES = 1_048_576;
 export const DEFAULT_KATOK_SOURCE: KatokSourceKind = "macos";
 export const DEFAULT_KATOK_OPTIONS = {

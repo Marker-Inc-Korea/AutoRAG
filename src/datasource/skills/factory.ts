@@ -158,11 +158,10 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			},
 		}),
-	kakao: (config, _workspaceRoot, _registrationName, managedCliConfigManager) =>
+	kakao: (config, _workspaceRoot, _registrationName, _managedCliConfigManager) =>
 		new KatokSkill({
 			client: new KatokClient({
 				...(config.connector as KatokOptions),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			}),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),

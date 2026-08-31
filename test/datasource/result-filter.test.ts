@@ -39,7 +39,7 @@ const filter = new DatasourceResultFilter();
 
 describe("DatasourceResultFilter", () => {
 	describe("single-scope source filtering", () => {
-		it("keeps only sources under the trusted scope for an allowed datasource method", () => {
+		it("passes every source of an allowed datasource method (tag-level gating only)", () => {
 			const ctx = new DatasourceAccessContext({
 				allowedTags: ["kakao"],
 				allowedScopes: ["/kakao/acct-1"],
@@ -59,12 +59,13 @@ describe("DatasourceResultFilter", () => {
 			expect(out.get("kakao")?.map((r) => r.source)).toEqual([
 				"/kakao/acct-1/chunks/c-1",
 				"/kakao/acct-1/chunks/c-2",
+				"/kakao/acct-3/chunks/c-9",
 			]);
 		});
 	});
 
 	describe("multi-scope source filtering", () => {
-		it("keeps sources under any of the trusted scopes", () => {
+		it("keeps sources regardless of which instance they came from", () => {
 			const ctx = new DatasourceAccessContext({
 				allowedTags: ["kakao"],
 				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
@@ -84,12 +85,13 @@ describe("DatasourceResultFilter", () => {
 			expect(out.get("kakao")?.map((r) => r.source)).toEqual([
 				"/kakao/acct-1/chunks/c-1",
 				"/kakao/acct-2/chunks/c-7",
+				"/kakao/acct-3/chunks/c-x",
 			]);
 		});
 	});
 
 	describe("userScope intersection", () => {
-		it("narrows trusted-scope results to the user scope", () => {
+		it("ignores user scope narrowing (no per-source virtual-path gate)", () => {
 			const ctx = new DatasourceAccessContext({
 				allowedTags: ["kakao"],
 				allowedScopes: ["/kakao/acct-1", "/kakao/acct-2"],
@@ -99,7 +101,10 @@ describe("DatasourceResultFilter", () => {
 				["kakao", [result("/kakao/acct-1/chunks/c-1"), result("/kakao/acct-2/chunks/c-7")]],
 			]);
 			const out = filter.filter(byMethod, [method], ctx, "/kakao/acct-1");
-			expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1"]);
+			expect(out.get("kakao")?.map((r) => r.source)).toEqual([
+				"/kakao/acct-1/chunks/c-1",
+				"/kakao/acct-2/chunks/c-7",
+			]);
 		});
 
 		it("keeps all trusted-scope results when userScope is undefined", () => {
@@ -140,13 +145,13 @@ describe("DatasourceResultFilter", () => {
 	});
 
 	describe("empty allowed scopes (tags set, no scopes)", () => {
-		it("denies every source explicitly while keeping the method entry present", () => {
+		it("passes every source of an allowed method (tag-level gating only)", () => {
 			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
 			const method = dsMethod("kakao", "kakao:acct-1", ["kakao"]);
 			const byMethod = new Map<string, RetrievalResult[]>([["kakao", [result("/kakao/acct-1/chunks/c-1")]]]);
 			const out = filter.filter(byMethod, [method], ctx);
 			expect(out.has("kakao")).toBe(true);
-			expect(out.get("kakao")).toEqual([]);
+			expect(out.get("kakao")?.map((r) => r.source)).toEqual(["/kakao/acct-1/chunks/c-1"]);
 		});
 	});
 

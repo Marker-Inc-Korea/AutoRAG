@@ -4,7 +4,7 @@ import type {
 	RetrievalOptions,
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
-import { datasourceSourcePath, matchesDatasourceScope } from "../../scope.ts";
+import { matchesDatasourceScope } from "../../scope.ts";
 import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
 
 /**
@@ -114,28 +114,45 @@ async function retrieveKatok(
 
 	const scope = options.scope;
 	const allowedScopes = options.allowedScopes;
+	if (!matchesScope("", scope, allowedScopes, instanceId)) return [];
 	const mapped: RetrievalResult[] = [];
 	for (const hit of result.hits) {
 		const source = katokSource(instanceId, hit);
-		if (!matchesScope(source, scope, allowedScopes)) continue;
 		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode));
 		if (mapped.length >= topK) break;
 	}
 	return mapped;
 }
 
+/**
+ * Human-readable kakao source identity. Starts with the `kakao:` scheme so
+ * the agent can never mistake it for an OS file path, and carries the chat
+ * name and sender when katok provides them (e.g.
+ * `kakao:오픈소스 개발과제/류동현투이컨설팅/chunk_58b3`).
+ */
 function katokSource(instanceId: string, hit: KatokHit): string {
-	return datasourceSourcePath(KAKAO_DATASOURCE_ID, instanceId, hit.chunkId);
+	const chatName = typeof hit.metadata?.chatName === "string" ? hit.metadata.chatName : undefined;
+	const sender = typeof hit.metadata?.senderNickname === "string" ? hit.metadata.senderNickname : undefined;
+	const room = chatName ?? instanceId;
+	const segments = [room, sender, hit.chunkId].filter((segment) => segment !== undefined && segment.length > 0);
+	return `kakao:${segments.join("/")}`;
 }
 
+/**
+ * Scope gating stays on the legacy virtual form (`/kakao/<instance>`) that
+ * callers pass in, independent of the human-readable result source. Scope
+ * can only narrow to this datasource's own instance tree.
+ */
 function matchesScope(
 	source: string,
 	scope: string | undefined,
 	allowedScopes: readonly string[] | undefined,
+	instanceId: string,
 ): boolean {
-	if (!matchesDatasourceScope(source, scope)) return false;
+	const virtualSource = `/kakao/${instanceId}`;
+	if (!matchesDatasourceScope(virtualSource, scope)) return false;
 	if (allowedScopes === undefined || allowedScopes.length === 0) return true;
-	return allowedScopes.some((entry) => matchesDatasourceScope(source, entry));
+	return allowedScopes.some((entry) => matchesDatasourceScope(virtualSource, entry));
 }
 
 function toRetrievalResult(
