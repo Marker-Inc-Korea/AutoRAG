@@ -15,8 +15,6 @@ import type { DatasourceAccessContextOptions } from "../datasource/access-contex
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
-import { createManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
-import { createManagedCliRuntime } from "./managed-cli-runtime.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
@@ -696,19 +694,9 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
-	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd());
 	const minSyncConfig = config.minSync;
-	const managedRetrievalRuntime = createManagedRetrievalRuntime(config.workspacePath ?? process.cwd(), {
-		minSync: minSyncConfig?.enabled !== false,
-		minSyncBinaryPath: minSyncConfig?.binaryPath,
-		jikji: config.jikji !== undefined,
-		jikjiBinaryPath: typeof config.jikji?.binaryPath === "string" ? config.jikji.binaryPath : undefined,
-	});
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
-		managedCliRegistry: managedCliRuntime.registry,
-		managedCliConfigManager: managedCliRuntime.manager,
-		managedRetrievalRuntime,
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;
@@ -736,11 +724,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(
-			config.datasources,
-			config.workspacePath,
-			managedCliRuntime.manager,
-		);
+		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {
 			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));

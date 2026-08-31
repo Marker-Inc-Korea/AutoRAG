@@ -1,14 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import {
-	ManagedCliConfigManager,
-	type ManagedCliLaunchContext,
-	ManagedCliRegistry,
-} from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { createDiscrawlManagedCliProvider } from "./config.ts";
-import { discrawlDatasourceRoot } from "./paths.ts";
 import type {
 	DiscrawlDoctorInfo,
 	DiscrawlDoctorResult,
@@ -72,8 +65,6 @@ type SpawnRequest = {
 	readonly signal?: AbortSignal;
 	readonly cwd?: string;
 };
-
-type DiscrawlLaunchContext = Pick<ManagedCliLaunchContext, "prefixArgs" | "cwd" | "env" | "configPath">;
 
 /**
  * Thin external `discrawl` CLI wrapper. Every method spawns the `discrawl`

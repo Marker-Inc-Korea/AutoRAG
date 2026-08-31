@@ -126,10 +126,7 @@ describe("AutoRAGAgent datasource integration", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
 			datasourceSkills: [
-				makeSkill([
-					result("a", "kakao:오픈소스 개발과제/chunks/a"),
-					result("b", "kakao:다른방/chunks/b"),
-				]),
+				makeSkill([result("a", "kakao:오픈소스 개발과제/chunks/a"), result("b", "kakao:다른방/chunks/b")]),
 			],
 			datasourceAccess: { allowedTags: ["kakao"] },
 		});

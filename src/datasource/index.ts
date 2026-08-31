@@ -24,7 +24,6 @@ export {
 	type ConnectorSkillDefinition,
 	type ConnectorSkillOptions,
 } from "./connector-skill.ts";
-export { createCrawlerManagedCliProvider } from "./crawler-managed-config.ts";
 export { mapDatasourceDiagnostic, mapDatasourceDiagnostics } from "./diagnostics.ts";
 export { type CronParseResult, isDue, parseCronExpr } from "./polling.ts";
 export { DatasourceSkillRegistry, type RegisteredDatasourceSkill } from "./registry.ts";
@@ -82,7 +81,6 @@ export {
 	GitHubSkill,
 	type GitHubSkillOptions,
 } from "./skills/github/index.ts";
-export { createHimalayaManagedCliProvider } from "./skills/gmail/himalaya-managed-config.ts";
 export {
 	GmailConnector,
 	type GmailConnectorOptions,
@@ -100,7 +98,6 @@ export type {
 	KatokSkillOptions,
 } from "./skills/katok/index.ts";
 export {
-	createKatokManagedCliProvider,
 	KatokBm25Method,
 	KatokClient,
 	KatokSemanticMethod,

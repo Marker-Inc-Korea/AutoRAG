@@ -2,7 +2,7 @@
 
 For CLI-backed datasource configuration, ownership, process boundaries, and
 contributor requirements, see the normative
-[managed CLI configuration guide](managed-cli-configuration.md).
+the direct-CLI execution model.
 
 Datasource skills let AutoRAG search external, server-configured sources while preserving the same retrieval and curation model used for local document collections.
 

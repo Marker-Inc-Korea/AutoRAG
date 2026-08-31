@@ -1,5 +1,4 @@
 export interface JikjiOptions {
-	readonly managedCliConfigManager?: import("../cli/managed-cli-config.ts").ManagedCliConfigManager;
 	readonly binaryPath?: string;
 	/** Workspace root used to cache/auto-install the jikji binary under `.autorag/bin`. */
 	readonly root?: string;

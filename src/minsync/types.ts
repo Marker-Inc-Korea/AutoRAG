@@ -1,5 +1,4 @@
 /** Embedder configuration for MinSync vector indexing. Shared by config and method layers. */
-import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
 
 export interface MinSyncEmbedderConfig {
 	readonly id?: string;
@@ -22,7 +21,6 @@ export interface MinSyncOptions {
 	readonly workspacePath?: string;
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export interface MinSyncSyncResult {

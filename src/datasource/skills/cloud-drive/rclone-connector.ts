@@ -11,12 +11,10 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
-import { type ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
 import { asArray, asRecord, asString, parseEpochMs } from "../../http.ts";
-import { createRcloneManagedCliProvider } from "./rclone-managed-config.ts";
 
 export interface RcloneRunResult {
 	readonly ok: boolean;
@@ -47,7 +45,6 @@ export interface RcloneConnectorOptions {
 	readonly runner?: RcloneRunner;
 	/** Explicit operator-owned rclone.conf path, passed read-only. */
 	readonly configPath?: string;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 interface ManifestEntry {
@@ -77,7 +74,6 @@ const MAX_CONTENT_CHARS = 100_000;
 export class RcloneConnector implements DatasourceConnector {
 	private readonly options: RcloneConnectorOptions;
 	private readonly runner: RcloneRunner;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: RcloneConnectorOptions = {}) {
 		this.options = options;

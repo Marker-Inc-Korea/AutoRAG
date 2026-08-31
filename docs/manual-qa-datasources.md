@@ -2,7 +2,7 @@
 
 All external CLI checks below must use the managed launch surface. The
 configuration and bash-boundary checklist is defined in
-[managed-cli-configuration.md](managed-cli-configuration.md).
+direct native CLI execution.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
 (GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
