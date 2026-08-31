@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import type { MinSyncVectorMethod } from "../minsync/method.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
 
-export const SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME = "search_minsync_documents";
+export const SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME = "semantic_search_local_docs";
 
 const searchMinSyncSchema = Type.Object({
 	query: Type.String({
@@ -14,7 +14,7 @@ const searchMinSyncSchema = Type.Object({
 });
 
 export interface SearchMinSyncDocumentsDetails {
-	readonly method: "search_minsync_documents";
+	readonly method: "semantic_search_local_docs";
 	readonly resultCount: number;
 	readonly sources: readonly string[];
 	readonly available: boolean;
@@ -48,7 +48,7 @@ export function createSearchMinSyncDocumentsTool(
 			if (params.query.trim().length === 0) {
 				return {
 					content: [{ type: "text", text: "MinSync query was empty; no documents searched." }],
-					details: { method: "search_minsync_documents", resultCount: 0, sources: [], available: true },
+					details: { method: "semantic_search_local_docs", resultCount: 0, sources: [], available: true },
 				};
 			}
 			const scope = resolveScope(params.scope);
@@ -60,7 +60,7 @@ export function createSearchMinSyncDocumentsTool(
 				return {
 					content: [{ type: "text", text: formatResults(results) }],
 					details: {
-						method: "search_minsync_documents",
+						method: "semantic_search_local_docs",
 						resultCount: results.length,
 						sources: [...new Set(results.map((result) => result.source))],
 						available: true,
@@ -77,7 +77,7 @@ function unavailableResult(message: string): AgentToolResult<SearchMinSyncDocume
 	return {
 		content: [{ type: "text", text: message }],
 		details: {
-			method: "search_minsync_documents",
+			method: "semantic_search_local_docs",
 			resultCount: 0,
 			sources: [],
 			available: false,

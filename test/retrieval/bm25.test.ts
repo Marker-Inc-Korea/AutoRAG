@@ -182,7 +182,7 @@ describe("AutoRAG BM25 integration", () => {
 		expect(agent.getMethodRegistry().getByType("bm25")).toHaveLength(1);
 		expect(agent.getMethodRegistry().getByType("vector")).toHaveLength(1);
 		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
-		expect(agent.getSystemPrompt()).toContain("search_bm25_documents");
+		expect(agent.getSystemPrompt()).toContain("lexical_search_local_docs");
 		expect(existsSync(join(root, BM25_SUBDIR))).toBe(false);
 		expect(readFileSync(new URL("../../src/retrieval/methods/bm25.ts", import.meta.url), "utf8")).not.toContain(
 			"class BM25Method",
@@ -224,7 +224,7 @@ describe("AutoRAG BM25 integration", () => {
 		expect(hasLegacyBm25Artifacts(root)).toBe(false);
 	});
 
-	it("search_bm25_documents exposes method, readiness, engine, and original sources", async () => {
+	it("lexical_search_local_docs exposes method, readiness, engine, and original sources", async () => {
 		writeFileSync(join(docs, "many.txt"), "chargeback chargeback process\n");
 		writeFileSync(join(docs, "sub", "nested.txt"), "chargeback scoped process\n");
 		await refreshMirrors();

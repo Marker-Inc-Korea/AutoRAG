@@ -149,8 +149,8 @@ The librarian agent owns the full workflow:
 | `bash` | Filesystem discovery and document reading with real paths (`ls`, `find`, `grep`, `cat`, etc.) | Direct source verification |
 | `jikji_find` | Runs `jikji find ROOT "query"` and returns a policy-aware answer pack | Optional local discovery |
 | `search_all_documents` | Fan-out across configured retrieval methods and merge/rank candidates | Combined retrieval |
-| `search_bm25_documents` | Lexical BM25 ranking over parsed document mirrors | Exact-term retrieval |
-| `search_minsync_documents` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
+| `lexical_search_local_docs` | Lexical BM25 ranking over parsed document mirrors | Exact-term retrieval |
+| `semantic_search_local_docs` | MinSync semantic/vector retrieval over parsed mirrors | Semantic retrieval |
 | `search_datasource_documents` | Search authorized external datasource skills | Server-bound datasource retrieval |
 | `check_memory` | Query past search outcomes | Adaptive strategy |
 | `load_datasource_skill` | Load instructions for an authorized datasource skill | Datasource-specific searches |
