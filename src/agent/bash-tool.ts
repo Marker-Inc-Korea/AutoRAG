@@ -84,6 +84,14 @@ function runCommand(
 		child.stdout?.on("data", collect);
 		child.stderr?.on("data", collect);
 
+		const finish = (exitCode: number | undefined) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			signal?.removeEventListener("abort", onAbort);
+			resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode, timedOut, truncated });
+		};
+
 		const killProcessTree = () => {
 			if (child.pid === undefined) return;
 			if (process.platform === "win32") {
@@ -100,20 +108,18 @@ function runCommand(
 		const timer = setTimeout(() => {
 			timedOut = true;
 			killProcessTree();
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			setTimeout(() => finish(undefined), 50);
 		}, timeoutMs);
 
 		const onAbort = () => {
 			killProcessTree();
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			setTimeout(() => finish(undefined), 50);
 		};
 		signal?.addEventListener("abort", onAbort, { once: true });
-
-		const finish = (exitCode: number | undefined) => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			signal?.removeEventListener("abort", onAbort);
-			resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode, timedOut, truncated });
-		};
 
 		child.on("error", () => finish(undefined));
 		child.on("close", (code) => finish(code === null ? undefined : code));
