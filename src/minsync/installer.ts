@@ -9,7 +9,7 @@ import { spawnProcess } from "./process.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.4.0";
+export const MINSYNC_VERSION = "0.4.1";
 
 export interface MinSyncReleaseAsset {
 	readonly name: string;
@@ -38,10 +38,7 @@ export interface EnsureMinSyncBinaryOptions {
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
-	if (options.releaseProvider === undefined) {
-		return installMinSyncFromCargo(options, binaryPath);
-	}
-	const releaseProvider = options.releaseProvider;
+	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
 	const release = await releaseProvider();
 	let asset: MinSyncReleaseAsset;
 	try {

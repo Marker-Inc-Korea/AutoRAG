@@ -195,7 +195,7 @@ export class MinSyncBM25Method extends MinSyncVectorMethod {
 		return {
 			name: "bm25",
 			type: "bm25",
-			description: "MinSync 0.4.0 BM25 lexical retrieval over parsed markdown mirror chunks",
+			description: "MinSync-backed BM25 lexical retrieval over parsed markdown mirror chunks",
 			status: this.status.readiness === "ready" ? "active" : "stub",
 			capabilities: [
 				"lexical",

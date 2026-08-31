@@ -325,7 +325,7 @@ export class AutoRAGAgent {
 		this.excludeExactDuplicates = options.excludeExactDuplicates ?? true;
 
 		if (options.minSync !== false) {
-			const minSyncOpts = options.minSync ?? { autoInstall: false };
+			const minSyncOpts = options.minSync ?? { autoInstall: true };
 			this.minSyncMethod = new MinSyncVectorMethod({
 				...minSyncOpts,
 				root: this.workspaceProjectRoot,
@@ -333,7 +333,7 @@ export class AutoRAGAgent {
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
 			if (options.bm25 !== false) {
-				const bm25Opts = { autoInstall: false, ...(options.bm25 ?? {}) };
+				const bm25Opts = { autoInstall: true, ...(options.bm25 ?? {}) };
 				this.bm25Method = new MinSyncBM25Method({
 					...bm25Opts,
 					root: this.workspaceProjectRoot,
