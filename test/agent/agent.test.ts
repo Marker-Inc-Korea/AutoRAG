@@ -260,7 +260,8 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Search Strategy");
 		expect(prompt).toContain("glob");
 		expect(prompt).toContain("regex");
-		expect(prompt).toContain("Fallback Chain");
+		expect(prompt).toContain("timeout");
+		expect(prompt).not.toContain("Fallback Chain");
 	});
 
 	it("system prompt routes output through emit_autorag_results without an internal_mapping channel", () => {
