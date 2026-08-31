@@ -11,7 +11,7 @@ async function waitForFile(path: string): Promise<void> {
 	if (existsSync(path)) return;
 	await new Promise<void>((resolve, reject) => {
 		const watcher = watch(tmpDir, (_event, filename) => {
-			if (filename === basename(path) && existsSync(path)) {
+			if (String(filename) === basename(path) && existsSync(path)) {
 				watcher.close();
 				resolve();
 			}
