@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { ManagedCliRegistry } from "../cli/managed-cli-config.ts";
+import { classifyFilesystemRoot, isDatalessPlaceholder } from "../filesystem/cloud-placeholder.ts";
 
 export const BASH_TOOL_NAME = "bash";
 
@@ -38,6 +39,8 @@ export interface BashToolDetails {
 	readonly timedOut: boolean;
 	readonly truncated: boolean;
 }
+
+const CLOUD_CONTENT_COMMAND = /\b(?:rg|ripgrep|grep|egrep|fgrep|cat|less|more|head|tail|sed|awk)\b/i;
 
 interface RunResult {
 	readonly output: string;
@@ -173,6 +176,35 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 				};
 			}
 			const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : options.cwd;
+			if (CLOUD_CONTENT_COMMAND.test(command)) {
+				const classification = await classifyFilesystemRoot(cwd);
+				if (classification.kind === "file-provider") {
+					return {
+						content: [
+							{
+								type: "text",
+								text:
+									"AUTORAG_CLOUD_PLACEHOLDER_BLOCKED: content access under a cloud placeholder root was refused to prevent remote hydration. " +
+									"Use the configured cloud-drive datasource or a materialized local file.",
+							},
+						],
+						details: { method: "bash", command, exitCode: undefined, timedOut: false, truncated: false },
+					};
+				}
+				if (await isDatalessPlaceholder(cwd)) {
+					return {
+						content: [
+							{
+								type: "text",
+								text:
+									"AUTORAG_CLOUD_PLACEHOLDER_BLOCKED: the working path is a data-less cloud placeholder. " +
+									"Use the configured cloud-drive datasource or materialize the file first.",
+							},
+						],
+						details: { method: "bash", command, exitCode: undefined, timedOut: false, truncated: false },
+					};
+				}
+			}
 			const managedCliRegistries = [
 				...(options.managedCliRegistry === undefined ? [] : [options.managedCliRegistry]),
 				...(options.managedCliRegistries ?? []),
