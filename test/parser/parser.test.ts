@@ -166,6 +166,122 @@ describe("ParserRegistry", () => {
 		expect(calls).toEqual([{ hybrid: "docling-fast", hybridMode: "full", hybridTimeout: "4000" }]);
 	});
 
+	it("retries a multi-page PDF when local extraction is abnormally thin", async () => {
+		// Given: local conversion drops later pages while the hybrid path recovers them.
+		const calls: string[] = [];
+		const converter: PdfConverter = async (inputPath, options) => {
+			calls.push(options.hybrid === undefined ? "local" : "hybrid");
+			const outputDir = options.outputDir;
+			if (outputDir === undefined) throw new Error("expected parser to provide outputDir");
+			const markdown =
+				options.hybrid === undefined ? "Slide one summary" : "Slide one summary\nCompetition rate table";
+			await import("node:fs/promises").then((fs) =>
+				fs.writeFile(join(outputDir, basename(inputPath).replace(/\.pdf$/i, ".md")), markdown),
+			);
+			return "ok";
+		};
+		const parser = new OpendataloaderPdfParser({
+			converter,
+			thinExtract: { minPages: 3, minChars: 800, minCharsPerPage: 40 },
+		});
+
+		// When: a 3-page PDF is parsed.
+		const parsed = await parser.parse({
+			virtualPath: "/docs/sparse.pdf",
+			bytes: Buffer.from("%PDF-1.7\n/Type /Page\n/Type /Page\n/Type /Page\n"),
+		});
+
+		// Then: later-page content is returned after the local-to-hybrid retry.
+		expect(parsed.markdown).toContain("Competition rate table");
+		expect(calls).toEqual(["local", "hybrid"]);
+	});
+
+	it("keeps local markdown and reports a warning when hybrid retry is unavailable", async () => {
+		// Given: a thin multi-page local extract and an unavailable hybrid sidecar.
+		const converter: PdfConverter = async (inputPath, options) => {
+			if (options.hybrid !== undefined) throw new Error("hybrid sidecar unavailable");
+			const outputDir = options.outputDir;
+			if (outputDir === undefined) throw new Error("expected parser to provide outputDir");
+			await import("node:fs/promises").then((fs) =>
+				fs.writeFile(join(outputDir, basename(inputPath).replace(/\.pdf$/i, ".md")), "Local fallback marker"),
+			);
+			return "ok";
+		};
+		const parser = new OpendataloaderPdfParser({ converter });
+
+		// When: the thin PDF is parsed.
+		const parsed = await parser.parse({
+			virtualPath: "/docs/unavailable.pdf",
+			bytes: Buffer.from("%PDF-1.7\n/Type /Page\n/Type /Page\n/Type /Page\n"),
+		});
+
+		// Then: local content survives and the typed diagnostic markers are exposed.
+		expect(parsed.markdown).toBe("Local fallback marker");
+		expect(parsed.metadata).toMatchObject({
+			pdfExtract: "thin-local-fallback",
+		});
+		expect(parsed.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+			"pdf-extract-thin",
+			"pdf-hybrid-unavailable",
+		]);
+	});
+
+	it("does not retry a dense multi-page PDF", async () => {
+		// Given: a dense local extract from a multi-page PDF.
+		let calls = 0;
+		const converter: PdfConverter = async (inputPath, options) => {
+			calls += 1;
+			const outputDir = options.outputDir;
+			if (outputDir === undefined) throw new Error("expected parser to provide outputDir");
+			await import("node:fs/promises").then((fs) =>
+				fs.writeFile(
+					join(outputDir, basename(inputPath).replace(/\.pdf$/i, ".md")),
+					"Readable page text ".repeat(100),
+				),
+			);
+			return "ok";
+		};
+		const parser = new OpendataloaderPdfParser({ converter });
+
+		// When: the dense PDF is parsed.
+		const parsed = await parser.parse({
+			virtualPath: "/docs/dense.pdf",
+			bytes: Buffer.from("%PDF-1.7\n/Type /Page\n/Type /Page\n/Type /Page\n"),
+		});
+
+		// Then: the local result is returned without hybrid latency.
+		expect(parsed.markdown.length).toBeGreaterThan(800);
+		expect(calls).toBe(1);
+		expect(parsed.metadata).toMatchObject({ parser: "opendataloader-pdf", pages: 3 });
+	});
+
+	it("keeps local markdown when hybrid retry times out", async () => {
+		// Given: local extraction succeeds but the hybrid converter never settles.
+		const converter: PdfConverter = async (inputPath, options) => {
+			const outputDir = options.outputDir;
+			if (outputDir === undefined) throw new Error("expected parser to provide outputDir");
+			if (options.hybrid !== undefined) return new Promise<string>(() => undefined);
+			await import("node:fs/promises").then((fs) =>
+				fs.writeFile(join(outputDir, basename(inputPath).replace(/\.pdf$/i, ".md")), "Timeout fallback marker"),
+			);
+			return "ok";
+		};
+		const parser = new OpendataloaderPdfParser({ converter, thinExtract: { timeoutMs: 1 } });
+
+		// When: the hybrid attempt exceeds its configured budget.
+		const parsed = await parser.parse({
+			virtualPath: "/docs/timeout.pdf",
+			bytes: Buffer.from("%PDF-1.7\n/Type /Page\n/Type /Page\n/Type /Page\n"),
+		});
+
+		// Then: the bounded retry degrades to the local markdown.
+		expect(parsed.markdown).toBe("Timeout fallback marker");
+		expect(parsed.diagnostics?.map((diagnostic) => diagnostic.code)).toEqual([
+			"pdf-extract-thin",
+			"pdf-hybrid-unavailable",
+		]);
+	});
+
 	it("parses legacy binary HWP through an injected extractor", async () => {
 		const parser = new HwpParser({
 			extractor: async () => ({

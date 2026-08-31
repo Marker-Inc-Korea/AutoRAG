@@ -7,6 +7,15 @@ export interface ParseInput {
 export interface ParseOutput {
 	readonly markdown: string;
 	readonly metadata?: Readonly<Record<string, unknown>>;
+	readonly diagnostics?: readonly ParseDiagnostic[];
+}
+
+export type ParseDiagnosticCode = "pdf-extract-thin" | "pdf-hybrid-unavailable";
+
+export interface ParseDiagnostic {
+	readonly code: ParseDiagnosticCode;
+	readonly severity: "warning";
+	readonly message: string;
 }
 
 export abstract class Parser {
