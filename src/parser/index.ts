@@ -4,8 +4,18 @@ export { ParseError } from "./errors.ts";
 export { HwpParser, type HwpParserOptions } from "./hwp.ts";
 export { ImageOcrParser, type OcrEngine, type OcrEngineInput, type OcrParserOptions } from "./ocr.ts";
 export { DocxParser, PptxParser, XlsxParser } from "./office.ts";
-export { OpendataloaderPdfParser, type PdfConverter } from "./opendataloader-pdf.ts";
+export {
+	OpendataloaderPdfParser,
+	type OpendataloaderPdfParserOptions,
+	type PdfConverter,
+} from "./opendataloader-pdf.ts";
 export { PlainTextParser } from "./plain-text.ts";
 export { ParserRegistry } from "./registry.ts";
 export type { HwpExtractionLimits, HwpExtractor } from "./rhwp-adapter.ts";
-export { type ParseInput, type ParseOutput, Parser } from "./types.ts";
+export {
+	type ParseDiagnostic,
+	type ParseDiagnosticCode,
+	type ParseInput,
+	type ParseOutput,
+	Parser,
+} from "./types.ts";
