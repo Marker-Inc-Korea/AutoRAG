@@ -58,7 +58,7 @@ function runCommand(
 ): Promise<RunResult> {
 	return new Promise((resolve) => {
 		const shell = process.platform === "win32" ? "bash.exe" : "/bin/bash";
-		const child = spawn(shell, ["-c", command], { cwd });
+		const child = spawn(shell, ["-c", command], { cwd, detached: true });
 		const chunks: Buffer[] = [];
 		let total = 0;
 		let truncated = false;
@@ -84,13 +84,26 @@ function runCommand(
 		child.stdout?.on("data", collect);
 		child.stderr?.on("data", collect);
 
+		const killProcessTree = () => {
+			if (child.pid === undefined) return;
+			if (process.platform === "win32") {
+				child.kill("SIGKILL");
+				return;
+			}
+			try {
+				process.kill(-child.pid, "SIGKILL");
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+			}
+		};
+
 		const timer = setTimeout(() => {
 			timedOut = true;
-			child.kill("SIGKILL");
+			killProcessTree();
 		}, timeoutMs);
 
 		const onAbort = () => {
-			child.kill("SIGKILL");
+			killProcessTree();
 		};
 		signal?.addEventListener("abort", onAbort, { once: true });
 
