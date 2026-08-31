@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,16 +10,17 @@ let tmpDir: string;
 async function waitForFile(path: string): Promise<void> {
 	if (existsSync(path)) return;
 	await new Promise<void>((resolve, reject) => {
-		const watcher = watch(tmpDir, (_event, filename) => {
-			if (String(filename) === basename(path) && existsSync(path)) {
-				watcher.close();
-				resolve();
-			}
-		});
-		watcher.on("error", (error) => {
-			watcher.close();
-			reject(error);
-		});
+		const timeout = setTimeout(() => {
+			unwatchFile(path, onChange);
+			reject(new Error(`Timed out waiting for ${basename(path)}`));
+		}, 2_000);
+		const onChange = () => {
+			if (!existsSync(path)) return;
+			clearTimeout(timeout);
+			unwatchFile(path, onChange);
+			resolve();
+		};
+		watchFile(path, { interval: 25 }, onChange);
 	});
 }
 
