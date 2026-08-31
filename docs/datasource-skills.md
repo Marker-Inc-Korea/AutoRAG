@@ -56,6 +56,40 @@ RetrievalMethodRegistry
 
 A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
 
+## mailcrawl
+
+The `mailcrawl` datasource delegates local email synchronization and search to
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl` (Node.js 24+) and
+configure Himalaya separately; AutoRAG never opens `archive.sqlite` directly.
+Managed mode isolates the archive under
+`.autorag/datasources/mailcrawl/<instance>/data` through `MAILCRAWL_DATA_DIR`.
+
+```json
+{
+  "datasources": {
+    "mailcrawl": {
+      "instanceId": "personal",
+      "connector": {
+        "binaryPath": "mailcrawl",
+        "account": "personal",
+        "mailbox": "INBOX"
+      }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["mailcrawl", "email"],
+    "allowedScopes": ["/mailcrawl/personal/**"]
+  }
+}
+```
+
+Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
+Retrieval exposes independent BM25, semantic, and hybrid methods and maps
+results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
+`mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
+datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
+path, while Gmail/Himalaya remains available as a separate backend.
+
 ## Universal connection aliases
 
 Every datasource entry can use a reusable template with a connection alias:

@@ -3,6 +3,7 @@ import { createRcloneManagedCliProvider } from "../datasource/skills/cloud-drive
 import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
 import { createHimalayaManagedCliProvider } from "../datasource/skills/gmail/himalaya-managed-config.ts";
 import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
+import { createMailcrawlManagedCliProvider } from "../datasource/skills/mailcrawl/config.ts";
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "./managed-cli-config.ts";
 
@@ -21,6 +22,7 @@ export function createManagedCliRuntime(workspace: string): {
 		createQmdManagedCliProvider(),
 		createRcloneManagedCliProvider(),
 		createHimalayaManagedCliProvider(),
+		createMailcrawlManagedCliProvider(),
 	]) {
 		registry.register(provider);
 	}

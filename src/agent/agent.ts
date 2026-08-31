@@ -14,6 +14,7 @@ import { createRcloneManagedCliProvider } from "../datasource/skills/cloud-drive
 import { createDiscrawlManagedCliProvider } from "../datasource/skills/discrawl/config.ts";
 import { createHimalayaManagedCliProvider } from "../datasource/skills/gmail/himalaya-managed-config.ts";
 import { createKatokManagedCliProvider } from "../datasource/skills/katok/config.ts";
+import { createMailcrawlManagedCliProvider } from "../datasource/skills/mailcrawl/config.ts";
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
@@ -238,16 +239,16 @@ export interface AutoRAGSearchSession {
 
 export type AutoRAGJikjiPrepareResult =
 	| {
-			readonly ok: true;
-			readonly code: number;
-			readonly diagnostics: readonly string[];
-	  }
+		readonly ok: true;
+		readonly code: number;
+		readonly diagnostics: readonly string[];
+	}
 	| {
-			readonly ok: false;
-			readonly reason: JikjiFailureReason;
-			readonly code: number | null;
-			readonly diagnostics: readonly string[];
-	  };
+		readonly ok: false;
+		readonly reason: JikjiFailureReason;
+		readonly code: number | null;
+		readonly diagnostics: readonly string[];
+	};
 
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
@@ -371,6 +372,13 @@ export class AutoRAGAgent {
 		if (this.datasourceSkills.some((skill) => skill.describe().name === "gmail")) {
 			try {
 				this.managedCliRegistry.register(createHimalayaManagedCliProvider());
+			} catch (error) {
+				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
+			}
+		}
+		if (this.datasourceSkills.some((skill) => skill.describe().name === "mailcrawl")) {
+			try {
+				this.managedCliRegistry.register(createMailcrawlManagedCliProvider());
 			} catch (error) {
 				if (!(error instanceof Error) || !error.message.includes("already registered")) throw error;
 			}
@@ -617,7 +625,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => {},
+			dispose: () => { },
 		};
 	}
 
@@ -1048,10 +1056,10 @@ export class AutoRAGAgent {
 			};
 			const publicMinsync = minsync
 				? {
-						ok: minsync.ok,
-						synced: minsync.synced,
-						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-					}
+					ok: minsync.ok,
+					synced: minsync.synced,
+					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+				}
 				: undefined;
 			return {
 				...(bm25 ? { ...summary } : summary),
@@ -1194,7 +1202,7 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => {} };
+				return { close: () => { } };
 			}
 		};
 	}

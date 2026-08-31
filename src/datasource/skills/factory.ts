@@ -20,6 +20,7 @@ import { HimalayaConnector, type HimalayaConnectorOptions } from "./gmail/himala
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
+import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
@@ -214,6 +215,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
+	mailcrawl: (config, workspaceRoot, registrationName, managedCliConfigManager) =>
+		new MailcrawlSkill({
+			...common(config, workspaceRoot),
+			datasourceId: registrationName,
+			...(config.connector as MailcrawlOptions),
+			...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
+		}),
 	obsidian: (config, workspaceRoot, registrationName, managedCliConfigManager) => {
 		const connector = config.connector as
 			| { vaultPath?: string; binaryPath?: string; configPath?: string }
@@ -288,10 +296,10 @@ export function buildDatasourceSkills(
 		const aliased =
 			name !== templateName || hasChannelFilter
 				? new AliasedDatasourceSkill(skill, {
-						alias: name,
-						...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
-						...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
-					})
+					alias: name,
+					...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
+					...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
+				})
 				: skill;
 		skills.push(
 			typeof entry.description === "string" && entry.description.trim().length > 0
