@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { ManagedCliRegistry } from "../cli/managed-cli-config.ts";
@@ -87,7 +87,7 @@ function runCommand(
 		const killProcessTree = () => {
 			if (child.pid === undefined) return;
 			if (process.platform === "win32") {
-				child.kill("SIGKILL");
+				spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
 				return;
 			}
 			try {

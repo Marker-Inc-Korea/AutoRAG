@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BASH_TOOL_NAME, createBashTool, isManagedCliDirectInvocation } from "../../src/agent/bash-tool.ts";
 import { type ManagedCliConfigProvider, ManagedCliRegistry } from "../../src/cli/managed-cli-config.ts";
@@ -11,7 +11,7 @@ async function waitForFile(path: string): Promise<void> {
 	if (existsSync(path)) return;
 	await new Promise<void>((resolve, reject) => {
 		const watcher = watch(tmpDir, (_event, filename) => {
-			if (filename === path.split("/").at(-1) && existsSync(path)) {
+			if (filename === basename(path) && existsSync(path)) {
 				watcher.close();
 				resolve();
 			}
