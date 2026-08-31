@@ -41,6 +41,18 @@ describe("createBashTool", () => {
 		expect(text).toContain("marker.txt");
 	});
 
+	it("refuses content access under known cloud-provider roots", async () => {
+		const tool = createBashTool({ cwd: String.raw`G:\Google Drive\My Drive` });
+
+		const result = await tool.execute("call-cloud-blocked", { command: "rg renewal ." });
+
+		expect(result.details.exitCode).toBeUndefined();
+		expect(result.content[0]).toMatchObject({
+			type: "text",
+			text: expect.stringContaining("AUTORAG_CLOUD_PLACEHOLDER_BLOCKED"),
+		});
+	});
+
 	it("reports a non-zero exit code without throwing", async () => {
 		const tool = createBashTool({ cwd: tmpDir });
 		const result = await tool.execute("call-3", { command: "exit 3" });

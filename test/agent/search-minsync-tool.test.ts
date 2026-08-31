@@ -38,7 +38,7 @@ function result(id: string, source: string): RetrievalResult {
 	return { id, source, content: `semantic content ${id}`, score: 0.9, metadata: { method: "minsync" } };
 }
 
-describe("search_minsync_documents tool", () => {
+describe("semantic_search_local_docs tool", () => {
 	it("exposes the tool name and path-opaque-only schema fields", () => {
 		const tool = createSearchMinSyncDocumentsTool(() => undefined);
 		expect(tool.name).toBe(SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME);
@@ -50,7 +50,7 @@ describe("search_minsync_documents tool", () => {
 		const tool = createSearchMinSyncDocumentsTool(() => undefined);
 		const out = await tool.execute("call-1", { query: "meaning" });
 
-		expect(out.details.method).toBe("search_minsync_documents");
+		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(0);
 		expect(out.details.available).toBe(false);
 		const text = textOf(out);
@@ -70,7 +70,7 @@ describe("search_minsync_documents tool", () => {
 		const tool = createSearchMinSyncDocumentsTool(() => method);
 		const out = await tool.execute("call-2", { query: "meaning" });
 
-		expect(out.details.method).toBe("search_minsync_documents");
+		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(0);
 		expect(out.details.available).toBe(false);
 		const text = textOf(out);
@@ -83,7 +83,7 @@ describe("search_minsync_documents tool", () => {
 		const tool = createSearchMinSyncDocumentsTool(() => stubMethod([]));
 		const out = await tool.execute("call-3", { query: "  " });
 
-		expect(out.details.method).toBe("search_minsync_documents");
+		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(0);
 		expect(out.details.available).toBe(true);
 		expect(textOf(out)).toContain("empty");
@@ -95,7 +95,7 @@ describe("search_minsync_documents tool", () => {
 		);
 		const out = await tool.execute("call-4", { query: "concept", topK: 2 });
 
-		expect(out.details.method).toBe("search_minsync_documents");
+		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(2);
 		expect(out.details.sources).toEqual(["/docs/notes", "/docs/guide"]);
 		expect(out.details.available).toBe(true);
@@ -153,7 +153,7 @@ describe("search_minsync_documents tool", () => {
 		const tool = createSearchMinSyncDocumentsTool(() => throwing as never);
 		const out = await tool.execute("call-5", { query: "concept" });
 
-		expect(out.details.method).toBe("search_minsync_documents");
+		expect(out.details.method).toBe("semantic_search_local_docs");
 		expect(out.details.resultCount).toBe(0);
 		expect(out.details.available).toBe(false);
 		const text = textOf(out);

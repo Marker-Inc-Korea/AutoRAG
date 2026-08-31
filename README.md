@@ -73,6 +73,38 @@ BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled.
 
 AutoRAG reads configured source directories directly through its built-in `bash` tool. Retrieval tools can supply candidate paths, but the same agent opens the source material before curating. Answers are returned as a structured `SearchDocumentsResponse`; results carry their real source (file path or datasource id) in the internal mapping for feedback and curation. MinSync indexes parsed markdown mirrors under `.autorag` for BM25, vector, and hybrid retrieval.
 
+### Thin PDF extraction retry
+
+The default PDF parser performs a cheap quality check for multi-page PDFs.
+When local markdown is unusually sparse (fewer than 800 characters or fewer
+than 40 characters per detected page, for at least three pages), it retries
+through OpenDataLoader's `docling-fast` hybrid backend with `hybridMode:
+"auto"` and a 30-second timeout. Dense PDFs are not retried, and hybrid is
+never used for single-page PDFs or as the first path for images.
+
+The gate is parser-owned and can be tuned through trusted programmatic
+`parserOptions`:
+
+```typescript
+new AutoRAGAgent({
+  searchPaths: ["/path/to/documents"],
+  parserOptions: {
+    thinExtract: {
+      minPages: 3,
+      minChars: 800,
+      minCharsPerPage: 40,
+      timeoutMs: 30_000,
+      hybrid: "docling-fast",
+      hybridMode: "auto",
+    },
+  },
+});
+```
+
+If the hybrid sidecar is missing, times out, or fails, AutoRAG keeps the local
+markdown and emits `pdf-extract-thin` plus `pdf-hybrid-unavailable`
+diagnostics; refresh remains successful.
+
 ### Optional Jikji discovery and indexing
 
 AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
@@ -348,6 +380,30 @@ Config path precedence is `--config` > `AUTORAG_CONFIG` > `~/.autorag/config.jso
 `autorag refresh` and `autorag index reset|rebuild` accept `--method <csv>` (e.g. `--method bm25,minsync,parsed`) to scope which indexing methods run or which index directories are removed. When omitted, all methods run. `autorag init` accepts `--embedder-*` flags to configure the MinSync embedder endpoint in the config file.
 
 `autorag health` checks model/provider auth before a search — it resolves the model, verifies credential presence, and optionally probes one completion call. Use it to diagnose model, provider, auth, or timeout failures. `autorag status` remains the model-free index-health command (corpus freshness and BM25/MinSync readiness). When `autorag search` fails for a model/provider reason, the error output includes a hint pointing to `autorag health`.
+
+`autorag ui` opens a loopback-only page (`127.0.0.1`) to connect local folders and datasource skills without editing JSON. It writes the same trusted `datasources` / `datasourceAccess` fields as a hand-edited config, stores env-var *names* rather than secrets, and refuses non-loopback binds. Use `--no-open` to print the URL without launching a browser.
+
+For a deliberately deployed UI, opt in explicitly in `config.json`. Keep the
+session token in the environment, set the public URL used by the browser, and
+allow only the frontend origins that should make credentialed API requests:
+
+```json
+{
+  "ui": {
+    "host": "0.0.0.0",
+    "port": 8787,
+    "allowRemote": true,
+    "publicOrigin": "https://autorag.example.com",
+    "corsOrigins": ["https://autorag.example.com"],
+    "tokenEnv": "AUTORAG_UI_TOKEN"
+  }
+}
+```
+
+Start it with `AUTORAG_UI_TOKEN` set to a random value of at least 16
+characters. Local use remains the safe default: omit `ui` (or leave
+`allowRemote` false) and AutoRAG binds to loopback, including a working
+`localhost` URL on systems that resolve it to IPv6.
 
 ## Installation
 
