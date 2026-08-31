@@ -12,7 +12,19 @@ import { DATASOURCE_TYPE_CATALOG, getDatasourceType, SOURCE_PICKER } from "./cat
 import { type ProbeResult, probeConnection } from "./probe.ts";
 
 const ALIAS_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
-const SECRET_KEYS = new Set(["token", "password", "accesstoken", "apikey", "clientsecret", "env", "authorization"]);
+const SECRET_KEYS = new Set([
+	"token",
+	"password",
+	"accesstoken",
+	"apikey",
+	"secret",
+	"credential",
+	"authorization",
+	"cookie",
+	"privatekey",
+	"refreshtoken",
+	"env",
+]);
 const BUILTIN = new Set<string>(BUILTIN_DATASOURCE_SKILL_NAMES);
 
 export interface ConnectionInput {
@@ -253,12 +265,18 @@ export function stripSecrets<T>(value: T): T {
 	if (value && typeof value === "object") {
 		const out: Record<string, unknown> = {};
 		for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-			if (SECRET_KEYS.has(key.toLowerCase())) continue;
+			if (isSecretKey(key)) continue;
 			out[key] = stripSecrets(nested);
 		}
 		return out as T;
 	}
 	return value;
+}
+
+function isSecretKey(key: string): boolean {
+	const normalized = key.replace(/[-_]/g, "").toLowerCase();
+	if (normalized.length > 3 && normalized.endsWith("env")) return false;
+	return SECRET_KEYS.has(normalized) || normalized.includes("token") || normalized.includes("secret");
 }
 
 function asObject(value: unknown): Record<string, unknown> {

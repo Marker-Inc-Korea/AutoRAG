@@ -160,7 +160,17 @@ async function refreshPrompt() {
 }
 
 function attr(value) {
-  return String(value || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return html(value).replace(/'/g, '&#39;');
+}
+
+function html(value) {
+  return String(value || '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
 }
 
 async function renderExtras(type) {
@@ -174,17 +184,17 @@ async function renderExtras(type) {
   try { choices = await api('/api/choices?type=' + encodeURIComponent(type)); } catch (error) { /* keep empty */ }
   root.innerHTML = entry.extras.map((extra) => {
     const id = 'extra-' + extra.key;
-    const label = '<label for="' + id + '">' + extra.label + '</label>';
+    const label = '<label for="' + id + '">' + html(extra.label) + '</label>';
     if (extra.kind === 'textarea') {
-      return label + '<textarea id="' + id + '" data-extra="' + extra.key + '" placeholder="' + attr(extra.placeholder) + '"></textarea>' + (extra.help ? '<p class="help">' + extra.help + '</p>' : '');
+      return label + '<textarea id="' + id + '" data-extra="' + html(extra.key) + '" placeholder="' + attr(extra.placeholder) + '"></textarea>' + (extra.help ? '<p class="help">' + html(extra.help) + '</p>' : '');
     }
     if (extra.kind === 'select') {
       const list = extra.choices === 'rclone-remotes' ? (choices.rcloneRemotes || []) : extra.choices === 'mail-accounts' ? (choices.mailAccounts || []) : [];
-      const opts = ['<option value="">Skip for now</option>'].concat(list.map((item) => '<option value="' + attr(item.value) + '">' + item.label + '</option>'));
+      const opts = ['<option value="">Skip for now</option>'].concat(list.map((item) => '<option value="' + attr(item.value) + '">' + html(item.label) + '</option>'));
       if (extra.allowOther && !list.some((item) => item.value === 'other')) opts.push('<option value="other">Other</option>');
-      return label + '<select id="' + id + '" data-extra="' + extra.key + '">' + opts.join('') + '</select><input id="' + id + '-other" data-extra="' + extra.key + 'Other" placeholder="Other" hidden>';
+      return label + '<select id="' + id + '" data-extra="' + html(extra.key) + '">' + opts.join('') + '</select><input id="' + id + '-other" data-extra="' + html(extra.key) + 'Other" placeholder="Other" hidden>';
     }
-    return label + '<input id="' + id + '" data-extra="' + extra.key + '" placeholder="' + attr(extra.placeholder) + '">';
+    return label + '<input id="' + id + '" data-extra="' + html(extra.key) + '" placeholder="' + attr(extra.placeholder) + '">';
   }).join('');
   root.querySelectorAll('[data-extra]').forEach((el) => el.addEventListener('input', refreshPrompt));
   root.querySelectorAll('select[data-extra]').forEach((el) => {

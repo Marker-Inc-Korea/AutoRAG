@@ -7,6 +7,7 @@ import {
 	listUiState,
 	removeConnection,
 	setSearchPaths,
+	stripSecrets,
 	toggleConnection,
 	upsertConnection,
 } from "../../src/ui/config-store.ts";
@@ -42,6 +43,25 @@ function readConfig(): Record<string, unknown> {
 }
 
 describe("datasource UI config store", () => {
+	it("strips secret-like values but preserves environment variable references", () => {
+		const sanitized = stripSecrets({
+			token: "token-value",
+			refreshToken: "refresh-token-value",
+			client_secret: "secret-value",
+			password: "password-value",
+			secret: "secret-value",
+			apiKey: "api-key-value",
+			cookie: "cookie-value",
+			tokenEnv: "GITHUB_TOKEN",
+			apiKeyEnv: "API_KEY",
+		});
+
+		expect(sanitized).toEqual({
+			tokenEnv: "GITHUB_TOKEN",
+			apiKeyEnv: "API_KEY",
+		});
+	});
+
 	it("adds a GitHub connection without persisting the token value", () => {
 		upsertConnection(configPath, {
 			alias: "work-github",

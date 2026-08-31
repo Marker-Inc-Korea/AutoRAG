@@ -64,7 +64,9 @@ export function buildRegistrationPrompt(input: RegistrationPromptInput): Registr
 	lines.push(
 		`Add \`datasources.${alias}\` with \`type: "${entry.type}"\`, enabled true.`,
 		`Grant access with tags ${JSON.stringify(skill?.defaultTags ?? [entry.type])} and scope \`/${alias}/**\`.`,
-		"Never write token/password values into config — env-var names only.",
+		"Never ask this UI for a token, password, cookie, secret, or refresh credential.",
+		"If authentication is needed, ask me to set the secret in the local environment, or in the CLI's own keychain/profile, then store only the environment-variable name in AutoRAG config.",
+		"Do not print, echo, log, or copy secret values. Verify only that the referenced local secret is available.",
 	);
 	return { type: entry.type, title: entry.title, alias, prompt: lines.join("\n"), questions };
 }
