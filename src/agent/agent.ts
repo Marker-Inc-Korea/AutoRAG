@@ -950,14 +950,13 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const vectorMethod = this.methodRegistry
-			.getByType("vector")
-			.find((method) => method.describe().name === "minsync");
-		const bm25Method = this.methodRegistry.getByType("bm25").find((method) => method.describe().name === "bm25");
+		const retrieveOptions = { topK: 5, scope: options.scope };
 		const [jikji, vector, bm25] = await Promise.all([
-			this.jikjiClient === undefined ? Promise.resolve(undefined) : this.findJikji(query, { topK: 5 }),
-			vectorMethod?.retrieve(query, { topK: 5, scope: options.scope }).catch(() => []),
-			bm25Method?.retrieve(query, { topK: 5, scope: options.scope }).catch(() => []),
+			this.jikjiClient === undefined
+				? Promise.resolve(undefined)
+				: this.findJikji(query, { topK: 5 }).catch(() => undefined),
+			this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []),
+			this.bm25Method?.retrieve(query, retrieveOptions).catch(() => []),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
