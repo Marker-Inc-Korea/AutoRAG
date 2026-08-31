@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import type { ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 
 export const BASH_TOOL_NAME = "bash";
 
@@ -25,10 +24,6 @@ export interface BashToolOptions {
 	readonly timeoutMs?: number;
 	/** Maximum captured output bytes before truncation. */
 	readonly maxOutputBytes?: number;
-	/** Registry used to prevent datasource CLIs bypassing managed execution. */
-	readonly managedCliRegistry?: ManagedCliRegistry;
-	/** Additional registry used to prevent retrieval CLIs bypassing managed execution. */
-	readonly managedCliRegistries?: readonly ManagedCliRegistry[];
 }
 
 export interface BashToolDetails {
@@ -105,52 +100,6 @@ function runCommand(
 }
 
 /**
- * Detects a registered managed CLI in executable position without attempting
- * to parse or abstract its native command language.
- */
-export function isManagedCliDirectInvocation(command: string, registry: ManagedCliRegistry): boolean {
-	const tokens = shellWords(command);
-	let commandStart = true;
-	let envWrapper = false;
-	for (const token of tokens) {
-		if (
-			token === ";" ||
-			token === "||" ||
-			token === "&&" ||
-			token === "|" ||
-			token === "\n" ||
-			token === "(" ||
-			token === ")"
-		) {
-			commandStart = true;
-			envWrapper = false;
-			continue;
-		}
-		if (commandStart && (token === "env" || token === "command" || token === "exec" || token === "sudo")) {
-			envWrapper = true;
-			continue;
-		}
-		if (commandStart || envWrapper) {
-			if (!token.includes("=") && registry.resolve(token)) return true;
-			if (!token.includes("=")) {
-				commandStart = false;
-				envWrapper = false;
-			}
-		}
-	}
-	return false;
-}
-
-function shellWords(command: string): string[] {
-	return (
-		command.match(/(?:[^\s"'`|;&()]+|'[^']*'|"[^"]*"|`[^`]*`|[|;&()])/g)?.map((token) => {
-			if (/^'.*'$|^".*"$|^`.*`$/.test(token)) return token.slice(1, -1);
-			return token;
-		}) ?? []
-	);
-}
-
-/**
  * Real shell access for the librarian agent. AutoRAG navigates and reads the
  * configured collection directly through this tool (ls, find, grep, cat, …).
  * Output — including real filesystem paths — is returned to the model verbatim.
@@ -173,21 +122,6 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 				};
 			}
 			const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : options.cwd;
-			const managedCliRegistries = [
-				...(options.managedCliRegistry === undefined ? [] : [options.managedCliRegistry]),
-				...(options.managedCliRegistries ?? []),
-			];
-			if (managedCliRegistries.some((registry) => isManagedCliDirectInvocation(command, registry))) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: "AUTORAG_MANAGED_CLI_BLOCKED: run this datasource CLI through its managed datasource tool or managed CLI execution surface.",
-						},
-					],
-					details: { method: "bash", command, exitCode: undefined, timedOut: false, truncated: false },
-				};
-			}
 			const timeoutMs =
 				typeof params.timeoutMs === "number" && params.timeoutMs > 0 ? params.timeoutMs : defaultTimeout;
 			const run = await runCommand(command, cwd, timeoutMs, maxOutputBytes, signal);

@@ -451,8 +451,6 @@ export class AutoRAGAgent {
 
 		const bashTool = createBashTool({
 			cwd: this.workspaceProjectRoot,
-			managedCliRegistry: this.managedCliRegistry,
-			managedCliRegistries: [this.managedRetrievalRuntime.registry],
 		});
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
