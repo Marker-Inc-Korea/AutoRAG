@@ -246,8 +246,8 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 				[
 					fauxToolCall(JIKJI_FIND_TOOL_NAME, { query: "refund director approval" }),
 					fauxToolCall("bash", { command: "grep -rn 'director approval' docs/q3.txt" }),
-					fauxToolCall("search_minsync_documents", { query: "refund exception semantics", topK: 2 }),
-					fauxToolCall("search_bm25_documents", { query: "refund director approval", topK: 3 }),
+					fauxToolCall("semantic_search_local_docs", { query: "refund exception semantics", topK: 2 }),
+					fauxToolCall("lexical_search_local_docs", { query: "refund director approval", topK: 3 }),
 					fauxToolCall("search_all_documents", { query: "refund director approval finance kakao", topK: 6 }),
 				],
 				{ stopReason: "toolUse" },
@@ -272,8 +272,8 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		for (const name of [
 			"bash",
 			"check_memory",
-			"search_minsync_documents",
-			"search_bm25_documents",
+			"semantic_search_local_docs",
+			"lexical_search_local_docs",
 			"search_all_documents",
 			"search_datasource_documents",
 			"jikji_find",

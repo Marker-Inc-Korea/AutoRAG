@@ -105,7 +105,7 @@ describe("AutoRAGAgent", () => {
 				subscribe: (listener: (event: unknown) => void) => {
 					listener({
 						type: "tool_execution_end",
-						toolName: "search_bm25_documents",
+						toolName: "lexical_search_local_docs",
 						result: { details: { method: "bm25" } },
 					});
 					return () => {};
@@ -167,8 +167,8 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Use `bash` to open and verify relevant local files");
 		expect(prompt).toContain("check_memory");
 		for (const name of [
-			"search_bm25_documents",
-			"search_minsync_documents",
+			"lexical_search_local_docs",
+			"semantic_search_local_docs",
 			"search_all_documents",
 			"search_datasource_documents",
 		]) {
