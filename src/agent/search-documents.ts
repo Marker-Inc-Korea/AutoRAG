@@ -25,6 +25,8 @@ export type SearchDocumentDiagnosticCode =
 	| "unsupported-file"
 	| "stale-index"
 	| "deleted-mirror"
+	| "pdf-extract-thin"
+	| "pdf-hybrid-unavailable"
 	| "retrieval-method-failed"
 	| "jikji-unavailable"
 	| "jikji-prepare-failed"
