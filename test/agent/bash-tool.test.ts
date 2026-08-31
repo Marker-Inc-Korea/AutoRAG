@@ -112,7 +112,7 @@ describe("createBashTool", () => {
 		const pidPath = join(tmpDir, "timeout-child.pid");
 		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 100 });
 		const execution = tool.execute("call-tree-timeout", {
-			command: `sleep 10 & echo $! > ${pidPath}; wait`,
+			command: "sleep 10 & echo $! > timeout-child.pid; wait",
 		});
 
 		await waitForFile(pidPath);
@@ -138,7 +138,7 @@ describe("createBashTool", () => {
 		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 10_000 });
 		const execution = tool.execute(
 			"call-tree-abort",
-			{ command: `sleep 10 & echo $! > ${pidPath}; wait` },
+			{ command: "sleep 10 & echo $! > abort-child.pid; wait" },
 			controller.signal,
 		);
 
