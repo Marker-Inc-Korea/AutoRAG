@@ -19,6 +19,7 @@ import { HimalayaConnector, type HimalayaConnectorOptions } from "./gmail/himala
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
+import { type MailcrawlOptions, MailcrawlSkill } from "./mailcrawl/index.ts";
 import { type NotcrawlOptions, NotionSkill } from "./notion/index.ts";
 import { ObsidianSkill } from "./obsidian/index.ts";
 import { type RssConnectorOptions, RssSkill } from "./rss/index.ts";
@@ -203,6 +204,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			connectorOptions: config.connector as MailExportConnectorOptions,
+		}),
+	mailcrawl: (config, workspaceRoot, registrationName) =>
+		new MailcrawlSkill({
+			...common(config, workspaceRoot),
+			datasourceId: registrationName,
+			...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
+			...(config.connector as MailcrawlOptions),
 		}),
 	obsidian: (config, workspaceRoot, registrationName) => {
 		const connector = config.connector as

@@ -178,9 +178,9 @@ export class RcloneConnector implements DatasourceConnector {
 		let nextEntry = 0;
 		let copyFailure:
 			| {
-				readonly reason: "not-configured" | "auth" | "permission" | "api-error" | "unavailable";
-				readonly message: string;
-			}
+					readonly reason: "not-configured" | "auth" | "permission" | "api-error" | "unavailable";
+					readonly message: string;
+			  }
 			| undefined;
 		const copyOne = async (): Promise<void> => {
 			const entryIndex = nextEntry;
@@ -296,8 +296,8 @@ function toManifestEntry(raw: unknown): ManifestEntry | undefined {
 		hashesRecord === undefined
 			? undefined
 			: Object.fromEntries(
-				Object.entries(hashesRecord).filter((pair): pair is [string, string] => typeof pair[1] === "string"),
-			);
+					Object.entries(hashesRecord).filter((pair): pair is [string, string] => typeof pair[1] === "string"),
+				);
 	return {
 		path,
 		name,
