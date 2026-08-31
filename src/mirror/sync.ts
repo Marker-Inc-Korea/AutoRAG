@@ -58,7 +58,9 @@ export type ParsedMirrorDiagnosticCode =
 	| "parser-failed"
 	| "duplicate-excluded"
 	| "deleted-mirror"
-	| "stale-index";
+	| "stale-index"
+	| "pdf-extract-thin"
+	| "pdf-hybrid-unavailable";
 
 /** Path-opaque refresh diagnostic. `source` is an opaque virtual path, never a real fs path. */
 export interface ParsedMirrorDiagnostic {
@@ -179,6 +181,14 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				continue;
 			}
 			writeAtomic(outputPath, normalizeMarkdown(parsed.markdown));
+			for (const diagnostic of parsed.diagnostics ?? []) {
+				diagnostics.push({
+					code: diagnostic.code,
+					severity: diagnostic.severity,
+					message: diagnostic.message,
+					source: entry.virtualPath,
+				});
+			}
 			written += 1;
 			sinceCheckpoint += 1;
 		}
