@@ -75,6 +75,8 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			...(this.options.account === undefined ? [] : ["--account", this.options.account]),
 			...(this.options.mailbox === undefined ? [] : ["--mailbox", this.options.mailbox]),
 			...(this.options.backend === undefined ? [] : ["--backend", this.options.backend]),
+			...(this.options.source === undefined ? [] : ["--source", this.options.source]),
+			...(this.options.fixture === undefined ? [] : ["--fixture", this.options.fixture]),
 			...(this.options.himalayaConfig === undefined ? [] : ["--himalaya-config", this.options.himalayaConfig]),
 		];
 		const result = await this.run(args, signal);

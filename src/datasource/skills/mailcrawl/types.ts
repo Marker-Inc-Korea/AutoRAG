@@ -14,6 +14,8 @@ export interface MailcrawlOptions {
 	readonly account?: string;
 	readonly mailbox?: string;
 	readonly backend?: string;
+	readonly source?: string;
+	readonly fixture?: string;
 	readonly himalayaConfig?: string;
 	readonly timeoutMs?: number;
 	readonly maxBufferBytes?: number;

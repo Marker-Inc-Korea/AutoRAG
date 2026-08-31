@@ -168,9 +168,11 @@ keep authentication in their external tool configuration. Unknown skill names
 fail config resolution. `scope` and tags can narrow trusted access but cannot
 grant it.
 
-Mailcrawl must be installed separately and configured through its own Himalaya
-account. AutoRAG runs its local `sync` and `index` lifecycle, then uses the
-mailcrawl CLI for BM25, semantic, or hybrid search.
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.4` or newer)
+and configured through its own Himalaya account. AutoRAG runs its local `sync`
+and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
+hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
+fails with `text array must be non-empty`.
 
 ## Verify and build indexes
 

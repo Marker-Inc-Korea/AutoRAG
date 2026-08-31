@@ -127,6 +127,30 @@ describe("MailcrawlClient", () => {
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "invalid-output" });
 	});
 
+	it("forwards native fixture sync flags", async () => {
+		const fixture = join(root, "messages.json");
+		writeFake(JSON.stringify({ added: 1, unchanged: 0, chunksAdded: 1 }));
+		const client = new MailcrawlClient({
+			binaryPath,
+			dataDir: join(root, "data"),
+			source: "fixture",
+			fixture,
+		});
+
+		expect(await client.sync()).toMatchObject({ ok: true, data: { messages: 1, chunksAdded: 1 } });
+		expect(calls()[0]?.args).toEqual(["sync", "--json", "--source", "fixture", "--fixture", fixture]);
+	});
+
+	it("accepts 0.1.4 reused-only semantic index JSON", async () => {
+		writeFake(JSON.stringify({ embedded: 0, reused: 3, generation: "gen-1" }));
+		const client = new MailcrawlClient({ binaryPath, dataDir: join(root, "data") });
+
+		expect(await client.index()).toMatchObject({
+			ok: true,
+			data: { embedded: 0, reused: 3, generation: "gen-1" },
+		});
+	});
+
 	it("rejects remote embedding configuration before spawning", async () => {
 		const client = new MailcrawlClient({
 			binaryPath,

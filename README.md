@@ -242,10 +242,12 @@ Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `sla
 Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search --json` during retrieval. Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
 
 Install and configure [`mailcrawl`](https://github.com/NomaDamas/mailcrawl)
-separately. AutoRAG invokes `mailcrawl sync` followed by `mailcrawl index`
-during datasource refresh, then calls `mailcrawl search` in BM25, semantic, or
-hybrid mode. The archive remains local under the managed datasource workspace;
-Himalaya credentials and provider configuration remain owned by mailcrawl.
+`@nomadamas/mailcrawl@0.1.4` or newer separately. AutoRAG invokes
+`mailcrawl sync` followed by `mailcrawl index` during datasource refresh, then
+calls `mailcrawl search` in BM25, semantic, or hybrid mode. The archive remains
+local under the managed datasource workspace; Himalaya credentials and provider
+configuration remain owned by mailcrawl. 0.1.3 and earlier fail a repeated
+`index` after a no-op sync.
 
 Install and authenticate rclone separately (`brew install rclone && rclone
 config` on macOS), then configure the provider-neutral `cloud-drive` skill.
