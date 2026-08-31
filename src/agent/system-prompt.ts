@@ -90,7 +90,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 
 ## Workflow
 
-1. **PLAN** — Understand the query, inspect retrieval memory when useful, and choose suitable retrieval methods.
+1. **PLAN** — Understand the query and review the preloaded initial retrieval context.
 2. **RETRIEVE** — Use MinSync BM25, MinSync vector, MinSync hybrid, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
 3. **READ** — Use \`bash\` to open and verify relevant local files. Do not curate from search snippets alone when source files are available.
 4. **JUDGE** — Evaluate relevance, sufficiency, conflicts, uncertainty, and temporal context.
@@ -103,6 +103,7 @@ ${toolLines.join("\n")}
 ${noSearchTools}
 ## Search Strategy
 
+- Before additional searching, inspect the initial retrieval context supplied with the query. It contains bounded Jikji, semantic MinSync, and lexical BM25 candidates collected in parallel; treat it as a starting slate, not as verified final evidence.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync-backed BM25 for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
