@@ -47,7 +47,6 @@ export interface DatasourceSkillConfig {
 		readonly names?: readonly string[];
 	};
 }
-
 /** The trusted `datasources` config section: skill name → config. */
 export type DatasourcesConfig = Readonly<Record<string, DatasourceSkillConfig | boolean>>;
 
@@ -219,6 +218,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
+			...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
 			...(config.connector as MailcrawlOptions),
 			...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 		}),
@@ -295,11 +295,7 @@ export function buildDatasourceSkills(
 		const hasChannelFilter = (entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0;
 		const aliased =
 			name !== templateName || hasChannelFilter
-				? new AliasedDatasourceSkill(skill, {
-					alias: name,
-					...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
-					...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
-				})
+				? new AliasedDatasourceSkill(skill, aliasOptions(name, entry))
 				: skill;
 		skills.push(
 			typeof entry.description === "string" && entry.description.trim().length > 0
@@ -308,4 +304,15 @@ export function buildDatasourceSkills(
 		);
 	}
 	return { skills, unknown };
+}
+
+function aliasOptions(
+	alias: string,
+	entry: DatasourceSkillConfig,
+): ConstructorParameters<typeof AliasedDatasourceSkill>[1] {
+	return {
+		alias,
+		...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
+		...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
+	};
 }

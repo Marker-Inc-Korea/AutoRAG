@@ -32,7 +32,6 @@ export class ConfigError extends Error {
 		this.name = "ConfigError";
 	}
 }
-
 /**
  * Typed BM25 method config persisted in `config.json`. Missing `enabled` means
  * enabled (true). `false` as a top-level value is also accepted and disables.
@@ -224,12 +223,11 @@ function migrateLegacyConfig(configPath: string, legacyPath: string): Partial<Cl
 	const legacy = readConfigFile(legacyPath, true);
 	const legacyBytes = readFileSync(legacyPath);
 	const migrated = normalizeLegacyConfigPaths(legacy ?? {}, dirname(legacyPath));
-	const migratedBytes =
+	const legacyUnchanged =
 		legacy?.workspacePath === migrated.workspacePath &&
 		legacy?.memoryPath === migrated.memoryPath &&
-		JSON.stringify(legacy?.searchPaths) === JSON.stringify(migrated.searchPaths)
-			? legacyBytes
-			: `${JSON.stringify(migrated, null, 2)}\n`;
+		JSON.stringify(legacy?.searchPaths) === JSON.stringify(migrated.searchPaths);
+	const migratedBytes = legacyUnchanged ? legacyBytes : `${JSON.stringify(migrated, null, 2)}\n`;
 	mkdirSync(dirname(configPath), { recursive: true });
 	const lock = acquireConfigWriteLock(configPath);
 	try {
@@ -696,7 +694,15 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
-	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd());
+	const mailcrawlBinaryPaths = Object.entries(config.datasources ?? {}).flatMap(([name, raw]) => {
+		if (raw === false || raw === true || raw === undefined || raw === null || typeof raw !== "object") return [];
+		if ((raw.type ?? name) !== "mailcrawl" || raw.connector === null || typeof raw.connector !== "object") return [];
+		const binaryPath = raw.connector.binaryPath;
+		return typeof binaryPath === "string" ? [binaryPath] : [];
+	});
+	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd(), {
+		mailcrawlBinaryPaths,
+	});
 	const minSyncConfig = config.minSync;
 	const managedRetrievalRuntime = createManagedRetrievalRuntime(config.workspacePath ?? process.cwd(), {
 		minSync: minSyncConfig?.enabled !== false,
@@ -793,16 +799,27 @@ function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefine
 	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
 }
 
+function unknownConfiguredModelMessage(reference: AgentModelConfig): string {
+	return (
+		`Unknown configured model: ${reference.provider}/${reference.id}. ` +
+		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id."
+	);
+}
+
+function loadLocalAutoRAGModelForReference(
+	options: LoadLocalAutoRAGModelOptions,
+	modelId: string | undefined,
+): LocalAutoRAGModel {
+	return loadLocalAutoRAGModel({ ...options, modelId });
+}
+
 function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
 	if (isConfiguredEndpoint(reference)) {
 		return buildModelFromConfiguredEndpoint(reference);
 	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
-	throw new ConfigError(
-		`Unknown configured model: ${reference.provider}/${reference.id}. ` +
-			`Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.`,
-	);
+	throw new ConfigError(unknownConfiguredModelMessage(reference));
 }
 
 function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
@@ -815,10 +832,7 @@ function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
 	if ((getProviders() as readonly string[]).includes(reference.provider)) {
-		throw new ConfigError(
-			`Unknown configured model: ${reference.provider}/${reference.id}. ` +
-				`Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.`,
-		);
+		throw new ConfigError(unknownConfiguredModelMessage(reference));
 	}
 	return undefined;
 }
@@ -890,12 +904,7 @@ function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAG
 	const modelRef = config.model;
 	const registered = resolveBuiltInModel(modelRef);
 	const needsLocal = modelRef === undefined || registered === undefined;
-	const local = needsLocal
-		? loadLocalAutoRAGModel({
-				...localOptions,
-				modelId: modelRef?.id,
-			})
-		: undefined;
+	const local = needsLocal ? loadLocalAutoRAGModelForReference(localOptions, modelRef?.id) : undefined;
 	const model =
 		registered ??
 		(modelRef === undefined || modelRef.provider === local?.provider
@@ -951,7 +960,6 @@ function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAG
 		env,
 	};
 }
-
 export function resolveAgentModel(
 	config: CliConfig,
 	localOptions: LoadLocalAutoRAGModelOptions = {},
@@ -963,7 +971,6 @@ export function resolveAgentModel(
 		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
 	};
 }
-
 function providerApiKeyEnvName(provider: string): string {
 	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }

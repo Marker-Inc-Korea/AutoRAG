@@ -9,6 +9,7 @@ export type {
 	MailcrawlOptions,
 	MailcrawlSearchHit,
 	MailcrawlSearchMode,
+	MailcrawlSearchOptions,
 	MailcrawlSearchResult,
 	MailcrawlSyncInfo,
 	MailcrawlSyncResult,

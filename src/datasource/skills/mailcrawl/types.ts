@@ -1,7 +1,11 @@
 import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
-import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 export type MailcrawlSearchMode = "keyword" | "bm25" | "semantic" | "hybrid";
+
+export interface MailcrawlSearchOptions {
+	readonly topK?: number;
+	readonly signal?: AbortSignal;
+}
 
 export interface MailcrawlOptions {
 	readonly binaryPath?: string;
@@ -27,7 +31,8 @@ export type MailcrawlFailureReason =
 	| "aborted"
 	| "stdout-too-large"
 	| "stderr-too-large"
-	| "invalid-output";
+	| "invalid-output"
+	| "remote-embedding-rejected";
 
 export interface MailcrawlFailure {
 	readonly ok: false;
@@ -86,5 +91,3 @@ export interface MailcrawlSearchOk {
 
 export type MailcrawlSyncResult = MailcrawlOk<MailcrawlSyncInfo> | MailcrawlFailure;
 export type MailcrawlSearchResult = MailcrawlSearchOk | MailcrawlFailure;
-export type MailcrawlSearchOptions = RetrievalOptions;
-

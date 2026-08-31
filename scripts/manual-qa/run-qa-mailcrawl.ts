@@ -1,6 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { EMIT_AUTORAG_RESULTS_TOOL_NAME } from "../../src/agent/emit-results-tool.ts";
 import { MailcrawlClient, MailcrawlSkill } from "../../src/datasource/skills/mailcrawl/index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "autorag-mailcrawl-live-"));
@@ -26,7 +30,36 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 	if (bad.ok || bad.reason !== "binary-missing") throw new Error("mailcrawl bad binary handling failed");
 	const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { args: string[] });
 	if (!calls.some((call) => call.args[0] === "sync") || !calls.some((call) => call.args[0] === "index")) throw new Error("mailcrawl lifecycle calls missing");
-	console.log("MAILCRAWL_LIVE_QA_PASS");
+	const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "mailcrawl-qa" }] });
+	registration.setResponses([
+		fauxAssistantMessage([fauxToolCall("load_datasource_skill", { name: "datasource-mailcrawl" })], { stopReason: "toolUse" }),
+		fauxAssistantMessage([fauxToolCall("search_datasource_documents", { query: "refund approval", topK: 5, scope: "/mailcrawl/personal/**" })], { stopReason: "toolUse" }),
+		fauxAssistantMessage([fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+			answer: "[1] Director approval is required before payout.",
+			results: [{ number: 1, title: "Refund approval", summary: "Director approval is required before payout.", evidence: [{ excerpt: "Director approval is required before payout." }], confidence: 0.99 }],
+			mapping: [{ number: 1, source: "/mailcrawl/personal/chunks/msg-1:latest:0", method: "mailcrawl-bm25", content: "Director approval is required before payout.", evidenceRefs: [{ method: "mailcrawl-bm25", source: "/mailcrawl/personal/chunks/msg-1:latest:0", content: "Director approval is required before payout." }] }],
+		})], { stopReason: "toolUse" }),
+	]);
+	try {
+		const agent = new AutoRAGAgent({
+			model: registration.getModel(),
+			searchPaths: [root],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: false,
+			bm25: false,
+			dupey: false,
+			datasourceSkills: [skill],
+			datasourceAccess: { allowedTags: ["mailcrawl"], allowedScopes: ["/mailcrawl/personal/**"] },
+			searchTimeoutMs: 30_000,
+		});
+		const response = await agent.searchDocuments("Which refund exceptions require approval before payout?", { topK: 1, scope: "/mailcrawl/personal/**" });
+		if (response.results[0]?.source !== "/mailcrawl/personal/chunks/msg-1:latest:0") throw new Error("AutoRAG agent source mapping failed");
+		if (!response.answer.includes("Director approval")) throw new Error("AutoRAG agent answer failed");
+	} finally {
+		registration.unregister();
+	}
+	console.log("MAILCRAWL_AGENT_QA_PASS");
 } finally {
 	rmSync(root, { recursive: true, force: true });
 }

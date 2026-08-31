@@ -237,19 +237,20 @@ export interface AutoRAGSearchSession {
 	dispose(): void;
 }
 
-export type AutoRAGJikjiPrepareResult =
-	| {
-		readonly ok: true;
-		readonly code: number;
-		readonly diagnostics: readonly string[];
-	}
-	| {
-		readonly ok: false;
-		readonly reason: JikjiFailureReason;
-		readonly code: number | null;
-		readonly diagnostics: readonly string[];
-	};
+export interface AutoRAGJikjiPrepareSuccess {
+	readonly ok: true;
+	readonly code: number;
+	readonly diagnostics: readonly string[];
+}
 
+export interface AutoRAGJikjiPrepareFailure {
+	readonly ok: false;
+	readonly reason: JikjiFailureReason;
+	readonly code: number | null;
+	readonly diagnostics: readonly string[];
+}
+
+export type AutoRAGJikjiPrepareResult = AutoRAGJikjiPrepareSuccess | AutoRAGJikjiPrepareFailure;
 export class AutoRAGAgent {
 	private readonly innerAgent: Agent;
 	private readonly tools: readonly AgentTool[];
@@ -377,6 +378,7 @@ export class AutoRAGAgent {
 			}
 		}
 		if (this.datasourceSkills.some((skill) => skill.describe().name === "mailcrawl")) {
+			// Register the datasource CLI with the shared bash execution gate.
 			try {
 				this.managedCliRegistry.register(createMailcrawlManagedCliProvider());
 			} catch (error) {
@@ -625,7 +627,7 @@ export class AutoRAGAgent {
 			agent,
 			prompt: async (prompt) => agent.prompt(prompt),
 			abort: async () => agent.abort(),
-			dispose: () => { },
+			dispose: () => undefined,
 		};
 	}
 
@@ -1054,13 +1056,7 @@ export class AutoRAGAgent {
 				datasources,
 				lastError: undefined,
 			};
-			const publicMinsync = minsync
-				? {
-					ok: minsync.ok,
-					synced: minsync.synced,
-					...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
-				}
-				: undefined;
+			const publicMinsync = minsync === undefined ? undefined : toPublicMinsync(minsync);
 			return {
 				...(bm25 ? { ...summary } : summary),
 				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
@@ -1202,11 +1198,10 @@ export class AutoRAGAgent {
 				return { close: () => watcher.close() };
 			} catch {
 				this.refreshState = { ...this.refreshState, watchFailed: true };
-				return { close: () => { } };
+				return { close: () => undefined };
 			}
 		};
 	}
-
 	async syncParsedMirrors(force = false): Promise<ParsedMirrorSyncResult> {
 		const duplicateFilter = await this.exactDuplicateExclusions();
 		return syncParsedMirrors({
@@ -1614,7 +1609,6 @@ export class AutoRAGAgent {
 		);
 	}
 }
-
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {
 	return {
 		code: diagnostic.code,
@@ -1623,7 +1617,6 @@ function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentD
 		source: diagnostic.source,
 	};
 }
-
 function pinSearchRoot(searchPath: string): string {
 	const resolvedPath = resolve(searchPath);
 	let canonicalPath: string;
@@ -1655,4 +1648,12 @@ function pinSearchRoot(searchPath: string): string {
 
 function hasFileSystemErrorCode(error: unknown, code: string): boolean {
 	return error instanceof Error && "code" in error && error.code === code;
+}
+
+function toPublicMinsync(minsync: AutoRAGMinSyncRefreshResult): AutoRAGMinSyncRefreshResult {
+	return {
+		ok: minsync.ok,
+		synced: minsync.synced,
+		...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+	};
 }

@@ -7,7 +7,10 @@ import { createMailcrawlManagedCliProvider } from "../datasource/skills/mailcraw
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "./managed-cli-config.ts";
 
-export function createManagedCliRuntime(workspace: string): {
+export function createManagedCliRuntime(
+	workspace: string,
+	options: { readonly mailcrawlBinaryPaths?: readonly string[] } = {},
+): {
 	readonly registry: ManagedCliRegistry;
 	readonly manager: ManagedCliConfigManager;
 } {
@@ -22,7 +25,7 @@ export function createManagedCliRuntime(workspace: string): {
 		createQmdManagedCliProvider(),
 		createRcloneManagedCliProvider(),
 		createHimalayaManagedCliProvider(),
-		createMailcrawlManagedCliProvider(),
+		createMailcrawlManagedCliProvider(undefined, options.mailcrawlBinaryPaths),
 	]) {
 		registry.register(provider);
 	}

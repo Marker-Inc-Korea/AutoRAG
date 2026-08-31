@@ -14,7 +14,6 @@ beforeEach(() => {
 	binaryPath = join(root, "bin", "mailcrawl");
 	logPath = join(root, "calls.jsonl");
 });
-
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 function writeFake(output: string): void {
@@ -33,9 +32,16 @@ process.stdout.write(${JSON.stringify(output)});
 	chmodSync(binaryPath, 0o755);
 }
 
-function calls(): readonly { readonly args: readonly string[]; readonly dataDir: string | null; readonly openai: string | null }[] {
+function calls(): readonly {
+	readonly args: readonly string[];
+	readonly dataDir: string | null;
+	readonly openai: string | null;
+}[] {
 	if (!existsSync(logPath)) return [];
-	return readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+	return readFileSync(logPath, "utf8")
+		.trim()
+		.split("\n")
+		.map((line) => JSON.parse(line));
 }
 
 describe("MailcrawlClient", () => {
@@ -51,19 +57,23 @@ describe("MailcrawlClient", () => {
 
 		expect(await client.sync()).toMatchObject({ ok: true, data: { messages: 2, chunksAdded: 3 } });
 
-		writeFake(JSON.stringify([{
-			chunkId: "msg-1:latest:0",
-			messageId: "msg-1",
-			threadId: "thread-1",
-			accountId: "personal",
-			mailbox: "INBOX",
-			subject: "Contract renewal",
-			from: "legal@example.com",
-			to: ["me@example.com"],
-			date: "2026-08-30T10:00:00Z",
-			snippet: "Renewal is approved.",
-			score: 0.9,
-		}]));
+		writeFake(
+			JSON.stringify([
+				{
+					chunkId: "msg-1:latest:0",
+					messageId: "msg-1",
+					threadId: "thread-1",
+					accountId: "personal",
+					mailbox: "INBOX",
+					subject: "Contract renewal",
+					from: "legal@example.com",
+					to: ["me@example.com"],
+					date: "2026-08-30T10:00:00Z",
+					snippet: "Renewal is approved.",
+					score: 0.9,
+				},
+			]),
+		);
 		expect(await client.search("hybrid", "renewal", { topK: 5 })).toMatchObject({
 			ok: true,
 			hits: [{ chunkId: "msg-1:latest:0", messageId: "msg-1" }],
@@ -71,37 +81,95 @@ describe("MailcrawlClient", () => {
 
 		const recorded = calls();
 		expect(recorded[0]?.args).toEqual(["sync", "--json", "--account", "personal", "--mailbox", "INBOX"]);
-		expect(recorded[1]?.args).toEqual(["search", "--mode", "hybrid", "--limit", "5", "--json", "renewal"]);
-		expect(recorded.every((call) => call.dataDir === join(root, ".autorag", "datasources", "mailcrawl", "default", "data"))).toBe(true);
+		expect(recorded[1]?.args).toEqual([
+			"search",
+			"--mode",
+			"hybrid",
+			"--account",
+			"personal",
+			"--mailbox",
+			"INBOX",
+			"--limit",
+			"5",
+			"--json",
+			"renewal",
+		]);
+		expect(
+			recorded.every(
+				(call) => call.dataDir === join(root, ".autorag", "datasources", "mailcrawl", "default", "data"),
+			),
+		).toBe(true);
 		expect(recorded.every((call) => call.openai === null)).toBe(true);
 	});
-
 	it("returns bounded failure results without throwing", async () => {
 		const client = new MailcrawlClient({ binaryPath: join(root, "missing") });
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "binary-missing" });
 	});
-});
 
+	it("applies dataDir when used without a workspace", async () => {
+		writeFake(JSON.stringify([]));
+		const dataDir = join(root, "custom-data");
+		const client = new MailcrawlClient({ binaryPath, dataDir });
+
+		await client.search("bm25", "query");
+
+		expect(calls()[0]?.dataDir).toBe(dataDir);
+	});
+
+	it("rejects malformed successful JSON responses", async () => {
+		writeFake("{}");
+		const client = new MailcrawlClient({ binaryPath });
+
+		expect(await client.sync()).toMatchObject({ ok: false, reason: "invalid-output" });
+		expect(await client.index()).toMatchObject({ ok: false, reason: "invalid-output" });
+
+		writeFake(JSON.stringify([{}]));
+		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "invalid-output" });
+	});
+
+	it("rejects remote embedding configuration before spawning", async () => {
+		const client = new MailcrawlClient({
+			binaryPath,
+			env: { MAILCRAWL_EMBEDDER: "https://embeddings.example.com" },
+		});
+
+		expect(await client.index()).toMatchObject({ ok: false, reason: "remote-embedding-rejected" });
+		expect(calls()).toEqual([]);
+	});
+
+	it("bounds UTF-8 process output by bytes", async () => {
+		writeFake(JSON.stringify("😀".repeat(32)));
+		const client = new MailcrawlClient({ binaryPath, maxBufferBytes: 8 });
+
+		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "stdout-too-large" });
+	});
+});
 describe("MailcrawlSkill", () => {
 	it("indexes and exposes BM25, semantic, and hybrid opaque retrieval methods", async () => {
 		const client = {
-			async sync() { return { ok: true as const, data: { messages: 2, chunksAdded: 2 }, stdout: "", stderr: "", code: 0 }; },
-			async index() { return { ok: true as const, data: { embedded: 2 }, stdout: "", stderr: "", code: 0 }; },
+			async sync() {
+				return { ok: true as const, data: { messages: 2, chunksAdded: 2 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return { ok: true as const, data: { embedded: 2 }, stdout: "", stderr: "", code: 0 };
+			},
 			async search() {
-				const hits = [{
-					chunkId: "m1:latest:0",
-					messageId: "m1",
-					threadId: "t1",
-					accountId: "acct",
-					mailbox: "INBOX",
-					subject: "Policy",
-					from: "a@example.com",
-					to: [],
-					date: "2026-08-30",
-					snippet: "Director approval required.",
-					score: 1,
-					mode: "bm25" as const,
-				}];
+				const hits = [
+					{
+						chunkId: "m1:latest:0",
+						messageId: "m1",
+						threadId: "t1",
+						accountId: "acct",
+						mailbox: "INBOX",
+						subject: "Policy",
+						from: "a@example.com",
+						to: [],
+						date: "2026-08-30",
+						snippet: "Director approval required.",
+						score: 1,
+						mode: "bm25" as const,
+					},
+				];
 				return { ok: true as const, hits, stdout: "", stderr: "", code: 0 };
 			},
 		};
@@ -112,8 +180,77 @@ describe("MailcrawlSkill", () => {
 			"mailcrawl-semantic",
 			"mailcrawl-hybrid",
 		]);
-		const result = await skill.retrievalMethods()[0]?.retrieve("approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
+		const result = await skill
+			.retrievalMethods()[0]
+			?.retrieve("approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
 		expect(result?.[0]?.source).toBe("/mailcrawl/personal/chunks/m1:latest:0");
 		expect(skill.skillManifest().content).toContain("mailcrawl");
+	});
+
+	it("filters configured account and mailbox at retrieval time", async () => {
+		const client = {
+			async sync() {
+				return { ok: true as const, data: { messages: 1, chunksAdded: 1 }, stdout: "", stderr: "", code: 0 };
+			},
+			async index() {
+				return { ok: true as const, data: { embedded: 1 }, stdout: "", stderr: "", code: 0 };
+			},
+			async search() {
+				return {
+					ok: true as const,
+					hits: [
+						{
+							chunkId: "other",
+							messageId: "other",
+							threadId: "thread",
+							accountId: "other",
+							mailbox: "INBOX",
+							subject: "Other",
+							from: "other@example.com",
+							to: [],
+							date: "2026-08-30",
+							snippet: "Other account",
+							score: 1,
+							mode: "bm25" as const,
+						},
+						{
+							chunkId: "personal",
+							messageId: "personal",
+							threadId: "thread",
+							accountId: "personal",
+							mailbox: "INBOX",
+							subject: "Personal",
+							from: "me@example.com",
+							to: [],
+							date: "2026-08-30",
+							snippet: "Personal account",
+							score: 1,
+							mode: "bm25" as const,
+						},
+					],
+					stdout: "",
+					stderr: "",
+					code: 0,
+				};
+			},
+		};
+		const skill = new MailcrawlSkill({
+			client,
+			instanceId: "personal",
+			account: "personal",
+			mailbox: "INBOX",
+		});
+
+		const result = await skill.retrievalMethods()[0]?.retrieve("account", {
+			topK: 5,
+			allowedScopes: ["/mailcrawl/personal/**"],
+		});
+
+		expect(result).toHaveLength(1);
+		expect(result?.[0]?.metadata.accountId).toBe("personal");
+	});
+
+	it("rejects unsafe instance identifiers", () => {
+		expect(() => new MailcrawlSkill({ instanceId: "../outside" })).toThrow(/safe single path segment/);
 	});
 });
