@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { lstat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, relative, sep } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -15,10 +15,7 @@ export const WINDOWS_FILE_ATTRIBUTE_OFFLINE = 0x0000_1000;
 export const WINDOWS_FILE_ATTRIBUTE_RECALL_ON_OPEN = 0x0004_0000;
 export const WINDOWS_FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS = 0x0040_0000;
 
-const MAC_CLOUD_PATH_MARKERS = [
-	`${sep}Library${sep}CloudStorage${sep}`,
-	`${sep}Library${sep}Mobile Documents${sep}`,
-] as const;
+const MAC_CLOUD_PATH_MARKERS = ["/Library/CloudStorage/", "/Library/Mobile Documents/"] as const;
 
 const WINDOWS_CLOUD_PATH_MARKERS = [
 	"\\OneDrive",
@@ -42,7 +39,7 @@ export interface FilesystemClassification {
 }
 
 export function pathLooksLikeCloudRoot(target: string): boolean {
-	const normalized = target.replaceAll("\\", sep);
+	const normalized = target.replaceAll("\\", "/");
 	return (
 		MAC_CLOUD_PATH_MARKERS.some((marker) => normalized.includes(marker)) ||
 		WINDOWS_CLOUD_PATH_MARKERS.some((marker) => normalized.toLowerCase().includes(marker.toLowerCase()))
@@ -50,7 +47,8 @@ export function pathLooksLikeCloudRoot(target: string): boolean {
 }
 
 export function homeCloudRoots(home = homedir()): readonly string[] {
-	return [join(home, "Library", "CloudStorage"), join(home, "Library", "Mobile Documents")];
+	const normalizedHome = home.replaceAll("\\", "/").replace(/\/+$/, "");
+	return [`${normalizedHome}/Library/CloudStorage`, `${normalizedHome}/Library/Mobile Documents`];
 }
 
 export async function classifyFilesystemRoot(target: string): Promise<FilesystemClassification> {
