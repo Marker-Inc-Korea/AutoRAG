@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -114,6 +114,7 @@ describe("MailcrawlClient", () => {
 		await client.search("bm25", "query");
 
 		expect(calls()[0]?.dataDir).toBe(dataDir);
+		if (process.platform !== "win32") expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 	});
 
 	it("rejects malformed successful JSON responses", async () => {
@@ -125,6 +126,16 @@ describe("MailcrawlClient", () => {
 
 		writeFake(JSON.stringify([{}]));
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "invalid-output" });
+	});
+
+	it("creates the managed archive directory with private permissions", async () => {
+		if (process.platform === "win32") return;
+		writeFake(JSON.stringify({ added: 1, chunksAdded: 1 }));
+		const client = new MailcrawlClient({ binaryPath, workspacePath: root });
+		const dataDir = join(root, ".autorag", "datasources", "mailcrawl", "default", "data");
+
+		expect(await client.sync()).toMatchObject({ ok: true });
+		expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 	});
 
 	it("forwards native fixture sync flags", async () => {

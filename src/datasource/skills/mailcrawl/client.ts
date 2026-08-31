@@ -2,7 +2,11 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { createMailcrawlManagedCliProvider, validateMailcrawlInstanceId } from "./config.ts";
+import {
+	createMailcrawlManagedCliProvider,
+	ensurePrivateMailcrawlDataDir,
+	validateMailcrawlInstanceId,
+} from "./config.ts";
 import type {
 	MailcrawlFailure,
 	MailcrawlFailureReason,
@@ -148,6 +152,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 					instance: this.options.instanceId,
 					...(this.options.dataDir === undefined ? {} : { config: { dataDir: this.options.dataDir } }),
 				});
+			else if (this.options.dataDir !== undefined) ensurePrivateMailcrawlDataDir(this.options.dataDir);
 		} catch {
 			return { ok: false, reason: "spawn-error", stdout: "", stderr: "", code: null };
 		}
