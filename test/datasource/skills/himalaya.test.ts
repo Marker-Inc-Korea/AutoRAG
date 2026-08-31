@@ -130,7 +130,7 @@ describe("HimalayaConnector", () => {
 		expect(result).toMatchObject({ ok: false });
 	});
 
-	it("applies the managed HIMALAYA_CONFIG and workspace cwd to real CLI runs", async () => {
+	it("runs himalaya directly without injecting a managed config", async () => {
 		const workspace = mkdtempSync(join(tmpdir(), "autorag-himalaya-managed-"));
 		const binary = join(workspace, "himalaya");
 		const envPath = join(workspace, "himalaya-env.json");
@@ -150,10 +150,7 @@ else process.stdout.write("managed body");
 		chmodSync(binary, 0o755);
 		const result = await new HimalayaConnector({ binaryPath: binary, workspaceRoot: workspace }).fetch();
 		expect(result).toMatchObject({ ok: true });
-		expect(JSON.parse(readFileSync(envPath, "utf8"))).toEqual({
-			config: join(workspace, ".autorag", "datasources", "himalaya", "default", "config.toml"),
-			cwd: realpathSync(workspace),
-		});
+		expect(JSON.parse(readFileSync(envPath, "utf8")).config).toBeUndefined();
 		rmSync(workspace, { recursive: true, force: true });
 	});
 

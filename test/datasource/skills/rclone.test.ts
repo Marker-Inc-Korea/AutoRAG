@@ -51,7 +51,7 @@ describe("RcloneConnector", () => {
 		expect(await new RcloneConnector({}).fetch()).toMatchObject({ ok: false, reason: "not-configured" });
 	});
 
-	it("applies the managed RCLONE_CONFIG and workspace cwd to real CLI runs", async () => {
+	it("runs rclone directly without injecting a managed config", async () => {
 		const root = workspace();
 		const binary = join(root, "rclone");
 		const log = join(root, "rclone-env.json");
@@ -74,10 +74,7 @@ process.stdout.write("[]");
 		}).fetch();
 		if (!result.ok) throw new Error(`rclone failed: ${JSON.stringify(result)}`);
 		expect(result.ok).toBe(true);
-		expect(JSON.parse(readFileSync(log, "utf8"))).toEqual({
-			config: join(root, ".autorag", "datasources", "rclone", "default", "rclone.conf"),
-			cwd: realpathSync(root),
-		});
+		expect(JSON.parse(readFileSync(log, "utf8")).config).toBeUndefined();
 	});
 
 	it("inventories recursively, mirrors indexable files, and preserves folder hierarchy", async () => {

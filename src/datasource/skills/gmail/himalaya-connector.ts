@@ -12,7 +12,7 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
+import { type ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import {
 	boundDiagnosticText,
@@ -78,21 +78,8 @@ export class HimalayaConnector implements DatasourceConnector {
 
 	constructor(options: HimalayaConnectorOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
-		else if (options.workspaceRoot !== undefined && options.runner === undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createHimalayaManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
-		}
 		this.runner =
-			options.runner ??
-			(async (args, timeoutMs) => {
-				const launch = await this.managedCliConfigManager?.materialize("himalaya", {
-					...(options.configPath === undefined ? {} : { ownership: "external", configPath: options.configPath }),
-					config: { account: options.account ?? "default", folder: options.folder ?? "INBOX" },
-				});
-				return runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, launch?.env, launch?.cwd);
-			});
+			options.runner ?? ((args, timeoutMs) => runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs));
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {

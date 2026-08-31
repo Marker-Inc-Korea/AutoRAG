@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
+import { type ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
@@ -81,22 +81,8 @@ export class RcloneConnector implements DatasourceConnector {
 
 	constructor(options: RcloneConnectorOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) {
-			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (options.workspaceRoot !== undefined && options.runner === undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createRcloneManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
-		}
 		this.runner =
-			options.runner ??
-			(async (args, timeoutMs) => {
-				const launch = await this.managedCliConfigManager?.materialize("rclone", {
-					...(options.configPath === undefined ? {} : { ownership: "external", configPath: options.configPath }),
-					config: { remote: options.remote ?? "" },
-				});
-				return runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, launch?.env, launch?.cwd);
-			});
+			options.runner ?? ((args, timeoutMs) => runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs));
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {
