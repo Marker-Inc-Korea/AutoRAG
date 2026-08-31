@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	copyFileSync,
 	existsSync,
@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { normalizeVirtualPath } from "../filesystem/source-paths.ts";
-import { loadMirrorIndex } from "../mirror/index-store.ts";
+import { loadMirrorIndex, type ParsedMirrorIndex } from "../mirror/index-store.ts";
 import { minSyncDocumentPath, minSyncWorkspaceRoot } from "./paths.ts";
 
 export interface MinSyncWorkspaceEntry {
@@ -25,25 +25,32 @@ export interface MinSyncWorkspaceEntry {
 export interface MinSyncWorkspaceSyncResult {
 	readonly workspacePath: string;
 	readonly entries: readonly MinSyncWorkspaceEntry[];
+	readonly fingerprint: string;
+	readonly changed: boolean;
 }
 
 interface MinSyncStagingEntry {
 	readonly outputPath: string;
 	readonly updatedAt: string;
+	readonly contentSha256?: string;
 }
 
 interface MinSyncStagingState {
 	readonly version: 1;
+	readonly fingerprint?: string;
 	readonly entries: Readonly<Record<string, MinSyncStagingEntry>>;
 }
 
 export function syncMinSyncWorkspace(
 	root: string,
-	options: { readonly workspacePath?: string } = {},
+	options: { readonly workspacePath?: string; readonly configurationFingerprint?: string } = {},
 ): MinSyncWorkspaceSyncResult {
 	const workspacePath = options.workspacePath ?? minSyncWorkspaceRoot(root);
 	const filesRoot = join(workspacePath, "files");
 	const index = loadMirrorIndex(root);
+	const fingerprint = minSyncMirrorFingerprint(index, options.configurationFingerprint);
+	const previousState = loadStagingState(workspacePath);
+	let changed = previousState?.fingerprint !== fingerprint;
 	const entries = Object.values(index.entries)
 		.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath))
 		.filter((entry) => normalizeVirtualPath(entry.virtualPath) === entry.virtualPath && existsSync(entry.outputPath))
@@ -56,7 +63,6 @@ export function syncMinSyncWorkspace(
 				minSyncPath,
 			};
 		});
-	const previousState = loadStagingState(workspacePath);
 	ensureManagedFilesRoot(filesRoot, previousState === undefined);
 
 	const currentState: Record<string, MinSyncStagingEntry> = {};
@@ -67,23 +73,29 @@ export function syncMinSyncWorkspace(
 		const previousEntry = previousState?.entries[entry.virtualPath];
 		const unchanged =
 			previousEntry?.outputPath === mirrorEntry.outputPath &&
-			previousEntry.updatedAt === mirrorEntry.updatedAt &&
+			(mirrorEntry.contentSha256 === undefined
+				? previousEntry.updatedAt === mirrorEntry.updatedAt
+				: previousEntry.contentSha256 === mirrorEntry.contentSha256) &&
 			isRegularFile(entry.minSyncPath);
 		if (!unchanged) {
 			ensureManagedDirectory(filesRoot, dirname(entry.minSyncPath));
 			copyFileAtomically(entry.parsedOutputPath, entry.minSyncPath);
+			changed = true;
 		}
 		currentState[entry.virtualPath] = {
 			outputPath: mirrorEntry.outputPath,
 			updatedAt: mirrorEntry.updatedAt,
+			...(mirrorEntry.contentSha256 === undefined ? {} : { contentSha256: mirrorEntry.contentSha256 }),
 		};
 		desiredPaths.add(entry.minSyncPath);
 	}
 
-	removeUnexpectedStagedFiles(filesRoot, desiredPaths);
-	saveStagingState(workspacePath, { version: 1, entries: currentState });
+	changed = removeUnexpectedStagedFiles(filesRoot, desiredPaths) || changed;
+	if (changed || previousState === undefined) {
+		saveStagingState(workspacePath, { version: 1, fingerprint, entries: currentState });
+	}
 
-	return { workspacePath, entries };
+	return { workspacePath, entries, fingerprint, changed };
 }
 
 function stagingStatePath(workspacePath: string): string {
@@ -101,6 +113,17 @@ function loadStagingState(workspacePath: string): MinSyncStagingState | undefine
 	}
 }
 
+export function minSyncMirrorFingerprint(index: ParsedMirrorIndex, configurationFingerprint?: string): string {
+	const entries = Object.values(index.entries)
+		.map(
+			(entry) =>
+				`${entry.virtualPath}\u0000${entry.sourcePath}\u0000${entry.outputPath}\u0000${entry.parserName}\u0000${entry.contentSha256 ?? "-"}`,
+		)
+		.sort();
+	const material = [`config:${configurationFingerprint ?? "-"}`, `entries:${entries.length}`, ...entries].join("\n");
+	return createHash("sha256").update(material, "utf8").digest("hex");
+}
+
 function saveStagingState(workspacePath: string, state: MinSyncStagingState): void {
 	const path = stagingStatePath(workspacePath);
 	const temporaryPath = `${path}.${randomUUID()}.tmp`;
@@ -109,13 +132,21 @@ function saveStagingState(workspacePath: string, state: MinSyncStagingState): vo
 }
 
 function isMinSyncStagingState(value: unknown): value is MinSyncStagingState {
-	if (!isRecord(value) || value.version !== 1 || !isRecord(value.entries)) return false;
+	if (
+		!isRecord(value) ||
+		value.version !== 1 ||
+		(value.fingerprint !== undefined && typeof value.fingerprint !== "string") ||
+		!isRecord(value.entries)
+	) {
+		return false;
+	}
 	return Object.entries(value.entries).every(
 		([virtualPath, entry]) =>
 			normalizeVirtualPath(virtualPath) === virtualPath &&
 			isRecord(entry) &&
 			typeof entry.outputPath === "string" &&
-			typeof entry.updatedAt === "string",
+			typeof entry.updatedAt === "string" &&
+			(entry.contentSha256 === undefined || typeof entry.contentSha256 === "string"),
 	);
 }
 
@@ -159,15 +190,18 @@ function isRegularFile(path: string): boolean {
 	return lstatSync(path, { throwIfNoEntry: false })?.isFile() === true;
 }
 
-function removeUnexpectedStagedFiles(directory: string, desiredPaths: ReadonlySet<string>): void {
+function removeUnexpectedStagedFiles(directory: string, desiredPaths: ReadonlySet<string>): boolean {
+	let changed = false;
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		const path = join(directory, entry.name);
 		if (entry.isDirectory()) {
-			removeUnexpectedStagedFiles(path, desiredPaths);
+			changed = removeUnexpectedStagedFiles(path, desiredPaths) || changed;
 		} else if (!desiredPaths.has(path)) {
 			rmSync(path, { force: true });
+			changed = true;
 		}
 	}
+	return changed;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

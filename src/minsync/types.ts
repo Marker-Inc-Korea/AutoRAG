@@ -30,6 +30,8 @@ export interface MinSyncSyncResult {
 	readonly synced: number;
 	readonly workspacePath: string;
 	readonly reason?: string;
+	/** True when the unchanged workspace fingerprint avoided an external MinSync sync. */
+	readonly skipped?: boolean;
 }
 
 export interface MinSyncQueryHit {

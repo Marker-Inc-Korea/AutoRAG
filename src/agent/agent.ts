@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { watch as fsWatch, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
@@ -17,6 +17,7 @@ import { createKatokManagedCliProvider } from "../datasource/skills/katok/config
 import { createQmdManagedCliProvider } from "../datasource/skills/obsidian/config.ts";
 import type { DatasourceIndexResult, DatasourceSkill } from "../datasource/types.ts";
 import { DupeyCliError, type DupeyCliOptions, scanWithDupey, selectExactDuplicateExclusions } from "../dupey/index.ts";
+import type { FileLockHandle } from "../filesystem/file-lock.ts";
 import { jikjiFindDiagnostic, jikjiPrepareDiagnostic } from "../jikji/diagnostics.ts";
 import {
 	type JikjiAnswerPack,
@@ -47,6 +48,7 @@ import {
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
 import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
+import { acquireRefreshLock } from "../mirror/refresh-lock.ts";
 import {
 	detectMirrorStaleness,
 	type ParsedMirrorDiagnostic,
@@ -134,12 +136,15 @@ export type RefreshMethod = "parsed" | "bm25" | "minsync" | "datasources" | "jik
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
 	readonly methods?: readonly RefreshMethod[];
+	/** Externally held refresh lock used by `index rebuild`. */
+	readonly lock?: FileLockHandle;
 }
 
 export interface AutoRAGMinSyncRefreshResult {
 	readonly ok: boolean;
 	readonly synced: number;
 	readonly reason?: string;
+	readonly skipped?: boolean;
 }
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
@@ -147,6 +152,7 @@ export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diag
 	readonly bm25?: BM25SyncResult;
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
+	readonly outcome?: "completed" | "busy";
 }
 
 export interface AutoRAGRefreshComponentStatus {
@@ -266,6 +272,7 @@ export class AutoRAGAgent {
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
+	private refreshInFlight: { readonly key: string; readonly promise: Promise<AutoRAGRefreshResult> } | undefined;
 	private refreshState: RefreshState = {
 		inFlight: false,
 		lastOutcome: "never",
@@ -1002,6 +1009,52 @@ export class AutoRAGAgent {
 	}
 
 	async refresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
+		const key = this.refreshLockKey(force, opts);
+		const inFlight = this.refreshInFlight;
+		if (inFlight) {
+			if (inFlight.key === key) return inFlight.promise;
+			return this.busyRefreshResult();
+		}
+		const externalLock = opts?.lock;
+		const lock = externalLock ?? acquireRefreshLock(this.workspaceProjectRoot);
+		if (!lock) return this.busyRefreshResult();
+		if (externalLock !== undefined) externalLock.assertOwned();
+		const promise = this.runRefresh(force, opts).finally(() => {
+			if (externalLock === undefined) lock.release();
+			if (this.refreshInFlight?.key === key) this.refreshInFlight = undefined;
+		});
+		this.refreshInFlight = { key, promise };
+		return promise;
+	}
+
+	private refreshLockKey(force: boolean, opts?: AutoRAGRefreshOptions): string {
+		return createHash("sha256")
+			.update(
+				JSON.stringify({
+					root: this.workspaceProjectRoot,
+					searchPaths: [...this.searchPaths].sort(),
+					force,
+					methods: opts?.methods ?? null,
+				}),
+				"utf8",
+			)
+			.digest("hex");
+	}
+
+	private busyRefreshResult(): AutoRAGRefreshResult {
+		return {
+			scanned: 0,
+			written: 0,
+			deleted: 0,
+			skipped: 0,
+			indexPath: join(this.workspaceProjectRoot, PARSED_MIRROR_SUBDIR),
+			diagnostics: [],
+			datasources: [],
+			outcome: "busy",
+		};
+	}
+
+	private async runRefresh(force = false, opts?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> {
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
@@ -1019,8 +1072,8 @@ export class AutoRAGAgent {
 			if (wants("bm25") || wants("minsync") || allMethods) {
 				removeLegacyBm25Artifacts(this.workspaceProjectRoot);
 			}
-			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
-			const bm25 = wants("bm25") ? await this.syncBM25(minsync) : undefined;
+			const minsync = wants("minsync") ? await this.syncMinSync(force) : undefined;
+			const bm25 = wants("bm25") ? await this.syncBM25(minsync, force) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
 			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
@@ -1051,6 +1104,7 @@ export class AutoRAGAgent {
 						ok: minsync.ok,
 						synced: minsync.synced,
 						...(minsync.reason !== undefined ? { reason: minsync.reason } : {}),
+						...(minsync.skipped === undefined ? {} : { skipped: minsync.skipped }),
 					}
 				: undefined;
 			return {
@@ -1059,6 +1113,7 @@ export class AutoRAGAgent {
 				...(bm25 ? { bm25 } : {}),
 				minsync: publicMinsync,
 				datasources,
+				outcome: "completed",
 			};
 		} catch (error) {
 			this.refreshState = {
@@ -1250,13 +1305,13 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncBM25(minsync?: MinSyncSyncResult): Promise<BM25SyncResult | undefined> {
+	async syncBM25(minsync?: MinSyncSyncResult, force = false): Promise<BM25SyncResult | undefined> {
 		if (this.bm25Method === undefined) return undefined;
-		return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
+		return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync({ force })));
 	}
 
-	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
-		return this.minSyncMethod?.sync();
+	async syncMinSync(force = false): Promise<MinSyncSyncResult | undefined> {
+		return this.minSyncMethod?.sync({ force });
 	}
 
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {

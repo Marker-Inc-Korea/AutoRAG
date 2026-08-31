@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
-export const PARSED_MIRROR_SUBDIR = join(".autorag", "parsed");
+export const AUTORAG_DIR = ".autorag";
+export const PARSED_MIRROR_SUBDIR = join(AUTORAG_DIR, "parsed");
 export const PARSED_FILES_SUBDIR = "files";
 export const PARSED_INDEX_FILE = "index.json";
 
