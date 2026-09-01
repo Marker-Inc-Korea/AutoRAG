@@ -109,6 +109,66 @@ describe("runTui", () => {
 		expect(presenter.lines().join("\n")).toContain("collapsed");
 	});
 
+	it("interrupts an active search and marks the TUI paused", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		let abortCalls = 0;
+		let resolveSearch: ((value: SearchDocumentsResponse) => void) | undefined;
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				searchDocuments: () =>
+					new Promise((resolve) => {
+						resolveSearch = resolve;
+					}),
+				abort: () => {
+					abortCalls++;
+					resolveSearch?.(response);
+				},
+			}),
+			tuiFactory: () => tui,
+		});
+
+		const submission = tui.onSubmit?.("long query");
+		tui.onInput?.("\u0003");
+
+		expect(abortCalls).toBe(1);
+		expect(tui.rendered.join("\n")).toContain("interrupted");
+		await submission;
+		expect(tui.rendered.join("\n")).not.toContain("answer");
+		tui.onExit?.();
+		expect(await running).toBe(0);
+	});
+
+	it("consumes Ctrl+C while idle and leaves Ctrl+D as the exit action", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		const running = runTui(ctx, {
+			agentFactory: () => ({ searchDocuments: async () => response }),
+			tuiFactory: () => tui,
+		});
+
+		tui.onInput?.("\u0003");
+
+		expect(tui.stopped).toBe(false);
+		expect(tui.rendered.join("\n")).toContain("paused");
+		tui.onInput?.("\u0004");
+		tui.onExit?.();
+		expect(await running).toBe(0);
+	});
+
+	it("ignores late agent events after interrupt until the next run begins", () => {
+		const presenter = createTuiPresenter();
+		presenter.beginRun();
+		presenter.handle({ type: "agent_start" });
+		presenter.interrupt();
+		presenter.handle({ type: "agent_start" });
+		expect(presenter.working()).toBe(false);
+		expect(presenter.lines()[0]).toBe("paused");
+		presenter.beginRun();
+		presenter.handle({ type: "agent_start" });
+		expect(presenter.working()).toBe(true);
+	});
+
 	it("searches submitted questions and exits on the driver exit signal", async () => {
 		const { ctx } = context();
 		const tui = driver(["question"]);

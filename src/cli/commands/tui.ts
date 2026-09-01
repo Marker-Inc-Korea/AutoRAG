@@ -20,6 +20,7 @@ export interface TuiDriver {
 	onSubmit?: (text: string) => void | Promise<void>;
 	onExit?: () => void;
 	onEvent?: (event: AgentEvent) => void;
+	onInput?: (data: string) => void;
 }
 
 export interface TuiPresenter {
@@ -27,12 +28,15 @@ export interface TuiPresenter {
 	lines(): readonly string[];
 	working(): boolean;
 	setWorking(active: boolean): void;
+	beginRun(): void;
+	interrupt(): void;
 }
 
+type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> &
+	Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+
 export interface TuiDeps {
-	agentFactory?: (
-		opts: AutoRAGAgentOptions,
-	) => Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe">>;
+	agentFactory?: (opts: AutoRAGAgentOptions) => TuiAgent;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 	tuiFactory?: (ctx: CommandContext) => TuiDriver;
 }
@@ -42,6 +46,8 @@ export function createTuiPresenter(): TuiPresenter {
 	let thinkingIndex: number | undefined;
 	let answerIndex: number | undefined;
 	let active = false;
+	let paused = false;
+	let suppressEvents = false;
 
 	const append = (line: string): void => {
 		output.push(line);
@@ -65,10 +71,22 @@ export function createTuiPresenter(): TuiPresenter {
 		setWorking: (value) => {
 			active = value;
 		},
+		beginRun: () => {
+			active = true;
+			paused = false;
+			suppressEvents = false;
+		},
+		interrupt: () => {
+			active = false;
+			paused = true;
+			suppressEvents = true;
+		},
 		handle(event) {
+			if (suppressEvents) return;
 			switch (event.type) {
 				case "agent_start":
 					active = true;
+					paused = false;
 					append("agent: started");
 					return;
 				case "agent_end":
@@ -112,7 +130,7 @@ export function createTuiPresenter(): TuiPresenter {
 					return;
 			}
 		},
-		lines: () => (active ? ["working"] : []).concat(output),
+		lines: () => (active ? ["working"] : paused ? ["paused"] : []).concat(output),
 	};
 }
 
@@ -145,7 +163,7 @@ function createRealTui(): TUI {
 
 function runRealTui(
 	ctx: CommandContext,
-	agent: Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe">>,
+	agent: TuiAgent,
 ): Promise<number> {
 	const tui = createRealTui();
 	let transcriptHistory = "AutoRAG librarian - Ctrl+C or Ctrl+D to exit";
@@ -170,6 +188,8 @@ function runRealTui(
 		},
 	});
 	let settled = false;
+	let queryRunning = false;
+	let interrupted = false;
 	return new Promise((resolve) => {
 		const finish = () => {
 			if (settled) return;
@@ -183,10 +203,30 @@ function runRealTui(
 			renderTranscript();
 			tui.requestRender();
 		});
+		const handleInput = (data: string): void => {
+			if (data === "\u0003") {
+				if (queryRunning) {
+					interrupted = true;
+					presenter.interrupt();
+					agent.abort?.();
+					transcriptHistory = `${transcriptHistory}\ninterrupted`;
+				} else {
+					presenter.interrupt();
+					transcriptHistory = `${transcriptHistory}\npaused`;
+				}
+				renderTranscript();
+				tui.requestRender();
+				return;
+			}
+			if (data === "\u0004") finish();
+		};
 		editor.onSubmit = (raw) => {
 			const query = raw.trim();
 			editor.setText("");
 			if (query.length === 0) return;
+			queryRunning = true;
+			interrupted = false;
+			presenter.beginRun();
 			editor.disableSubmit = true;
 			presenter.setWorking(true);
 			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
@@ -202,6 +242,7 @@ function runRealTui(
 					renderTranscript();
 				})
 				.catch((error) => {
+					if (interrupted) return;
 					transcriptHistory = `${transcriptHistory}\n\n${renderError(error, {
 						json: false,
 						debug: ctx.debug,
@@ -209,6 +250,7 @@ function runRealTui(
 					renderTranscript();
 				})
 				.finally(() => {
+					queryRunning = false;
 					presenter.setWorking(false);
 					renderTranscript();
 					editor.disableSubmit = false;
@@ -219,11 +261,8 @@ function runRealTui(
 		tui.addChild(editor);
 		tui.setFocus(editor);
 		tui.addInputListener((data) => {
-			if (data === "\u0003" || data === "\u0004") {
-				finish();
-				return { consume: true };
-			}
-			return undefined;
+			handleInput(data);
+			return { consume: data === "\u0003" || data === "\u0004" };
 		});
 		tui.start();
 	});
@@ -235,6 +274,8 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 		if (!deps.tuiFactory) return runRealTui(ctx, agent);
 		const tui = deps.tuiFactory(ctx);
 		const presenter = createTuiPresenter();
+		let queryRunning = false;
+		let interrupted = false;
 		const unsubscribe = agent.subscribe?.((event) => {
 			presenter.handle(event);
 			tui.rendered.push(presenter.lines().join("\n"));
@@ -243,12 +284,37 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 		tui.onSubmit = async (raw) => {
 			const query = raw.trim();
 			if (query.length === 0) return;
+			queryRunning = true;
+			interrupted = false;
+			presenter.beginRun();
 			try {
 				const response: SearchDocumentsResponse = await agent.searchDocuments(query);
-				tui.rendered.push(renderSearch(response, { json: false, debug: ctx.debug }));
+				if (!interrupted) {
+					tui.rendered.push(renderSearch(response, { json: false, debug: ctx.debug }));
+				}
 			} catch (error) {
-				tui.rendered.push(renderError(error, { json: false, debug: ctx.debug }));
+				if (!interrupted) {
+					tui.rendered.push(renderError(error, { json: false, debug: ctx.debug }));
+				}
+			} finally {
+				queryRunning = false;
+				presenter.setWorking(false);
 			}
+		};
+		tui.onInput = (data) => {
+			if (data === "\u0003") {
+				if (queryRunning) {
+					interrupted = true;
+					presenter.interrupt();
+					agent.abort?.();
+					tui.rendered.push("interrupted");
+				} else {
+					presenter.interrupt();
+					tui.rendered.push("paused");
+				}
+				return;
+			}
+			if (data === "\u0004") tui.onExit?.();
 		};
 		tui.onExit = () => {
 			unsubscribe?.();
