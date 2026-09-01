@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { obsidianQmdCacheDir, obsidianQmdConfigDir, stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
+import { stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
 import type {
 	QmdEmbedInfo,
 	QmdEmbedResult,
@@ -75,22 +75,24 @@ export class QmdClient {
 			return failure("not-configured", "vault path not configured");
 		}
 		const instanceId = this.options.instanceId ?? "default";
-		const workspaceRoot = this.options.workspaceRoot ?? process.cwd();
 		const collectionName = this.options.collectionName ?? toQmdCollectionName(instanceId);
-		const configDir = this.options.configPath ?? obsidianQmdConfigDir(workspaceRoot, instanceId);
-		const cacheDir = obsidianQmdCacheDir(workspaceRoot, instanceId);
-		try {
-			if (this.options.configPath === undefined) {
-				mkdirSync(configDir, { recursive: true });
-				writeFileSync(resolve(configDir, "index.yml"), renderIndexYaml(collectionName, vaultPath), "utf8");
+		// When the operator supplies an explicit configPath, write the vault collection
+		// definition there. Otherwise qmd uses its own native config and cache dirs.
+		if (this.options.configPath !== undefined) {
+			try {
+				mkdirSync(this.options.configPath, { recursive: true });
+				writeFileSync(
+					resolve(this.options.configPath, "index.yml"),
+					renderIndexYaml(collectionName, vaultPath),
+					"utf8",
+				);
+			} catch (error) {
+				return failure("spawn-error", error instanceof Error ? error.message : "failed to write qmd config");
 			}
-			mkdirSync(cacheDir, { recursive: true });
-		} catch (error) {
-			return failure("spawn-error", error instanceof Error ? error.message : "failed to write qmd config");
 		}
 		const probe = await this.run(["status"], signal);
 		if (!probe.ok && probe.reason === "binary-missing") return toFailure(probe);
-		const data: QmdEnsureInfo = { collectionName, vaultPath, configDir };
+		const data: QmdEnsureInfo = { collectionName, vaultPath, configDir: this.options.configPath };
 		return ok(data, probe.ok ? probe : { ok: true, stdout: "", stderr: "", code: 0 });
 	}
 
@@ -159,8 +161,6 @@ function resolveVaultPath(vaultPath: string | undefined): string | undefined {
 }
 
 function controlledEnv(options: QmdOptions): NodeJS.ProcessEnv {
-	const instanceId = options.instanceId ?? "default";
-	const workspaceRoot = options.workspaceRoot ?? process.cwd();
 	const env: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(process.env)) {
 		if (value !== undefined && isAllowedEnvKey(key)) env[key] = value;
@@ -169,8 +169,11 @@ function controlledEnv(options: QmdOptions): NodeJS.ProcessEnv {
 		if (value === undefined) delete env[key];
 		else if (isAllowedEnvKey(key)) env[key] = value;
 	}
-	env.QMD_CONFIG_DIR = options.configPath ?? obsidianQmdConfigDir(workspaceRoot, instanceId);
-	env.XDG_CACHE_HOME = obsidianQmdCacheDir(workspaceRoot, instanceId);
+	// Only override qmd's native config/cache when the operator explicitly
+	// supplies a configPath. Without it, qmd uses its own defaults.
+	if (options.configPath !== undefined) {
+		env.QMD_CONFIG_DIR = options.configPath;
+	}
 	env.QMD_TRUST_LOCAL_CONFIG = env.QMD_TRUST_LOCAL_CONFIG ?? "1";
 	return env;
 }

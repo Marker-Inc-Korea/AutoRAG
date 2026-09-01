@@ -104,4 +104,70 @@ describe("AliasedDatasourceSkill", () => {
 		expect(results?.map((result) => result.content)).toEqual(["family"]);
 		expect(skill.skillManifest().content).toContain("가족방");
 	});
+
+	it("rewrites scheme-prefixed sources (kakao:) to the alias", async () => {
+		const base: DatasourceSkill = {
+			describe: () => ({
+				name: "kakao",
+				id: "kakao",
+				type: "kakaotalk",
+				description: "KakaoTalk datasource",
+				capabilities: ["chat"],
+				tags: ["kakaotalk"],
+				status: "active",
+				datasourceId: "kakao",
+				instanceId: "default",
+				instances: ["default"],
+			}),
+			polling: () => ({ mode: "none" }),
+			index: async () => ({
+				ok: true,
+				instanceId: "default",
+				skill: "kakao",
+				chunkCount: 1,
+				indexedAt: 1,
+				diagnostics: [],
+			}),
+			retrievalMethods: () => [
+				{
+					describe: () => ({
+						name: "kakao-bm25",
+						type: "bm25",
+						description: "kakao search",
+						status: "active",
+						capabilities: ["chat"],
+						datasourceId: "kakao",
+						tags: ["kakaotalk"],
+					}),
+					retrieve: async () => [
+						{
+							id: "kakao:default:chunk-001",
+							content: "hello",
+							source: "kakao:default/chunk-001",
+							score: 1,
+							metadata: { datasourceId: "kakao", method: "kakao-bm25" },
+						},
+					],
+				},
+			],
+			describeSources: () => [
+				{
+					source: "kakao:default/**",
+					datasourceId: "kakao",
+					skill: "kakao",
+					instanceId: "default",
+					contentType: "chat",
+					metadata: {},
+				},
+			],
+			skillManifest: () => ({ name: "datasource-kakao", description: "kakao", content: "search kakao:default/**" }),
+		};
+
+		const skill = new AliasedDatasourceSkill(base, { alias: "family-kakao" });
+		const results = await skill.retrievalMethods()[0]?.retrieve("hello", { topK: 5 });
+		expect(results).toHaveLength(1);
+		expect(results?.[0]?.source).toBe("family-kakao:default/chunk-001");
+		expect(results?.[0]?.id).toBe("family-kakao:kakao:default:chunk-001");
+		expect(results?.[0]?.metadata.datasourceId).toBe("family-kakao");
+	});
 });

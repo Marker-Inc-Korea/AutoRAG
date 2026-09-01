@@ -48,7 +48,8 @@ function createCloudDriveSkillDefinition(skillName: string, provider?: string): 
 			"Configure and authenticate the remote with `rclone config`; AutoRAG never receives or stores provider credentials.",
 			"Google Drive is Tier-1 supported. OneDrive and other rclone remotes use the same manifest contract. iCloud Drive is experimental and requires periodic Apple ID reauthentication.",
 			"Indexing is incremental: `rclone lsjson` inventories metadata, then only added or changed indexable files are mirrored. Search uses the last completed snapshot while a failed sync is retried.",
-			`This connection is independently addressable. Load \`datasource-${skillName}\`, then call \`search_datasource_documents\` with an optional narrowing scope under \`/${skillName}/<instance>/**\`.`,
+			`This connection is independently addressable. Load \`datasource-${skillName}\`, then call \`search_datasource_documents\` with a natural-language query and \`topK\`.`,
+			"You can also invoke `rclone` directly through `bash` for the full CLI surface: `rclone lsjson <remote>:<path>`, `rclone copy <remote>:<path> <dest>`, `rclone --help`.",
 		],
 	};
 }

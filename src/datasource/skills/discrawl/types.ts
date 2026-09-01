@@ -80,7 +80,11 @@ export interface DiscrawlOptions {
 	readonly configPath?: string;
 	/** Retained for source compatibility; native discrawl defaults are used. */
 	readonly root?: string;
-	/** Explicit workspace directory overriding the computed default. */
+	/**
+	 * Working directory for the discrawl child process. When set, discrawl
+	 * resolves its archive and config relative to this directory instead of
+	 * its native default store.
+	 */
 	readonly workspacePath?: string;
 	/** Restrict search and sync to one guild id. */
 	readonly guildId?: string;

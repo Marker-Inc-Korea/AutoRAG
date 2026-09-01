@@ -273,7 +273,6 @@ describe("ConnectorDatasourceSkill", () => {
 		const manifest = skill.skillManifest();
 		expect(manifest.name).toBe("datasource-slack");
 		expect(manifest.content).toContain("search_datasource_documents");
-		expect(manifest.content).toContain("/slack/ws-1");
 		expect(manifest.content).not.toContain("/Users/");
 
 		const sources = skill.describeSources();

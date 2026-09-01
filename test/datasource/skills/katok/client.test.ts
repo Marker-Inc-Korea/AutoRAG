@@ -131,7 +131,7 @@ describe("KatokClient", () => {
 		expect(call?.args).toEqual(["doctor", "--json"]);
 	});
 
-	it("forwards an explicitly configured workspacePath", async () => {
+	it("forwards an explicitly configured workspacePath before the subcommand", async () => {
 		writeFakeKatok();
 		const client = new KatokClient({
 			binaryPath,
@@ -143,8 +143,29 @@ describe("KatokClient", () => {
 
 		expect(result.ok).toBe(true);
 		const args = loggedCalls()[0]?.args ?? [];
-		expect(args).toContain("--data-dir");
-		expect(args[args.indexOf("--data-dir") + 1]).toBe(join(root, "custom-katok"));
+		// katok accepts --data-dir as a global flag; it must precede the subcommand.
+		const dataDirIdx = args.indexOf("--data-dir");
+		expect(dataDirIdx).toBeGreaterThanOrEqual(0);
+		expect(args[dataDirIdx + 1]).toBe(join(root, "custom-katok"));
+		expect(args.indexOf("doctor")).toBeGreaterThan(dataDirIdx + 1);
+	});
+
+	it("forwards an explicitly configured configPath before the subcommand", async () => {
+		writeFakeKatok();
+		const client = new KatokClient({
+			binaryPath,
+			configPath: join(root, "custom-config.toml"),
+			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }) },
+		});
+
+		const result = await client.doctor();
+
+		expect(result.ok).toBe(true);
+		const args = loggedCalls()[0]?.args ?? [];
+		const configIdx = args.indexOf("--config");
+		expect(configIdx).toBeGreaterThanOrEqual(0);
+		expect(args[configIdx + 1]).toBe(join(root, "custom-config.toml"));
+		expect(args.indexOf("doctor")).toBeGreaterThan(configIdx + 1);
 	});
 
 	it("parses search hits in returned order", async () => {

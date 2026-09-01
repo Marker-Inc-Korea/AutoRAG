@@ -147,9 +147,6 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 	}
 
 	skillManifest(): DatasourceSkillManifest {
-		const scopes = this.instances
-			.map((instanceId) => `- \`${datasourceSourcePath(this.definition.datasourceId, instanceId)}\``)
-			.join("\n");
 		return {
 			name: `datasource-${this.definition.datasourceId}`,
 			description: this.definition.manifestDescription,
@@ -162,10 +159,7 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				this.definition.manifestDescription,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a query and optional narrowing scope:",
-				scopes,
-				"",
-				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"Call `search_datasource_documents` with a natural-language query and `topK`.",
 				"",
 				this.channelIds.size === 0 && this.channelNames.size === 0
 					? "Channel selection: all channels/chats are searchable."

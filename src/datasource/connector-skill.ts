@@ -246,9 +246,6 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 
 	skillManifest(): DatasourceSkillManifest {
 		const skillName = this.definition.skillName;
-		const instanceScopes = this.instances
-			.map((instanceId) => `- \`${datasourceSourcePath(skillName, instanceId)}\``)
-			.join("\n");
 		const cadence =
 			this.pollingIntervalMs > 0
 				? `roughly every ${Math.round(this.pollingIntervalMs / 60000)} minute(s) when auto-refresh runs`
@@ -266,10 +263,7 @@ export class ConnectorDatasourceSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
-				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
-				"",
-				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"Call `search_datasource_documents` with a natural-language `query` and `topK`.",
 				"",
 				"## Output rules",
 				`Datasource source identifiers such as \`/${skillName}/<instance>/chunks/<id>\` are stable and traceable. Result metadata may carry real file paths or account identifiers; you may cite them in the visible answer when they help the user locate the underlying item. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.`,

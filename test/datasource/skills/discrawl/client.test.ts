@@ -35,6 +35,24 @@ describe("DiscrawlClient search", () => {
 		expect(result.stderr).not.toContain("--config");
 	});
 
+	it("uses workspacePath as the child process cwd when explicitly configured", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
+		const binaryPath = stubBinary(`pwd >&2; echo '[]'`);
+		const result = await new DiscrawlClient({ binaryPath, workspacePath: root }).search("fts", "q");
+
+		expect(result.ok).toBe(true);
+		expect(result.stderr.trim().replace(/^\/private/, "")).toBe(root);
+	});
+
+	it("does not set cwd when workspacePath is absent", async () => {
+		const binaryPath = stubBinary(`pwd >&2; echo '[]'`);
+		const result = await new DiscrawlClient({ binaryPath }).search("fts", "q");
+
+		expect(result.ok).toBe(true);
+		// Without an explicit workspacePath, the process cwd is inherited (not forced).
+		expect(result.stderr.trim()).toBe(process.cwd());
+	});
+
 	it("does not mutate an explicitly supplied config path", async () => {
 		const root = mkdtempSync(join(tmpdir(), "discrawl-root-"));
 		const configPath = join(root, "operator-config.toml");

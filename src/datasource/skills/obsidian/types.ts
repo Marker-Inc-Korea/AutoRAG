@@ -21,7 +21,7 @@ export interface QmdOptions {
 	readonly maxBufferBytes?: number;
 	/** Absolute path to the Obsidian vault. Required for ensure/update. */
 	readonly vaultPath?: string;
-	/** AutoRAG workspace root used to isolate qmd config/cache. */
+	/** Retained for source compatibility; qmd uses its own native config/cache by default. */
 	readonly workspaceRoot?: string;
 	/** Instance id used for source paths and collection naming. Default `default`. */
 	readonly instanceId?: string;
@@ -82,7 +82,7 @@ export interface QmdEmbedInfo {
 export interface QmdEnsureInfo {
 	readonly collectionName: string;
 	readonly vaultPath: string;
-	readonly configDir: string;
+	readonly configDir?: string;
 }
 
 /** A scored search hit from `qmd search` / `qmd vsearch`. */

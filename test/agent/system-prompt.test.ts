@@ -59,7 +59,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(manifest).toContain("Google Drive");
 		expect(manifest).toContain("OneDrive");
 		expect(manifest).toMatch(/iCloud.*experimental/i);
-		expect(manifest).toContain("/cloud-drive/icloud-docs");
+		expect(manifest).toContain("datasource-cloud-drive");
 	});
 
 	it("lists multiple drive connections as independently loadable skills", () => {
@@ -83,7 +83,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 
 		expect(prompt).toContain("datasource-personal-google-drive");
 		expect(prompt).toContain("datasource-company-onedrive");
-		expect(personal.skillManifest().content).toContain("/personal-google-drive/personal");
-		expect(work.skillManifest().content).toContain("/company-onedrive/work");
+		expect(personal.skillManifest().content).toContain("datasource-personal-google-drive");
+		expect(work.skillManifest().content).toContain("datasource-company-onedrive");
 	});
 });

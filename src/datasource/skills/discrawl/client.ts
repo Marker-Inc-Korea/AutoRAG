@@ -151,6 +151,7 @@ export class DiscrawlClient {
 			args: [...commonArgs(this.options), ...args],
 			env,
 			signal,
+			cwd: this.options.workspacePath,
 		});
 	}
 }

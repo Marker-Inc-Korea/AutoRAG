@@ -123,14 +123,9 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector.embedLimit !== undefined ? { embedLimit: connector.embedLimit } : {}),
 		});
 	},
-	clawgallery: (config, workspaceRoot, registrationName) => {
+	clawgallery: (config, _workspaceRoot, _registrationName) => {
 		const connector = (config.connector ?? {}) as ClawGalleryOptions;
-		const clientOptions: ClawGalleryOptions = {
-			...connector,
-			...(connector.configDir === undefined && workspaceRoot !== undefined
-				? { configDir: `${workspaceRoot}/.autorag/datasources/clawgallery/${registrationName}` }
-				: {}),
-		};
+		const clientOptions: ClawGalleryOptions = { ...connector };
 		return new ClawGallerySkill({
 			client: new ClawGalleryClient(clientOptions),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),

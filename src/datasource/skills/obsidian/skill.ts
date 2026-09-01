@@ -31,6 +31,7 @@ export interface ObsidianSkillOptions {
 	readonly pollingIntervalMs?: number;
 	readonly tags?: readonly string[];
 	readonly lastIndexedAt?: number;
+	/** Retained for source compatibility; no longer used for qmd config/cache. */
 	readonly workspaceRoot?: string;
 	readonly collectionName?: string;
 	readonly timeoutMs?: number;
@@ -169,9 +170,6 @@ export class ObsidianSkill implements DatasourceSkill {
 	}
 
 	skillManifest(): DatasourceSkillManifest {
-		const instanceScopes = this.instances
-			.map((instanceId) => `- \`${datasourceSourcePath(OBSIDIAN_DATASOURCE_ID, instanceId)}\``)
-			.join("\n");
 		const cadence =
 			this.pollingIntervalMs > 0
 				? `roughly every ${Math.round(this.pollingIntervalMs / 60000)} minute(s) when auto-refresh runs`
@@ -189,16 +187,20 @@ export class ObsidianSkill implements DatasourceSkill {
 				"Use this skill when the question is about Obsidian notes, vault folders, tags, or knowledge-base content.",
 				"",
 				"## Indexing",
-				`Indexing is server-managed and refreshed ${cadence} via \`qmd update\` (+ \`qmd embed\` for semantic). You do not trigger indexing; just search.`,
+				`Indexing is refreshed ${cadence} via \`qmd update\` (+ \`qmd embed\` for semantic). You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
-				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
+				"Call `search_datasource_documents` with a natural-language `query` and `topK`.",
 				"",
-				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"## Native CLI",
+				"You can also invoke `qmd` directly through `bash` when you need its full surface:",
+				"- `qmd search <query> --json -c <collection>` — BM25 lexical search",
+				"- `qmd vsearch <query> --json -c <collection>` — dense vector search",
+				"- `qmd status` — index health check",
+				"- `qmd --help` — full command reference",
 				"",
 				"## Output rules",
-				"Datasource source identifiers such as `/obsidian/<instance>/chunks/<id>` are stable. Result metadata may carry real vault file paths; cite them when helpful. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.",
+				"Result metadata may carry real vault file paths; cite them when helpful. Privacy is the operator's responsibility: run AutoRAG with a local LLM if results must not leave this machine.",
 			].join("\n"),
 		};
 	}

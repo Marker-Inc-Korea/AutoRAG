@@ -143,7 +143,10 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 function rewriteSource(value: string, originalId: string, alias: string): string {
 	return value
 		.replaceAll(`/${originalId}/`, `/${alias}/`)
-		.replaceAll(`datasource-${originalId}`, `datasource-${alias}`);
+		.replaceAll(`datasource-${originalId}`, `datasource-${alias}`)
+		.replaceAll(`kakao:${originalId}:`, `kakao:${alias}:`)
+		.replaceAll(`kakao:${originalId}/`, `kakao:${alias}/`)
+		.replaceAll(`${originalId}:default/`, `${alias}:default/`);
 }
 
 function rewriteScope(scope: string | undefined, alias: string, originalId: string): string | undefined {

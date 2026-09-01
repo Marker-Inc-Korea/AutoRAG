@@ -6,9 +6,6 @@ export {
 	ObsidianSemanticMethod,
 } from "./methods.ts";
 export {
-	obsidianDatasourceRoot,
-	obsidianQmdCacheDir,
-	obsidianQmdConfigDir,
 	obsidianSourcePath,
 	parseObsidianSourcePath,
 	stripEdgeDashes,

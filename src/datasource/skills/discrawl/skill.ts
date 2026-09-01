@@ -191,9 +191,6 @@ export class DiscrawlSkill implements DatasourceSkill {
 	}
 
 	skillManifest(): DatasourceSkillManifest {
-		const instanceScopes = this.instances
-			.map((instanceId) => `- \`${datasourceSourcePath(DISCORD_DATASOURCE_ID, instanceId)}\``)
-			.join("\n");
 		const cadence =
 			this.pollingIntervalMs > 0
 				? `roughly every ${Math.round(this.pollingIntervalMs / 60000)} minute(s) when auto-refresh runs`
@@ -211,13 +208,19 @@ export class DiscrawlSkill implements DatasourceSkill {
 				"Use this skill when the question is about Discord conversations, channel discussions, or content shared inside a guild or DM.",
 				"",
 				"## Indexing",
-				`Indexing is server-managed and refreshed ${cadence}. Sync is incremental (cursor-based) and embeddings are queued per changed message. You do not trigger indexing; just search.`,
+				`Indexing is refreshed ${cadence} via \`discrawl sync\` and \`discrawl embed\` (incremental). You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
-				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
+				"Call `search_datasource_documents` with a natural-language `query` and `topK`.",
 				"",
-				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"## Native CLI",
+				"You can also invoke `discrawl` directly through `bash` when you need its full surface:",
+				"- `discrawl --json search --mode fts <query> --limit <n>` — SQLite FTS5 lexical search",
+				"- `discrawl --json search --mode semantic <query> --limit <n>` — vector search",
+				"- `discrawl --json search --mode hybrid <query> --limit <n>` — combined retrieval",
+				"- `discrawl doctor` — health and config check",
+				"- `discrawl status --json` — archive freshness",
+				"- `discrawl --help` — full command reference",
 				"",
 				"## Retrieval quality",
 				"Hybrid retrieval is the default. The underlying FTS index merges words across line breaks into a single token, so lexical-only search can miss terms that appear immediately after a newline; semantic recall covers that gap. Prefer natural-language queries over single exact keywords.",

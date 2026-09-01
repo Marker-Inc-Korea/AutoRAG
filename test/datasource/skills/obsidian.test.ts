@@ -145,9 +145,9 @@ describe("ObsidianSkill", () => {
 			vaultPath: "/Users/someone/Notes",
 		});
 		const manifest = skill.skillManifest();
-		expect(manifest.content).toContain("/obsidian/work");
 		expect(manifest.content).toContain("qmd");
 		expect(manifest.content).not.toContain("/Users/someone");
+		expect(manifest.content).not.toContain("/obsidian/work");
 	});
 });
 
@@ -176,7 +176,7 @@ describe("Obsidian retrieval methods", () => {
 });
 
 describe("QmdClient", () => {
-	it("writes isolated index.yml and parses search JSON from a fake binary", async () => {
+	it("writes index.yml only when an explicit configPath is supplied", async () => {
 		const binDir = join(root, "bin");
 		const binaryPath = join(binDir, "qmd");
 		const logPath = join(root, "calls.jsonl");
@@ -186,7 +186,7 @@ describe("QmdClient", () => {
 			`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, configDir: process.env.QMD_CONFIG_DIR, cache: process.env.XDG_CACHE_HOME }) + "\\n");
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args, configDir: process.env.QMD_CONFIG_DIR ?? null, cache: process.env.XDG_CACHE_HOME ?? null }) + "\\n");
 if (args[0] === "search" || args[0] === "vsearch") {
   process.stdout.write(JSON.stringify([{ docid: "#deadbe", score: 0.8, file: "notes/a.md", snippet: "hello vault" }]));
 } else if (args[0] === "update") {
@@ -203,6 +203,7 @@ process.exit(0);
 		mkdirSync(vault, { recursive: true });
 		writeFileSync(join(vault, "note.md"), "# Note\nhello");
 
+		// Without explicit configPath: no index.yml written, no env override.
 		const client = new QmdClient({
 			binaryPath,
 			vaultPath: vault,
@@ -213,10 +214,16 @@ process.exit(0);
 
 		const ensure = await client.ensureCollection();
 		expect(ensure.ok).toBe(true);
-		const configPath = join(root, ".autorag", "datasources", "obsidian", "vault-1", "config", "index.yml");
-		expect(existsSync(configPath)).toBe(true);
-		expect(readFileSync(configPath, "utf8")).toContain(JSON.stringify(vault));
-		expect(readFileSync(configPath, "utf8")).toContain(".obsidian/**");
+		const managedConfigPath = join(root, ".autorag", "datasources", "obsidian", "vault-1", "config", "index.yml");
+		expect(existsSync(managedConfigPath)).toBe(false);
+
+		const calls = readFileSync(logPath, "utf8")
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line) as { args: string[]; configDir: string | null; cache: string | null });
+		expect(calls.some((call) => call.args[0] === "status")).toBe(true);
+		expect(calls.every((call) => call.configDir === null)).toBe(true);
+		expect(calls.every((call) => call.cache === null)).toBe(true);
 
 		const update = await client.update();
 		expect(update.ok).toBe(true);
@@ -230,19 +237,17 @@ process.exit(0);
 			expect(search.hits[0]).toMatchObject({ chunkId: "deadbe", content: "hello vault", score: 0.8 });
 		}
 
-		const calls = readFileSync(logPath, "utf8")
+		// After update/search: still no configDir or cache injected.
+		const allCalls = readFileSync(logPath, "utf8")
 			.trim()
 			.split("\n")
-			.map((line) => JSON.parse(line) as { args: string[]; configDir: string });
-		expect(calls.some((call) => call.args[0] === "update")).toBe(true);
-		expect(
-			calls.every(
-				(call) => call.configDir === join(root, ".autorag", "datasources", "obsidian", "vault-1", "config"),
-			),
-		).toBe(true);
+			.map((line) => JSON.parse(line) as { args: string[]; configDir: string | null; cache: string | null });
+		expect(allCalls.some((call) => call.args[0] === "update")).toBe(true);
+		expect(allCalls.every((call) => call.configDir === null)).toBe(true);
+		expect(allCalls.every((call) => call.cache === null)).toBe(true);
 	});
 
-	it("uses the managed qmd environment transport for configured workspaces", async () => {
+	it("does not inject QMD_CONFIG_DIR or XDG_CACHE_HOME without an explicit configPath", async () => {
 		const binDir = join(root, "managed-bin");
 		const binaryPath = join(binDir, "qmd");
 		const logPath = join(root, "managed-calls.jsonl");
@@ -252,8 +257,8 @@ process.exit(0);
 			`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
-  configDir: process.env.QMD_CONFIG_DIR,
-  cache: process.env.XDG_CACHE_HOME,
+  configDir: process.env.QMD_CONFIG_DIR ?? null,
+  cache: process.env.XDG_CACHE_HOME ?? null,
   args: process.argv.slice(2),
 }) + "\\n");
 process.stdout.write("{}");
@@ -266,12 +271,13 @@ process.stdout.write("{}");
 
 		expect(await client.ensureCollection()).toMatchObject({ ok: true });
 		const call = JSON.parse(readFileSync(logPath, "utf8").trim()) as {
-			configDir: string;
-			cache: string;
+			configDir: string | null;
+			cache: string | null;
 			args: string[];
 		};
-		expect(call.configDir).toBe(join(root, ".autorag", "datasources", "obsidian", "notes", "config"));
-		expect(call.cache).toBe(join(root, ".autorag", "datasources", "obsidian", "notes", "cache"));
+		// Native qmd defaults are used; no AutoRAG-managed paths are injected.
+		expect(call.configDir).toBeNull();
+		expect(call.cache).toBeNull();
 		expect(call.args).toEqual(["status"]);
 	});
 

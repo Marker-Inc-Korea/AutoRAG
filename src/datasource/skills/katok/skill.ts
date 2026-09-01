@@ -136,9 +136,6 @@ export class KatokSkill implements DatasourceSkill {
 	}
 
 	skillManifest(): DatasourceSkillManifest {
-		const instanceSources = this.instances
-			.map((instanceId) => `- \`${datasourceSourcePath(KAKAO_DATASOURCE_ID, instanceId)}\``)
-			.join("\n");
 		const cadence =
 			this.pollingIntervalMs > 0
 				? `roughly every ${Math.round(this.pollingIntervalMs / 60000)} minute(s) when auto-refresh runs`
@@ -150,22 +147,29 @@ export class KatokSkill implements DatasourceSkill {
 			content: [
 				`# KakaoTalk datasource (${KAKAO_SKILL_TYPE})`,
 				"",
-				"This skill searches KakaoTalk chats that are indexed through the external `katok` CLI. AutoRAG never reads KakaoTalk databases directly.",
+				"This skill searches KakaoTalk chats through the external `katok` CLI. AutoRAG never reads KakaoTalk databases directly.",
 				"",
 				"## When to use",
 				"Use this skill when the question is about KakaoTalk conversations, chat participants, or content shared inside chats.",
 				"",
 				"## Indexing",
-				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
+				`Indexing is refreshed ${cadence} via \`katok sync\` and \`katok index\` (incremental). You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query` and `topK`. This datasource does not support per-source scope narrowing. Authorized datasource:",
-				instanceSources.length > 0 ? instanceSources : "- (no configured instances)",
+				"Call `search_datasource_documents` with a natural-language `query` and `topK`.",
+				"",
+				"## Native CLI",
+				"You can also invoke `katok` directly through `bash` when you need its full surface:",
+				"- `katok search keyword <query> --json` — BM25 keyword search",
+				"- `katok search semantic <query> --json` — vector search",
+				"- `katok search hybrid <query> --json` — combined retrieval",
+				"- `katok doctor --json` — health and freshness check",
+				"- `katok --help` — full command reference",
 				"",
 				"Access is controlled by the trusted datasource tag; chat/channel filtering is owned by katok.",
 				"",
 				"## Output rules",
-				"Datasource source identifiers such as `/kakao/<instance>/chunks/<id>` are internal and opaque. Never put them, real file paths, account IDs, or phone numbers in the visible answer.",
+				"Result sources use the `kakao:` scheme (e.g. `kakao:<chat>/<sender>/<chunk-id>`) and are not OS file paths. Never put real file paths, account IDs, or phone numbers in the visible answer.",
 			].join("\n"),
 		};
 	}

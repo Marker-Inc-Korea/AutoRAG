@@ -129,11 +129,29 @@ export class MailcrawlSkill implements DatasourceSkill {
 		}));
 	}
 	skillManifest(): DatasourceSkillManifest {
-		const scopes = this.instances.map((id) => `- \`${datasourceSourcePath("mailcrawl", id)}\``).join("\n");
 		return {
 			name: "datasource-mailcrawl",
 			description: "Search local email synchronized and indexed by mailcrawl.",
-			content: `# mailcrawl email datasource\n\nUse this skill for authorized local email retrieval. AutoRAG invokes the external \`mailcrawl\` CLI and never opens its SQLite archive directly.\n\n## Indexing\nIndexing is server-managed and incremental; do not trigger sync yourself.\n\n## Search\nCall \`search_datasource_documents\` with a natural-language query. Available scopes:\n${scopes}\n\nThe selectable retrieval modes are BM25, semantic, and hybrid. Scope arguments can only narrow trusted access. Source identifiers remain opaque and hierarchical.`,
+			content: [
+				"# mailcrawl email datasource",
+				"",
+				"AutoRAG invokes the external `mailcrawl` CLI and never opens its SQLite archive directly.",
+				"",
+				"## Indexing",
+				"Indexing is incremental via `mailcrawl sync`; do not trigger sync yourself.",
+				"",
+				"## How to search",
+				"Call `search_datasource_documents` with a natural-language query and `topK`.",
+				"",
+				"## Native CLI",
+				"You can also invoke `mailcrawl` directly through `bash` when you need its full surface:",
+				"- `mailcrawl search <query> --json` — BM25 search",
+				"- `mailcrawl search <query> --semantic --json` — semantic search",
+				"- `mailcrawl doctor --json` — health check",
+				"- `mailcrawl --help` — full command reference",
+				"",
+				"Source identifiers are opaque and hierarchical.",
+			].join("\n"),
 		};
 	}
 	private fail(code: DatasourceDiagnosticCode, message: string): DatasourceIndexResult {

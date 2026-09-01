@@ -160,7 +160,7 @@ export class KatokClient {
 		const env = controlledEnv(this.options.env);
 		return spawnKatok({
 			options: this.options,
-			args: [...args, ...commonArgs(this.options)],
+			args: [...commonArgs(this.options), ...args],
 			env,
 			signal,
 		});

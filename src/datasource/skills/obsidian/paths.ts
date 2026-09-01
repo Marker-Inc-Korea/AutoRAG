@@ -3,11 +3,10 @@ import { join } from "node:path";
 /**
  * Path helpers for the Obsidian (`qmd`) datasource skill.
  *
- * All AutoRAG-managed state lives under
- * `<workspaceRoot>/.autorag/datasources/obsidian/<instanceId>/`. The external
- * `qmd` CLI is pointed at isolated config/cache dirs so multiple workspaces
- * never share an index. Callers surface opaque slash-hierarchical sources of
- * the form `/obsidian/<instance-id>/chunks/<chunk-id>`.
+ * When the operator does not supply an explicit `configPath`, the external
+ * `qmd` CLI uses its own native config and cache directories (e.g.
+ * `~/.config/qmd/` and `~/.cache/qmd/`). AutoRAG does not force an
+ * AutoRAG-managed config or cache on qmd.
  */
 
 export const AUTORAG_DIRNAME = ".autorag";
