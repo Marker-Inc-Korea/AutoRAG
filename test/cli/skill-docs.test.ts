@@ -10,7 +10,7 @@ import { BUILTIN_DATASOURCE_SKILL_NAMES } from "../../src/datasource/skills/fact
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 function readSkill(name: "autorag" | "autorag-setup"): string {
-	return readFileSync(join(repoRoot, "skills", name, "SKILL.md"), "utf8");
+	return readFileSync(join(repoRoot, "skills", name, "SKILL.md"), "utf8").replace(/\r\n?/g, "\n");
 }
 
 const searchResponse: SearchDocumentsResponse = {
