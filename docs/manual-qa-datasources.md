@@ -1,8 +1,8 @@
 # Manual QA — Datasource Skills
 
-All external CLI checks below must use the managed launch surface. The
-configuration and bash-boundary checklist is defined in
-[managed-cli-configuration.md](managed-cli-configuration.md).
+External CLI checks below use each CLI's native launch surface. AutoRAG only
+supplies explicitly configured paths and bounded process execution; it does not
+materialize or force an AutoRAG-managed archive/config for datasource CLIs.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
 (GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
@@ -76,10 +76,11 @@ mapping. Configure credentials in notcrawl itself, then set
       `RetrievalMethodRegistry` pipeline on agent construction.
 
 ### Indexing
-- [x] `agent.refresh(true, { methods: ["datasources"] })` indexes all nine
+- [x] `agent.refresh(true, { methods: ["datasources"] })` indexes all configured
       skills; each returns an ok result with a chunk count.
-- [x] Chunk stores persist under `<workspace>/.autorag/datasources/<skill>/<instance>/`
-      and reload lazily in fresh agent processes.
+- [x] Connector-backed skills persist their own state under the configured
+      connector or CLI-native store; AutoRAG-managed chunk stores remain used
+      only by connector skills that own that storage.
 - [x] Polling metadata (`mode`, `intervalMs`, `lastIndexedAt`, `lastPolledAt`,
       `lastError`) tracks success and failure; RSS applies a dedupe window.
 
@@ -91,7 +92,7 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] `search_datasource_documents` returns hits for each skill with opaque
       slash-hierarchical sources (`/<skill>/<instance>/chunks/<id>`); no `#`
       fragments, no real filesystem paths.
-- [x] `scope` narrows results (e.g. `/gmail/**` excludes Slack hits) and can
+- [x] `scope` narrows results for scope-capable datasources (e.g. `/gmail/**` excludes Slack hits) and can
       never widen access.
 
 ### Security

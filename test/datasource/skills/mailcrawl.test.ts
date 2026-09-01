@@ -45,11 +45,10 @@ function calls(): readonly {
 }
 
 describe("MailcrawlClient", () => {
-	it("runs sync and all search modes through the managed data directory", async () => {
+	it("runs sync and search through mailcrawl's native store by default", async () => {
 		writeFake(JSON.stringify({ added: 2, updated: 1, unchanged: 4, chunksAdded: 3, archiveRevision: "r1" }));
 		const client = new MailcrawlClient({
 			binaryPath,
-			workspacePath: root,
 			account: "personal",
 			mailbox: "INBOX",
 			env: { OPENAI_API_KEY: "must-not-leak" },
@@ -94,11 +93,7 @@ describe("MailcrawlClient", () => {
 			"--json",
 			"renewal",
 		]);
-		expect(
-			recorded.every(
-				(call) => call.dataDir === join(root, ".autorag", "datasources", "mailcrawl", "default", "data"),
-			),
-		).toBe(true);
+		expect(recorded.every((call) => call.dataDir === null)).toBe(true);
 		expect(recorded.every((call) => call.openai === null)).toBe(true);
 	});
 	it("returns bounded failure results without throwing", async () => {
@@ -126,16 +121,6 @@ describe("MailcrawlClient", () => {
 
 		writeFake(JSON.stringify([{}]));
 		expect(await client.search("bm25", "query")).toMatchObject({ ok: false, reason: "invalid-output" });
-	});
-
-	it("creates the managed archive directory with private permissions", async () => {
-		if (process.platform === "win32") return;
-		writeFake(JSON.stringify({ added: 1, chunksAdded: 1 }));
-		const client = new MailcrawlClient({ binaryPath, workspacePath: root });
-		const dataDir = join(root, ".autorag", "datasources", "mailcrawl", "default", "data");
-
-		expect(await client.sync()).toMatchObject({ ok: true });
-		expect(statSync(dataDir).mode & 0o777).toBe(0o700);
 	});
 
 	it("forwards native fixture sync flags", async () => {

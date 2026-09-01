@@ -113,11 +113,12 @@ describe("DatasourceSkillRegistry", () => {
 			expect(instance.polling).toBe(polling);
 		});
 
-		it("does not resolve instances when tags match but no trusted scopes are granted", () => {
+		it("resolves instances when tags match (no scope requirement)", () => {
 			const registry = new DatasourceSkillRegistry();
 			registry.register(makeSkill({ name: "kakao", tags: ["kakao"], instances: ["acct-1"] }));
 			const ctx = new DatasourceAccessContext({ allowedTags: ["kakao"] });
-			expect(registry.resolveInstances(ctx)).toEqual([]);
+			const instances = registry.resolveInstances(ctx);
+			expect(instances.map((instance) => instance.descriptor.name)).toEqual(["kakao"]);
 		});
 
 		it("resolves nothing under a deny-all context", () => {

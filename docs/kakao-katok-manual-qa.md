@@ -1,6 +1,7 @@
 # KakaoTalk / katok manual QA
 
-This checklist validates the KakaoTalk datasource skill and its default-deny access controls.
+This checklist validates the KakaoTalk datasource skill and its default-deny
+tag access controls. Katok does not expose per-source scope filtering.
 
 ## Preconditions
 
@@ -14,7 +15,6 @@ new AutoRAGAgent({
   datasourceSkills: [new KatokSkill({ instanceId: "personal" })],
   datasourceAccess: {
     allowedTags: ["kakaotalk"],
-    allowedScopes: ["/kakao/personal/**"],
   },
 });
 ```
@@ -27,15 +27,14 @@ new AutoRAGAgent({
    - Expected: zero datasource results; no error.
 
 2. **Trusted allow**
-   - Restore `allowedTags: ["kakaotalk"]` and an instance scope such as `/kakao/personal/**`.
+   - Restore `allowedTags: ["kakaotalk"]`.
    - Run `agent.refresh()`.
    - Expected: `components.datasources` is `configured` or `degraded`.
 
-3. **Scope narrowing**
-   - Search with a narrower scope inside the trusted instance.
-   - Expected: only matching `/kakao/personal/...` results survive.
-   - Search with a scope outside trusted access, e.g. `/kakao/other/**`.
-   - Expected: zero results.
+3. **Datasource-native filtering**
+   - Search with the trusted Kakao datasource.
+   - Expected: katok-owned chat/channel filtering and chat identity metadata
+     remain intact; AutoRAG does not apply a virtual source scope.
 
 4. **Remote embedding egress rejection**
    - Set one of these before refresh/search: `EMBEDDER_BASE_URL`, `embedder_base_url`, `ALLOW_REMOTE_EMBEDDINGS`, `allow_remote_embeddings`, or URL-valued `KATOK_EMBEDDER`.

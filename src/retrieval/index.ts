@@ -1,4 +1,3 @@
-export * from "./managed-runtime.ts";
 export type { MergeOptions } from "./merger.ts";
 export { ParallelRetriever, ResultMerger } from "./merger.ts";
 export type { BM25Engine, BM25ReadinessState, BM25Status, BM25SyncResult } from "./methods/bm25.ts";

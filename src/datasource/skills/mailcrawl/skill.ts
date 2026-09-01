@@ -19,14 +19,13 @@ const TAGS = ["mailcrawl", "email", "pii"] as const;
 export interface MailcrawlSkillClient extends MailcrawlIndexClient {
 	sync(signal?: AbortSignal): Promise<MailcrawlSyncResult>;
 }
-export interface MailcrawlSkillOptions extends Omit<MailcrawlOptions, "managedCliConfigManager"> {
+export interface MailcrawlSkillOptions extends MailcrawlOptions {
 	readonly client?: MailcrawlSkillClient;
 	readonly datasourceId?: string;
 	readonly instanceId?: string;
 	readonly instances?: readonly string[];
 	readonly pollingIntervalMs?: number;
 	readonly tags?: readonly string[];
-	readonly managedCliConfigManager?: import("../../../cli/managed-cli-config.ts").ManagedCliConfigManager;
 	readonly connectorOptions?: MailcrawlOptions;
 }
 export class MailcrawlSkill implements DatasourceSkill {

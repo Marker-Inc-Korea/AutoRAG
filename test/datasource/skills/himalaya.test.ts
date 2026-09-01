@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -130,7 +130,7 @@ describe("HimalayaConnector", () => {
 		expect(result).toMatchObject({ ok: false });
 	});
 
-	it("applies the managed HIMALAYA_CONFIG and workspace cwd to real CLI runs", async () => {
+	it("runs himalaya directly without injecting a managed config", async () => {
 		const workspace = mkdtempSync(join(tmpdir(), "autorag-himalaya-managed-"));
 		const binary = join(workspace, "himalaya");
 		const envPath = join(workspace, "himalaya-env.json");
@@ -150,10 +150,29 @@ else process.stdout.write("managed body");
 		chmodSync(binary, 0o755);
 		const result = await new HimalayaConnector({ binaryPath: binary, workspaceRoot: workspace }).fetch();
 		expect(result).toMatchObject({ ok: true });
-		expect(JSON.parse(readFileSync(envPath, "utf8"))).toEqual({
-			config: join(workspace, ".autorag", "datasources", "himalaya", "default", "config.toml"),
-			cwd: realpathSync(workspace),
-		});
+		expect(JSON.parse(readFileSync(envPath, "utf8")).config).toBeUndefined();
+		rmSync(workspace, { recursive: true, force: true });
+	});
+
+	it("passes an explicit operator config through HIMALAYA_CONFIG", async () => {
+		const workspace = mkdtempSync(join(tmpdir(), "autorag-himalaya-config-"));
+		const binary = join(workspace, "himalaya");
+		const envPath = join(workspace, "env.json");
+		writeFileSync(
+			binary,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(envPath)}, JSON.stringify({ config: process.env.HIMALAYA_CONFIG }));
+const args = process.argv.slice(2);
+if (args.includes("envelope")) process.stdout.write('[{"id":"1","subject":"QA","date":"2026-07-20"}]');
+else process.stdout.write("managed body");
+`,
+		);
+		chmodSync(binary, 0o755);
+		const configPath = join(workspace, "operator-himalaya.toml");
+		const result = await new HimalayaConnector({ binaryPath: binary, configPath }).fetch();
+		expect(result).toMatchObject({ ok: true });
+		expect(JSON.parse(readFileSync(envPath, "utf8")).config).toBe(configPath);
 		rmSync(workspace, { recursive: true, force: true });
 	});
 
