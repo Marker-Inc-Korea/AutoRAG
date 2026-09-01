@@ -228,7 +228,7 @@ describe("KatokSkill retrievalMethods", () => {
 
 		const [bm25] = methods;
 		const results = await bm25.retrieve("refund", { topK: 1 });
-		expect(results.map((r) => r.source)).toEqual(["/kakao/default/chunks/chunk-001"]);
+		expect(results.map((r) => r.source)).toEqual(["kakao:default/chunk-001"]);
 		expect(results[0]?.metadata).toMatchObject({ method: "kakao-bm25", instanceId: "default" });
 	});
 

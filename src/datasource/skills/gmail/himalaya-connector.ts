@@ -12,7 +12,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import {
 	boundDiagnosticText,
@@ -22,7 +21,6 @@ import {
 	sanitizeIdSegment,
 } from "../../connector.ts";
 import { asArray, asRecord, asString } from "../../http.ts";
-import { createHimalayaManagedCliProvider } from "./himalaya-managed-config.ts";
 
 export interface HimalayaRunResult {
 	readonly ok: boolean;
@@ -56,7 +54,6 @@ export interface HimalayaConnectorOptions {
 	readonly runner?: HimalayaRunner;
 	/** Explicit operator-owned config path, passed read-only to Himalaya. */
 	readonly configPath?: string;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 const DEFAULT_BINARY = "himalaya";
@@ -74,25 +71,15 @@ interface HimalayaState {
 export class HimalayaConnector implements DatasourceConnector {
 	private readonly options: HimalayaConnectorOptions;
 	private readonly runner: HimalayaRunner;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: HimalayaConnectorOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
-		else if (options.workspaceRoot !== undefined && options.runner === undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createHimalayaManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
-		}
 		this.runner =
 			options.runner ??
-			(async (args, timeoutMs) => {
-				const launch = await this.managedCliConfigManager?.materialize("himalaya", {
-					...(options.configPath === undefined ? {} : { ownership: "external", configPath: options.configPath }),
-					config: { account: options.account ?? "default", folder: options.folder ?? "INBOX" },
-				});
-				return runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, launch?.env, launch?.cwd);
-			});
+			((args, timeoutMs) =>
+				runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, {
+					...(options.configPath === undefined ? {} : { HIMALAYA_CONFIG: options.configPath }),
+				}));
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {

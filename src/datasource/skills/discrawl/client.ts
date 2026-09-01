@@ -1,14 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import {
-	ManagedCliConfigManager,
-	type ManagedCliLaunchContext,
-	ManagedCliRegistry,
-} from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { createDiscrawlManagedCliProvider } from "./config.ts";
-import { discrawlDatasourceRoot } from "./paths.ts";
 import type {
 	DiscrawlDoctorInfo,
 	DiscrawlDoctorResult,
@@ -73,8 +65,6 @@ type SpawnRequest = {
 	readonly cwd?: string;
 };
 
-type DiscrawlLaunchContext = Pick<ManagedCliLaunchContext, "prefixArgs" | "cwd" | "env" | "configPath">;
-
 /**
  * Thin external `discrawl` CLI wrapper. Every method spawns the `discrawl`
  * binary as a child process, parses JSON from stdout, and returns a
@@ -87,20 +77,9 @@ type DiscrawlLaunchContext = Pick<ManagedCliLaunchContext, "prefixArgs" | "cwd" 
  */
 export class DiscrawlClient {
 	private readonly options: DiscrawlOptions;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: DiscrawlOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) {
-			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (discrawlWorkspace(options) !== undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createDiscrawlManagedCliProvider(options));
-			this.managedCliConfigManager = new ManagedCliConfigManager({
-				workspace: options.root ?? options.workspacePath ?? process.cwd(),
-				registry,
-			});
-		}
 	}
 
 	async doctor(signal?: AbortSignal): Promise<DiscrawlDoctorResult> {
@@ -167,40 +146,27 @@ export class DiscrawlClient {
 			return { ok: false, reason: "user-token-rejected", stdout: "", stderr: "", code: null, violatingKey };
 		}
 		const env = controlledEnv(this.options.env);
-		let launchContext: DiscrawlLaunchContext | undefined;
-		try {
-			if (this.managedCliConfigManager !== undefined) {
-				const workspace = discrawlWorkspace(this.options) ?? process.cwd();
-				launchContext = await this.managedCliConfigManager.materialize("discrawl", {
-					...(this.options.configPath === undefined
-						? {}
-						: { ownership: "external", configPath: this.options.configPath }),
-					config: { databasePath: join(workspace, "discrawl.db") },
-				});
-			}
-		} catch {
-			return {
-				ok: false,
-				reason: "spawn-error",
-				stdout: "",
-				stderr: "discrawl config could not be prepared",
-				code: null,
-			};
-		}
 		return spawnDiscrawl({
 			options: this.options,
-			args: [...(launchContext?.prefixArgs ?? []), ...args],
-			env: { ...env, ...(launchContext?.env ?? {}) },
+			args: [...commonArgs(this.options), ...args],
+			env,
 			signal,
-			...(launchContext?.cwd === undefined ? {} : { cwd: launchContext.cwd }),
 		});
 	}
 }
 
 export function discrawlWorkspace(options: DiscrawlOptions): string | undefined {
-	if (options.workspacePath !== undefined) return options.workspacePath;
-	if (options.root === undefined) return undefined;
-	return discrawlDatasourceRoot(options.root);
+	return options.workspacePath;
+}
+
+/**
+ * Global discrawl flags. discrawl exposes `--config` as a global option and
+ * AutoRAG never forces an AutoRAG-managed config on it — without an explicit
+ * `configPath`, discrawl uses its own default store
+ * (`~/Library/Application Support/discrawl` on macOS).
+ */
+function commonArgs(options: DiscrawlOptions): readonly string[] {
+	return options.configPath === undefined ? [] : ["--config", options.configPath];
 }
 
 function spawnDiscrawl(request: SpawnRequest): Promise<ProcessResult> {

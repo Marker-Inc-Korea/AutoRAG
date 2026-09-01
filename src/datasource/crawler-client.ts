@@ -1,8 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../process/portable-spawn.ts";
-import { createCrawlerManagedCliProvider } from "./crawler-managed-config.ts";
 import type {
 	CrawlerCliOptions,
 	CrawlerFailure,
@@ -50,21 +48,10 @@ type BufferState = {
 export class CrawlerCliClient {
 	private readonly profile: CrawlerProfile;
 	private readonly options: CrawlerCliOptions;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(profile: CrawlerProfile, options: CrawlerCliOptions = {}) {
 		this.profile = profile;
 		this.options = options;
-		if (options.managedCliConfigManager) {
-			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (options.workspacePath !== undefined || options.configPath !== undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createCrawlerManagedCliProvider(profile.binaryName, options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({
-				workspace: options.workspacePath ?? process.cwd(),
-				registry,
-			});
-		}
 	}
 
 	async sync(signal?: AbortSignal): Promise<CrawlerSyncResult> {
@@ -87,50 +74,15 @@ export class CrawlerCliClient {
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
 		const env = controlledEnv(this.profile.allowedEnvPrefixes, this.options.env);
 		env.CRAWLKIT_NO_UPDATE_CHECK = "1";
-		let launch:
-			| {
-					readonly prefixArgs: readonly string[];
-					readonly cwd?: string;
-					readonly env: Readonly<Record<string, string>>;
-			  }
-			| undefined;
-		try {
-			if (this.managedCliConfigManager) {
-				launch = await this.managedCliConfigManager.materialize(this.profile.binaryName, {
-					...(this.options.configPath === undefined
-						? {}
-						: { ownership: "external", configPath: this.options.configPath }),
-					config: {
-						...(this.options.databasePath === undefined ? {} : { databasePath: this.options.databasePath }),
-						...(this.options.sourcePath === undefined ? {} : { sourcePath: this.options.sourcePath }),
-					},
-				});
-			}
-		} catch {
-			return { ok: false, reason: "spawn-error", stdout: "", stderr: "", code: null };
-		}
 		return spawnCrawler(
 			this.options.binaryPath ?? this.profile.binaryName,
-			[...(launch?.prefixArgs ?? []), ...stripTransportArgs(args, launch !== undefined)],
-			{ ...env, ...(launch?.env ?? {}) },
+			args,
+			env,
 			signal,
 			this.options,
-			launch?.cwd,
+			this.options.workspacePath,
 		);
 	}
-}
-
-function stripTransportArgs(args: readonly string[], managed: boolean): readonly string[] {
-	if (!managed) return args;
-	const result: string[] = [];
-	for (let index = 0; index < args.length; index += 1) {
-		if (args[index] === "--db" || args[index] === "--config") {
-			index += 1;
-			continue;
-		}
-		result.push(args[index] as string);
-	}
-	return result;
 }
 
 function spawnCrawler(

@@ -11,13 +11,11 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import type { DefaultParserRegistryOptions } from "../../../parser/defaults.ts";
 import { createDefaultParserRegistry } from "../../../parser/defaults.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import type { ConnectorDocument, ConnectorFetchResult, DatasourceConnector } from "../../connector.ts";
 import { asArray, asRecord, asString, parseEpochMs } from "../../http.ts";
-import { createRcloneManagedCliProvider } from "./rclone-managed-config.ts";
 
 export interface RcloneRunResult {
 	readonly ok: boolean;
@@ -48,7 +46,6 @@ export interface RcloneConnectorOptions {
 	readonly runner?: RcloneRunner;
 	/** Explicit operator-owned rclone.conf path, passed read-only. */
 	readonly configPath?: string;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 	readonly parserOptions?: DefaultParserRegistryOptions;
 }
 
@@ -79,26 +76,15 @@ const MAX_CONTENT_CHARS = 100_000;
 export class RcloneConnector implements DatasourceConnector {
 	private readonly options: RcloneConnectorOptions;
 	private readonly runner: RcloneRunner;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: RcloneConnectorOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) {
-			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (options.workspaceRoot !== undefined && options.runner === undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createRcloneManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
-		}
 		this.runner =
 			options.runner ??
-			(async (args, timeoutMs) => {
-				const launch = await this.managedCliConfigManager?.materialize("rclone", {
-					...(options.configPath === undefined ? {} : { ownership: "external", configPath: options.configPath }),
-					config: { remote: options.remote ?? "" },
-				});
-				return runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, launch?.env, launch?.cwd);
-			});
+			((args, timeoutMs) =>
+				runBinary(options.binaryPath ?? DEFAULT_BINARY, args, timeoutMs, {
+					...(options.configPath === undefined ? {} : { RCLONE_CONFIG: options.configPath }),
+				}));
 	}
 
 	async fetch(): Promise<ConnectorFetchResult> {

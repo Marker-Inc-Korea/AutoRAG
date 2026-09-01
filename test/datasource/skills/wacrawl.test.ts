@@ -101,7 +101,7 @@ describe("WacrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
-	it("routes configured workspace execution through the managed launch context", async () => {
+	it("runs wacrawl against its own default store without a managed --db injection", async () => {
 		writeFakeWacrawl();
 		const client = new WacrawlClient({
 			binaryPath,
@@ -110,10 +110,9 @@ describe("WacrawlClient", () => {
 		});
 
 		expect(await client.sync()).toMatchObject({ ok: true, count: 1 });
-		expect(calls()[0]?.args.slice(0, 2)).toEqual([
-			"--db",
-			join(root, ".autorag", "datasources", "wacrawl", "archive.db"),
-		]);
+		const args = calls()[0]?.args ?? [];
+		expect(args).not.toContain("--db");
+		expect(args.join(" ")).not.toContain(".autorag/datasources/wacrawl");
 	});
 
 	it("maps a missing binary and malformed output without throwing", async () => {

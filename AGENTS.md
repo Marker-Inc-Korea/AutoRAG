@@ -106,29 +106,31 @@ Code repositories work too. AutoRAG's value is in the exploration + retrieval me
 
 ## New CLI-backed datasource
 
-Every external CLI used by a datasource must be integrated through the shared
-managed CLI configuration boundary documented in
-[`docs/managed-cli-configuration.md`](docs/managed-cli-configuration.md).
+External datasource CLIs (katok, discrawl, slacrawl, qmd, rclone, himalaya,
+crawlers) are driven **directly** with their own native stores. There is no
+AutoRAG-managed workspace/config forcing and no bash gate: the agent may run
+these CLIs through `bash` as well as through the datasource tools.
+
 Contributors and agents adding a CLI-backed datasource must:
 
-- register the CLI, every supported alias, and explicit binary path in the
-  shared managed CLI registry;
-- implement a configuration-only provider with explicit ownership and secret
-  policy;
-- route every process launch through the materialized managed launch context;
-- rely on the registry-driven `bash` direct-execution gate rather than a
-  duplicated binary list;
+- spawn the CLI with its own default store; never force
+  `--workspace`/`--config`/env into an empty AutoRAG-managed directory unless
+  the operator explicitly configured a workspace path;
+- keep result sources human-readable datasource identities (e.g.
+  `kakao:<chat>/<sender>/<chunk>`), never slash-prefixed fake filesystem
+  paths the agent could mistake for local files;
 - provide a datasource skill with native command examples and `<binary>
-  --help` guidance;
-- never add shared `sync`, `search`, `doctor`, or other native command enums;
-- never standardize or assume the upstream CLI's config format in shared code;
-- never rely on prompt text alone to apply configuration or prevent execution;
-- add focused tests, diagnostics, documentation, migration notes, and manual
-  QA before registering the datasource.
+  --help` guidance so the agent understands which CLI backs the datasource;
+- keep failure isolation per CLI (missing binary degrades to diagnostics,
+  never crashes the search loop);
+- retain small, focused guards where they matter (e.g. katok's pre-spawn
+  remote-embedding env rejection, discrawl's user-token rejection);
+- add focused tests and live manual QA where a local store exists before
+  registering the datasource.
 
 Secrets must remain external: store only environment-variable, keychain, or
 profile references and never tokens, cookies, passwords, or refresh
-credentials in managed files, logs, argv snapshots, or diagnostics.
+credentials in files, logs, argv snapshots, or diagnostics.
 
 ## Why AutoRAG Exists
 
@@ -267,3 +269,5 @@ AutoRAG remembers past search outcomes across sessions:
 | `src/datasource/connector-skill.ts` | Shared DatasourceSkill base composing a connector with the chunk store |
 | `src/datasource/skills/` | Built-in skills: katok, discrawl (Discord), slack, notion, github, cloud-drive, gmail, mail-export, obsidian, rss, spotlight (+ config factory) |
 | `src/agent/search-datasource-tool.ts` | `search_datasource_documents` tool with model-safe `{ query, topK?, scope? }` parameters |
+| `src/cli/commands/ui.ts` | `autorag ui` loopback dashboard for connecting and managing datasource skills |
+| `src/ui/` | Local datasource UI catalog, config store, probes, HTML, and 127.0.0.1 HTTP server |

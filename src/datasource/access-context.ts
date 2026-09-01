@@ -2,8 +2,8 @@
  * Trusted, server-bound access context for the datasource layer.
  *
  * Constructed from server-supplied allow-tags and allow-scopes ONLY — never
- * from model or tool arguments. Enforces default-deny semantics and uses
- * explicit boolean `false` for every deny decision (never `undefined`).
+ * from model or tool arguments. Tags authorize datasource skills; scopes are
+ * applied only to skills that advertise the `scoped` capability.
  */
 
 import { matchesVirtualPathScope, normalizeVirtualPath } from "../retrieval/scope.ts";
@@ -59,28 +59,20 @@ export class DatasourceAccessContext {
 	}
 
 	/**
-	 * Build a predicate that filters source paths by trusted allow-scopes,
-	 * intersected with an optional user-supplied scope (the model/tool view).
-	 *
-	 * The predicate always returns an explicit boolean. On default-deny it
-	 * returns `() => false`. Sources containing a `#` fragment are denied
-	 * (datasource sources are slash-hierarchical only).
-	 *
-	 * @param userScope Optional user/model-requested scope; when provided a
-	 *   source must match BOTH a trusted allow-scope AND the user scope.
+	 * Scope-capable datasource results are filtered by trusted and user scopes.
+	 * Datasources without the `scoped` capability bypass this predicate and
+	 * are authorized only at the skill/tag level.
 	 */
-	allowedSourcesPredicate(userScope?: string): (source: string) => boolean {
+	allowedSourcesPredicate(_userScope?: string): (source: string) => boolean {
 		if (this.denyAll) return () => false;
 		const trustedScopes = this.allowedScopes;
-		const normalizedUserScope = userScope === undefined ? undefined : normalizeVirtualPath(userScope);
+		const normalizedUserScope = _userScope === undefined ? undefined : normalizeVirtualPath(_userScope);
 		return (source: string): boolean => {
-			// Datasource sources are slash-hierarchical; reject fragments.
 			if (source.includes("#")) return false;
 			const inTrusted =
-				trustedScopes.length === 0 ? false : trustedScopes.some((scope) => matchesVirtualPathScope(source, scope));
+				trustedScopes.length === 0 ? true : trustedScopes.some((scope) => matchesVirtualPathScope(source, scope));
 			if (!inTrusted) return false;
-			if (normalizedUserScope === undefined) return true;
-			return matchesVirtualPathScope(source, normalizedUserScope);
+			return normalizedUserScope === undefined ? true : matchesVirtualPathScope(source, normalizedUserScope);
 		};
 	}
 }

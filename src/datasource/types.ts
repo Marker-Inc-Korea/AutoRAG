@@ -14,8 +14,9 @@
  *    `undefined`-as-deny.
  *  - Model/tool arguments never grant access. Only the trusted server-supplied
  *    {@link DatasourceAccessContext} can authorize a datasource.
- *  - Datasource sources are slash-hierarchical opaque paths such as
- *    `/kakao/<instance-id>/chunks/<chunk-id>`; `#` fragments are rejected.
+ *  - Datasource sources are slash-hierarchical opaque paths when the skill
+ *    supports the `scoped` capability; skills without that capability may
+ *    expose another opaque identity format.
  */
 
 import type { RetrievalMethod } from "../retrieval/types.ts";
@@ -66,6 +67,8 @@ export interface DatasourceSkillDescriptor {
 export interface DatasourceAccessible {
 	readonly datasourceId?: string;
 	readonly tags?: readonly string[];
+	/** Capability names such as `scoped`; absent means no source-scope support. */
+	readonly capabilities?: readonly string[];
 }
 
 /**
