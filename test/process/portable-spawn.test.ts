@@ -53,6 +53,19 @@ describe("portableSpawnCommand", () => {
 		});
 	});
 
+	it("executes Node shebang fixtures with an executable extension on Windows", () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
+		tempDirs.push(root);
+		const script = join(root, "fake-minsync.exe");
+		writeFileSync(script, "#!/usr/bin/env node\nprocess.exit(0);\n", "utf8");
+		chmodSync(script, 0o755);
+
+		expect(portableSpawnCommand(script, ["sync"], "win32")).toEqual({
+			command: process.versions.bun ? "node.exe" : process.execPath,
+			args: [script, "sync"],
+		});
+	});
+
 	it("runs extensionless Node shebang fixtures with Node module semantics", async () => {
 		if (process.platform !== "win32") return;
 		const root = mkdtempSync(join(tmpdir(), "autorag-portable-spawn-"));
