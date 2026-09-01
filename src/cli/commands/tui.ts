@@ -25,6 +25,8 @@ export interface TuiDriver {
 export interface TuiPresenter {
 	handle(event: AgentEvent): void;
 	lines(): readonly string[];
+	working(): boolean;
+	setWorking(active: boolean): void;
 }
 
 export interface TuiDeps {
@@ -39,6 +41,7 @@ export function createTuiPresenter(): TuiPresenter {
 	const output: string[] = [];
 	let thinkingIndex: number | undefined;
 	let answerIndex: number | undefined;
+	let active = false;
 
 	const append = (line: string): void => {
 		output.push(line);
@@ -46,21 +49,30 @@ export function createTuiPresenter(): TuiPresenter {
 	const appendDelta = (prefix: string, delta: string, index: "thinking" | "answer"): void => {
 		const currentIndex = index === "thinking" ? thinkingIndex : answerIndex;
 		if (currentIndex === undefined) {
-			append(`${prefix}${delta}`);
+			append(index === "thinking" ? dimGray(`${prefix}${delta}`) : `${prefix}${delta}`);
 			if (index === "thinking") thinkingIndex = output.length - 1;
 			else answerIndex = output.length - 1;
 			return;
 		}
-		output[currentIndex] = `${output[currentIndex]}${delta}`;
+		output[currentIndex] =
+			index === "thinking"
+				? dimGray(`${stripAnsi(output[currentIndex])}${delta}`)
+				: `${output[currentIndex]}${delta}`;
 	};
 
 	return {
+		working: () => active,
+		setWorking: (value) => {
+			active = value;
+		},
 		handle(event) {
 			switch (event.type) {
 				case "agent_start":
+					active = true;
 					append("agent: started");
 					return;
 				case "agent_end":
+					active = false;
 					append("agent: done");
 					return;
 				case "turn_start":
@@ -79,6 +91,9 @@ export function createTuiPresenter(): TuiPresenter {
 						thinkingIndex = undefined;
 					} else if (streamEvent.type === "thinking_delta") {
 						appendDelta("thinking: ", streamEvent.delta, "thinking");
+					} else if (streamEvent.type === "thinking_end" && thinkingIndex !== undefined) {
+						output[thinkingIndex] = dimGray("thinking: (collapsed)");
+						thinkingIndex = undefined;
 					} else if (streamEvent.type === "text_start") {
 						answerIndex = undefined;
 					} else if (streamEvent.type === "text_delta") {
@@ -97,8 +112,19 @@ export function createTuiPresenter(): TuiPresenter {
 					return;
 			}
 		},
-		lines: () => [...output],
+		lines: () => (active ? ["working"] : []).concat(output),
 	};
+}
+
+const ANSI_RESET = "\u001b[0m";
+const ANSI_DIM_GRAY = "\u001b[90m\u001b[2m";
+
+function dimGray(text: string): string {
+	return `${ANSI_DIM_GRAY}${text}${ANSI_RESET}`;
+}
+
+function stripAnsi(text: string): string {
+	return text.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
 function createAgent(ctx: CommandContext, deps: TuiDeps) {
@@ -162,6 +188,7 @@ function runRealTui(
 			editor.setText("");
 			if (query.length === 0) return;
 			editor.disableSubmit = true;
+			presenter.setWorking(true);
 			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
 			renderTranscript();
 			tui.requestRender();
@@ -182,6 +209,8 @@ function runRealTui(
 					renderTranscript();
 				})
 				.finally(() => {
+					presenter.setWorking(false);
+					renderTranscript();
 					editor.disableSubmit = false;
 					tui.requestRender();
 				});

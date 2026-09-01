@@ -46,10 +46,16 @@ function driver(submissions: string[]): TuiDriver {
 describe("runTui", () => {
 	it("renders thinking, answer deltas, and datasource tool lifecycle", () => {
 		const presenter = createTuiPresenter();
+		presenter.handle({ type: "agent_start" });
 		presenter.handle({
 			type: "message_update",
 			message: { role: "assistant" },
 			assistantMessageEvent: { type: "thinking_delta", delta: "checking indexes" },
+		} as AgentEvent);
+		presenter.handle({
+			type: "message_update",
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "thinking_end", content: "checking indexes" },
 		} as AgentEvent);
 		presenter.handle({
 			type: "tool_execution_start",
@@ -70,12 +76,37 @@ describe("runTui", () => {
 			assistantMessageEvent: { type: "text_delta", delta: "final answer" },
 		} as AgentEvent);
 
+		expect(presenter.working()).toBe(true);
 		expect(presenter.lines()).toEqual([
-			"thinking: checking indexes",
+			"working",
+			"agent: started",
+			"\u001b[90m\u001b[2mthinking: (collapsed)\u001b[0m",
 			"search_datasource_documents: started",
 			"search_datasource_documents: done",
 			"assistant: final answer",
 		]);
+		presenter.handle({ type: "agent_end", messages: [] });
+		expect(presenter.working()).toBe(false);
+	});
+
+	it("shows working during an active run and collapses thinking after completion", () => {
+		const presenter = createTuiPresenter();
+		expect(presenter.working()).toBe(false);
+		presenter.handle({ type: "agent_start" });
+		expect(presenter.working()).toBe(true);
+		presenter.handle({
+			type: "message_update",
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "thinking_delta", delta: "private reasoning" },
+		} as AgentEvent);
+		expect(presenter.lines().join("\n")).toContain("private reasoning");
+		presenter.handle({
+			type: "message_update",
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "thinking_end", content: "private reasoning" },
+		} as AgentEvent);
+		expect(presenter.lines().join("\n")).not.toContain("private reasoning");
+		expect(presenter.lines().join("\n")).toContain("collapsed");
 	});
 
 	it("searches submitted questions and exits on the driver exit signal", async () => {
