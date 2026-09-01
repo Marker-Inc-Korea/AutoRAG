@@ -1,6 +1,5 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
-import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
 import { type BM25Status, type BM25SyncResult, BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
@@ -24,7 +23,6 @@ export interface MinSyncVectorMethodOptions {
 	readonly autoInstall?: boolean;
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 	readonly mode?: MinSyncQueryMode;
 }
 
@@ -62,7 +60,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly autoInstall: boolean;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 	private readonly mode: MinSyncQueryMode;
 
 	constructor(options: MinSyncVectorMethodOptions) {
@@ -73,7 +70,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		this.autoInstall = options.autoInstall ?? true;
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
-		this.managedCliConfigManager = options.managedCliConfigManager;
 		this.mode = options.mode ?? "vector";
 	}
 
@@ -108,9 +104,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				binaryPath: binaryResult,
 				workspacePath: this.workspacePath,
 				embedder: this.embedder,
-				...(this.managedCliConfigManager === undefined
-					? {}
-					: { managedCliConfigManager: this.managedCliConfigManager }),
 				maxChunkSize: this.maxChunkSize,
 			});
 			return client.sync();
@@ -135,9 +128,6 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 			workspacePath: this.workspacePath,
 			embedder: this.embedder,
 			maxChunkSize: this.maxChunkSize,
-			...(this.managedCliConfigManager === undefined
-				? {}
-				: { managedCliConfigManager: this.managedCliConfigManager }),
 		});
 		const hits = await client.query(query, queryK, this.mode);
 		const results: RetrievalResult[] = [];
@@ -210,7 +200,7 @@ export class MinSyncBM25Method extends MinSyncVectorMethod {
 		return {
 			name: "bm25",
 			type: "bm25",
-			description: "MinSync 0.4.0 BM25 lexical retrieval over parsed markdown mirror chunks",
+			description: "MinSync-backed BM25 lexical retrieval over parsed markdown mirror chunks",
 			status: this.status.readiness === "ready" ? "active" : "stub",
 			capabilities: [
 				"lexical",
@@ -238,10 +228,10 @@ export class MinSyncBM25Method extends MinSyncVectorMethod {
 		this.status = result.ok
 			? { readiness: "ready", engine: "minsync" }
 			: {
-					readiness: result.reason === "missing-binary" ? "dependency_unavailable" : "error",
-					engine: "minsync",
-					message: result.reason,
-				};
+				readiness: result.reason === "missing-binary" ? "dependency_unavailable" : "error",
+				engine: "minsync",
+				message: result.reason,
+			};
 		return {
 			indexPath: result.workspacePath,
 			indexedChunks: result.synced,

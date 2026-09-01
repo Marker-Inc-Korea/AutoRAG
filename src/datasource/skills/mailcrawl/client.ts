@@ -1,12 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import {
-	createMailcrawlManagedCliProvider,
-	ensurePrivateMailcrawlDataDir,
-	validateMailcrawlInstanceId,
-} from "./config.ts";
+import { ensurePrivateMailcrawlDataDir, validateMailcrawlInstanceId } from "./config.ts";
 import type {
 	MailcrawlFailure,
 	MailcrawlFailureReason,
@@ -59,17 +54,10 @@ export interface MailcrawlIndexClient extends MailcrawlSearchClient {
 
 export class MailcrawlClient implements MailcrawlSearchClient {
 	private readonly options: MailcrawlOptions;
-	private readonly manager: ManagedCliConfigManager | undefined;
 
 	constructor(options: MailcrawlOptions = {}) {
 		this.options = options;
 		if (options.instanceId !== undefined) validateMailcrawlInstanceId(options.instanceId);
-		if (options.managedCliConfigManager) this.manager = options.managedCliConfigManager;
-		else if (options.workspacePath !== undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createMailcrawlManagedCliProvider(options.binaryPath));
-			this.manager = new ManagedCliConfigManager({ workspace: options.workspacePath, registry });
-		}
 	}
 
 	async sync(signal?: AbortSignal): Promise<MailcrawlSyncResult> {
@@ -145,17 +133,8 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 		if (violation !== undefined) {
 			return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
 		}
-		let launch: { readonly env: Readonly<Record<string, string>>; readonly cwd?: string } | undefined;
-		try {
-			if (this.manager)
-				launch = await this.manager.materialize("mailcrawl", {
-					instance: this.options.instanceId,
-					...(this.options.dataDir === undefined ? {} : { config: { dataDir: this.options.dataDir } }),
-				});
-			else if (this.options.dataDir !== undefined) ensurePrivateMailcrawlDataDir(this.options.dataDir);
-		} catch {
-			return { ok: false, reason: "spawn-error", stdout: "", stderr: "", code: null };
-		}
+		const dataDir = this.options.dataDir;
+		if (dataDir !== undefined) ensurePrivateMailcrawlDataDir(dataDir);
 		const env: NodeJS.ProcessEnv = {};
 		for (const [key, value] of Object.entries(process.env)) {
 			if (value !== undefined && (SAFE_ENV_KEYS.has(key) || SAFE_MAILCRAWL_ENV_KEYS.has(key))) env[key] = value;
@@ -164,9 +143,8 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 			if (value === undefined) delete env[key];
 			else if (SAFE_ENV_KEYS.has(key) || SAFE_MAILCRAWL_ENV_KEYS.has(key)) env[key] = value;
 		}
-		if (this.manager === undefined && this.options.dataDir !== undefined)
-			env.MAILCRAWL_DATA_DIR = this.options.dataDir;
-		return spawnMailcrawl(this.options.binaryPath ?? DEFAULT_BINARY, args, env, this.options, signal, launch);
+		if (dataDir !== undefined) env.MAILCRAWL_DATA_DIR = dataDir;
+		return spawnMailcrawl(this.options.binaryPath ?? DEFAULT_BINARY, args, env, this.options, signal);
 	}
 
 	async index(signal?: AbortSignal): Promise<MailcrawlOk<MailcrawlIndexInfo> | MailcrawlFailure> {
@@ -198,13 +176,11 @@ function spawnMailcrawl(
 	env: NodeJS.ProcessEnv,
 	options: MailcrawlOptions,
 	signal: AbortSignal | undefined,
-	launch: { readonly env: Readonly<Record<string, string>>; readonly cwd?: string } | undefined,
 ): Promise<ProcessResult> {
 	return new Promise((resolveResult) => {
 		const portable = portableSpawnCommand(binary, args);
 		const child = spawn(portable.command, portable.args, {
-			env: { ...env, ...(launch?.env ?? {}) },
-			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
+			env,
 			detached: process.platform !== "win32",
 			stdio: ["ignore", "pipe", "pipe"],
 		});

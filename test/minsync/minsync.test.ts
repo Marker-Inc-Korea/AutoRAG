@@ -1,5 +1,6 @@
 import {
 	chmodSync,
+	copyFileSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
@@ -13,7 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -670,6 +671,45 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			const result = await method.sync();
 
 			expect(result).toMatchObject({ ok: false, synced: 0, reason: "missing-binary" });
+		} finally {
+			process.env.PATH = savedPath;
+		}
+	});
+
+	it("auto-installs a verified release when no binary is available", async () => {
+		const savedPath = process.env.PATH;
+		process.env.PATH = savedPath
+			?.split(delimiter)
+			.filter((directory) => !existsSync(join(directory, process.platform === "win32" ? "minsync.exe" : "minsync")))
+			.join(delimiter);
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		try {
+			const method = new MinSyncVectorMethod({
+				root,
+				workspacePath: minsyncWorkspace,
+				installer: {
+					platform: "darwin",
+					arch: "arm64",
+					releaseProvider: async () => ({
+						tagName: "v0.3.0",
+						assets: [
+							{
+								name: "minsync-v0.3.0-aarch64-apple-darwin.tar.gz",
+								downloadUrl: "https://example.test/minsync.tar.gz",
+								sha256: "a".repeat(64),
+							},
+						],
+					}),
+					assetInstaller: async (_asset, destination) => {
+						copyFileSync(minsyncBinary, destination);
+					},
+				},
+			});
+
+			const result = await method.sync();
+
+			expect(result).toMatchObject({ ok: true, synced: 1 });
+			expect(existsSync(join(root, ".autorag", "bin", "minsync"))).toBe(true);
 		} finally {
 			process.env.PATH = savedPath;
 		}

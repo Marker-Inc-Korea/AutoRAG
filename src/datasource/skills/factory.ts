@@ -8,7 +8,6 @@
  * and reported so setup surfaces actionable (but path-opaque) feedback.
  */
 
-import type { ManagedCliConfigManager } from "../../cli/managed-cli-config.ts";
 import { AliasedDatasourceSkill } from "../aliased-skill.ts";
 import { DescribedDatasourceSkill } from "../described-skill.ts";
 import type { DatasourceSkill } from "../types.ts";
@@ -47,6 +46,7 @@ export interface DatasourceSkillConfig {
 		readonly names?: readonly string[];
 	};
 }
+
 /** The trusted `datasources` config section: skill name → config. */
 export type DatasourcesConfig = Readonly<Record<string, DatasourceSkillConfig | boolean>>;
 
@@ -60,11 +60,10 @@ type SkillBuilder = (
 	config: DatasourceSkillConfig,
 	workspaceRoot: string | undefined,
 	registrationName: string,
-	managedCliConfigManager: ManagedCliConfigManager | undefined,
 ) => DatasourceSkill;
 
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
-	telegram: (config, _workspaceRoot, registrationName, managedCliConfigManager) =>
+	telegram: (config, _workspaceRoot, registrationName) =>
 		new TelecrawlSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -75,10 +74,9 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: {
 				...(config.connector as TelecrawlOptions),
 				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			},
 		}),
-	whatsapp: (config, _workspaceRoot, registrationName, managedCliConfigManager) =>
+	whatsapp: (config, _workspaceRoot, registrationName) =>
 		new WacrawlSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -89,10 +87,9 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: {
 				...(config.connector as WacrawlOptions),
 				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			},
 		}),
-	slack: (config, _workspaceRoot, registrationName, managedCliConfigManager) =>
+	slack: (config, _workspaceRoot, registrationName) =>
 		new SlackSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -103,10 +100,9 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: {
 				...(config.connector as SlacrawlOptions),
 				...(_workspaceRoot === undefined ? {} : { workspacePath: _workspaceRoot }),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			},
 		}),
-	discord: (config, workspaceRoot, registrationName, managedCliConfigManager) => {
+	discord: (config, workspaceRoot, registrationName) => {
 		const connector = (config.connector ?? {}) as DiscrawlOptions & { readonly embedLimit?: number };
 		const clientOptions: DiscrawlOptions = {
 			...connector,
@@ -121,7 +117,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			channelNames: config.channels?.names,
 			client: new DiscrawlClient({
 				...clientOptions,
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			}),
 			...(connector.embeddingModel !== undefined ? { embeddingModel: connector.embeddingModel } : {}),
 			...(connector.defaultMode !== undefined ? { defaultMode: connector.defaultMode } : {}),
@@ -146,7 +141,7 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector.vdrBackend !== undefined ? { vdrBackend: connector.vdrBackend } : {}),
 		});
 	},
-	notion: (config, workspaceRoot, registrationName, managedCliConfigManager) =>
+	notion: (config, workspaceRoot, registrationName) =>
 		new NotionSkill({
 			datasourceId: registrationName,
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
@@ -155,14 +150,12 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			connectorOptions: {
 				...(config.connector as NotcrawlOptions),
 				...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			},
 		}),
-	kakao: (config, _workspaceRoot, _registrationName, managedCliConfigManager) =>
+	kakao: (config, _workspaceRoot, _registrationName) =>
 		new KatokSkill({
 			client: new KatokClient({
 				...(config.connector as KatokOptions),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			}),
 			...(config.instanceId !== undefined ? { instanceId: config.instanceId } : {}),
 			...(config.pollingIntervalMs !== undefined ? { pollingIntervalMs: config.pollingIntervalMs } : {}),
@@ -174,17 +167,16 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as GitHubConnectorOptions,
 		}),
-	"cloud-drive": (config, workspaceRoot, registrationName, managedCliConfigManager) =>
+	"cloud-drive": (config, workspaceRoot, registrationName) =>
 		new CloudDriveSkill({
 			...common(config, workspaceRoot),
 			skillName: registrationName,
 			provider: typeof config.connector?.provider === "string" ? config.connector.provider : undefined,
 			connectorOptions: {
 				...(config.connector as RcloneConnectorOptions),
-				...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 			},
 		}),
-	gmail: (config, workspaceRoot, registrationName, managedCliConfigManager) => {
+	gmail: (config, workspaceRoot, registrationName) => {
 		const connector = config.connector as
 			| (GmailConnectorOptions & HimalayaConnectorOptions & { backend?: string })
 			| undefined;
@@ -198,7 +190,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 				connector: new HimalayaConnector({
 					...himalayaOptions,
 					...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-					...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 				}),
 			});
 		}
@@ -214,15 +205,13 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			skillName: registrationName,
 			connectorOptions: config.connector as MailExportConnectorOptions,
 		}),
-	mailcrawl: (config, workspaceRoot, registrationName, managedCliConfigManager) =>
+	mailcrawl: (config, workspaceRoot, registrationName) =>
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
-			...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
 			...(config.connector as MailcrawlOptions),
-			...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 		}),
-	obsidian: (config, workspaceRoot, registrationName, managedCliConfigManager) => {
+	obsidian: (config, workspaceRoot, registrationName) => {
 		const connector = config.connector as
 			| { vaultPath?: string; binaryPath?: string; configPath?: string }
 			| undefined;
@@ -233,7 +222,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			...(connector?.binaryPath !== undefined ? { binaryPath: connector.binaryPath } : {}),
 			...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
 			...(connector?.configPath !== undefined ? { configPath: connector.configPath } : {}),
-			...(managedCliConfigManager === undefined ? {} : { managedCliConfigManager }),
 		});
 	},
 	rss: (config, workspaceRoot, registrationName) =>
@@ -271,7 +259,6 @@ function common(config: DatasourceSkillConfig, workspaceRoot: string | undefined
 export function buildDatasourceSkills(
 	config: DatasourcesConfig | undefined,
 	workspaceRoot?: string,
-	managedCliConfigManager?: ManagedCliConfigManager,
 ): BuildDatasourceSkillsResult {
 	const skills: DatasourceSkill[] = [];
 	const unknown: string[] = [];
@@ -291,11 +278,15 @@ export function buildDatasourceSkills(
 		}
 		const normalizedEntry =
 			entry.instanceId === undefined && entry.type !== undefined ? { ...entry, instanceId: name } : entry;
-		const skill = builder(normalizedEntry, workspaceRoot, name, managedCliConfigManager);
+		const skill = builder(normalizedEntry, workspaceRoot, name);
 		const hasChannelFilter = (entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0;
 		const aliased =
 			name !== templateName || hasChannelFilter
-				? new AliasedDatasourceSkill(skill, aliasOptions(name, entry))
+				? new AliasedDatasourceSkill(skill, {
+						alias: name,
+						...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
+						...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
+					})
 				: skill;
 		skills.push(
 			typeof entry.description === "string" && entry.description.trim().length > 0
@@ -304,15 +295,4 @@ export function buildDatasourceSkills(
 		);
 	}
 	return { skills, unknown };
-}
-
-function aliasOptions(
-	alias: string,
-	entry: DatasourceSkillConfig,
-): ConstructorParameters<typeof AliasedDatasourceSkill>[1] {
-	return {
-		alias,
-		...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
-		...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
-	};
 }

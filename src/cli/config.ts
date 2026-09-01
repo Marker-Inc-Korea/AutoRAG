@@ -15,8 +15,6 @@ import type { DatasourceAccessContextOptions } from "../datasource/access-contex
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
-import { createManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
-import { createManagedCliRuntime } from "./managed-cli-runtime.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
@@ -32,6 +30,7 @@ export class ConfigError extends Error {
 		this.name = "ConfigError";
 	}
 }
+
 /**
  * Typed BM25 method config persisted in `config.json`. Missing `enabled` means
  * enabled (true). `false` as a top-level value is also accepted and disables.
@@ -42,7 +41,7 @@ export interface Bm25MethodConfig {
 
 /**
  * Typed MinSync method config persisted in `config.json`. Missing `enabled`
- * means enabled (true); `autoInstall` defaults to false. `embedder` carries
+ * means enabled (true); `autoInstall` defaults to true. `embedder` carries
  * the MinSync vector embedder settings validated by {@link normalizeEmbedder}.
  */
 export interface MinSyncMethodConfig {
@@ -642,7 +641,7 @@ function normalizeBm25Method(raw: Bm25MethodConfig | false | undefined): Bm25Met
 
 function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): MinSyncMethodConfig {
 	if (raw === false) return { enabled: false };
-	if (raw === undefined || raw === null) return { enabled: true, autoInstall: false };
+	if (raw === undefined || raw === null) return { enabled: true, autoInstall: true };
 	if (typeof raw !== "object" || Array.isArray(raw)) {
 		throw new ConfigError("minSync must be an object or false");
 	}
@@ -653,7 +652,7 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 		}
 	}
 	const enabled = record.enabled !== false;
-	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall === true };
+	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall !== false };
 	if (typeof record.binaryPath === "string" && record.binaryPath.length > 0) out.binaryPath = record.binaryPath;
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
 		out.workspacePath = record.workspacePath;
@@ -683,7 +682,7 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 /**
  * Normalize raw indexing method config into a fully-populated shape.
  *
- * - `undefined` / missing key => `{ enabled: true }` (minSync `autoInstall: false`)
+ * - `undefined` / missing key => `{ enabled: true, autoInstall: true }`
  * - `false` => `{ enabled: false }` (disabled marker)
  * - object merges with `enabled: true` default and is validated
  *
@@ -794,27 +793,8 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
-	const mailcrawlBinaryPaths = Object.entries(config.datasources ?? {}).flatMap(([name, raw]) => {
-		if (raw === false || raw === true || raw === undefined || raw === null || typeof raw !== "object") return [];
-		if ((raw.type ?? name) !== "mailcrawl" || raw.connector === null || typeof raw.connector !== "object") return [];
-		const binaryPath = raw.connector.binaryPath;
-		return typeof binaryPath === "string" ? [binaryPath] : [];
-	});
-	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd(), {
-		mailcrawlBinaryPaths,
-	});
-	const minSyncConfig = config.minSync;
-	const managedRetrievalRuntime = createManagedRetrievalRuntime(config.workspacePath ?? process.cwd(), {
-		minSync: minSyncConfig?.enabled !== false,
-		minSyncBinaryPath: minSyncConfig?.binaryPath,
-		jikji: config.jikji !== undefined,
-		jikjiBinaryPath: typeof config.jikji?.binaryPath === "string" ? config.jikji.binaryPath : undefined,
-	});
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
-		managedCliRegistry: managedCliRuntime.registry,
-		managedCliConfigManager: managedCliRuntime.manager,
-		managedRetrievalRuntime,
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;
@@ -842,11 +822,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(
-			config.datasources,
-			config.workspacePath,
-			managedCliRuntime.manager,
-		);
+		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {
 			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
@@ -899,27 +875,15 @@ function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefine
 	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
 }
 
-function unknownConfiguredModelMessage(reference: AgentModelConfig): string {
-	return (
-		`Unknown configured model: ${reference.provider}/${reference.id}. ` +
-		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id."
-	);
-}
-
-function loadLocalAutoRAGModelForReference(
-	options: LoadLocalAutoRAGModelOptions,
-	modelId: string | undefined,
-): LocalAutoRAGModel {
-	return loadLocalAutoRAGModel({ ...options, modelId });
-}
-
 function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
 	if (isConfiguredEndpoint(reference)) {
 		return buildModelFromConfiguredEndpoint(reference);
 	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
-	throw new ConfigError(unknownConfiguredModelMessage(reference));
+	const hint =
+		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
+	throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
 }
 
 function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
@@ -932,7 +896,9 @@ function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
 	if ((getProviders() as readonly string[]).includes(reference.provider)) {
-		throw new ConfigError(unknownConfiguredModelMessage(reference));
+		const hint =
+			"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.";
+		throw new ConfigError(`Unknown configured model: ${reference.provider}/${reference.id}. ${hint}`);
 	}
 	return undefined;
 }
@@ -1004,7 +970,8 @@ function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAG
 	const modelRef = config.model;
 	const registered = resolveBuiltInModel(modelRef);
 	const needsLocal = modelRef === undefined || registered === undefined;
-	const local = needsLocal ? loadLocalAutoRAGModelForReference(localOptions, modelRef?.id) : undefined;
+	const localModelOptions = { ...localOptions, modelId: modelRef?.id };
+	const local = needsLocal ? loadLocalAutoRAGModel(localModelOptions) : undefined;
 	const model =
 		registered ??
 		(modelRef === undefined || modelRef.provider === local?.provider
@@ -1060,6 +1027,7 @@ function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAG
 		env,
 	};
 }
+
 export function resolveAgentModel(
 	config: CliConfig,
 	localOptions: LoadLocalAutoRAGModelOptions = {},
@@ -1071,6 +1039,7 @@ export function resolveAgentModel(
 		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
 	};
 }
+
 function providerApiKeyEnvName(provider: string): string {
 	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }

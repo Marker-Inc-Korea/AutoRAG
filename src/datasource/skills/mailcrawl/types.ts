@@ -1,5 +1,3 @@
-import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
-
 export type MailcrawlSearchMode = "keyword" | "bm25" | "semantic" | "hybrid";
 
 export interface MailcrawlSearchOptions {
@@ -20,8 +18,6 @@ export interface MailcrawlOptions {
 	readonly timeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	readonly workspacePath?: string;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export type MailcrawlFailureReason =

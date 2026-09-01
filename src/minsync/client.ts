@@ -1,8 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../cli/managed-cli-config.ts";
 import { minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
-import { createMinSyncManagedCliProvider } from "./managed-config.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
@@ -11,7 +9,6 @@ export interface MinSyncClientOptions {
 	readonly workspacePath: string;
 	readonly embedder?: MinSyncEmbedderConfig;
 	readonly maxChunkSize?: number;
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
@@ -23,19 +20,12 @@ export class MinSyncClient {
 	private readonly workspacePath: string;
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
 		this.embedder = options.embedder;
 		this.maxChunkSize = options.maxChunkSize;
-		if (options.managedCliConfigManager) this.managedCliConfigManager = options.managedCliConfigManager;
-		else {
-			const registry = new ManagedCliRegistry();
-			registry.register(createMinSyncManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspacePath, registry });
-		}
 	}
 
 	async sync(): Promise<MinSyncSyncResult> {
@@ -118,10 +108,7 @@ export class MinSyncClient {
 		args: readonly string[],
 		options: { readonly timeoutMs?: number } = {},
 	): Promise<ReturnType<typeof spawnProcess> extends Promise<infer T> ? T : never> {
-		const launch = await this.managedCliConfigManager?.materialize("minsync", {
-			config: { workspacePath: this.workspacePath },
-		});
-		return spawnProcess(this.binaryPath, args, launch?.cwd ?? this.workspacePath, options);
+		return spawnProcess(this.binaryPath, args, this.workspacePath, options);
 	}
 }
 

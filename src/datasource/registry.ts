@@ -70,11 +70,11 @@ export class DatasourceSkillRegistry {
 	 */
 	resolveInstances(ctx: DatasourceAccessContext): readonly DatasourceInstance[] {
 		const out: DatasourceInstance[] = [];
-		const predicate = ctx.allowedSourcesPredicate();
 		for (const { skill, descriptor } of this.skills.values()) {
 			if (!ctx.isAccessible(descriptor)) continue;
 			const instanceIds = descriptor.instances ?? [];
 			const polling = safePolling(skill);
+			const predicate = descriptor.capabilities.includes("scoped") ? ctx.allowedSourcesPredicate() : () => true;
 			for (const id of instanceIds) {
 				const sourcePath = buildDatasourceInstanceSource(descriptor.name, id);
 				if (!predicate(sourcePath)) continue;

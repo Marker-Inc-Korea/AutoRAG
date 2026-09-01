@@ -94,7 +94,7 @@ describe("NotcrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
-	it("routes configured workspace execution through the managed launch context", async () => {
+	it("runs notcrawl against its own default store without a managed --db injection", async () => {
 		writeFakeNotcrawl();
 		const client = new NotcrawlClient({
 			binaryPath,
@@ -103,11 +103,9 @@ describe("NotcrawlClient", () => {
 		});
 
 		expect(await client.sync()).toMatchObject({ ok: true, count: 2 });
-		expect(calls()[0]?.args.slice(0, 2)).toEqual([
-			"--db",
-			join(root, ".autorag", "datasources", "notcrawl", "archive.db"),
-		]);
-		expect(calls()[0]?.args).toContain("sync");
+		const args = calls()[0]?.args ?? [];
+		expect(args).not.toContain("--db");
+		expect(args.join(" ")).not.toContain(".autorag/datasources/notcrawl");
 	});
 
 	it("maps a missing binary and malformed output without throwing", async () => {

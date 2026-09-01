@@ -20,7 +20,7 @@ else if (args[0] === "index") process.stdout.write(JSON.stringify({ embedded: 1,
 else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId: "msg-1", threadId: "thread-1", accountId: "personal", mailbox: "INBOX", subject: "Refund approval", from: "finance@example.com", to: ["director@example.com"], date: "2026-08-31", snippet: "Director approval is required before payout.", score: 0.99, mode: "bm25" }]));
 `);
 	chmodSync(binary, 0o755);
-	const client = new MailcrawlClient({ binaryPath: binary, workspacePath: root, account: "personal", mailbox: "INBOX" });
+	const client = new MailcrawlClient({ binaryPath: binary, account: "personal", mailbox: "INBOX" });
 	const skill = new MailcrawlSkill({ client, instanceId: "personal" });
 	const indexed = await skill.index();
 	if (!indexed.ok || indexed.chunkCount !== 1) throw new Error("mailcrawl index failed");
@@ -44,7 +44,6 @@ else process.stdout.write(JSON.stringify([{ chunkId: "msg-1:latest:0", messageId
 		const agent = new AutoRAGAgent({
 			model: registration.getModel(),
 			searchPaths: [root],
-			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			minSync: false,
 			bm25: false,
