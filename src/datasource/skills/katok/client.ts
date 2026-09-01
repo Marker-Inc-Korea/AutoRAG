@@ -1,9 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { createKatokManagedCliProvider } from "./config.ts";
-import { katokDatasourceRoot } from "./paths.ts";
 import type {
 	KatokChunk,
 	KatokChunkResult,
@@ -24,12 +21,7 @@ import type {
 	KatokSyncInfo,
 	KatokSyncResult,
 } from "./types.ts";
-import {
-	DEFAULT_KATOK_BINARY,
-	DEFAULT_KATOK_MAX_BUFFER_BYTES,
-	DEFAULT_KATOK_SOURCE,
-	DEFAULT_KATOK_TIMEOUT_MS,
-} from "./types.ts";
+import { DEFAULT_KATOK_BINARY, DEFAULT_KATOK_MAX_BUFFER_BYTES, DEFAULT_KATOK_TIMEOUT_MS } from "./types.ts";
 
 /**
  * Environment keys whose mere presence (any value) enables remote embeddings
@@ -82,24 +74,9 @@ interface RemoteEmbeddingViolation {
  */
 export class KatokClient {
 	private readonly options: KatokOptions;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: KatokOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) {
-			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (
-			options.root !== undefined ||
-			options.workspacePath !== undefined ||
-			options.configPath !== undefined
-		) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createKatokManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({
-				workspace: options.root ?? process.cwd(),
-				registry,
-			});
-		}
 	}
 
 	async doctor(signal?: AbortSignal): Promise<KatokDoctorResult> {
@@ -131,11 +108,10 @@ export class KatokClient {
 
 	async search(mode: KatokSearchMode, query: string, options?: KatokSearchOptions): Promise<KatokSearchResult> {
 		const args = ["search", mode, query, "--json"];
-		if (options?.topK !== undefined) args.push("--top-k", String(options.topK));
-		if (options?.scope !== undefined) args.push("--scope", options.scope);
+		if (options?.topK !== undefined) args.push("--limit", String(options.topK));
 		const result = await this.run(args, options?.signal);
 		if (!result.ok) return toFailure(result);
-		const parsed = parseJsonObject(result.stdout);
+		const parsed = parseJsonValue(result.stdout);
 		if (parsed === undefined) return toFailure(result, "invalid-json");
 		const hits = normalizeHits(parsed);
 		return hits === undefined ? toFailure(result, "invalid-shape") : searchOk(hits, result);
@@ -182,33 +158,11 @@ export class KatokClient {
 			};
 		}
 		const env = controlledEnv(this.options.env);
-		let launchContext:
-			| {
-					readonly prefixArgs: readonly string[];
-					readonly cwd?: string;
-					readonly env: Readonly<Record<string, string>>;
-			  }
-			| undefined;
-		try {
-			launchContext = await this.managedCliConfigManager?.materialize("katok", {
-				...(this.options.configPath === undefined
-					? {}
-					: { ownership: "external", configPath: this.options.configPath }),
-				config: { source: this.options.source ?? DEFAULT_KATOK_SOURCE },
-			});
-		} catch {
-			return { ok: false, reason: "spawn-error", stdout: "", stderr: "", code: null };
-		}
 		return spawnKatok({
 			options: this.options,
-			args: [
-				...(launchContext?.prefixArgs ?? []),
-				...args,
-				...(launchContext === undefined ? commonArgs(this.options) : commonArgsWithoutWorkspace(this.options)),
-			],
-			env: { ...env, ...(launchContext?.env ?? {}) },
+			args: [...args, ...commonArgs(this.options)],
+			env,
 			signal,
-			...(launchContext?.cwd === undefined ? {} : { cwd: launchContext.cwd }),
 		});
 	}
 }
@@ -285,33 +239,18 @@ function commandFor(binaryPath: string | undefined): string {
 	return binaryPath === undefined ? DEFAULT_KATOK_BINARY : binaryPath;
 }
 
-/** Flags common to every subcommand: data source, fixture path, workspace. */
+/**
+ * Flags common to every subcommand. katok's own CLI contract only exposes
+ * `--data-dir` and `--config` as global options; there is no `--workspace`
+ * or global `--source` flag. AutoRAG never forces an AutoRAG-managed
+ * workspace on katok — without explicit options, katok uses its own default
+ * store (e.g. `~/Library/Application Support/katok` on macOS).
+ */
 function commonArgs(options: KatokOptions): readonly string[] {
 	const args: string[] = [];
-	const source = options.source ?? DEFAULT_KATOK_SOURCE;
-	args.push("--source", source);
-	if (source === "fixture" && options.fixturePath !== undefined) {
-		args.push("--fixture-path", options.fixturePath);
-	}
-	const workspace = resolveWorkspace(options);
-	if (workspace !== undefined) args.push("--workspace", workspace);
+	if (options.workspacePath !== undefined) args.push("--data-dir", options.workspacePath);
+	if (options.configPath !== undefined) args.push("--config", options.configPath);
 	return args;
-}
-
-function commonArgsWithoutWorkspace(options: KatokOptions): readonly string[] {
-	const args: string[] = [];
-	const source = options.source ?? DEFAULT_KATOK_SOURCE;
-	args.push("--source", source);
-	if (source === "fixture" && options.fixturePath !== undefined) {
-		args.push("--fixture-path", options.fixturePath);
-	}
-	return args;
-}
-
-function resolveWorkspace(options: KatokOptions): string | undefined {
-	if (options.workspacePath !== undefined) return options.workspacePath;
-	const root = options.root ?? process.cwd();
-	return katokDatasourceRoot(root);
 }
 
 /**
@@ -380,15 +319,18 @@ function appendBounded(state: BufferState, chunk: string, maxBytes: number): Buf
 	return { text: state.text + chunk.slice(0, remainingBytes), bytes: maxBytes, capped: true };
 }
 
-function parseJsonObject(stdout: string): Record<string, unknown> | undefined {
+function parseJsonValue(stdout: string): unknown {
 	const trimmed = stdout.trim();
 	if (trimmed.length === 0) return undefined;
-	let parsed: unknown;
 	try {
-		parsed = JSON.parse(trimmed);
+		return JSON.parse(trimmed);
 	} catch {
 		return undefined;
 	}
+}
+
+function parseJsonObject(stdout: string): Record<string, unknown> | undefined {
+	const parsed = parseJsonValue(stdout);
 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
 	return parsed as Record<string, unknown>;
 }
@@ -433,22 +375,50 @@ function normalizeIndex(raw: Record<string, unknown>): KatokIndexInfo | undefine
 	return { chunkCount, metadata };
 }
 
-function normalizeHits(raw: Record<string, unknown>): readonly KatokSearchHit[] | undefined {
-	const hits = raw.hits;
+function normalizeHits(raw: unknown): readonly KatokSearchHit[] | undefined {
+	// Real katok prints a bare JSON array; the legacy envelope wraps it in { hits }.
+	const hits = Array.isArray(raw) ? raw : asRecord(raw)?.hits;
 	if (!Array.isArray(hits)) return undefined;
 	const normalized: KatokSearchHit[] = [];
 	for (const entry of hits) {
 		const record = asRecord(entry);
 		if (record === undefined) return undefined;
-		const chunkId = asString(record.chunkId);
-		const score = asNumber(record.score);
-		const content = asString(record.content);
-		if (chunkId === undefined || chunkId.length === 0 || score === undefined || content === undefined)
-			return undefined;
-		const metadata = stripKnown(record, new Set(["chunkId", "score", "content"]));
-		normalized.push({ chunkId, score, content, metadata });
+		const hit = normalizeHit(record);
+		if (hit === undefined) return undefined;
+		normalized.push(hit);
 	}
 	return normalized;
+}
+
+/**
+ * One katok search hit. Accepts both the AutoRAG-legacy object envelope
+ * (`{ chunkId, score, content }`) and the real katok CLI fields
+ * (`chunk_id`, `snippet`, `chat_name`, `sender_nickname`, `started_at`,
+ * `ended_at`, `ranker`, `unit`, `rank`). Chat identity fields are surfaced
+ * in metadata so callers can present a human-readable source.
+ */
+function normalizeHit(record: Record<string, unknown>): KatokSearchHit | undefined {
+	const chunkId = asString(record.chunkId) ?? asString(record.chunk_id);
+	const score = asNumber(record.score);
+	const content = asString(record.content) ?? asString(record.snippet);
+	if (chunkId === undefined || chunkId.length === 0 || score === undefined || content === undefined) return undefined;
+	const metadata = stripKnown(record, new Set(["chunkId", "chunk_id", "score", "content", "snippet"]));
+	const chatName = asString(record.chat_name);
+	const senderNickname = asString(record.sender_nickname);
+	const startedAt = asString(record.started_at);
+	const endedAt = asString(record.ended_at);
+	return {
+		chunkId,
+		score,
+		content,
+		metadata: {
+			...metadata,
+			...(chatName !== undefined ? { chatName } : {}),
+			...(senderNickname !== undefined ? { senderNickname } : {}),
+			...(startedAt !== undefined ? { startedAt } : {}),
+			...(endedAt !== undefined ? { endedAt } : {}),
+		},
+	};
 }
 
 function normalizeChunk(raw: Record<string, unknown>): KatokChunk | undefined {

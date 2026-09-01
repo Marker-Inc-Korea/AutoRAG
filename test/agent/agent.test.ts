@@ -105,7 +105,7 @@ describe("AutoRAGAgent", () => {
 				subscribe: (listener: (event: unknown) => void) => {
 					listener({
 						type: "tool_execution_end",
-						toolName: "search_bm25_documents",
+						toolName: "lexical_search_local_docs",
 						result: { details: { method: "bm25" } },
 					});
 					return () => {};
@@ -167,8 +167,8 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Use `bash` to open and verify relevant local files");
 		expect(prompt).toContain("check_memory");
 		for (const name of [
-			"search_bm25_documents",
-			"search_minsync_documents",
+			"lexical_search_local_docs",
+			"semantic_search_local_docs",
 			"search_all_documents",
 			"search_datasource_documents",
 		]) {
@@ -260,7 +260,8 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("Search Strategy");
 		expect(prompt).toContain("glob");
 		expect(prompt).toContain("regex");
-		expect(prompt).toContain("Fallback Chain");
+		expect(prompt).toContain("timeout");
+		expect(prompt).not.toContain("Fallback Chain");
 	});
 
 	it("system prompt routes output through emit_autorag_results without an internal_mapping channel", () => {
@@ -428,7 +429,7 @@ describe("AutoRAGAgent default method registration", () => {
 		expect(internals(agent).bm25Method?.describe().name).toBe("bm25");
 	});
 
-	it("defaults MinSync autoInstall to false when undefined", () => {
+	it("defaults MinSync autoInstall to true when undefined", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),

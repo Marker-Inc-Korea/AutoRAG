@@ -136,7 +136,7 @@ export class KatokSkill implements DatasourceSkill {
 	}
 
 	skillManifest(): DatasourceSkillManifest {
-		const instanceScopes = this.instances
+		const instanceSources = this.instances
 			.map((instanceId) => `- \`${datasourceSourcePath(KAKAO_DATASOURCE_ID, instanceId)}\``)
 			.join("\n");
 		const cadence =
@@ -159,10 +159,10 @@ export class KatokSkill implements DatasourceSkill {
 				`Indexing is server-managed and refreshed ${cadence}. You do not trigger indexing; just search.`,
 				"",
 				"## How to search",
-				"Call `search_datasource_documents` with a natural-language `query`. Optionally pass `topK` and a narrowing `scope`. Available authorized scopes:",
-				instanceScopes.length > 0 ? instanceScopes : "- (no authorized instances)",
+				"Call `search_datasource_documents` with a natural-language `query` and `topK`. This datasource does not support per-source scope narrowing. Authorized datasource:",
+				instanceSources.length > 0 ? instanceSources : "- (no configured instances)",
 				"",
-				"`scope` can only narrow within already-authorized scopes; it can never widen access.",
+				"Access is controlled by the trusted datasource tag; chat/channel filtering is owned by katok.",
 				"",
 				"## Output rules",
 				"Datasource source identifiers such as `/kakao/<instance>/chunks/<id>` are internal and opaque. Never put them, real file paths, account IDs, or phone numbers in the visible answer.",

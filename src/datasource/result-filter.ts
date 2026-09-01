@@ -6,7 +6,8 @@
  * takes the per-method result map and the {@link RetrievalMethod}s that
  * produced it, then for every datasource-backed method either drops all of
  * its results (when the trusted access context denies the descriptor) or
- * keeps only the sources the context allows for the current user scope.
+ * keeps only the sources the context allows for the current user scope when
+ * the method advertises the `scoped` capability.
  *
  * Non-datasource methods (those whose descriptor has no `datasourceId`) pass
  * through completely untouched — they are gated by their own retrieval
@@ -73,11 +74,6 @@ export class DatasourceResultFilter {
 			descriptors.set(method.describe().name, method);
 		}
 
-		// One predicate per filter call; userScope is forwarded as-is. The
-		// access context treats `undefined` userScope as "no extra restriction"
-		// and never passes it to `matchesVirtualPathScope` as a deny value.
-		const predicate = ctx.allowedSourcesPredicate(userScope);
-
 		const out: ResultsByMethod = new Map();
 		for (const [name, results] of byMethod) {
 			const method = descriptors.get(name);
@@ -97,7 +93,12 @@ export class DatasourceResultFilter {
 				out.set(name, []);
 				continue;
 			}
-			// Allowed descriptor: keep only sources the context permits.
+			if (!descriptor.capabilities.includes("scoped")) {
+				out.set(name, results);
+				continue;
+			}
+			// Scope-capable methods are narrowed by trusted/user scopes.
+			const predicate = ctx.allowedSourcesPredicate(userScope);
 			out.set(
 				name,
 				results.filter((r) => predicate(r.source)),

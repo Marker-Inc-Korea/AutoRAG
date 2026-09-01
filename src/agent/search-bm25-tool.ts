@@ -4,7 +4,7 @@ import type { BM25Status } from "../retrieval/methods/bm25.ts";
 import { BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import type { RetrievalResult } from "../retrieval/types.ts";
 
-export const SEARCH_BM25_DOCUMENTS_TOOL_NAME = "search_bm25_documents";
+export const SEARCH_BM25_DOCUMENTS_TOOL_NAME = "lexical_search_local_docs";
 
 const searchBM25Schema = Type.Object({
 	query: Type.String({ description: "Lexical query to search in parsed document mirrors with BM25." }),
@@ -33,7 +33,7 @@ export function createSearchBM25DocumentsTool(
 		name: SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 		label: "Search BM25 Documents",
 		description:
-			"Search parsed document mirrors with MinSync 0.4.0 lexical BM25 ranking. Use for exact terms, repeated terms, headings, identifiers, and folder-scoped document search.",
+			"Search parsed document mirrors with MinSync lexical BM25 ranking. Use for exact terms, repeated terms, headings, identifiers, and folder-scoped document search.",
 		parameters: searchBM25Schema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchBM25DocumentsDetails>> {
 			const method = getMethod();

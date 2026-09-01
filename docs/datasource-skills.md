@@ -1,8 +1,7 @@
 # Datasource skills
 
-For CLI-backed datasource configuration, ownership, process boundaries, and
-contributor requirements, see the normative
-[managed CLI configuration guide](managed-cli-configuration.md).
+CLI-backed datasource skills run their native binaries directly and use
+operator-provided configuration paths or each CLI's own default store.
 
 Datasource skills let AutoRAG search external, server-configured sources while preserving the same retrieval and curation model used for local document collections.
 
@@ -55,6 +54,53 @@ RetrievalMethodRegistry
 ```
 
 A skill must also provide `describeSources()` entries so the librarian prompt can explain what data exists.
+
+## mailcrawl
+
+The `mailcrawl` datasource delegates local email synchronization and search to
+the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.1.4` or newer
+(Node.js 24+) and configure Himalaya separately; AutoRAG never opens
+`archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
+no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
+native archive. Set `connector.dataDir` only when the operator explicitly
+wants a different mailcrawl data directory.
+
+```json
+{
+  "datasources": {
+    "mailcrawl": {
+      "instanceId": "personal",
+      "connector": {
+        "binaryPath": "mailcrawl",
+        "account": "personal",
+        "mailbox": "INBOX"
+      }
+    }
+  },
+  "datasourceAccess": {
+    "allowedTags": ["mailcrawl", "email"],
+    "allowedScopes": ["/mailcrawl/personal/**"]
+  }
+}
+```
+
+Refresh runs `mailcrawl sync --json` followed by `mailcrawl index --json`.
+Retrieval exposes independent BM25, semantic, and hybrid methods and maps
+results to opaque `/mailcrawl/<instance>/chunks/<chunk-id>` sources. Use
+`mailcrawl --help` for upstream commands; AutoRAG does not invent a shared
+datasource command taxonomy. `mail-export` remains the static `.mbox`/`.eml`
+path, while Gmail/Himalaya remains available as a separate backend.
+
+## Datasource UI
+
+Operators can add, test, enable, and remove connections from `autorag ui` instead of editing `config.json`. The UI is a local loopback control plane: it uses the same factory, never grants access from model tool arguments, and never writes token values into config.
+
+The UI can also be deployed behind an explicitly configured reverse proxy. Set
+`ui.allowRemote` to `true`, keep `ui.tokenEnv` in the process environment, and
+list the exact browser origins in `ui.corsOrigins`; wildcard CORS is not
+supported because the UI uses credentialed requests. `ui.publicOrigin` is the
+URL printed for operators and used when opening the browser. Without
+`allowRemote`, non-loopback binds are rejected.
 
 ## Universal connection aliases
 
@@ -125,7 +171,7 @@ Model-controlled tool arguments cannot grant access. The LLM-visible `search_dat
 { query: string; topK?: number; scope?: string }
 ```
 
-`scope` is only a user-requested narrowing filter. A result must match both the trusted allow-scopes and the requested scope to survive. Datasource paths are slash-hierarchical IDs such as `/kakao/personal/chunks/abc123`; fragment-style paths with `#` are denied.
+`scope` is only a user-requested narrowing filter for datasource methods that advertise the `scoped` capability. A result from such a method must match both the trusted allow-scopes and the requested scope to survive. Datasources without that capability (for example, katok's chat-identity results) are authorized at the datasource/tag level and own any narrower filtering themselves.
 
 ## Security responsibility
 
@@ -371,6 +417,6 @@ const hits = await agent.searchDatasourceDocuments("contract renewal", { topK: 5
 - Emit slash-hierarchical `source` values.
 - Include polling/cron metadata.
 - Provide source descriptions that explain the data content.
-- Add default-deny, multi-scope, and user-scope intersection tests.
+- Add default-deny and capability-specific scope tests; only scope-capable datasources need multi-scope and user-scope intersection tests.
 - Add no-throw diagnostics for missing credentials/binaries/permissions.
 - Add issue labels `datasource-skill`, `integration`, and a source-specific label.

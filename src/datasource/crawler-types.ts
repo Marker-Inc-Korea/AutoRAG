@@ -1,4 +1,3 @@
-import type { ManagedCliConfigManager } from "../cli/managed-cli-config.ts";
 import type { RetrievalOptions } from "../retrieval/types.ts";
 
 export type CrawlerFailureReason =
@@ -58,10 +57,8 @@ export interface CrawlerCliOptions {
 	readonly timeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	/** Workspace root for the shared managed CLI boundary. */
+	/** Working directory for the native CLI process, when explicitly needed. */
 	readonly workspacePath?: string;
-	/** Parent-owned managed configuration manager. */
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export interface CrawlerProfile {

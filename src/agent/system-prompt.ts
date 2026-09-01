@@ -30,8 +30,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "jikji_find", "optional local discovery through Jikji answer packs"),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
-		toolLine(config, "search_bm25_documents", "MinSync-backed lexical BM25 search over parsed document mirrors"),
-		toolLine(config, "search_minsync_documents", "semantic MinSync search over parsed document mirrors"),
+		toolLine(config, "lexical_search_local_docs", "MinSync-backed lexical BM25 search over parsed document mirrors"),
+		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
 		toolLine(
 			config,
 			"search_datasource_documents",
@@ -48,8 +48,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"bash",
 						"jikji_find",
 						"search_all_documents",
-						"search_bm25_documents",
-						"search_minsync_documents",
+						"lexical_search_local_docs",
+						"semantic_search_local_docs",
 						"search_datasource_documents",
 						"load_datasource_skill",
 						"scan_duplicate_documents",
@@ -107,8 +107,9 @@ ${noSearchTools}
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync-backed BM25 for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
-- Use \`bash\` with find/grep to discover files and cat/head/sed to read enough surrounding context.
-- If results are empty, follow this Fallback Chain: simplify the query, broaden file discovery, try synonyms, then inspect likely directories.
+- Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
+- If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
+- Slash-prefixed datasource IDs such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/... are virtual, not OS paths. Do not bash them. Search them with \`search_datasource_documents\`.
 - Cross-check important claims against the original source and preserve real source paths.
 
 ${duplicateManagement}
