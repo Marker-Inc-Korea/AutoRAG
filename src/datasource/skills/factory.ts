@@ -209,7 +209,6 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 		new MailcrawlSkill({
 			...common(config, workspaceRoot),
 			datasourceId: registrationName,
-			...(workspaceRoot === undefined ? {} : { workspacePath: workspaceRoot }),
 			...(config.connector as MailcrawlOptions),
 		}),
 	obsidian: (config, workspaceRoot, registrationName) => {

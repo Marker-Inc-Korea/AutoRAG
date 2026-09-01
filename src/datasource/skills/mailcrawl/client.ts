@@ -1,6 +1,5 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
 import { ensurePrivateMailcrawlDataDir, validateMailcrawlInstanceId } from "./config.ts";
 import type {
@@ -134,18 +133,7 @@ export class MailcrawlClient implements MailcrawlSearchClient {
 		if (violation !== undefined) {
 			return { ok: false, reason: "remote-embedding-rejected", stdout: "", stderr: "", code: null };
 		}
-		const dataDir =
-			this.options.dataDir ??
-			(this.options.workspacePath === undefined
-				? undefined
-				: join(
-						this.options.workspacePath,
-						".autorag",
-						"datasources",
-						"mailcrawl",
-						this.options.instanceId ?? "default",
-						"data",
-					));
+		const dataDir = this.options.dataDir;
 		if (dataDir !== undefined) ensurePrivateMailcrawlDataDir(dataDir);
 		const env: NodeJS.ProcessEnv = {};
 		for (const [key, value] of Object.entries(process.env)) {

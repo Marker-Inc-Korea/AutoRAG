@@ -169,7 +169,7 @@ function controlledEnv(options: QmdOptions): NodeJS.ProcessEnv {
 		if (value === undefined) delete env[key];
 		else if (isAllowedEnvKey(key)) env[key] = value;
 	}
-	env.QMD_CONFIG_DIR = obsidianQmdConfigDir(workspaceRoot, instanceId);
+	env.QMD_CONFIG_DIR = options.configPath ?? obsidianQmdConfigDir(workspaceRoot, instanceId);
 	env.XDG_CACHE_HOME = obsidianQmdCacheDir(workspaceRoot, instanceId);
 	env.QMD_TRUST_LOCAL_CONFIG = env.QMD_TRUST_LOCAL_CONFIG ?? "1";
 	return env;

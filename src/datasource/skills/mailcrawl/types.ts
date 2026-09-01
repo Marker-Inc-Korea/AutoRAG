@@ -18,7 +18,6 @@ export interface MailcrawlOptions {
 	readonly timeoutMs?: number;
 	readonly maxBufferBytes?: number;
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	readonly workspacePath?: string;
 }
 
 export type MailcrawlFailureReason =

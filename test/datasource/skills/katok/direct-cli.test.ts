@@ -61,7 +61,6 @@ describe("KatokClient direct CLI execution", () => {
 		writeFakeKatok();
 		const client = new KatokClient({
 			binaryPath,
-			root,
 			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: JSON.stringify({ ready: true }) },
 		});
 

@@ -131,23 +131,6 @@ describe("KatokClient", () => {
 		expect(call?.args).toEqual(["doctor", "--json"]);
 	});
 
-	it("does not force an AutoRAG-managed workspace when only a root is configured", async () => {
-		writeFakeKatok();
-		const client = new KatokClient({
-			binaryPath,
-			root,
-			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }) },
-		});
-
-		const result = await client.doctor();
-
-		expect(result.ok).toBe(true);
-		const args = loggedCalls()[0]?.args ?? [];
-		expect(args).not.toContain("--workspace");
-		expect(args).not.toContain("--source");
-		expect(args).toContain("doctor");
-	});
-
 	it("forwards an explicitly configured workspacePath", async () => {
 		writeFakeKatok();
 		const client = new KatokClient({

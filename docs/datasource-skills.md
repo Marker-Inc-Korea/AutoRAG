@@ -61,9 +61,9 @@ The `mailcrawl` datasource delegates local email synchronization and search to
 the external `mailcrawl` CLI. Install `@nomadamas/mailcrawl@0.1.4` or newer
 (Node.js 24+) and configure Himalaya separately; AutoRAG never opens
 `archive.sqlite` directly. 0.1.3 and earlier fail a repeated `index` after a
-no-op sync (`text array must be non-empty`). Managed mode isolates the archive
-under `.autorag/datasources/mailcrawl/<instance>/data` through
-`MAILCRAWL_DATA_DIR`.
+no-op sync (`text array must be non-empty`). By default, mailcrawl uses its
+native archive. Set `connector.dataDir` only when the operator explicitly
+wants a different mailcrawl data directory.
 
 ```json
 {
