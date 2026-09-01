@@ -48,8 +48,8 @@ describe("portableSpawnCommand", () => {
 		chmodSync(script, 0o755);
 
 		expect(portableSpawnCommand(script, ["find"], "win32")).toEqual({
-			command: process.versions.bun ? "node.exe" : process.execPath,
-			args: [script, "find"],
+			command: process.execPath,
+			args: process.versions.bun ? ["run", script, "--", "find"] : [script, "find"],
 		});
 	});
 
@@ -61,8 +61,8 @@ describe("portableSpawnCommand", () => {
 		chmodSync(script, 0o755);
 
 		expect(portableSpawnCommand(script, ["sync"], "win32")).toEqual({
-			command: process.versions.bun ? "node.exe" : process.execPath,
-			args: [script, "sync"],
+			command: process.execPath,
+			args: process.versions.bun ? ["run", script, "--", "sync"] : [script, "sync"],
 		});
 	});
 
