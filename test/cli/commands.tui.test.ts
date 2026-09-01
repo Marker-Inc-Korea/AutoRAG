@@ -1,8 +1,18 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
-import { createTuiPresenter, runTui, type TuiDeps, type TuiDriver } from "../../src/cli/commands/tui.ts";
+import {
+	createTuiPresenter,
+	parseSlashCommand,
+	runTui,
+	type TuiDeps,
+	type TuiDriver,
+} from "../../src/cli/commands/tui.ts";
+import { createFileTuiSessionStore } from "../../src/cli/tui-session-store.ts";
 
 const response: SearchDocumentsResponse = {
 	sessionId: "session",
@@ -44,6 +54,77 @@ function driver(submissions: string[]): TuiDriver {
 }
 
 describe("runTui", () => {
+	it("persists and reloads resumable TUI sessions", () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-tui-session-"));
+		try {
+			const store = createFileTuiSessionStore(join(root, "sessions.json"));
+			store.save({
+				id: "session-1",
+				query: "old question",
+				answer: "old answer",
+				trace: "old trace",
+				updatedAt: 1,
+			});
+			const reloaded = createFileTuiSessionStore(join(root, "sessions.json"));
+			expect(reloaded.get("session-1")).toMatchObject({
+				query: "old question",
+				answer: "old answer",
+				trace: "old trace",
+			});
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("parses supported slash commands and rejects unknown commands", () => {
+		expect(parseSlashCommand("/")).toEqual({ kind: "incomplete" });
+		expect(parseSlashCommand("/quit")).toEqual({ kind: "quit" });
+		expect(parseSlashCommand("/resume")).toEqual({ kind: "resume", sessionId: undefined });
+		expect(parseSlashCommand("/resume abc")).toEqual({ kind: "resume", sessionId: "abc" });
+		expect(parseSlashCommand("/unknown")).toEqual({ kind: "unknown", name: "unknown" });
+	});
+
+	it("handles slash commands without invoking search", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		let calls = 0;
+		const session = {
+			id: "old-session",
+			query: "old question",
+			answer: "old answer",
+			trace: "old trace",
+			updatedAt: 1,
+		};
+		const store = {
+			list: () => [session],
+			get: (id: string) => (id === session.id ? session : undefined),
+			save: () => undefined,
+		};
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				searchDocuments: async () => {
+					calls++;
+					return response;
+				},
+			}),
+			sessionStore: store,
+			tuiFactory: () => tui,
+		});
+
+		await tui.onSubmit?.("/");
+		await tui.onSubmit?.("/does-not-exist");
+		await tui.onSubmit?.("/resume");
+		await tui.onSubmit?.("/resume old-session");
+		await tui.onSubmit?.("/quit");
+
+		expect(calls).toBe(0);
+		expect(tui.rendered.join("\n")).toContain("commands: /quit, /resume [session-id]");
+		expect(tui.rendered.join("\n")).toContain("unknown command: /does-not-exist");
+		expect(tui.rendered.join("\n")).toContain("old answer");
+		expect(tui.stopped).toBe(true);
+		expect(await running).toBe(0);
+	});
+
 	it("renders thinking, answer deltas, and datasource tool lifecycle", () => {
 		const presenter = createTuiPresenter();
 		presenter.handle({ type: "agent_start" });
