@@ -1,10 +1,11 @@
 """Expose Ollama's local EmbeddingGemma API using MinSync's TEI shape."""
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.request import Request, urlopen
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/embeddings"
+OLLAMA_URL = os.environ.get("OLLAMA_EMBEDDINGS_URL", "http://127.0.0.1:11434/api/embeddings")
 MODEL = "embeddinggemma:latest"
 
 

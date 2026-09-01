@@ -48,7 +48,7 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			partial.minSync = {
 				...(partial.minSync ?? {}),
 				enabled: true,
-				autoInstall: false,
+				autoInstall: true,
 				embedder,
 			};
 		}

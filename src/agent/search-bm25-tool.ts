@@ -33,7 +33,7 @@ export function createSearchBM25DocumentsTool(
 		name: SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 		label: "Search BM25 Documents",
 		description:
-			"Search parsed document mirrors with MinSync 0.4.0 lexical BM25 ranking. Use for exact terms, repeated terms, headings, identifiers, and folder-scoped document search.",
+			"Search parsed document mirrors with MinSync lexical BM25 ranking. Use for exact terms, repeated terms, headings, identifiers, and folder-scoped document search.",
 		parameters: searchBM25Schema,
 		async execute(_toolCallId, params): Promise<AgentToolResult<SearchBM25DocumentsDetails>> {
 			const method = getMethod();
