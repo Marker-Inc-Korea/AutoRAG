@@ -38,6 +38,11 @@ To manage MinSync yourself, set an explicit path and disable installation:
 An explicit `binaryPath` is authoritative. If it is missing, AutoRAG reports a
 missing binary instead of silently installing another executable.
 
+When a local embedder has a smaller context window, set
+`minSync.maxChunkSize` (or pass `--minsync-max-chunk-size` to `autorag init`) to
+keep indexed chunks within that limit. Changing the value rebuilds an existing
+MinSync index on the next refresh.
+
 ## Local EmbeddingGemma
 
 For a local-only semantic index, run Ollama and expose its embeddings through

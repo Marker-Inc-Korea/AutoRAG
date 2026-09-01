@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configuredMaxChunkSize, minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
 import { spawnProcess } from "./process.ts";
@@ -66,11 +66,18 @@ export class MinSyncClient {
 			}
 		}
 		const configuredChunkSize = configuredMaxChunkSize(this.workspacePath);
-		if (this.embedder || this.maxChunkSize !== undefined) {
+		const configPath = minSyncConfigPath(this.workspacePath);
+		const shouldRewriteConfig = this.embedder !== undefined || this.maxChunkSize !== undefined;
+		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
+		const configRewritten =
+			shouldRewriteConfig &&
 			rewriteEmbedderConfig(this.workspacePath, this.embedder ?? {}, { maxChunkSize: this.maxChunkSize });
-		}
+		const restoreConfig = () => {
+			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
+		};
 		const check = await this.spawn(["check", "--format", "json"], spawnOpts);
 		if (!check.ok) {
+			restoreConfig();
 			return {
 				ok: false,
 				synced: 0,
@@ -80,6 +87,7 @@ export class MinSyncClient {
 		}
 		const checkFailure = readCheckFailure(check.stdout);
 		if (checkFailure) {
+			restoreConfig();
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
@@ -89,6 +97,7 @@ export class MinSyncClient {
 				: ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);
 		if (!result.ok) {
+			restoreConfig();
 			return {
 				ok: false,
 				synced: 0,
@@ -97,6 +106,7 @@ export class MinSyncClient {
 			};
 		}
 		if (!existsSync(cursorPath)) {
+			restoreConfig();
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
 		return { ok: true, synced: readSyncedCount(result.stdout), workspacePath: this.workspacePath };
@@ -114,6 +124,15 @@ export class MinSyncClient {
 		options: { readonly timeoutMs?: number } = {},
 	): Promise<ReturnType<typeof spawnProcess> extends Promise<infer T> ? T : never> {
 		return spawnProcess(this.binaryPath, args, this.workspacePath, options);
+	}
+}
+
+function readConfigSnapshot(configPath: string): string | undefined {
+	try {
+		return readFileSync(configPath, "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
 	}
 }
 

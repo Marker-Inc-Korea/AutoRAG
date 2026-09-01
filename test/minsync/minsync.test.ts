@@ -893,6 +893,35 @@ max_chunk_size = 4096
 		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json"]);
 	});
 
+	it("restores the previous config when a forced full sync fails", async () => {
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		const originalConfig = "[chunker.options]\nmax_chunk_size = 4096\n";
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(minSyncConfigPath(minsyncWorkspace), originalConfig);
+		writeFileSync(join(minsyncConfigDir, "cursor.json"), "{}");
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
+if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
+if (args[0] === "sync") process.exit(1);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+
+		const result = await new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			maxChunkSize: 1000,
+		}).sync();
+
+		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
+		expect(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")).toBe(originalConfig);
+	});
+
 	it("uses the MinSync chunk size for BM25-only indexing", async () => {
 		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
 		mkdirSync(minsyncConfigDir, { recursive: true });
