@@ -14,7 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -678,18 +678,29 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 
 	it("auto-installs a verified release when no binary is available", async () => {
 		const savedPath = process.env.PATH;
-		process.env.PATH = dirname(process.execPath);
+		process.env.PATH = savedPath
+			?.split(delimiter)
+			.filter((directory) => !existsSync(join(directory, process.platform === "win32" ? "minsync.exe" : "minsync")))
+			.join(delimiter);
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		try {
+			const platform = process.platform;
+			const assetTarget =
+				platform === "darwin"
+					? "aarch64-apple-darwin"
+					: platform === "linux"
+						? "x86_64-unknown-linux-gnu"
+						: "x86_64-pc-windows-msvc";
+			const installedName = platform === "win32" ? "minsync.exe" : "minsync";
 			const method = new MinSyncVectorMethod({
 				root,
 				workspacePath: minsyncWorkspace,
 				installer: {
 					releaseProvider: async () => ({
-						tagName: "v0.4.0",
+						tagName: "v0.4.1",
 						assets: [
 							{
-								name: "minsync-v0.4.0-aarch64-apple-darwin.tar.gz",
+								name: `minsync-v0.4.1-${assetTarget}.tar.gz`,
 								downloadUrl: "https://example.test/minsync.tar.gz",
 								sha256: "a".repeat(64),
 							},
@@ -704,7 +715,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			const result = await method.sync();
 
 			expect(result).toMatchObject({ ok: true, synced: 1 });
-			expect(existsSync(join(root, ".autorag", "bin", "minsync"))).toBe(true);
+			expect(existsSync(join(root, ".autorag", "bin", installedName))).toBe(true);
 		} finally {
 			process.env.PATH = savedPath;
 		}
