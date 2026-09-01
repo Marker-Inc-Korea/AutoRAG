@@ -22,10 +22,10 @@ export function portableSpawnCommand(
 
 	const extension = extname(command).toLowerCase();
 	if (NODE_SCRIPT_EXTENSIONS.has(extension) || hasShebang(command, "node")) {
-		if (hasShebang(command, "node") && (extension.length === 0 || extension === ".exe")) {
+		if (hasShebang(command, "node") && extension.length === 0) {
 			return {
-				command: process.execPath,
-				args: process.versions.bun ? ["run", command, "--", ...args] : [command, ...args],
+				command: process.versions.bun ? "node.exe" : process.execPath,
+				args: [command, ...args],
 			};
 		}
 		if (process.versions.bun) {
