@@ -42,6 +42,7 @@ const COMMANDS = [
 	"watch",
 	"health",
 	"duplicates",
+	"tui",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -70,6 +71,7 @@ Commands:
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
   health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
+  tui                  Open an interactive Pi-powered librarian terminal UI
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -181,6 +183,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "duplicates": {
 			const { runDuplicates } = await import("./commands/duplicates.ts");
 			return runDuplicates(ctx);
+		}
+		case "tui": {
+			const { runTui } = await import("./commands/tui.ts");
+			return runTui(ctx);
 		}
 	}
 }
