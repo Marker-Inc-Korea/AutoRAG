@@ -230,6 +230,31 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 		],
 	},
 	{
+		type: "mailcrawl",
+		title: "Mailcrawl",
+		summary: "Search a local email archive through the mailcrawl CLI.",
+		defaultTags: ["mailcrawl", "email", "pii"],
+		binaryName: "mailcrawl",
+		installHint: "Install @nomadamas/mailcrawl@0.1.4 or newer, then configure Himalaya in mailcrawl itself.",
+		fields: [
+			INSTANCE,
+			{
+				key: "connector.account",
+				label: "Mail account",
+				kind: "text",
+				help: "Optional account filter passed to mailcrawl search.",
+			},
+			{
+				key: "connector.mailbox",
+				label: "Mailbox",
+				kind: "text",
+				placeholder: "INBOX",
+				help: "Optional mailbox filter passed to mailcrawl search.",
+			},
+			BINARY,
+		],
+	},
+	{
 		type: "obsidian",
 		title: "Obsidian vault",
 		summary: "Search a vault through the qmd CLI.",
@@ -398,6 +423,21 @@ const EXTRAS_BY_TYPE: Readonly<Record<string, readonly PickerExtra[]>> = {
 			kind: "textarea",
 			placeholder: "/path/to/export.mbox",
 			question: "Where are the .eml or .mbox files for this mailbox?",
+		},
+	],
+	mailcrawl: [
+		{
+			key: "account",
+			label: "Mail account",
+			kind: "text",
+			question: "Which mailcrawl account should this connection use, if any?",
+		},
+		{
+			key: "mailbox",
+			label: "Mailbox",
+			kind: "text",
+			placeholder: "INBOX",
+			question: "Which mailcrawl mailbox should this connection use, if any?",
 		},
 	],
 	obsidian: [

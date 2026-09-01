@@ -159,6 +159,7 @@ describe("CLI config datasources wiring", () => {
 			instanceId: "personal",
 			requiresExternalCli: true,
 		});
+		expect(options.managedCliRegistry?.resolve("/opt/bin/mailcrawl")?.tool).toBe("mailcrawl");
 	});
 
 	it("materializes Telegram through the external telecrawl backend", () => {
@@ -241,6 +242,28 @@ describe("CLI config datasources wiring", () => {
 			instanceId: "workspace",
 			requiresExternalCli: true,
 		});
+	});
+
+	it("materializes mailcrawl through the external mailcrawl backend", () => {
+		const configPath = writeConfig({
+			searchPaths: [tmpRoot],
+			workspacePath: tmpRoot,
+			datasources: {
+				mailcrawl: { instanceId: "personal", connector: { binaryPath: "/opt/bin/company-mail-wrapper" } },
+			},
+		});
+
+		const options = buildAgentOptions(resolveConfig({ flags: { config: configPath } }));
+		const skills = (options.datasourceSkills ?? []) as readonly DatasourceSkill[];
+
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.describe()).toMatchObject({
+			name: "mailcrawl",
+			type: "mailcrawl-archive",
+			instanceId: "personal",
+			requiresExternalCli: true,
+		});
+		expect(options.managedCliRegistry?.resolve("/opt/bin/company-mail-wrapper")?.tool).toBe("mailcrawl");
 	});
 
 	it("materializes provider-neutral cloud drives through the rclone CLI datasource", () => {
