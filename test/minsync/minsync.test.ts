@@ -19,6 +19,7 @@ import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	ensureMinSyncBinary,
+	MinSyncBM25Method,
 	MinSyncClient,
 	MinSyncVectorMethod,
 	minSyncConfigPath,
@@ -862,6 +863,55 @@ dimension = 1536
 		expect(rewritten.embedder?.max_concurrent).toBe(4);
 		expect(rewritten.embedder?.timeout_seconds).toBe(30);
 		expect((rewritten.vectorstore?.options as { dimension?: number } | undefined)?.dimension).toBe(3072);
+		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
+	});
+
+	it("forces a full sync when the configured chunk size changes", async () => {
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[chunker.options]
+max_chunk_size = 4096
+`,
+		);
+		writeFileSync(join(minsyncConfigDir, "cursor.json"), "{}");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			maxChunkSize: 1000,
+		});
+
+		await method.sync();
+
+		const syncCall = loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[] })
+			.find((call) => call.args[0] === "sync");
+		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json"]);
+	});
+
+	it("uses the MinSync chunk size for BM25-only indexing", async () => {
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(minSyncConfigPath(minsyncWorkspace), "[chunker.options]\n");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const method = new MinSyncBM25Method({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			maxChunkSize: 1000,
+		});
+
+		await method.sync();
+
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
 		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
 	});
 

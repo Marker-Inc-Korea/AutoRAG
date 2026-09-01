@@ -228,10 +228,10 @@ export class MinSyncBM25Method extends MinSyncVectorMethod {
 		this.status = result.ok
 			? { readiness: "ready", engine: "minsync" }
 			: {
-				readiness: result.reason === "missing-binary" ? "dependency_unavailable" : "error",
-				engine: "minsync",
-				message: result.reason,
-			};
+					readiness: result.reason === "missing-binary" ? "dependency_unavailable" : "error",
+					engine: "minsync",
+					message: result.reason,
+				};
 		return {
 			indexPath: result.workspacePath,
 			indexedChunks: result.synced,

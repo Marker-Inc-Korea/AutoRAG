@@ -15,6 +15,22 @@ export function minSyncConfigPath(workspacePath: string): string {
 	return join(workspacePath, MINSYNC_CONFIG_DIR, MINSYNC_CONFIG_FILE);
 }
 
+export function configuredMaxChunkSize(workspacePath: string): number | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
+	} catch {
+		return undefined;
+	}
+	const parsed = parse(raw) as Record<string, unknown>;
+	const chunker = parsed.chunker;
+	if (typeof chunker !== "object" || chunker === null || Array.isArray(chunker)) return undefined;
+	const options = (chunker as Record<string, unknown>).options;
+	if (typeof options !== "object" || options === null || Array.isArray(options)) return undefined;
+	const maxChunkSize = (options as Record<string, unknown>).max_chunk_size;
+	return typeof maxChunkSize === "number" ? maxChunkSize : undefined;
+}
+
 /**
  * Atomically rewrite allowlisted embedder fields in MinSync config.toml.
  * Reads the existing file, merges the allowlisted fields from `embedder`,
