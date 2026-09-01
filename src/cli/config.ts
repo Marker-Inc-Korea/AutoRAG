@@ -32,7 +32,6 @@ export class ConfigError extends Error {
 		this.name = "ConfigError";
 	}
 }
-
 /**
  * Typed BM25 method config persisted in `config.json`. Missing `enabled` means
  * enabled (true). `false` as a top-level value is also accepted and disables.
@@ -66,6 +65,15 @@ export interface RawIndexingMethods {
 export interface NormalizedIndexingConfig {
 	bm25: Bm25MethodConfig;
 	minSync: MinSyncMethodConfig;
+}
+
+export interface UiConfig {
+	host?: string;
+	port?: number;
+	allowRemote?: boolean;
+	publicOrigin?: string;
+	corsOrigins?: string[];
+	tokenEnv?: string;
 }
 
 export interface AgentModelConfig {
@@ -115,6 +123,8 @@ export interface CliConfig {
 	datasources?: DatasourcesConfig;
 	/** Trusted datasource allow-tags/allow-scopes. Absent ⇒ default-deny. */
 	datasourceAccess?: DatasourceAccessContextOptions;
+	/** Optional local/deployment settings for the datasource UI. */
+	ui?: UiConfig;
 }
 
 export interface ResolveConfigInput {
@@ -225,12 +235,11 @@ function migrateLegacyConfig(configPath: string, legacyPath: string): Partial<Cl
 	const legacy = readConfigFile(legacyPath, true);
 	const legacyBytes = readFileSync(legacyPath);
 	const migrated = normalizeLegacyConfigPaths(legacy ?? {}, dirname(legacyPath));
-	const migratedBytes =
+	const migratedPathsUnchanged =
 		legacy?.workspacePath === migrated.workspacePath &&
 		legacy?.memoryPath === migrated.memoryPath &&
-		JSON.stringify(legacy?.searchPaths) === JSON.stringify(migrated.searchPaths)
-			? legacyBytes
-			: `${JSON.stringify(migrated, null, 2)}\n`;
+		JSON.stringify(legacy?.searchPaths) === JSON.stringify(migrated.searchPaths);
+	const migratedBytes = migratedPathsUnchanged ? legacyBytes : `${JSON.stringify(migrated, null, 2)}\n`;
 	mkdirSync(dirname(configPath), { recursive: true });
 	const lock = acquireConfigWriteLock(configPath);
 	try {
@@ -539,6 +548,82 @@ const MINSYNC_ALLOWLIST = new Set<string>([
 	"embedder",
 ]);
 
+const UI_TOKEN_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function normalizeUiConfig(raw: unknown): UiConfig {
+	if (raw === undefined || raw === null) return {};
+	if (typeof raw !== "object" || Array.isArray(raw)) throw new ConfigError("Config field 'ui' must be an object");
+	const record = raw as Record<string, unknown>;
+	const allowed = new Set(["host", "port", "allowRemote", "publicOrigin", "corsOrigins", "tokenEnv"]);
+	for (const key of Object.keys(record)) {
+		if (!allowed.has(key)) throw new ConfigError(`ui.${key} is not a recognized field`);
+	}
+	const out: UiConfig = {};
+	if (record.host !== undefined) {
+		if (typeof record.host !== "string" || record.host.trim().length === 0) {
+			throw new ConfigError("ui.host must be a non-empty string");
+		}
+		out.host = record.host.trim();
+	}
+	if (record.port !== undefined) {
+		if (typeof record.port !== "number" || !Number.isInteger(record.port) || record.port < 0 || record.port > 65535) {
+			throw new ConfigError("ui.port must be an integer between 0 and 65535");
+		}
+		out.port = record.port;
+	}
+	if (record.allowRemote !== undefined) {
+		if (typeof record.allowRemote !== "boolean") throw new ConfigError("ui.allowRemote must be a boolean");
+		out.allowRemote = record.allowRemote;
+	}
+	if (record.publicOrigin !== undefined) {
+		if (typeof record.publicOrigin !== "string" || record.publicOrigin.trim().length === 0) {
+			throw new ConfigError("ui.publicOrigin must be a non-empty origin");
+		}
+		let origin: URL;
+		try {
+			origin = new URL(record.publicOrigin);
+		} catch {
+			throw new ConfigError("ui.publicOrigin must be a valid http(s) origin");
+		}
+		if (!["http:", "https:"].includes(origin.protocol) || origin.pathname !== "/" || origin.search || origin.hash) {
+			throw new ConfigError("ui.publicOrigin must be a valid http(s) origin");
+		}
+		out.publicOrigin = origin.origin;
+	}
+	if (record.corsOrigins !== undefined) {
+		if (!Array.isArray(record.corsOrigins)) throw new ConfigError("ui.corsOrigins must be an array of origins");
+		const origins: string[] = [];
+		for (const value of record.corsOrigins) {
+			if (typeof value !== "string" || value.trim().length === 0) {
+				throw new ConfigError("ui.corsOrigins must contain non-empty origins");
+			}
+			let origin: URL;
+			try {
+				origin = new URL(value);
+			} catch {
+				throw new ConfigError("ui.corsOrigins must contain valid http(s) origins");
+			}
+			if (
+				!["http:", "https:"].includes(origin.protocol) ||
+				origin.pathname !== "/" ||
+				origin.search ||
+				origin.hash
+			) {
+				throw new ConfigError("ui.corsOrigins must contain valid http(s) origins");
+			}
+			if (!origins.includes(origin.origin)) origins.push(origin.origin);
+		}
+		out.corsOrigins = origins;
+	}
+	if (record.tokenEnv !== undefined) {
+		if (typeof record.tokenEnv !== "string" || !UI_TOKEN_ENV_PATTERN.test(record.tokenEnv)) {
+			throw new ConfigError("ui.tokenEnv must match /^[A-Za-z_][A-Za-z0-9_]*$/");
+		}
+		out.tokenEnv = record.tokenEnv;
+	}
+	return out;
+}
+
 function normalizeBm25Method(raw: Bm25MethodConfig | false | undefined): Bm25MethodConfig {
 	if (raw === false) return { enabled: false };
 	if (raw === undefined || raw === null) return { enabled: true };
@@ -695,6 +780,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 		}
 		config.datasourceAccess = file.datasourceAccess as DatasourceAccessContextOptions;
 	}
+	if (file.ui !== undefined) config.ui = normalizeUiConfig(file.ui);
 	return config;
 }
 
@@ -708,7 +794,15 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
-	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd());
+	const mailcrawlBinaryPaths = Object.entries(config.datasources ?? {}).flatMap(([name, raw]) => {
+		if (raw === false || raw === true || raw === undefined || raw === null || typeof raw !== "object") return [];
+		if ((raw.type ?? name) !== "mailcrawl" || raw.connector === null || typeof raw.connector !== "object") return [];
+		const binaryPath = raw.connector.binaryPath;
+		return typeof binaryPath === "string" ? [binaryPath] : [];
+	});
+	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd(), {
+		mailcrawlBinaryPaths,
+	});
 	const minSyncConfig = config.minSync;
 	const managedRetrievalRuntime = createManagedRetrievalRuntime(config.workspacePath ?? process.cwd(), {
 		minSync: minSyncConfig?.enabled !== false,
@@ -805,16 +899,27 @@ function resolveCatalogModel(reference: AgentModelConfig): Model<Api> | undefine
 	return getModel(reference.provider as never, reference.id as never) as Model<Api> | undefined;
 }
 
+function unknownConfiguredModelMessage(reference: AgentModelConfig): string {
+	return (
+		`Unknown configured model: ${reference.provider}/${reference.id}. ` +
+		"Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id."
+	);
+}
+
+function loadLocalAutoRAGModelForReference(
+	options: LoadLocalAutoRAGModelOptions,
+	modelId: string | undefined,
+): LocalAutoRAGModel {
+	return loadLocalAutoRAGModel({ ...options, modelId });
+}
+
 function resolveRegisteredModel(reference: AgentModelConfig): Model<Api> {
 	if (isConfiguredEndpoint(reference)) {
 		return buildModelFromConfiguredEndpoint(reference);
 	}
 	const catalog = resolveCatalogModel(reference);
 	if (catalog !== undefined) return catalog;
-	throw new ConfigError(
-		`Unknown configured model: ${reference.provider}/${reference.id}. ` +
-			`Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.`,
-	);
+	throw new ConfigError(unknownConfiguredModelMessage(reference));
 }
 
 function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api> | undefined {
@@ -827,10 +932,7 @@ function resolveBuiltInModel(reference: AgentModelConfig | undefined): Model<Api
 	// Known catalog provider with an unknown model id is a hard config error.
 	// Unknown providers fall through so a local runtime (e.g. codex proxy) can supply them.
 	if ((getProviders() as readonly string[]).includes(reference.provider)) {
-		throw new ConfigError(
-			`Unknown configured model: ${reference.provider}/${reference.id}. ` +
-				`Add baseUrl (and optional api/apiKeyEnv) for OpenAI-compatible endpoints, or use a pi-ai catalog model id.`,
-		);
+		throw new ConfigError(unknownConfiguredModelMessage(reference));
 	}
 	return undefined;
 }
@@ -902,12 +1004,7 @@ function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAG
 	const modelRef = config.model;
 	const registered = resolveBuiltInModel(modelRef);
 	const needsLocal = modelRef === undefined || registered === undefined;
-	const local = needsLocal
-		? loadLocalAutoRAGModel({
-				...localOptions,
-				modelId: modelRef?.id,
-			})
-		: undefined;
+	const local = needsLocal ? loadLocalAutoRAGModelForReference(localOptions, modelRef?.id) : undefined;
 	const model =
 		registered ??
 		(modelRef === undefined || modelRef.provider === local?.provider
@@ -963,7 +1060,6 @@ function resolveAgentModelCore(config: CliConfig, localOptions: LoadLocalAutoRAG
 		env,
 	};
 }
-
 export function resolveAgentModel(
 	config: CliConfig,
 	localOptions: LoadLocalAutoRAGModelOptions = {},
@@ -975,7 +1071,6 @@ export function resolveAgentModel(
 		...(core.providerApiKeys !== undefined ? { providerApiKeys: core.providerApiKeys } : {}),
 	};
 }
-
 function providerApiKeyEnvName(provider: string): string {
 	return `${provider.replace(/[^A-Za-z0-9_]/g, "_").toUpperCase()}_API_KEY`;
 }
@@ -1079,6 +1174,27 @@ export function resolveAgentModelDetailed(
 	};
 }
 
+export function readRawConfigObject(path: string): Record<string, unknown> {
+	const parsed = readConfigFile(path, true);
+	if (parsed === undefined) throw new ConfigError(`Config file not found: ${path}`);
+	return { ...(parsed as Record<string, unknown>) };
+}
+
+/** Atomically replace a config file, preserving the caller's JSON object. */
+export function writeConfigObject(path: string, config: unknown): void {
+	if (config === null || typeof config !== "object" || Array.isArray(config)) {
+		throw new ConfigError("Config file must be a JSON object");
+	}
+	mkdirSync(dirname(path), { recursive: true });
+	const contents = `${JSON.stringify(config, null, 2)}\n`;
+	const lock = acquireConfigWriteLock(path);
+	try {
+		replaceFileAtomically(path, contents, lock.assertOwned);
+	} finally {
+		lock.release();
+	}
+}
+
 export function writeDefaultConfig(
 	path: string,
 	partial: Partial<CliConfig>,
@@ -1110,6 +1226,7 @@ export function writeDefaultConfig(
 	full.dupey = partial.dupey ?? { enabled: true };
 	full.excludeExactDuplicates = partial.excludeExactDuplicates ?? true;
 	if (partial.parserOptions) full.parserOptions = partial.parserOptions;
+	if (partial.ui !== undefined) full.ui = normalizeUiConfig(partial.ui);
 	mkdirSync(dirname(path), { recursive: true });
 	const contents = `${JSON.stringify(full, null, 2)}\n`;
 	const lock = acquireConfigWriteLock(path);

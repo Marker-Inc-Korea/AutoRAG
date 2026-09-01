@@ -158,6 +158,7 @@ pass `args` unchanged. It must not turn native commands into an AutoRAG
 | `jikji` | retrieval discovery layer, not datasource | managed cwd | `.autorag/tools/jikji/` + root-scoped state |
 | `rclone` | Google Drive / remote | `RCLONE_CONFIG` | `.autorag/datasources/rclone/` |
 | `himalaya` | Gmail / IMAP | `HIMALAYA_CONFIG` | `.autorag/datasources/himalaya/` |
+| `mailcrawl` | Local email archive | `MAILCRAWL_DATA_DIR` | `.autorag/datasources/mailcrawl/<instance>/` |
 
 Each row requires a provider-owned migration test and a deterministic manual
 QA run. The provider must preserve native arguments and report non-secret

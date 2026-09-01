@@ -113,6 +113,22 @@ export {
 	type MailExportSkillOptions,
 } from "./skills/mail-export/index.ts";
 export {
+	createMailcrawlManagedCliProvider,
+	MAILCRAWL_MODES,
+	MailcrawlClient,
+	type MailcrawlFailure,
+	type MailcrawlFailureReason,
+	type MailcrawlIndexInfo,
+	MailcrawlMethod,
+	type MailcrawlOptions,
+	type MailcrawlSearchHit,
+	type MailcrawlSearchMode,
+	type MailcrawlSearchResult,
+	MailcrawlSkill,
+	type MailcrawlSyncInfo,
+	type MailcrawlSyncResult,
+} from "./skills/mailcrawl/index.ts";
+export {
 	NotcrawlClient,
 	type NotcrawlOptions,
 	NotionSkill,

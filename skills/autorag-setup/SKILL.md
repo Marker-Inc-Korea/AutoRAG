@@ -143,7 +143,7 @@ size must be positive integers.
 Datasource skills belong in trusted config and remain default-deny. Common
 entries include WhatsApp, Telegram, Slack, Discord, Notion, GitHub, Google
 Drive, a generic cloud-drive/rclone source, Gmail, local mail exports,
-Obsidian, RSS/news, and Spotlight.
+Mailcrawl, Obsidian, RSS/news, and Spotlight.
 
 ```jsonc
 {
@@ -152,12 +152,13 @@ Obsidian, RSS/news, and Spotlight.
     "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
     "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
     "gmail": { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
+    "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["github", "cloud-drive", "gmail", "obsidian", "rss"],
-    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/gmail/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["github", "cloud-drive", "gmail", "mailcrawl", "obsidian", "rss"],
+    "allowedScopes": ["/github/**", "/google-drive/**", "/archive-drive/**", "/gmail/**", "/mailcrawl/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -166,6 +167,12 @@ Tokens are environment-variable names, not raw secrets. CLI-backed connectors
 keep authentication in their external tool configuration. Unknown skill names
 fail config resolution. `scope` and tags can narrow trusted access but cannot
 grant it.
+
+Mailcrawl must be installed separately (`@nomadamas/mailcrawl@0.1.4` or newer)
+and configured through its own Himalaya account. AutoRAG runs its local `sync`
+and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
+hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
+fails with `text array must be non-empty`.
 
 ## Verify and build indexes
 

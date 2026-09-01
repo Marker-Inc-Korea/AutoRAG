@@ -177,4 +177,14 @@ describe("ManagedCliConfigManager", () => {
 			}),
 		).resolves.toBeDefined();
 	});
+
+	it("rejects path traversal in managed CLI instances", async () => {
+		const registry = new ManagedCliRegistry();
+		registry.register(provider());
+		const manager = new ManagedCliConfigManager({ workspace, registry });
+
+		await expect(manager.materialize("fixture", { instance: "../outside" })).rejects.toThrow(
+			/safe single path segment/,
+		);
+	});
 });

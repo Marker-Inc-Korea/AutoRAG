@@ -5,7 +5,18 @@ import { fileURLToPath } from "node:url";
 import type { CommandContext } from "./commands/types.ts";
 import { renderError } from "./output.ts";
 
-const BOOLEAN_FLAGS = new Set(["json", "debug", "help", "force", "yes", "once", "immediate", "skip-probes"]);
+const BOOLEAN_FLAGS = new Set([
+	"json",
+	"debug",
+	"help",
+	"force",
+	"yes",
+	"once",
+	"immediate",
+	"skip-probes",
+	"no-open",
+	"allow-remote",
+]);
 const VALUE_FLAGS = new Set([
 	"config",
 	"search-paths",
@@ -30,6 +41,8 @@ const VALUE_FLAGS = new Set([
 	"embedder-batch-size",
 	"minsync-max-chunk-size",
 	"timeout-ms",
+	"port",
+	"host",
 ]);
 
 const COMMANDS = [
@@ -43,6 +56,7 @@ const COMMANDS = [
 	"watch",
 	"health",
 	"duplicates",
+	"ui",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -72,6 +86,8 @@ Commands:
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
   health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
+  ui                   Open a local loopback page to connect and manage data sources
+                       (--port N  --host 127.0.0.1  --no-open  --allow-remote)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -92,6 +108,9 @@ Global flags:
   --method <csv>       For refresh/index: bm25,minsync,parsed,datasources,jikji,all
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
+  --port <n>           For ui: loopback port (default 8787, 0 for ephemeral)
+  --host <addr>        For ui: loopback bind address (127.0.0.1 or ::1)
+  --no-open            For ui: print the URL and do not launch a browser
   --help, -h           Show this help
 `;
 
@@ -183,6 +202,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "duplicates": {
 			const { runDuplicates } = await import("./commands/duplicates.ts");
 			return runDuplicates(ctx);
+		}
+		case "ui": {
+			const { runUi } = await import("./commands/ui.ts");
+			return runUi(ctx);
 		}
 	}
 }

@@ -73,6 +73,12 @@ export interface ManagedCliConfigRequest {
 	readonly [key: string]: unknown;
 }
 
+export function validateManagedCliInstance(instance: string): void {
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(instance)) {
+		throw new Error("Managed CLI instance must be a safe single path segment");
+	}
+}
+
 export class ManagedCliConfigManager {
 	private readonly workspace: string;
 	private readonly cliRegistry: ManagedCliRegistry;
@@ -86,6 +92,7 @@ export class ManagedCliConfigManager {
 		const provider = this.cliRegistry.resolve(tool);
 		if (!provider) throw new Error(`Managed CLI "${tool}" is not registered`);
 		const instance = request.instance ?? "default";
+		validateManagedCliInstance(instance);
 		const ownership = request.ownership ?? "managed";
 		const managedDir = join(this.workspace, ".autorag", "tools", provider.tool, instance);
 		const pathContext = {
@@ -123,6 +130,7 @@ export class ManagedCliConfigManager {
 		const provider = this.cliRegistry.resolve(tool);
 		if (!provider) throw new Error(`Managed CLI "${tool}" is not registered`);
 		const instance = request.instance ?? "default";
+		validateManagedCliInstance(instance);
 		const ownership = request.ownership ?? "managed";
 		const managedDir = join(this.workspace, ".autorag", "tools", provider.tool, instance);
 		const configPath =
