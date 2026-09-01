@@ -39,6 +39,7 @@ describe("single-model CLI config", () => {
 		expect(config.searchPaths).toEqual(["docs", "notes"]);
 		expect(config.bm25?.enabled).toBe(true);
 		expect(config.minSync?.enabled).toBe(true);
+		expect(config.minSync?.autoInstall).toBe(true);
 		expect(config.excludeExactDuplicates).toBe(true);
 	});
 

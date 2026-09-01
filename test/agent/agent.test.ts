@@ -429,7 +429,7 @@ describe("AutoRAGAgent default method registration", () => {
 		expect(internals(agent).bm25Method?.describe().name).toBe("bm25");
 	});
 
-	it("defaults MinSync autoInstall to false when undefined", () => {
+	it("defaults MinSync autoInstall to true when undefined", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),

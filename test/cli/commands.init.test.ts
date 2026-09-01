@@ -296,7 +296,7 @@ describe("runInit embedder flags", () => {
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.minSync).toBeDefined();
 		expect(config.minSync.enabled).toBe(true);
-		expect(config.minSync.autoInstall).toBe(false);
+		expect(config.minSync.autoInstall).toBe(true);
 		expect(config.minSync.embedder).toEqual({
 			id: "text-embedding-3-small",
 			baseUrl: "https://api.openai.com/v1",
@@ -360,6 +360,6 @@ describe("runInit embedder flags", () => {
 		expect(config.bm25.enabled).toBe(true);
 		expect(config.minSync).toBeDefined();
 		expect(config.minSync.enabled).toBe(true);
-		expect(config.minSync.autoInstall).toBe(false);
+		expect(config.minSync.autoInstall).toBe(true);
 	});
 });
