@@ -146,6 +146,9 @@ describe("ObsidianSkill", () => {
 		});
 		const manifest = skill.skillManifest();
 		expect(manifest.content).toContain("qmd");
+		expect(manifest.content).toContain("## Configuration");
+		expect(manifest.content).toContain("QMD_CONFIG_DIR");
+		expect(manifest.content).toContain("vaultPath");
 		expect(manifest.content).not.toContain("/Users/someone");
 		expect(manifest.content).not.toContain("/obsidian/work");
 	});

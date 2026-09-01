@@ -272,6 +272,8 @@ describe("DiscrawlSkill manifest", () => {
 		expect(manifest.name).toBe("datasource-discord");
 		expect(manifest.content).toContain("Hybrid retrieval is the default");
 		expect(manifest.content).toContain("line breaks");
+		expect(manifest.content).toContain("## Configuration");
+		expect(manifest.content).toContain("--config");
 		expect(manifest.content).not.toContain("/Users/");
 	});
 });

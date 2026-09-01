@@ -140,13 +140,20 @@ export class AliasedDatasourceSkill implements DatasourceSkill {
 	}
 }
 
+/**
+ * Rewrites the datasource identity embedded in a source or manifest string.
+ *
+ * Every datasource source carries the producing skill's identity either as a
+ * leading path segment (`/discord/<instance>/chunks/<id>`) or as a scheme
+ * prefix (`kakao:<chat>/<sender>/<chunk>`). Aliasing rewrites that identity
+ * wherever it appears so the agent can always tell which configured
+ * connection produced a result, regardless of what the native CLI emitted.
+ */
 function rewriteSource(value: string, originalId: string, alias: string): string {
 	return value
 		.replaceAll(`/${originalId}/`, `/${alias}/`)
 		.replaceAll(`datasource-${originalId}`, `datasource-${alias}`)
-		.replaceAll(`kakao:${originalId}:`, `kakao:${alias}:`)
-		.replaceAll(`kakao:${originalId}/`, `kakao:${alias}/`)
-		.replaceAll(`${originalId}:default/`, `${alias}:default/`);
+		.replaceAll(`${originalId}:`, `${alias}:`);
 }
 
 function rewriteScope(scope: string | undefined, alias: string, originalId: string): string | undefined {

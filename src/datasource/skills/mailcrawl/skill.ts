@@ -150,6 +150,9 @@ export class MailcrawlSkill implements DatasourceSkill {
 				"- `mailcrawl doctor --json` — health check",
 				"- `mailcrawl --help` — full command reference",
 				"",
+				"## Configuration",
+				"mailcrawl uses its own native archive by default. Server-side connector overrides: `dataDir` (archive location), `account`/`mailbox` (sync scope), `backend`/`source` (ingest backend), `himalayaConfig` (explicit himalaya config), `binaryPath`.",
+				"",
 				"Source identifiers are opaque and hierarchical.",
 			].join("\n"),
 		};

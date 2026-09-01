@@ -157,6 +157,9 @@ describe("SlackSkill", () => {
 		const results = await method?.retrieve("freeze", { topK: 5 });
 		expect(results?.[0]?.source).toBe("/slack/workspace/chunks/C2-2-5");
 		expect(results?.[0]?.metadata).toMatchObject({ backend: "slacrawl", title: "#ops" });
+		const manifest = searchable.skillManifest().content;
+		expect(manifest).toContain("## Configuration");
+		expect(manifest).toContain("databasePath");
 	});
 });
 

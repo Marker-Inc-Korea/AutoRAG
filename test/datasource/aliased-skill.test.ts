@@ -170,4 +170,65 @@ describe("AliasedDatasourceSkill", () => {
 		expect(results?.[0]?.id).toBe("family-kakao:kakao:default:chunk-001");
 		expect(results?.[0]?.metadata.datasourceId).toBe("family-kakao");
 	});
+
+	it("rewrites the leading datasource scheme even when the instance id is absent from the source", async () => {
+		const base: DatasourceSkill = {
+			describe: () => ({
+				name: "kakao",
+				id: "kakao",
+				type: "kakaotalk",
+				description: "KakaoTalk datasource",
+				capabilities: ["chat"],
+				tags: ["kakaotalk"],
+				status: "active",
+				datasourceId: "kakao",
+				instanceId: "default",
+				instances: ["default"],
+			}),
+			polling: () => ({ mode: "none" }),
+			index: async () => ({
+				ok: true,
+				instanceId: "default",
+				skill: "kakao",
+				chunkCount: 1,
+				indexedAt: 1,
+				diagnostics: [],
+			}),
+			retrievalMethods: () => [
+				{
+					describe: () => ({
+						name: "kakao-bm25",
+						type: "bm25",
+						description: "kakao search",
+						status: "active",
+						capabilities: ["chat"],
+						datasourceId: "kakao",
+						tags: ["kakaotalk"],
+					}),
+					// Real katok hits carry the chat name instead of the instance id.
+					retrieve: async () => [
+						{
+							id: "kakao:default:chunk-9",
+							content: "hi",
+							source: "kakao:가족방/엄마/chunk-9",
+							score: 1,
+							metadata: { datasourceId: "kakao", method: "kakao-bm25" },
+						},
+					],
+				},
+			],
+			describeSources: () => [],
+			skillManifest: () => ({
+				name: "datasource-kakao",
+				description: "kakao",
+				content: "katok search; sources look like kakao:<chat>/<sender>/<chunk>",
+			}),
+		};
+
+		const skill = new AliasedDatasourceSkill(base, { alias: "family-kakao" });
+		const results = await skill.retrievalMethods()[0]?.retrieve("hello", { topK: 5 });
+		// The agent must be able to tell which connection (alias) produced the result.
+		expect(results?.[0]?.source).toBe("family-kakao:가족방/엄마/chunk-9");
+		expect(skill.skillManifest().content).toContain("family-kakao:<chat>/<sender>/<chunk>");
+	});
 });

@@ -161,6 +161,13 @@ export class CrawlerDatasourceSkill implements DatasourceSkill {
 				"## How to search",
 				"Call `search_datasource_documents` with a natural-language query and `topK`.",
 				"",
+				"## Configuration",
+				`The \`${this.definition.backendName}\` CLI uses its own native archive and config by default. Server-side connector overrides: \`databasePath\`, \`configPath\`, \`sourcePath\`, \`syncSource\`, \`binaryPath\`.`,
+				"",
+				"You can also invoke the CLI directly through `bash` for its full surface; see `",
+				this.definition.backendName,
+				"--help`.",
+				"",
 				this.channelIds.size === 0 && this.channelNames.size === 0
 					? "Channel selection: all channels/chats are searchable."
 					: `Channel selection: only configured ids/names are searchable (${[

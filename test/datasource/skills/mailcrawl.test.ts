@@ -205,6 +205,8 @@ describe("MailcrawlSkill", () => {
 			?.retrieve("approval", { topK: 5, allowedScopes: ["/mailcrawl/personal/**"] });
 		expect(result?.[0]?.source).toBe("/mailcrawl/personal/chunks/m1:latest:0");
 		expect(skill.skillManifest().content).toContain("mailcrawl");
+		expect(skill.skillManifest().content).toContain("## Configuration");
+		expect(skill.skillManifest().content).toContain("dataDir");
 	});
 
 	it("filters configured account and mailbox at retrieval time", async () => {

@@ -64,6 +64,8 @@ describe("ClawGallerySkill", () => {
 		const manifest = skill.skillManifest();
 		expect(manifest.content).toContain("Never use `embedding` just because a V-SPLADE index exists");
 		expect(manifest.content).toContain("`hybrid` is the default");
+		expect(manifest.content).toContain("## Configuration");
+		expect(manifest.content).toContain("CLAWGALLERY_CONFIG_DIR");
 		expect(
 			formatDatasourceSkillInvocation({
 				name: manifest.name,
