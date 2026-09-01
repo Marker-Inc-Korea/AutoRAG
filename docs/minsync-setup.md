@@ -18,7 +18,7 @@ their SHA-256 digest before installation. If a compatible release asset is not
 available, AutoRAG falls back to:
 
 ```bash
-cargo install minsync --version 0.4.1 --locked
+cargo install minsync --version 0.3.0 --locked
 ```
 
 The fallback requires a Rust toolchain. Installation failures are reported as

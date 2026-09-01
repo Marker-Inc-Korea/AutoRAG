@@ -691,10 +691,10 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 					platform: "darwin",
 					arch: "arm64",
 					releaseProvider: async () => ({
-						tagName: "v0.4.1",
+						tagName: "v0.3.0",
 						assets: [
 							{
-								name: "minsync-v0.4.1-aarch64-apple-darwin.tar.gz",
+								name: "minsync-v0.3.0-aarch64-apple-darwin.tar.gz",
 								downloadUrl: "https://example.test/minsync.tar.gz",
 								sha256: "a".repeat(64),
 							},

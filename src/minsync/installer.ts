@@ -9,7 +9,7 @@ import { spawnProcess } from "./process.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.4.1";
+export const MINSYNC_VERSION = "0.3.0";
 
 export interface MinSyncReleaseAsset {
 	readonly name: string;
