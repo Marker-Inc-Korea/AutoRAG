@@ -122,9 +122,17 @@ function runRealTui(
 	agent: Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe">>,
 ): Promise<number> {
 	const tui = createRealTui();
-	let transcriptText = "AutoRAG librarian - Ctrl+C or Ctrl+D to exit";
-	const transcript = new Text(transcriptText);
+	let transcriptHistory = "AutoRAG librarian - Ctrl+C or Ctrl+D to exit";
+	const transcript = new Text(transcriptHistory);
 	const presenter = createTuiPresenter();
+	const renderTranscript = (): void => {
+		const trace = presenter.lines();
+		transcript.setText(
+			trace.length > 0
+				? `${transcriptHistory}\n\n--- live trace ---\n${trace.join("\n")}`
+				: transcriptHistory,
+		);
+	};
 	const editor = new Editor(tui, {
 		borderColor: (value) => value,
 		selectList: {
@@ -146,10 +154,7 @@ function runRealTui(
 		};
 		const unsubscribe = agent.subscribe?.((event) => {
 			presenter.handle(event);
-			transcriptText = `${transcriptText.split("\n\n--- live trace ---")[0]}\n\n--- live trace ---\n${presenter
-				.lines()
-				.join("\n")}`;
-			transcript.setText(transcriptText);
+			renderTranscript();
 			tui.requestRender();
 		});
 		editor.onSubmit = (raw) => {
@@ -157,18 +162,24 @@ function runRealTui(
 			editor.setText("");
 			if (query.length === 0) return;
 			editor.disableSubmit = true;
-			transcriptText = `${transcriptText}\n\n> ${query}\nsearch: preparing retrieval`;
-			transcript.setText(transcriptText);
+			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
+			renderTranscript();
 			tui.requestRender();
 			void agent
 				.searchDocuments(query)
 				.then((response) => {
-					transcriptText = `${transcriptText}\n\n${renderSearch(response, { json: false, debug: ctx.debug })}`;
-					transcript.setText(transcriptText);
+					transcriptHistory = `${transcriptHistory}\n\n${renderSearch(response, {
+						json: false,
+						debug: ctx.debug,
+					})}`;
+					renderTranscript();
 				})
 				.catch((error) => {
-					transcriptText = `${transcriptText}\n\n${renderError(error, { json: false, debug: ctx.debug })}`;
-					transcript.setText(transcriptText);
+					transcriptHistory = `${transcriptHistory}\n\n${renderError(error, {
+						json: false,
+						debug: ctx.debug,
+					})}`;
+					renderTranscript();
 				})
 				.finally(() => {
 					editor.disableSubmit = false;

@@ -206,4 +206,24 @@ describe("runTui", () => {
 		expect(tui.rendered.join("\n")).toContain("first: started");
 		expect(tui.rendered.join("\n")).toContain("second: started");
 	});
+
+	it("unsubscribes the event bridge exactly when the TUI exits", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		let unsubscribeCalls = 0;
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				searchDocuments: async () => response,
+				subscribe: () => () => {
+					unsubscribeCalls++;
+				},
+			}),
+			tuiFactory: () => tui,
+		});
+
+		tui.onExit?.();
+
+		expect(await running).toBe(0);
+		expect(unsubscribeCalls).toBe(1);
+	});
 });
