@@ -684,23 +684,17 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			.join(delimiter);
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		try {
-			const platform = process.platform;
-			const assetTarget =
-				platform === "darwin"
-					? "aarch64-apple-darwin"
-					: platform === "linux"
-						? "x86_64-unknown-linux-gnu"
-						: "x86_64-pc-windows-msvc";
-			const installedName = platform === "win32" ? "minsync.exe" : "minsync";
 			const method = new MinSyncVectorMethod({
 				root,
 				workspacePath: minsyncWorkspace,
 				installer: {
+					platform: "darwin",
+					arch: "arm64",
 					releaseProvider: async () => ({
 						tagName: "v0.4.1",
 						assets: [
 							{
-								name: `minsync-v0.4.1-${assetTarget}.tar.gz`,
+								name: "minsync-v0.4.1-aarch64-apple-darwin.tar.gz",
 								downloadUrl: "https://example.test/minsync.tar.gz",
 								sha256: "a".repeat(64),
 							},
@@ -715,7 +709,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			const result = await method.sync();
 
 			expect(result).toMatchObject({ ok: true, synced: 1 });
-			expect(existsSync(join(root, ".autorag", "bin", installedName))).toBe(true);
+			expect(existsSync(join(root, ".autorag", "bin", "minsync"))).toBe(true);
 		} finally {
 			process.env.PATH = savedPath;
 		}
