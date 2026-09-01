@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, watch } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, unwatchFile, watchFile } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createBashTool } from "../../src/agent/bash-tool.ts";
@@ -9,16 +9,17 @@ const pidPath = join(workspace, "child.pid");
 const waitForFile = async (path) => {
 	if (existsSync(path)) return;
 	await new Promise((resolve, reject) => {
-		const watcher = watch(workspace, (_event, filename) => {
-			if (filename === "child.pid" && existsSync(path)) {
-				watcher.close();
-				resolve();
-			}
-		});
-		watcher.on("error", (error) => {
-			watcher.close();
-			reject(error);
-		});
+		const timeout = setTimeout(() => {
+			unwatchFile(path, onChange);
+			reject(new Error(`Timed out waiting for ${path}`));
+		}, 2_000);
+		const onChange = () => {
+			if (!existsSync(path)) return;
+			clearTimeout(timeout);
+			unwatchFile(path, onChange);
+			resolve();
+		};
+		watchFile(path, { interval: 25 }, onChange);
 	});
 };
 
@@ -35,7 +36,7 @@ try {
 	const tool = createBashTool({ cwd: workspace, timeoutMs: 120 });
 	const timeoutStarted = performance.now();
 	const timeoutExecution = tool.execute("manual-timeout", {
-		command: `sleep 10 & echo $! > ${pidPath}; wait`,
+		command: "sleep 10 & echo $! > child.pid; wait",
 	});
 	await waitForFile(pidPath);
 	const childPid = Number(readFileSync(pidPath, "utf8"));
@@ -62,17 +63,9 @@ try {
 	const abortPidPath = join(workspace, "abort-child.pid");
 	const controller = new AbortController();
 	const abortExecution = tool.execute("manual-abort", {
-		command: `sleep 10 & echo $! > ${abortPidPath}; wait`,
+		command: "sleep 10 & echo $! > abort-child.pid; wait",
 	}, controller.signal);
-	await new Promise((resolve, reject) => {
-		const watcher = watch(workspace, (_event, filename) => {
-			if (filename === "abort-child.pid" && existsSync(abortPidPath)) {
-				watcher.close();
-				resolve();
-			}
-		});
-		watcher.on("error", reject);
-	});
+	await waitForFile(abortPidPath);
 	const abortChildPid = Number(readFileSync(abortPidPath, "utf8"));
 	controller.abort();
 	const abortResult = await abortExecution;
