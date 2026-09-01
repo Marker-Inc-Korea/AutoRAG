@@ -275,6 +275,28 @@ process.stdout.write("{}");
 		expect(call.args).toEqual(["status"]);
 	});
 
+	it("honors an explicit operator-owned qmd config directory", async () => {
+		const binDir = join(root, "explicit-bin");
+		const binaryPath = join(binDir, "qmd");
+		const logPath = join(root, "explicit-calls.jsonl");
+		const configPath = join(root, "operator-qmd-config");
+		mkdirSync(binDir, { recursive: true });
+		mkdirSync(configPath, { recursive: true });
+		writeFileSync(
+			binaryPath,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(logPath)}, process.env.QMD_CONFIG_DIR + "\\n");
+process.stdout.write("{}");
+`,
+		);
+		chmodSync(binaryPath, 0o755);
+		const client = new QmdClient({ binaryPath, configPath, vaultPath: join(root, "vault") });
+
+		expect(await client.ensureCollection()).toMatchObject({ ok: true });
+		expect(readFileSync(logPath, "utf8").trim()).toBe(configPath);
+	});
+
 	it("returns binary-missing without throwing", async () => {
 		const client = new QmdClient({
 			binaryPath: join(root, "no-such-qmd"),

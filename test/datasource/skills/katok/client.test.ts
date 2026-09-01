@@ -128,14 +128,14 @@ describe("KatokClient", () => {
 		if (!result.ok) return;
 		expect(result.data).toEqual({ version: "1.2.3", ready: true, metadata: {} });
 		const call = loggedCalls()[0];
-		expect(call?.args).toEqual(["doctor", "--json", "--source", "macos", "--workspace", expect.any(String)]);
+		expect(call?.args).toEqual(["doctor", "--json"]);
 	});
 
-	it("uses the shared managed workspace transport when a workspace root is configured", async () => {
+	it("forwards an explicitly configured workspacePath", async () => {
 		writeFakeKatok();
 		const client = new KatokClient({
 			binaryPath,
-			root,
+			workspacePath: join(root, "custom-katok"),
 			env: { PATH: `${binDir}:${process.env.PATH ?? ""}`, KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }) },
 		});
 
@@ -143,9 +143,8 @@ describe("KatokClient", () => {
 
 		expect(result.ok).toBe(true);
 		const args = loggedCalls()[0]?.args ?? [];
-		expect(args.slice(0, 2)).toEqual(["--workspace", join(root, ".autorag", "datasources", "katok")]);
-		expect(args).toContain("doctor");
-		expect(args).toContain("--source");
+		expect(args).toContain("--data-dir");
+		expect(args[args.indexOf("--data-dir") + 1]).toBe(join(root, "custom-katok"));
 	});
 
 	it("parses search hits in returned order", async () => {
@@ -166,31 +165,20 @@ describe("KatokClient", () => {
 		expect(result.data.hits.map((hit) => hit.chunkId)).toEqual(["c1", "c2", "c3"]);
 		expect(result.data.hits[0]).toMatchObject({ chunkId: "c1", score: 0.9, content: "alpha" });
 		const call = loggedCalls()[0];
-		expect(call?.args).toEqual([
-			"search",
-			"semantic",
-			"hello",
-			"--json",
-			"--top-k",
-			"3",
-			"--source",
-			"macos",
-			"--workspace",
-			expect.any(String),
-		]);
+		expect(call?.args).toEqual(["search", "semantic", "hello", "--json", "--limit", "3"]);
 	});
 
-	it("forwards scope alongside topK when provided", async () => {
+	it("maps topK to katok's --limit flag and never forwards virtual scopes", async () => {
 		writeFakeKatok();
 		const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ hits: [] }) });
 
 		await client.search("keyword", "q", { topK: 5, scope: "room-42" });
 
 		const args = loggedCalls()[0]?.args ?? [];
-		expect(args).toContain("--scope");
-		expect(args[args.indexOf("--scope") + 1]).toBe("room-42");
-		expect(args).toContain("--top-k");
-		expect(args[args.indexOf("--top-k") + 1]).toBe("5");
+		expect(args).toContain("--limit");
+		expect(args[args.indexOf("--limit") + 1]).toBe("5");
+		expect(args).not.toContain("--scope");
+		expect(args).not.toContain("--top-k");
 	});
 
 	it("parses index/sync/chunk/context/parent payloads", async () => {

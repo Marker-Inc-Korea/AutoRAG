@@ -1,4 +1,3 @@
-import type { ManagedCliConfigManager } from "../../../cli/managed-cli-config.ts";
 import type { RetrievalOptions } from "../../../retrieval/types.ts";
 
 /**
@@ -11,15 +10,6 @@ import type { RetrievalOptions } from "../../../retrieval/types.ts";
 export type KatokSearchMode = "semantic" | "keyword" | "hybrid";
 
 /**
- * Where the `katok` CLI reads KakaoTalk data from.
- *
- * - `macos`   — live KakaoTalk install on macOS (the CLI owns DB access; this
- *               client never touches the DB directly).
- * - `fixture` — a frozen fixture directory (used for tests / dry runs).
- */
-export type KatokSourceKind = "macos" | "fixture";
-
-/**
  * Configuration for {@link KatokClient}. All fields optional; sensible defaults
  * mirror the jikji client. The client spawns the `katok` binary as a child
  * process — it never opens the KakaoTalk database directly.
@@ -27,39 +17,25 @@ export type KatokSourceKind = "macos" | "fixture";
 export interface KatokOptions {
 	/** Explicit path to the `katok` binary. Defaults to a bare `katok` PATH lookup. */
 	readonly binaryPath?: string;
-	/** Spawn timeout in milliseconds. Default 10_000. */
+	/** Spawn timeout in milliseconds. Default 60_000 (sync/index over large archives can be slow). */
 	readonly timeoutMs?: number;
 	/** Max stdout/stderr bytes retained. Default 1_048_576 (1 MiB). */
 	readonly maxBufferBytes?: number;
-	/** Data source for the CLI. Default `macos`. */
-	readonly source?: KatokSourceKind;
-	/** Path to a fixture directory; required when `source === "fixture"`. */
-	readonly fixturePath?: string;
-	/**
-	 * Explicit katok workspace directory (the `.autorag/datasources/katok`
-	 * root). When omitted, computed from {@link KatokOptions.root} (or
-	 * `process.cwd()`) via the paths helper.
-	 */
+	/** Explicit native katok data directory, passed as `--data-dir`. */
 	readonly workspacePath?: string;
-	/** Workspace root used to compute the default katok workspace path. */
-	readonly root?: string;
 	/** Explicit operator-owned configuration/workspace transport. */
 	readonly configPath?: string;
 	/** Environment overrides merged on top of `process.env` for the child. */
 	readonly env?: Readonly<Record<string, string | undefined>>;
-	/** Parent-owned managed configuration boundary. */
-	readonly managedCliConfigManager?: ManagedCliConfigManager;
 }
 
 export const DEFAULT_KATOK_BINARY = "katok";
-export const DEFAULT_KATOK_TIMEOUT_MS = 10_000;
+export const DEFAULT_KATOK_TIMEOUT_MS = 60_000;
 export const DEFAULT_KATOK_MAX_BUFFER_BYTES = 1_048_576;
-export const DEFAULT_KATOK_SOURCE: KatokSourceKind = "macos";
 export const DEFAULT_KATOK_OPTIONS = {
 	binaryPath: DEFAULT_KATOK_BINARY,
 	timeoutMs: DEFAULT_KATOK_TIMEOUT_MS,
 	maxBufferBytes: DEFAULT_KATOK_MAX_BUFFER_BYTES,
-	source: DEFAULT_KATOK_SOURCE,
 } as const;
 
 /**
@@ -168,7 +144,7 @@ export type KatokParentResult = KatokOk<KatokChunk> | KatokFailure;
 /**
  * Search-specific options. Reuses the shared {@link RetrievalOptions} so the
  * KatokSkill retrieval method can pass its options straight through. The
- * client maps `topK` and `scope` to CLI flags; other fields are accepted but
- * not currently forwarded.
+ * client maps `topK` to the native CLI limit flag; other fields are handled
+ * by the retrieval layer or are not supported by katok.
  */
 export type KatokSearchOptions = RetrievalOptions;

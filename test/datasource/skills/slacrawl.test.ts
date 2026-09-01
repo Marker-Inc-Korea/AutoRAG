@@ -102,7 +102,7 @@ describe("SlacrawlClient", () => {
 		expect(calls().every((call) => call.updateCheck === "1")).toBe(true);
 	});
 
-	it("routes configured workspace execution through the managed launch context", async () => {
+	it("runs slacrawl against its own default store without a managed --db injection", async () => {
 		writeFakeSlacrawl();
 		const client = new SlacrawlClient({
 			binaryPath,
@@ -111,11 +111,9 @@ describe("SlacrawlClient", () => {
 		});
 
 		expect(await client.sync()).toMatchObject({ ok: true, count: 2 });
-		expect(calls()[0]?.args.slice(0, 2)).toEqual([
-			"--db",
-			join(root, ".autorag", "datasources", "slacrawl", "archive.db"),
-		]);
-		expect(calls()[0]?.args).toContain("sync");
+		const args = calls()[0]?.args ?? [];
+		expect(args).not.toContain("--db");
+		expect(args.join(" ")).not.toContain(".autorag/datasources/slacrawl");
 	});
 
 	it("maps a missing binary and malformed output without throwing", async () => {

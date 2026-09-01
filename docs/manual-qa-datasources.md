@@ -1,8 +1,8 @@
 # Manual QA — Datasource Skills
 
-All external CLI checks below must use the managed launch surface. The
-configuration and bash-boundary checklist is defined in
-[managed-cli-configuration.md](managed-cli-configuration.md).
+External CLI checks below use each CLI's native launch surface. AutoRAG only
+supplies explicitly configured paths and bounded process execution; it does not
+materialize or force an AutoRAG-managed archive/config for datasource CLIs.
 
 Covers issues #1300 (Slack), #1302 (Notion), #1303
 (GitHub Issues/PRs), #1304 (Gmail), #1311 (local mail
@@ -11,6 +11,7 @@ Issue #1416 adds external-crawler process coverage for WhatsApp through
 wacrawl, Telegram through telecrawl, Slack through slacrawl, and Notion
 through notcrawl.
 Issue #1477 adds the live ClawGallery CLI path.
+Issue #1496 adds the live mailcrawl local email CLI path.
 
 ## Harnesses
 
@@ -22,6 +23,8 @@ Issue #1477 adds the live ClawGallery CLI path.
 | `scripts/manual-qa/run-qa-live.ts` | Real public GitHub REST API (this repo's issues) and a real RSS feed (hnrss.org), credential-free | `bun scripts/manual-qa/run-qa-live.ts` |
 | `scripts/manual-qa/run-qa-spotlight-live.ts` | Real macOS Spotlight (`mdfind`/`mdimport`) end-to-end; macOS only, no credentials | `bun scripts/manual-qa/run-qa-spotlight-live.ts` |
 | `scripts/manual-qa/run-qa-rclone.ts` | Deterministic `cloud-drive`/rclone process seam covering initial/no-op/update/delete/rename/interrupted recovery and scoped search | `bun scripts/manual-qa/run-qa-rclone.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl.ts` | Deterministic mailcrawl process boundary, missing-binary diagnostics, and AutoRAGAgent datasource loop | `bun scripts/manual-qa/run-qa-mailcrawl.ts` |
+| `scripts/manual-qa/run-qa-mailcrawl-live.ts` | Real `@nomadamas/mailcrawl@0.1.4` fixture sync, no-op reindex, and BM25/semantic/hybrid retrieval | `bun scripts/manual-qa/run-qa-mailcrawl-live.ts` |
 | `scripts/manual-qa/run-qa-datasource-aliases.ts` | Universal alias registration plus all-channel and channel-allowlisted chat retrieval | `bun scripts/manual-qa/run-qa-datasource-aliases.ts` |
 | `scripts/manual-qa/run-qa-ui.ts` | Local loopback `autorag ui`: list/add/test/toggle/remove connections, secret stripping, folder browse | `bun scripts/manual-qa/run-qa-ui.ts` |
 | `test/datasource/skills/wacrawl.test.ts` | Real child-process boundary with a deterministic fake wacrawl executable: argv, JSON parsing, env isolation, missing binary, malformed output, indexing, retrieval | `bunx vitest run test/datasource/skills/wacrawl.test.ts` |
@@ -73,10 +76,11 @@ mapping. Configure credentials in notcrawl itself, then set
       `RetrievalMethodRegistry` pipeline on agent construction.
 
 ### Indexing
-- [x] `agent.refresh(true, { methods: ["datasources"] })` indexes all nine
+- [x] `agent.refresh(true, { methods: ["datasources"] })` indexes all configured
       skills; each returns an ok result with a chunk count.
-- [x] Chunk stores persist under `<workspace>/.autorag/datasources/<skill>/<instance>/`
-      and reload lazily in fresh agent processes.
+- [x] Connector-backed skills persist their own state under the configured
+      connector or CLI-native store; AutoRAG-managed chunk stores remain used
+      only by connector skills that own that storage.
 - [x] Polling metadata (`mode`, `intervalMs`, `lastIndexedAt`, `lastPolledAt`,
       `lastError`) tracks success and failure; RSS applies a dedupe window.
 
@@ -88,7 +92,7 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] `search_datasource_documents` returns hits for each skill with opaque
       slash-hierarchical sources (`/<skill>/<instance>/chunks/<id>`); no `#`
       fragments, no real filesystem paths.
-- [x] `scope` narrows results (e.g. `/gmail/**` excludes Slack hits) and can
+- [x] `scope` narrows results for scope-capable datasources (e.g. `/gmail/**` excludes Slack hits) and can
       never widen access.
 
 ### Security

@@ -2,9 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { ManagedCliConfigManager, ManagedCliRegistry } from "../../../cli/managed-cli-config.ts";
 import { portableSpawnCommand } from "../../../process/portable-spawn.ts";
-import { createQmdManagedCliProvider } from "./config.ts";
 import { obsidianQmdCacheDir, obsidianQmdConfigDir, stripEdgeDashes, toQmdCollectionName } from "./paths.ts";
 import type {
 	QmdEmbedInfo,
@@ -66,17 +64,9 @@ const SAFE_QMD_ENV_PREFIX = "QMD_";
  */
 export class QmdClient {
 	private readonly options: QmdOptions;
-	private readonly managedCliConfigManager: ManagedCliConfigManager | undefined;
 
 	constructor(options: QmdOptions = {}) {
 		this.options = options;
-		if (options.managedCliConfigManager) {
-			this.managedCliConfigManager = options.managedCliConfigManager;
-		} else if (options.workspaceRoot !== undefined) {
-			const registry = new ManagedCliRegistry();
-			registry.register(createQmdManagedCliProvider(options.binaryPath));
-			this.managedCliConfigManager = new ManagedCliConfigManager({ workspace: options.workspaceRoot, registry });
-		}
 	}
 
 	async ensureCollection(signal?: AbortSignal): Promise<QmdEnsureResult> {
@@ -137,35 +127,13 @@ export class QmdClient {
 	}
 
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
-		let launch: { readonly env: Readonly<Record<string, string>>; readonly cwd?: string } | undefined;
-		if (this.managedCliConfigManager) {
-			try {
-				launch = await this.managedCliConfigManager.materialize("qmd", {
-					instance: this.options.instanceId,
-					...(this.options.configPath === undefined
-						? {}
-						: { ownership: "external", configPath: this.options.configPath }),
-					config: {},
-				});
-			} catch {
-				return {
-					ok: false,
-					reason: "spawn-error",
-					stdout: "",
-					stderr: "qmd managed configuration failed",
-					code: null,
-				};
-			}
-		}
-		const env = { ...controlledEnv(this.options), ...(launch?.env ?? {}) };
 		return spawnQmd({
 			binaryPath: this.options.binaryPath,
 			args,
-			env,
+			env: controlledEnv(this.options),
 			timeoutMs: this.options.timeoutMs ?? DEFAULT_QMD_TIMEOUT_MS,
 			maxBufferBytes: this.options.maxBufferBytes ?? DEFAULT_QMD_MAX_BUFFER_BYTES,
 			signal,
-			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
 		});
 	}
 }
@@ -201,7 +169,7 @@ function controlledEnv(options: QmdOptions): NodeJS.ProcessEnv {
 		if (value === undefined) delete env[key];
 		else if (isAllowedEnvKey(key)) env[key] = value;
 	}
-	env.QMD_CONFIG_DIR = obsidianQmdConfigDir(workspaceRoot, instanceId);
+	env.QMD_CONFIG_DIR = options.configPath ?? obsidianQmdConfigDir(workspaceRoot, instanceId);
 	env.XDG_CACHE_HOME = obsidianQmdCacheDir(workspaceRoot, instanceId);
 	env.QMD_TRUST_LOCAL_CONFIG = env.QMD_TRUST_LOCAL_CONFIG ?? "1";
 	return env;

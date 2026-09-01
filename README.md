@@ -67,7 +67,10 @@ Different documents need different search strategies:
 
 AutoRAG supports **pluggable retrieval methods**. Local lexical BM25, semantic vector, and hybrid retrieval all go through **MinSync** over one shared CDC chunk lifecycle, wired through the `RetrievalMethodRegistry`. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication. External datasources keep their own archive/index lifecycle.
 
-BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync uses a pre-installed binary (`autoInstall: false`); configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
+BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync auto-installs a verified release into `<workspace>/.autorag/bin` on first use (`autoInstall: true`); set `"autoInstall": false` only when managing the binary yourself. Configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
+
+See [docs/minsync-setup.md](docs/minsync-setup.md) for automatic installation,
+managed binary paths, and the local EmbeddingGemma QA flow.
 
 ### Real directory access
 
@@ -185,7 +188,7 @@ channel or group chat as its own datasource.
 
 Security defaults are intentionally strict:
 
-- datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags` and `datasourceAccess.allowedScopes`;
+- datasource access is default-deny unless trusted server/API configuration supplies `datasourceAccess.allowedTags`; `allowedScopes` applies only to datasource methods that advertise the `scoped` capability;
 - model/tool arguments never grant datasource tags or scopes;
 - `search_datasource_documents` accepts only `{ query, topK?, scope? }`, and `scope` can only narrow trusted access.
 
@@ -203,6 +206,7 @@ Security defaults are intentionally strict:
 | Cloud drives | `cloud-drive` | **[`rclone`](https://rclone.org) CLI** | Incremental Google Drive Tier-1; OneDrive/network remotes; iCloud experimental |
 | Gmail / IMAP | `gmail` | Gmail REST v1, or **[`himalaya`](https://pimalaya.org) CLI** (`backend: "himalaya"`) | the himalaya backend indexes any IMAP/Maildir account it has configured — no OAuth plumbing |
 | Local mail exports | `mail-export` | filesystem (`.mbox` / `.eml`) | classic `From_` splitting, mailparser-based; count-only warnings |
+| Mail archives | `mailcrawl` | external [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | local email sync plus BM25, semantic, and hybrid retrieval |
 | Obsidian vault | `obsidian` | external [`qmd`](https://github.com/tobi/qmd) CLI | incremental `qmd update`, BM25 `qmd search`, semantic `qmd vsearch`; vault path via `connector.vaultPath` |
 | RSS / news | `rss` | HTTP feed polling | RSS 2.0 + Atom, feed/category hierarchy, 24h dedupe window |
 
@@ -219,14 +223,15 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "notion":   { "connector": { "binaryPath": "notcrawl", "configPath": "/path/to/notcrawl.yaml" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
     "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
+    "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "personal-google-drive": { "type": "cloud-drive", "instanceId": "personal", "connector": { "provider": "google-drive", "remote": "personal-gdrive:", "include": ["**/*.md"] } },
     "company-onedrive": { "type": "cloud-drive", "instanceId": "work", "connector": { "provider": "onedrive", "remote": "company-onedrive:Documents" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss":      { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
   },
   "datasourceAccess": {
-    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "cloud-drive", "obsidian", "rss"],
-    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/personal-google-drive/**", "/company-onedrive/**", "/obsidian/**", "/rss/**"]
+    "allowedTags": ["whatsapp", "telegram", "slack", "notion", "github", "gmail", "mailcrawl", "cloud-drive", "obsidian", "rss"],
+    "allowedScopes": ["/whatsapp/**", "/telegram/**", "/slack/**", "/notion/**", "/github/**", "/gmail/**", "/mailcrawl/**", "/personal-google-drive/**", "/company-onedrive/**", "/obsidian/**", "/rss/**"]
   }
 }
 ```
@@ -238,6 +243,15 @@ Install telecrawl with `brew install openclaw/tap/telecrawl`. AutoRAG invokes `t
 Install slacrawl with `brew install openclaw/tap/slacrawl`. AutoRAG invokes `slacrawl sync` during datasource refresh and `slacrawl --json search` during retrieval. Optional trusted connector fields are `binaryPath`, `configPath`, and `syncSource`. Slack credentials and source definitions remain in slacrawl's own configuration rather than AutoRAG.
 
 Install notcrawl with `brew install openclaw/tap/notcrawl`. AutoRAG invokes `notcrawl sync` during datasource refresh and `notcrawl search --json` during retrieval. Optional trusted connector fields are `binaryPath` and `configPath`. Notion credentials and workspace definitions remain in notcrawl's own configuration rather than AutoRAG.
+
+Install and configure [`mailcrawl`](https://github.com/NomaDamas/mailcrawl)
+`@nomadamas/mailcrawl@0.1.4` or newer separately. AutoRAG invokes
+`mailcrawl sync` followed by `mailcrawl index` during datasource refresh, then
+calls `mailcrawl search` in BM25, semantic, or hybrid mode. The archive remains
+in mailcrawl's native store unless the operator explicitly sets
+`connector.dataDir`; Himalaya credentials and provider configuration remain
+owned by mailcrawl. 0.1.3 and earlier fail a repeated
+`index` after a no-op sync.
 
 Install and authenticate rclone separately (`brew install rclone && rclone
 config` on macOS), then configure the provider-neutral `cloud-drive` skill.
@@ -272,7 +286,6 @@ const agent = new AutoRAGAgent({
   datasourceSkills: [kakao],
   datasourceAccess: {
     allowedTags: ["kakaotalk"],
-    allowedScopes: ["/kakao/personal/**"],
   },
 });
 
@@ -303,7 +316,6 @@ const agent = new AutoRAGAgent({
   datasourceSkills: [discord],
   datasourceAccess: {
     allowedTags: ["discord"],
-    allowedScopes: ["/discord/community/**"],
   },
 });
 ```
@@ -329,7 +341,7 @@ Or through the trusted config factory:
 Two defaults are deliberate and worth keeping:
 
 - **`defaultMode: "hybrid"`** — discrawl's FTS index strips newlines without substituting a space, welding words across line breaks into a single unsearchable token (measured at ~47% of post-newline words on a real archive). Semantic recall covers that gap. See [#1413](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1413).
-- **`embeddingProvider: "ollama"` + `embeddingModel: "embeddinggemma"`** — semantic search requires an embedding provider (`ollama serve && ollama pull embeddinggemma`). For workspace-managed discrawl state, AutoRAG writes these values to `.autorag/datasources/discrawl/config.toml` while preserving unrelated discrawl settings. An explicit `connector.configPath` remains operator-owned and is never rewritten. EmbeddingGemma (Gemma 3 300M, 768-dim, 100+ languages) is the same model family katok uses for KakaoTalk, so all CLI-backed datasources share one local embedder. Do **not** use `nomic-embed-text`: it is English-only and collapses non-English text into one narrow similarity band, silently degrading semantic search to noise. AutoRAG emits a diagnostic when an English-only model is configured. See [#1414](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1414).
+- **`embeddingProvider: "ollama"` + `embeddingModel: "embeddinggemma"`** — semantic search requires an embedding provider (`ollama serve && ollama pull embeddinggemma`). Configure these values in discrawl's own config; AutoRAG uses discrawl's native store unless an explicit `connector.configPath` is supplied. EmbeddingGemma (Gemma 3 300M, 768-dim, 100+ languages) is the same model family katok uses for KakaoTalk, so all CLI-backed datasources can share one local embedder. Do **not** use `nomic-embed-text`: it is English-only and collapses non-English text into one narrow similarity band, silently degrading semantic search to noise. AutoRAG emits a diagnostic when an English-only model is configured. See [#1414](https://github.com/Marker-Inc-Korea/AutoRAG/issues/1414).
 
 A datasource skill should provide polling/cron metadata for routine indexing, source descriptions for the agent prompt, slash-hierarchical opaque source paths such as `/kakao/personal/chunks/<chunk-id>`, and permission tags that match your server-side access policy.
 

@@ -15,8 +15,6 @@ import type { DatasourceAccessContextOptions } from "../datasource/access-contex
 import { buildDatasourceSkills, type DatasourcesConfig } from "../datasource/skills/factory.ts";
 import { acquireFileLock, type FileLockHandle } from "../filesystem/file-lock.ts";
 import type { EnsureMinSyncBinaryOptions, MinSyncEmbedderConfig } from "../minsync/index.ts";
-import { createManagedRetrievalRuntime } from "../retrieval/managed-runtime.ts";
-import { createManagedCliRuntime } from "./managed-cli-runtime.ts";
 
 export const DEFAULT_CONFIG_FILENAME = "config.json";
 export const LEGACY_CONFIG_FILENAME = "autorag.config.json";
@@ -43,7 +41,7 @@ export interface Bm25MethodConfig {
 
 /**
  * Typed MinSync method config persisted in `config.json`. Missing `enabled`
- * means enabled (true); `autoInstall` defaults to false. `embedder` carries
+ * means enabled (true); `autoInstall` defaults to true. `embedder` carries
  * the MinSync vector embedder settings validated by {@link normalizeEmbedder}.
  */
 export interface MinSyncMethodConfig {
@@ -641,7 +639,7 @@ function normalizeBm25Method(raw: Bm25MethodConfig | false | undefined): Bm25Met
 
 function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): MinSyncMethodConfig {
 	if (raw === false) return { enabled: false };
-	if (raw === undefined || raw === null) return { enabled: true, autoInstall: false };
+	if (raw === undefined || raw === null) return { enabled: true, autoInstall: true };
 	if (typeof raw !== "object" || Array.isArray(raw)) {
 		throw new ConfigError("minSync must be an object or false");
 	}
@@ -652,7 +650,7 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 		}
 	}
 	const enabled = record.enabled !== false;
-	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall === true };
+	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall !== false };
 	if (typeof record.binaryPath === "string" && record.binaryPath.length > 0) out.binaryPath = record.binaryPath;
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
 		out.workspacePath = record.workspacePath;
@@ -672,7 +670,7 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 /**
  * Normalize raw indexing method config into a fully-populated shape.
  *
- * - `undefined` / missing key => `{ enabled: true }` (minSync `autoInstall: false`)
+ * - `undefined` / missing key => `{ enabled: true, autoInstall: true }`
  * - `false` => `{ enabled: false }` (disabled marker)
  * - object merges with `enabled: true` default and is validated
  *
@@ -783,19 +781,8 @@ export function resolveConfigReadOnly(input: ResolveConfigInput): CliConfig {
 }
 
 export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, "model"> {
-	const managedCliRuntime = createManagedCliRuntime(config.workspacePath ?? process.cwd());
-	const minSyncConfig = config.minSync;
-	const managedRetrievalRuntime = createManagedRetrievalRuntime(config.workspacePath ?? process.cwd(), {
-		minSync: minSyncConfig?.enabled !== false,
-		minSyncBinaryPath: minSyncConfig?.binaryPath,
-		jikji: config.jikji !== undefined,
-		jikjiBinaryPath: typeof config.jikji?.binaryPath === "string" ? config.jikji.binaryPath : undefined,
-	});
 	const opts: Record<string, unknown> = {
 		searchPaths: config.searchPaths,
-		managedCliRegistry: managedCliRuntime.registry,
-		managedCliConfigManager: managedCliRuntime.manager,
-		managedRetrievalRuntime,
 	};
 	if (config.workspacePath) opts.workspacePath = config.workspacePath;
 	if (config.memoryPath) opts.memoryPath = config.memoryPath;
@@ -823,11 +810,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	}
 	opts.excludeExactDuplicates = config.excludeExactDuplicates ?? true;
 	if (config.datasources !== undefined) {
-		const { skills, unknown } = buildDatasourceSkills(
-			config.datasources,
-			config.workspacePath,
-			managedCliRuntime.manager,
-		);
+		const { skills, unknown } = buildDatasourceSkills(config.datasources, config.workspacePath);
 		if (skills.length > 0) opts.datasourceSkills = skills;
 		if (unknown.length > 0) {
 			const safeNames = unknown.map((name) => name.replace(/[^A-Za-z0-9._-]/g, "?").slice(0, 80));
