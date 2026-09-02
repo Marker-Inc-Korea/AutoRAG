@@ -10,10 +10,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createSearchBM25DocumentsTool } from "../../src/agent/search-bm25-tool.ts";
-import { MinSyncBM25Method, MinSyncHybridMethod, MinSyncVectorMethod } from "../../src/minsync/index.ts";
+import { MinSyncBM25Method, MinSyncHybridMethod, MinSyncVectorMethod, minSyncConfigPath } from "../../src/minsync/index.ts";
 import { syncParsedMirrors } from "../../src/mirror/sync.ts";
 import { BM25_SUBDIR, hasLegacyBm25Artifacts, removeLegacyBm25Artifacts } from "../../src/retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope, RetrievalScopeError } from "../../src/retrieval/scope.ts";
@@ -186,6 +187,28 @@ describe("AutoRAG BM25 integration", () => {
 		expect(existsSync(join(root, BM25_SUBDIR))).toBe(false);
 		expect(readFileSync(new URL("../../src/retrieval/methods/bm25.ts", import.meta.url), "utf8")).not.toContain(
 			"class BM25Method",
+		);
+	});
+
+	it("applies minSync.maxChunkSize during a BM25-only refresh", async () => {
+		writeFileSync(join(docs, "guide.txt"), "refund policy\n");
+		writeFakeMinSync();
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			minSync: { autoInstall: false, binaryPath: minsyncBinary, maxChunkSize: 1000 },
+		});
+
+		const refresh = await agent.refresh(true, { methods: ["bm25"] });
+
+		expect(refresh.bm25).toMatchObject({ engine: "minsync" });
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(
+			1000,
 		);
 	});
 
