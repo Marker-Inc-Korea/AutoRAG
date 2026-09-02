@@ -3,7 +3,6 @@ import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import {
 	CombinedAutocompleteProvider,
 	Editor,
-	HStack,
 	ProcessTerminal,
 	Text,
 	type TUI,
@@ -51,8 +50,7 @@ export interface TuiPresenter {
 	setWorking(active: boolean): void;
 	beginRun(): void;
 	interrupt(): void;
-	activity(): string;
-	advanceActivity(): void;
+	status(): string;
 }
 
 type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
@@ -72,12 +70,7 @@ export function createTuiPresenter(): TuiPresenter {
 	let paused = false;
 	let suppressEvents = false;
 	const lifecycleRows = new Map<string, number>();
-	const catFrames = [
-		" /\\_/\\\\\n( ^_^ )\n /   \\\\",
-		" /\\_/\\\\\n( ^_^ ) o\n /   \\\\",
-		" /\\_/\\\\\n( ^o^ ) O\n /   \\\\",
-	] as const;
-	let spinnerIndex = 0;
+	let statusText = "ready";
 
 	const append = (line: string): void => {
 		output.push(line);
@@ -107,21 +100,20 @@ export function createTuiPresenter(): TuiPresenter {
 
 	return {
 		working: () => active,
-		activity: () => (active ? catFrames[spinnerIndex % catFrames.length] : catFrames[0]),
-		advanceActivity: () => {
-			if (active) spinnerIndex = (spinnerIndex + 1) % catFrames.length;
-		},
+		status: () => statusText,
 		setWorking: (value) => {
 			active = value;
+			statusText = value ? "working..." : "completed.";
 		},
 		beginRun: () => {
 			active = true;
-			spinnerIndex = 1;
+			statusText = "working...";
 			paused = false;
 			suppressEvents = false;
 		},
 		interrupt: () => {
 			active = false;
+			statusText = "stopped.";
 			paused = true;
 			suppressEvents = true;
 		},
@@ -130,11 +122,12 @@ export function createTuiPresenter(): TuiPresenter {
 			switch (event.type) {
 				case "agent_start":
 					active = true;
-					spinnerIndex = 1;
+					statusText = "working...";
 					paused = false;
 					return;
 				case "agent_end":
 					active = false;
+					statusText = "completed.";
 					return;
 				case "turn_start":
 					return;
@@ -239,13 +232,10 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 		];
 		transcript.setText(sections.filter((section) => section.length > 0).join("\n\n"));
 	};
-	const activity = new Text(presenter.activity());
-	const animateActivity = (): void => {
-		presenter.advanceActivity();
-		activity.setText(presenter.activity());
-		tui.requestRender();
+	const status = new Text(presenter.status());
+	const renderStatus = (): void => {
+		status.setText(presenter.status());
 	};
-	const activityTimer = setInterval(animateActivity, 160);
 	const editor = new Editor(tui, {
 		borderColor: (value) => value,
 		selectList: {
@@ -268,12 +258,12 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			if (settled) return;
 			settled = true;
 			unsubscribe?.();
-			clearInterval(activityTimer);
 			tui.stop();
 			resolve(0);
 		};
 		const unsubscribe = agent.subscribe?.((event) => {
 			presenter.handle(event);
+			renderStatus();
 			renderTranscript();
 			tui.requestRender();
 		});
@@ -288,6 +278,7 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 					presenter.interrupt();
 					transcriptHistory = `${transcriptHistory}\npaused`;
 				}
+				renderStatus();
 				renderTranscript();
 				tui.requestRender();
 				return;
@@ -339,6 +330,7 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			presenter.beginRun();
 			editor.disableSubmit = true;
 			presenter.setWorking(true);
+			renderStatus();
 			finalAnswer = "";
 			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
 			renderTranscript();
@@ -366,6 +358,7 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 				.finally(() => {
 					queryRunning = false;
 					presenter.setWorking(false);
+					renderStatus();
 					if (completedResponse !== undefined) {
 						store.save({
 							id: completedResponse.sessionId,
@@ -382,7 +375,8 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 				});
 		};
 		tui.addChild(transcript);
-		tui.addChild(new HStack([activity, editor], { gap: 1 }));
+		tui.addChild(status);
+		tui.addChild(editor);
 		tui.setFocus(editor);
 		tui.addInputListener((data) => {
 			handleInput(data);

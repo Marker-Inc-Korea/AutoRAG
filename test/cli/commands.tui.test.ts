@@ -185,17 +185,13 @@ describe("runTui", () => {
 		expect(presenter.working()).toBe(false);
 	});
 
-	it("shows a three-line smiling talking cat only while the agent is active", () => {
+	it("shows working and completed status text around an agent run", () => {
 		const presenter = createTuiPresenter();
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^_^ )\n /   \\\\");
+		expect(presenter.status()).toBe("ready");
 		presenter.beginRun();
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^_^ ) o\n /   \\\\");
-		const firstFrame = presenter.activity();
-		presenter.advanceActivity();
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^o^ ) O\n /   \\\\");
-		expect(presenter.activity()).not.toBe(firstFrame);
+		expect(presenter.status()).toBe("working...");
 		presenter.handle({ type: "agent_end", messages: [] });
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^_^ )\n /   \\\\");
+		expect(presenter.status()).toBe("completed.");
 	});
 
 	it("merges workspace and global sessions by newest record", () => {
