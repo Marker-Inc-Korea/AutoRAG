@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configuredMaxChunkSize, minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
 import { spawnProcess } from "./process.ts";
@@ -91,12 +91,14 @@ export class MinSyncClient {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
+		if (chunkSizeChanged) rmSync(cursorPath, { force: true });
 		const syncArgs =
 			existsSync(cursorPath) && !chunkSizeChanged
 				? ["sync", "--format", "json"]
 				: ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);
 		if (!result.ok) {
+			if (chunkSizeChanged) rmSync(cursorPath, { force: true });
 			restoreConfig();
 			return {
 				ok: false,
@@ -106,6 +108,7 @@ export class MinSyncClient {
 			};
 		}
 		if (!existsSync(cursorPath)) {
+			if (chunkSizeChanged) rmSync(cursorPath, { force: true });
 			restoreConfig();
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
