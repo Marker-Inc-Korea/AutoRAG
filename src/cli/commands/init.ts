@@ -30,6 +30,21 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 	}
 	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];
+	if (typeof flags["minsync-max-chunk-size"] === "string") {
+		try {
+			const value = Number(flags["minsync-max-chunk-size"]);
+			if (!Number.isInteger(value) || value <= 0) {
+				throw new ConfigError("--minsync-max-chunk-size must be a positive integer");
+			}
+			partial.minSync = { ...(partial.minSync ?? {}), enabled: true, maxChunkSize: value };
+		} catch (error) {
+			if (error instanceof ConfigError) {
+				ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+				return 2;
+			}
+			throw error;
+		}
+	}
 
 	const modelProvider = typeof flags["model-provider"] === "string" ? flags["model-provider"] : undefined;
 	const modelId = typeof flags["model-id"] === "string" ? flags["model-id"] : undefined;

@@ -39,6 +39,7 @@ const VALUE_FLAGS = new Set([
 	"embedder-passage-prefix",
 	"embedder-timeout-ms",
 	"embedder-batch-size",
+	"minsync-max-chunk-size",
 	"timeout-ms",
 	"port",
 	"host",
@@ -73,7 +74,8 @@ Commands:
 	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
 	                        --model-provider P  --model-id ID
 	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
-	                        --embedder-dimension N --embedder-batch-size N  --force)
+	                       --embedder-dimension N --embedder-batch-size N
+	                       --minsync-max-chunk-size N  --force)
   refresh              Parse sources and refresh indexes (--method bm25,minsync,parsed)
   watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
