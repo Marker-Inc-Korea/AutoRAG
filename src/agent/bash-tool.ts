@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { classifyFilesystemRoot, isDatalessPlaceholder } from "../filesystem/cloud-placeholder.ts";
@@ -53,7 +53,7 @@ function runCommand(
 ): Promise<RunResult> {
 	return new Promise((resolve) => {
 		const shell = process.platform === "win32" ? "bash.exe" : "/bin/bash";
-		const child = spawn(shell, ["-c", command], { cwd });
+		const child = spawn(shell, ["-c", command], { cwd, detached: true });
 		const chunks: Buffer[] = [];
 		let total = 0;
 		let truncated = false;
@@ -79,16 +79,6 @@ function runCommand(
 		child.stdout?.on("data", collect);
 		child.stderr?.on("data", collect);
 
-		const timer = setTimeout(() => {
-			timedOut = true;
-			child.kill("SIGKILL");
-		}, timeoutMs);
-
-		const onAbort = () => {
-			child.kill("SIGKILL");
-		};
-		signal?.addEventListener("abort", onAbort, { once: true });
-
 		const finish = (exitCode: number | undefined) => {
 			if (settled) return;
 			settled = true;
@@ -96,6 +86,35 @@ function runCommand(
 			signal?.removeEventListener("abort", onAbort);
 			resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode, timedOut, truncated });
 		};
+
+		const killProcessTree = () => {
+			if (child.pid === undefined) return;
+			if (process.platform === "win32") {
+				spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+				return;
+			}
+			try {
+				process.kill(-child.pid, "SIGKILL");
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+			}
+		};
+
+		const timer = setTimeout(() => {
+			timedOut = true;
+			killProcessTree();
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			setTimeout(() => finish(undefined), 50);
+		}, timeoutMs);
+
+		const onAbort = () => {
+			killProcessTree();
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			setTimeout(() => finish(undefined), 50);
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
 
 		child.on("error", () => finish(undefined));
 		child.on("close", (code) => finish(code === null ? undefined : code));
