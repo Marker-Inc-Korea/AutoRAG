@@ -109,7 +109,7 @@ export interface CliConfig {
 	model?: AgentModelConfig;
 	minSync?: MinSyncMethodConfig;
 	bm25?: Bm25MethodConfig;
-	jikji?: Record<string, unknown>;
+	jikji?: Record<string, unknown> | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -739,7 +739,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	});
 	config.bm25 = normalized.bm25;
 	config.minSync = normalized.minSync;
-	if (file.jikji) config.jikji = file.jikji;
+	config.jikji = file.jikji === false ? false : (file.jikji ?? {});
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -798,7 +798,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	} else {
 		opts.bm25 = false;
 	}
-	if (config.jikji) opts.jikji = config.jikji;
+	opts.jikji = config.jikji === false ? false : (config.jikji ?? {});
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;

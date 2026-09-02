@@ -203,7 +203,7 @@ export interface AutoRAGAgentOptions {
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
 	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | false;
-	jikji?: JikjiOptions;
+	jikji?: JikjiOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
 	dupey?: DupeyCliOptions | false;
@@ -344,9 +344,9 @@ export class AutoRAGAgent {
 		for (const skill of this.datasourceSkills) {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
 		}
-		if (options.jikji) {
+		if (options.jikji !== false) {
 			this.jikjiClient = new JikjiClient({
-				...options.jikji,
+				...(options.jikji ?? {}),
 				root: this.workspaceProjectRoot,
 			});
 		}
@@ -432,7 +432,7 @@ export class AutoRAGAgent {
 			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
-			jikjiIndexingEnabled: options.jikji !== undefined,
+			jikjiIndexingEnabled: options.jikji !== false,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 

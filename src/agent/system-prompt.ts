@@ -28,7 +28,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 			"bash",
 			"read and inspect configured document collections with ls, find, grep, cat, and similar tools",
 		),
-		toolLine(config, "jikji_find", "optional local discovery through Jikji answer packs"),
+		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
 		toolLine(config, "lexical_search_local_docs", "MinSync-backed lexical BM25 search over parsed document mirrors"),
 		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
@@ -74,7 +74,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 	const jikji = config.jikjiIndexingEnabled
 		? `## Jikji Local Discovery
 
-\`jikji_find\` is an optional local-discovery aid. Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`.
+\`jikji_find\` is the default local-discovery aid. Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`. If Jikji is unavailable, use the diagnostic and fall back to \`bash\`.
 `
 		: "";
 	const duplicateManagement = toolAvailable(config, "scan_duplicate_documents")

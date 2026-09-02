@@ -23,6 +23,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
 		searchPaths: [docs],
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
+		jikji: false,
 		...overrides,
 	});
 }
