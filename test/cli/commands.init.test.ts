@@ -59,6 +59,7 @@ describe("runInit", () => {
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.model).toBeUndefined();
+		expect(config.jikji).toEqual({});
 		expect(config.excludeExactDuplicates).toBe(true);
 	});
 

@@ -40,6 +40,7 @@ describe("AutoRAGAgent lifecycle", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			jikji: false,
 		});
 		const events: string[] = [];
 		const unsubscribe = agent.subscribe((event) => {
