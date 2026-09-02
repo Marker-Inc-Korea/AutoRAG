@@ -73,9 +73,9 @@ export function createTuiPresenter(): TuiPresenter {
 	let suppressEvents = false;
 	const lifecycleRows = new Map<string, number>();
 	const catFrames = [
-		" /\\_/\\\\\n( ^‿^ )\n /   \\\\",
-		" /\\_/\\\\\n( ^‿^ ) ｡\n /   \\\\",
-		" /\\_/\\\\\n( ^o^ ) ｡ﾟ\n /   \\\\",
+		" /\\_/\\\\\n( ^_^ )\n /   \\\\",
+		" /\\_/\\\\\n( ^_^ ) o\n /   \\\\",
+		" /\\_/\\\\\n( ^o^ ) O\n /   \\\\",
 	] as const;
 	let spinnerIndex = 0;
 

@@ -187,15 +187,15 @@ describe("runTui", () => {
 
 	it("shows a three-line smiling talking cat only while the agent is active", () => {
 		const presenter = createTuiPresenter();
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^‿^ )\n /   \\\\");
+		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^_^ )\n /   \\\\");
 		presenter.beginRun();
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^‿^ ) ｡\n /   \\\\");
+		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^_^ ) o\n /   \\\\");
 		const firstFrame = presenter.activity();
 		presenter.advanceActivity();
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^o^ ) ｡ﾟ\n /   \\\\");
+		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^o^ ) O\n /   \\\\");
 		expect(presenter.activity()).not.toBe(firstFrame);
 		presenter.handle({ type: "agent_end", messages: [] });
-		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^‿^ )\n /   \\\\");
+		expect(presenter.activity()).toBe(" /\\_/\\\\\n( ^_^ )\n /   \\\\");
 	});
 
 	it("merges workspace and global sessions by newest record", () => {
