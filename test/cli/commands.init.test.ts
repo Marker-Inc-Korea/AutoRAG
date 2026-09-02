@@ -328,6 +328,14 @@ describe("runInit embedder flags", () => {
 		});
 	});
 
+	it("writes the MinSync chunk size into method config", async () => {
+		const code = await runInit(makeCtx({ flags: { "search-paths": "docs", "minsync-max-chunk-size": "1000" } }));
+		expect(code).toBe(0);
+		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
+		expect(config.minSync.maxChunkSize).toBe(1000);
+		expect(config.minSync.autoInstall).toBe(true);
+	});
+
 	it("does not write minSync.embedder when no embedder flags are given", async () => {
 		const code = await runInit(
 			makeCtx({
@@ -351,6 +359,19 @@ describe("runInit embedder flags", () => {
 		);
 		expect(code).toBe(2);
 		expect(stderr.join("\n")).toContain("positive integer");
+	});
+
+	it("returns a config error for an invalid MinSync chunk size", async () => {
+		const stderr: string[] = [];
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "docs", "minsync-max-chunk-size": "0" },
+				stderr: (line) => stderr.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toContain("positive integer");
+		expect(existsSync(homeConfigPath())).toBe(false);
 	});
 
 	it("defaults bm25 and minSync enabled when no method flags are given", async () => {
