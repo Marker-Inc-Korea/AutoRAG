@@ -72,7 +72,11 @@ export function createTuiPresenter(): TuiPresenter {
 	let paused = false;
 	let suppressEvents = false;
 	const lifecycleRows = new Map<string, number>();
-	const spinnerFrames = ["🐈‍⬛ ᗧ", "🐈‍⬛ ᗤ", "🐈‍⬛ ᗢ", "🐈‍⬛ ᗧ"] as const;
+	const catFrames = [
+		" /\\_/\\\\\n( ^‿^ )\n /   \\\\",
+		" /\\_/\\\\\n( ^‿^ ) ｡\n /   \\\\",
+		" /\\_/\\\\\n( ^o^ ) ｡ﾟ\n /   \\\\",
+	] as const;
 	let spinnerIndex = 0;
 
 	const append = (line: string): void => {
@@ -103,15 +107,16 @@ export function createTuiPresenter(): TuiPresenter {
 
 	return {
 		working: () => active,
-		activity: () => (active ? spinnerFrames[spinnerIndex % spinnerFrames.length] : "🐈"),
+		activity: () => (active ? catFrames[spinnerIndex % catFrames.length] : catFrames[0]),
 		advanceActivity: () => {
-			if (active) spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+			if (active) spinnerIndex = (spinnerIndex + 1) % catFrames.length;
 		},
 		setWorking: (value) => {
 			active = value;
 		},
 		beginRun: () => {
 			active = true;
+			spinnerIndex = 1;
 			paused = false;
 			suppressEvents = false;
 		},
@@ -125,6 +130,7 @@ export function createTuiPresenter(): TuiPresenter {
 			switch (event.type) {
 				case "agent_start":
 					active = true;
+					spinnerIndex = 1;
 					paused = false;
 					return;
 				case "agent_end":
