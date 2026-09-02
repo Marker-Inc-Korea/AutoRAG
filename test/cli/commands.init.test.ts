@@ -32,8 +32,8 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 		json: false,
 		debug: false,
 		cwd: root,
-		stdout: () => {},
-		stderr: () => {},
+		stdout: () => { },
+		stderr: () => { },
 		...overrides,
 	};
 }
@@ -332,6 +332,21 @@ describe("runInit embedder flags", () => {
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.minSync.maxChunkSize).toBe(1000);
+		expect(config.minSync.enabled).toBe(true);
+		expect(config.minSync.autoInstall).toBe(true);
+	});
+
+	it("rejects a non-positive MinSync chunk size with the config-error exit", async () => {
+		const stderr: string[] = [];
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "docs", "minsync-max-chunk-size": "0" },
+				stderr: (line) => stderr.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toContain("positive integer");
+		expect(existsSync(homeConfigPath())).toBe(false);
 	});
 
 	it("does not write minSync.embedder when no embedder flags are given", async () => {

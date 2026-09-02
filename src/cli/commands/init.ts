@@ -30,13 +30,6 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 	}
 	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];
-	if (typeof flags["minsync-max-chunk-size"] === "string") {
-		const value = Number(flags["minsync-max-chunk-size"]);
-		if (!Number.isInteger(value) || value <= 0) {
-			throw new ConfigError("--minsync-max-chunk-size must be a positive integer");
-		}
-		partial.minSync = { ...(partial.minSync ?? {}), enabled: true, autoInstall: false, maxChunkSize: value };
-	}
 
 	const modelProvider = typeof flags["model-provider"] === "string" ? flags["model-provider"] : undefined;
 	const modelId = typeof flags["model-id"] === "string" ? flags["model-id"] : undefined;
@@ -50,6 +43,13 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 	// apiKeyEnv (the env-var *name*, never the key value), dimension, prefixes,
 	// timeout, batch size. All optional; only set fields the user provided.
 	try {
+		if (typeof flags["minsync-max-chunk-size"] === "string") {
+			const value = Number(flags["minsync-max-chunk-size"]);
+			if (!Number.isInteger(value) || value <= 0) {
+				throw new ConfigError("--minsync-max-chunk-size must be a positive integer");
+			}
+			partial.minSync = { ...(partial.minSync ?? {}), enabled: true, maxChunkSize: value };
+		}
 		const embedder = parseEmbedderFlags(flags);
 		if (embedder !== undefined) {
 			partial.minSync = {

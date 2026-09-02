@@ -38,6 +38,27 @@ To manage MinSync yourself, set an explicit path and disable installation:
 An explicit `binaryPath` is authoritative. If it is missing, AutoRAG reports a
 missing binary instead of silently installing another executable.
 
+## Chunk size
+
+MinSync defaults to `max_chunk_size = 4096`. Local embedders with smaller
+context windows, such as EmbeddingGemma (2048 tokens), overflow at that size.
+Set `minSync.maxChunkSize` in `config.json`, or pass
+`--minsync-max-chunk-size` to `autorag init`. AutoRAG writes the value to
+MinSync's `[chunker.options].max_chunk_size` and forces a full reindex when
+the configured size changes.
+
+```json
+{
+  "minSync": {
+    "maxChunkSize": 1000
+  }
+}
+```
+
+```bash
+autorag init --search-paths /path/to/docs --minsync-max-chunk-size 1000 --force
+```
+
 ## Local EmbeddingGemma
 
 For a local-only semantic index, run Ollama and expose its embeddings through
@@ -59,6 +80,7 @@ autorag init \
   --embedder-id tei:embeddinggemma:latest \
   --embedder-base-url http://127.0.0.1:18080 \
   --embedder-dimension 768 \
+  --minsync-max-chunk-size 1000 \
   --force
 autorag refresh --method parsed,bm25,minsync --json
 ```

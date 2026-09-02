@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { configuredMaxChunkSize, minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
 import { spawnProcess } from "./process.ts";
@@ -69,6 +69,10 @@ export class MinSyncClient {
 		if (this.embedder || this.maxChunkSize !== undefined) {
 			rewriteEmbedderConfig(this.workspacePath, this.embedder ?? {}, { maxChunkSize: this.maxChunkSize });
 		}
+		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
+		if (chunkSizeChanged && existsSync(cursorPath)) {
+			unlinkSync(cursorPath);
+		}
 		const check = await this.spawn(["check", "--format", "json"], spawnOpts);
 		if (!check.ok) {
 			return {
@@ -82,11 +86,9 @@ export class MinSyncClient {
 		if (checkFailure) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
 		}
-		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
-		const syncArgs =
-			existsSync(cursorPath) && !chunkSizeChanged
-				? ["sync", "--format", "json"]
-				: ["sync", "--full", "--format", "json"];
+		const syncArgs = existsSync(cursorPath)
+			? ["sync", "--format", "json"]
+			: ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);
 		if (!result.ok) {
 			return {

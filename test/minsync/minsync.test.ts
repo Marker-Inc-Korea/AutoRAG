@@ -67,7 +67,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeMinSync(queryJson: string): void {
+function writeFakeMinSync(queryJson: string, options: { readonly syncFails?: boolean } = {}): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
@@ -92,6 +92,10 @@ if (args[0] === "check") {
 }
 
 if (args[0] === "sync") {
+  if (${options.syncFails === true}) {
+    console.error("sync failed");
+    process.exit(1);
+  }
   mkdirSync(dirname(cursor), { recursive: true });
   writeFileSync(cursor, JSON.stringify({ ready: true }));
   console.log(JSON.stringify({ files_processed: 1, files_processed_paths: ["files/docs/policy.txt.md"] }));
@@ -887,6 +891,72 @@ max_chunk_size = 4096
 
 		await method.sync();
 
+		const syncCall = loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[] })
+			.find((call) => call.args[0] === "sync");
+		expect(syncCall?.args).toEqual(["sync", "--full", "--format", "json"]);
+	});
+
+	it("keeps incremental sync when the configured chunk size is unchanged", async () => {
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[chunker.options]
+max_chunk_size = 1000
+`,
+		);
+		writeFileSync(join(minsyncConfigDir, "cursor.json"), "{}");
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			maxChunkSize: 1000,
+		});
+
+		await method.sync();
+
+		const syncCall = loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[] })
+			.find((call) => call.args[0] === "sync");
+		expect(syncCall?.args).toEqual(["sync", "--format", "json"]);
+	});
+
+	it("retries a full sync after a failed rebuild for a chunk-size change", async () => {
+		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
+		const cursorPath = join(minsyncConfigDir, "cursor.json");
+		mkdirSync(minsyncConfigDir, { recursive: true });
+		writeFileSync(
+			minSyncConfigPath(minsyncWorkspace),
+			`[chunker.options]
+max_chunk_size = 4096
+`,
+		);
+		writeFileSync(cursorPath, "{}");
+		writeFakeMinSync(JSON.stringify({ results: [] }), { syncFails: true });
+
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+			maxChunkSize: 1000,
+		});
+
+		const first = await method.sync();
+		expect(first.ok).toBe(false);
+		expect(existsSync(cursorPath)).toBe(false);
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
+
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		writeFileSync(logPath, "");
+		const second = await method.sync();
+		expect(second.ok).toBe(true);
 		const syncCall = loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[] })
 			.find((call) => call.args[0] === "sync");
