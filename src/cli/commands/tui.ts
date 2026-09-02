@@ -51,6 +51,7 @@ export interface TuiPresenter {
 	beginRun(): void;
 	interrupt(): void;
 	status(): string;
+	reset(): void;
 }
 
 type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
@@ -101,6 +102,16 @@ export function createTuiPresenter(): TuiPresenter {
 	return {
 		working: () => active,
 		status: () => statusText,
+		reset: () => {
+			output.length = 0;
+			thinkingIndex = undefined;
+			answer = "";
+			active = false;
+			paused = false;
+			suppressEvents = false;
+			lifecycleRows.clear();
+			statusText = "ready";
+		},
 		setWorking: (value) => {
 			active = value;
 			statusText = value ? "working..." : "completed.";
@@ -210,6 +221,13 @@ function sessionForSelection(store: TuiSessionStore, input: string): TuiSessionR
 	return store.get(input);
 }
 
+const TUI_TITLE = "AutoRAG librarian - Ctrl+C or Ctrl+D to exit";
+
+export function renderTuiSessionView(session: TuiSessionRecord | undefined, input: string): string {
+	const content = session === undefined ? `resume: session not found: ${input}` : renderRestoredTuiSession(session);
+	return `${TUI_TITLE}\n\n${content}`;
+}
+
 function defaultSessionStore(ctx: CommandContext): TuiSessionStore {
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	const workspace = createFileTuiSessionStore(join(config.workspacePath, ".autorag", "tui-sessions.json"));
@@ -219,7 +237,7 @@ function defaultSessionStore(ctx: CommandContext): TuiSessionStore {
 
 function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore): Promise<number> {
 	const tui = createRealTui();
-	let transcriptHistory = "AutoRAG librarian - Ctrl+C or Ctrl+D to exit";
+	let transcriptHistory = TUI_TITLE;
 	const transcript = new Text(transcriptHistory);
 	const presenter = createTuiPresenter();
 	let finalAnswer = "";
@@ -292,7 +310,9 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			if (resumeSelection && !query.startsWith("/")) {
 				resumeSelection = false;
 				const session = sessionForSelection(store, query);
-				transcriptHistory = `${transcriptHistory}\n\n${session === undefined ? `resume: session not found: ${query}` : renderRestoredTuiSession(session)}`;
+				presenter.reset();
+				finalAnswer = "";
+				transcriptHistory = renderTuiSessionView(session, query);
 				renderTranscript();
 				tui.requestRender();
 				return;
@@ -311,15 +331,15 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 					return;
 				}
 				if (command.sessionId === undefined) {
+					presenter.reset();
+					finalAnswer = "";
 					resumeSelection = store.list().length > 0;
-					transcriptHistory = `${transcriptHistory}\n\n${renderTuiSessionList(store.list())}`;
+					transcriptHistory = `${TUI_TITLE}\n\n${renderTuiSessionList(store.list())}`;
 				} else {
 					const session = sessionForSelection(store, command.sessionId);
-					const restored =
-						session === undefined
-							? `resume: session not found: ${command.sessionId}`
-							: renderRestoredTuiSession(session);
-					transcriptHistory = `${transcriptHistory}\n\n${restored}`;
+					presenter.reset();
+					finalAnswer = "";
+					transcriptHistory = renderTuiSessionView(session, command.sessionId);
 				}
 				renderTranscript();
 				tui.requestRender();
@@ -409,6 +429,8 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 			if (resumeSelection && !query.startsWith("/")) {
 				resumeSelection = false;
 				const session = sessionForSelection(store, query);
+				presenter.reset();
+				tui.rendered.length = 0;
 				tui.rendered.push(
 					session === undefined ? `resume: session not found: ${query}` : renderRestoredTuiSession(session),
 				);
@@ -426,10 +448,14 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 				} else if (command.kind === "unknown") {
 					tui.rendered.push(`unknown command: /${command.name}`);
 				} else if (command.sessionId === undefined) {
+					presenter.reset();
+					tui.rendered.length = 0;
 					resumeSelection = store.list().length > 0;
 					tui.rendered.push(renderTuiSessionList(store.list()));
 				} else {
 					const session = sessionForSelection(store, command.sessionId);
+					presenter.reset();
+					tui.rendered.length = 0;
 					tui.rendered.push(
 						session === undefined
 							? `resume: session not found: ${command.sessionId}`

@@ -122,11 +122,47 @@ describe("runTui", () => {
 		await tui.onSubmit?.("/quit");
 
 		expect(calls).toBe(0);
-		expect(tui.rendered.join("\n")).toContain("commands: /quit, /resume [session-id]");
-		expect(tui.rendered.join("\n")).toContain("unknown command: /does-not-exist");
-		expect(tui.rendered.join("\n")).toContain("1. old question");
-		expect(tui.rendered.join("\n")).toContain("old answer");
+		expect(tui.rendered).toHaveLength(1);
+		expect(tui.rendered[0]).toContain("old question");
+		expect(tui.rendered[0]).toContain("old answer");
+		expect(tui.rendered[0]).not.toContain("unknown command");
 		expect(tui.stopped).toBe(true);
+		expect(await running).toBe(0);
+	});
+
+	it("replaces the current view instead of mixing it with a resumed session", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		const session = {
+			id: "old-session",
+			query: "old question",
+			answer: "old answer",
+			trace: "old trace",
+			updatedAt: 1,
+		};
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				searchDocuments: async () => ({ ...response, query: "current question", answer: "current answer" }),
+			}),
+			sessionStore: {
+				list: () => [session],
+				get: (id: string) => (id === session.id ? session : undefined),
+				save: () => undefined,
+			},
+			tuiFactory: () => tui,
+		});
+
+		await tui.onSubmit?.("current question");
+		await tui.onSubmit?.("/resume");
+		await tui.onSubmit?.("1");
+
+		const currentView = tui.rendered.at(-1) ?? "";
+		expect(currentView).toContain("old question");
+		expect(currentView).toContain("old answer");
+		expect(currentView).not.toContain("current question");
+		expect(currentView).not.toContain("current answer");
+		expect(tui.rendered).toHaveLength(1);
+		tui.onExit?.();
 		expect(await running).toBe(0);
 	});
 
@@ -183,6 +219,31 @@ describe("runTui", () => {
 			"assistant: final answer",
 		]);
 		expect(presenter.working()).toBe(false);
+	});
+
+	it("clears the previous trace when a different session is restored", () => {
+		const presenter = createTuiPresenter();
+		presenter.handle({
+			type: "tool_execution_start",
+			toolCallId: "old-tool",
+			toolName: "old_session_tool",
+			args: {},
+		});
+		presenter.handle({
+			type: "message_update",
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "old answer" },
+		} as AgentEvent);
+
+		presenter.reset();
+		presenter.handle({
+			type: "tool_execution_start",
+			toolCallId: "new-tool",
+			toolName: "new_session_tool",
+			args: {},
+		});
+
+		expect(presenter.lines()).toEqual(["new_session_tool: searching"]);
 	});
 
 	it("shows working and completed status text around an agent run", () => {
