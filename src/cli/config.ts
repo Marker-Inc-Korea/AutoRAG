@@ -49,6 +49,7 @@ export interface MinSyncMethodConfig {
 	autoInstall?: boolean;
 	binaryPath?: string;
 	workspacePath?: string;
+	maxChunkSize?: number;
 	installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	embedder?: MinSyncEmbedderConfig;
 }
@@ -541,6 +542,7 @@ const MINSYNC_ALLOWLIST = new Set<string>([
 	"autoInstall",
 	"binaryPath",
 	"workspacePath",
+	"maxChunkSize",
 	"installer",
 	"embedder",
 ]);
@@ -654,6 +656,16 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 	if (typeof record.binaryPath === "string" && record.binaryPath.length > 0) out.binaryPath = record.binaryPath;
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
 		out.workspacePath = record.workspacePath;
+	}
+	if (record.maxChunkSize !== undefined) {
+		if (
+			typeof record.maxChunkSize !== "number" ||
+			!Number.isInteger(record.maxChunkSize) ||
+			record.maxChunkSize <= 0
+		) {
+			throw new ConfigError("minSync.maxChunkSize must be a positive integer");
+		}
+		out.maxChunkSize = record.maxChunkSize;
 	}
 	if (record.installer !== undefined && record.installer !== null) {
 		if (typeof record.installer !== "object" || Array.isArray(record.installer)) {

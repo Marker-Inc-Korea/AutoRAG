@@ -139,6 +139,16 @@ describe("AutoRAGAgent", () => {
 		expect(agent).toBeDefined();
 	});
 
+	it("shares MinSync chunk size with BM25-only refresh configuration", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: { maxChunkSize: 1000, autoInstall: false },
+		});
+
+		expect((internals(agent).bm25Method as unknown as { maxChunkSize?: number }).maxChunkSize).toBe(1000);
+	});
+
 	it("registers the dupey duplicate scan tool by default", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

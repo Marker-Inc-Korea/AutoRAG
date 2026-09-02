@@ -15,6 +15,22 @@ export function minSyncConfigPath(workspacePath: string): string {
 	return join(workspacePath, MINSYNC_CONFIG_DIR, MINSYNC_CONFIG_FILE);
 }
 
+export function configuredMaxChunkSize(workspacePath: string): number | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
+	} catch {
+		return undefined;
+	}
+	const parsed = parse(raw) as Record<string, unknown>;
+	const chunker = parsed.chunker;
+	if (typeof chunker !== "object" || chunker === null || Array.isArray(chunker)) return undefined;
+	const options = (chunker as Record<string, unknown>).options;
+	if (typeof options !== "object" || options === null || Array.isArray(options)) return undefined;
+	const maxChunkSize = (options as Record<string, unknown>).max_chunk_size;
+	return typeof maxChunkSize === "number" ? maxChunkSize : undefined;
+}
+
 /**
  * Atomically rewrite allowlisted embedder fields in MinSync config.toml.
  * Reads the existing file, merges the allowlisted fields from `embedder`,
@@ -27,7 +43,11 @@ export function minSyncConfigPath(workspacePath: string): string {
  *
  * Returns true if the file was rewritten, false if the file does not exist.
  */
-export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEmbedderConfig): boolean {
+export function rewriteEmbedderConfig(
+	workspacePath: string,
+	embedder: MinSyncEmbedderConfig,
+	chunkerConfig: { readonly maxChunkSize?: number } = {},
+): boolean {
 	const configPath = minSyncConfigPath(workspacePath);
 	let raw: string;
 	try {
@@ -46,6 +66,16 @@ export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEm
 			? (vectorstore.options as Record<string, unknown>)
 			: {};
 	vectorstore.options = options;
+	const chunker =
+		typeof parsed.chunker === "object" && parsed.chunker !== null && !Array.isArray(parsed.chunker)
+			? (parsed.chunker as Record<string, unknown>)
+			: {};
+	parsed.chunker = chunker;
+	const chunkerOptions =
+		typeof chunker.options === "object" && chunker.options !== null && !Array.isArray(chunker.options)
+			? (chunker.options as Record<string, unknown>)
+			: {};
+	chunker.options = chunkerOptions;
 
 	if (embedder.id !== undefined) embedderSection.id = embedder.id;
 	if (embedder.baseUrl !== undefined) embedderSection.base_url = embedder.baseUrl;
@@ -58,6 +88,7 @@ export function rewriteEmbedderConfig(workspacePath: string, embedder: MinSyncEm
 		embedderSection.timeout_seconds = Math.ceil(embedder.timeoutMs / 1000);
 	}
 	if (embedder.dimension !== undefined) options.dimension = embedder.dimension;
+	if (chunkerConfig.maxChunkSize !== undefined) chunkerOptions.max_chunk_size = chunkerConfig.maxChunkSize;
 
 	writeFileSync(configPath, stringify(parsed));
 	return true;
