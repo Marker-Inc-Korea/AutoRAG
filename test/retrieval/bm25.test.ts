@@ -14,7 +14,12 @@ import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createSearchBM25DocumentsTool } from "../../src/agent/search-bm25-tool.ts";
-import { MinSyncBM25Method, MinSyncHybridMethod, MinSyncVectorMethod, minSyncConfigPath } from "../../src/minsync/index.ts";
+import {
+	MinSyncBM25Method,
+	MinSyncHybridMethod,
+	MinSyncVectorMethod,
+	minSyncConfigPath,
+} from "../../src/minsync/index.ts";
 import { syncParsedMirrors } from "../../src/mirror/sync.ts";
 import { BM25_SUBDIR, hasLegacyBm25Artifacts, removeLegacyBm25Artifacts } from "../../src/retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope, RetrievalScopeError } from "../../src/retrieval/scope.ts";
@@ -207,9 +212,7 @@ describe("AutoRAG BM25 integration", () => {
 			string,
 			Record<string, unknown>
 		>;
-		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(
-			1000,
-		);
+		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
 	});
 
 	it("does not fall back to a local BM25 index when MinSync is disabled", async () => {
