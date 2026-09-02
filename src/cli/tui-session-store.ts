@@ -43,12 +43,39 @@ export function createFileTuiSessionStore(path: string): TuiSessionStore {
 	};
 }
 
+export function createMergedTuiSessionStore(...stores: readonly TuiSessionStore[]): TuiSessionStore {
+	return {
+		list: () => {
+			const sessions = new Map<string, TuiSessionRecord>();
+			for (const store of stores) {
+				for (const session of store.list()) {
+					const current = sessions.get(session.id);
+					if (current === undefined || session.updatedAt > current.updatedAt) {
+						sessions.set(session.id, session);
+					}
+				}
+			}
+			return [...sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+		},
+		get: (id) => {
+			const matches = stores
+				.flatMap((store) => store.list())
+				.filter((session) => session.id === id)
+				.sort((a, b) => b.updatedAt - a.updatedAt);
+			return matches[0];
+		},
+		save: (session) => {
+			for (const store of stores) store.save(session);
+		},
+	};
+}
+
 export function renderTuiSessionList(sessions: readonly TuiSessionRecord[]): string {
 	if (sessions.length === 0) return "resume: no saved sessions";
 	return [
 		"resume sessions:",
-		...sessions.map((session) => `  ${session.id}  ${session.query}`),
-		"run /resume <session-id> to restore one",
+		...sessions.map((session, index) => `  ${index + 1}. ${session.query}  [${session.id}]`),
+		"enter the session number to restore it",
 	].join("\n");
 }
 

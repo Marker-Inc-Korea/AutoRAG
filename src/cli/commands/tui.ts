@@ -1,15 +1,17 @@
 import { join } from "node:path";
+import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import {
 	CombinedAutocompleteProvider,
 	Editor,
+	HStack,
 	ProcessTerminal,
 	Text,
-	TuiMainScreen,
 	type TUI,
+	TuiMainScreen,
 } from "@earendil-works/pi-tui";
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
 import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
+import { resolveAutoRAGHome } from "../../config/home.ts";
 import {
 	buildAgentOptions,
 	type CliConfig,
@@ -18,15 +20,13 @@ import {
 	resolveConfig,
 } from "../config.ts";
 import { renderError, renderSearch } from "../output.ts";
-import {
-	createTuiSlashCommands,
-	parseSlashCommand,
-	renderSlashHelp,
-} from "../tui-commands.ts";
+import { createTuiSlashCommands, parseSlashCommand, renderSlashHelp } from "../tui-commands.ts";
 import {
 	createFileTuiSessionStore,
+	createMergedTuiSessionStore,
 	renderRestoredTuiSession,
 	renderTuiSessionList,
+	type TuiSessionRecord,
 	type TuiSessionStore,
 } from "../tui-session-store.ts";
 import type { CommandContext } from "./types.ts";
@@ -51,10 +51,11 @@ export interface TuiPresenter {
 	setWorking(active: boolean): void;
 	beginRun(): void;
 	interrupt(): void;
+	activity(): string;
+	advanceActivity(): void;
 }
 
-type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> &
-	Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
 
 export interface TuiDeps {
 	agentFactory?: (opts: AutoRAGAgentOptions) => TuiAgent;
@@ -66,30 +67,46 @@ export interface TuiDeps {
 export function createTuiPresenter(): TuiPresenter {
 	const output: string[] = [];
 	let thinkingIndex: number | undefined;
-	let answerIndex: number | undefined;
+	let answer = "";
 	let active = false;
 	let paused = false;
 	let suppressEvents = false;
+	const lifecycleRows = new Map<string, number>();
+	const spinnerFrames = ["🐈‍⬛ ᗧ", "🐈‍⬛ ᗤ", "🐈‍⬛ ᗢ", "🐈‍⬛ ᗧ"] as const;
+	let spinnerIndex = 0;
 
 	const append = (line: string): void => {
 		output.push(line);
 	};
 	const appendDelta = (prefix: string, delta: string, index: "thinking" | "answer"): void => {
-		const currentIndex = index === "thinking" ? thinkingIndex : answerIndex;
-		if (currentIndex === undefined) {
-			append(index === "thinking" ? dimGray(`${prefix}${delta}`) : `${prefix}${delta}`);
-			if (index === "thinking") thinkingIndex = output.length - 1;
-			else answerIndex = output.length - 1;
+		if (index === "answer") {
+			answer = `${answer.length === 0 ? prefix : answer}${delta}`;
 			return;
 		}
-		output[currentIndex] =
-			index === "thinking"
-				? dimGray(`${stripAnsi(output[currentIndex])}${delta}`)
-				: `${output[currentIndex]}${delta}`;
+		const currentIndex = thinkingIndex;
+		if (currentIndex === undefined) {
+			append(dimGray(`${prefix}${delta}`));
+			thinkingIndex = output.length - 1;
+			return;
+		}
+		output[currentIndex] = dimGray(`${stripAnsi(output[currentIndex])}${delta}`);
+	};
+	const updateLifecycle = (key: string, started: string, completed: string): void => {
+		const index = lifecycleRows.get(key);
+		if (index === undefined) {
+			lifecycleRows.set(key, output.length);
+			append(started);
+			return;
+		}
+		output[index] = completed;
 	};
 
 	return {
 		working: () => active,
+		activity: () => (active ? spinnerFrames[spinnerIndex % spinnerFrames.length] : "🐈"),
+		advanceActivity: () => {
+			if (active) spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+		},
 		setWorking: (value) => {
 			active = value;
 		},
@@ -109,17 +126,13 @@ export function createTuiPresenter(): TuiPresenter {
 				case "agent_start":
 					active = true;
 					paused = false;
-					append("agent: started");
 					return;
 				case "agent_end":
 					active = false;
-					append("agent: done");
 					return;
 				case "turn_start":
-					append("turn: started");
 					return;
 				case "turn_end":
-					append("turn: done");
 					return;
 				case "message_start":
 					return;
@@ -135,24 +148,32 @@ export function createTuiPresenter(): TuiPresenter {
 						output[thinkingIndex] = dimGray("thinking: (collapsed)");
 						thinkingIndex = undefined;
 					} else if (streamEvent.type === "text_start") {
-						answerIndex = undefined;
+						answer = "";
 					} else if (streamEvent.type === "text_delta") {
 						appendDelta("assistant: ", streamEvent.delta, "answer");
 					}
 					return;
 				}
 				case "tool_execution_start":
-					append(`${event.toolName}: started`);
+					updateLifecycle(`tool:${event.toolCallId}`, `${event.toolName}: searching`, `✓ ${event.toolName}: done`);
 					return;
 				case "tool_execution_update":
-					append(`${event.toolName}: searching`);
+					updateLifecycle(
+						`tool:${event.toolCallId}`,
+						`${event.toolName}: searching`,
+						`${event.toolName}: searching`,
+					);
 					return;
 				case "tool_execution_end":
-					append(`${event.toolName}: ${event.isError ? "error" : "done"}`);
+					updateLifecycle(
+						`tool:${event.toolCallId}`,
+						`${event.toolName}: searching`,
+						`${event.isError ? "✗" : "✓"} ${event.toolName}: ${event.isError ? "error" : "done"}`,
+					);
 					return;
 			}
 		},
-		lines: () => (active ? ["working"] : paused ? ["paused"] : []).concat(output),
+		lines: () => (paused ? ["paused"] : []).concat(output, answer.length > 0 ? [answer] : []),
 	};
 }
 
@@ -183,28 +204,42 @@ function createRealTui(): TUI {
 	return new TuiMainScreen(new ProcessTerminal());
 }
 
-function defaultSessionStore(ctx: CommandContext): TuiSessionStore {
-	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
-	return createFileTuiSessionStore(join(config.workspacePath, ".autorag", "tui-sessions.json"));
+function sessionForSelection(store: TuiSessionStore, input: string): TuiSessionRecord | undefined {
+	const sessions = store.list();
+	const index = Number.parseInt(input, 10);
+	if (Number.isInteger(index) && index > 0) return sessions[index - 1];
+	return store.get(input);
 }
 
-function runRealTui(
-	ctx: CommandContext,
-	agent: TuiAgent,
-	store: TuiSessionStore,
-): Promise<number> {
+function defaultSessionStore(ctx: CommandContext): TuiSessionStore {
+	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
+	const workspace = createFileTuiSessionStore(join(config.workspacePath, ".autorag", "tui-sessions.json"));
+	const global = createFileTuiSessionStore(join(resolveAutoRAGHome(), "tui-sessions.json"));
+	return createMergedTuiSessionStore(workspace, global);
+}
+
+function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore): Promise<number> {
 	const tui = createRealTui();
 	let transcriptHistory = "AutoRAG librarian - Ctrl+C or Ctrl+D to exit";
 	const transcript = new Text(transcriptHistory);
 	const presenter = createTuiPresenter();
+	let finalAnswer = "";
 	const renderTranscript = (): void => {
 		const trace = presenter.lines();
-		transcript.setText(
-			trace.length > 0
-				? `${transcriptHistory}\n\n--- live trace ---\n${trace.join("\n")}`
-				: transcriptHistory,
-		);
+		const sections = [
+			transcriptHistory,
+			trace.length > 0 ? `--- live trace ---\n${trace.join("\n")}` : "",
+			finalAnswer,
+		];
+		transcript.setText(sections.filter((section) => section.length > 0).join("\n\n"));
 	};
+	const activity = new Text(presenter.activity());
+	const animateActivity = (): void => {
+		presenter.advanceActivity();
+		activity.setText(presenter.activity());
+		tui.requestRender();
+	};
+	const activityTimer = setInterval(animateActivity, 160);
 	const editor = new Editor(tui, {
 		borderColor: (value) => value,
 		selectList: {
@@ -219,11 +254,15 @@ function runRealTui(
 	let settled = false;
 	let queryRunning = false;
 	let interrupted = false;
+	let resumeSelection = false;
+	let completedResponse: SearchDocumentsResponse | undefined;
+	let completedAnswer = "";
 	return new Promise((resolve) => {
 		const finish = () => {
 			if (settled) return;
 			settled = true;
 			unsubscribe?.();
+			clearInterval(activityTimer);
 			tui.stop();
 			resolve(0);
 		};
@@ -253,6 +292,15 @@ function runRealTui(
 			const query = raw.trim();
 			editor.setText("");
 			if (query.length === 0) return;
+			if (resumeSelection && !query.startsWith("/")) {
+				resumeSelection = false;
+				const session = sessionForSelection(store, query);
+				transcriptHistory = `${transcriptHistory}\n\n${session === undefined ? `resume: session not found: ${query}` : renderRestoredTuiSession(session)}`;
+				renderTranscript();
+				tui.requestRender();
+				return;
+			}
+			resumeSelection = false;
 			const command = parseSlashCommand(query);
 			if (command !== undefined) {
 				if (command.kind === "quit") {
@@ -266,11 +314,15 @@ function runRealTui(
 					return;
 				}
 				if (command.sessionId === undefined) {
+					resumeSelection = store.list().length > 0;
 					transcriptHistory = `${transcriptHistory}\n\n${renderTuiSessionList(store.list())}`;
 				} else {
-					const session = store.get(command.sessionId);
-					transcriptHistory = `${transcriptHistory}\n\n${session === undefined ? `resume: session not found: ${command.sessionId}` : renderRestoredTuiSession(session)
-						}`;
+					const session = sessionForSelection(store, command.sessionId);
+					const restored =
+						session === undefined
+							? `resume: session not found: ${command.sessionId}`
+							: renderRestoredTuiSession(session);
+					transcriptHistory = `${transcriptHistory}\n\n${restored}`;
 				}
 				renderTranscript();
 				tui.requestRender();
@@ -281,6 +333,7 @@ function runRealTui(
 			presenter.beginRun();
 			editor.disableSubmit = true;
 			presenter.setWorking(true);
+			finalAnswer = "";
 			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
 			renderTranscript();
 			tui.requestRender();
@@ -291,14 +344,9 @@ function runRealTui(
 						json: false,
 						debug: ctx.debug,
 					});
-					store.save({
-						id: response.sessionId,
-						query,
-						answer,
-						trace: presenter.lines().join("\n"),
-						updatedAt: Date.now(),
-					});
-					transcriptHistory = `${transcriptHistory}\n\n${answer}`;
+					completedResponse = response;
+					completedAnswer = answer;
+					finalAnswer = answer;
 					renderTranscript();
 				})
 				.catch((error) => {
@@ -312,13 +360,23 @@ function runRealTui(
 				.finally(() => {
 					queryRunning = false;
 					presenter.setWorking(false);
+					if (completedResponse !== undefined) {
+						store.save({
+							id: completedResponse.sessionId,
+							query,
+							answer: completedAnswer,
+							trace: presenter.lines().join("\n"),
+							updatedAt: Date.now(),
+						});
+						completedResponse = undefined;
+					}
 					renderTranscript();
 					editor.disableSubmit = false;
 					tui.requestRender();
 				});
 		};
 		tui.addChild(transcript);
-		tui.addChild(editor);
+		tui.addChild(new HStack([activity, editor], { gap: 1 }));
 		tui.setFocus(editor);
 		tui.addInputListener((data) => {
 			handleInput(data);
@@ -337,6 +395,9 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 		const presenter = createTuiPresenter();
 		let queryRunning = false;
 		let interrupted = false;
+		let resumeSelection = false;
+		let completedResponse: SearchDocumentsResponse | undefined;
+		let completedAnswer = "";
 		const unsubscribe = agent.subscribe?.((event) => {
 			presenter.handle(event);
 			tui.rendered.push(presenter.lines().join("\n"));
@@ -345,6 +406,15 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 		tui.onSubmit = async (raw) => {
 			const query = raw.trim();
 			if (query.length === 0) return;
+			if (resumeSelection && !query.startsWith("/")) {
+				resumeSelection = false;
+				const session = sessionForSelection(store, query);
+				tui.rendered.push(
+					session === undefined ? `resume: session not found: ${query}` : renderRestoredTuiSession(session),
+				);
+				return;
+			}
+			resumeSelection = false;
 			const command = parseSlashCommand(query);
 			if (command !== undefined) {
 				if (command.kind === "quit") {
@@ -356,9 +426,10 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 				} else if (command.kind === "unknown") {
 					tui.rendered.push(`unknown command: /${command.name}`);
 				} else if (command.sessionId === undefined) {
+					resumeSelection = store.list().length > 0;
 					tui.rendered.push(renderTuiSessionList(store.list()));
 				} else {
-					const session = store.get(command.sessionId);
+					const session = sessionForSelection(store, command.sessionId);
 					tui.rendered.push(
 						session === undefined
 							? `resume: session not found: ${command.sessionId}`
@@ -375,13 +446,8 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 				if (!interrupted) {
 					const answer = renderSearch(response, { json: false, debug: ctx.debug });
 					tui.rendered.push(answer);
-					store.save({
-						id: response.sessionId,
-						query,
-						answer,
-						trace: presenter.lines().join("\n"),
-						updatedAt: Date.now(),
-					});
+					completedResponse = response;
+					completedAnswer = answer;
 				}
 			} catch (error) {
 				if (!interrupted) {
@@ -390,6 +456,16 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 			} finally {
 				queryRunning = false;
 				presenter.setWorking(false);
+				if (completedResponse !== undefined) {
+					store.save({
+						id: completedResponse.sessionId,
+						query,
+						answer: completedAnswer,
+						trace: presenter.lines().join("\n"),
+						updatedAt: Date.now(),
+					});
+					completedResponse = undefined;
+				}
 			}
 		};
 		tui.onInput = (data) => {

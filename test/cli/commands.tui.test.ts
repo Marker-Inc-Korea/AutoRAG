@@ -1,10 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import { describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
-import type { CommandContext } from "../../src/cli/commands/types.ts";
 import {
 	createTuiPresenter,
 	parseSlashCommand,
@@ -12,7 +11,12 @@ import {
 	type TuiDeps,
 	type TuiDriver,
 } from "../../src/cli/commands/tui.ts";
-import { createFileTuiSessionStore } from "../../src/cli/tui-session-store.ts";
+import type { CommandContext } from "../../src/cli/commands/types.ts";
+import {
+	createFileTuiSessionStore,
+	createMergedTuiSessionStore,
+	renderTuiSessionList,
+} from "../../src/cli/tui-session-store.ts";
 
 const response: SearchDocumentsResponse = {
 	sessionId: "session",
@@ -84,7 +88,7 @@ describe("runTui", () => {
 		expect(parseSlashCommand("/unknown")).toEqual({ kind: "unknown", name: "unknown" });
 	});
 
-	it("handles slash commands without invoking search", async () => {
+	it("opens a resume picker with first-question titles and restores the selected session", async () => {
 		const { ctx } = context();
 		const tui = driver([]);
 		let calls = 0;
@@ -114,18 +118,19 @@ describe("runTui", () => {
 		await tui.onSubmit?.("/");
 		await tui.onSubmit?.("/does-not-exist");
 		await tui.onSubmit?.("/resume");
-		await tui.onSubmit?.("/resume old-session");
+		await tui.onSubmit?.("1");
 		await tui.onSubmit?.("/quit");
 
 		expect(calls).toBe(0);
 		expect(tui.rendered.join("\n")).toContain("commands: /quit, /resume [session-id]");
 		expect(tui.rendered.join("\n")).toContain("unknown command: /does-not-exist");
+		expect(tui.rendered.join("\n")).toContain("1. old question");
 		expect(tui.rendered.join("\n")).toContain("old answer");
 		expect(tui.stopped).toBe(true);
 		expect(await running).toBe(0);
 	});
 
-	it("renders thinking, answer deltas, and datasource tool lifecycle", () => {
+	it("updates one trace row in place and keeps the final answer last", () => {
 		const presenter = createTuiPresenter();
 		presenter.handle({ type: "agent_start" });
 		presenter.handle({
@@ -156,18 +161,81 @@ describe("runTui", () => {
 			message: { role: "assistant" },
 			assistantMessageEvent: { type: "text_delta", delta: "final answer" },
 		} as AgentEvent);
+		presenter.handle({
+			type: "tool_execution_start",
+			toolCallId: "tool-2",
+			toolName: "verify_sources",
+			args: {},
+		});
+		presenter.handle({
+			type: "tool_execution_end",
+			toolCallId: "tool-2",
+			toolName: "verify_sources",
+			result: {},
+			isError: false,
+		});
+		presenter.handle({ type: "agent_end", messages: [] });
 
-		expect(presenter.working()).toBe(true);
 		expect(presenter.lines()).toEqual([
-			"working",
-			"agent: started",
 			"\u001b[90m\u001b[2mthinking: (collapsed)\u001b[0m",
-			"search_datasource_documents: started",
-			"search_datasource_documents: done",
+			"✓ search_datasource_documents: done",
+			"✓ verify_sources: done",
 			"assistant: final answer",
 		]);
-		presenter.handle({ type: "agent_end", messages: [] });
 		expect(presenter.working()).toBe(false);
+	});
+
+	it("shows a running cat only while the agent is active", () => {
+		const presenter = createTuiPresenter();
+		expect(presenter.activity()).toBe("🐈");
+		presenter.beginRun();
+		expect(presenter.activity()).toMatch(/^🐈‍⬛ /u);
+		const firstFrame = presenter.activity();
+		presenter.advanceActivity();
+		expect(presenter.activity()).not.toBe(firstFrame);
+		presenter.handle({ type: "agent_end", messages: [] });
+		expect(presenter.activity()).toBe("🐈");
+	});
+
+	it("merges workspace and global sessions by newest record", () => {
+		const workspace = {
+			list: () => [{ id: "same", query: "workspace question", answer: "a", trace: "", updatedAt: 1 }],
+			get: () => undefined,
+			save: () => undefined,
+		};
+		const global = {
+			list: () => [
+				{ id: "same", query: "global question", answer: "b", trace: "", updatedAt: 2 },
+				{ id: "global-only", query: "first global question", answer: "c", trace: "", updatedAt: 3 },
+			],
+			get: () => undefined,
+			save: () => undefined,
+		};
+
+		const merged = createMergedTuiSessionStore(workspace, global);
+
+		expect(merged.list().map((session) => session.query)).toEqual(["first global question", "global question"]);
+		expect(renderTuiSessionList(merged.list())).toContain("1. first global question");
+	});
+
+	it("writes new sessions to both workspace and global stores", () => {
+		let workspaceSaved = 0;
+		let globalSaved = 0;
+		const session = { id: "saved", query: "q", answer: "a", trace: "", updatedAt: 1 };
+		const makeStore = (save: () => void) => ({
+			list: () => [],
+			get: () => undefined,
+			save,
+		});
+		const merged = createMergedTuiSessionStore(
+			makeStore(() => workspaceSaved++),
+			makeStore(() => globalSaved++),
+		);
+
+		merged.save(session);
+
+		expect(workspaceSaved).toBe(1);
+		expect(globalSaved).toBe(1);
 	});
 
 	it("shows working during an active run and collapses thinking after completion", () => {
@@ -259,17 +327,23 @@ describe("runTui", () => {
 			agentFactory: () => ({
 				searchDocuments: async (query) => {
 					queries.push(query);
-					void listener?.({
-						type: "tool_execution_start",
-						toolCallId: "tool-1",
-						toolName: "search_datasource_documents",
-						args: {},
-					}, new AbortController().signal);
-					void listener?.({
-						type: "message_update",
-						message: { role: "assistant" },
-						assistantMessageEvent: { type: "text_delta", delta: "streamed" },
-					} as AgentEvent, new AbortController().signal);
+					void listener?.(
+						{
+							type: "tool_execution_start",
+							toolCallId: "tool-1",
+							toolName: "search_datasource_documents",
+							args: {},
+						},
+						new AbortController().signal,
+					);
+					void listener?.(
+						{
+							type: "message_update",
+							message: { role: "assistant" },
+							assistantMessageEvent: { type: "text_delta", delta: "streamed" },
+						} as AgentEvent,
+						new AbortController().signal,
+					);
 					return response;
 				},
 				subscribe: (callback) => {
@@ -289,9 +363,60 @@ describe("runTui", () => {
 		expect(await running).toBe(0);
 		expect(queries).toEqual(["question"]);
 		expect(tui.rendered.join("\n")).toContain("answer");
-		expect(tui.rendered.join("\n")).toContain("search_datasource_documents: started");
+		expect(tui.rendered.join("\n")).toContain("search_datasource_documents");
 		expect(tui.rendered.join("\n")).toContain("assistant: streamed");
 		expect(tui.stopped).toBe(true);
+	});
+
+	it("persists completed lifecycle statuses instead of transient searching rows", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		const saved: string[] = [];
+		let listener: ((event: AgentEvent, signal: AbortSignal) => void | Promise<void>) | undefined;
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				searchDocuments: async () => {
+					listener?.(
+						{
+							type: "tool_execution_start",
+							toolCallId: "tool-1",
+							toolName: "lookup",
+							args: {},
+						},
+						new AbortController().signal,
+					);
+					listener?.(
+						{
+							type: "tool_execution_end",
+							toolCallId: "tool-1",
+							toolName: "lookup",
+							result: {},
+							isError: false,
+						},
+						new AbortController().signal,
+					);
+					return response;
+				},
+				subscribe: (callback) => {
+					listener = callback;
+					return () => {
+						listener = undefined;
+					};
+				},
+			}),
+			sessionStore: {
+				list: () => [],
+				get: () => undefined,
+				save: (session) => saved.push(session.trace),
+			},
+			tuiFactory: () => tui,
+		});
+
+		await tui.onSubmit?.("question");
+		tui.onExit?.();
+
+		expect(await running).toBe(0);
+		expect(saved).toEqual(["✓ lookup: done"]);
 	});
 
 	it("ignores blank submissions without calling search", async () => {
@@ -375,8 +500,8 @@ describe("runTui", () => {
 		tui.onExit?.();
 
 		expect(await running).toBe(0);
-		expect(tui.rendered.join("\n")).toContain("first: started");
-		expect(tui.rendered.join("\n")).toContain("second: started");
+		expect(tui.rendered.join("\n")).toContain("first");
+		expect(tui.rendered.join("\n")).toContain("second");
 	});
 
 	it("unsubscribes the event bridge exactly when the TUI exits", async () => {

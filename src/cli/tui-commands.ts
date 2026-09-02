@@ -26,7 +26,7 @@ export function createTuiSlashCommands(store: TuiSessionStore): SlashCommand[] {
 		{
 			name: "resume",
 			description: "List or restore a previous TUI session",
-			argumentHint: "[session-id]",
+			argumentHint: "[number|session-id]",
 			getArgumentCompletions: (prefix) => {
 				const normalized = prefix.trim().toLowerCase();
 				return store
