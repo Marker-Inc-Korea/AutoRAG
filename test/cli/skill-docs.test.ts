@@ -83,6 +83,7 @@ describe("parent-agent skill docs", () => {
 		const setup = readSkill("autorag-setup");
 		expect(setup).toMatch(/`hwp`, `hwpx`/);
 		expect(setup).not.toMatch(/or `hwp` as fully supported parsed formats/);
-		expect(setup).toMatch(/Do not present legacy\n`\.doc` or `\.xls` as supported parsed formats/s);
+		expect(setup).toMatch(/`xlsx`, `xls`, `hwp`, `hwpx`/);
+		expect(setup).toMatch(/Do not present legacy\n`\.doc` as a supported parsed format/s);
 	});
 });

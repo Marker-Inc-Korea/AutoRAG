@@ -1,4 +1,5 @@
 import { extname } from "node:path";
+import * as XLSX from "xlsx";
 import { ParseError } from "./errors.ts";
 import { normalizeMarkdown } from "./text.ts";
 import { type ParseInput, type ParseOutput, Parser } from "./types.ts";
@@ -42,7 +43,7 @@ export class XlsxParser extends Parser {
 	async parse(input: ParseInput): Promise<ParseOutput> {
 		try {
 			if (extname(input.virtualPath).toLowerCase() === ".xls") {
-				throw new Error("legacy XLS binary parsing is not supported by the pure JavaScript parser");
+				return formatLegacyXls(input.bytes);
 			}
 			const sharedStrings = await readZipXmlText(input.bytes, /^xl\/sharedStrings\.xml$/);
 			const sheetText = await readZipXmlText(input.bytes, /^xl\/worksheets\/sheet\d+\.xml$/);
@@ -51,6 +52,34 @@ export class XlsxParser extends Parser {
 			throw new ParseError(this.name, input.virtualPath, cause);
 		}
 	}
+}
+
+function formatLegacyXls(bytes: Uint8Array): ParseOutput {
+	const oleMagic = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+	if (bytes.length < oleMagic.length || !oleMagic.every((byte, index) => bytes[index] === byte)) {
+		throw new Error("legacy XLS input is not an OLE compound document");
+	}
+	const workbook = XLSX.read(Buffer.from(bytes), { type: "buffer", cellText: true, cellDates: true });
+	const markdown = workbook.SheetNames.map((sheetName) => {
+		const worksheet = workbook.Sheets[sheetName];
+		if (!worksheet) return `## ${sheetName}`;
+		const rows = XLSX.utils.sheet_to_json<readonly unknown[]>(worksheet, {
+			header: 1,
+			raw: false,
+			blankrows: false,
+			defval: "",
+		});
+		const lines = rows
+			.map((row) =>
+				row
+					.map((cell) => String(cell ?? "").trim())
+					.join(" | ")
+					.replace(/\s+\|$/, ""),
+			)
+			.filter((row) => row.trim().length > 0);
+		return [`## ${sheetName}`, ...lines].join("\n");
+	}).join("\n\n");
+	return { markdown: normalizeMarkdown(markdown), metadata: { parser: "xlsx", format: "xls" } };
 }
 
 function formatMarkdown(parserName: string, chunks: readonly string[]): ParseOutput {

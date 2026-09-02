@@ -17,6 +17,7 @@ import {
 	createEucKrEmlFixture,
 	createHwpxFixture,
 	createPptxFixture,
+	createXlsFixture,
 	createXlsxFixture,
 } from "../fixtures/document-formats.ts";
 import { createMinimalPdfBuffer } from "../fixtures/minimal-pdf.ts";
@@ -346,7 +347,20 @@ describe("ParserRegistry", () => {
 		).rejects.toBeInstanceOf(ParseError);
 	});
 
-	it("routes legacy XLS files but rejects them with typed parser errors", async () => {
+	it("parses legacy XLS worksheets through the default registry", async () => {
+		const registry = createDefaultParserRegistry();
+		const xlsParser = registry.getForVirtualPath("/docs/legacy.xls");
+
+		expect(xlsParser).toBeDefined();
+		await expect(
+			xlsParser?.parse({ virtualPath: "/docs/legacy.xls", bytes: createXlsFixture("Legacy XLS marker") }),
+		).resolves.toMatchObject({
+			markdown: expect.stringContaining("Legacy XLS marker"),
+			metadata: { parser: "xlsx", format: "xls" },
+		});
+	});
+
+	it("rejects malformed legacy XLS bytes with a typed parser error", async () => {
 		const registry = createDefaultParserRegistry();
 		const xlsParser = registry.getForVirtualPath("/docs/legacy.xls");
 
