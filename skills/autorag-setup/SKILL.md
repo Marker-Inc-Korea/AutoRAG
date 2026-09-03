@@ -175,7 +175,7 @@ aliases with `"type": "<template>"`. Unknown names are skipped with an
     "github": { "connector": { "repos": ["owner/repo"], "tokenEnv": "GITHUB_TOKEN" } },
     "google-drive": { "type": "cloud-drive", "connector": { "provider": "google-drive", "remote": "gdrive:" } },
     "archive-drive": { "type": "cloud-drive", "connector": { "remote": "archive:" } },
-    "gmail": { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
+    "gmail": { "connector": { "tokenEnv": "GMAIL_ACCESS_TOKEN", "labelIds": ["INBOX"] } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "obsidian": { "connector": { "vaultPath": "/path/to/vault" } },
     "rss": { "connector": { "feeds": [{ "url": "https://example.com/feed.xml" }] } }
@@ -195,6 +195,9 @@ and configured through its own Himalaya account. AutoRAG runs its local `sync`
 and `index` lifecycle, then uses the mailcrawl CLI for BM25, semantic, or
 hybrid search. Do not use 0.1.3 or earlier: a no-op sync followed by `index`
 fails with `text array must be non-empty`.
+Use mailcrawl for Himalaya-backed IMAP/Maildir retrieval. The legacy
+`gmail` connector option `backend: "himalaya"` is no longer registered; migrate
+that configuration to an explicit `mailcrawl` datasource.
 
 ## Verify and build indexes
 

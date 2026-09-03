@@ -180,21 +180,11 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 	},
 	{
 		type: "gmail",
-		title: "Gmail / IMAP",
-		summary: "Gmail API via a token env var, or any IMAP account through himalaya.",
+		title: "Gmail",
+		summary: "Search Gmail through the Gmail API.",
 		defaultTags: ["gmail", "email", "pii"],
-		binaryName: "himalaya",
 		fields: [
 			INSTANCE,
-			{
-				key: "connector.backend",
-				label: "Backend",
-				kind: "select",
-				options: [
-					{ value: "", label: "Gmail API (token env)" },
-					{ value: "himalaya", label: "himalaya (IMAP)" },
-				],
-			},
 			{
 				key: "connector.tokenEnv",
 				label: "Access token environment variable",
@@ -208,9 +198,6 @@ export const DATASOURCE_TYPE_CATALOG: readonly DatasourceTypeCatalog[] = [
 				placeholder: "INBOX",
 				help: "One label id per line.",
 			},
-			{ key: "connector.account", label: "himalaya account", kind: "text" },
-			{ key: "connector.folder", label: "Mail folder", kind: "text", placeholder: "INBOX" },
-			BINARY,
 		],
 	},
 	{
@@ -406,16 +393,7 @@ const EXTRAS_BY_TYPE: Readonly<Record<string, readonly PickerExtra[]>> = {
 			question: "Which rclone remote (Google Drive, OneDrive, …) should this connection use?",
 		},
 	],
-	gmail: [
-		{
-			key: "account",
-			label: "Mailbox",
-			kind: "select",
-			choices: "mail-accounts",
-			allowOther: true,
-			question: "Which email account should this connection use (Gmail, Outlook, iCloud, or another IMAP mailbox)?",
-		},
-	],
+	gmail: [],
 	"mail-export": [
 		{
 			key: "paths",
