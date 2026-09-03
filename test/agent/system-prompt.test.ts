@@ -23,6 +23,14 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("read the relevant source material directly");
 		expect(text).toContain("judge the evidence");
 		expect(text).toContain("emit_autorag_results");
+		expect(text).toContain("generic, stable question");
+		expect(text).toContain("baseline retrieval is already running in parallel");
+		expect(text).toContain("Do not query the same datasource more than three times");
+		expect(text).toContain("Never repeat a generic status message");
+		expect(text).toContain("generic, stable question");
+		expect(text).toContain("baseline retrieval is already running in parallel");
+		expect(text).toContain("Do not query the same datasource more than three times");
+		expect(text).toContain("Never repeat a generic status message");
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
 

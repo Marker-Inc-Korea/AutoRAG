@@ -75,6 +75,12 @@ function emitModel(onPrompt?: (text: string) => void) {
 	registration.setResponses([
 		(context) => {
 			onPrompt?.(extractUserText(context));
+			return fauxAssistantMessage([{ type: "text", text: "초기 후보를 확인하고 있습니다." }], {
+				stopReason: "stop",
+			});
+		},
+		(context) => {
+			onPrompt?.(extractUserText(context));
 			return fauxAssistantMessage(
 				[
 					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
@@ -106,11 +112,9 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		writeFakeJikji(join(root, "fake-jikji.mjs"));
 		writeFakeMinSync(join(root, "fake-minsync.mjs"));
 		const source = realpathSync(join(docs, "refund-policy.txt"));
-		let prompt = "";
+		const prompts: string[] = [];
 		const agent = new AutoRAGAgent({
-			model: emitModel((text) => {
-				prompt = text;
-			}),
+			model: emitModel((text) => prompts.push(text)),
 			searchPaths: [docs],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
@@ -120,7 +124,7 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		await agent.refresh(true);
 		const response = await agent.searchDocuments("refund director approval");
 		expect(response.results).toHaveLength(1);
-		expect(prompt).toContain(source);
+		expect(prompts.join("\n")).toContain(source);
 	});
 
 	it("still emits structured results when Jikji prefetch throws", async () => {

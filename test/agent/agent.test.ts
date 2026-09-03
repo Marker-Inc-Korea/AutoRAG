@@ -132,6 +132,22 @@ describe("AutoRAGAgent", () => {
 		expect(abortCalls).toBe(1);
 	});
 
+	it("limits each retrieval tool to three executions", async () => {
+		const agent = new AutoRAGAgent({
+			model: fakeModel(),
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: false,
+			jikji: false,
+		});
+		const tool = internals(agent).tools.find((entry) => entry.name === "semantic_search_local_docs");
+		expect(tool).toBeDefined();
+		const execute = tool?.execute as (id: string, params: { query: string }) => Promise<{ details?: unknown }>;
+		for (let i = 0; i < 3; i++) await execute(`call-${i}`, { query: "same source" });
+		const fourth = await execute("call-4", { query: "same source" });
+		expect(fourth.details).toMatchObject({ limitReached: true });
+	});
+
 	it("creates with default config", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],

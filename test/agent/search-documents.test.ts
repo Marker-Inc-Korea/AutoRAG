@@ -171,4 +171,45 @@ describe("AutoRAGAgent searchDocuments", () => {
 			],
 		});
 	});
+
+	it("yields assistant progress before the structured completion", async () => {
+		const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "streaming-agent" }] });
+		registration.setResponses([
+			fauxAssistantMessage([{ type: "text", text: "류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다." }], {
+				stopReason: "stop",
+			}),
+			fauxAssistantMessage(
+				[
+					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {
+						answer: "[1] 확인된 답변",
+						results: [
+							{
+								number: 1,
+								title: "확인된 결과",
+								summary: "확인된 답변",
+								evidence: [{ excerpt: "확인된 답변" }],
+								confidence: 1,
+							},
+						],
+						mapping: [{ number: 1, source: "/docs/a.txt", method: "bash", content: "확인된 답변" }],
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+		]);
+		registrations.push(registration);
+		const agent = new AutoRAGAgent({
+			model: registration.getModel(),
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			jikji: false,
+		});
+
+		const events = [];
+		for await (const event of agent.searchDocumentsStream("류동현 선임 전화번호")) events.push(event);
+
+		expect(events[0]).toMatchObject({ type: "progress" });
+		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "[1] 확인된 답변" } });
+	});
 });

@@ -104,6 +104,21 @@ describe("runSearch", () => {
 		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
 	});
 
+	it("renders progress events before the final response", async () => {
+		const { ctx, stdout } = context(["query"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				searchDocuments: async () => response,
+				async *searchDocumentsStream() {
+					yield { type: "progress" as const, sessionId: "session", query: "query", text: "checking evidence" };
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout[0]).toContain("checking evidence");
+		expect(JSON.parse(stdout[1]).answer).toBe("[1] answer");
+	});
+
 	it("does not fail agent construction for unknown datasource names", async () => {
 		const configPath = join(root, "config.json");
 		writeFileSync(

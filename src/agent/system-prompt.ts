@@ -90,7 +90,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 
 ## Workflow
 
-1. **PLAN** — Understand the query and review the preloaded initial retrieval context.
+1. **PLAN** — Decide whether the query is answerable from stable general knowledge, memory, or intrinsic model knowledge. If so, answer immediately without retrieval.
 2. **RETRIEVE** — Use MinSync BM25, MinSync vector, MinSync hybrid, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
 3. **READ** — Use \`bash\` to open and verify relevant local files. Do not curate from search snippets alone when source files are available.
 4. **JUDGE** — Evaluate relevance, sufficiency, conflicts, uncertainty, and temporal context.
@@ -103,7 +103,7 @@ ${toolLines.join("\n")}
 ${noSearchTools}
 ## Search Strategy
 
-- Before additional searching, inspect the initial retrieval context supplied with the query. It contains bounded Jikji, semantic MinSync, and lexical BM25 candidates collected in parallel; treat it as a starting slate, not as verified final evidence.
+- For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, baseline MinSync and Jikji retrieval starts before the model's search decision and supplies up to 50 candidates per method; inspect it first and treat it as unverified evidence.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
 - Use MinSync-backed BM25 for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
@@ -111,6 +111,9 @@ ${noSearchTools}
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
 - Slash-prefixed datasource IDs such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/... are virtual, not OS paths. Do not bash them. Search them with \`search_datasource_documents\`.
 - Cross-check important claims against the original source and preserve real source paths.
+- When more searching is needed, first emit a brief, query-specific 1–2 line progress update describing the best current hypothesis and what is being checked next; baseline retrieval is already running in parallel. Never repeat a generic status message.
+- Do not use broad grep/find or recursive filesystem scans. Only inspect a narrow neighborhood around a retrieved candidate when the evidence clearly points there.
+- Do not query the same datasource more than three times. After three attempts, stop searching it and conclude from the evidence available.
 
 ${duplicateManagement}
 ## External Datasource Skills

@@ -105,7 +105,7 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
  * `searchDocuments` resolves a canned {@link SearchDocumentsResponse}.
  */
 export interface SearchDeps {
-	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocuments">;
+	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "searchDocumentsStream">>;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 }
 
@@ -165,7 +165,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		return 2;
 	}
 
-	let agent: Pick<AutoRAGAgent, "searchDocuments">;
+	let agent: Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "searchDocumentsStream">>;
 	if (deps.agentFactory && deps.modelResolver === undefined) {
 		agent = deps.agentFactory({ ...buildAgentOptions(config) });
 	} else {
@@ -188,6 +188,16 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 
 	const options = buildSearchOptions(ctx.flags);
 	try {
+		if (agent.searchDocumentsStream) {
+			for await (const event of agent.searchDocumentsStream(query, options)) {
+				if (event.type === "progress") {
+					ctx.stdout(ctx.json ? JSON.stringify({ type: "progress", text: event.text }) : event.text);
+				} else {
+					ctx.stdout(renderSearch(event.response, { json: ctx.json, debug: ctx.debug }));
+				}
+			}
+			return 0;
+		}
 		const resp = await agent.searchDocuments(query, options);
 		ctx.stdout(renderSearch(resp, { json: ctx.json, debug: ctx.debug }));
 		return 0;

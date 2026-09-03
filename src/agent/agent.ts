@@ -95,6 +95,7 @@ import {
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentsResponse,
+	type SearchDocumentsStreamEvent,
 } from "./search-documents.ts";
 import { createSearchMinSyncDocumentsTool, SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME } from "./search-minsync-tool.ts";
 
@@ -290,6 +291,7 @@ export class AutoRAGAgent {
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
 	private searchToolCallCount = 0;
+	private readonly sourceSearchCallCounts = new Map<string, number>();
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
@@ -423,7 +425,9 @@ export class AutoRAGAgent {
 			if (seenToolNames.has(tool.name)) return false;
 			seenToolNames.add(tool.name);
 			return true;
-		});
+		}).map((tool) =>
+			(SEARCH_TOOLS as readonly string[]).includes(tool.name) ? this.withPerSourceSearchLimit(tool) : tool,
+		);
 		this.tools = tools;
 		const toolNames = tools.map((tool) => tool.name);
 		this.baseSystemPromptConfig = {
@@ -553,6 +557,28 @@ export class AutoRAGAgent {
 		return unsubscribers;
 	}
 
+	private withPerSourceSearchLimit(tool: AgentTool): AgentTool {
+		return {
+			...tool,
+			execute: async (...args: Parameters<AgentTool["execute"]>) => {
+				const count = this.sourceSearchCallCounts.get(tool.name) ?? 0;
+				if (count >= 3) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `${tool.name} has reached its three-query limit. Do not call it again; conclude from the evidence already gathered.`,
+							},
+						],
+						details: { method: tool.name, resultCount: 0, sources: [], limitReached: true },
+					};
+				}
+				this.sourceSearchCallCounts.set(tool.name, count + 1);
+				return tool.execute(...args);
+			},
+		};
+	}
+
 	private recordSearchToolEvent(event: AgentEvent): void {
 		if (event.type !== "tool_execution_end" || !this.lastQuery) return;
 		if (!(SEARCH_TOOLS as readonly string[]).includes(event.toolName)) return;
@@ -666,6 +692,7 @@ export class AutoRAGAgent {
 
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
+		this.sourceSearchCallCounts.clear();
 		this.lastQuery = trimmedQuery;
 		this.lastSessionId = sessionId;
 		let captured: AutoRAGResultsDetails | undefined;
@@ -695,8 +722,17 @@ export class AutoRAGAgent {
 			try {
 				await Promise.race([
 					(async () => {
-						const initialRetrievalContext = await this.prefetchInitialRetrievalContext(trimmedQuery, options);
-						await session.prompt(this.buildSearchPrompt(trimmedQuery, options, initialRetrievalContext));
+						// Start retrieval immediately, without waiting for the model's
+						// first inference. The model receives the result as a follow-up
+						// turn, and is explicitly forbidden from finalizing before it.
+						const retrievalPromise = this.prefetchInitialRetrievalContext(trimmedQuery, options);
+						await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
+						if (captured === undefined) {
+							const initialRetrievalContext = await retrievalPromise;
+							await session.prompt(
+								`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
+							);
+						}
 					})(),
 					new Promise<never>((_, reject) => {
 						timeout = setTimeout(() => {
@@ -766,6 +802,62 @@ export class AutoRAGAgent {
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
 			this.activeRun = false;
+		}
+	}
+
+	/**
+	 * Stream bounded progress updates while retaining the stable
+	 * {@link searchDocuments} promise API. Progress is sourced from model text
+	 * deltas, so callers can render it in a TUI, CLI, or parent agent and can
+	 * stop by calling {@link abort}.
+	 */
+	async *searchDocumentsStream(
+		query: string,
+		options: RetrievalOptions = {},
+	): AsyncGenerator<SearchDocumentsStreamEvent, void, void> {
+		const queue: SearchDocumentsStreamEvent[] = [];
+		let wake: (() => void) | undefined;
+		let settled = false;
+		const unsubscribe = this.subscribe((event) => {
+			if (event.type !== "message_update" || event.assistantMessageEvent.type !== "text_delta") return;
+			const text = event.assistantMessageEvent.delta.trim();
+			if (text.length === 0) return;
+			queue.push({
+				type: "progress",
+				sessionId: this.lastSessionId ?? "",
+				query: query.trim(),
+				text,
+			});
+			wake?.();
+			wake = undefined;
+		});
+		const run = this.searchDocuments(query, options)
+			.then((response) => {
+				queue.push({ type: "complete", response });
+			})
+			.catch((error) => {
+				settled = true;
+				wake?.();
+				throw error;
+			})
+			.finally(() => {
+				settled = true;
+				wake?.();
+			});
+		try {
+			while (!settled || queue.length > 0) {
+				if (queue.length === 0) {
+					await new Promise<void>((resolve) => {
+						wake = resolve;
+					});
+					continue;
+				}
+				yield queue.shift() as SearchDocumentsStreamEvent;
+			}
+			await run;
+		} finally {
+			unsubscribe();
+			await run.catch(() => undefined);
 		}
 	}
 
@@ -872,28 +964,29 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 5, scope: options.scope };
-		const [jikji, vector, bm25] = await Promise.all([
+		const retrieveOptions = { topK: 50, scope: options.scope };
+		const [jikji, vector] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
-				: this.findJikji(query, { topK: 5 }).catch(() => undefined),
+				: this.findJikji(query, { topK: 50 }).catch(() => undefined),
 			this.minSyncMethod?.retrieve(query, retrieveOptions).catch(() => []),
-			this.bm25Method?.retrieve(query, retrieveOptions).catch(() => []),
 		]);
 		const sections: string[] = [];
 		if (jikji?.answerPack !== undefined) {
 			sections.push(
 				`Jikji initial candidates (preserve order when agent_should_not_rerank=true):\n${jikji.answerPack.answerPaths
-					.slice(0, 5)
+					.slice(0, 50)
 					.map((path, index) => `[${index + 1}] ${path}`)
 					.join("\n")}`,
 			);
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
 			if (!results || results.length === 0) return;
+			const unique = [...new Map(results.map((result) => [`${result.source}\0${result.content}`, result])).values()];
 			sections.push(
 				`${label} initial candidates:\n${results
-					.slice(0, 5)
+					.filter((result, index) => unique.indexOf(result) === index)
+					.slice(0, 50)
 					.map(
 						(result, index) =>
 							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
@@ -902,7 +995,6 @@ export class AutoRAGAgent {
 			);
 		};
 		formatResults("MinSync semantic", vector);
-		formatResults("MinSync lexical BM25", bm25);
 		return sections.length === 0
 			? "No initial retrieval candidates were available; use the configured tools and report degradation honestly."
 			: sections.join("\n\n");
@@ -913,11 +1005,15 @@ export class AutoRAGAgent {
 		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
 		return (
 			`Find and curate information for this original query: ${query}${limit}${scope}\n\n` +
-			`Initial retrieval context (Jikji, MinSync semantic, and MinSync lexical searches were run in parallel before this turn):\n` +
-			`${initialRetrievalContext ?? "Not preloaded; use the available retrieval tools."}\n\n` +
-			`Treat this as candidate evidence, verify important claims against source files, and use additional tools when needed. ` +
+			`Start by deciding whether this is answerable from general knowledge or memory. If it is a generic, stable question, answer it immediately without retrieval and emit the structured result. ` +
+			`Otherwise, baseline MinSync and Jikji retrieval is already running in parallel; do not emit final results until its next message arrives.\n\n` +
+			`Baseline retrieval context:\n${initialRetrievalContext ?? "Pending; continue only with a brief progress statement."}\n\n` +
+			`Treat candidates as unverified evidence, verify important claims against source files, and use additional tools when needed. ` +
 			`Use the available retrieval tools to find candidates, then use bash to read and verify the relevant source files directly. ` +
 			`Judge relevance, conflicts, freshness, and sufficiency in this agent loop. Preserve real source paths and evidence excerpts in the result mapping.\n\n` +
+			`If more search is needed, first write a brief 1–2 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
+			`Never repeat a generic status message. Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
+			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
 			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
 			`results and the internal number-to-source mapping.`
 		);

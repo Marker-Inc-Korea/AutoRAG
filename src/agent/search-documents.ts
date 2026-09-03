@@ -74,6 +74,18 @@ export interface SearchDocumentsResponse {
 	readonly diagnostics?: readonly SearchDocumentDiagnostic[];
 }
 
+export type SearchDocumentsStreamEvent =
+	| {
+			readonly type: "progress";
+			readonly sessionId: string;
+			readonly query: string;
+			readonly text: string;
+	  }
+	| {
+			readonly type: "complete";
+			readonly response: SearchDocumentsResponse;
+	  };
+
 type SearchSessions = Map<string, { query: string; registry: Map<number, CuratedResult> }>;
 type ReadonlySearchSessions = ReadonlyMap<string, { query: string; registry: ReadonlyMap<number, CuratedResult> }>;
 

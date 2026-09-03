@@ -1,5 +1,6 @@
 export type { AutoRAGAgentOptions, AutoRefreshOptions } from "./agent.ts";
 export { AutoRAGAgent } from "./agent.ts";
+export type { SearchDocumentsStreamEvent } from "./search-documents.ts";
 export {
 	buildDatasourceSkillsPrompt,
 	createLoadDatasourceSkillTool,
