@@ -7,7 +7,7 @@ import { createDefaultParserRegistry, type DefaultParserRegistryOptions } from "
 import { ParseError } from "../parser/errors.ts";
 import type { ParserRegistry } from "../parser/registry.ts";
 import { normalizeMarkdown } from "../parser/text.ts";
-import type { ParseOutput } from "../parser/types.ts";
+import type { ParseOutput, Parser } from "../parser/types.ts";
 import { loadMirrorIndex, type ParsedMirrorEntry, type ParsedMirrorIndex, saveMirrorIndex } from "./index-store.ts";
 import { parsedMirrorIndexPath, parsedOutputPath } from "./paths.ts";
 
@@ -56,6 +56,7 @@ export type ParsedMirrorDiagnosticCode =
 	| "unsupported-file"
 	| "parser-skipped"
 	| "parser-failed"
+	| "pdf-java-version"
 	| "duplicate-excluded"
 	| "deleted-mirror"
 	| "stale-index"
@@ -84,6 +85,19 @@ interface CurrentEntry {
 	readonly sourcePath: string;
 	readonly sizeBytes: number;
 	readonly mtimeNs: number;
+}
+
+function parserFailureCode(parser: Parser, error: ParseError): ParsedMirrorDiagnosticCode {
+	return parser.name === "opendataloader-pdf" && /UnsupportedClassVersionError/.test(error.message)
+		? "pdf-java-version"
+		: "parser-failed";
+}
+
+function parserFailureMessage(parser: Parser, error: ParseError): string {
+	if (parserFailureCode(parser, error) === "pdf-java-version") {
+		return "PDF parsing requires Java 11 or newer; the Java runtime selected from PATH is too old.";
+	}
+	return "The registered parser failed on this file; it was skipped during indexing.";
 }
 
 export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promise<ParsedMirrorSyncResult> {
@@ -171,9 +185,9 @@ export async function syncParsedMirrors(options: ParsedMirrorSyncOptions): Promi
 				handledPrevious.add(entry.virtualPath);
 				skipped += 1;
 				diagnostics.push({
-					code: "parser-failed",
+					code: parserFailureCode(parser, error),
 					severity: "warning",
-					message: "The registered parser failed on this file; it was skipped during indexing.",
+					message: parserFailureMessage(parser, error),
 					source: entry.virtualPath,
 				});
 				sinceCheckpoint += 1;
