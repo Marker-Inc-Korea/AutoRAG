@@ -1,12 +1,32 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 
 import copy
+from math import ceil
 
 from transformers.modeling_outputs import SequenceClassifierOutput
 from transformers.models.t5.modeling_t5 import T5Config, T5PreTrainedModel, T5Stack
-from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
 from autorag.utils.util import empty_cuda_cache
+
+
+def assert_device_map(device_map, num_blocks):
+	blocks = list(range(num_blocks))
+	device_map_blocks = [block for blocks in device_map.values() for block in blocks]
+	duplicate_blocks = [block for block in device_map_blocks if device_map_blocks.count(block) > 1]
+	missing_blocks = [block for block in blocks if block not in device_map_blocks]
+	extra_blocks = [block for block in device_map_blocks if block not in blocks]
+	if duplicate_blocks or missing_blocks or extra_blocks:
+		raise ValueError("device_map must contain each encoder block exactly once")
+
+
+def get_device_map(n_layers, devices):
+	layers = list(range(n_layers))
+	layers_per_device = int(ceil(n_layers / len(devices)))
+	layers_list = [
+		layers[index : index + layers_per_device]
+		for index in range(0, n_layers, layers_per_device)
+	]
+	return dict(zip(devices, layers_list))
 
 
 class EncT5ForSequenceClassification(T5PreTrainedModel):
@@ -28,7 +48,8 @@ class EncT5ForSequenceClassification(T5PreTrainedModel):
 		encoder_config = copy.deepcopy(config)
 		encoder_config.use_cache = False
 		encoder_config.is_encoder_decoder = False
-		self.encoder = T5Stack(encoder_config, self.shared)
+		self.encoder = T5Stack(encoder_config)
+		self.encoder.embed_tokens = self.shared
 
 		self.dropout = nn.Dropout(dropout)
 		self.classifier = nn.Linear(config.hidden_size, config.num_labels)
