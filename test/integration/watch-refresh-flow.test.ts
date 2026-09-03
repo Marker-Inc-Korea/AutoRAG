@@ -27,6 +27,7 @@ describe("AutoRAGAgent watch refresh", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 		await agent.refresh(true);
 

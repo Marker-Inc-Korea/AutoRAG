@@ -81,7 +81,7 @@ function loggedArgs(): readonly string[][] {
 }
 
 describe("AutoRAGAgent Jikji indexing integration", () => {
-	it("does not register Jikji as a retrieval method by default", () => {
+	it("registers jikji_find by default", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
@@ -89,6 +89,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		});
 
 		expect(methodNames(agent)).not.toContain("jikji");
+		expect(toolNames(agent)).toContain(JIKJI_FIND_TOOL_NAME);
 	});
 
 	it("keeps Jikji out of the retrieval registry when configured", () => {
@@ -126,11 +127,12 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(toolNames(agent)).toContain(JIKJI_FIND_TOOL_NAME);
 	});
 
-	it("does NOT register jikji_find when jikji is not configured", () => {
+	it("does not register jikji_find when jikji is explicitly disabled", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 
 		expect(toolNames(agent)).not.toContain(JIKJI_FIND_TOOL_NAME);
@@ -208,6 +210,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 
 		await expect(agent.prepareJikji()).resolves.toBeUndefined();
