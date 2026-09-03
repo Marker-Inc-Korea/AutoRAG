@@ -902,9 +902,12 @@ max_chunk_size = 4096
 		writeFileSync(
 			minsyncBinary,
 			`#!/usr/bin/env node
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 const args = process.argv.slice(2);
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
+const cursor = join(process.cwd(), ".minsync", "cursor.json");
+const entry = { args, ...(args[0] === "sync" ? { cursorExists: existsSync(cursor) } : {}) };
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(entry) + "\\n");
 if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
 if (args[0] === "sync") process.exit(1);
 `,
@@ -920,6 +923,11 @@ if (args[0] === "sync") process.exit(1);
 
 		expect(result).toMatchObject({ ok: false, reason: "sync-failed" });
 		expect(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")).toBe(originalConfig);
+		expect(existsSync(join(minsyncConfigDir, "cursor.json"))).toBe(false);
+		const syncCall = loggedCalls()
+			.map((line) => JSON.parse(line) as { args: string[]; cursorExists?: boolean })
+			.find((call) => call.args[0] === "sync");
+		expect(syncCall?.cursorExists).toBe(false);
 	});
 
 	it("uses the MinSync chunk size for BM25-only indexing", async () => {
