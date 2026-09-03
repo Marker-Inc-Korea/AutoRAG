@@ -54,6 +54,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			jikji: false,
 		});
 
 		const response = await agent.searchDocuments("find the grounded answer");
@@ -109,6 +110,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			jikji: false,
 		});
 
 		await expect(agent.searchDocuments("authenticated search")).resolves.toMatchObject({
@@ -122,6 +124,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			jikji: false,
 		});
 
 		const first = agent.searchDocuments("first");
@@ -135,6 +138,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			jikji: false,
 		});
 
 		await expect(agent.searchDocuments("  ")).resolves.toMatchObject({ query: "", answer: "", results: [] });
@@ -146,6 +150,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			jikji: false,
 			startupDiagnostics: [
 				{
 					code: "unknown-datasource-skill",

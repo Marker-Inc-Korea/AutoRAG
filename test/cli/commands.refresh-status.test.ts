@@ -44,6 +44,7 @@ function writeConfig(bm25: unknown, minSync?: unknown): void {
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
 		bm25,
+		jikji: false,
 	};
 	if (minSync !== undefined) config.minSync = minSync;
 	const configDir = join(process.env.HOME as string, ".autorag");

@@ -67,7 +67,7 @@ Different documents need different search strategies:
 
 AutoRAG supports **pluggable retrieval methods**. Local lexical BM25, semantic vector, and hybrid retrieval all go through **MinSync** over one shared CDC chunk lifecycle, wired through the `RetrievalMethodRegistry`. The librarian invokes retrieval tools, reads the underlying documents directly through `bash`, and curates one unified result set after `ResultMerger` score normalization and deduplication. External datasources keep their own archive/index lifecycle.
 
-BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync auto-installs a verified release into `<workspace>/.autorag/bin` on first use (`autoInstall: true`); set `"autoInstall": false` only when managing the binary yourself. Configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints. AutoRAG never forces TEI or any external embedding service.
+BM25, vector, and hybrid are **enabled by default** whenever MinSync is enabled. Disable local indexing with `"minSync": false`, or disable only lexical search with `"bm25": false`. MinSync auto-installs a verified release into `<workspace>/.autorag/bin` on first use (`autoInstall: true`); set `"autoInstall": false` only when managing the binary yourself. Configure `minSync.embedder` via `autorag init --embedder-*` flags for remote embedding endpoints, and set `minSync.maxChunkSize` (or `--minsync-max-chunk-size`) when a local embedder has a smaller context window. AutoRAG never forces TEI or any external embedding service.
 
 See [docs/minsync-setup.md](docs/minsync-setup.md) for automatic installation,
 managed binary paths, and the local EmbeddingGemma QA flow.
@@ -108,18 +108,19 @@ If the hybrid sidecar is missing, times out, or fails, AutoRAG keeps the local
 markdown and emits `pdf-extract-thin` plus `pdf-hybrid-unavailable`
 diagnostics; refresh remains successful.
 
-### Optional Jikji discovery and indexing
+### Default Jikji discovery and indexing
 
-AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
+AutoRAG uses [Jikji](https://github.com/NomaDamas/jikji) by default as a local CLI-backed **find-first discovery and indexing** layer. Jikji is not registered as a retrieval backend: it supplies bounded discovery answer packs while the librarian still reads original files directly.
 
-When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
+The default agent calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly. If the binary or Rust toolchain is unavailable, Jikji reports a diagnostic and the normal filesystem/retrieval paths continue.
+
+New `autorag init` configs include `"jikji": {}`. To opt out, set `"jikji": false` in `config.json`; programmatic callers can pass `jikji: false`.
 
 Programmatic use:
 
 ```typescript
 const agent = new AutoRAGAgent({
   searchPaths: ["/path/to/documents"],
-  jikji: { binaryPath: "jikji" },
 });
 await agent.prepareJikji();
 ```
@@ -153,7 +154,7 @@ searchable:
 If `dupey` is not installed or fails, refresh continues without exclusion and
 reports no destructive action; install it with `cargo install dupey`.
 
-The same `.autorag/jikji.json` shape configures Jikji when present:
+The same configuration shape customizes Jikji when needed:
 
 ```json
 {

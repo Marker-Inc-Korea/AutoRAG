@@ -35,6 +35,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 
 		await agent.refresh(true);
@@ -60,6 +61,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: false,
 			bm25: false,
 			dupey: {
@@ -91,6 +93,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: false,
 			bm25: false,
 			excludeExactDuplicates: false,
@@ -111,6 +114,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 
 		// When: the agent refreshes with hash verification enabled.
@@ -137,6 +141,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 
 		// When: the collection refresh reaches the malformed PDF.
@@ -168,6 +173,7 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 		});
 
 		// When: refresh drives the real default parser registry through mirror sync.

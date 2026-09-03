@@ -49,6 +49,7 @@ export interface MinSyncMethodConfig {
 	autoInstall?: boolean;
 	binaryPath?: string;
 	workspacePath?: string;
+	maxChunkSize?: number;
 	installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
 	embedder?: MinSyncEmbedderConfig;
 }
@@ -109,7 +110,7 @@ export interface CliConfig {
 	model?: AgentModelConfig;
 	minSync?: MinSyncMethodConfig;
 	bm25?: Bm25MethodConfig;
-	jikji?: Record<string, unknown>;
+	jikji?: Record<string, unknown> | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
 		enabled?: boolean;
@@ -541,6 +542,7 @@ const MINSYNC_ALLOWLIST = new Set<string>([
 	"autoInstall",
 	"binaryPath",
 	"workspacePath",
+	"maxChunkSize",
 	"installer",
 	"embedder",
 ]);
@@ -655,6 +657,16 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
 		out.workspacePath = record.workspacePath;
 	}
+	if (record.maxChunkSize !== undefined) {
+		if (
+			typeof record.maxChunkSize !== "number" ||
+			!Number.isInteger(record.maxChunkSize) ||
+			record.maxChunkSize <= 0
+		) {
+			throw new ConfigError("minSync.maxChunkSize must be a positive integer");
+		}
+		out.maxChunkSize = record.maxChunkSize;
+	}
 	if (record.installer !== undefined && record.installer !== null) {
 		if (typeof record.installer !== "object" || Array.isArray(record.installer)) {
 			throw new ConfigError("minSync.installer must be an object");
@@ -739,7 +751,7 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	});
 	config.bm25 = normalized.bm25;
 	config.minSync = normalized.minSync;
-	if (file.jikji) config.jikji = file.jikji;
+	config.jikji = file.jikji === false ? false : (file.jikji ?? {});
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
 	if (file.dupey !== undefined) {
 		if (typeof file.dupey !== "object" || file.dupey === null || Array.isArray(file.dupey)) {
@@ -798,7 +810,7 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 	} else {
 		opts.bm25 = false;
 	}
-	if (config.jikji) opts.jikji = config.jikji;
+	opts.jikji = config.jikji === false ? false : (config.jikji ?? {});
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
 	if (config.dupey?.enabled === false) {
 		opts.dupey = false;
