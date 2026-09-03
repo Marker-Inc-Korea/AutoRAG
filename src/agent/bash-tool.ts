@@ -69,7 +69,13 @@ function runCommand(
 			return;
 		}
 		const shell = process.platform === "win32" ? "bash.exe" : "/bin/bash";
-		const child = spawn(shell, ["-c", command], { cwd, detached: process.platform !== "win32" });
+		const child = spawn(shell, ["-c", command], {
+			cwd,
+			// Unix: new process group so kill(-pid) reaps descendants.
+			// Windows: keep the Win32 parent/child chain for taskkill /T.
+			detached: process.platform !== "win32",
+			windowsHide: true,
+		});
 		const chunks: Buffer[] = [];
 		let total = 0;
 		let truncated = false;

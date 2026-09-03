@@ -20,6 +20,7 @@ import {
 	syncParsedMirrors,
 } from "../../src/mirror/index.ts";
 import { createDefaultParserRegistry, ParseError, Parser, ParserRegistry } from "../../src/parser/index.ts";
+import { createXlsFixture } from "../fixtures/document-formats.ts";
 
 let root: string;
 let source: string;
@@ -44,6 +45,20 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("syncParsedMirrors", () => {
+	it("writes legacy XLS worksheet text to the parsed mirror", async () => {
+		writeFileSync(join(source, "legacy.xls"), createXlsFixture("Mirror legacy XLS marker"));
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const outputPath = requireValue(
+			loadMirrorIndex(root).entries["/docs/legacy.xls"]?.outputPath,
+			"legacy XLS output path",
+		);
+		const markdown = readFileSync(outputPath, "utf8");
+
+		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0 });
+		expect(markdown).toContain("Mirror legacy XLS marker");
+	});
+
 	it("writes legacy HWP5 body and table text to the parsed mirror", async () => {
 		copyFileSync(
 			new URL("../fixtures/hwp5/minimal-body-table.hwp", import.meta.url),
