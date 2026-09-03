@@ -57,7 +57,7 @@ export interface TuiPresenter {
 type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
 
 export interface TuiDeps {
-	agentFactory?: (opts: AutoRAGAgentOptions) => TuiAgent;
+	agentFactory?: (opts?: AutoRAGAgentOptions) => TuiAgent;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 	tuiFactory?: (ctx: CommandContext) => TuiDriver;
 	sessionStore?: TuiSessionStore;
@@ -199,6 +199,7 @@ function stripAnsi(text: string): string {
 }
 
 function createAgent(ctx: CommandContext, deps: TuiDeps) {
+	if (deps.agentFactory) return deps.agentFactory();
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	const resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
 	const options: AutoRAGAgentOptions = {
@@ -207,7 +208,7 @@ function createAgent(ctx: CommandContext, deps: TuiDeps) {
 		...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 		...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
 	};
-	return deps.agentFactory ? deps.agentFactory(options) : new AutoRAGAgent(options);
+	return new AutoRAGAgent(options);
 }
 
 function createRealTui(): TUI {

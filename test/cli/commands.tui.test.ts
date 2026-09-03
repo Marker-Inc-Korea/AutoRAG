@@ -88,6 +88,24 @@ describe("runTui", () => {
 		expect(parseSlashCommand("/unknown")).toEqual({ kind: "unknown", name: "unknown" });
 	});
 
+	it("uses injected agents without requiring a user runtime config", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		const running = runTui(ctx, {
+			agentFactory: () => ({ searchDocuments: async () => response }),
+			modelResolver: () => {
+				throw new Error("model resolution should not run for injected agents");
+			},
+			tuiFactory: () => tui,
+		});
+
+		tui.onExit?.();
+
+		expect(await running).toBe(0);
+		expect(tui.started).toBe(true);
+		expect(tui.stopped).toBe(true);
+	});
+
 	it("opens a resume picker with first-question titles and restores the selected session", async () => {
 		const { ctx } = context();
 		const tui = driver([]);
