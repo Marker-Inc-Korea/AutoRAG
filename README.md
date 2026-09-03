@@ -445,6 +445,29 @@ start a new shell). Java 8 is not supported by the PDF parser.
 Git-based installs build `dist/` via the `prepare` script and require Bun on the installing machine.
 External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** downloads a verified GitHub release asset (on by default; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) and Discord (`discrawl`) stay manual, optional installs. All of them degrade gracefully when missing — core BM25 search works without any of them.
 
+### Experimental TUI (beta)
+
+The latest TUI work is currently available on the `feat/experimental-tui`
+branch. To use this beta version from source:
+
+```bash
+git clone --branch feat/experimental-tui https://github.com/Marker-Inc-Korea/AutoRAG.git
+cd AutoRAG
+bun install
+bun run build
+
+# Configure your document roots and model once:
+node dist/cli/index.js init --search-paths /path/to/documents
+
+# Start the beta TUI:
+node dist/cli/index.js tui
+```
+
+Inside the TUI, use `/resume` to browse saved sessions. Selecting a session
+replaces the current view with that session instead of mixing the two
+conversation histories. This branch is experimental and may change before the
+feature is included in a published release.
+
 ## Quick Start
 
 ```typescript
