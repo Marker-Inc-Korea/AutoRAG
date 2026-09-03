@@ -108,18 +108,19 @@ If the hybrid sidecar is missing, times out, or fails, AutoRAG keeps the local
 markdown and emits `pdf-extract-thin` plus `pdf-hybrid-unavailable`
 diagnostics; refresh remains successful.
 
-### Optional Jikji discovery and indexing
+### Default Jikji discovery and indexing
 
-AutoRAG can opt into [Jikji](https://github.com/NomaDamas/jikji) as a local CLI-backed **find-first discovery and indexing** layer. Jikji is optional: AutoRAG does not vendor it, install it, or register it as a retrieval backend when enabled.
+AutoRAG uses [Jikji](https://github.com/NomaDamas/jikji) by default as a local CLI-backed **find-first discovery and indexing** layer. Jikji is not registered as a retrieval backend: it supplies bounded discovery answer packs while the librarian still reads original files directly.
 
-When Jikji is configured, AutoRAG calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly.
+The default agent calls `jikji find ROOT "query" --json` via the `jikji_find` tool. The tool parses and validates the upstream answer pack and exposes its `handoff_action`, `tool_call_policy`, and `agent_should_not_rerank` to the librarian. Direct file reading remains available for source verification. `prepare`/`refresh` remain for indexing only and do not answer queries directly. If the binary or Rust toolchain is unavailable, Jikji reports a diagnostic and the normal filesystem/retrieval paths continue.
+
+New `autorag init` configs include `"jikji": {}`. To opt out, set `"jikji": false` in `config.json`; programmatic callers can pass `jikji: false`.
 
 Programmatic use:
 
 ```typescript
 const agent = new AutoRAGAgent({
   searchPaths: ["/path/to/documents"],
-  jikji: { binaryPath: "jikji" },
 });
 await agent.prepareJikji();
 ```
@@ -153,7 +154,7 @@ searchable:
 If `dupey` is not installed or fails, refresh continues without exclusion and
 reports no destructive action; install it with `cargo install dupey`.
 
-The same `.autorag/jikji.json` shape configures Jikji when present:
+The same configuration shape customizes Jikji when needed:
 
 ```json
 {
@@ -428,8 +429,44 @@ bun install -g @autorag/librarian   # autorag CLI
 bun add github:NomaDamas/AutoRAG-2.0
 ```
 
+PDF parsing requires **Java 11 or newer** because the bundled
+`@opendataloader/pdf` runtime is compiled for Java 11. This applies to
+Windows, macOS, and Linux. Verify the runtime that will be selected from
+`PATH` before indexing PDFs:
+
+```bash
+java -version
+```
+
+On Windows, ensure a Java 11+ installation appears before older Java
+installations in `PATH` (or set `JAVA_HOME` to the Java 11+ installation and
+start a new shell). Java 8 is not supported by the PDF parser.
+
 Git-based installs build `dist/` via the `prepare` script and require Bun on the installing machine.
 External tool binaries auto-install on first use into `<workspace>/.autorag/bin`: **MinSync** downloads a verified GitHub release asset (on by default; `minSync.autoInstall: false` to opt out), and **Jikji** compiles the [`jikji-cli`](https://crates.io/crates/jikji-cli) crate via cargo (requires the [Rust toolchain](https://rustup.rs); `jikji.autoInstall: false` to opt out). New `autorag init` configs enable Jikji find-first discovery by default. KakaoTalk (`katok`) and Discord (`discrawl`) stay manual, optional installs. All of them degrade gracefully when missing — core BM25 search works without any of them.
+
+### Experimental TUI (beta)
+
+The latest TUI work is currently available on the `feat/experimental-tui`
+branch. To use this beta version from source:
+
+```bash
+git clone --branch feat/experimental-tui https://github.com/Marker-Inc-Korea/AutoRAG.git
+cd AutoRAG
+bun install
+bun run build
+
+# Configure your document roots and model once:
+node dist/cli/index.js init --search-paths /path/to/documents
+
+# Start the beta TUI:
+node dist/cli/index.js tui
+```
+
+Inside the TUI, use `/resume` to browse saved sessions. Selecting a session
+replaces the current view with that session instead of mixing the two
+conversation histories. This branch is experimental and may change before the
+feature is included in a published release.
 
 ## Quick Start
 

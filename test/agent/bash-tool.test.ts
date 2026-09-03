@@ -47,8 +47,7 @@ writeFileSync(${JSON.stringify(pidFileName)}, String(process.pid));
 setInterval(() => {}, 1000);
 `,
 	);
-	const execPath = process.execPath.replaceAll("\\", "/");
-	return `${JSON.stringify(execPath)} hang.mjs`;
+	return "node hang.mjs";
 }
 
 function readChildPid(pidPath: string): number {
@@ -143,6 +142,26 @@ describe("createBashTool", () => {
 		expect(result.details.timedOut).toBe(true);
 	});
 
+	it("does not run a command when the signal is already aborted", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const markerPath = join(tmpDir, "already-aborted-ran");
+		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 1_000 });
+
+		const result = await tool.execute(
+			"call-already-aborted",
+			{ command: "printf ran > already-aborted-ran" },
+			controller.signal,
+		);
+
+		expect(existsSync(markerPath)).toBe(false);
+		expect(result.content[0]).toMatchObject({
+			type: "text",
+			text: expect.stringContaining("(command aborted)"),
+		});
+		expect(result.details.timedOut).toBe(false);
+	});
+
 	it("kills a process tree and resolves on process tree timeout", async () => {
 		const pidPath = join(tmpDir, "timeout-child.pid");
 		const tool = createBashTool({ cwd: tmpDir, timeoutMs: TREE_TIMEOUT_MS });
@@ -155,6 +174,8 @@ describe("createBashTool", () => {
 		const result = await awaitToolResult(execution, "bash tool");
 
 		expect(result.details.timedOut).toBe(true);
+		expect(result.details.terminationFailed).toBe(false);
+		expect(result.details.aborted).toBe(false);
 		expect(result.content[0]).toMatchObject({
 			type: "text",
 			text: expect.stringContaining(`(command timed out after ${TREE_TIMEOUT_MS}ms and was killed)`),
@@ -178,6 +199,8 @@ describe("createBashTool", () => {
 		const result = await awaitToolResult(execution, "aborted bash tool");
 
 		expect(result.details.timedOut).toBe(false);
+		expect(result.details.aborted).toBe(true);
+		expect(result.details.terminationFailed).toBe(false);
 		await waitForProcessDeath(childPid);
 	}, 20_000);
 

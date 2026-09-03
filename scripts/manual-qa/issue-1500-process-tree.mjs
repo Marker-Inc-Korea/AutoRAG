@@ -5,6 +5,7 @@ import { createBashTool } from "../../src/agent/bash-tool.ts";
 
 const workspace = mkdtempSync(join(tmpdir(), "autorag-issue-1500-"));
 const pidPath = join(workspace, "child.pid");
+let allPassed = true;
 
 const waitForFile = async (path) => {
 	if (existsSync(path)) return;
@@ -43,9 +44,11 @@ try {
 	const timeoutResult = await timeoutExecution;
 	const timeoutElapsedMs = Math.round(performance.now() - timeoutStarted);
 	const timeoutText = timeoutResult.content[0].text;
+	const timeoutPass = timeoutResult.details.timedOut && !isAlive(childPid) && timeoutText.includes("command timed out after 120ms");
+	allPassed &&= timeoutPass;
 	console.log(JSON.stringify({
 		scenario: "timeout process tree",
-		pass: timeoutResult.details.timedOut && !isAlive(childPid) && timeoutText.includes("command timed out after 120ms"),
+		pass: timeoutPass,
 		elapsedMs: timeoutElapsedMs,
 		childPid,
 		childAlive: isAlive(childPid),
@@ -53,9 +56,11 @@ try {
 	}));
 
 	const failedResult = await tool.execute("manual-failure", { command: "printf fail >&2; exit 7" });
+	const failedPass = failedResult.details.exitCode === 7 && failedResult.content[0].text.includes("exit code 7");
+	allPassed &&= failedPass;
 	console.log(JSON.stringify({
 		scenario: "failed command",
-		pass: failedResult.details.exitCode === 7 && failedResult.content[0].text.includes("exit code 7"),
+		pass: failedPass,
 		exitCode: failedResult.details.exitCode,
 		text: failedResult.content[0].text,
 	}));
@@ -69,13 +74,16 @@ try {
 	const abortChildPid = Number(readFileSync(abortPidPath, "utf8"));
 	controller.abort();
 	const abortResult = await abortExecution;
+	const abortPass = !abortResult.details.timedOut && !isAlive(abortChildPid);
+	allPassed &&= abortPass;
 	console.log(JSON.stringify({
 		scenario: "abort process tree",
-		pass: !abortResult.details.timedOut && !isAlive(abortChildPid),
+		pass: abortPass,
 		childPid: abortChildPid,
 		childAlive: isAlive(abortChildPid),
 	}));
 } finally {
 	rmSync(workspace, { recursive: true, force: true });
 	console.log(JSON.stringify({ cleanup: "removed temporary workspace", workspace }));
+	if (!allPassed) process.exitCode = 1;
 }

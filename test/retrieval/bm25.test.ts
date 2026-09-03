@@ -179,6 +179,7 @@ describe("AutoRAG BM25 integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			bm25: { autoInstall: false },
 			minSync: { autoInstall: false, binaryPath: join(root, "missing-minsync") },
 		});
@@ -202,6 +203,7 @@ describe("AutoRAG BM25 integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: { autoInstall: false, binaryPath: minsyncBinary, maxChunkSize: 1000 },
 		});
 
@@ -221,6 +223,7 @@ describe("AutoRAG BM25 integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: false,
 		});
 		await agent.refresh(true);
@@ -242,6 +245,7 @@ describe("AutoRAG BM25 integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: { autoInstall: false, binaryPath: join(root, "missing-minsync") },
 		});
 		await agent.refresh(true);

@@ -41,7 +41,18 @@ describe("single-model CLI config", () => {
 		expect(config.bm25?.enabled).toBe(true);
 		expect(config.minSync?.enabled).toBe(true);
 		expect(config.minSync?.autoInstall).toBe(true);
+		expect(config.jikji).toEqual({});
 		expect(config.excludeExactDuplicates).toBe(true);
+	});
+
+	it("preserves explicit Jikji opt-out in resolved agent options", () => {
+		const config = resolveConfig({
+			flags: {},
+			env: { HOME: root },
+			cwd: root,
+		});
+		const optedOut = { ...config, jikji: false as const };
+		expect(buildAgentOptions(optedOut).jikji).toBe(false);
 	});
 
 	it("rejects partial model flags", () => {

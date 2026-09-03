@@ -131,6 +131,7 @@ function createAgent(): AutoRAGAgent {
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
 		bm25: false,
+		jikji: false,
 		minSync: { binaryPath: minsyncBinary, workspacePath: minsyncWorkspace },
 	});
 }

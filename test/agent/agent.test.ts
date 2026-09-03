@@ -122,6 +122,7 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			maxSearchToolCalls: 1,
+			jikji: false,
 		});
 		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
