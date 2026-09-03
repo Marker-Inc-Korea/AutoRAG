@@ -107,6 +107,26 @@ describe("createBashTool", () => {
 		expect(result.details.timedOut).toBe(true);
 	});
 
+	it("does not run a command when the signal is already aborted", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const markerPath = join(tmpDir, "already-aborted-ran");
+		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 1_000 });
+
+		const result = await tool.execute(
+			"call-already-aborted",
+			{ command: `printf ran > ${markerPath}` },
+			controller.signal,
+		);
+
+		expect(existsSync(markerPath)).toBe(false);
+		expect(result.content[0]).toMatchObject({
+			type: "text",
+			text: expect.stringContaining("(command aborted)"),
+		});
+		expect(result.details.timedOut).toBe(false);
+	});
+
 	it("kills a process tree and resolves on process tree timeout", async () => {
 		const pidPath = join(tmpDir, "timeout-child.pid");
 		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 100 });

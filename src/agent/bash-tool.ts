@@ -7,6 +7,7 @@ export const BASH_TOOL_NAME = "bash";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 131_072;
+const KILL_EXIT_GRACE_MS = 5_000;
 
 const bashSchema = Type.Object({
 	command: Type.String({
@@ -40,6 +41,7 @@ const CLOUD_CONTENT_COMMAND = /\b(?:rg|ripgrep|grep|egrep|fgrep|cat|less|more|he
 interface RunResult {
 	readonly output: string;
 	readonly exitCode: number | undefined;
+	readonly aborted: boolean;
 	readonly timedOut: boolean;
 	readonly truncated: boolean;
 }
@@ -52,13 +54,19 @@ function runCommand(
 	signal?: AbortSignal,
 ): Promise<RunResult> {
 	return new Promise((resolve) => {
+		if (signal?.aborted) {
+			resolve({ output: "", exitCode: undefined, aborted: true, timedOut: false, truncated: false });
+			return;
+		}
 		const shell = process.platform === "win32" ? "bash.exe" : "/bin/bash";
-		const child = spawn(shell, ["-c", command], { cwd, detached: true });
+		const child = spawn(shell, ["-c", command], { cwd, detached: process.platform !== "win32" });
 		const chunks: Buffer[] = [];
 		let total = 0;
 		let truncated = false;
 		let timedOut = false;
+		let aborted = false;
 		let settled = false;
+		let killGraceTimer: ReturnType<typeof setTimeout> | undefined;
 
 		const collect = (data: Buffer) => {
 			if (total >= maxOutputBytes) {
@@ -83,38 +91,62 @@ function runCommand(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			if (killGraceTimer !== undefined) clearTimeout(killGraceTimer);
 			signal?.removeEventListener("abort", onAbort);
-			resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode, timedOut, truncated });
+			resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode, aborted, timedOut, truncated });
 		};
 
 		const killProcessTree = () => {
 			if (child.pid === undefined) return;
 			if (process.platform === "win32") {
-				spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+				try {
+					const result = spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+						stdio: "ignore",
+						timeout: KILL_EXIT_GRACE_MS,
+					});
+					if (result.status === 0) return;
+				} catch {
+					// Fall through to the direct-process fallback.
+				}
+				try {
+					child.kill("SIGKILL");
+				} catch {
+					// The process may already have exited.
+				}
 				return;
 			}
 			try {
 				process.kill(-child.pid, "SIGKILL");
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+			} catch {
+				try {
+					child.kill("SIGKILL");
+				} catch {
+					// The process may already have exited.
+				}
 			}
+		};
+
+		const releaseAfterKill = () => {
+			child.stdout?.destroy();
+			child.stderr?.destroy();
+			killGraceTimer = setTimeout(() => finish(undefined), KILL_EXIT_GRACE_MS);
 		};
 
 		const timer = setTimeout(() => {
 			timedOut = true;
 			killProcessTree();
-			child.stdout?.destroy();
-			child.stderr?.destroy();
-			setTimeout(() => finish(undefined), 50);
+			releaseAfterKill();
 		}, timeoutMs);
 
 		const onAbort = () => {
+			aborted = true;
 			killProcessTree();
-			child.stdout?.destroy();
-			child.stderr?.destroy();
-			setTimeout(() => finish(undefined), 50);
+			releaseAfterKill();
 		};
-		signal?.addEventListener("abort", onAbort, { once: true });
+		if (signal) {
+			if (signal.aborted) onAbort();
+			else signal.addEventListener("abort", onAbort, { once: true });
+		}
 
 		child.on("error", () => finish(undefined));
 		child.on("close", (code) => finish(code === null ? undefined : code));
@@ -178,7 +210,7 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 			const run = await runCommand(command, cwd, timeoutMs, maxOutputBytes, signal);
 
 			const parts: string[] = [];
-			parts.push(run.output.length > 0 ? run.output : "(no output)");
+			parts.push(run.output.length > 0 ? run.output : run.aborted ? "(command aborted)" : "(no output)");
 			if (run.timedOut) parts.push(`\n(command timed out after ${timeoutMs}ms and was killed)`);
 			if (run.truncated) parts.push(`\n(output truncated at ${maxOutputBytes} bytes)`);
 			if (run.exitCode !== undefined && run.exitCode !== 0 && !run.timedOut) {
