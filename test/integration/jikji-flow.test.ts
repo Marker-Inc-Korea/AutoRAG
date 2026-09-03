@@ -113,7 +113,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			jikji: { binaryPath },
 		});
 
-		expect(methodNames(agent)).toEqual(["minsync", "hybrid", "bm25"]);
+		expect(methodNames(agent)).toEqual(["minsync", "hybrid"]);
 	});
 
 	it("registers jikji_find tool when jikji is configured", () => {

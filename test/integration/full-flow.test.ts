@@ -99,7 +99,7 @@ describe("Full flow integration", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent.getSystemPrompt()).toContain("check_memory");
-		expect(agent.getSystemPrompt()).toContain("lexical_search_local_docs");
+		expect(agent.getSystemPrompt()).toContain("semantic_search_local_docs");
 		expect(agent.getSystemPrompt()).toContain("search_all_documents");
 	});
 

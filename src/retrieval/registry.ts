@@ -19,7 +19,7 @@ export class RetrievalMethodRegistry {
 		return Array.from(this.methods.values());
 	}
 
-	getByType(type: "posix" | "vector" | "bm25" | "hybrid" | "visual"): RetrievalMethod[] {
+	getByType(type: "posix" | "vector" | "hybrid" | "visual"): RetrievalMethod[] {
 		return this.list().filter((m) => m.describe().type === type);
 	}
 }

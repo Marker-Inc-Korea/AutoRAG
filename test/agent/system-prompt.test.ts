@@ -7,7 +7,7 @@ function prompt(
 	toolNames = [
 		"bash",
 		"search_all_documents",
-		"lexical_search_local_docs",
+		"semantic_search_local_docs",
 		"semantic_search_local_docs",
 		"check_memory",
 		"emit_autorag_results",
@@ -37,7 +37,7 @@ describe("buildSystemPrompt single-agent contract", () => {
 	it("keeps retrieval, memory, datasource trust, and Jikji guidance", () => {
 		const text = prompt();
 		expect(text).toContain("search_all_documents");
-		expect(text).toContain("lexical_search_local_docs");
+		expect(text).toContain("semantic_search_local_docs");
 		expect(text).toContain("semantic_search_local_docs");
 		expect(text).toContain("check_memory");
 		expect(text).toContain("default-deny");

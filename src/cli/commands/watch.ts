@@ -10,7 +10,7 @@ function parsePositiveInt(value: string | boolean | undefined, fallback: number)
 }
 
 /**
- * `autorag watch` — keep parsed/BM25/MinSync indexes current.
+ * `autorag watch` — keep parsed/MinSync indexes current.
  *
  * - default: long-running recursive fs watch with debounced refresh
  * - `--once`: single refresh tick (for cron / launchd / Task Scheduler)

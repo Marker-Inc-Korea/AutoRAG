@@ -77,14 +77,14 @@ Commands:
 	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
 	                       --embedder-dimension N --embedder-batch-size N
 	                       --minsync-max-chunk-size N  --force)
-  refresh              Parse sources and refresh indexes (--method bm25,minsync,parsed)
+  refresh              Parse sources and refresh indexes (--method minsync,parsed)
   watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
   search <query>       Search and curate documents (requires a configured model)
   feedback <session>   Record numbered feedback (--useful 1,3 --not-useful 2)
   memory inspect       Inspect the retrieval memory snapshot
-  index reset          Remove parsed/minsync indexes and leftover .autorag/bm25 (--method)
-  index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
+  index reset          Remove parsed/minsync indexes (--method)
+  index rebuild        Reset then re-run a refresh (--method minsync|all)
   health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
@@ -107,7 +107,7 @@ Global flags:
   --once               For watch: run one refresh tick and exit (for cron)
   --immediate          For watch: refresh once before reading fs events (default true)
   --debounce-ms <n>    For watch: debounce milliseconds for fs events (default 1500)
-  --method <csv>       For refresh/index: bm25,minsync,parsed,datasources,jikji,all
+  --method <csv>       For refresh/index: minsync,parsed,datasources,jikji,all
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --port <n>           For ui: loopback port (default 8787, 0 for ephemeral)

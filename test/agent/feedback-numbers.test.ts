@@ -108,7 +108,6 @@ describe("AutoRAGAgent numbered feedback", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: memPath,
-			bm25: false,
 			minSync: false,
 		});
 		const state = internals(agent);

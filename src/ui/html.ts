@@ -89,7 +89,7 @@ export function renderUiPage(state: UiState): string {
   <section class="card">
     <label for="folders">Folders to search</label>
     <textarea id="folders">${folders}</textarea>
-    <p class="help">BM25, MinSync, and Jikji index these folders by default. One absolute path per line.</p>
+    <p class="help">MinSync and Jikji index these folders by default. One absolute path per line.</p>
     <div class="row actions"><button type="button" class="primary" id="save-folders">Save folders</button></div>
   </section>
 

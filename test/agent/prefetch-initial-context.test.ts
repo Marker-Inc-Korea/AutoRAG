@@ -134,7 +134,6 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
 			minSync: false,
-			bm25: false,
 			jikji: { binaryPath: join(root, "missing-jikji") },
 		});
 		(agent as unknown as { findJikji: () => Promise<never> }).findJikji = async () => {

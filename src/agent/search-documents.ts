@@ -16,8 +16,6 @@ export type SearchDocumentDiagnosticCode =
 	| "empty-query"
 	| "unknown-warning"
 	| "caller-tool-dropped"
-	| "bm25-unavailable"
-	| "bm25-degraded-fallback"
 	| "minsync-unavailable"
 	| "parser-skipped"
 	| "parser-failed"
@@ -41,7 +39,7 @@ export interface SearchDocumentDiagnostic {
 	readonly code: SearchDocumentDiagnosticCode;
 	readonly severity: SearchDocumentDiagnosticSeverity;
 	readonly message: string;
-	/** Component label (e.g. "sanitizer", "bm25") or opaque virtual path — never a real filesystem path. */
+	/** Component label (e.g. "sanitizer", "minsync") or opaque virtual path — never a real filesystem path. */
 	readonly source?: string;
 }
 

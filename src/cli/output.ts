@@ -41,13 +41,6 @@ function refreshEnvelope(result: AutoRAGRefreshResult) {
 		},
 		diagnostics: (result.diagnostics ?? []).map(diagnosticProjection),
 	};
-	if (result.bm25) {
-		envelope.bm25 = {
-			indexedChunks: result.bm25.indexedChunks,
-			readiness: result.bm25.readiness,
-			engine: result.bm25.engine,
-		};
-	}
 	if (result.datasources && result.datasources.length > 0) {
 		envelope.datasources = result.datasources.map((ds) => ({
 			ok: ds.ok,
@@ -71,11 +64,6 @@ function renderRefreshHuman(result: AutoRAGRefreshResult, debug: boolean): strin
 	lines.push(
 		`  counts: scanned=${result.scanned} written=${result.written} deleted=${result.deleted} skipped=${result.skipped}`,
 	);
-	if (result.bm25) {
-		lines.push(
-			`  bm25: indexedChunks=${result.bm25.indexedChunks} readiness=${result.bm25.readiness} engine=${result.bm25.engine}`,
-		);
-	}
 	if (result.datasources && result.datasources.length > 0) {
 		for (const ds of result.datasources) {
 			lines.push(
@@ -112,7 +100,6 @@ function renderStatusHuman(status: AutoRAGRefreshStatus, debug: boolean): string
 	}
 	const comps = status.components;
 	const compParts: string[] = [];
-	if (comps.bm25) compParts.push(`bm25=${comps.bm25}`);
 	if (comps.minsync) compParts.push(`minsync=${comps.minsync}`);
 	if (comps.jikji) compParts.push(`jikji=${comps.jikji}`);
 	if (comps.datasources) compParts.push(`datasources=${comps.datasources}`);

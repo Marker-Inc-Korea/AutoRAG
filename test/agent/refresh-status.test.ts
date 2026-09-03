@@ -80,14 +80,13 @@ describe("getRefreshStatus", () => {
 		expect(status.diagnostics.some((d) => d.code === "stale-index")).toBe(true);
 	});
 
-	it("reports component status for bm25 and minsync without leaking paths", async () => {
+	it("reports component status for MinSync without leaking paths", async () => {
 		const agent = makeAgent({
 			minSync: { binaryPath: join(root, "missing-minsync"), workspacePath: join(root, ".autorag", "minsync") },
 		});
 		await agent.refresh(true);
 		const status = await agent.getRefreshStatus();
 
-		expect(status.components.bm25).toBeDefined();
 		expect(status.components.minsync).toBe("unavailable");
 		expect(JSON.stringify(status)).not.toContain(root);
 	});

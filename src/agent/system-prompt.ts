@@ -30,7 +30,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		),
 		toolLine(config, "jikji_find", "local discovery through Jikji answer packs"),
 		toolLine(config, "search_all_documents", "fan out across every configured retrieval method and merge results"),
-		toolLine(config, "lexical_search_local_docs", "MinSync-backed lexical BM25 search over parsed document mirrors"),
 		toolLine(config, "semantic_search_local_docs", "semantic MinSync search over parsed document mirrors"),
 		toolLine(
 			config,
@@ -48,7 +47,6 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"bash",
 						"jikji_find",
 						"search_all_documents",
-						"lexical_search_local_docs",
 						"semantic_search_local_docs",
 						"search_datasource_documents",
 						"load_datasource_skill",
@@ -91,7 +89,7 @@ Your job is to retrieve candidates, read the relevant source material directly, 
 ## Workflow
 
 1. **PLAN** — Decide whether the query is answerable from stable general knowledge, memory, or intrinsic model knowledge. If so, answer immediately without retrieval.
-2. **RETRIEVE** — Use MinSync BM25, MinSync vector, MinSync hybrid, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
+2. **RETRIEVE** — Use MinSync lexical/vector/hybrid retrieval, combined retrieval, Jikji, datasource search, or direct filesystem discovery as appropriate.
 3. **READ** — Use \`bash\` to open and verify relevant local files. Do not curate from search snippets alone when source files are available.
 4. **JUDGE** — Evaluate relevance, sufficiency, conflicts, uncertainty, and temporal context.
 5. **CURATE** — Produce concise numbered knowledge units grounded in source evidence.
@@ -106,7 +104,7 @@ ${noSearchTools}
 - For generic, stable questions answer directly from knowledge or memory without searching. For source-dependent questions, baseline MinSync and Jikji retrieval starts before the model's search decision and supplies up to 50 candidates per method; inspect it first and treat it as unverified evidence.
 - Start with the most specific exact term, identifier, filename glob, or regex that preserves the query intent.
 - Use \`search_all_documents\` when multiple configured retrieval methods can help.
-- Use MinSync-backed BM25 for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
+- Use MinSync lexical mode for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
 - Slash-prefixed datasource IDs such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/... are virtual, not OS paths. Do not bash them. Search them with \`search_datasource_documents\`.

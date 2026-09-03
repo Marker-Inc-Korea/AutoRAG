@@ -5,13 +5,12 @@ import type { CommandContext } from "./types.ts";
 
 /**
  * `autorag refresh` — parse configured search paths and resync every active
- * index (parsed mirror, BM25, MinSync, datasources, jikji). Model-free: no LLM
+ * index (parsed mirror, MinSync, datasources, jikji). Model-free: no LLM
  * is constructed. Output is rendered through the path-opaque refresh renderer;
  * the raw result (which carries absolute `indexPath`) is never printed.
  *
- * `--method bm25,minsync,parsed` restricts which methods run. When omitted, all
- * methods run. Parsed mirrors are always synced when BM25 or MinSync is selected
- * (they index over the parsed mirrors).
+ * `--method minsync,parsed` restricts which methods run. When omitted, all
+ * methods run. Parsed mirrors are always synced when MinSync is selected.
  */
 export async function runRefresh(ctx: CommandContext): Promise<number> {
 	try {
@@ -28,7 +27,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 }
 
 /** All method names accepted by `--method`. */
-const ALL_METHOD_NAMES = ["all", "bm25", "minsync", "parsed", "datasources", "jikji"] as const;
+const ALL_METHOD_NAMES = ["all", "minsync", "parsed", "datasources", "jikji"] as const;
 
 /**
  * Parse a `--method` CSV flag into a sorted set of `RefreshMethod` values.
@@ -50,10 +49,10 @@ export function parseMethodFlag(flag: string | boolean | undefined): readonly Re
 		}
 	}
 	if (entries.includes("all")) {
-		return ["parsed", "bm25", "minsync", "datasources", "jikji"] as const;
+		return ["parsed", "minsync", "datasources", "jikji"] as const;
 	}
 	// Preserve canonical order, deduplicate.
-	const order: readonly RefreshMethod[] = ["parsed", "bm25", "minsync", "datasources", "jikji"];
+	const order: readonly RefreshMethod[] = ["parsed", "minsync", "datasources", "jikji"];
 	const seen = new Set<RefreshMethod>();
 	for (const m of order) {
 		if (entries.includes(m)) seen.add(m);

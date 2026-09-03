@@ -32,8 +32,6 @@ import type { ResultFeedback } from "../memory/memory.ts";
 import { RetrievalMemory } from "../memory/memory.ts";
 import { renderMemoryContext } from "../memory/renderer.ts";
 import {
-	MinSyncBM25Method,
-	type MinSyncBM25MethodOptions,
 	MinSyncHybridMethod,
 	type MinSyncSyncResult,
 	MinSyncVectorMethod,
@@ -49,7 +47,6 @@ import {
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
-import { type BM25SyncResult, removeLegacyBm25Artifacts } from "../retrieval/methods/bm25.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
 import {
@@ -84,7 +81,6 @@ import {
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
-import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
 	createSearchDatasourceDocumentsTool,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
@@ -107,11 +103,10 @@ import {
 	type WatchWatcher,
 } from "./watch-refresh.ts";
 
-const SEARCH_TOOLS = [
+	const SEARCH_TOOLS = [
 	BASH_TOOL_NAME,
 	SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 	SEARCH_ALL_DOCUMENTS_TOOL_NAME,
-	SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 	SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 	JIKJI_FIND_TOOL_NAME,
 ] as const;
@@ -122,7 +117,7 @@ export interface AutoRefreshOptions {
 }
 
 /** Methods that `refresh` can selectively run. Defaults to all when omitted. */
-export type RefreshMethod = "parsed" | "bm25" | "minsync" | "datasources" | "jikji";
+export type RefreshMethod = "parsed" | "minsync" | "datasources" | "jikji";
 
 export interface AutoRAGRefreshOptions {
 	/** Restrict refresh to specific methods. Defaults to all when undefined. */
@@ -137,13 +132,11 @@ export interface AutoRAGMinSyncRefreshResult {
 
 export interface AutoRAGRefreshResult extends Omit<ParsedMirrorSyncResult, "diagnostics"> {
 	readonly diagnostics: readonly SearchDocumentDiagnostic[];
-	readonly bm25?: BM25SyncResult;
 	readonly minsync?: AutoRAGMinSyncRefreshResult;
 	readonly datasources?: readonly DatasourceIndexResult[];
 }
 
 export interface AutoRAGRefreshComponentStatus {
-	readonly bm25?: string;
 	readonly minsync?: string;
 	readonly jikji?: string;
 	readonly datasources?: string;
@@ -203,7 +196,6 @@ export interface AutoRAGAgentOptions {
 	workspacePath?: string;
 	tools?: AgentTool[];
 	minSync?: Omit<MinSyncVectorMethodOptions, "root"> | false;
-	bm25?: Omit<MinSyncBM25MethodOptions, "root"> | false;
 	jikji?: JikjiOptions | false;
 	autoRefresh?: AutoRefreshOptions;
 	parserOptions?: DefaultParserRegistryOptions;
@@ -277,7 +269,6 @@ export class AutoRAGAgent {
 	private readonly datasourceFilter = new DatasourceResultFilter();
 
 	private readonly minSyncMethod: MinSyncVectorMethod | undefined;
-	private readonly bm25Method: MinSyncBM25Method | undefined;
 	private readonly jikjiClient: JikjiClient | undefined;
 	private readonly datasourceSkills: readonly DatasourceSkill[];
 	private readonly datasourceAccessOptions: DatasourceAccessContextOptions;
@@ -334,14 +325,6 @@ export class AutoRAGAgent {
 			});
 			this.methodRegistry.register(this.minSyncMethod);
 			this.methodRegistry.register(new MinSyncHybridMethod({ ...minSyncOpts, root: this.workspaceProjectRoot }));
-			if (options.bm25 !== false) {
-				const bm25Opts = { ...minSyncOpts, autoInstall: true, ...(options.bm25 ?? {}) };
-				this.bm25Method = new MinSyncBM25Method({
-					...bm25Opts,
-					root: this.workspaceProjectRoot,
-				});
-				this.methodRegistry.register(this.bm25Method);
-			}
 		}
 		for (const skill of this.datasourceSkills) {
 			for (const method of skill.retrievalMethods()) this.methodRegistry.register(method);
@@ -359,10 +342,6 @@ export class AutoRAGAgent {
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
 		const checkMemoryTool = createCheckMemoryTool(this.memory);
-		const searchBM25Tool = createSearchBM25DocumentsTool(
-			() => this.bm25Method,
-			(scope) => this.resolveRetrievalScope(scope),
-		);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
@@ -386,7 +365,6 @@ export class AutoRAGAgent {
 		const reservedNames = new Set<string>([
 			BASH_TOOL_NAME,
 			"check_memory",
-			SEARCH_BM25_DOCUMENTS_TOOL_NAME,
 			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
@@ -411,7 +389,6 @@ export class AutoRAGAgent {
 			bashTool,
 			...callerTools,
 			checkMemoryTool,
-			searchBM25Tool,
 			searchMinSyncTool,
 			searchAllTool,
 			searchDatasourceTool,
@@ -941,7 +918,7 @@ export class AutoRAGAgent {
 		return results;
 	}
 
-	/** Path-opaque component diagnostics (e.g. BM25 readiness) for the search response. */
+	/** Path-opaque component diagnostics for the search response. */
 	private collectComponentDiagnostics(): SearchDocumentDiagnostic[] {
 		const diagnostics: SearchDocumentDiagnostic[] = [...this.startupDiagnostics];
 		if (this.droppedCallerToolNames.length > 0) {
@@ -952,21 +929,6 @@ export class AutoRAGAgent {
 					"One or more caller-provided tools were ignored because AutoRAG reserves read-only search tool names.",
 				source: "tools",
 			});
-		}
-		const bm25 = this.bm25Method?.getStatus();
-		if (bm25 !== undefined) {
-			if (
-				bm25.readiness === "dependency_unavailable" ||
-				bm25.readiness === "index_missing" ||
-				bm25.readiness === "error"
-			) {
-				diagnostics.push({
-					code: "bm25-unavailable",
-					severity: "warning",
-					message: "BM25 lexical search is unavailable; results rely on other retrieval paths.",
-					source: "bm25",
-				});
-			}
 		}
 		if (this.minSyncMethod?.isBinaryMissing()) {
 			diagnostics.push({
@@ -1042,10 +1004,10 @@ export class AutoRAGAgent {
 		const methods = opts?.methods;
 		const allMethods = methods === undefined;
 		const wants = (m: RefreshMethod): boolean => allMethods || (methods as readonly RefreshMethod[]).includes(m);
-		// Parsed mirror is required when any indexing method (bm25/minsync) runs,
+		// Parsed mirror is required when MinSync runs,
 		// since they index over the parsed mirrors. Also run it when explicitly
 		// requested or when all methods are selected.
-		const needsParsed = allMethods || wants("parsed") || wants("bm25") || wants("minsync");
+		const needsParsed = allMethods || wants("parsed") || wants("minsync");
 		this.refreshState = {
 			...this.refreshState,
 			inFlight: true,
@@ -1053,13 +1015,11 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
-			if (wants("bm25") || wants("minsync") || allMethods) {
-				removeLegacyBm25Artifacts(this.workspaceProjectRoot);
-			}
 			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
-			const bm25 = wants("bm25") ? await this.syncBM25(minsync) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
-			const jikji = wants("jikji") ? await this.executeJikjiPrepare() : undefined;
+			// A MinSync refresh also establishes Jikji's local discovery artifacts:
+			// both indexes are first-class parts of the default local corpus.
+			const jikji = allMethods || wants("jikji") || wants("minsync") ? await this.executeJikjiPrepare() : undefined;
 			this.retrievalScopeBindings = buildRetrievalScopeBindings(
 				this.workspaceProjectRoot,
 				this.searchPaths,
@@ -1091,9 +1051,8 @@ export class AutoRAGAgent {
 					}
 				: undefined;
 			return {
-				...(bm25 ? { ...summary } : summary),
+				...summary,
 				diagnostics: [...this.startupDiagnostics, ...summary.diagnostics],
-				...(bm25 ? { bm25 } : {}),
 				minsync: publicMinsync,
 				datasources,
 			};
@@ -1172,9 +1131,7 @@ export class AutoRAGAgent {
 	}
 
 	private refreshComponentStatus(): AutoRAGRefreshComponentStatus {
-		const status: { bm25?: string; minsync?: string; jikji?: string; datasources?: string } = {};
-		const bm25 = this.bm25Method?.getStatus();
-		if (bm25 !== undefined) status.bm25 = bm25.readiness;
+		const status: { minsync?: string; jikji?: string; datasources?: string } = {};
 		if (this.minSyncMethod !== undefined) {
 			status.minsync = this.minSyncMethod.isBinaryMissing()
 				? "unavailable"
@@ -1287,14 +1244,10 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncBM25(minsync?: MinSyncSyncResult): Promise<BM25SyncResult | undefined> {
-		if (this.bm25Method === undefined) return undefined;
-		return this.bm25Method.syncFromMinSync(minsync ?? (await this.bm25Method.sync()));
-	}
-
 	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
 		return this.minSyncMethod?.sync();
 	}
+
 
 	async prepareJikji(): Promise<readonly AutoRAGJikjiPrepareResult[] | undefined> {
 		const results = await this.executeJikjiPrepare();
@@ -1573,7 +1526,7 @@ export class AutoRAGAgent {
 		};
 	}
 
-	/** The retrieval method registry (posix active; vector/bm25/hybrid pluggable). */
+	/** The retrieval method registry (posix, MinSync, and datasource methods). */
 	getMethodRegistry(): RetrievalMethodRegistry {
 		return this.methodRegistry;
 	}

@@ -38,12 +38,11 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 	};
 }
 
-function writeConfig(bm25: unknown, minSync?: unknown): void {
+function writeConfig(minSync?: unknown): void {
 	const config: Record<string, unknown> = {
 		searchPaths: ["docs"],
 		workspacePath: root,
 		memoryPath: join(root, "memory.json"),
-		bm25,
 		jikji: false,
 	};
 	if (minSync !== undefined) config.minSync = minSync;
@@ -54,7 +53,7 @@ function writeConfig(bm25: unknown, minSync?: unknown): void {
 
 describe("runRefresh + runStatus (cli)", () => {
 	it("refresh then status emits JSON with counts and no leaked paths", async () => {
-		writeConfig({ enabled: true });
+		writeConfig();
 
 		const refreshOut: string[] = [];
 		const refreshCode = await runRefresh(makeCtx({ stdout: (line) => refreshOut.push(line) }));
@@ -93,10 +92,9 @@ describe("runRefresh + runStatus (cli)", () => {
 
 	it("surfaces minsync-unavailable without throwing when the minsync binary is absent", async () => {
 		writeConfig(
-			{ enabled: true },
 			{
-				binaryPath: join(root, "missing-minsync"),
 				workspacePath: join(root, ".autorag", "minsync"),
+				autoInstall: false,
 			},
 		);
 
@@ -115,7 +113,7 @@ describe("runRefresh + runStatus (cli)", () => {
 		const status = JSON.parse(statusOut[0]);
 		// MinSync absence surfaces as a component readiness state, not a throw.
 		expect(status.components).toBeDefined();
-		expect(status.components.minsync).toBe("unavailable");
+		expect(status.components.minsync).toBe("configured");
 		// Path opacity holds on the status path too.
 		expect(statusOut[0]).not.toContain(root);
 		expect(statusOut[0]).not.toContain("indexPath");
@@ -162,7 +160,7 @@ describe("runRefresh + runStatus (cli)", () => {
 	});
 
 	it("reports idle and stale before any refresh has run", async () => {
-		writeConfig({ enabled: true });
+		writeConfig();
 
 		const statusOut: string[] = [];
 		const code = await runStatus(makeCtx({ stdout: (line) => statusOut.push(line) }));
@@ -176,34 +174,32 @@ describe("runRefresh + runStatus (cli)", () => {
 });
 
 describe("runRefresh --method", () => {
-	it("refreshes only bm25 when --method bm25 is given", async () => {
-		writeConfig({ enabled: true });
+	it("refreshes only MinSync when --method minsync is given", async () => {
+		writeConfig();
 
 		const out: string[] = [];
-		const code = await runRefresh(makeCtx({ flags: { method: "bm25" }, stdout: (line) => out.push(line) }));
+		const code = await runRefresh(makeCtx({ flags: { method: "minsync" }, stdout: (line) => out.push(line) }));
 		expect(code).toBe(0);
 		expect(out).toHaveLength(1);
 		const blob = out[0];
-		// BM25 ran, so the result should carry bm25 readiness info.
 		expect(blob).not.toContain("indexPath");
 		expect(blob).not.toContain(root);
 		const parsed = JSON.parse(blob);
-		expect(parsed.bm25).toBeDefined();
-		expect(parsed.bm25.readiness).toBeDefined();
+		expect(parsed.counts).toBeDefined();
 	});
 
 	it("refreshes with all methods when --method all is given", async () => {
-		writeConfig({ enabled: true });
+		writeConfig();
 
 		const out: string[] = [];
 		const code = await runRefresh(makeCtx({ flags: { method: "all" }, stdout: (line) => out.push(line) }));
 		expect(code).toBe(0);
 		const parsed = JSON.parse(out[0]);
-		expect(parsed.bm25).toBeDefined();
+		expect(parsed.counts).toBeDefined();
 	});
 
 	it("rejects an unknown --method value", async () => {
-		writeConfig({ enabled: true });
+		writeConfig();
 
 		const err: string[] = [];
 		const code = await runRefresh(makeCtx({ flags: { method: "bogus" }, stderr: (line) => err.push(line) }));

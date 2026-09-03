@@ -63,7 +63,6 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			minSync: false,
-			bm25: false,
 			dupey: {
 				run: async () =>
 					JSON.stringify({
@@ -95,7 +94,6 @@ describe("AutoRAGAgent parsed mirror integration", () => {
 			workspacePath: root,
 			jikji: false,
 			minSync: false,
-			bm25: false,
 			excludeExactDuplicates: false,
 		});
 

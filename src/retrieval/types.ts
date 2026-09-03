@@ -33,8 +33,6 @@ export interface RetrievalMethod {
 export type RetrievalDiagnosticCode =
 	| "retrieval-method-failed"
 	| "minsync-unavailable"
-	| "bm25-unavailable"
-	| "bm25-degraded-fallback";
 
 /** Path-opaque diagnostic emitted by the multi-method retrieval pipeline. */
 export interface RetrievalDiagnostic {
