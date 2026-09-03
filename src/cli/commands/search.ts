@@ -189,13 +189,24 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 	const options = buildSearchOptions(ctx.flags);
 	try {
 		if (agent.searchDocumentsStream) {
+			let progressBuffer = "";
 			for await (const event of agent.searchDocumentsStream(query, options)) {
 				if (event.type === "progress") {
-					ctx.stdout(ctx.json ? JSON.stringify({ type: "progress", text: event.text }) : event.text);
+					if (ctx.json) {
+						ctx.stdout(JSON.stringify({ type: "progress", text: event.text }));
+					} else {
+						progressBuffer += event.text;
+						if (/[.!?。！？]\s*$/u.test(progressBuffer)) {
+							ctx.stdout(progressBuffer);
+							progressBuffer = "";
+						}
+					}
 				} else {
+					if (progressBuffer.trim() !== "") ctx.stdout(progressBuffer);
 					ctx.stdout(renderSearch(event.response, { json: ctx.json, debug: ctx.debug }));
 				}
 			}
+			if (progressBuffer.trim() !== "") ctx.stdout(progressBuffer);
 			return 0;
 		}
 		const resp = await agent.searchDocuments(query, options);

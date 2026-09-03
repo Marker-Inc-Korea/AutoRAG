@@ -9,7 +9,7 @@ import {
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
-import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
+import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../../config/home.ts";
 import {
 	buildAgentOptions,
@@ -54,7 +54,8 @@ export interface TuiPresenter {
 	reset(): void;
 }
 
-type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> &
+	Partial<Pick<AutoRAGAgent, "searchDocumentsStream" | "subscribe" | "abort">>;
 
 export interface TuiDeps {
 	agentFactory?: (opts?: AutoRAGAgentOptions) => TuiAgent;
@@ -192,6 +193,10 @@ const ANSI_DIM_GRAY = "\u001b[90m\u001b[2m";
 
 function dimGray(text: string): string {
 	return `${ANSI_DIM_GRAY}${text}${ANSI_RESET}`;
+}
+
+function renderProgressEvent(event: SearchDocumentsStreamEvent): string | undefined {
+	return event.type === "progress" && event.text.trim() !== "" ? event.text : undefined;
 }
 
 function stripAnsi(text: string): string {
@@ -356,18 +361,30 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
 			renderTranscript();
 			tui.requestRender();
-			void agent
-				.searchDocuments(query)
-				.then((response) => {
-					const answer = renderSearch(response, {
-						json: false,
-						debug: ctx.debug,
-					});
-					completedResponse = response;
-					completedAnswer = answer;
-					finalAnswer = answer;
-					renderTranscript();
-				})
+			void (async () => {
+				if (agent.searchDocumentsStream) {
+					for await (const event of agent.searchDocumentsStream(query)) {
+						const progress = renderProgressEvent(event);
+						if (progress !== undefined) {
+							transcriptHistory = `${transcriptHistory}\n\n${progress}`;
+							renderTranscript();
+						} else if (event.type === "complete") {
+							const answer = renderSearch(event.response, { json: false, debug: ctx.debug });
+							completedResponse = event.response;
+							completedAnswer = answer;
+							finalAnswer = answer;
+							renderTranscript();
+						}
+					}
+					return;
+				}
+				const response = await agent.searchDocuments(query);
+				const answer = renderSearch(response, { json: false, debug: ctx.debug });
+				completedResponse = response;
+				completedAnswer = answer;
+				finalAnswer = answer;
+				renderTranscript();
+			})()
 				.catch((error) => {
 					if (interrupted) return;
 					transcriptHistory = `${transcriptHistory}\n\n${renderError(error, {
@@ -469,12 +486,27 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 			interrupted = false;
 			presenter.beginRun();
 			try {
-				const response: SearchDocumentsResponse = await agent.searchDocuments(query);
-				if (!interrupted) {
-					const answer = renderSearch(response, { json: false, debug: ctx.debug });
-					tui.rendered.push(answer);
-					completedResponse = response;
-					completedAnswer = answer;
+				if (agent.searchDocumentsStream) {
+					for await (const event of agent.searchDocumentsStream(query)) {
+						if (interrupted) break;
+						const progress = renderProgressEvent(event);
+						if (progress !== undefined) {
+							tui.rendered.push(progress);
+						} else if (event.type === "complete") {
+							const answer = renderSearch(event.response, { json: false, debug: ctx.debug });
+							tui.rendered.push(answer);
+							completedResponse = event.response;
+							completedAnswer = answer;
+						}
+					}
+				} else {
+					const response: SearchDocumentsResponse = await agent.searchDocuments(query);
+					if (!interrupted) {
+						const answer = renderSearch(response, { json: false, debug: ctx.debug });
+						tui.rendered.push(answer);
+						completedResponse = response;
+						completedAnswer = answer;
+					}
 				}
 			} catch (error) {
 				if (!interrupted) {

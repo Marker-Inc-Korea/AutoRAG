@@ -816,23 +816,42 @@ export class AutoRAGAgent {
 		options: RetrievalOptions = {},
 	): AsyncGenerator<SearchDocumentsStreamEvent, void, void> {
 		const queue: SearchDocumentsStreamEvent[] = [];
+		let progressBuffer = "";
 		let wake: (() => void) | undefined;
 		let settled = false;
 		const unsubscribe = this.subscribe((event) => {
 			if (event.type !== "message_update" || event.assistantMessageEvent.type !== "text_delta") return;
-			const text = event.assistantMessageEvent.delta.trim();
-			if (text.length === 0) return;
+			const text = event.assistantMessageEvent.delta;
+			if (text.trim().length === 0) return;
+			progressBuffer += text;
+			if (!/[.!?。！？]\s*$/u.test(progressBuffer)) return;
 			queue.push({
 				type: "progress",
 				sessionId: this.lastSessionId ?? "",
 				query: query.trim(),
-				text,
+				text: progressBuffer,
 			});
+			progressBuffer = "";
 			wake?.();
 			wake = undefined;
 		});
+		queue.push({
+			type: "progress",
+			sessionId: "",
+			query: query.trim(),
+			text: "질문을 확인하고 있습니다.",
+		});
 		const run = this.searchDocuments(query, options)
 			.then((response) => {
+				if (progressBuffer.trim() !== "") {
+					queue.push({
+						type: "progress",
+						sessionId: this.lastSessionId ?? "",
+						query: query.trim(),
+						text: progressBuffer,
+					});
+					progressBuffer = "";
+				}
 				queue.push({ type: "complete", response });
 			})
 			.catch((error) => {

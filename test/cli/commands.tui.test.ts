@@ -106,6 +106,28 @@ describe("runTui", () => {
 		expect(tui.stopped).toBe(true);
 	});
 
+	it("renders streaming progress before the final answer", async () => {
+		const { ctx } = context();
+		const tui = driver([]);
+		const running = runTui(ctx, {
+			agentFactory: () => ({
+				searchDocuments: async () => response,
+				async *searchDocumentsStream() {
+					yield { type: "progress" as const, sessionId: "session", query: "question", text: "현재 자료를 확인 중입니다." };
+					yield { type: "complete" as const, response };
+				},
+			}),
+			tuiFactory: () => tui,
+		});
+
+		await tui.onSubmit?.("question");
+		await tui.onSubmit?.("/quit");
+		await running;
+
+		expect(tui.rendered.join("\n")).toContain("현재 자료를 확인 중입니다.");
+		expect(tui.rendered.join("\n")).toContain("answer");
+	});
+
 	it("opens a resume picker with first-question titles and restores the selected session", async () => {
 		const { ctx } = context();
 		const tui = driver([]);
