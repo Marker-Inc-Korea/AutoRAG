@@ -82,6 +82,24 @@ export function createXlsFixture(text: string): Buffer {
 	return Buffer.from(XLSX.write(workbook, { bookType: "xls", type: "buffer" }));
 }
 
+export function createRichXlsFixture(): Buffer {
+	const workbook = XLSX.utils.book_new();
+	const summary = XLSX.utils.aoa_to_sheet([
+		["Whitespace", "  preserve me  "],
+		["Pipes", "left | right"],
+		["Newlines", "first line\nsecond line"],
+		["Backslash", String.raw`C:\docs\file.xls`],
+	]);
+	const second = XLSX.utils.aoa_to_sheet([
+		["Unicode", "한글 marker"],
+		["Number", 42],
+		["Boolean", true],
+	]);
+	XLSX.utils.book_append_sheet(workbook, summary, "Summary");
+	XLSX.utils.book_append_sheet(workbook, second, "Details");
+	return Buffer.from(XLSX.write(workbook, { bookType: "xls", type: "buffer" }));
+}
+
 export async function createHwpxFixture(text: string): Promise<Buffer> {
 	const zip = new JSZip();
 	zip.file(

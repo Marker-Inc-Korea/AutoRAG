@@ -17,6 +17,7 @@ import {
 	createEucKrEmlFixture,
 	createHwpxFixture,
 	createPptxFixture,
+	createRichXlsFixture,
 	createXlsFixture,
 	createXlsxFixture,
 } from "../fixtures/document-formats.ts";
@@ -368,5 +369,32 @@ describe("ParserRegistry", () => {
 		await expect(
 			xlsParser?.parse({ virtualPath: "/docs/legacy.xls", bytes: Buffer.from("not xls") }),
 		).rejects.toBeInstanceOf(ParseError);
+	});
+
+	it("wraps corrupt OLE-prefixed legacy XLS input in a typed parser error", async () => {
+		const registry = createDefaultParserRegistry();
+		const xlsParser = registry.getForVirtualPath("/docs/corrupt.xls");
+		const bytes = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
+
+		await expect(xlsParser?.parse({ virtualPath: "/docs/corrupt.xls", bytes })).rejects.toBeInstanceOf(ParseError);
+	});
+
+	it("preserves legacy XLS cell boundaries and values in escaped Markdown", async () => {
+		const registry = createDefaultParserRegistry();
+		const xlsParser = registry.getForVirtualPath("/docs/rich.xls");
+
+		const parsed = await xlsParser?.parse({
+			virtualPath: "/docs/rich.xls",
+			bytes: createRichXlsFixture(),
+		});
+
+		expect(parsed?.markdown).toContain("  preserve me  ");
+		expect(parsed?.markdown).toContain("left \\| right");
+		expect(parsed?.markdown).toContain("first line<br>second line");
+		expect(parsed?.markdown).toContain("C:\\\\docs\\\\file.xls");
+		expect(parsed?.markdown).toContain("## Details");
+		expect(parsed?.markdown).toContain("Unicode | 한글 marker");
+		expect(parsed?.markdown).toContain("Number | 42");
+		expect(parsed?.markdown).toContain("Boolean | TRUE");
 	});
 });

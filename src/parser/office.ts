@@ -69,17 +69,32 @@ function formatLegacyXls(bytes: Uint8Array): ParseOutput {
 			blankrows: false,
 			defval: "",
 		});
-		const lines = rows
-			.map((row) =>
-				row
-					.map((cell) => String(cell ?? "").trim())
-					.join(" | ")
-					.replace(/\s+\|$/, ""),
-			)
-			.filter((row) => row.trim().length > 0);
+		const lines = rows.map((row) => formatLegacyXlsRow(row)).filter((row): row is string => row !== undefined);
 		return [`## ${sheetName}`, ...lines].join("\n");
 	}).join("\n\n");
 	return { markdown: normalizeMarkdown(markdown), metadata: { parser: "xlsx", format: "xls" } };
+}
+
+function formatLegacyXlsRow(row: readonly unknown[]): string | undefined {
+	let lastContentIndex = -1;
+	for (let index = row.length - 1; index >= 0; index -= 1) {
+		if (String(row[index] ?? "").length > 0) {
+			lastContentIndex = index;
+			break;
+		}
+	}
+	if (lastContentIndex < 0) return undefined;
+	return row
+		.slice(0, lastContentIndex + 1)
+		.map((cell) => escapeMarkdownTableCell(String(cell ?? "")))
+		.join(" | ");
+}
+
+function escapeMarkdownTableCell(value: string): string {
+	return value
+		.replaceAll("\\", "\\\\")
+		.replaceAll("|", "\\|")
+		.replace(/\r\n|\r|\n/g, "<br>");
 }
 
 function formatMarkdown(parserName: string, chunks: readonly string[]): ParseOutput {
