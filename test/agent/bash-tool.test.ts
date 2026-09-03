@@ -144,6 +144,8 @@ describe("createBashTool", () => {
 		]);
 
 		expect(result.details.timedOut).toBe(true);
+		expect(result.details.terminationFailed).toBe(false);
+		expect(result.details.aborted).toBe(false);
 		expect(result.content[0]).toMatchObject({
 			type: "text",
 			text: expect.stringContaining("(command timed out after 100ms and was killed)"),
@@ -172,6 +174,8 @@ describe("createBashTool", () => {
 		]);
 
 		expect(result.details.timedOut).toBe(false);
+		expect(result.details.aborted).toBe(true);
+		expect(result.details.terminationFailed).toBe(false);
 		expect(isProcessAlive(childPid)).toBe(false);
 	});
 

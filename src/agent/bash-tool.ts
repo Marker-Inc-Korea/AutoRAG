@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { classifyFilesystemRoot, isDatalessPlaceholder } from "../filesystem/cloud-placeholder.ts";
@@ -31,7 +31,9 @@ export interface BashToolOptions {
 export interface BashToolDetails {
 	readonly method: "bash";
 	readonly command: string;
+	readonly aborted: boolean;
 	readonly exitCode: number | undefined;
+	readonly terminationFailed: boolean;
 	readonly timedOut: boolean;
 	readonly truncated: boolean;
 }
@@ -42,6 +44,7 @@ interface RunResult {
 	readonly output: string;
 	readonly exitCode: number | undefined;
 	readonly aborted: boolean;
+	readonly terminationFailed: boolean;
 	readonly timedOut: boolean;
 	readonly truncated: boolean;
 }
@@ -55,7 +58,14 @@ function runCommand(
 ): Promise<RunResult> {
 	return new Promise((resolve) => {
 		if (signal?.aborted) {
-			resolve({ output: "", exitCode: undefined, aborted: true, timedOut: false, truncated: false });
+			resolve({
+				output: "",
+				exitCode: undefined,
+				aborted: true,
+				terminationFailed: false,
+				timedOut: false,
+				truncated: false,
+			});
 			return;
 		}
 		const shell = process.platform === "win32" ? "bash.exe" : "/bin/bash";
@@ -67,6 +77,11 @@ function runCommand(
 		let aborted = false;
 		let settled = false;
 		let killGraceTimer: ReturnType<typeof setTimeout> | undefined;
+		let terminationRequested = false;
+		let terminationStarted = false;
+		let terminationSettled = false;
+		let terminationFailed = false;
+		let pendingExitCode: number | undefined;
 
 		const collect = (data: Buffer) => {
 			if (total >= maxOutputBytes) {
@@ -89,59 +104,86 @@ function runCommand(
 
 		const finish = (exitCode: number | undefined) => {
 			if (settled) return;
+			if (terminationRequested && !terminationSettled) {
+				pendingExitCode = exitCode;
+				return;
+			}
 			settled = true;
 			clearTimeout(timer);
 			if (killGraceTimer !== undefined) clearTimeout(killGraceTimer);
 			signal?.removeEventListener("abort", onAbort);
-			resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode, aborted, timedOut, truncated });
+			resolve({
+				output: Buffer.concat(chunks).toString("utf8"),
+				exitCode,
+				aborted,
+				terminationFailed,
+				timedOut,
+				truncated,
+			});
 		};
 
-		const killProcessTree = () => {
-			if (child.pid === undefined) return;
+		const killDirectChild = (): boolean => {
+			try {
+				return child.kill("SIGKILL");
+			} catch {
+				return false;
+			}
+		};
+
+		const killProcessTree = async (): Promise<boolean> => {
+			if (child.pid === undefined) return true;
 			if (process.platform === "win32") {
-				try {
-					const result = spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
-						stdio: "ignore",
-						timeout: KILL_EXIT_GRACE_MS,
-					});
-					if (result.status === 0) return;
-				} catch {
-					// Fall through to the direct-process fallback.
-				}
-				try {
-					child.kill("SIGKILL");
-				} catch {
-					// The process may already have exited.
-				}
-				return;
+				return await new Promise<boolean>((resolve) => {
+					const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+					let completed = false;
+					const graceTimer = setTimeout(() => {
+						if (completed) return;
+						completed = true;
+						killer.kill();
+						resolve(killDirectChild());
+					}, KILL_EXIT_GRACE_MS);
+					const finishKill = (success: boolean) => {
+						if (completed) return;
+						completed = true;
+						clearTimeout(graceTimer);
+						if (!success) killDirectChild();
+						resolve(success);
+					};
+					killer.on("error", () => finishKill(false));
+					killer.on("close", (code) => finishKill(code === 0));
+				});
 			}
 			try {
 				process.kill(-child.pid, "SIGKILL");
+				return true;
 			} catch {
-				try {
-					child.kill("SIGKILL");
-				} catch {
-					// The process may already have exited.
-				}
+				killDirectChild();
+				return false;
 			}
 		};
 
-		const releaseAfterKill = () => {
+		const releaseAfterKill = async () => {
+			if (terminationStarted) return;
+			terminationStarted = true;
+			const killed = await killProcessTree();
+			terminationSettled = true;
+			terminationFailed = !killed;
 			child.stdout?.destroy();
 			child.stderr?.destroy();
 			killGraceTimer = setTimeout(() => finish(undefined), KILL_EXIT_GRACE_MS);
+			if (pendingExitCode !== undefined) finish(pendingExitCode);
 		};
 
 		const timer = setTimeout(() => {
 			timedOut = true;
-			killProcessTree();
-			releaseAfterKill();
+			terminationRequested = true;
+			void releaseAfterKill();
 		}, timeoutMs);
 
 		const onAbort = () => {
 			aborted = true;
-			killProcessTree();
-			releaseAfterKill();
+			terminationRequested = true;
+			void releaseAfterKill();
 		};
 		if (signal) {
 			if (signal.aborted) onAbort();
@@ -172,7 +214,15 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 			if (command.length === 0) {
 				return {
 					content: [{ type: "text", text: "Command was empty; nothing was run." }],
-					details: { method: "bash", command: "", exitCode: undefined, timedOut: false, truncated: false },
+					details: {
+						method: "bash",
+						command: "",
+						aborted: false,
+						exitCode: undefined,
+						terminationFailed: false,
+						timedOut: false,
+						truncated: false,
+					},
 				};
 			}
 			const cwd = typeof params.cwd === "string" && params.cwd.length > 0 ? params.cwd : options.cwd;
@@ -188,7 +238,15 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 									"Use the configured cloud-drive datasource or a materialized local file.",
 							},
 						],
-						details: { method: "bash", command, exitCode: undefined, timedOut: false, truncated: false },
+						details: {
+							method: "bash",
+							command,
+							aborted: false,
+							exitCode: undefined,
+							terminationFailed: false,
+							timedOut: false,
+							truncated: false,
+						},
 					};
 				}
 				if (await isDatalessPlaceholder(cwd)) {
@@ -201,7 +259,15 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 									"Use the configured cloud-drive datasource or materialize the file first.",
 							},
 						],
-						details: { method: "bash", command, exitCode: undefined, timedOut: false, truncated: false },
+						details: {
+							method: "bash",
+							command,
+							aborted: false,
+							exitCode: undefined,
+							terminationFailed: false,
+							timedOut: false,
+							truncated: false,
+						},
 					};
 				}
 			}
@@ -216,13 +282,16 @@ export function createBashTool(options: BashToolOptions): AgentTool<typeof bashS
 			if (run.exitCode !== undefined && run.exitCode !== 0 && !run.timedOut) {
 				parts.push(`\n(exit code ${run.exitCode})`);
 			}
+			if (run.terminationFailed) parts.push("\n(process termination failed)");
 
 			return {
 				content: [{ type: "text", text: parts.join("") }],
 				details: {
 					method: "bash",
 					command,
+					aborted: run.aborted,
 					exitCode: run.exitCode,
+					terminationFailed: run.terminationFailed,
 					timedOut: run.timedOut,
 					truncated: run.truncated,
 				},
