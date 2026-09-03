@@ -56,6 +56,7 @@ const COMMANDS = [
 	"watch",
 	"health",
 	"duplicates",
+	"tui",
 	"ui",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
@@ -86,6 +87,7 @@ Commands:
   index rebuild        Reset then re-run a refresh (--method bm25|minsync|all)
   health               Check model/provider auth and completion access (no index check)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
+  tui                  Open an interactive Pi-powered librarian terminal UI
   ui                   Open a local loopback page to connect and manage data sources
                        (--port N  --host 127.0.0.1  --no-open  --allow-remote)
 
@@ -202,6 +204,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "duplicates": {
 			const { runDuplicates } = await import("./commands/duplicates.ts");
 			return runDuplicates(ctx);
+		}
+		case "tui": {
+			const { runTui } = await import("./commands/tui.ts");
+			return runTui(ctx);
 		}
 		case "ui": {
 			const { runUi } = await import("./commands/ui.ts");

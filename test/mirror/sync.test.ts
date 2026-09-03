@@ -19,7 +19,8 @@ import {
 	saveMirrorIndex,
 	syncParsedMirrors,
 } from "../../src/mirror/index.ts";
-import { createDefaultParserRegistry } from "../../src/parser/index.ts";
+import { createDefaultParserRegistry, ParseError, Parser, ParserRegistry } from "../../src/parser/index.ts";
+import { createXlsFixture } from "../fixtures/document-formats.ts";
 
 let root: string;
 let source: string;
@@ -44,6 +45,20 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("syncParsedMirrors", () => {
+	it("writes legacy XLS worksheet text to the parsed mirror", async () => {
+		writeFileSync(join(source, "legacy.xls"), createXlsFixture("Mirror legacy XLS marker"));
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const outputPath = requireValue(
+			loadMirrorIndex(root).entries["/docs/legacy.xls"]?.outputPath,
+			"legacy XLS output path",
+		);
+		const markdown = readFileSync(outputPath, "utf8");
+
+		expect(result).toMatchObject({ scanned: 1, written: 1, skipped: 0 });
+		expect(markdown).toContain("Mirror legacy XLS marker");
+	});
+
 	it("writes legacy HWP5 body and table text to the parsed mirror", async () => {
 		copyFileSync(
 			new URL("../fixtures/hwp5/minimal-body-table.hwp", import.meta.url),
@@ -238,6 +253,38 @@ describe("syncParsedMirrors", () => {
 		expect(result.scanned).toBe(1);
 		expect(result.written).toBe(1);
 		expect(diag).toBeUndefined();
+		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
+	});
+
+	class FailingPdfParser extends Parser {
+		readonly name = "opendataloader-pdf";
+		readonly extensions = [".pdf"];
+
+		async parse(input: { readonly virtualPath: string }): Promise<never> {
+			throw new ParseError(
+				this.name,
+				input.virtualPath,
+				new Error("UnsupportedClassVersionError: class file version 55.0"),
+			);
+		}
+	}
+
+	it("reports the Java runtime requirement when PDF parsing uses an old Java", async () => {
+		writeFileSync(join(source, "legacy.pdf"), Buffer.from("pdf"));
+
+		const result = await syncParsedMirrors({
+			root,
+			searchPaths: [source],
+			registry: new ParserRegistry([new FailingPdfParser()]),
+		});
+		const diag = result.diagnostics.find((d) => d.source === "/docs/legacy.pdf");
+
+		expect(diag).toEqual({
+			code: "pdf-java-version",
+			severity: "warning",
+			message: "PDF parsing requires Java 11 or newer; the Java runtime selected from PATH is too old.",
+			source: "/docs/legacy.pdf",
+		});
 		expect(JSON.stringify(result.diagnostics)).not.toContain(root);
 	});
 
