@@ -7,6 +7,7 @@ import {
 	type CliConfig,
 	ConfigError,
 	normalizeEmbedder,
+	normalizeIndexingConfig,
 	resolveAgentModel,
 	resolveConfig,
 	writeDefaultConfig,
@@ -40,7 +41,18 @@ describe("single-model CLI config", () => {
 		expect(config.bm25?.enabled).toBe(true);
 		expect(config.minSync?.enabled).toBe(true);
 		expect(config.minSync?.autoInstall).toBe(true);
+		expect(config.jikji).toEqual({});
 		expect(config.excludeExactDuplicates).toBe(true);
+	});
+
+	it("preserves explicit Jikji opt-out in resolved agent options", () => {
+		const config = resolveConfig({
+			flags: {},
+			env: { HOME: root },
+			cwd: root,
+		});
+		const optedOut = { ...config, jikji: false as const };
+		expect(buildAgentOptions(optedOut).jikji).toBe(false);
 	});
 
 	it("rejects partial model flags", () => {
@@ -119,6 +131,11 @@ describe("single-model CLI config", () => {
 			dimension: 3,
 		});
 		expect(() => normalizeEmbedder({ dimension: 0 }, "minSync.embedder")).toThrow(ConfigError);
+	});
+
+	it("validates the MinSync chunk size", () => {
+		expect(normalizeIndexingConfig({ minSync: { maxChunkSize: 1000 } }).minSync.maxChunkSize).toBe(1000);
+		expect(() => normalizeIndexingConfig({ minSync: { maxChunkSize: 0 } })).toThrow(ConfigError);
 	});
 
 	it("rejects malformed JSON config", () => {

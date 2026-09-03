@@ -122,6 +122,7 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			maxSearchToolCalls: 1,
+			jikji: false,
 		});
 		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
@@ -137,6 +138,16 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(agent).toBeDefined();
+	});
+
+	it("shares MinSync chunk size with BM25-only refresh configuration", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: { maxChunkSize: 1000, autoInstall: false },
+		});
+
+		expect((internals(agent).bm25Method as unknown as { maxChunkSize?: number }).maxChunkSize).toBe(1000);
 	});
 
 	it("registers the dupey duplicate scan tool by default", () => {

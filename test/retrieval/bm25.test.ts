@@ -10,10 +10,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 import { createSearchBM25DocumentsTool } from "../../src/agent/search-bm25-tool.ts";
-import { MinSyncBM25Method, MinSyncHybridMethod, MinSyncVectorMethod } from "../../src/minsync/index.ts";
+import {
+	MinSyncBM25Method,
+	MinSyncHybridMethod,
+	MinSyncVectorMethod,
+	minSyncConfigPath,
+} from "../../src/minsync/index.ts";
 import { syncParsedMirrors } from "../../src/mirror/sync.ts";
 import { BM25_SUBDIR, hasLegacyBm25Artifacts, removeLegacyBm25Artifacts } from "../../src/retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope, RetrievalScopeError } from "../../src/retrieval/scope.ts";
@@ -173,6 +179,7 @@ describe("AutoRAG BM25 integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			bm25: { autoInstall: false },
 			minSync: { autoInstall: false, binaryPath: join(root, "missing-minsync") },
 		});
@@ -189,12 +196,34 @@ describe("AutoRAG BM25 integration", () => {
 		);
 	});
 
+	it("applies minSync.maxChunkSize during a BM25-only refresh", async () => {
+		writeFileSync(join(docs, "guide.txt"), "refund policy\n");
+		writeFakeMinSync();
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: false,
+			minSync: { autoInstall: false, binaryPath: minsyncBinary, maxChunkSize: 1000 },
+		});
+
+		const refresh = await agent.refresh(true, { methods: ["bm25"] });
+
+		expect(refresh.bm25).toMatchObject({ engine: "minsync" });
+		const rewritten = parse(readFileSync(minSyncConfigPath(minsyncWorkspace), "utf8")) as Record<
+			string,
+			Record<string, unknown>
+		>;
+		expect((rewritten.chunker?.options as { max_chunk_size?: number } | undefined)?.max_chunk_size).toBe(1000);
+	});
+
 	it("does not fall back to a local BM25 index when MinSync is disabled", async () => {
 		writeFileSync(join(docs, "guide.txt"), "chargeback chargeback process\n");
 		const agent = new AutoRAGAgent({
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: false,
 		});
 		await agent.refresh(true);
@@ -216,6 +245,7 @@ describe("AutoRAG BM25 integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			jikji: false,
 			minSync: { autoInstall: false, binaryPath: join(root, "missing-minsync") },
 		});
 		await agent.refresh(true);
