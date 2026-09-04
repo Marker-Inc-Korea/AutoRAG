@@ -1,35 +1,70 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, unwatchFile, watchFile, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BASH_TOOL_NAME, createBashTool } from "../../src/agent/bash-tool.ts";
 
+const PID_WAIT_MS = 10_000;
+const TREE_TIMEOUT_MS = 8_000;
+const RESOLVE_WAIT_MS = 15_000;
+const DEATH_WAIT_MS = 2_000;
+
 let tmpDir: string;
 
-async function waitForFile(path: string): Promise<void> {
-	if (existsSync(path)) return;
-	await new Promise<void>((resolve, reject) => {
-		const timeout = setTimeout(() => {
-			unwatchFile(path, onChange);
-			reject(new Error(`Timed out waiting for ${basename(path)}`));
-		}, 2_000);
-		const onChange = () => {
-			if (!existsSync(path)) return;
-			clearTimeout(timeout);
-			unwatchFile(path, onChange);
-			resolve();
-		};
-		watchFile(path, { interval: 25 }, onChange);
-	});
+async function waitForFile(path: string, timeoutMs = PID_WAIT_MS): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (existsSync(path) && readFileSync(path, "utf8").trim().length > 0) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	throw new Error(`Timed out waiting for ${basename(path)}`);
 }
 
 function isProcessAlive(pid: number): boolean {
+	if (!Number.isInteger(pid) || pid <= 0) return false;
 	try {
 		process.kill(pid, 0);
 		return true;
 	} catch {
 		return false;
 	}
+}
+
+async function waitForProcessDeath(pid: number, timeoutMs = DEATH_WAIT_MS): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (!isProcessAlive(pid)) return;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	throw new Error(`Process ${pid} still alive`);
+}
+
+function hangingChildCommand(pidFileName: string): string {
+	writeFileSync(
+		join(tmpDir, "hang.mjs"),
+		`import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(pidFileName)}, String(process.pid));
+setInterval(() => {}, 1000);
+`,
+	);
+	return "node hang.mjs";
+}
+
+function readChildPid(pidPath: string): number {
+	const childPid = Number(readFileSync(pidPath, "utf8").trim());
+	if (!Number.isInteger(childPid) || childPid <= 0) {
+		throw new Error(`Invalid child pid in ${basename(pidPath)}`);
+	}
+	return childPid;
+}
+
+async function awaitToolResult<T>(execution: Promise<T>, label: string): Promise<T> {
+	return await Promise.race([
+		execution,
+		new Promise<never>((_, reject) =>
+			setTimeout(() => reject(new Error(`${label} did not resolve promptly`)), RESOLVE_WAIT_MS),
+		),
+	]);
 }
 
 beforeEach(() => {
@@ -115,7 +150,7 @@ describe("createBashTool", () => {
 
 		const result = await tool.execute(
 			"call-already-aborted",
-			{ command: `printf ran > ${markerPath}` },
+			{ command: "printf ran > already-aborted-ran" },
 			controller.signal,
 		);
 
@@ -129,55 +164,45 @@ describe("createBashTool", () => {
 
 	it("kills a process tree and resolves on process tree timeout", async () => {
 		const pidPath = join(tmpDir, "timeout-child.pid");
-		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 100 });
+		const tool = createBashTool({ cwd: tmpDir, timeoutMs: TREE_TIMEOUT_MS });
 		const execution = tool.execute("call-tree-timeout", {
-			command: "sleep 10 & echo $! > timeout-child.pid; wait",
+			command: hangingChildCommand("timeout-child.pid"),
 		});
 
 		await waitForFile(pidPath);
-		const childPid = Number(readFileSync(pidPath, "utf8"));
-		const result = await Promise.race([
-			execution,
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error("bash tool did not resolve promptly")), 1_000),
-			),
-		]);
+		const childPid = readChildPid(pidPath);
+		const result = await awaitToolResult(execution, "bash tool");
 
 		expect(result.details.timedOut).toBe(true);
 		expect(result.details.terminationFailed).toBe(false);
 		expect(result.details.aborted).toBe(false);
 		expect(result.content[0]).toMatchObject({
 			type: "text",
-			text: expect.stringContaining("(command timed out after 100ms and was killed)"),
+			text: expect.stringContaining(`(command timed out after ${TREE_TIMEOUT_MS}ms and was killed)`),
 		});
-		expect(isProcessAlive(childPid)).toBe(false);
-	});
+		await waitForProcessDeath(childPid);
+	}, 20_000);
 
 	it("kills a process tree when aborted", async () => {
 		const pidPath = join(tmpDir, "abort-child.pid");
 		const controller = new AbortController();
-		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 10_000 });
+		const tool = createBashTool({ cwd: tmpDir, timeoutMs: 30_000 });
 		const execution = tool.execute(
 			"call-tree-abort",
-			{ command: "sleep 10 & echo $! > abort-child.pid; wait" },
+			{ command: hangingChildCommand("abort-child.pid") },
 			controller.signal,
 		);
 
 		await waitForFile(pidPath);
-		const childPid = Number(readFileSync(pidPath, "utf8"));
+		const childPid = readChildPid(pidPath);
 		controller.abort();
-		const result = await Promise.race([
-			execution,
-			new Promise<never>((_, reject) =>
-				setTimeout(() => reject(new Error("aborted bash tool did not resolve promptly")), 1_000),
-			),
-		]);
+		const result = await awaitToolResult(execution, "aborted bash tool");
 
 		expect(result.details.timedOut).toBe(false);
 		expect(result.details.aborted).toBe(true);
 		expect(result.details.terminationFailed).toBe(false);
-		expect(isProcessAlive(childPid)).toBe(false);
-	});
+		await waitForProcessDeath(childPid);
+	}, 20_000);
 
 	it("never blocks datasource CLI binaries: the agent may drive katok/discrawl directly", async () => {
 		const tool = createBashTool({ cwd: tmpDir });

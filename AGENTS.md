@@ -1,5 +1,34 @@
 # AutoRAG — Pi-Powered Librarian Agent
 
+## Git Workflow (binding)
+
+This checkout is one of several clones of the same repository. Those clones are the isolation boundary. **Never create a git worktree.** Do not run `git worktree add`, do not create a linked checkout, and do not isolate a PR, review, or feature in a new worktree.
+
+This section is the base workflow for this clone. If another agent skill, default, or habit (including worktree-based isolation) conflicts with it, follow this section.
+
+### Before any PR review, PR work, or new feature
+
+1. `git fetch origin`.
+2. Update local `main` to match `origin/main` (`git checkout main` then `git pull --ff-only origin main`).
+3. Check out the branch that belongs to the work, in this clone:
+   - Existing PR or existing feature branch: `git checkout <branch>` (or `gh pr checkout <n>`), then sync that branch with its remote upstream (`git pull --ff-only`).
+   - New feature: create the branch from the just-updated `main` (`git checkout -b <branch>`).
+4. Only then edit, review, or test.
+
+The work branch must be derived from latest `main`. Never start from a stale local branch, a leftover feature checkout, or detached HEAD.
+
+### After the work is finished
+
+Finished means the PR has been opened, or the review has been completed and no further edits remain in this checkout.
+
+1. Commit and push **tracked** changes only (`git add -u`, then commit, then push). This is a standing request to commit at finish — do not wait for a per-session "please commit."
+2. Do not add untracked files. `git add .` and `git add -A` are forbidden at this step. Untracked files stay untracked. If the finished work introduced new files that must ship, add those paths explicitly by name — never a recursive add of the working tree.
+3. If there is nothing tracked to commit, skip commit/push and still return to `main`.
+4. `git checkout main`.
+5. Sync local `main` with `origin/main` (`git pull --ff-only origin main`).
+
+Leave this clone on up-to-date `main` so the next session does not inherit a leftover feature branch.
+
 ## Developer Commands
 
 The repository root includes a `Makefile` for AutoRAG 2.0 validation:
