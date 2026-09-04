@@ -48,6 +48,10 @@ export function probeConnection(input: ProbeConnectionInput, deps: ProbeDeps = {
 
 	const fail = (status: ProbeStatus, detail: string): ProbeResult => ({ ok: false, status, detail });
 
+	if (input.type === "gmail" && connector.backend === "himalaya") {
+		return fail("not-configured", "Himalaya-backed mail must be configured through the mailcrawl datasource.");
+	}
+
 	if (input.type === "github") {
 		const repos = asStringList(connector.repos);
 		if (repos.length === 0) return fail("not-configured", "Add at least one owner/repo.");
