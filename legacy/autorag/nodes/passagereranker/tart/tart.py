@@ -8,6 +8,7 @@ from autorag.nodes.passagereranker.tart.modeling_enc_t5 import (
 	EncT5ForSequenceClassification,
 )
 from autorag.nodes.passagereranker.tart.tokenization_enc_t5 import EncT5Tokenizer
+from transformers import T5Config
 from autorag.utils.util import (
 	make_batch,
 	sort_by_scores,
@@ -28,7 +29,15 @@ class Tart(BasePassageReranker):
 				"torch is not installed. Please install torch first to use TART reranker."
 			)
 		model_name = "facebook/tart-full-flan-t5-xl"
-		self.model = EncT5ForSequenceClassification.from_pretrained(model_name)
+		config_dict, _ = T5Config.get_config_dict(model_name)
+		config_dict["id2label"] = {
+			int(key): str(value) for key, value in config_dict["id2label"].items()
+		}
+		config = T5Config.from_dict(config_dict)
+		self.model = EncT5ForSequenceClassification.from_pretrained(
+			model_name,
+			config=config,
+		)
 		self.tokenizer = EncT5Tokenizer.from_pretrained(model_name)
 		self.device = "cuda" if torch.cuda.is_available() else "cpu"
 		self.model = self.model.to(self.device)
