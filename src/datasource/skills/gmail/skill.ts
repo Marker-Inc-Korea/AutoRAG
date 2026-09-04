@@ -20,21 +20,18 @@ export const GMAIL_SKILL_DEFINITION: ConnectorSkillDefinition = {
 	skillName: "gmail",
 	skillType: "gmail-account",
 	description: "Gmail datasource",
-	capabilities: ["email", "api", "external-cli", "polling", "bm25", "incremental"],
+	capabilities: ["email", "api", "polling", "bm25", "incremental"],
 	defaultTags: ["gmail", "email", "pii"],
 	contentType: "email",
 	manifestDescription:
 		"Search indexed Gmail messages from the authorized account and labels. Use for questions about email conversations, decisions, or attachments discussed over email.",
-	manifestNotes: [
-		"Label and folder visibility is bounded by the server-configured OAuth token.",
-		"When the Himalaya backend is selected, indexing is incremental and lexical BM25 retrieval is local to AutoRAG; Himalaya itself does not provide semantic embeddings.",
-	],
+	manifestNotes: ["Label visibility is bounded by the server-configured OAuth token."],
 };
 
 export interface GmailSkillOptions extends Omit<ConnectorSkillOptions, "connector"> {
 	/**
 	 * Trusted pre-built connector; wins over {@link connectorOptions}. Accepts
-	 * any mail-backed connector (Gmail REST or the himalaya CLI bridge).
+	 * any compatible mail-backed connector.
 	 */
 	readonly connector?: DatasourceConnector;
 	readonly connectorOptions?: GmailConnectorOptions;

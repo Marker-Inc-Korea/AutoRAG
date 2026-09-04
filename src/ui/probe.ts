@@ -48,6 +48,10 @@ export function probeConnection(input: ProbeConnectionInput, deps: ProbeDeps = {
 
 	const fail = (status: ProbeStatus, detail: string): ProbeResult => ({ ok: false, status, detail });
 
+	if (input.type === "gmail" && connector.backend === "himalaya") {
+		return fail("not-configured", "Himalaya-backed mail must be configured through the mailcrawl datasource.");
+	}
+
 	if (input.type === "github") {
 		const repos = asStringList(connector.repos);
 		if (repos.length === 0) return fail("not-configured", "Add at least one owner/repo.");
@@ -92,12 +96,6 @@ export function probeConnection(input: ProbeConnectionInput, deps: ProbeDeps = {
 	}
 
 	if (input.type === "gmail") {
-		if (connector.backend === "himalaya") {
-			if (!binaryExists("himalaya", asString(connector.binaryPath))) {
-				return fail("binary-missing", "himalaya is not installed.");
-			}
-			return ok("himalaya will use its own account config.");
-		}
 		const tokenEnv = envName(connector.tokenEnv, "GMAIL_ACCESS_TOKEN");
 		if (!envHas(env, tokenEnv)) return fail("auth-missing", `${tokenEnv} is not set in the environment.`);
 		return ok("Gmail token will be read from the environment.");

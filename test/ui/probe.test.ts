@@ -89,4 +89,17 @@ describe("datasource UI probes", () => {
 		expect(result.ok).toBe(false);
 		expect(result.status).toBe("not-configured");
 	});
+
+	it("rejects the retired Gmail Himalaya backend", () => {
+		const result = probeConnection({
+			alias: "legacy-imap",
+			type: "gmail",
+			enabled: true,
+			connector: { backend: "himalaya", account: "personal", folder: "INBOX" },
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.status).toBe("not-configured");
+		expect(result.detail).toContain("mailcrawl");
+	});
 });

@@ -205,7 +205,7 @@ Security defaults are intentionally strict:
 | Notion | `notion` | external [`notcrawl`](https://github.com/openclaw/notcrawl) CLI | local-first page/database/block archive + FTS5 search |
 | GitHub Issues/PRs | `github` | GitHub REST (token optional) | issues + PR bodies per `owner/repo`; public repos work unauthenticated |
 | Cloud drives | `cloud-drive` | **[`rclone`](https://rclone.org) CLI** | Incremental Google Drive Tier-1; OneDrive/network remotes; iCloud experimental |
-| Gmail / IMAP | `gmail` | Gmail REST v1, or **[`himalaya`](https://pimalaya.org) CLI** (`backend: "himalaya"`) | the himalaya backend indexes any IMAP/Maildir account it has configured — no OAuth plumbing |
+| Gmail | `gmail` | Gmail REST v1 | OAuth access token is referenced by environment variable name |
 | Local mail exports | `mail-export` | filesystem (`.mbox` / `.eml`) | classic `From_` splitting, mailparser-based; count-only warnings |
 | Mail archives | `mailcrawl` | external [`mailcrawl`](https://github.com/NomaDamas/mailcrawl) CLI | local email sync plus BM25, semantic, and hybrid retrieval |
 | Obsidian vault | `obsidian` | external [`qmd`](https://github.com/tobi/qmd) CLI | incremental `qmd update`, BM25 `qmd search`, semantic `qmd vsearch`; vault path via `connector.vaultPath` |
@@ -223,7 +223,7 @@ Configure them in `config.json` (CLI) or pass `datasourceSkills` programmaticall
     "slack":    { "connector": { "binaryPath": "slacrawl", "configPath": "/path/to/slacrawl.yaml", "syncSource": "primary" } },
     "notion":   { "connector": { "binaryPath": "notcrawl", "configPath": "/path/to/notcrawl.yaml" } },
     "github":   { "connector": { "repos": ["owner/repo"] } },
-    "gmail":    { "connector": { "backend": "himalaya", "account": "gmail", "folder": "INBOX" } },
+    "gmail":    { "connector": { "tokenEnv": "GMAIL_ACCESS_TOKEN", "labelIds": ["INBOX"] } },
     "mailcrawl": { "instanceId": "personal", "connector": { "account": "personal", "mailbox": "INBOX", "binaryPath": "mailcrawl" } },
     "personal-google-drive": { "type": "cloud-drive", "instanceId": "personal", "connector": { "provider": "google-drive", "remote": "personal-gdrive:", "include": ["**/*.md"] } },
     "company-onedrive": { "type": "cloud-drive", "instanceId": "work", "connector": { "provider": "onedrive", "remote": "company-onedrive:Documents" } },
@@ -253,6 +253,9 @@ in mailcrawl's native store unless the operator explicitly sets
 `connector.dataDir`; Himalaya credentials and provider configuration remain
 owned by mailcrawl. 0.1.3 and earlier fail a repeated
 `index` after a no-op sync.
+Use `mailcrawl` for all Himalaya-backed IMAP/Maildir retrieval. The retired
+`gmail` connector option `backend: "himalaya"` is no longer registered; migrate
+that configuration to an explicit `mailcrawl` datasource.
 
 Install and authenticate rclone separately (`brew install rclone && rclone
 config` on macOS), then configure the provider-neutral `cloud-drive` skill.
