@@ -32,8 +32,6 @@ export class ConfigError extends Error {
 }
 
 /**
- */
-/**
  * Typed MinSync method config persisted in `config.json`. Missing `enabled`
  * means enabled (true); `autoInstall` defaults to true. `embedder` carries
  * the MinSync vector embedder settings validated by {@link normalizeEmbedder}.
@@ -534,6 +532,13 @@ const MINSYNC_ALLOWLIST = new Set<string>([
 	"embedder",
 ]);
 
+/**
+ * Fields that older configs may still carry. MinSync is now resolved from PATH
+ * and the workspace cache, so a persisted `binaryPath` is ignored rather than
+ * rejected; failing here would break every command for existing installs.
+ */
+const MINSYNC_LEGACY_IGNORED = new Set<string>(["binaryPath"]);
+
 const UI_TOKEN_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 function normalizeUiConfig(raw: unknown): UiConfig {
@@ -618,6 +623,7 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 	}
 	const record = raw as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
+		if (MINSYNC_LEGACY_IGNORED.has(key)) continue;
 		if (!MINSYNC_ALLOWLIST.has(key)) {
 			throw new ConfigError(`minSync.${key} is not a recognized field`);
 		}

@@ -146,6 +146,40 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		expect(status.components.minsync).toBe("ready");
 	});
 
+	it("collapses duplicate MinSync chunks without dropping distinct candidates", async () => {
+		// CDC chunking can surface the same (source, content) pair more than once.
+		// Deduplication must drop only the repeat, never the whole candidate set.
+		const agent = new AutoRAGAgent({
+			model: emitModel(),
+			searchPaths: [docs],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: false,
+			jikji: false,
+		});
+		const duplicated = [
+			{ id: "1", source: "/docs/a.md", content: "shared boilerplate header", score: 0.9, metadata: {} },
+			{ id: "2", source: "/docs/a.md", content: "shared boilerplate header", score: 0.8, metadata: {} },
+			{ id: "3", source: "/docs/b.md", content: "unique refund clause", score: 0.7, metadata: {} },
+		];
+		const internals = agent as unknown as {
+			minSyncMethod: unknown;
+			prefetchInitialRetrievalContext: (query: string, options: Record<string, unknown>) => Promise<string>;
+		};
+		internals.minSyncMethod = {
+			isReady: () => true,
+			isBinaryMissing: () => false,
+			retrieve: async () => duplicated,
+		};
+
+		const context = await internals.prefetchInitialRetrievalContext("refund", {});
+
+		expect(context).toContain("shared boilerplate header");
+		expect(context).toContain("unique refund clause");
+		expect(context).toContain("/docs/b.md");
+		expect(context.match(/shared boilerplate header/gu)).toHaveLength(1);
+	});
+
 	it("still emits structured results when Jikji prefetch throws", async () => {
 		const agent = new AutoRAGAgent({
 			model: emitModel(),

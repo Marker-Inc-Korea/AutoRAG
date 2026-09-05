@@ -212,7 +212,7 @@ describe("AutoRAGAgent searchDocuments", () => {
 		const events = [];
 		for await (const event of agent.searchDocumentsStream("류동현 선임 전화번호")) events.push(event);
 
-		expect(events[0]).toMatchObject({ type: "progress", text: "질문을 확인하고 있습니다." });
+		expect(events[0]).toMatchObject({ type: "progress", text: "Reviewing the query." });
 		expect(events.at(-1)).toMatchObject({ type: "complete", response: { answer: "[1] 확인된 답변" } });
 	});
 });

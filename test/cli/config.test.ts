@@ -133,6 +133,17 @@ describe("single-model CLI config", () => {
 		expect(() => normalizeIndexingConfig({ minSync: { maxChunkSize: 0 } })).toThrow(ConfigError);
 	});
 
+	it("ignores a legacy minSync.binaryPath instead of rejecting the config", () => {
+		// Configs written before MinSync moved to PATH resolution still carry this
+		// key; rejecting it would break every command for existing installs.
+		const config = normalizeIndexingConfig({
+			minSync: { enabled: true, binaryPath: "/usr/local/bin/minsync" } as never,
+		}).minSync;
+		expect(config.enabled).toBe(true);
+		expect(config).not.toHaveProperty("binaryPath");
+		expect(() => normalizeIndexingConfig({ minSync: { nope: true } as never })).toThrow(ConfigError);
+	});
+
 	it("rejects malformed JSON config", () => {
 		const path = join(root, "bad.json");
 		mkdirSync(root, { recursive: true });

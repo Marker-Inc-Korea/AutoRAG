@@ -1,4 +1,4 @@
-import type { RetrievalMethod } from "./types.ts";
+import type { RetrievalMethod, RetrievalMethodDescriptor } from "./types.ts";
 
 export class RetrievalMethodRegistry {
 	private readonly methods: Map<string, RetrievalMethod> = new Map();
@@ -19,7 +19,7 @@ export class RetrievalMethodRegistry {
 		return Array.from(this.methods.values());
 	}
 
-	getByType(type: "posix" | "vector" | "hybrid" | "visual"): RetrievalMethod[] {
+	getByType(type: RetrievalMethodDescriptor["type"]): RetrievalMethod[] {
 		return this.list().filter((m) => m.describe().type === type);
 	}
 }

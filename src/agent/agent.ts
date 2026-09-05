@@ -826,7 +826,7 @@ export class AutoRAGAgent {
 			type: "progress",
 			sessionId: "",
 			query: query.trim(),
-			text: "질문을 확인하고 있습니다.",
+			text: "Reviewing the query.",
 		});
 		const run = this.searchDocuments(query, options)
 			.then((response) => {
@@ -974,10 +974,15 @@ export class AutoRAGAgent {
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
 			if (!results || results.length === 0) return;
-			const unique = [...new Map(results.map((result) => [`${result.source}\0${result.content}`, result])).values()];
+			const seen = new Set<string>();
 			sections.push(
 				`${label} initial candidates:\n${results
-					.filter((result, index) => unique.indexOf(result) === index)
+					.filter((result) => {
+						const key = `${result.source}\0${result.content}`;
+						if (seen.has(key)) return false;
+						seen.add(key);
+						return true;
+					})
 					.slice(0, 50)
 					.map(
 						(result, index) =>
