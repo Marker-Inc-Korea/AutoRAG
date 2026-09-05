@@ -133,6 +133,30 @@ operations faster.
 **Primary target**: non-code document retrieval (manuals, legal docs, internal wikis, meeting notes, research literature).
 Code repositories work too. AutoRAG's value is in the exploration + retrieval methods + curation layer that sit *on top* of raw search.
 
+## Product Positioning
+
+Three core values drive every design decision. Features and PRs that conflict
+with any of them should be rejected or reshaped:
+
+1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
+   stores (katok, discrawl, qmd, msgvault, rclone, …) in place. No forced
+   ingestion into a central index, no third-party server holding a copy of
+   the corpus. Results carry source-native identities
+   (`kakao:<chat>/<sender>/<chunk>`) and scope-checked access, and secrets
+   stay with the tool that owns them.
+2. **Just works — no RAG degree required.** A non-developer installs it and
+   it works: minimal configuration, no pipeline tuning, no vector-DB
+   operations, no OpenAI keys. The local embedder (EmbeddingGemma via Ollama)
+   and MinSync auto-install handle the "RAG plumbing" invisibly.
+3. **Fast by design.** One configured model owns the whole loop; retrieval
+   runs locally over MinSync CDC chunks (BM25 / vector / hybrid); interactive
+   search is optimized for low latency across several model turns.
+
+Rationale for value 1 comes from the competitive landscape study
+(see `docs/competitive-landscape-2026-09.md`): MCP-native, local-first, and
+hybrid retrieval are commoditized, while harness-free federation with
+source-native provenance is the durable differentiator.
+
 ## New CLI-backed datasource
 
 External datasource CLIs (katok, discrawl, slacrawl, qmd, rclone,
@@ -170,6 +194,11 @@ Raw search tools return file paths and matching lines. A human still has to open
 3. **Judge and curate** — extract key insights, resolve conflicts, and assess freshness
 4. **Deliver** numbered knowledge units grounded in the sources
 5. **Learn** — remember which methods worked and adapt strategy over time
+
+The loop exists to serve the three core values above: it searches data where
+it already lives (value 1), hides the retrieval plumbing behind curated
+answers (value 2), and keeps every step local and latency-sensitive
+(value 3).
 
 ## Agent Tools
 
