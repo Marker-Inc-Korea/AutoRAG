@@ -16,6 +16,25 @@ AutoRAG itself is the specialized search agent, not a coordinator for other
 model roles. You configure one model, and that model owns the complete
 retrieval, reading, judgment, and curation loop.
 
+## Core values
+
+Three principles drive every design decision:
+
+1. **Never migrate your data to search it.** AutoRAG federates CLI-owned
+   stores (katok, discrawl, qmd, msgvault, rclone, …) in place. No forced
+   ingestion into a central index, no third-party server holding a copy of
+   your corpus. Results carry source-native identities
+   (`kakao:<chat>/<sender>/<chunk>`) with scope-checked access — see the
+   [competitive landscape study](docs/competitive-landscape-2026-09.md) for
+   why this is the durable differentiator.
+2. **Just works — no RAG degree required.** Install it and it works: minimal
+   configuration, no pipeline tuning, no vector-DB operations, no API keys.
+   The local embedder (EmbeddingGemma via Ollama) and MinSync auto-install
+   handle the "RAG plumbing" invisibly.
+3. **Fast by design.** One configured model owns the whole loop; retrieval
+   runs locally over MinSync CDC chunks (BM25 / vector / hybrid); interactive
+   search is optimized for low latency.
+
 ## Why AutoRAG
 
 ### The problem with search tools
