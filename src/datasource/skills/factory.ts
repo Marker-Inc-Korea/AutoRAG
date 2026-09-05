@@ -15,7 +15,6 @@ import { ClawGalleryClient, type ClawGalleryOptions, ClawGallerySkill } from "./
 import { CloudDriveSkill, type RcloneConnectorOptions } from "./cloud-drive/index.ts";
 import { DiscrawlClient, type DiscrawlOptions, DiscrawlSkill } from "./discrawl/index.ts";
 import { type GitHubConnectorOptions, GitHubSkill } from "./github/index.ts";
-import { HimalayaConnector, type HimalayaConnectorOptions } from "./gmail/himalaya-connector.ts";
 import { type GmailConnectorOptions, GmailSkill } from "./gmail/index.ts";
 import { KatokClient, type KatokOptions, KatokSkill } from "./katok/index.ts";
 import { type MailExportConnectorOptions, MailExportSkill } from "./mail-export/index.ts";
@@ -60,7 +59,7 @@ type SkillBuilder = (
 	config: DatasourceSkillConfig,
 	workspaceRoot: string | undefined,
 	registrationName: string,
-) => DatasourceSkill;
+) => DatasourceSkill | undefined;
 
 const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 	telegram: (config, _workspaceRoot, registrationName) =>
@@ -177,22 +176,8 @@ const BUILDERS: Readonly<Record<string, SkillBuilder>> = {
 			},
 		}),
 	gmail: (config, workspaceRoot, registrationName) => {
-		const connector = config.connector as
-			| (GmailConnectorOptions & HimalayaConnectorOptions & { backend?: string })
-			| undefined;
-		// `backend: "himalaya"` routes through the external himalaya CLI (any
-		// IMAP/Maildir account it has configured) instead of the Gmail REST API.
-		if (connector?.backend === "himalaya") {
-			const { backend: _backend, ...himalayaOptions } = connector;
-			return new GmailSkill({
-				...common(config, workspaceRoot),
-				skillName: registrationName,
-				connector: new HimalayaConnector({
-					...himalayaOptions,
-					...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-				}),
-			});
-		}
+		const connector = config.connector as (GmailConnectorOptions & { backend?: string }) | undefined;
+		if (connector?.backend === "himalaya") return undefined;
 		return new GmailSkill({
 			...common(config, workspaceRoot),
 			skillName: registrationName,
@@ -279,15 +264,19 @@ export function buildDatasourceSkills(
 		const normalizedEntry =
 			entry.instanceId === undefined && entry.type !== undefined ? { ...entry, instanceId: name } : entry;
 		const skill = builder(normalizedEntry, workspaceRoot, name);
+		if (skill === undefined) {
+			unknown.push(name);
+			continue;
+		}
 		const hasChannelFilter = (entry.channels?.ids?.length ?? 0) > 0 || (entry.channels?.names?.length ?? 0) > 0;
-		const aliased =
-			name !== templateName || hasChannelFilter
-				? new AliasedDatasourceSkill(skill, {
-						alias: name,
-						...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
-						...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
-					})
-				: skill;
+		let aliased: DatasourceSkill = skill;
+		if (name !== templateName || hasChannelFilter) {
+			aliased = new AliasedDatasourceSkill(skill, {
+				alias: name,
+				...(entry.channels?.ids !== undefined ? { channelIds: entry.channels.ids } : {}),
+				...(entry.channels?.names !== undefined ? { channelNames: entry.channels.names } : {}),
+			});
+		}
 		skills.push(
 			typeof entry.description === "string" && entry.description.trim().length > 0
 				? new DescribedDatasourceSkill(aliased, entry.description.trim())

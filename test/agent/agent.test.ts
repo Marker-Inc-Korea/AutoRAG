@@ -78,12 +78,12 @@ describe("AutoRAGAgent", () => {
 	it("aborts and rejects when a search exceeds its timeout", async () => {
 		let abortCalls = 0;
 		const session = {
-			agent: { subscribe: () => () => {} },
-			prompt: async () => await new Promise<void>(() => {}),
+			agent: { subscribe: () => () => undefined },
+			prompt: async () => await new Promise<void>(() => undefined),
 			abort: async () => {
 				abortCalls += 1;
 			},
-			dispose: () => {},
+			dispose: () => undefined,
 		};
 		const agent = new AutoRAGAgent({
 			model: fakeModel(),
@@ -108,14 +108,14 @@ describe("AutoRAGAgent", () => {
 						toolName: "lexical_search_local_docs",
 						result: { details: { method: "bm25" } },
 					});
-					return () => {};
+					return () => undefined;
 				},
 			},
-			prompt: async () => {},
+			prompt: async () => undefined,
 			abort: async () => {
 				abortCalls += 1;
 			},
-			dispose: () => {},
+			dispose: () => undefined,
 		};
 		const agent = new AutoRAGAgent({
 			model: fakeModel(),
@@ -123,6 +123,7 @@ describe("AutoRAGAgent", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 			maxSearchToolCalls: 1,
 			jikji: false,
+			minSync: false,
 		});
 		(agent as unknown as { createSearchSession: () => typeof session }).createSearchSession = () => session;
 
@@ -257,7 +258,7 @@ describe("AutoRAGAgent", () => {
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
-		const unsubscribe = agent.subscribe(() => {});
+		const unsubscribe = agent.subscribe(() => undefined);
 		expect(typeof unsubscribe).toBe("function");
 		expect(() => unsubscribe()).not.toThrow();
 	});
