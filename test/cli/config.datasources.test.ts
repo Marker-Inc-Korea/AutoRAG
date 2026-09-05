@@ -359,7 +359,7 @@ describe("CLI config datasources wiring", () => {
 			datasources: {
 				"personal-mail": {
 					type: "gmail",
-					connector: { backend: "himalaya", account: "personal" },
+					connector: { tokenEnv: "GMAIL_ACCESS_TOKEN_TEST" },
 				},
 				"company-github": {
 					type: "github",

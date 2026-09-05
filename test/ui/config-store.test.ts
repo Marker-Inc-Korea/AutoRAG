@@ -138,6 +138,14 @@ describe("datasource UI config store", () => {
 		expect(() =>
 			upsertConnection(configPath, { alias: "personal-drive", type: "gdrive", enabled: true, connector: {} }),
 		).toThrow(ConfigError);
+		expect(() =>
+			upsertConnection(configPath, {
+				alias: "legacy-imap",
+				type: "gmail",
+				enabled: true,
+				connector: { backend: "himalaya" },
+			}),
+		).toThrow("mailcrawl");
 	});
 
 	it("toggles, lists, and removes connections while recomputing trusted access", () => {
@@ -182,5 +190,27 @@ describe("datasource UI config store", () => {
 		const state = listUiState(configPath);
 		expect(state.searchPaths).toEqual([docs, extra]);
 		expect(state.connections).toHaveLength(1);
+	});
+
+	it("does not grant UI access to a retired Gmail Himalaya config", () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [],
+				datasources: {
+					"legacy-imap": {
+						type: "gmail",
+						enabled: true,
+						connector: { backend: "himalaya", account: "personal", folder: "INBOX" },
+					},
+				},
+			}),
+		);
+
+		const state = listUiState(configPath, {});
+		expect(state.connections[0]?.enabled).toBe(false);
+		expect(state.connections[0]?.probe.status).toBe("not-configured");
+		expect(state.access.allowedTags).toEqual([]);
+		expect(state.access.allowedScopes).toEqual([]);
 	});
 });

@@ -12,12 +12,6 @@ export interface Choice {
 
 export type DiscoverRun = (binary: string, args: readonly string[]) => Promise<{ ok: boolean; stdout: string }>;
 
-const MAIL_PRESETS: readonly Choice[] = [
-	{ value: "gmail", label: "Gmail" },
-	{ value: "outlook", label: "Outlook" },
-	{ value: "icloud", label: "iCloud" },
-];
-
 export async function listRcloneRemotes(run: DiscoverRun = runCli): Promise<readonly Choice[]> {
 	const result = await run("rclone", ["listremotes"]);
 	if (!result.ok) return [];
@@ -28,35 +22,6 @@ export async function listRcloneRemotes(run: DiscoverRun = runCli): Promise<read
 		.map((value) => ({ value, label: value }));
 }
 
-export async function listMailAccounts(run: DiscoverRun = runCli): Promise<readonly Choice[]> {
-	const discovered = await listHimalayaAccounts(run);
-	const seen = new Set(discovered.map((item) => item.value.toLowerCase()));
-	const presets = MAIL_PRESETS.filter(
-		(item) => !seen.has(item.value.toLowerCase()) && !seen.has(item.label.toLowerCase()),
-	);
-	return [...discovered, ...presets, { value: "other", label: "Other…" }];
-}
-
-export async function listHimalayaAccounts(run: DiscoverRun = runCli): Promise<readonly Choice[]> {
-	const result = await run("himalaya", ["account", "list"]);
-	if (!result.ok) return [];
-	const choices: Choice[] = [];
-	for (const raw of result.stdout.split(/\r?\n/)) {
-		const line = raw.replace(/^\s*[*-]\s*/, "").trim();
-		if (
-			line.length === 0 ||
-			line.toLowerCase().startsWith("account") ||
-			line.startsWith("─") ||
-			line.startsWith("-")
-		) {
-			continue;
-		}
-		const name = line.split(/\s{2,}|\t/)[0]?.trim();
-		if (name && name !== "NAME" && name !== "Name") choices.push({ value: name, label: name });
-	}
-	return choices;
-}
-
 export async function choicesForType(
 	type: string,
 	run: DiscoverRun = runCli,
@@ -64,9 +29,7 @@ export async function choicesForType(
 	if (type === "cloud-drive") {
 		return { rcloneRemotes: await listRcloneRemotes(run), mailAccounts: [] };
 	}
-	if (type === "gmail") {
-		return { rcloneRemotes: [], mailAccounts: await listMailAccounts(run) };
-	}
+	if (type === "gmail") return { rcloneRemotes: [], mailAccounts: [] };
 	return { rcloneRemotes: [], mailAccounts: [] };
 }
 

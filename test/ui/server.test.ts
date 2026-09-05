@@ -139,7 +139,7 @@ describe("datasource UI server", () => {
 
 		const choices = await request(server, "/api/choices?type=gmail", { token: server.token });
 		expect(choices.status).toBe(200);
-		expect(JSON.stringify(choices.json)).toContain("gmail");
+		expect(choices.json).toEqual({ rcloneRemotes: [], mailAccounts: [] });
 
 		const created = await request(server, "/api/connections", {
 			method: "POST",
