@@ -461,7 +461,6 @@ gpu = [
     { name = "sentencepiece" },
     { name = "torch" },
     { name = "transformers" },
-    { name = "vllm" },
     { name = "xgrammar" },
 ]
 ja = [
@@ -481,6 +480,9 @@ parse = [
     { name = "pypdf2" },
     { name = "unstructured", version = "0.18.32", source = { registry = "https://pypi.org/simple" }, extra = ["pdf"], marker = "python_full_version < '3.11'" },
     { name = "unstructured", version = "0.25.2", source = { registry = "https://pypi.org/simple" }, extra = ["pdf"], marker = "python_full_version >= '3.11'" },
+]
+vllm = [
+    { name = "vllm" },
 ]
 
 [package.dev-dependencies]
@@ -505,6 +507,7 @@ requires-dist = [
     { name = "autorag", extras = ["ja"], marker = "extra == 'all'" },
     { name = "autorag", extras = ["ko"], marker = "extra == 'all'" },
     { name = "autorag", extras = ["parse"], marker = "extra == 'all'" },
+    { name = "autorag", extras = ["vllm"], marker = "extra == 'all'" },
     { name = "banks", specifier = ">=2.4.2" },
     { name = "bert-score", marker = "extra == 'gpu'", specifier = ">=0.3.13" },
     { name = "chromadb", specifier = ">=1.0.0" },
@@ -585,12 +588,12 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'gpu'", specifier = ">=4.51.3" },
     { name = "unstructured", extras = ["pdf"], marker = "extra == 'parse'", specifier = ">=0.17.2" },
-    { name = "vllm", marker = "extra == 'gpu'", specifier = ">=0.11.0,<0.29.0" },
+    { name = "vllm", marker = "extra == 'vllm'", specifier = ">=0.11.0,<0.29.0" },
     { name = "voyageai", specifier = ">=0.3.2" },
     { name = "weaviate-client", specifier = ">=4.15.2" },
     { name = "xgrammar", marker = "extra == 'gpu'", specifier = ">=0.1.32,<0.3.0" },
 ]
-provides-extras = ["ko", "parse", "ja", "gpu", "all"]
+provides-extras = ["ko", "parse", "ja", "gpu", "vllm", "all"]
 
 [package.metadata.requires-dev]
 dev = [
