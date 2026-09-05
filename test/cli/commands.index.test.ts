@@ -248,7 +248,6 @@ describe("runIndex", () => {
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });
-
 describe("runIndex --method scoped reset", () => {
 	it("reset --method minsync removes only the minsync index", async () => {
 		const fx = seedWorkspace();
@@ -287,5 +286,4 @@ describe("runIndex --method scoped reset", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 	});
-
 });

@@ -193,11 +193,7 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("read the relevant source material directly");
 		expect(prompt).toContain("Use `bash` to open and verify relevant local files");
 		expect(prompt).toContain("check_memory");
-		for (const name of [
-			"semantic_search_local_docs",
-			"search_all_documents",
-			"search_datasource_documents",
-		]) {
+		for (const name of ["semantic_search_local_docs", "search_all_documents", "search_datasource_documents"]) {
 			expect(prompt).toContain(name);
 		}
 		// deleted builtin/posix surface is gone

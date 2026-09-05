@@ -27,6 +27,7 @@ const VALUE_FLAGS = new Set([
 	"top-k",
 	"scope",
 	"tags",
+	"result",
 	"useful",
 	"not-useful",
 	"debounce-ms",
@@ -51,6 +52,7 @@ const COMMANDS = [
 	"status",
 	"search",
 	"feedback",
+	"evidence",
 	"memory",
 	"index",
 	"watch",
@@ -77,11 +79,12 @@ Commands:
 	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
 	                       --embedder-dimension N --embedder-batch-size N
 	                       --minsync-max-chunk-size N  --force)
-  refresh              Parse sources and refresh indexes (--method minsync,parsed)
+  refresh              Refresh every configured index; --method narrows the run
   watch                Watch configured roots (or --once for cron/poll tick)
   status               Show corpus freshness and index health
   search <query>       Search and curate documents (requires a configured model)
   feedback <session>   Record numbered feedback (--useful 1,3 --not-useful 2)
+  evidence <session>   Show persisted source/chunk evidence (--result N)
   memory inspect       Inspect the retrieval memory snapshot
   index reset          Remove parsed/minsync indexes (--method)
   index rebuild        Reset then re-run a refresh (--method minsync|all)
@@ -93,7 +96,7 @@ Commands:
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
-  autorag refresh                                            # parse + index (+ jikji prepare)
+  autorag refresh                                            # parsed + MinSync + datasources + Jikji
   autorag watch --once                                       # single index refresh tick (cron)
   autorag search "your question"                             # curated answer
 
@@ -184,6 +187,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "feedback": {
 			const { runFeedback } = await import("./commands/feedback.ts");
 			return runFeedback(ctx);
+		}
+		case "evidence": {
+			const { runEvidence } = await import("./commands/evidence.ts");
+			return runEvidence(ctx);
 		}
 		case "memory": {
 			const { runMemory } = await import("./commands/memory.ts");

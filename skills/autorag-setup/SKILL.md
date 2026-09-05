@@ -221,6 +221,9 @@ autorag search "summarize the collection" --top-k 3 --json --debug
 - Use `refresh --force` for a full resync only when incremental refresh is not
   enough. Keep destructive reset/rebuild operations scoped to workspace
   `.autorag` indexes, never source documents.
+- After a search, use `autorag evidence <sessionId> --json` to inspect the
+  exact source chunks behind numbered results, including source, method,
+  stable evidence ID, excerpt/content, chunk index, and line number.
 
 ## Keep indexes fresh
 

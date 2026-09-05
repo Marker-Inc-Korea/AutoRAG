@@ -175,9 +175,12 @@ describe("AutoRAGAgent searchDocuments", () => {
 	it("yields assistant progress before the structured completion", async () => {
 		const registration = registerFauxProvider({ api: `faux-${randomUUID()}`, models: [{ id: "streaming-agent" }] });
 		registration.setResponses([
-			fauxAssistantMessage([{ type: "text", text: "류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다." }], {
-				stopReason: "stop",
-			}),
+			fauxAssistantMessage(
+				[{ type: "text", text: "류동현 선임은 오픈소스 과제 담당자로 보입니다. 추가 자료를 확인하겠습니다." }],
+				{
+					stopReason: "stop",
+				},
+			),
 			fauxAssistantMessage(
 				[
 					fauxToolCall(EMIT_AUTORAG_RESULTS_TOOL_NAME, {

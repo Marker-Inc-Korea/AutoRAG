@@ -254,4 +254,22 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 		expect(result.diagnostics.length).toBeGreaterThan(0);
 		expect(result.diagnostics[0]?.code).toBe("jikji-unavailable");
 	});
+
+	it("starts prepare asynchronously and skips Jikji for the current find", async () => {
+		writeFakeJikji();
+		const agent = new AutoRAGAgent({
+			searchPaths: [docs],
+			memoryPath: join(root, "memory.json"),
+			workspacePath: root,
+			jikji: { binaryPath },
+		});
+
+		const first = await agent.findJikji("Q3 report");
+		expect(first.answerPack).toBeUndefined();
+
+		await agent.prepareJikji();
+
+		const second = await agent.findJikji("Q3 report");
+		expect(second.answerPack?.answerPaths).toContain(realpathSync(join(docs, "q3-report.txt")));
+	});
 });

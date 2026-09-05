@@ -105,7 +105,9 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
  * `searchDocuments` resolves a canned {@link SearchDocumentsResponse}.
  */
 export interface SearchDeps {
-	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "searchDocumentsStream">>;
+	agentFactory?: (
+		opts: AutoRAGAgentOptions,
+	) => Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "searchDocumentsStream">>;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 }
 

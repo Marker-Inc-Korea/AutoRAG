@@ -30,9 +30,7 @@ export interface RetrievalMethod {
 	retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
 }
 
-export type RetrievalDiagnosticCode =
-	| "retrieval-method-failed"
-	| "minsync-unavailable"
+export type RetrievalDiagnosticCode = "retrieval-method-failed" | "minsync-unavailable";
 
 /** Path-opaque diagnostic emitted by the multi-method retrieval pipeline. */
 export interface RetrievalDiagnostic {

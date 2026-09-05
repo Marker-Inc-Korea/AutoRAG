@@ -9,12 +9,17 @@ import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { ConfigError } from "../../src/cli/config.ts";
 
 let root: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-search-cli-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(root, "home");
 });
 
 afterEach(() => {
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(root, { recursive: true, force: true });
 });
 

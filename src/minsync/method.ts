@@ -116,6 +116,11 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		return this.binaryPath !== undefined && !existsSync(this.binaryPath);
 	}
 
+	/** A vector index is ready only after MinSync has written its cursor. */
+	isReady(): boolean {
+		return existsSync(join(this.workspacePath, ".minsync", "cursor.json"));
+	}
+
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
 		const topK = options.topK ?? 20;
 		const queryK = options.scope ? Math.min(Math.max(topK * 5, topK + 20), 100) : topK;

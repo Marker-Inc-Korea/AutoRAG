@@ -127,6 +127,25 @@ describe("AutoRAGAgent prefetchInitialRetrievalContext", () => {
 		expect(prompts.join("\n")).toContain(source);
 	});
 
+	it("starts MinSync preparation in the background and marks it ready", async () => {
+		writeFakeJikji(join(root, "fake-jikji.mjs"));
+		writeFakeMinSync(join(root, "fake-minsync.mjs"));
+		const agent = new AutoRAGAgent({
+			model: emitModel(),
+			searchPaths: [docs],
+			workspacePath: root,
+			memoryPath: join(root, "memory.json"),
+			minSync: { binaryPath: join(root, "fake-minsync.mjs"), autoInstall: false },
+			jikji: { binaryPath: join(root, "fake-jikji.mjs") },
+		});
+
+		const prepare = agent.scheduleMinSyncPrepareForTest();
+		const result = await prepare;
+		expect(result?.ok).toBe(true);
+		const status = await agent.getRefreshStatus();
+		expect(status.components.minsync).toBe("ready");
+	});
+
 	it("still emits structured results when Jikji prefetch throws", async () => {
 		const agent = new AutoRAGAgent({
 			model: emitModel(),

@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import {
 	createTuiPresenter,
@@ -27,6 +27,20 @@ const response: SearchDocumentsResponse = {
 	warnings: [],
 	diagnostics: [],
 };
+
+let previousHome: string | undefined;
+
+beforeEach(() => {
+	previousHome = process.env.HOME;
+	process.env.HOME = mkdtempSync(join(tmpdir(), "autorag-tui-home-"));
+});
+
+afterEach(() => {
+	const testHome = process.env.HOME;
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
+	if (testHome !== undefined && testHome !== previousHome) rmSync(testHome, { recursive: true, force: true });
+});
 
 function context(): { ctx: CommandContext; stdout: string[]; stderr: string[] } {
 	const stdout: string[] = [];
@@ -113,7 +127,12 @@ describe("runTui", () => {
 			agentFactory: () => ({
 				searchDocuments: async () => response,
 				async *searchDocumentsStream() {
-					yield { type: "progress" as const, sessionId: "session", query: "question", text: "현재 자료를 확인 중입니다." };
+					yield {
+						type: "progress" as const,
+						sessionId: "session",
+						query: "question",
+						text: "현재 자료를 확인 중입니다.",
+					};
 					yield { type: "complete" as const, response };
 				},
 			}),

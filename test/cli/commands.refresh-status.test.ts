@@ -91,12 +91,10 @@ describe("runRefresh + runStatus (cli)", () => {
 	});
 
 	it("surfaces minsync-unavailable without throwing when the minsync binary is absent", async () => {
-		writeConfig(
-			{
-				workspacePath: join(root, ".autorag", "minsync"),
-				autoInstall: false,
-			},
-		);
+		writeConfig({
+			workspacePath: join(root, ".autorag", "minsync"),
+			autoInstall: false,
+		});
 
 		const refreshOut: string[] = [];
 		const refreshCode = await runRefresh(makeCtx({ stdout: (line) => refreshOut.push(line) }));
