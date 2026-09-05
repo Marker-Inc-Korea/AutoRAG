@@ -127,7 +127,7 @@ Use `--force` only when intentionally replacing an existing config. Legacy cwd
 
 ### Retrieval defaults
 
-BM25, MinSync, and Jikji are enabled by default. Leave them enabled unless the
+MinSync and Jikji are enabled by default. Leave them enabled unless the
 user explicitly asks otherwise. MinSync auto-installs a verified GitHub release
 into `<workspace>/.autorag/bin` on first use (`minSync.autoInstall` defaults to
 true). Set `"autoInstall": false` only when managing the binary yourself. Jikji
@@ -215,9 +215,9 @@ autorag search "summarize the collection" --top-k 3 --json --debug
   performs one live completion probe.
 - `health --skip-probes` is only for intentionally offline validation and does
   not prove live provider access.
-- `refresh` syncs parsed mirrors, BM25, MinSync, Jikji, and authorized
+- `refresh` syncs parsed mirrors, MinSync, Jikji, and authorized
   datasources. `--method <csv>` may deliberately narrow it
-  (`parsed,bm25,minsync,datasources,jikji,all`).
+  (`parsed,minsync,datasources,jikji,all`).
 - Use `refresh --force` for a full resync only when incremental refresh is not
   enough. Keep destructive reset/rebuild operations scoped to workspace
   `.autorag` indexes, never source documents.
