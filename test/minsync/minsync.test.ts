@@ -19,7 +19,6 @@ import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	ensureMinSyncBinary,
-	MinSyncBM25Method,
 	MinSyncClient,
 	MinSyncVectorMethod,
 	minSyncConfigPath,
@@ -930,17 +929,18 @@ if (args[0] === "sync") process.exit(1);
 		expect(syncCall?.cursorExists).toBe(false);
 	});
 
-	it("uses the MinSync chunk size for BM25-only indexing", async () => {
+	it("uses the MinSync chunk size for lexical indexing", async () => {
 		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");
 		mkdirSync(minsyncConfigDir, { recursive: true });
 		writeFileSync(minSyncConfigPath(minsyncWorkspace), "[chunker.options]\n");
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 
-		const method = new MinSyncBM25Method({
+		const method = new MinSyncVectorMethod({
 			binaryPath: minsyncBinary,
 			root,
 			workspacePath: minsyncWorkspace,
 			maxChunkSize: 1000,
+			mode: "bm25",
 		});
 
 		await method.sync();

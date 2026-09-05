@@ -106,6 +106,13 @@ describe("parseArgs health flags", () => {
 		expect(parsed.positionals).toEqual(["duplicates"]);
 	});
 
+	it("accepts evidence result selection", () => {
+		const parsed = parseArgs(["evidence", "session-1", "--result", "2", "--json"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.positionals).toEqual(["evidence", "session-1"]);
+		expect(parsed.flags.result).toBe("2");
+	});
+
 	it("accepts --skip-probes as a boolean flag", () => {
 		const parsed = parseArgs(["health", "--skip-probes"]);
 		if ("error" in parsed) throw new Error(parsed.error);
@@ -154,5 +161,6 @@ describe("main health routing", () => {
 		expect(usage).toContain("--skip-probes");
 		expect(usage).toContain("--timeout-ms");
 		expect(usage).toContain("duplicates");
+		expect(usage).toContain("evidence <session>");
 	});
 });

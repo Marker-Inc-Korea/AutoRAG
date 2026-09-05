@@ -51,6 +51,7 @@ export type {
 	SearchDocumentEvidence,
 	SearchDocumentResult,
 	SearchDocumentsResponse,
+	SearchDocumentsStreamEvent,
 	SearchDocumentWarning,
 } from "./search-documents.ts";
 export {

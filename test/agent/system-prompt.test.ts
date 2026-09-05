@@ -7,7 +7,7 @@ function prompt(
 	toolNames = [
 		"bash",
 		"search_all_documents",
-		"lexical_search_local_docs",
+		"semantic_search_local_docs",
 		"semantic_search_local_docs",
 		"check_memory",
 		"emit_autorag_results",
@@ -23,13 +23,21 @@ describe("buildSystemPrompt single-agent contract", () => {
 		expect(text).toContain("read the relevant source material directly");
 		expect(text).toContain("judge the evidence");
 		expect(text).toContain("emit_autorag_results");
+		expect(text).toContain("generic, stable question");
+		expect(text).toContain("baseline retrieval is already running in parallel");
+		expect(text).toContain("Do not query the same datasource more than three times");
+		expect(text).toContain("Never repeat a generic status message");
+		expect(text).toContain("generic, stable question");
+		expect(text).toContain("baseline retrieval is already running in parallel");
+		expect(text).toContain("Do not query the same datasource more than three times");
+		expect(text).toContain("Never repeat a generic status message");
 		expect(text).not.toMatch(/subagent|explorer|delegat|Assignment V1|pi-subagents/i);
 	});
 
 	it("keeps retrieval, memory, datasource trust, and Jikji guidance", () => {
 		const text = prompt();
 		expect(text).toContain("search_all_documents");
-		expect(text).toContain("lexical_search_local_docs");
+		expect(text).toContain("semantic_search_local_docs");
 		expect(text).toContain("semantic_search_local_docs");
 		expect(text).toContain("check_memory");
 		expect(text).toContain("default-deny");

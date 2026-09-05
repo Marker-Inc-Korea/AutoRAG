@@ -136,7 +136,7 @@ describe("search_all_documents tool", () => {
 	it("formats a path-free diagnostics-only message when there are no results", async () => {
 		const provider: SearchAllDocumentsProvider = {
 			async searchAllDocuments() {
-				return { results: [], diagnostics: [diagnostic("bm25-unavailable", "bm25")] };
+				return { results: [], diagnostics: [diagnostic("minsync-unavailable", "minsync")] };
 			},
 		};
 		const tool = createSearchAllDocumentsTool(provider);
@@ -144,7 +144,7 @@ describe("search_all_documents tool", () => {
 
 		const text = textOf(out);
 		expect(text).toContain("No results.");
-		expect(text).toContain("bm25:bm25-unavailable");
+		expect(text).toContain("minsync:minsync-unavailable");
 	});
 });
 

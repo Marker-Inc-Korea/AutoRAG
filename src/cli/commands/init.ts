@@ -91,7 +91,6 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			partial.memoryPath ??= normalizedLegacy.memoryPath;
 			partial.model ??= legacy.model;
 			partial.minSync ??= legacy.minSync;
-			partial.bm25 ??= legacy.bm25;
 			partial.jikji ??= legacy.jikji;
 			partial.parserOptions ??= legacy.parserOptions;
 			partial.dupey ??= legacy.dupey;

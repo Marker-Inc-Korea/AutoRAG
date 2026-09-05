@@ -9,12 +9,17 @@ import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { ConfigError } from "../../src/cli/config.ts";
 
 let root: string;
+let previousHome: string | undefined;
 
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), "autorag-search-cli-"));
+	previousHome = process.env.HOME;
+	process.env.HOME = join(root, "home");
 });
 
 afterEach(() => {
+	if (previousHome === undefined) delete process.env.HOME;
+	else process.env.HOME = previousHome;
 	rmSync(root, { recursive: true, force: true });
 });
 
@@ -67,10 +72,19 @@ function model(): Model<"openai-responses"> {
 	};
 }
 
+function completeStream(result: SearchDocumentsResponse = response, onOptions?: (options: unknown) => void) {
+	return {
+		async *searchDocumentsStream(_query: string, options?: unknown) {
+			onOptions?.(options);
+			yield { type: "complete" as const, response: result };
+		},
+	};
+}
+
 describe("runSearch", () => {
 	it("reports usage for an empty query", async () => {
 		const { ctx, stderr } = context([]);
-		expect(await runSearch(ctx, { agentFactory: () => ({ searchDocuments: async () => response }) })).toBe(2);
+		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);
 		expect(stderr.join("\n")).toContain("Usage");
 	});
 
@@ -82,7 +96,7 @@ describe("runSearch", () => {
 				modelResolver: () => ({ model: model(), apiKey: "secret" }),
 				agentFactory: (options) => {
 					received = { model: options.model?.id, apiKey: options.apiKey };
-					return { searchDocuments: async () => response };
+					return completeStream();
 				},
 			}),
 		).toBe(0);
@@ -94,14 +108,26 @@ describe("runSearch", () => {
 		let options: unknown;
 		const { ctx } = context(["query"], { "top-k": "3", scope: "/docs" });
 		await runSearch(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async (_query, received) => {
+			agentFactory: () =>
+				completeStream(response, (received) => {
 					options = received;
-					return response;
+				}),
+		});
+		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
+	});
+
+	it("renders progress events before the final response", async () => {
+		const { ctx, stdout } = context(["query"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield { type: "progress" as const, sessionId: "session", query: "query", text: "checking evidence" };
+					yield { type: "complete" as const, response };
 				},
 			}),
 		});
-		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
+		expect(stdout[0]).toContain("checking evidence");
+		expect(JSON.parse(stdout[1]).answer).toBe("[1] answer");
 	});
 
 	it("does not fail agent construction for unknown datasource names", async () => {
@@ -122,7 +148,7 @@ describe("runSearch", () => {
 					startupDiagnostics: options.startupDiagnostics,
 					datasourceSkills: options.datasourceSkills,
 				};
-				return { searchDocuments: async () => response };
+				return completeStream();
 			},
 		});
 		expect(code).toBe(0);

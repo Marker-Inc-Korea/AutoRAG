@@ -1,6 +1,5 @@
 import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { basename, delimiter, join, normalize } from "node:path";
-import { type BM25Status, type BM25SyncResult, BM25UnavailableError } from "../retrieval/methods/bm25.ts";
 import { matchesVirtualPathScope } from "../retrieval/scope.ts";
 import type {
 	RetrievalMethod,
@@ -17,6 +16,7 @@ import { buildMinSyncPathMap, syncMinSyncWorkspace } from "./workspace.ts";
 
 export interface MinSyncVectorMethodOptions {
 	readonly root: string;
+	/** Test/embedded override; CLI config intentionally does not persist this. */
 	readonly binaryPath?: string;
 	readonly workspacePath?: string;
 	readonly installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
@@ -26,7 +26,6 @@ export interface MinSyncVectorMethodOptions {
 	readonly mode?: MinSyncQueryMode;
 }
 
-export type MinSyncBM25MethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
 export type MinSyncHybridMethodOptions = Omit<MinSyncVectorMethodOptions, "mode">;
 
 /** Degrade result returned when no binary can be resolved. */
@@ -112,9 +111,14 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		return binaryResult;
 	}
 
-	/** True when a configured binary path is missing (an explicit degraded state). */
+	/** MinSync is resolved from PATH, then the workspace cache. */
 	isBinaryMissing(): boolean {
 		return this.binaryPath !== undefined && !existsSync(this.binaryPath);
+	}
+
+	/** A vector index is ready only after MinSync has written its cursor. */
+	isReady(): boolean {
+		return existsSync(join(this.workspacePath, ".minsync", "cursor.json"));
 	}
 
 	async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
@@ -153,29 +157,19 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	}
 
 	/**
-	 * Resolve the minsync binary path following the priority chain:
-	 * 1. explicit binaryPath if set and exists
-	 * 2. PATH lookup for `minsync`
-	 * 3. cached join(root, '.autorag', 'bin', execName) if exists
-	 * 4. if autoInstall===true, try ensureMinSyncBinary in try/catch => install-failed degrade
-	 * 5. else return undefined (missing-binary degrade)
+	 * Resolve the MinSync CLI from the user's global PATH first, then the
+	 * workspace cache, and finally the verified auto-install fallback.
 	 *
 	 * Returns: string path on success, undefined for missing-binary, or a MinSyncSyncResult
 	 * for install-failed.
 	 */
 	protected async resolveBinary(): Promise<string | undefined | MinSyncSyncResult> {
-		// 1. explicit binaryPath
-		if (this.binaryPath && existsSync(this.binaryPath)) {
-			return this.binaryPath;
-		}
+		if (this.binaryPath && existsSync(this.binaryPath)) return this.binaryPath;
 		if (this.binaryPath !== undefined) return undefined;
-		// 2. PATH lookup
 		const pathBinary = lookupInPath(process.env);
 		if (pathBinary) return pathBinary;
-		// 3. cached bin
 		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
 		if (existsSync(cachedBinary)) return cachedBinary;
-		// 4. autoInstall
 		if (this.autoInstall) {
 			try {
 				const installed = await ensureMinSyncBinary({ ...this.installer, root: this.root });
@@ -184,69 +178,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				return degrade(this.workspacePath, "install-failed");
 			}
 		}
-		// 5. missing-binary
 		return undefined;
-	}
-}
-
-export class MinSyncBM25Method extends MinSyncVectorMethod {
-	private status: BM25Status = { readiness: "index_missing", engine: "minsync" };
-
-	constructor(options: MinSyncBM25MethodOptions) {
-		super({ ...options, mode: "bm25" });
-	}
-
-	override describe(): RetrievalMethodDescriptor {
-		return {
-			name: "bm25",
-			type: "bm25",
-			description: "MinSync-backed BM25 lexical retrieval over parsed markdown mirror chunks",
-			status: this.status.readiness === "ready" ? "active" : "stub",
-			capabilities: [
-				"lexical",
-				"incremental",
-				"parsed-mirrors",
-				"virtual-paths",
-				`readiness:${this.status.readiness}`,
-			],
-		};
-	}
-
-	override async retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]> {
-		const binaryResult = await this.resolveBinaryForRetrieve();
-		if (binaryResult === undefined) {
-			const readiness = this.status.readiness === "ready" ? "dependency_unavailable" : this.status.readiness;
-			throw new BM25UnavailableError(
-				readiness === "index_missing" ? "dependency_unavailable" : readiness,
-				this.status.message ?? "MinSync BM25 is unavailable",
-			);
-		}
-		return super.retrieve(query, options);
-	}
-
-	syncFromMinSync(result: MinSyncSyncResult): BM25SyncResult {
-		this.status = result.ok
-			? { readiness: "ready", engine: "minsync" }
-			: {
-					readiness: result.reason === "missing-binary" ? "dependency_unavailable" : "error",
-					engine: "minsync",
-					message: result.reason,
-				};
-		return {
-			indexPath: result.workspacePath,
-			indexedChunks: result.synced,
-			readiness: this.status.readiness,
-			engine: this.status.engine,
-		};
-	}
-
-	getStatus(): BM25Status {
-		return this.status;
-	}
-
-	private async resolveBinaryForRetrieve(): Promise<string | undefined> {
-		const binaryResult = await this.resolveBinary();
-		return typeof binaryResult === "string" ? binaryResult : undefined;
 	}
 }
 

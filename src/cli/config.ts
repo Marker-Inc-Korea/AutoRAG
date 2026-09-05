@@ -32,14 +32,6 @@ export class ConfigError extends Error {
 }
 
 /**
- * Typed BM25 method config persisted in `config.json`. Missing `enabled` means
- * enabled (true). `false` as a top-level value is also accepted and disables.
- */
-export interface Bm25MethodConfig {
-	enabled?: boolean;
-}
-
-/**
  * Typed MinSync method config persisted in `config.json`. Missing `enabled`
  * means enabled (true); `autoInstall` defaults to true. `embedder` carries
  * the MinSync vector embedder settings validated by {@link normalizeEmbedder}.
@@ -47,7 +39,6 @@ export interface Bm25MethodConfig {
 export interface MinSyncMethodConfig {
 	enabled?: boolean;
 	autoInstall?: boolean;
-	binaryPath?: string;
 	workspacePath?: string;
 	maxChunkSize?: number;
 	installer?: Omit<EnsureMinSyncBinaryOptions, "root">;
@@ -56,13 +47,11 @@ export interface MinSyncMethodConfig {
 
 /** Indexing method config as it appears in a raw config file (before normalization). */
 export interface RawIndexingMethods {
-	bm25?: Bm25MethodConfig | false;
 	minSync?: MinSyncMethodConfig | false;
 }
 
 /** Result of {@link normalizeIndexingConfig}: always fully populated. */
 export interface NormalizedIndexingConfig {
-	bm25: Bm25MethodConfig;
 	minSync: MinSyncMethodConfig;
 }
 
@@ -109,7 +98,6 @@ export interface CliConfig {
 	memoryPath: string;
 	model?: AgentModelConfig;
 	minSync?: MinSyncMethodConfig;
-	bm25?: Bm25MethodConfig;
 	jikji?: Record<string, unknown> | false;
 	parserOptions?: Record<string, unknown>;
 	dupey?: {
@@ -535,17 +523,21 @@ export function normalizeEmbedder(raw: unknown, path: string): MinSyncEmbedderCo
 	}
 	return out;
 }
-const BM25_ALLOWLIST = new Set<string>(["enabled"]);
-const BM25_LEGACY_IGNORED = new Set<string>(["indexPath", "fallback", "forceEngine", "importBinding"]);
 const MINSYNC_ALLOWLIST = new Set<string>([
 	"enabled",
 	"autoInstall",
-	"binaryPath",
 	"workspacePath",
 	"maxChunkSize",
 	"installer",
 	"embedder",
 ]);
+
+/**
+ * Fields that older configs may still carry. MinSync is now resolved from PATH
+ * and the workspace cache, so a persisted `binaryPath` is ignored rather than
+ * rejected; failing here would break every command for existing installs.
+ */
+const MINSYNC_LEGACY_IGNORED = new Set<string>(["binaryPath"]);
 
 const UI_TOKEN_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -623,22 +615,6 @@ function normalizeUiConfig(raw: unknown): UiConfig {
 	return out;
 }
 
-function normalizeBm25Method(raw: Bm25MethodConfig | false | undefined): Bm25MethodConfig {
-	if (raw === false) return { enabled: false };
-	if (raw === undefined || raw === null) return { enabled: true };
-	if (typeof raw !== "object" || Array.isArray(raw)) {
-		throw new ConfigError("bm25 must be an object or false");
-	}
-	const record = raw as Record<string, unknown>;
-	for (const key of Object.keys(record)) {
-		if (BM25_LEGACY_IGNORED.has(key)) continue;
-		if (!BM25_ALLOWLIST.has(key)) {
-			throw new ConfigError(`bm25.${key} is not a recognized field`);
-		}
-	}
-	return { enabled: record.enabled !== false };
-}
-
 function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): MinSyncMethodConfig {
 	if (raw === false) return { enabled: false };
 	if (raw === undefined || raw === null) return { enabled: true, autoInstall: true };
@@ -647,13 +623,13 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
 	}
 	const record = raw as Record<string, unknown>;
 	for (const key of Object.keys(record)) {
+		if (MINSYNC_LEGACY_IGNORED.has(key)) continue;
 		if (!MINSYNC_ALLOWLIST.has(key)) {
 			throw new ConfigError(`minSync.${key} is not a recognized field`);
 		}
 	}
 	const enabled = record.enabled !== false;
 	const out: MinSyncMethodConfig = { enabled, autoInstall: record.autoInstall !== false };
-	if (typeof record.binaryPath === "string" && record.binaryPath.length > 0) out.binaryPath = record.binaryPath;
 	if (typeof record.workspacePath === "string" && record.workspacePath.length > 0) {
 		out.workspacePath = record.workspacePath;
 	}
@@ -691,7 +667,6 @@ function normalizeMinSyncMethod(raw: MinSyncMethodConfig | false | undefined): M
  */
 export function normalizeIndexingConfig(raw: RawIndexingMethods): NormalizedIndexingConfig {
 	return {
-		bm25: normalizeBm25Method(raw.bm25),
 		minSync: normalizeMinSyncMethod(raw.minSync),
 	};
 }
@@ -746,10 +721,8 @@ export function resolveConfig(input: ResolveConfigInput): CliConfig {
 	};
 	if (model) config.model = model;
 	const normalized = normalizeIndexingConfig({
-		bm25: file.bm25 as Bm25MethodConfig | false | undefined,
 		minSync: file.minSync as MinSyncMethodConfig | false | undefined,
 	});
-	config.bm25 = normalized.bm25;
 	config.minSync = normalized.minSync;
 	config.jikji = file.jikji === false ? false : (file.jikji ?? {});
 	if (file.parserOptions) config.parserOptions = file.parserOptions;
@@ -803,12 +776,6 @@ export function buildAgentOptions(config: CliConfig): Omit<AutoRAGAgentOptions, 
 		opts.minSync = minSyncFields;
 	} else {
 		opts.minSync = false;
-	}
-	if (config.bm25 && config.bm25.enabled !== false) {
-		const { enabled: _omitBm25Enabled, ...bm25Fields } = config.bm25;
-		opts.bm25 = bm25Fields;
-	} else {
-		opts.bm25 = false;
 	}
 	opts.jikji = config.jikji === false ? false : (config.jikji ?? {});
 	if (config.parserOptions) opts.parserOptions = config.parserOptions;
@@ -1184,10 +1151,8 @@ export function writeDefaultConfig(
 	// Indexing method defaults: enabled when not explicitly provided.
 	// Never inject embedder id defaults; preserve partial embedder config as-is.
 	const normalizedMethods = normalizeIndexingConfig({
-		bm25: partial.bm25 as Bm25MethodConfig | false | undefined,
 		minSync: partial.minSync as MinSyncMethodConfig | false | undefined,
 	});
-	full.bm25 = normalizedMethods.bm25;
 	full.minSync = normalizedMethods.minSync;
 	// Jikji find-first discovery is enabled by default for new configs; the CLI
 	// auto-installs the jikji binary on first use when cargo is available.

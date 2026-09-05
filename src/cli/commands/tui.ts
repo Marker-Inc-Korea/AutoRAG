@@ -9,7 +9,7 @@ import {
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
-import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
+import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../../config/home.ts";
 import {
 	buildAgentOptions,
@@ -54,7 +54,13 @@ export interface TuiPresenter {
 	reset(): void;
 }
 
-type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+type TuiAgent = Pick<AutoRAGAgent, "searchDocumentsStream"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+
+type SearchStreamHandlers = {
+	readonly onProgress: (text: string) => void;
+	readonly onComplete: (response: SearchDocumentsResponse) => void;
+	readonly isInterrupted?: () => boolean;
+};
 
 export interface TuiDeps {
 	agentFactory?: (opts?: AutoRAGAgentOptions) => TuiAgent;
@@ -192,6 +198,26 @@ const ANSI_DIM_GRAY = "\u001b[90m\u001b[2m";
 
 function dimGray(text: string): string {
 	return `${ANSI_DIM_GRAY}${text}${ANSI_RESET}`;
+}
+
+function renderProgressEvent(event: SearchDocumentsStreamEvent): string | undefined {
+	return event.type === "progress" && event.text.trim() !== "" ? event.text : undefined;
+}
+
+async function consumeSearchStream(agent: TuiAgent, query: string, handlers: SearchStreamHandlers): Promise<void> {
+	for await (const event of agent.searchDocumentsStream(query)) {
+		if (handlers.isInterrupted?.()) return;
+		switch (event.type) {
+			case "progress": {
+				const progress = renderProgressEvent(event);
+				if (progress !== undefined) handlers.onProgress(progress);
+				break;
+			}
+			case "complete":
+				handlers.onComplete(event.response);
+				break;
+		}
+	}
 }
 
 function stripAnsi(text: string): string {
@@ -353,21 +379,25 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			presenter.setWorking(true);
 			renderStatus();
 			finalAnswer = "";
-			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
+			transcriptHistory = `${transcriptHistory}\n\n> ${query}`;
 			renderTranscript();
 			tui.requestRender();
-			void agent
-				.searchDocuments(query)
-				.then((response) => {
-					const answer = renderSearch(response, {
-						json: false,
-						debug: ctx.debug,
-					});
+			void consumeSearchStream(agent, query, {
+				onProgress: (progress) => {
+					transcriptHistory = `${transcriptHistory}\n\n${progress}`;
+					renderTranscript();
+					tui.requestRender();
+				},
+				onComplete: (response) => {
+					const answer = renderSearch(response, { json: false, debug: ctx.debug });
 					completedResponse = response;
 					completedAnswer = answer;
 					finalAnswer = answer;
 					renderTranscript();
-				})
+					tui.requestRender();
+				},
+				isInterrupted: () => interrupted,
+			})
 				.catch((error) => {
 					if (interrupted) return;
 					transcriptHistory = `${transcriptHistory}\n\n${renderError(error, {
@@ -469,13 +499,18 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 			interrupted = false;
 			presenter.beginRun();
 			try {
-				const response: SearchDocumentsResponse = await agent.searchDocuments(query);
-				if (!interrupted) {
-					const answer = renderSearch(response, { json: false, debug: ctx.debug });
-					tui.rendered.push(answer);
-					completedResponse = response;
-					completedAnswer = answer;
-				}
+				await consumeSearchStream(agent, query, {
+					onProgress: (progress) => {
+						tui.rendered.push(progress);
+					},
+					onComplete: (response) => {
+						const answer = renderSearch(response, { json: false, debug: ctx.debug });
+						tui.rendered.push(answer);
+						completedResponse = response;
+						completedAnswer = answer;
+					},
+					isInterrupted: () => interrupted,
+				});
 			} catch (error) {
 				if (!interrupted) {
 					tui.rendered.push(renderError(error, { json: false, debug: ctx.debug }));

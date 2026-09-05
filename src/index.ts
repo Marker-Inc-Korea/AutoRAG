@@ -18,6 +18,7 @@ export {
 	type SearchDocumentDiagnosticCode,
 	type SearchDocumentDiagnosticSeverity,
 	type SearchDocumentsResponse,
+	type SearchDocumentsStreamEvent,
 	type SearchDocumentWarning,
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";

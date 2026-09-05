@@ -55,7 +55,6 @@ function makeCtx(opts: {
 interface WorkspaceFixture {
 	readonly workspace: string;
 	readonly parsed: string;
-	readonly bm25: string;
 	readonly minsync: string;
 	readonly bin: string;
 	readonly datasources: string;
@@ -71,17 +70,15 @@ function seedWorkspace(): WorkspaceFixture {
 	mkdirSync(autorag, { recursive: true });
 
 	const parsed = join(autorag, "parsed");
-	const bm25 = join(autorag, "bm25");
 	const minsync = join(autorag, "minsync");
 	const bin = join(autorag, "bin");
 	const datasources = join(autorag, "datasources");
 
-	for (const dir of [parsed, bm25, minsync, bin, datasources]) {
+	for (const dir of [parsed, minsync, bin, datasources]) {
 		mkdirSync(dir, { recursive: true });
 	}
 	// Each reset target contains a file so the directory is non-empty.
 	writeFileSync(join(parsed, "index.json"), "{}");
-	writeFileSync(join(bm25, "fallback-index.json"), "{}");
 	writeFileSync(join(minsync, "data.bin"), "bytes");
 	writeFileSync(join(bin, "runner"), "binary");
 	writeFileSync(join(datasources, "source.json"), "{}");
@@ -100,7 +97,7 @@ function seedWorkspace(): WorkspaceFixture {
 	const siblingFile = join(siblingDir, "keep.txt");
 	writeFileSync(siblingFile, "sibling keep");
 
-	return { workspace, parsed, bm25, minsync, bin, datasources, memoryFile, outsideFile, siblingDir, siblingFile };
+	return { workspace, parsed, minsync, bin, datasources, memoryFile, outsideFile, siblingDir, siblingFile };
 }
 
 describe("runIndex", () => {
@@ -131,7 +128,6 @@ describe("runIndex", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.parsed)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.minsync)).toBe(false);
 
 		expect(existsSync(fx.bin)).toBe(true);
@@ -141,7 +137,7 @@ describe("runIndex", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.action).toBe("reset");
-		expect(parsed.removed).toEqual(["parsed", "minsync", "bm25"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 	});
 
 	it("declined reset returns exit 2 and removes nothing", async () => {
@@ -159,7 +155,6 @@ describe("runIndex", () => {
 
 		// Nothing removed.
 		expect(existsSync(fx.parsed)).toBe(true);
-		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(true);
 		expect(existsSync(fx.bin)).toBe(true);
 		expect(existsSync(fx.datasources)).toBe(true);
@@ -176,7 +171,6 @@ describe("runIndex", () => {
 		const code = await runIndex(ctx);
 		expect(code).toBe(2);
 		expect(existsSync(fx.parsed)).toBe(true);
-		expect(existsSync(fx.bm25)).toBe(true);
 		expect(existsSync(fx.minsync)).toBe(true);
 	});
 
@@ -250,33 +244,11 @@ describe("runIndex", () => {
 		const parsed = JSON.parse(stdout[0]);
 		expect(parsed.ok).toBe(true);
 		expect(parsed.action).toBe("rebuild");
-		expect(parsed.removed).toEqual(["parsed", "minsync", "bm25"]);
+		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 		expect(parsed.rebuilt).toBeDefined();
 	});
 });
-
 describe("runIndex --method scoped reset", () => {
-	it("reset --method bm25 removes only the bm25 index", async () => {
-		const fx = seedWorkspace();
-		const { ctx, stdout } = makeCtx({
-			positionals: ["reset"],
-			flags: { yes: true, method: "bm25" },
-			cwd: fx.workspace,
-			json: true,
-		});
-
-		const code = await runIndex(ctx);
-		expect(code).toBe(0);
-
-		expect(existsSync(fx.bm25)).toBe(false);
-		expect(existsSync(fx.parsed)).toBe(true);
-		expect(existsSync(fx.minsync)).toBe(true);
-
-		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.action).toBe("reset");
-		expect(parsed.removed).toEqual(["bm25"]);
-	});
-
 	it("reset --method minsync removes only the minsync index", async () => {
 		const fx = seedWorkspace();
 		const { ctx, stdout } = makeCtx({
@@ -290,31 +262,10 @@ describe("runIndex --method scoped reset", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.minsync)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.parsed)).toBe(true);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["minsync", "bm25"]);
-	});
-
-	it("reset --method bm25,minsync removes the shared MinSync index but not parsed", async () => {
-		const fx = seedWorkspace();
-		const { ctx, stdout } = makeCtx({
-			positionals: ["reset"],
-			flags: { yes: true, method: "bm25,minsync" },
-			cwd: fx.workspace,
-			json: true,
-		});
-
-		const code = await runIndex(ctx);
-		expect(code).toBe(0);
-
-		expect(existsSync(fx.bm25)).toBe(false);
-		expect(existsSync(fx.minsync)).toBe(false);
-		expect(existsSync(fx.parsed)).toBe(true);
-
-		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["bm25", "minsync"]);
+		expect(parsed.removed).toEqual(["minsync"]);
 	});
 
 	it("reset --method all removes the parsed mirror and shared MinSync index", async () => {
@@ -330,37 +281,9 @@ describe("runIndex --method scoped reset", () => {
 		expect(code).toBe(0);
 
 		expect(existsSync(fx.parsed)).toBe(false);
-		expect(existsSync(fx.bm25)).toBe(false);
 		expect(existsSync(fx.minsync)).toBe(false);
 
 		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.removed).toEqual(["parsed", "bm25", "minsync"]);
-	});
-
-	it("rebuild --method bm25 removes and rebuilds only bm25", async () => {
-		const fx = seedWorkspace();
-		const docs = join(fx.workspace, "docs");
-		mkdirSync(docs, { recursive: true });
-		writeFileSync(join(docs, "note.txt"), "Scoped rebuild content\n");
-
-		const { ctx, stdout } = makeCtx({
-			positionals: ["rebuild"],
-			flags: { yes: true, method: "bm25", "search-paths": docs },
-			cwd: fx.workspace,
-			json: true,
-		});
-
-		const code = await runIndex(ctx);
-		expect(code).toBe(0);
-
-		// Legacy BM25 artifacts are removed; parsed/MinSync remain unless also selected.
-		expect(existsSync(fx.bm25)).toBe(false);
-		expect(existsSync(fx.parsed)).toBe(true);
-		expect(existsSync(fx.minsync)).toBe(true);
-
-		const parsed = JSON.parse(stdout[0]);
-		expect(parsed.action).toBe("rebuild");
-		expect(parsed.removed).toEqual(["bm25"]);
-		expect(parsed.rebuilt).toBeDefined();
+		expect(parsed.removed).toEqual(["parsed", "minsync"]);
 	});
 });

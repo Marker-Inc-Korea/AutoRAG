@@ -34,7 +34,6 @@ function makeTool(name: string): AgentTool {
 interface AgentInternals {
 	lastQuery: string | undefined;
 	memory: RetrievalMemory;
-	bm25Method: { describe(): { name: string } } | undefined;
 	minSyncMethod: { describe(): { name: string } } | undefined;
 	innerAgent: {
 		transformContext?: (
@@ -105,8 +104,8 @@ describe("AutoRAGAgent", () => {
 				subscribe: (listener: (event: unknown) => void) => {
 					listener({
 						type: "tool_execution_end",
-						toolName: "lexical_search_local_docs",
-						result: { details: { method: "bm25" } },
+						toolName: "semantic_search_local_docs",
+						result: { details: { method: "minsync" } },
 					});
 					return () => undefined;
 				},
@@ -133,6 +132,22 @@ describe("AutoRAGAgent", () => {
 		expect(abortCalls).toBe(1);
 	});
 
+	it("limits each retrieval tool to three executions", async () => {
+		const agent = new AutoRAGAgent({
+			model: fakeModel(),
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: false,
+			jikji: false,
+		});
+		const tool = internals(agent).tools.find((entry) => entry.name === "semantic_search_local_docs");
+		expect(tool).toBeDefined();
+		const execute = tool?.execute as (id: string, params: { query: string }) => Promise<{ details?: unknown }>;
+		for (let i = 0; i < 3; i++) await execute(`call-${i}`, { query: "same source" });
+		const fourth = await execute("call-4", { query: "same source" });
+		expect(fourth.details).toMatchObject({ limitReached: true });
+	});
+
 	it("creates with default config", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
@@ -141,14 +156,14 @@ describe("AutoRAGAgent", () => {
 		expect(agent).toBeDefined();
 	});
 
-	it("shares MinSync chunk size with BM25-only refresh configuration", () => {
+	it("accepts MinSync chunk size configuration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 			minSync: { maxChunkSize: 1000, autoInstall: false },
 		});
 
-		expect((internals(agent).bm25Method as unknown as { maxChunkSize?: number }).maxChunkSize).toBe(1000);
+		expect((internals(agent).minSyncMethod as unknown as { maxChunkSize?: number }).maxChunkSize).toBe(1000);
 	});
 
 	it("registers the dupey duplicate scan tool by default", () => {
@@ -178,12 +193,7 @@ describe("AutoRAGAgent", () => {
 		expect(prompt).toContain("read the relevant source material directly");
 		expect(prompt).toContain("Use `bash` to open and verify relevant local files");
 		expect(prompt).toContain("check_memory");
-		for (const name of [
-			"lexical_search_local_docs",
-			"semantic_search_local_docs",
-			"search_all_documents",
-			"search_datasource_documents",
-		]) {
+		for (const name of ["semantic_search_local_docs", "search_all_documents", "search_datasource_documents"]) {
 			expect(prompt).toContain(name);
 		}
 		// deleted builtin/posix surface is gone
@@ -397,26 +407,14 @@ describe("AutoRAGAgent", () => {
 });
 
 describe("AutoRAGAgent default method registration", () => {
-	it("registers BM25 and MinSync by default when options omit them", () => {
+	it("registers MinSync and hybrid by default when options omit them", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		const internal = internals(agent);
-		expect(internal.bm25Method).toBeDefined();
-		expect(internal.bm25Method?.describe().name).toBe("bm25");
 		expect(internal.minSyncMethod).toBeDefined();
 		expect(internal.minSyncMethod?.describe().name).toBe("minsync");
-		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
-	});
-
-	it("does not register BM25 when bm25: false is passed", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			bm25: false,
-		});
-		expect(internals(agent).bm25Method).toBeUndefined();
 		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(1);
 	});
 
@@ -427,18 +425,7 @@ describe("AutoRAGAgent default method registration", () => {
 			minSync: false,
 		});
 		expect(internals(agent).minSyncMethod).toBeUndefined();
-		expect(internals(agent).bm25Method).toBeUndefined();
 		expect(agent.getMethodRegistry().getByType("hybrid")).toHaveLength(0);
-	});
-
-	it("registers BM25 with provided options when an object is passed", () => {
-		const agent = new AutoRAGAgent({
-			searchPaths: [FIXTURE_DIR],
-			memoryPath: join(tmpDir, "memory.json"),
-			bm25: { autoInstall: false },
-		});
-		expect(internals(agent).bm25Method).toBeDefined();
-		expect(internals(agent).bm25Method?.describe().name).toBe("bm25");
 	});
 
 	it("defaults MinSync autoInstall to true when undefined", () => {

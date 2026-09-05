@@ -1,5 +1,4 @@
 import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
-import type { SearchDocumentsResponse } from "../../agent/search-documents.ts";
 import {
 	buildAgentOptions,
 	type CliConfig,
@@ -102,10 +101,10 @@ export function classifySearchHealthHint(error: unknown): SearchHealthHint | und
 /**
  * Search-command dependencies. Tests inject `agentFactory` to bypass real
  * model construction and AutoRAGAgent instantiation, returning a stub whose
- * `searchDocuments` resolves a canned {@link SearchDocumentsResponse}.
+ * `searchDocumentsStream` yields progress and a canned completion.
  */
 export interface SearchDeps {
-	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocuments">;
+	agentFactory?: (opts: AutoRAGAgentOptions) => Pick<AutoRAGAgent, "searchDocumentsStream">;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 }
 
@@ -165,7 +164,7 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 		return 2;
 	}
 
-	let agent: Pick<AutoRAGAgent, "searchDocuments">;
+	let agent: Pick<AutoRAGAgent, "searchDocumentsStream">;
 	if (deps.agentFactory && deps.modelResolver === undefined) {
 		agent = deps.agentFactory({ ...buildAgentOptions(config) });
 	} else {
@@ -188,8 +187,17 @@ export async function runSearch(ctx: CommandContext, deps: SearchDeps = {}): Pro
 
 	const options = buildSearchOptions(ctx.flags);
 	try {
-		const resp = await agent.searchDocuments(query, options);
-		ctx.stdout(renderSearch(resp, { json: ctx.json, debug: ctx.debug }));
+		for await (const event of agent.searchDocumentsStream(query, options)) {
+			switch (event.type) {
+				case "progress":
+					if (event.text.trim() === "") break;
+					ctx.stdout(ctx.json ? JSON.stringify({ type: "progress", text: event.text }) : event.text);
+					break;
+				case "complete":
+					ctx.stdout(renderSearch(event.response, { json: ctx.json, debug: ctx.debug }));
+					break;
+			}
+		}
 		return 0;
 	} catch (error) {
 		const hint = classifySearchHealthHint(error);

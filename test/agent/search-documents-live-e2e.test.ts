@@ -247,7 +247,7 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 					fauxToolCall(JIKJI_FIND_TOOL_NAME, { query: "refund director approval" }),
 					fauxToolCall("bash", { command: "grep -rn 'director approval' docs/q3.txt" }),
 					fauxToolCall("semantic_search_local_docs", { query: "refund exception semantics", topK: 2 }),
-					fauxToolCall("lexical_search_local_docs", { query: "refund director approval", topK: 3 }),
+					fauxToolCall("semantic_search_local_docs", { query: "refund director approval", topK: 3 }),
 					fauxToolCall("search_all_documents", { query: "refund director approval finance kakao", topK: 6 }),
 				],
 				{ stopReason: "toolUse" },
@@ -273,7 +273,6 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 			"bash",
 			"check_memory",
 			"semantic_search_local_docs",
-			"lexical_search_local_docs",
 			"search_all_documents",
 			"search_datasource_documents",
 			"jikji_find",
@@ -283,8 +282,6 @@ describe("AutoRAGAgent live single-agent searchDocuments e2e", () => {
 		}
 
 		const refresh = await agent.refresh(true);
-		expect(refresh.bm25?.engine).toBe("minsync");
-		expect(["ready", "error", "dependency_unavailable"]).toContain(refresh.bm25?.readiness);
 		expect(refresh.datasources?.[0]).toMatchObject({ ok: true, skill: "kakao" });
 		expect(agent.getSystemPrompt()).toContain("## Jikji Local Discovery");
 		expect(agent.getSystemPrompt()).toContain("jikji_find");
