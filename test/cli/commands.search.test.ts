@@ -72,10 +72,19 @@ function model(): Model<"openai-responses"> {
 	};
 }
 
+function completeStream(result: SearchDocumentsResponse = response, onOptions?: (options: unknown) => void) {
+	return {
+		async *searchDocumentsStream(_query: string, options?: unknown) {
+			onOptions?.(options);
+			yield { type: "complete" as const, response: result };
+		},
+	};
+}
+
 describe("runSearch", () => {
 	it("reports usage for an empty query", async () => {
 		const { ctx, stderr } = context([]);
-		expect(await runSearch(ctx, { agentFactory: () => ({ searchDocuments: async () => response }) })).toBe(2);
+		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);
 		expect(stderr.join("\n")).toContain("Usage");
 	});
 
@@ -87,7 +96,7 @@ describe("runSearch", () => {
 				modelResolver: () => ({ model: model(), apiKey: "secret" }),
 				agentFactory: (options) => {
 					received = { model: options.model?.id, apiKey: options.apiKey };
-					return { searchDocuments: async () => response };
+					return completeStream();
 				},
 			}),
 		).toBe(0);
@@ -99,12 +108,10 @@ describe("runSearch", () => {
 		let options: unknown;
 		const { ctx } = context(["query"], { "top-k": "3", scope: "/docs" });
 		await runSearch(ctx, {
-			agentFactory: () => ({
-				searchDocuments: async (_query, received) => {
+			agentFactory: () =>
+				completeStream(response, (received) => {
 					options = received;
-					return response;
-				},
-			}),
+				}),
 		});
 		expect(options).toMatchObject({ topK: 3, scope: "/docs" });
 	});
@@ -113,7 +120,6 @@ describe("runSearch", () => {
 		const { ctx, stdout } = context(["query"]);
 		await runSearch(ctx, {
 			agentFactory: () => ({
-				searchDocuments: async () => response,
 				async *searchDocumentsStream() {
 					yield { type: "progress" as const, sessionId: "session", query: "query", text: "checking evidence" };
 					yield { type: "complete" as const, response };
@@ -142,7 +148,7 @@ describe("runSearch", () => {
 					startupDiagnostics: options.startupDiagnostics,
 					datasourceSkills: options.datasourceSkills,
 				};
-				return { searchDocuments: async () => response };
+				return completeStream();
 			},
 		});
 		expect(code).toBe(0);

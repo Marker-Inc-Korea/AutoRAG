@@ -54,8 +54,13 @@ export interface TuiPresenter {
 	reset(): void;
 }
 
-type TuiAgent = Pick<AutoRAGAgent, "searchDocuments"> &
-	Partial<Pick<AutoRAGAgent, "searchDocumentsStream" | "subscribe" | "abort">>;
+type TuiAgent = Pick<AutoRAGAgent, "searchDocumentsStream"> & Partial<Pick<AutoRAGAgent, "subscribe" | "abort">>;
+
+type SearchStreamHandlers = {
+	readonly onProgress: (text: string) => void;
+	readonly onComplete: (response: SearchDocumentsResponse) => void;
+	readonly isInterrupted?: () => boolean;
+};
 
 export interface TuiDeps {
 	agentFactory?: (opts?: AutoRAGAgentOptions) => TuiAgent;
@@ -197,6 +202,22 @@ function dimGray(text: string): string {
 
 function renderProgressEvent(event: SearchDocumentsStreamEvent): string | undefined {
 	return event.type === "progress" && event.text.trim() !== "" ? event.text : undefined;
+}
+
+async function consumeSearchStream(agent: TuiAgent, query: string, handlers: SearchStreamHandlers): Promise<void> {
+	for await (const event of agent.searchDocumentsStream(query)) {
+		if (handlers.isInterrupted?.()) return;
+		switch (event.type) {
+			case "progress": {
+				const progress = renderProgressEvent(event);
+				if (progress !== undefined) handlers.onProgress(progress);
+				break;
+			}
+			case "complete":
+				handlers.onComplete(event.response);
+				break;
+		}
+	}
 }
 
 function stripAnsi(text: string): string {
@@ -358,33 +379,25 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 			presenter.setWorking(true);
 			renderStatus();
 			finalAnswer = "";
-			transcriptHistory = `${transcriptHistory}\n\n> ${query}\nsearch: preparing retrieval`;
+			transcriptHistory = `${transcriptHistory}\n\n> ${query}`;
 			renderTranscript();
 			tui.requestRender();
-			void (async () => {
-				if (agent.searchDocumentsStream) {
-					for await (const event of agent.searchDocumentsStream(query)) {
-						const progress = renderProgressEvent(event);
-						if (progress !== undefined) {
-							transcriptHistory = `${transcriptHistory}\n\n${progress}`;
-							renderTranscript();
-						} else if (event.type === "complete") {
-							const answer = renderSearch(event.response, { json: false, debug: ctx.debug });
-							completedResponse = event.response;
-							completedAnswer = answer;
-							finalAnswer = answer;
-							renderTranscript();
-						}
-					}
-					return;
-				}
-				const response = await agent.searchDocuments(query);
-				const answer = renderSearch(response, { json: false, debug: ctx.debug });
-				completedResponse = response;
-				completedAnswer = answer;
-				finalAnswer = answer;
-				renderTranscript();
-			})()
+			void consumeSearchStream(agent, query, {
+				onProgress: (progress) => {
+					transcriptHistory = `${transcriptHistory}\n\n${progress}`;
+					renderTranscript();
+					tui.requestRender();
+				},
+				onComplete: (response) => {
+					const answer = renderSearch(response, { json: false, debug: ctx.debug });
+					completedResponse = response;
+					completedAnswer = answer;
+					finalAnswer = answer;
+					renderTranscript();
+					tui.requestRender();
+				},
+				isInterrupted: () => interrupted,
+			})
 				.catch((error) => {
 					if (interrupted) return;
 					transcriptHistory = `${transcriptHistory}\n\n${renderError(error, {
@@ -486,28 +499,18 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 			interrupted = false;
 			presenter.beginRun();
 			try {
-				if (agent.searchDocumentsStream) {
-					for await (const event of agent.searchDocumentsStream(query)) {
-						if (interrupted) break;
-						const progress = renderProgressEvent(event);
-						if (progress !== undefined) {
-							tui.rendered.push(progress);
-						} else if (event.type === "complete") {
-							const answer = renderSearch(event.response, { json: false, debug: ctx.debug });
-							tui.rendered.push(answer);
-							completedResponse = event.response;
-							completedAnswer = answer;
-						}
-					}
-				} else {
-					const response: SearchDocumentsResponse = await agent.searchDocuments(query);
-					if (!interrupted) {
+				await consumeSearchStream(agent, query, {
+					onProgress: (progress) => {
+						tui.rendered.push(progress);
+					},
+					onComplete: (response) => {
 						const answer = renderSearch(response, { json: false, debug: ctx.debug });
 						tui.rendered.push(answer);
 						completedResponse = response;
 						completedAnswer = answer;
-					}
-				}
+					},
+					isInterrupted: () => interrupted,
+				});
 			} catch (error) {
 				if (!interrupted) {
 					tui.rendered.push(renderError(error, { json: false, debug: ctx.debug }));
