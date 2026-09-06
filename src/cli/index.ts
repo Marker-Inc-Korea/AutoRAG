@@ -43,6 +43,7 @@ const VALUE_FLAGS = new Set([
 	"timeout-ms",
 	"port",
 	"host",
+	"peer",
 ]);
 
 const COMMANDS = [
@@ -58,6 +59,8 @@ const COMMANDS = [
 	"duplicates",
 	"tui",
 	"ui",
+	"serve",
+	"p2p",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -90,6 +93,13 @@ Commands:
   tui                  Open an interactive Pi-powered librarian terminal UI
   ui                   Open a local loopback page to connect and manage data sources
                        (--port N  --host 127.0.0.1  --no-open  --allow-remote)
+  serve                Start the P2P peer query server
+                       (--port N  --host 0.0.0.0  --force)
+  p2p                  Manage peer-to-peer pairing and permissions
+                       (pair  --accept <code> [--alias name] | peers [--remove <alias>])
+  p2p policy list      Show effective merged sharing policy (virtual-path keys)
+  p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
+  p2p policy unset     Remove a sharing rule by key
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -111,7 +121,7 @@ Global flags:
   --skip-probes        For health: skip the network completion probe (auth checks still run)
   --timeout-ms <n>     For health: per-probe timeout in ms (default 10000)
   --port <n>           For ui: loopback port (default 8787, 0 for ephemeral)
-  --host <addr>        For ui: loopback bind address (127.0.0.1 or ::1)
+  --host <addr>        For ui/serve: bind address (127.0.0.1, ::1, or 0.0.0.0)
   --no-open            For ui: print the URL and do not launch a browser
   --help, -h           Show this help
 `;
@@ -212,6 +222,20 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "ui": {
 			const { runUi } = await import("./commands/ui.ts");
 			return runUi(ctx);
+		}
+		case "serve": {
+			const { runServe } = await import("./commands/serve.ts");
+			return runServe(ctx);
+		}
+		case "p2p": {
+			if (ctx.positionals[0] === "policy") {
+				const { runP2pPolicy } = await import("./commands/p2p-policy.ts");
+				ctx.positionals = ctx.positionals.slice(1);
+				return runP2pPolicy(ctx);
+			}
+			ctx.positionals = ctx.positionals.slice(1);
+			const { runP2p } = await import("./commands/p2p.ts");
+			return runP2p(ctx);
 		}
 	}
 }
