@@ -1,5 +1,6 @@
 import type { Skill } from "@earendil-works/pi-agent-core";
 import type { StoreManifest } from "../manifest/types.ts";
+import { FENCING_GUARD_LINE } from "../p2p/injection-classifier.ts";
 import { buildDatasourceSkillsPrompt } from "./datasource-skill.ts";
 
 export interface SystemPromptConfig {
@@ -10,6 +11,7 @@ export interface SystemPromptConfig {
 	manifests: StoreManifest[];
 	jikjiIndexingEnabled?: boolean;
 	datasourceSkills?: readonly Skill[];
+	retrievedContentGuard?: boolean;
 }
 
 function toolAvailable(config: SystemPromptConfig, name: string): boolean {
@@ -77,6 +79,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 \`jikji_find\` is the default local-discovery aid. Read its \`handoff_action\`, \`tool_call_policy\`, \`answer_paths\`, and \`agent_should_not_rerank\` fields when choosing candidates. Jikji is not part of \`search_all_documents\`, and it does not block direct file reading with \`bash\`. If Jikji is unavailable, use the diagnostic and fall back to \`bash\`.
 `
 		: "";
+	const retrievedContentGuard = config.retrievedContentGuard ? `\n${FENCING_GUARD_LINE}\n` : "";
 	const duplicateManagement = toolAvailable(config, "scan_duplicate_documents")
 		? `## Local Corpus Management
 
@@ -131,8 +134,7 @@ Call \`emit_autorag_results\` exactly once with:
 - \`results\`: curated units with number, title, summary, evidence, and confidence.
 - \`mapping\`: exactly one matching entry per result number with source, method, content, and evidence references.
 
-## Constraints
-
+## Constraints${retrievedContentGuard}
 - **Read before curating**: verify relevant local files directly when available.
 - **No fabrication**: report a negative result when evidence is absent.
 - **Curate, don't dump**: return useful knowledge units, not raw search output.

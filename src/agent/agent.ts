@@ -47,6 +47,7 @@ import {
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
+import { fenceRetrievedContent, scanOutboundPayload } from "../p2p/injection-classifier.ts";
 import type { PolicyResolver } from "../p2p/policy-filter.ts";
 import { filterRetrievalResultsByPolicy } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
@@ -206,6 +207,18 @@ declare module "../retrieval/types.ts" {
 		observedSources?: Set<string>;
 		/** Server-only datasource source globs derived from the loaded policy. */
 		policyDatasourceScopes?: readonly string[];
+	}
+}
+
+export type RemoteSessionRejectionCode = "injection-detected" | "outbound-leak-detected";
+
+export class RemoteSessionRejectedError extends Error {
+	readonly code: RemoteSessionRejectionCode;
+
+	constructor(code: RemoteSessionRejectionCode) {
+		super(`Remote session rejected: ${code}`);
+		this.name = "RemoteSessionRejectedError";
+		this.code = code;
 	}
 }
 
@@ -458,6 +471,7 @@ export class AutoRAGAgent {
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
+			retrievedContentGuard: this.remoteSession,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
@@ -512,7 +526,30 @@ export class AutoRAGAgent {
 	}
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
-		if (this.remoteSession) return messages;
+		if (this.remoteSession) {
+			const hasRetrievedToolResult = messages.some(
+				(message) =>
+					message.role === "toolResult" && (SEARCH_TOOLS as readonly string[]).includes(message.toolName),
+			);
+			if (!hasRetrievedToolResult) return messages;
+			return messages.map((message) => {
+				if (message.role !== "toolResult" || !(SEARCH_TOOLS as readonly string[]).includes(message.toolName)) {
+					return message;
+				}
+				const details =
+					message.details && typeof message.details === "object" && !Array.isArray(message.details)
+						? (message.details as { sources?: readonly unknown[] })
+						: undefined;
+				const sources = details?.sources?.filter((source): source is string => typeof source === "string") ?? [];
+				const source = sources.length > 0 ? sources.join(",") : message.toolName;
+				return {
+					...message,
+					content: message.content.map((part) =>
+						part.type === "text" ? { ...part, text: fenceRetrievedContent(source, part.text) } : part,
+					),
+				};
+			});
+		}
 		const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
 		const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
 		const contextHints = this.lastQuery ? this.memory.getContextHints(this.lastQuery) : undefined;
@@ -749,6 +786,19 @@ export class AutoRAGAgent {
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
 			}
+			if (this.remoteSession) {
+				const scan = scanOutboundPayload(
+					[
+						captured.answer,
+						...captured.results.flatMap((result) => [
+							result.summary,
+							...result.evidence.map((evidence) => evidence.excerpt),
+						]),
+					],
+					[this.workspaceProjectRoot, ...this.searchPaths].map((root) => resolve(root)),
+				);
+				if (!scan.ok) throw new RemoteSessionRejectedError(scan.code);
+			}
 			const response = recordStructuredResultsSession(
 				sessionId,
 				trimmedQuery,
@@ -980,7 +1030,11 @@ export class AutoRAGAgent {
 					.slice(0, 5)
 					.map(
 						(result, index) =>
-							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
+							`[${index + 1}] ${result.source}\n${
+								this.remoteSession
+									? fenceRetrievedContent(result.source, result.content.replace(/\s+/gu, " ").slice(0, 400))
+									: result.content.replace(/\s+/gu, " ").slice(0, 400)
+							}`,
 					)
 					.join("\n")}`,
 			);
