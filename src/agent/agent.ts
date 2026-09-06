@@ -47,6 +47,8 @@ import {
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
+import type { PolicyResolver } from "../p2p/policy-filter.ts";
+import { filterRetrievalResultsByPolicy } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { type BM25SyncResult, removeLegacyBm25Artifacts } from "../retrieval/methods/bm25.ts";
@@ -105,6 +107,8 @@ import {
 	type WatchRefreshHandle,
 	type WatchWatcher,
 } from "./watch-refresh.ts";
+
+const denyPolicy: PolicyResolver = () => ({ tier: "private", allowed: false, shareBytes: false, redact: true });
 
 const SEARCH_TOOLS = [
 	BASH_TOOL_NAME,
@@ -190,6 +194,19 @@ interface RefreshState {
 	lastError?: string;
 	watchLimited: boolean;
 	watchFailed: boolean;
+}
+
+declare module "../retrieval/types.ts" {
+	interface RetrievalOptions {
+		/** Server-only P2P policy identity; never included in model tool schemas. */
+		peerFingerprint?: string;
+		/** Server-only P2P policy resolver. */
+		resolvePolicy?: PolicyResolver;
+		/** Server-only run registry populated from observed retrieval output. */
+		observedSources?: Set<string>;
+		/** Server-only datasource source globs derived from the loaded policy. */
+		policyDatasourceScopes?: readonly string[];
+	}
 }
 
 export interface AutoRAGAgentOptions {
@@ -292,13 +309,14 @@ export class AutoRAGAgent {
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
 	private readonly remoteSession: boolean;
+	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
 		this.remoteSession = options.remoteSession ?? false;
-		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
+		this.searchTimeoutMs = options.searchTimeoutMs ?? (this.remoteSession ? 120_000 : 10 * 60 * 1000);
 		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
 		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
 			throw new Error("searchTimeoutMs must be a positive finite number");
@@ -362,13 +380,13 @@ export class AutoRAGAgent {
 
 		const checkMemoryTool = options.remoteSession ? undefined : createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(
-			() => this.bm25Method,
+			() => this.remoteFilteredRetrievalMethod(this.bm25Method),
 			(scope) => this.resolveRetrievalScope(scope),
 		);
 		const searchDatasourceTool = createSearchDatasourceDocumentsTool(this);
 
 		const searchMinSyncTool = createSearchMinSyncDocumentsTool(
-			() => this.minSyncMethod,
+			() => this.remoteFilteredRetrievalMethod(this.minSyncMethod),
 			(scope) => this.resolveRetrievalScope(scope),
 		);
 		const searchAllTool = createSearchAllDocumentsTool(this);
@@ -570,7 +588,10 @@ export class AutoRAGAgent {
 		if (this.searchToolCallCount >= this.maxSearchToolCalls) {
 			void this.activeSession?.abort();
 		}
-		const details = event.result.details as { method?: string } | undefined;
+		const details = event.result.details as { method?: string; sources?: readonly string[] } | undefined;
+		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
+			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
+		}
 		if (!this.remoteSession) {
 			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
 			this.memory.save();
@@ -677,6 +698,8 @@ export class AutoRAGAgent {
 			return createEmptySearchDocumentsResponse(sessionId, trimmedQuery, this.sessions, this.startupDiagnostics);
 		}
 		options = this.normalizeRetrievalOptions(options);
+		if (this.remoteSession && options.observedSources !== undefined) options.observedSources.clear();
+		this.activeRetrievalOptions = options;
 
 		this.activeRun = true;
 		this.searchToolCallCount = 0;
@@ -780,14 +803,47 @@ export class AutoRAGAgent {
 			}
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
+			this.activeRetrievalOptions = undefined;
 			this.activeRun = false;
 		}
 	}
 
 	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
+		const effectiveOptions = this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options;
+		if (this.remoteSession) {
+			// Policy scopes are supplied by the trusted server from its PolicyStore;
+			// source-level filtering below handles channel-specific never/private rules.
+			const policyScopes = effectiveOptions.policyDatasourceScopes ?? [];
+			const allowedScopes = policyScopes.filter((scope) => {
+				const probe = scope.replace(/\*+$/u, "probe");
+				return effectiveOptions.resolvePolicy?.(probe, effectiveOptions.peerFingerprint).allowed ?? false;
+			});
+			const allowedTags = this.methodRegistry
+				.list()
+				.filter((method) => {
+					const descriptor = method.describe();
+					return (
+						descriptor.datasourceId !== undefined &&
+						(allowedScopes.length === 0 ||
+							allowedScopes.some((scope) => scope.startsWith(`${descriptor.datasourceId}:`)))
+					);
+				})
+				.flatMap((method) => method.describe().tags ?? []);
+			const trustedTags = [...new Set(allowedTags)];
+			return new DatasourceAccessContext({
+				allowedTags:
+					trustedTags.length > 0
+						? trustedTags
+						: (effectiveOptions.allowedTags ?? this.datasourceAccessOptions.allowedTags ?? []),
+				// Datasource identifiers use colon schemes (e.g. kakao:room/**),
+				// while DatasourceAccessContext scopes are slash paths. The policy
+				// filter below applies the source-identifier glob authoritatively.
+				allowedScopes: effectiveOptions.allowedScopes ?? [],
+			});
+		}
 		return new DatasourceAccessContext({
-			allowedTags: options.allowedTags ?? this.datasourceAccessOptions.allowedTags,
-			allowedScopes: options.allowedScopes ?? this.datasourceAccessOptions.allowedScopes,
+			allowedTags: effectiveOptions.allowedTags ?? this.datasourceAccessOptions.allowedTags,
+			allowedScopes: effectiveOptions.allowedScopes ?? this.datasourceAccessOptions.allowedScopes,
 		});
 	}
 
@@ -887,7 +943,11 @@ export class AutoRAGAgent {
 	}
 
 	private async prefetchInitialRetrievalContext(query: string, options: RetrievalOptions): Promise<string> {
-		const retrieveOptions = { topK: 5, scope: options.scope };
+		const retrieveOptions: RetrievalOptions = {
+			...options,
+			topK: 5,
+			scope: options.scope,
+		};
 		const [jikji, vector, bm25] = await Promise.all([
 			this.jikjiClient === undefined
 				? Promise.resolve(undefined)
@@ -905,6 +965,15 @@ export class AutoRAGAgent {
 			);
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
+			if (results && this.remoteSession && options.resolvePolicy !== undefined) {
+				const filtered = filterRetrievalResultsByPolicy(
+					new Map([[label, results]]),
+					options.resolvePolicy ?? denyPolicy,
+					options.peerFingerprint ?? "",
+				);
+				results = filtered.get(label) ?? [];
+				for (const result of results) options.observedSources?.add(result.source);
+			}
 			if (!results || results.length === 0) return;
 			sections.push(
 				`${label} initial candidates:\n${results
@@ -1414,15 +1483,26 @@ export class AutoRAGAgent {
 		query: string,
 		options: RetrievalOptions = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
+		if (this.remoteSession) options = { ...this.activeRetrievalOptions, ...options };
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
-		const filteredByMethod = this.datasourceFilter.filter(
+		let filteredByMethod = this.datasourceFilter.filter(
 			byMethod,
 			methods,
 			this.datasourceAccessContext(options),
 			options.scope,
 		);
+		if (this.remoteSession && options.resolvePolicy !== undefined) {
+			filteredByMethod = filterRetrievalResultsByPolicy(
+				filteredByMethod,
+				options.resolvePolicy ?? denyPolicy,
+				options.peerFingerprint ?? "",
+			);
+			for (const results of filteredByMethod.values()) {
+				for (const result of results) options.observedSources?.add(result.source);
+			}
+		}
 		if (this.minSyncMethod?.isBinaryMissing() && !diagnostics.some((d) => d.source === "minsync")) {
 			diagnostics.push({
 				code: "minsync-unavailable",
@@ -1451,7 +1531,11 @@ export class AutoRAGAgent {
 		query: string,
 		options: { readonly topK?: number; readonly scope?: string } = {},
 	): Promise<{ results: RetrievalResult[]; diagnostics: RetrievalDiagnostic[] }> {
-		const retrievalOptions: RetrievalOptions = { topK: options.topK, scope: options.scope };
+		const retrievalOptions: RetrievalOptions = {
+			...this.activeRetrievalOptions,
+			topK: options.topK,
+			scope: options.scope,
+		};
 		const ctx = this.datasourceAccessContext(retrievalOptions);
 		const methods = this.methodRegistry.list().filter((method) => {
 			const descriptor = method.describe();
@@ -1463,7 +1547,17 @@ export class AutoRAGAgent {
 			query,
 			retrievalOptions,
 		);
-		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		let filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		if (this.remoteSession && retrievalOptions.resolvePolicy !== undefined) {
+			filteredByMethod = filterRetrievalResultsByPolicy(
+				filteredByMethod,
+				retrievalOptions.resolvePolicy ?? denyPolicy,
+				retrievalOptions.peerFingerprint ?? "",
+			);
+			for (const results of filteredByMethod.values()) {
+				for (const result of results) retrievalOptions.observedSources?.add(result.source);
+			}
+		}
 		return {
 			results: this.rerankWithMemory(
 				query,
@@ -1524,6 +1618,32 @@ export class AutoRAGAgent {
 			})
 			.sort((a, b) => b.rankScore - a.rankScore || a.index - b.index)
 			.map(({ result }) => result);
+	}
+
+	private remoteFilteredRetrievalMethod<
+		T extends {
+			retrieve(query: string, options: RetrievalOptions): Promise<RetrievalResult[]>;
+			describe(): { name: string };
+		},
+	>(method: T | undefined): T | undefined {
+		if (!method || !this.remoteSession) return method;
+		return new Proxy(method, {
+			get: (target, property, receiver) => {
+				if (property !== "retrieve") return Reflect.get(target, property, receiver);
+				return async (query: string, options: RetrievalOptions) => {
+					const effective = { ...this.activeRetrievalOptions, ...options };
+					const results = await target.retrieve.call(target, query, effective);
+					const filtered =
+						filterRetrievalResultsByPolicy(
+							new Map([[target.describe().name, results]]),
+							effective.resolvePolicy ?? denyPolicy,
+							effective.peerFingerprint ?? "",
+						).get(target.describe().name) ?? [];
+					for (const result of filtered) effective.observedSources?.add(result.source);
+					return filtered;
+				};
+			},
+		}) as T;
 	}
 
 	private normalizeRetrievalOptions(options: RetrievalOptions): RetrievalOptions {
