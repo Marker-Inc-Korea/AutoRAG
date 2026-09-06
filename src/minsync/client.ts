@@ -28,7 +28,7 @@ export class MinSyncClient {
 		this.maxChunkSize = options.maxChunkSize;
 	}
 
-	async sync(): Promise<MinSyncSyncResult> {
+	async sync(force = false): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "missing-binary" };
 		}
@@ -93,7 +93,7 @@ export class MinSyncClient {
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
 		if (chunkSizeChanged) rmSync(cursorPath, { force: true });
 		const syncArgs =
-			existsSync(cursorPath) && !chunkSizeChanged
+			existsSync(cursorPath) && !chunkSizeChanged && !force
 				? ["sync", "--format", "json"]
 				: ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);

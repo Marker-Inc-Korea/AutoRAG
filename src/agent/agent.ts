@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { watch as fsWatch, realpathSync, statSync } from "node:fs";
+import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
@@ -37,7 +37,7 @@ import {
 	MinSyncVectorMethod,
 	type MinSyncVectorMethodOptions,
 } from "../minsync/index.ts";
-import { PARSED_MIRROR_SUBDIR } from "../mirror/paths.ts";
+import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../mirror/paths.ts";
 import {
 	detectMirrorStaleness,
 	type ParsedMirrorDiagnostic,
@@ -46,6 +46,7 @@ import {
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
+import { RetrievalEngine } from "../retrieval/engine.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 
 import { RetrievalMethodRegistry } from "../retrieval/registry.ts";
@@ -868,9 +869,13 @@ export class AutoRAGAgent {
 	}
 
 	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
+		const trustedTags = this.datasourceAccessOptions.allowedTags ?? [];
+		const requestedTags = options.allowedTags;
+		const allowedTags =
+			requestedTags === undefined ? trustedTags : trustedTags.filter((tag) => requestedTags.includes(tag));
 		return new DatasourceAccessContext({
-			allowedTags: options.allowedTags ?? this.datasourceAccessOptions.allowedTags,
-			allowedScopes: options.allowedScopes ?? this.datasourceAccessOptions.allowedScopes,
+			allowedTags,
+			allowedScopes: this.datasourceAccessOptions.allowedScopes,
 		});
 	}
 
@@ -1062,7 +1067,7 @@ export class AutoRAGAgent {
 		};
 		try {
 			const summary = needsParsed ? await this.syncParsedMirrors(force) : await this.scanMirrorStaleness();
-			const minsync = wants("minsync") ? await this.syncMinSync() : undefined;
+			const minsync = wants("minsync") ? await this.syncMinSync(force) : undefined;
 			const datasources = wants("datasources") ? await this.indexDatasources() : [];
 			// A MinSync refresh also establishes Jikji's local discovery artifacts:
 			// both indexes are first-class parts of the default local corpus.
@@ -1090,6 +1095,8 @@ export class AutoRAGAgent {
 				datasources,
 				lastError: undefined,
 			};
+			mkdirSync(dirname(refreshReadinessPath(this.workspaceProjectRoot)), { recursive: true });
+			writeFileSync(refreshReadinessPath(this.workspaceProjectRoot), '{"version":1,"completed":true}\n');
 			const publicMinsync = minsync
 				? {
 						ok: minsync.ok,
@@ -1291,8 +1298,8 @@ export class AutoRAGAgent {
 		return { excluded };
 	}
 
-	async syncMinSync(): Promise<MinSyncSyncResult | undefined> {
-		const result = await this.minSyncMethod?.sync();
+	async syncMinSync(force = false): Promise<MinSyncSyncResult | undefined> {
+		const result = await this.minSyncMethod?.sync(force);
 		this.minSyncReady = result?.ok === true;
 		this.refreshState = { ...this.refreshState, minsync: result };
 		return result;
@@ -1566,6 +1573,7 @@ export class AutoRAGAgent {
 			methods,
 			this.datasourceAccessContext(options),
 			options.scope,
+			options.allowedScopes,
 		);
 		if (this.minSyncMethod?.isBinaryMissing() && !diagnostics.some((d) => d.source === "minsync")) {
 			diagnostics.push({
@@ -1620,6 +1628,26 @@ export class AutoRAGAgent {
 	/** The retrieval method registry (posix, MinSync, and datasource methods). */
 	getMethodRegistry(): RetrievalMethodRegistry {
 		return this.methodRegistry;
+	}
+
+	/**
+	 * The standalone retrieval engine for this agent's method pipeline.
+	 * Built on first access using the agent's registered methods and configured
+	 * datasource access context. Model-free — no agent state required.
+	 */
+	private retrievalEngine: RetrievalEngine | undefined;
+	getRetrievalEngine(): RetrievalEngine {
+		if (this.retrievalEngine === undefined) {
+			this.retrievalEngine = new RetrievalEngine({
+				datasourceAccess: this.datasourceAccessOptions,
+				isMinSyncBinaryMissing:
+					this.minSyncMethod !== undefined ? () => this.minSyncMethod!.isBinaryMissing() : undefined,
+			});
+			for (const method of this.methodRegistry.list()) {
+				this.retrievalEngine.register(method);
+			}
+		}
+		return this.retrievalEngine;
 	}
 
 	getSystemPrompt(): string {

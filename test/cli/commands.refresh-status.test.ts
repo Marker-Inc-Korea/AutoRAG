@@ -51,6 +51,20 @@ function writeConfig(minSync?: unknown): void {
 	writeFileSync(join(configDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 }
 
+describe("runStatus exit codes", () => {
+	it("returns exit 2 when --config points to a missing file", async () => {
+		const err: string[] = [];
+		const code = await runStatus(
+			makeCtx({
+				flags: { config: join(root, "nonexistent-config.json") },
+				stderr: (line) => err.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(err.join("\n")).toContain("Config file not found");
+	});
+});
+
 describe("runRefresh + runStatus (cli)", () => {
 	it("refresh then status emits JSON with counts and no leaked paths", async () => {
 		writeConfig();

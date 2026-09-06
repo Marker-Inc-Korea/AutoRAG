@@ -21,7 +21,11 @@ export type {
 	AutoRAGMappingEntry,
 	AutoRAGResultsDetails,
 } from "./emit-results-tool.ts";
-export { createEmitResultsTool, EMIT_AUTORAG_RESULTS_TOOL_NAME } from "./emit-results-tool.ts";
+export {
+	createEmitResultsTool,
+	EMIT_AUTORAG_RESULTS_TOOL_NAME,
+	emitResultsSchema,
+} from "./emit-results-tool.ts";
 export {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,

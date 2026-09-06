@@ -14,6 +14,7 @@ export {
 	type AutoRAGResultsDetails,
 	createEmitResultsTool,
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
+	emitResultsSchema,
 	type SearchDocumentDiagnostic,
 	type SearchDocumentDiagnosticCode,
 	type SearchDocumentDiagnosticSeverity,
@@ -22,6 +23,18 @@ export {
 	type SearchDocumentWarning,
 } from "./agent/index.ts";
 export { buildSystemPrompt, type SystemPromptConfig } from "./agent/system-prompt.ts";
+export {
+	AutoRAGLite,
+	type AutoRAGLiteOptions,
+	buildAgentOptions,
+	type CliConfig,
+	createAutoRAGLite,
+	type ResolveConfigInput,
+	resolveConfig,
+	resolveConfigReadOnly,
+	writeConfigObject,
+	writeDefaultConfig,
+} from "./core.ts";
 export * from "./datasource/index.ts";
 export * from "./dupey/index.ts";
 export * from "./jikji/index.ts";

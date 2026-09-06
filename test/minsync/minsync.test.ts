@@ -25,6 +25,7 @@ import {
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
+import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
 let root: string;
 let source: string;
@@ -509,6 +510,40 @@ describe("MinSyncVectorMethod", () => {
 		expect(result.content).toBe("Relative path hit from MinSync.");
 	});
 
+	it("exposes an install-failed diagnostic through retrieval after auto-install fails", async () => {
+		// Given
+		const originalPath = process.env.PATH;
+		process.env.PATH = join(root, "empty-path");
+		const method = new MinSyncVectorMethod({
+			root,
+			workspacePath: minsyncWorkspace,
+			installer: {
+				releaseProvider: async () => {
+					throw new Error("mock install failure");
+				},
+			},
+			autoInstall: true,
+		});
+		const engine = new RetrievalEngine({ isMinSyncBinaryMissing: () => method.isBinaryMissing() });
+		engine.register(method);
+
+		try {
+			// When
+			const { results, diagnostics } = await engine.retrieve("renewal cancellation");
+
+			// Then
+			expect(results).toEqual([]);
+			expect(diagnostics).toHaveLength(1);
+			expect(diagnostics[0]).toMatchObject({
+				code: "minsync-unavailable",
+				severity: "warning",
+				source: "minsync",
+			});
+		} finally {
+			process.env.PATH = originalPath;
+		}
+	});
+
 	it("returns empty vector results when the minsync binary is missing", async () => {
 		// Given
 		const method = new MinSyncVectorMethod({
@@ -671,6 +706,17 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 			const result = await method.sync();
 
 			expect(result).toMatchObject({ ok: false, synced: 0, reason: "missing-binary" });
+		} finally {
+			process.env.PATH = savedPath;
+		}
+	});
+
+	it("degrades with missing-binary when PATH resolution finds no executable", async () => {
+		const savedPath = process.env.PATH;
+		process.env.PATH = "/nonexistent";
+		try {
+			const method = new MinSyncVectorMethod({ root, workspacePath: minsyncWorkspace, autoInstall: false });
+			expect(await method.sync()).toMatchObject({ ok: false, reason: "missing-binary" });
 		} finally {
 			process.env.PATH = savedPath;
 		}
