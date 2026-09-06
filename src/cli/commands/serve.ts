@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
+import { AutoRAGAgent } from "../../agent/agent.ts";
 import { loadOrCreateIdentity } from "../../p2p/identity.ts";
 import { type P2pServer, type StartP2pServerOptions, startP2pServer } from "../../p2p/server.ts";
-import { ConfigError, resolveConfig, resolveConfigPath } from "../config.ts";
+import { buildAgentOptions, ConfigError, resolveConfig, resolveConfigPath } from "../config.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -71,15 +72,16 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 
 	let server: P2pServer;
 	try {
+		const agent = new AutoRAGAgent({
+			...buildAgentOptions(config),
+			remoteSession: true,
+			searchTimeoutMs: p2p.searchTimeoutMs,
+		});
 		server = await start({
 			host,
 			port,
 			workspacePath: config.workspacePath,
-			agent: {
-				searchDocuments: () => {
-					throw new Error("P2P server requires a configured search agent; use autorag search instead.");
-				},
-			},
+			agent,
 		} as StartP2pServerOptions);
 	} catch (error) {
 		const status = error instanceof ConfigError ? 2 : 1;

@@ -72,14 +72,22 @@ interface Fixture {
 	logs: unknown[];
 }
 
-function fixture(agent: P2pSearchAgent = { searchDocuments: async (query) => searchResponse(query) }): Fixture {
+function fixture(
+	agent: Omit<P2pSearchAgent, "remoteSession"> | P2pSearchAgent = { searchDocuments: async (query) => searchResponse(query) },
+): Fixture {
 	const root = workspace();
 	const peerIdentity = generateIdentity(root);
 	const peer = registerPeer(root, "friend", {
 		endpoint: "127.0.0.1:9470",
 		pubkey: peerIdentity.pubkey,
 	});
-	return { root, peerIdentity, peer, agent, logs: [] };
+	return {
+		root,
+		peerIdentity,
+		peer,
+		agent: { ...agent, remoteSession: true } as P2pSearchAgent,
+		logs: [],
+	};
 }
 
 async function start(
@@ -136,6 +144,21 @@ afterEach(async () => {
 });
 
 describe("P2P peer server", () => {
+	it("requires a remote-session agent at construction time", async () => {
+		const root = workspace();
+		const peerIdentity = generateIdentity(root);
+		const peer = registerPeer(root, "friend", {
+			endpoint: "127.0.0.1:9470",
+			pubkey: peerIdentity.pubkey,
+		});
+		await expect(
+			startP2pServer({
+				agent: { remoteSession: false, searchDocuments: async (query) => searchResponse(query) },
+				peers: loadPeerRegistry(root),
+				config: { host: "127.0.0.1", port: 0, injectionClassifier: false },
+			}),
+		).rejects.toThrow(/remoteSession: true/);
+	});
 	it("rejects unsigned and tampered requests before the agent", async () => {
 		const calls: string[] = [];
 		const value = fixture({
@@ -208,7 +231,6 @@ describe("P2P peer server", () => {
 		expect(Value.Check(PeerQueryResponseSchema, firstBody)).toBe(true);
 		expect(retrievalOptions).toMatchObject({
 			peerFingerprint: value.peer.fingerprint,
-			remoteSession: true,
 			searchTimeoutMs: 120_000,
 		});
 		expect(retrievalOptions?.resolvePolicy).toEqual(expect.any(Function));

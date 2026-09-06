@@ -147,6 +147,33 @@ describe("autorag serve", () => {
 		expect(stdoutText).not.toContain("secret");
 	});
 
+	it("constructs the production search agent in remote-session mode", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				p2p: { enabled: true },
+			}),
+		);
+		let receivedAgent: { remoteSession?: boolean; searchDocuments: unknown } | undefined;
+		const code = await runServe(
+			makeCtx({ flags: { config: configPath } }),
+			{
+				startP2pServer: async (options) => {
+					receivedAgent = options.agent as typeof receivedAgent;
+					return stubServer();
+				},
+				waitUntilStopped: async () => undefined,
+				getFingerprint: async () => "test-fp",
+			},
+		);
+		expect(code).toBe(0);
+		expect(receivedAgent?.remoteSession).toBe(true);
+		expect(typeof receivedAgent?.searchDocuments).toBe("function");
+	});
+
 	it("surfaces ConfigError for invalid config", async () => {
 		// Write a config with invalid p2p value
 		writeFileSync(

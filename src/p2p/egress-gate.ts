@@ -77,6 +77,9 @@ function rejectedResponse(diagnostics: readonly EgressDiagnostic[]): PeerQueryRe
 export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryResponse {
 	const pseudonymMap = new Map<string, string>();
 	const diagnostics: EgressDiagnostic[] = [];
+	if (options.observedSources.size === 0) {
+		return rejectedResponse([diagnostic("policy-denied", "No policy-allowed retrieval sources were observed.")]);
+	}
 	const rawAnswer = typeof options.response?.answer === "string" ? options.response.answer : "";
 	const answer = redactPII(rawAnswer, {
 		pseudonymize: options.pseudonymize,

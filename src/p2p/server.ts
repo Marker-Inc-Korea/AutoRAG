@@ -33,6 +33,9 @@ const PRIVATE_POLICY: PolicyResolution = {
 };
 
 export interface P2pSearchAgent {
+	/** The server must only invoke an agent constructed with remote enforcement. */
+	/** Must be true; startP2pServer validates this before serving requests. */
+	readonly remoteSession: boolean;
 	searchDocuments(query: string, options?: RetrievalOptions): Promise<SearchDocumentsResponse>;
 }
 
@@ -135,6 +138,9 @@ type TokenBucket = {
 export async function startP2pServer(options: StartP2pServerOptions): Promise<P2pServer> {
 	if (!options.agent || typeof options.agent.searchDocuments !== "function") {
 		throw new TypeError("A public agent.searchDocuments implementation is required.");
+	}
+	if (options.agent.remoteSession !== true) {
+		throw new TypeError("P2P server requires an agent constructed with remoteSession: true.");
 	}
 	const buildPeerResponse = options.buildPeerResponse ?? defaultBuildPeerResponse;
 
@@ -329,7 +335,6 @@ async function handleRequest(
 				peerFingerprint: headers.fingerprint,
 				resolvePolicy: ctx.resolvePolicy,
 				observedSources,
-				remoteSession: true,
 				searchTimeoutMs: ctx.config.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
 			} as RetrievalOptions),
 		);

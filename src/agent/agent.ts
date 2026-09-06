@@ -321,7 +321,8 @@ export class AutoRAGAgent {
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
-	private readonly remoteSession: boolean;
+	/** True when this agent was constructed for an untrusted remote peer. */
+	readonly remoteSession: boolean;
 	private activeRetrievalOptions: RetrievalOptions | undefined;
 	private searchToolCallCount = 0;
 

@@ -197,6 +197,26 @@ describe("buildPeerResponse", () => {
 		);
 	});
 
+	it("withholds a non-empty answer when retrieval observed no policy-allowed sources", () => {
+		const result = buildPeerResponse({
+			response: {
+				answer: "A free-prose answer with no grounding.",
+				results: [],
+				searched: 0,
+				query: "q",
+				sessionId: "s",
+				warnings: [],
+			},
+			observedSources: new Set(),
+			resolvePolicy: allowed,
+			peerFingerprint,
+			workspaceRoots,
+			pseudonymize: false,
+		});
+
+		expect(result).toMatchObject({ status: "rejected", answer: "", results: [] });
+	});
+
 	it("rejects malformed input without emitting model-controlled source data", () => {
 		const result = buildPeerResponse({
 			response: {
@@ -214,7 +234,7 @@ describe("buildPeerResponse", () => {
 			pseudonymize: false,
 		});
 
-		expect(result.status).toBe("ok");
+		expect(result.status).toBe("rejected");
 		expect(result.results).toEqual([]);
 		expect(result.files).toEqual([]);
 	});

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join, resolve } from "node:path";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { createPairingCode, decodePairingCode, loadOrCreateIdentity, loadPeerRegistry, registerPeer, sha256Body, signRequest } from "../../src/p2p/identity.ts";
+import { createPairingCode, decodePairingCode, loadOrCreateIdentity, loadPeerRegistry, registerPeer, sha256Body, signRequest, verifyRequest } from "../../src/p2p/identity.ts";
 import { startP2pServer } from "../../src/p2p/server.ts";
 import { resolveFileShare } from "../../src/p2p/file-sharing.ts";
 import { PolicyStore } from "../../src/p2p/policy.ts";
@@ -50,9 +50,12 @@ async function worker(workspace: string, outerPort: number, innerPort: number): 
   const identity = loadOrCreateIdentity(workspace); const peerStore = new PolicyStore(workspace);
   for (const name of ["always.txt", "peers.md", "peers.bin", "never.txt", "private.txt"]) peerStore.promoteSource(`/${ROOT_NAME}/${name}`);
   const resolvePolicy = (source: string, peer?: string) => peerStore.resolvePolicy(source, peer);
-  const inner = await startP2pServer({ host: HOST, port: innerPort, workspacePath: workspace, workspaceRoots: roots.map((root) => root.rootPath), resolvePolicy, agent: { searchDocuments: async (query, options) => { ((options as RetrievalOptionsWithObserved).observedSources)?.add(`/${ROOT_NAME}/always.txt`); return responseFor(query); } }, injectionClassifier: false });
+  const inner = await startP2pServer({ host: HOST, port: innerPort, workspacePath: workspace, workspaceRoots: roots.map((root) => root.rootPath), resolvePolicy, agent: { remoteSession: true, searchDocuments: async (query, options) => { ((options as RetrievalOptionsWithObserved).observedSources)?.add(`/${ROOT_NAME}/always.txt`); return responseFor(query); } }, injectionClassifier: false });
   const proxy = createServer(async (req, res) => {
     if (req.url?.startsWith("/v1/file") && req.method === "GET") {
+      const fingerprint = String(req.headers["x-peer-fingerprint"] ?? ""); const timestamp = Number(req.headers["x-peer-timestamp"]); const signature = String(req.headers["x-peer-signature"] ?? "");
+      const peer = Object.values(loadPeerRegistry(workspace)).find((candidate) => candidate.fingerprint === fingerprint);
+      if (!peer || !verifyRequest(peer, timestamp, sha256Body(Buffer.alloc(0)), signature)) { send(res, 401, { status: "rejected", diagnostic: { code: "auth-error", message: "Peer authentication failed." } }); return; }
       const wire = new URL(req.url, `http://${HOST}`).searchParams.get("source") ?? "";
       
       const file = resolveFileShare(wire, String(req.headers["x-peer-fingerprint"] ?? ""), { resolvePolicy, workspaceRoots: roots, parsedMirrorRoot: join(workspace, ".autorag", "parsed"), maxFileBytes: 26_214_400 }); send(res, file.status === "ok" ? 200 : 403, file); return;
