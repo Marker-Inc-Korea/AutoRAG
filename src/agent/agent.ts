@@ -216,6 +216,8 @@ export interface AutoRAGAgentOptions {
 	searchTimeoutMs?: number;
 	/** Maximum number of retrieval/tool executions allowed in one search. */
 	maxSearchToolCalls?: number;
+	/** Restrict the agent to retrieval and result-emission tools for remote runs. */
+	remoteSession?: boolean;
 }
 
 export interface AutoRAGSearchSession {
@@ -356,7 +358,7 @@ export class AutoRAGAgent {
 		this.memory.load();
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
-		const checkMemoryTool = createCheckMemoryTool(this.memory);
+		const checkMemoryTool = options.remoteSession ? undefined : createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(
 			() => this.bm25Method,
 			(scope) => this.resolveRetrievalScope(scope),
@@ -373,11 +375,14 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
-		const bashTool = createBashTool({
-			cwd: this.workspaceProjectRoot,
-		});
+		const bashTool = options.remoteSession
+			? undefined
+			: createBashTool({
+					cwd: this.workspaceProjectRoot,
+				});
 
-		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
+		const jikjiFindTool =
+			!options.remoteSession && this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
@@ -406,9 +411,9 @@ export class AutoRAGAgent {
 		// Deterministic, duplicate-free ordering: bash first, then surviving
 		// caller tools, then AutoRAG-internal tools.
 		const orderedTools: AgentTool[] = [
-			bashTool,
+			...(bashTool !== undefined ? [bashTool] : []),
 			...callerTools,
-			checkMemoryTool,
+			...(checkMemoryTool !== undefined ? [checkMemoryTool] : []),
 			searchBM25Tool,
 			searchMinSyncTool,
 			searchAllTool,
