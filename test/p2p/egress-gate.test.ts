@@ -238,4 +238,80 @@ describe("buildPeerResponse", () => {
 		expect(result.results).toEqual([]);
 		expect(result.files).toEqual([]);
 	});
+
+	it("RED: blocks workspace paths in title via outbound scan", () => {
+		const result = buildPeerResponse({
+			response: response("clean answer", [
+				{
+					number: 1,
+					title: "Config at /workspace/AutoRAG/secrets/keys.txt",
+					summary: "shared config",
+					source: "/Shared Docs/guide.md",
+				},
+			]),
+			observedSources: new Set(["/Shared Docs/guide.md"]),
+			resolvePolicy: allowed,
+			peerFingerprint,
+			workspaceRoots,
+			pseudonymize: false,
+		});
+
+		expect(result).toMatchObject({
+			status: "rejected",
+			answer: "",
+			results: [],
+		});
+		expect(result.diagnostics).toEqual(
+			expect.arrayContaining([expect.objectContaining({ code: "outbound-leak-detected" })]),
+		);
+	});
+
+	it("RED: redacts PII in title via redactPII", () => {
+		const result = buildPeerResponse({
+			response: response("clean answer", [
+				{
+					number: 1,
+					title: "Contact alice@example.com about project",
+					summary: "shared config",
+					source: "/Shared Docs/guide.md",
+				},
+			]),
+			observedSources: new Set(["/Shared Docs/guide.md"]),
+			resolvePolicy: allowed,
+			peerFingerprint,
+			workspaceRoots,
+			pseudonymize: false,
+		});
+
+		expect(result.status).toBe("ok");
+		expect(result.results).toHaveLength(1);
+		expect(result.results[0]?.title).toBe("Contact [EMAIL] about project");
+	});
+
+	it("RED: pseudonymizes PII in title via the shared pseudonymMap", () => {
+		const result = buildPeerResponse({
+			response: response("contact alice@example.com", [
+				{
+					number: 1,
+					title: "Contact alice@example.com about project",
+					summary: "also alice@example.com",
+					source: "/Shared Docs/guide.md",
+				},
+			]),
+			observedSources: new Set(["/Shared Docs/guide.md"]),
+			resolvePolicy: allowed,
+			peerFingerprint,
+			workspaceRoots,
+			pseudonymize: true,
+		});
+
+		expect(result.status).toBe("ok");
+		expect(result.results).toHaveLength(1);
+		// Same pseudonym used across title, summary, and answer (shared map).
+		expect(result.results[0]?.title).not.toContain("alice@example.com");
+		expect(result.results[0]?.summary).not.toContain("alice@example.com");
+		expect(result.results[0]?.title).toMatch(/email_1/);
+		expect(result.results[0]?.summary).toMatch(/email_1/);
+		expect(result.answer).toMatch(/email_1/);
+	});
 });

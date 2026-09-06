@@ -130,6 +130,10 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 			continue;
 		}
 
+		const title = redactPII(rawResult.title, {
+			pseudonymize: options.pseudonymize,
+			map: pseudonymMap,
+		}).text;
 		const summary = redactPII(rawResult.summary, {
 			pseudonymize: options.pseudonymize,
 			map: pseudonymMap,
@@ -138,10 +142,10 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 			pseudonymize: options.pseudonymize,
 			map: pseudonymMap,
 		}).text;
-		outboundTexts.push(summary, excerpt);
+		outboundTexts.push(title, summary, excerpt);
 		survivingResults.push({
 			number: rawResult.number,
-			title: rawResult.title,
+			title,
 			summary,
 			source,
 			excerpt,
