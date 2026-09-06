@@ -291,11 +291,13 @@ export class AutoRAGAgent {
 	private readonly droppedCallerToolNames: readonly string[];
 	private readonly searchTimeoutMs: number;
 	private readonly maxSearchToolCalls: number;
+	private readonly remoteSession: boolean;
 	private searchToolCallCount = 0;
 
 	constructor(options: AutoRAGAgentOptions) {
 		const { manifestDir, memoryPath } = options;
 		this.configuredModel = options.model;
+		this.remoteSession = options.remoteSession ?? false;
 		this.searchTimeoutMs = options.searchTimeoutMs ?? 10 * 60 * 1000;
 		this.maxSearchToolCalls = options.maxSearchToolCalls ?? 32;
 		if (!Number.isFinite(this.searchTimeoutMs) || this.searchTimeoutMs <= 0) {
@@ -434,7 +436,7 @@ export class AutoRAGAgent {
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
-			memorySignalCount: this.memory.getSignalCount(),
+			memorySignalCount: this.remoteSession ? 0 : this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
@@ -459,8 +461,10 @@ export class AutoRAGAgent {
 					| { resultCount?: number; sources?: string[]; method?: string }
 					| undefined;
 				const method = details?.method ?? toolName;
-				this.memory.recordWeakSignal(this.lastQuery, method, "followup");
-				this.memory.save();
+				if (!this.remoteSession) {
+					this.memory.recordWeakSignal(this.lastQuery, method, "followup");
+					this.memory.save();
+				}
 				return undefined;
 			},
 		});
@@ -490,6 +494,7 @@ export class AutoRAGAgent {
 	}
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
+		if (this.remoteSession) return messages;
 		const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
 		const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
 		const contextHints = this.lastQuery ? this.memory.getContextHints(this.lastQuery) : undefined;
@@ -566,14 +571,16 @@ export class AutoRAGAgent {
 			void this.activeSession?.abort();
 		}
 		const details = event.result.details as { method?: string } | undefined;
-		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
-		this.memory.save();
+		if (!this.remoteSession) {
+			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
+			this.memory.save();
+		}
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
 		return {
 			...this.baseSystemPromptConfig,
-			memorySignalCount: this.memory.getSignalCount(),
+			memorySignalCount: this.remoteSession ? 0 : this.memory.getSignalCount(),
 			...models,
 		};
 	}
@@ -626,18 +633,20 @@ export class AutoRAGAgent {
 		const sid = sessionId ?? this.lastSessionId;
 		const session = sid ? this.sessions.get(sid) : undefined;
 		const query = session?.query ?? this.lastQuery;
-		if (query) {
+		if (query && !this.remoteSession) {
 			this.memory.resolvePendingEntries(query, null, satisfied ? "useful" : "not_useful");
 			this.memory.save();
 		}
 	}
 
 	recordResultFeedback(feedback: ResultFeedback[]): void {
+		if (this.remoteSession) return;
 		this.memory.recordResultFeedback(feedback);
 		this.memory.save();
 	}
 
 	recordFeedbackByNumbers(sessionId: string, usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
+		if (this.remoteSession) return;
 		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
 	}
 
@@ -646,7 +655,7 @@ export class AutoRAGAgent {
 			...usefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: true })),
 			...notUsefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: false })),
 		];
-		if (this.memory.recordFeedbackByIds(feedback)) this.memory.save();
+		if (!this.remoteSession && this.memory.recordFeedbackByIds(feedback)) this.memory.save();
 	}
 
 	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
@@ -724,6 +733,7 @@ export class AutoRAGAgent {
 				this.sessions,
 				this.memory,
 				this.collectComponentDiagnostics(),
+				{ isolateMemory: this.remoteSession },
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -1473,6 +1483,7 @@ export class AutoRAGAgent {
 	}
 
 	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {
+		if (this.remoteSession) return [...results];
 		const methodScores = new Map(this.memory.getMethodHints(query).map((hint) => [hint.method, hint.score]));
 		const context = this.memory.getContextHints(query);
 		const scoreMap = (
