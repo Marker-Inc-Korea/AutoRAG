@@ -286,9 +286,7 @@ describe("P2P peer server", () => {
 		const oversizedBody = JSON.stringify({ v: 1, query: "oversized" });
 		const oversized = await signedRequest(value, server, "ignored", { body: oversizedBody });
 		expect(oversized.status).toBe(413);
-		expect((await json(oversized)).diagnostics).toEqual([
-			{ code: "internal-error", message: expect.any(String) },
-		]);
+		expect((await json(oversized)).diagnostics).toEqual([{ code: "internal-error", message: expect.any(String) }]);
 
 		const malformedHeaders = await fetch(`${server.origin}/v1/query`, {
 			method: "POST",
@@ -301,9 +299,7 @@ describe("P2P peer server", () => {
 			body: "{}",
 		});
 		expect(malformedHeaders.status).toBe(401);
-		expect((await json(malformedHeaders)).diagnostics).toEqual([
-			{ code: "auth-error", message: expect.any(String) },
-		]);
+		expect((await json(malformedHeaders)).diagnostics).toEqual([{ code: "auth-error", message: expect.any(String) }]);
 		expect(calls).toEqual([]);
 	});
 

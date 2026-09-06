@@ -112,10 +112,9 @@ describe("P2P outbound payload scan", () => {
 		registration.setResponses([
 			(context) => {
 				contexts.push(context);
-				return fauxAssistantMessage(
-					[fauxToolCall("search_all_documents", { query: "fixture" })],
-					{ stopReason: "toolUse" },
-				);
+				return fauxAssistantMessage([fauxToolCall("search_all_documents", { query: "fixture" })], {
+					stopReason: "toolUse",
+				});
 			},
 			(context) => {
 				contexts.push(context);
