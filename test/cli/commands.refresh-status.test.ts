@@ -123,7 +123,7 @@ describe("runRefresh + runStatus (cli)", () => {
 		expect(statusCode).toBe(0);
 
 		const status = JSON.parse(statusOut[0]);
-		// MinSync absence surfaces as a component readiness state, not a throw.
+		// MinSync absence surfaces as a configured component state, not a throw.
 		expect(status.components).toBeDefined();
 		expect(status.components.minsync).toBe("configured");
 		// Path opacity holds on the status path too.

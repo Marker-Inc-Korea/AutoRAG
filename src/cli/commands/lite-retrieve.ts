@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createAutoRAGLite } from "../../core.ts";
-import { loadMirrorIndex } from "../../mirror/index.ts";
+import { detectMirrorStaleness } from "../../mirror/index.ts";
 import { refreshReadinessPath } from "../../mirror/paths.ts";
 import type { RetrievalDiagnostic, RetrievalResult } from "../../retrieval/types.ts";
 import { renderError } from "../output.ts";
@@ -102,14 +102,13 @@ function parseTopK(
 ): { readonly kind: "ok"; readonly value: number | undefined } | { readonly kind: "reject"; readonly error: string } {
 	if (value === undefined || value === true || value === false) return { kind: "ok", value: undefined };
 	const parsed = Number(value);
-	if (!Number.isFinite(parsed)) {
+	if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
 		return { kind: "reject", error: `Invalid --top-k value: "${String(value)}". Must be a positive integer.` };
 	}
-	const truncated = Math.trunc(parsed);
-	if (truncated < 1) {
-		return { kind: "reject", error: `Invalid --top-k value: ${truncated}. Must be a positive integer.` };
+	if (parsed < 1) {
+		return { kind: "reject", error: `Invalid --top-k value: ${parsed}. Must be a positive integer.` };
 	}
-	return { kind: "ok", value: truncated };
+	return { kind: "ok", value: parsed };
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +173,26 @@ function renderLiteRetrieveHuman(envelope: LiteRetrieveEnvelope | IndexNotReadyE
 	return lines.join("\n");
 }
 
+function hasCompletedParsedRefresh(workspacePath: string): boolean {
+	const markerPath = refreshReadinessPath(workspacePath);
+	if (!existsSync(markerPath)) return false;
+	try {
+		const marker: unknown = JSON.parse(readFileSync(markerPath, "utf8"));
+		return (
+			typeof marker === "object" &&
+			marker !== null &&
+			"version" in marker &&
+			marker.version === 1 &&
+			"completed" in marker &&
+			marker.completed === true &&
+			"parsed" in marker &&
+			marker.parsed === true
+		);
+	} catch {
+		return false;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -222,9 +241,7 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 	// mirror index file is created by `lite refresh` / `autorag refresh` and
 	// persists across CLI process boundaries.
 	const workspacePath = lite.config.workspacePath;
-	const parsedIndex = loadMirrorIndex(workspacePath);
-	const parsedReady = existsSync(refreshReadinessPath(workspacePath)) || Object.keys(parsedIndex.entries).length > 0;
-
+	const parsedReady = hasCompletedParsedRefresh(workspacePath);
 	if (!parsedReady) {
 		const envelope: IndexNotReadyEnvelope = {
 			ok: false,
@@ -235,6 +252,26 @@ export async function runLiteRetrieve(ctx: CommandContext): Promise<number> {
 					severity: "error",
 					message:
 						"Index has not been refreshed. Run `autorag lite refresh` or `autorag refresh` before retrieving.",
+				},
+			],
+		};
+		ctx.stdout(renderLiteRetrieveJson(envelope));
+		return 2;
+	}
+	const staleDiagnostics = await detectMirrorStaleness({
+		root: workspacePath,
+		searchPaths: lite.config.searchPaths,
+		parserOptions: lite.config.parserOptions,
+	});
+	if (staleDiagnostics.length > 0) {
+		const envelope: IndexNotReadyEnvelope = {
+			ok: false,
+			query,
+			diagnostics: [
+				{
+					code: "index-not-ready",
+					severity: "error",
+					message: "Index is stale. Run `autorag lite refresh` or `autorag refresh` before retrieving.",
 				},
 			],
 		};
