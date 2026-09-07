@@ -14,7 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -541,6 +541,9 @@ describe("MinSyncVectorMethod", () => {
 			root,
 			workspacePath: minsyncWorkspace,
 			installer: {
+				cargoInstaller: async () => {
+					throw new Error("mock cargo failure");
+				},
 				releaseProvider: async () => {
 					throw new Error("mock install failure");
 				},
@@ -598,7 +601,37 @@ describe("MinSyncVectorMethod", () => {
 		expect(results).toEqual([]);
 	});
 
-	it("installs the latest MinSync release asset into the AutoRAG bin cache when no binary exists", async () => {
+	it("installs crates.io latest MinSync via cargo when no binary exists", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		let cargoArgs: string[] | undefined;
+		let githubCalled = false;
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoInstaller: async ({ args, destination }) => {
+				cargoArgs = [...args];
+				mkdirSync(dirname(destination), { recursive: true });
+				writeFileSync(destination, "#!/usr/bin/env node\necho cargo-latest\n");
+				chmodSync(destination, 0o755);
+				return "0.4.1";
+			},
+			releaseProvider: async () => {
+				githubCalled = true;
+				throw new Error("github should not run");
+			},
+		});
+		expect(githubCalled).toBe(false);
+		expect(cargoArgs).toEqual(expect.arrayContaining(["install", "minsync", "--locked"]));
+		expect(cargoArgs?.includes("--version")).toBe(false);
+		expect(resolved).toMatchObject({
+			binaryPath: installedBinary,
+			version: "0.4.1",
+		});
+		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-latest");
+	});
+
+	it("falls back to the latest GitHub release asset when cargo install fails", async () => {
 		// Given
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
 		const release = {
@@ -617,6 +650,9 @@ describe("MinSyncVectorMethod", () => {
 			root,
 			platform: "darwin",
 			arch: "arm64",
+			cargoInstaller: async () => {
+				throw new Error("cargo unavailable");
+			},
 			releaseProvider: async () => release,
 			assetInstaller: async (asset, destination) => {
 				expect(asset.name).toBe("minsync-v0.2.1-aarch64-apple-darwin.tar.gz");
@@ -648,6 +684,9 @@ describe("MinSyncVectorMethod", () => {
 				root,
 				platform: "darwin",
 				arch: "arm64",
+				cargoInstaller: async () => {
+					throw new Error("cargo unavailable");
+				},
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
@@ -672,6 +711,9 @@ describe("MinSyncVectorMethod", () => {
 				root,
 				platform: "darwin",
 				arch: "arm64",
+				cargoInstaller: async () => {
+					throw new Error("cargo unavailable");
+				},
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
@@ -759,6 +801,9 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 				installer: {
 					platform: "darwin",
 					arch: "arm64",
+					cargoInstaller: async () => {
+						throw new Error("cargo unavailable");
+					},
 					releaseProvider: async () => ({
 						tagName: "v0.3.0",
 						assets: [

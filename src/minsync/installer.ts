@@ -9,7 +9,7 @@ import { spawnProcess } from "./process.ts";
 
 const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
-export const MINSYNC_VERSION = "0.3.0";
+export const CARGO_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 
 export interface MinSyncReleaseAsset {
 	readonly name: string;
@@ -31,6 +31,11 @@ export interface EnsureMinSyncBinaryOptions {
 	readonly root: string;
 	readonly platform?: NodeJS.Platform;
 	readonly arch?: NodeJS.Architecture;
+	readonly cargoInstaller?: (input: {
+		readonly args: readonly string[];
+		readonly cargoRoot: string;
+		readonly destination: string;
+	}) => Promise<string>;
 	readonly releaseProvider?: () => Promise<MinSyncRelease>;
 	readonly assetInstaller?: (asset: MinSyncReleaseAsset, destination: string) => Promise<void>;
 }
@@ -38,15 +43,18 @@ export interface EnsureMinSyncBinaryOptions {
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
+
+	// Try crates.io latest via cargo FIRST. No --version pin means latest.
+	try {
+		return await installMinSyncFromCargo(options, binaryPath);
+	} catch {
+		// cargo failed — fall through to GitHub release
+	}
+
+	// Fallback: GitHub release asset
 	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
 	const release = await releaseProvider();
-	let asset: MinSyncReleaseAsset;
-	try {
-		asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
-	} catch (error) {
-		if (!(error instanceof MinSyncReleaseError) || !error.message.startsWith("No MinSync")) throw error;
-		return installMinSyncFromCargo(options, binaryPath);
-	}
+	const asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
 	requireSha256(asset);
 	const assetInstaller = options.assetInstaller ?? installReleaseAsset;
 	mkdirSync(dirname(binaryPath), { recursive: true });
@@ -62,20 +70,31 @@ async function installMinSyncFromCargo(
 	const cargoRoot = join(options.root, ".autorag", "minsync-cargo");
 	mkdirSync(dirname(destination), { recursive: true });
 	mkdirSync(cargoRoot, { recursive: true });
-	const result = await spawnProcess(
-		"cargo",
-		["install", "minsync", "--version", MINSYNC_VERSION, "--locked", "--root", cargoRoot],
-		options.root,
-	);
+	const args = ["install", "minsync", "--locked", "--root", cargoRoot] as const;
+
+	if (options.cargoInstaller) {
+		const version = await options.cargoInstaller({ args, cargoRoot, destination });
+		return { binaryPath: destination, version };
+	}
+
+	const result = await spawnProcess("cargo", args, options.root, { timeoutMs: CARGO_INSTALL_TIMEOUT_MS });
 	if (!result.ok) {
-		throw new MinSyncReleaseError(result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`);
+		throw new MinSyncReleaseError(result.stderr || "Could not install MinSync from crates.io");
 	}
 	const installedBinary = join(cargoRoot, "bin", executableName(options.platform ?? process.platform));
 	if (!existsSync(installedBinary)) {
-		throw new MinSyncReleaseError(`Cargo did not produce the MinSync ${MINSYNC_VERSION} binary`);
+		throw new MinSyncReleaseError("Cargo did not produce the MinSync binary");
 	}
+
+	// Parse version from stdout: "Installed package `minsync vX.Y.Z`"
+	let version = "latest";
+	const versionMatch = result.stdout.match(/minsync\s+v([\d.]+)/);
+	if (versionMatch) {
+		version = versionMatch[1];
+	}
+
 	copyFileSync(installedBinary, destination);
-	return { binaryPath: destination, version: MINSYNC_VERSION };
+	return { binaryPath: destination, version };
 }
 
 export async function fetchLatestMinSyncRelease(): Promise<MinSyncRelease> {
