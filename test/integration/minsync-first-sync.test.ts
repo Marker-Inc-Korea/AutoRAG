@@ -182,8 +182,8 @@ describe("AutoRAGAgent MinSync first-sync contract (#1366)", () => {
 		expect(queries).toHaveLength(2);
 		expect(queries).toEqual(
 			expect.arrayContaining([
-				["query", "--format", "json", "-k", "1", "--mode", "vector", "refund approval"],
-				["query", "--format", "json", "-k", "1", "--mode", "hybrid", "refund approval"],
+				["query", "--format", "json", "-k", "1", "refund approval"],
+				["query", "--format", "json", "-k", "1", "refund approval"],
 			]),
 		);
 		expect(commands.slice(-2)).toEqual([

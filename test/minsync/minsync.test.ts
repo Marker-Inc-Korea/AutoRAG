@@ -67,7 +67,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeMinSync(queryJson: string): void {
+function writeFakeMinSync(queryJson: string, strictQuery = false): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
@@ -99,6 +99,7 @@ if (args[0] === "sync") {
 }
 
 if (args[0] === "query") {
+  ${strictQuery ? 'const supported = args.length === 6 && args[1] === "--format" && args[2] === "json" && args[3] === "-k" && !args[4].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
   console.log(${JSON.stringify(queryJson)});
   process.exit(0);
 }
@@ -125,6 +126,28 @@ function requireValue<T>(value: T | undefined, label: string): T {
 	if (value === undefined) throw new Error(`missing ${label}`);
 	return value;
 }
+
+describe("MinSyncClient", () => {
+	it("uses the official v0.3.0 semantic query command without forwarding mode", async () => {
+		// Given
+		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
+		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
+
+		// When
+		const results = await client.query("renewal cancellation", 2, "bm25");
+
+		// Then
+		expect(results).toEqual([{ path: parsedOutput, score: 0.9, text: "semantic hit" }]);
+		expect(JSON.parse(loggedCalls()[0] ?? "{}").args).toEqual([
+			"query",
+			"--format",
+			"json",
+			"-k",
+			"2",
+			"renewal cancellation",
+		]);
+	});
+});
 
 describe("MinSyncVectorMethod", () => {
 	it("syncs parsed mirror files through minsync sync when a mirror index exists", async () => {
@@ -446,7 +469,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "--mode", "vector", "renewal cancellation"],
+				args: ["query", "--format", "json", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -476,7 +499,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(results[0]?.metadata.method).toBe("minsync-bm25");
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "--mode", "bm25", "renewal cancellation"],
+				args: ["query", "--format", "json", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);

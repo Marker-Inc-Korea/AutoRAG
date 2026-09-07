@@ -11,6 +11,7 @@ export interface MinSyncClientOptions {
 	readonly maxChunkSize?: number;
 }
 
+/** MinSync v0.3.0 query is semantic/default; this API mode is retained but not forwarded. */
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -117,7 +118,8 @@ export class MinSyncClient {
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
-		const result = await this.spawn(["query", "--format", "json", "-k", String(topK), "--mode", mode, text]);
+		void mode;
+		const result = await this.spawn(["query", "--format", "json", "-k", String(topK), text]);
 		if (!result.ok) return [];
 		return parseQueryHits(result.stdout);
 	}

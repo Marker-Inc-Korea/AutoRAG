@@ -1,7 +1,9 @@
 # MinSync setup
 
 AutoRAG uses MinSync for local lexical BM25, semantic vector, and hybrid
-retrieval over parsed document mirrors.
+retrieval over parsed document mirrors. MinSync v0.3.0's `query` command is
+semantic by default and accepts no query mode flag; AutoRAG preserves its
+`MinSyncQueryMode` API for compatibility but does not forward the mode.
 
 ## Automatic installation
 
