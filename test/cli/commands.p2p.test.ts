@@ -55,6 +55,15 @@ describe("autorag p2p register/verify", () => {
 });
 
 describe("autorag p2p peers", () => {
+	it("parses peers --add/--signal-id flags through the CLI arg parser", async () => {
+		const { parseArgs } = await import("../../src/cli/index.ts");
+		const parsed = parseArgs(["p2p", "peers", "--add", "alice", "--signal-id", "+821099998888"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.positionals).toEqual(["p2p", "peers"]);
+		expect(parsed.flags.add).toBe("alice");
+		expect(parsed.flags["signal-id"]).toBe("+821099998888");
+	});
+
 	it("adds, lists, and removes a peer by Signal id", async () => {
 		const stdout: string[] = [];
 		const add = await runP2p(

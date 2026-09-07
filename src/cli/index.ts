@@ -48,6 +48,12 @@ const VALUE_FLAGS = new Set([
 	"alias",
 	"endpoint",
 	"remove",
+	"add",
+	"signal-id",
+	"account",
+	"voice",
+	"captcha",
+	"pin",
 ]);
 
 const COMMANDS = [
@@ -97,10 +103,11 @@ Commands:
   tui                  Open an interactive Pi-powered librarian terminal UI
   ui                   Open a local loopback page to connect and manage data sources
                        (--port N  --host 127.0.0.1  --no-open  --allow-remote)
-  serve                Start the P2P peer query server
-                       (--port N  --host 0.0.0.0  --force)
-  p2p                  Manage peer-to-peer pairing and permissions
-                       (pair  --accept <code> [--alias name] | peers [--remove <alias>])
+  serve                Start the P2P peer query server over Signal (signal-cli daemon)
+                       (--account +E164  --port N  --host 127.0.0.1  --force)
+  p2p                  Signal account registration and peer trust
+                       (register <+E164> [--voice] [--captcha token] | verify <+E164> <code> [--pin p]
+                        | peers [--add <alias> --signal-id <+E164|uuid>] [--remove <alias>])
   p2p policy list      Show effective merged sharing policy (virtual-path keys)
   p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
   p2p policy unset     Remove a sharing rule by key

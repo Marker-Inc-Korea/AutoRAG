@@ -129,17 +129,17 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] Include/exclude, maximum size, concurrency, bandwidth limit, and
       dry-run are trusted CLI datasource configuration.
 
-## P2P loopback live QA
+## P2P Signal live QA
 
-The two-instance P2P permission-sharing harness uses only loopback networking and deterministic local fixtures; it does not require external services, an API key, or a remote model:
+The P2P permission-sharing transport runs over signal-cli (JSON-RPC daemon); loopback HTTP servers, ed25519 pairing codes, and signed HTTP requests were removed in the signal-cli migration. Live QA exercises a real send/receive round-trip through `src/p2p/signal-transport.ts` between two registered Signal accounts (or one account note-to-self):
 
 ```bash
-bun scripts/manual-qa/p2p-loopback-qa.ts
+autorag p2p register +82XXXXXXXXXX   # SMS; --voice after an SMS attempt; --captcha signalcaptcha://... if challenged
+autorag p2p verify +82XXXXXXXXXX <code>
+SENDER=+82XXX RECIPIENT=+82YYY bun scripts/manual-qa/p2p-signal-qa.ts
 ```
 
-It creates temporary workspaces with a mixed-case source root and fixtures for every sharing tier, generates and accepts pairing codes, starts two local P2P workers on `127.0.0.1:19480` and `127.0.0.1:19481`, then verifies signed query/egress behavior and the original-file endpoint. Assertions cover opaque slugged sources, verbatim `always` bytes, PII-redacted `peers` text, withheld `peers` binary, indistinguishable `never`/missing refusals, unsigned authentication failure, replay rejection, quota rate limiting, and prompt-injection rejection. The model/retrieval layer is a deterministic local stub, so this QA must never be run with `OPENAI_API_KEY` or any other remote credential.
-
-The harness always kills child workers, removes its temporary workspaces, checks both fixed ports with `lsof`, and prints a cleanup receipt. A successful run exits 0 and prints `PASS` for every assertion plus `CLEANUP receipt`.
+The harness spawns one signal-cli daemon per account on loopback, sends a unique payload, and asserts byte-exact delivery. It closes both daemons and removes temporary data dirs on exit. Gate behavior (injection, policy, quotas, deterministic egress) is covered deterministically by `test/p2p/signal-server.test.ts` without external services.
 
 ## Last run
 
