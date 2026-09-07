@@ -7,8 +7,9 @@ import { basename, dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { spawnProcess } from "./process.ts";
 
-const LATEST_RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/latest";
+const RELEASE_URL = "https://api.github.com/repos/NomaDamas/MinSync/releases/tags/v0.4.2";
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
+export const MINSYNC_VERSION = "0.4.2";
 export const CARGO_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 
 export interface MinSyncReleaseAsset {
@@ -44,7 +45,7 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
 
-	// Try crates.io latest via cargo FIRST. No --version pin means latest.
+	// Try the supported MinSync release via crates.io FIRST.
 	try {
 		return await installMinSyncFromCargo(options, binaryPath);
 	} catch {
@@ -70,7 +71,7 @@ async function installMinSyncFromCargo(
 	const cargoRoot = join(options.root, ".autorag", "minsync-cargo");
 	mkdirSync(dirname(destination), { recursive: true });
 	mkdirSync(cargoRoot, { recursive: true });
-	const args = ["install", "minsync", "--locked", "--root", cargoRoot] as const;
+	const args = ["install", "minsync", "--version", MINSYNC_VERSION, "--locked", "--root", cargoRoot] as const;
 
 	if (options.cargoInstaller) {
 		const version = await options.cargoInstaller({ args, cargoRoot, destination });
@@ -79,11 +80,11 @@ async function installMinSyncFromCargo(
 
 	const result = await spawnProcess("cargo", args, options.root, { timeoutMs: CARGO_INSTALL_TIMEOUT_MS });
 	if (!result.ok) {
-		throw new MinSyncReleaseError(result.stderr || "Could not install MinSync from crates.io");
+		throw new MinSyncReleaseError(result.stderr || `Could not install MinSync ${MINSYNC_VERSION} from crates.io`);
 	}
 	const installedBinary = join(cargoRoot, "bin", executableName(options.platform ?? process.platform));
 	if (!existsSync(installedBinary)) {
-		throw new MinSyncReleaseError("Cargo did not produce the MinSync binary");
+		throw new MinSyncReleaseError(`Cargo did not produce the MinSync ${MINSYNC_VERSION} binary`);
 	}
 
 	// Parse version from stdout: "Installed package `minsync vX.Y.Z`"
@@ -98,7 +99,7 @@ async function installMinSyncFromCargo(
 }
 
 export async function fetchLatestMinSyncRelease(): Promise<MinSyncRelease> {
-	const text = await readHttpsText(LATEST_RELEASE_URL);
+	const text = await readHttpsText(RELEASE_URL);
 	const parsed: unknown = JSON.parse(text);
 	if (!isRecord(parsed) || typeof parsed.tag_name !== "string" || !Array.isArray(parsed.assets)) {
 		throw new MinSyncReleaseError("GitHub latest release response did not match the expected shape");

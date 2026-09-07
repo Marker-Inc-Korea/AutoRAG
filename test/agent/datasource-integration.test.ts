@@ -169,6 +169,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [
 				makeSkill([result("a", "kakao:오픈소스 개발과제/chunks/a"), result("b", "kakao:다른방/chunks/b")]),
@@ -185,6 +186,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [
 				makeScopedSkill([
@@ -207,6 +209,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill([result("a", "/kakao/acct-1/chunks/a")])],
 		});
@@ -228,6 +231,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill([])],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -272,6 +276,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [failingSkill],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -291,6 +296,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const agent = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill([])],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -309,6 +315,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const denied = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill([])],
 		});
@@ -319,6 +326,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const authorized = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill([])],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1"] },
@@ -333,6 +341,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const denied = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill(rows)],
 		});
@@ -343,6 +352,7 @@ describe("AutoRAGAgent datasource integration", () => {
 		const authorized = new AutoRAGAgent({
 			searchPaths: ["test/fixtures/sample-project"],
 			workspacePath: tmpDir,
+			minSync: false,
 			jikji: false,
 			datasourceSkills: [makeSkill(rows)],
 			datasourceAccess: { allowedTags: ["kakao"], allowedScopes: ["/kakao/acct-1/**"] },

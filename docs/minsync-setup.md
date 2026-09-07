@@ -1,18 +1,17 @@
 # MinSync setup
 
 AutoRAG uses MinSync for local lexical BM25, semantic vector, and hybrid
-retrieval over parsed document mirrors. MinSync v0.3.0's `query` command is
-semantic by default and accepts no query mode flag; AutoRAG preserves its
-`MinSyncQueryMode` API for compatibility but does not forward the mode.
+retrieval over parsed document mirrors. AutoRAG installs and targets MinSync
+v0.4.2, whose `query` command supports vector, BM25, and hybrid modes.
 
 ## Automatic installation
 
 MinSync is enabled by default. When no usable `minsync` executable is found
 in the configured `binaryPath`, on `PATH`, or in the workspace cache, AutoRAG
-installs the latest version from crates.io via:
+installs the supported version from crates.io via:
 
 ```bash
-cargo install minsync --locked
+cargo install minsync --version 0.4.2 --locked
 ```
 
 This is the primary installation path. If `cargo` is unavailable or fails,

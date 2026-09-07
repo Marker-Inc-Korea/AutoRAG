@@ -11,6 +11,7 @@ export {
 	executableName,
 	fetchLatestMinSyncRelease,
 	type InstalledMinSyncBinary,
+	MINSYNC_VERSION,
 	type MinSyncRelease,
 	type MinSyncReleaseAsset,
 	MinSyncReleaseError,

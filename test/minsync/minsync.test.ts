@@ -99,7 +99,7 @@ if (args[0] === "sync") {
 }
 
 if (args[0] === "query") {
-  ${strictQuery ? 'const supported = args.length === 6 && args[1] === "--format" && args[2] === "json" && args[3] === "-k" && !args[4].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
+  ${strictQuery ? 'const supported = args.length === 8 && args[1] === "--format" && args[2] === "json" && args[3] === "--mode" && args[4] === "bm25" && args[5] === "-k" && !args[6].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
   console.log(${JSON.stringify(queryJson)});
   process.exit(0);
 }
@@ -128,7 +128,7 @@ function requireValue<T>(value: T | undefined, label: string): T {
 }
 
 describe("MinSyncClient", () => {
-	it("uses the official v0.3.0 semantic query command without forwarding mode", async () => {
+	it("uses the official v0.4.2 query command with its selected mode", async () => {
 		// Given
 		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
 		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
@@ -142,6 +142,8 @@ describe("MinSyncClient", () => {
 			"query",
 			"--format",
 			"json",
+			"--mode",
+			"bm25",
 			"-k",
 			"2",
 			"renewal cancellation",
@@ -469,7 +471,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "vector", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -499,7 +501,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(results[0]?.metadata.method).toBe("minsync-bm25");
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "bm25", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -601,7 +603,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(results).toEqual([]);
 	});
 
-	it("installs crates.io latest MinSync via cargo when no binary exists", async () => {
+	it("installs the supported MinSync version via cargo when no binary exists", async () => {
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
 		let cargoArgs: string[] | undefined;
 		let githubCalled = false;
@@ -614,7 +616,7 @@ describe("MinSyncVectorMethod", () => {
 				mkdirSync(dirname(destination), { recursive: true });
 				writeFileSync(destination, "#!/usr/bin/env node\necho cargo-latest\n");
 				chmodSync(destination, 0o755);
-				return "0.4.1";
+				return "0.4.2";
 			},
 			releaseProvider: async () => {
 				githubCalled = true;
@@ -622,11 +624,10 @@ describe("MinSyncVectorMethod", () => {
 			},
 		});
 		expect(githubCalled).toBe(false);
-		expect(cargoArgs).toEqual(expect.arrayContaining(["install", "minsync", "--locked"]));
-		expect(cargoArgs?.includes("--version")).toBe(false);
+		expect(cargoArgs).toEqual(expect.arrayContaining(["install", "minsync", "--version", "0.4.2", "--locked"]));
 		expect(resolved).toMatchObject({
 			binaryPath: installedBinary,
-			version: "0.4.1",
+			version: "0.4.2",
 		});
 		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-latest");
 	});
@@ -805,10 +806,10 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 						throw new Error("cargo unavailable");
 					},
 					releaseProvider: async () => ({
-						tagName: "v0.3.0",
+						tagName: "v0.4.2",
 						assets: [
 							{
-								name: "minsync-v0.3.0-aarch64-apple-darwin.tar.gz",
+								name: "minsync-v0.4.2-aarch64-apple-darwin.tar.gz",
 								downloadUrl: "https://example.test/minsync.tar.gz",
 								sha256: "a".repeat(64),
 							},
