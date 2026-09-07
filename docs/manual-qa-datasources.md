@@ -129,17 +129,15 @@ mapping. Configure credentials in notcrawl itself, then set
 - [x] Include/exclude, maximum size, concurrency, bandwidth limit, and
       dry-run are trusted CLI datasource configuration.
 
-## P2P Signal live QA
+## P2P SimpleX live QA
 
-The P2P permission-sharing transport runs over signal-cli (JSON-RPC daemon); loopback HTTP servers, ed25519 pairing codes, and signed HTTP requests were removed in the signal-cli migration. Live QA exercises a real send/receive round-trip through `src/p2p/signal-transport.ts` between two registered Signal accounts (or one account note-to-self):
+The P2P permission-sharing transport runs over SimpleX Chat (simplex-chat CLI as a local WebSocket server). Live QA exercises a real send/receive round-trip through `src/p2p/simplex-transport.ts` between two local SimpleX profiles — no phone number or external account needed:
 
 ```bash
-autorag p2p register +82XXXXXXXXXX   # SMS; --voice after an SMS attempt; --captcha signalcaptcha://... if challenged
-autorag p2p verify +82XXXXXXXXXX <code>
-SENDER=+82XXX RECIPIENT=+82YYY bun scripts/manual-qa/p2p-signal-qa.ts
+bun scripts/manual-qa/p2p-simplex-qa.ts
 ```
 
-The harness spawns one signal-cli daemon per account on loopback, sends a unique payload, and asserts byte-exact delivery. It closes both daemons and removes temporary data dirs on exit. Gate behavior (injection, policy, quotas, deterministic egress) is covered deterministically by `test/p2p/signal-server.test.ts` without external services.
+The harness spawns two `simplex-chat` WebSocket servers on loopback with separate database prefixes, connects them via a one-time invitation link, sends a unique payload, and asserts byte-exact delivery. Both CLIs are stopped and their temp databases removed on exit. Gate behavior (injection, policy, quotas, deterministic egress) is covered deterministically by `test/p2p/simplex-server.test.ts` without external services.
 
 ## Last run
 

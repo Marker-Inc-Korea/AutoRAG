@@ -70,10 +70,8 @@ export interface P2pConfig {
 	enabled?: boolean;
 	port?: number;
 	host?: string;
-	/** Signal account (E.164 number) this installation serves queries from. */
-	account?: string;
-	/** Optional signal-cli data directory override. */
-	signalDataDir?: string;
+	/** SimpleX CLI database prefix (defaults to <workspace>/.autorag/p2p/simplex). */
+	simplexDbPrefix?: string;
 	maxBodyBytes?: number;
 	maxFileBytes?: number;
 	policy?: Record<string, unknown>;
@@ -650,8 +648,7 @@ const P2P_ALLOWLIST = new Set([
 	"enabled",
 	"port",
 	"host",
-	"account",
-	"signalDataDir",
+	"simplexDbPrefix",
 	"maxBodyBytes",
 	"maxFileBytes",
 	"policy",
@@ -700,18 +697,11 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 	}
 	out.host ??= "127.0.0.1";
 
-	if (record.account !== undefined) {
-		if (typeof record.account !== "string" || !/^\+[1-9][0-9]{6,14}$/.test(record.account)) {
-			throw new ConfigError("p2p.account must be an E.164 phone number like +821012345678");
+	if (record.simplexDbPrefix !== undefined) {
+		if (typeof record.simplexDbPrefix !== "string" || record.simplexDbPrefix.trim().length === 0) {
+			throw new ConfigError("p2p.simplexDbPrefix must be a non-empty string");
 		}
-		out.account = record.account;
-	}
-
-	if (record.signalDataDir !== undefined) {
-		if (typeof record.signalDataDir !== "string" || record.signalDataDir.trim().length === 0) {
-			throw new ConfigError("p2p.signalDataDir must be a non-empty string");
-		}
-		out.signalDataDir = record.signalDataDir;
+		out.simplexDbPrefix = record.simplexDbPrefix;
 	}
 
 	if (record.port !== undefined) {
@@ -720,7 +710,7 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 		}
 		out.port = record.port;
 	}
-	out.port ??= 7583;
+	out.port ??= 5225;
 
 	if (record.maxBodyBytes !== undefined) {
 		if (

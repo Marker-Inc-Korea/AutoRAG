@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runP2p } from "../../src/cli/commands/p2p.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
-import { loadSignalPeerRegistry } from "../../src/p2p/signal-server.ts";
+import { loadSimplexPeerRegistry } from "../../src/p2p/simplex-server.ts";
 
 let root: string;
 const noop = (): void => undefined;
@@ -35,63 +35,35 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 	};
 }
 
-describe("autorag p2p register/verify", () => {
-	it("rejects register without an E.164 number", async () => {
-		const stderr: string[] = [];
-		const code = await runP2p(
-			makeCtx({ positionals: ["register", "not-a-number"], stderr: (line) => stderr.push(line) }),
-		);
-		expect(code).toBe(2);
-		expect(stderr.join("\n")).toMatch(/E\.164/i);
-	});
-
-	it("rejects verify without a code", async () => {
-		const stderr: string[] = [];
-		const code = await runP2p(
-			makeCtx({ positionals: ["verify", "+821012345678"], stderr: (line) => stderr.push(line) }),
-		);
-		expect(code).toBe(2);
-	});
-});
-
 describe("autorag p2p peers", () => {
-	it("parses peers --add/--signal-id flags through the CLI arg parser", async () => {
-		const { parseArgs } = await import("../../src/cli/index.ts");
-		const parsed = parseArgs(["p2p", "peers", "--add", "alice", "--signal-id", "+821099998888"]);
-		if ("error" in parsed) throw new Error(parsed.error);
-		expect(parsed.positionals).toEqual(["p2p", "peers"]);
-		expect(parsed.flags.add).toBe("alice");
-		expect(parsed.flags["signal-id"]).toBe("+821099998888");
-	});
-
-	it("adds, lists, and removes a peer by Signal id", async () => {
+	it("adds, lists, and removes a peer by SimpleX contact id", async () => {
 		const stdout: string[] = [];
 		const add = await runP2p(
 			makeCtx({
 				positionals: ["peers"],
-				flags: { config: join(root, "config.json"), add: "alice", "signal-id": "+821099998888" },
+				flags: { config: join(root, "config.json"), add: "alice", "contact-id": "42" },
 				stdout: (line) => stdout.push(line),
 			}),
 		);
 		expect(add).toBe(0);
 
-		const registry = loadSignalPeerRegistry(root);
-		expect(registry.alice?.signalId).toBe("+821099998888");
+		const registry = loadSimplexPeerRegistry(root);
+		expect(registry.alice?.contactId).toBe(42);
 
 		const listOut: string[] = [];
 		const list = await runP2p(makeCtx({ positionals: ["peers"], stdout: (line) => listOut.push(line) }));
 		expect(list).toBe(0);
 		expect(listOut.join("\n")).toContain("alice");
-		expect(listOut.join("\n")).toContain("+821099998888");
+		expect(listOut.join("\n")).toContain("42");
 
 		const remove = await runP2p(
 			makeCtx({ positionals: ["peers"], flags: { config: join(root, "config.json"), remove: "alice" } }),
 		);
 		expect(remove).toBe(0);
-		expect(loadSignalPeerRegistry(root).alice).toBeUndefined();
+		expect(loadSimplexPeerRegistry(root).alice).toBeUndefined();
 	});
 
-	it("rejects --add without --signal-id", async () => {
+	it("rejects --add without --contact-id", async () => {
 		const stderr: string[] = [];
 		const code = await runP2p(
 			makeCtx({
@@ -101,7 +73,20 @@ describe("autorag p2p peers", () => {
 			}),
 		);
 		expect(code).toBe(2);
-		expect(stderr.join("\n")).toMatch(/signal-id/i);
+		expect(stderr.join("\n")).toMatch(/contact-id/i);
+	});
+
+	it("rejects a non-integer --contact-id", async () => {
+		const stderr: string[] = [];
+		const code = await runP2p(
+			makeCtx({
+				positionals: ["peers"],
+				flags: { config: join(root, "config.json"), add: "alice", "contact-id": "not-a-number" },
+				stderr: (line) => stderr.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toMatch(/contact-id/i);
 	});
 
 	it("reports an empty registry", async () => {

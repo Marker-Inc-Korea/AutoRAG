@@ -5,11 +5,11 @@ import { AutoRAGAgent } from "../../agent/agent.ts";
 import type { InjectionClassifierModel } from "../../p2p/injection-classifier.ts";
 import { PolicyStore } from "../../p2p/policy.ts";
 import {
-	type SignalPeerServer,
-	type StartSignalPeerServerOptions,
-	startSignalPeerServer,
-} from "../../p2p/signal-server.ts";
-import { type SignalTransport, type StartSignalDaemonOptions, startSignalDaemon } from "../../p2p/signal-transport.ts";
+	type SimplexPeerServer,
+	type StartSimplexPeerServerOptions,
+	startSimplexPeerServer,
+} from "../../p2p/simplex-server.ts";
+import { type SimplexTransport, type StartSimplexOptions, startSimplexChat } from "../../p2p/simplex-transport.ts";
 import {
 	buildAgentOptions,
 	ConfigError,
@@ -22,9 +22,9 @@ import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
 export interface ServeCommandDeps {
-	readonly startSignalPeerServer?: typeof startSignalPeerServer;
-	readonly startSignalDaemon?: (options: StartSignalDaemonOptions) => Promise<SignalTransport>;
-	readonly waitUntilStopped?: (server: SignalPeerServer) => Promise<void>;
+	readonly startSimplexPeerServer?: typeof startSimplexPeerServer;
+	readonly startSimplexChat?: (options: StartSimplexOptions) => Promise<SimplexTransport>;
+	readonly waitUntilStopped?: (server: SimplexPeerServer) => Promise<void>;
 	readonly modelResolver?: typeof resolveAgentModel;
 }
 
@@ -51,9 +51,9 @@ export function createInjectionClassifierModel(resolved: ResolvedAgentModel): In
 }
 
 /**
- * `autorag serve` — start the P2P peer query server over the Signal
- * transport (signal-cli JSON-RPC daemon). Peers reach this installation
- * through Signal; all security gates run unchanged.
+ * `autorag serve` — start the P2P peer query server over SimpleX Chat.
+ * Peers reach this installation through SimpleX; all security gates run
+ * unchanged.
  */
 export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {}): Promise<number> {
 	const flags = ctx.flags;
@@ -89,23 +89,9 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 		return 2;
 	}
 
-	const account = typeof flags.account === "string" && flags.account.length > 0 ? flags.account : p2p.account;
-	if (account === undefined || account.length === 0) {
-		ctx.stderr(
-			renderError(
-				new ConfigError(
-					"A Signal account is required. Set p2p.account in config or pass --account +E164 (register first with `autorag p2p register`).",
-				),
-				{ json: ctx.json },
-			),
-		);
-		return 2;
-	}
-
-	// signal-cli daemon bind; loopback-only — the daemon is a local control
-	// surface, peers arrive through the Signal network.
-	const host = typeof flags.host === "string" && flags.host.length > 0 ? flags.host : (p2p.host ?? "127.0.0.1");
-	let port = p2p.port ?? 7583;
+	// SimpleX WebSocket bind; loopback-only — the CLI is a local control
+	// surface, peers arrive through the SimpleX network.
+	let port = p2p.port ?? 5225;
 	if (typeof flags.port === "string" && flags.port.length > 0) {
 		const parsed = Number(flags.port);
 		if (!Number.isInteger(parsed) || parsed < 0) {
@@ -135,24 +121,21 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 		}
 	}
 
-	const startDaemon = deps.startSignalDaemon ?? startSignalDaemon;
-	const startServer = deps.startSignalPeerServer ?? startSignalPeerServer;
+	const startChat = deps.startSimplexChat ?? startSimplexChat;
+	const startServer = deps.startSimplexPeerServer ?? startSimplexPeerServer;
 
-	let server: SignalPeerServer;
-	let transport: SignalTransport;
+	let server: SimplexPeerServer;
+	let transport: SimplexTransport;
 	try {
-		transport = await startDaemon({
-			account,
-			host,
+		transport = await startChat({
+			dbPrefix: p2p.simplexDbPrefix ?? `${config.workspacePath}/.autorag/p2p/simplex`,
+			displayName: `autorag-${config.workspacePath.split("/").pop() ?? "node"}`,
 			port,
-			dataDir: p2p.signalDataDir,
 		});
 	} catch (error) {
 		ctx.stderr(
 			renderError(
-				error instanceof Error
-					? error
-					: new ConfigError("signal-cli daemon failed to start. Is the account registered?"),
+				error instanceof Error ? error : new ConfigError("simplex-chat failed to start. Is the CLI installed?"),
 				{ json: ctx.json, debug: ctx.debug },
 			),
 		);
@@ -192,7 +175,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			pseudonymize: p2p.piiNer,
 			searchTimeoutMs: p2p.searchTimeoutMs,
 			...(p2p.quotas !== undefined ? { quotas: p2p.quotas } : {}),
-		} as StartSignalPeerServerOptions);
+		} as StartSimplexPeerServerOptions);
 	} catch (error) {
 		await transport.close().catch(() => {});
 		const status = error instanceof ConfigError ? 2 : 1;
@@ -200,15 +183,29 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 		return status;
 	}
 
+	let address: string;
+	try {
+		address = await transport.getOrCreateAddress();
+	} catch (error) {
+		await transport.close().catch(() => {});
+		ctx.stderr(
+			renderError(error instanceof Error ? error : new ConfigError("address creation failed"), {
+				json: ctx.json,
+				debug: ctx.debug,
+			}),
+		);
+		return 1;
+	}
+
 	const payload = {
 		ok: true,
-		account,
-		daemon: { host, port },
+		address,
+		port,
 	};
 	ctx.stdout(
 		ctx.json
 			? JSON.stringify(payload)
-			: `P2P server over Signal | account: ${account} | signal-cli daemon: http://${host}:${port}`,
+			: `P2P server over SimpleX | address: ${address.slice(0, 40)}... | WebSocket: 127.0.0.1:${port}`,
 	);
 
 	const wait = deps.waitUntilStopped ?? defaultWaitUntilStopped;
@@ -223,7 +220,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	}
 }
 
-async function defaultWaitUntilStopped(server: SignalPeerServer): Promise<void> {
+async function defaultWaitUntilStopped(server: SimplexPeerServer): Promise<void> {
 	await new Promise<void>((resolve) => {
 		let stopped = false;
 		const stop = () => {

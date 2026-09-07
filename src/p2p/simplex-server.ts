@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
@@ -10,7 +10,7 @@ import { classifyInjection, type InjectionClassifierModel } from "./injection-cl
 import { screenInboundQuery } from "./injection-gate.ts";
 import { type PolicyQuotas, type PolicyResolution, PolicyStore } from "./policy.ts";
 import type { PolicyResolver } from "./policy-filter.ts";
-import type { SignalIncomingMessage, SignalTransport } from "./signal-transport.ts";
+import type { SimplexIncomingMessage, SimplexTransport } from "./simplex-transport.ts";
 import {
 	type PeerQueryRequest,
 	PeerQueryRequestSchema,
@@ -19,48 +19,19 @@ import {
 } from "./wire.ts";
 
 /**
- * Peer query server carried over Signal messages instead of the retired
- * node:http transport. All security gates (L0/L1 injection, policy quotas,
- * deterministic egress) are transport-independent and run exactly as before;
- * only the carrier changed.
+ * Peer query server carried over SimpleX Chat messages. All security gates
+ * (L0/L1 injection, policy quotas, deterministic egress) are transport-
+ * independent and run exactly as before; only the carrier changed.
  */
 
 const DEFAULT_QUEUE_DEPTH = 8;
 const DEFAULT_SEARCH_TIMEOUT_MS = 120_000;
 const DEFAULT_QUERY_TIMEOUT_MS = 120_000;
 /**
- * Conservative cap for one Signal text message carrying a wire envelope.
- * Signal's inline body limit is 2,048 UTF-8 bytes; the adapter chunks the
- * envelope below that and refuses oversize payloads rather than truncating.
- * File bytes move as Signal attachments in milestone 3.
+ * SimpleX message bodies have no documented byte cap, but the wire envelope
+ * stays bounded so a malformed or hostile payload cannot exhaust the peer.
  */
-export const MAX_SIGNAL_WIRE_BYTES = 1_800;
-
-/**
- * Maximum UTF-8 bytes per Signal text chunk. Signal's inline body limit is
- * 2,048 bytes (SignalServiceMessageLimits.MAX_INLINE_BODY_SIZE_BYTES); this
- * leaves headroom for multi-byte runes never splitting mid-chunk.
- */
-export const SIGNAL_TEXT_CHUNK_BYTES = 1_900;
-
-/** Split a wire payload into Signal-safe UTF-8 chunks, never splitting a rune. */
-export function chunkSignalText(text: string, maxBytes = SIGNAL_TEXT_CHUNK_BYTES): string[] {
-	const chunks: string[] = [];
-	let current = "";
-	let currentBytes = 0;
-	for (const char of text) {
-		const charBytes = Buffer.byteLength(char, "utf8");
-		if (currentBytes + charBytes > maxBytes && current.length > 0) {
-			chunks.push(current);
-			current = "";
-			currentBytes = 0;
-		}
-		current += char;
-		currentBytes += charBytes;
-	}
-	if (current.length > 0) chunks.push(current);
-	return chunks;
-}
+export const MAX_SIMPLEX_WIRE_BYTES = 262_144;
 
 const PRIVATE_POLICY: PolicyResolution = {
 	tier: "private",
@@ -70,48 +41,49 @@ const PRIVATE_POLICY: PolicyResolution = {
 };
 
 // ---------------------------------------------------------------------------
-// Wire envelope: wire.ts shapes carried as Signal message payloads
+// Wire envelope: wire.ts shapes carried as SimpleX text messages
 // ---------------------------------------------------------------------------
 
-export const SignalWireEnvelopeSchema = Type.Object({
+export const SimplexWireEnvelopeSchema = Type.Object({
 	v: Type.Literal(1, { description: "Envelope version" }),
 	kind: Type.Union([Type.Literal("query"), Type.Literal("response")], { description: "Payload kind" }),
 	id: Type.String({ minLength: 1, maxLength: 128, description: "Correlation id" }),
 	payload: Type.Unknown({ description: "PeerQueryRequest or PeerQueryResponse" }),
 });
 
-export type SignalWireEnvelope = Static<typeof SignalWireEnvelopeSchema>;
+export type SimplexWireEnvelope = Static<typeof SimplexWireEnvelopeSchema>;
 
 // ---------------------------------------------------------------------------
-// Peer registry: Signal phone-number/UUID keyed by local alias
+// Peer registry: SimpleX contactId keyed by local alias
 // ---------------------------------------------------------------------------
 
-export interface SignalPeerRecord {
-	/** E.164 phone number or Signal UUID (ACI) of the peer. */
-	readonly signalId: string;
+export interface SimplexPeerRecord {
+	/** SimpleX contact id of the peer (stable per profile). */
+	readonly contactId: number;
 	readonly addedAt: string;
 }
 
-export type SignalPeerRegistry = Record<string, SignalPeerRecord>;
+export type SimplexPeerRegistry = Record<string, SimplexPeerRecord>;
 
-const SIGNAL_PEERS_FILENAME = join(".autorag", "p2p", "signal-peers.json");
+const PEERS_DIR = join(".autorag", "p2p");
+const PEERS_FILENAME = "simplex-peers.json";
 
-/** Load the Signal peer registry; a missing file means no trusted peers. */
-export function loadSignalPeerRegistry(workspacePath: string): SignalPeerRegistry {
-	const path = join(workspacePath, SIGNAL_PEERS_FILENAME);
+/** Load the SimpleX peer registry; a missing file means no trusted peers. */
+export function loadSimplexPeerRegistry(workspacePath: string): SimplexPeerRegistry {
+	const path = join(workspacePath, PEERS_DIR, PEERS_FILENAME);
 	if (!existsSync(path)) return {};
 	try {
 		const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
 		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-		const registry: SignalPeerRegistry = {};
+		const registry: SimplexPeerRegistry = {};
 		for (const [alias, record] of Object.entries(parsed as Record<string, unknown>)) {
 			if (
 				typeof record === "object" &&
 				record !== null &&
-				typeof (record as Record<string, unknown>).signalId === "string" &&
+				typeof (record as Record<string, unknown>).contactId === "number" &&
 				typeof (record as Record<string, unknown>).addedAt === "string"
 			) {
-				registry[alias] = record as SignalPeerRecord;
+				registry[alias] = record as SimplexPeerRecord;
 			}
 		}
 		return registry;
@@ -120,12 +92,18 @@ export function loadSignalPeerRegistry(workspacePath: string): SignalPeerRegistr
 	}
 }
 
+/** Persist the SimpleX peer registry. */
+export function saveSimplexPeerRegistry(workspacePath: string, registry: SimplexPeerRegistry): void {
+	const dir = join(workspacePath, PEERS_DIR);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, PEERS_FILENAME), JSON.stringify(registry, null, 2), { mode: 0o600 });
+}
+
 // ---------------------------------------------------------------------------
-// Agent + response-builder contracts (moved from the retired http server)
+// Agent + response-builder contracts
 // ---------------------------------------------------------------------------
 
 export interface P2pSearchAgent {
-	/** Must be true; startSignalPeerServer validates this before serving. */
 	readonly remoteSession: boolean;
 	searchDocuments(query: string, options?: RetrievalOptions): Promise<SearchDocumentsResponse>;
 }
@@ -141,16 +119,16 @@ export interface PeerResponseBuilderArgs {
 
 export type PeerResponseBuilder = (args: PeerResponseBuilderArgs) => PeerQueryResponse | Promise<PeerQueryResponse>;
 
-export interface SignalPeerLog {
+export interface SimplexPeerLog {
 	readonly event: "request" | "request_rejected";
-	readonly peerSignalId?: string;
+	readonly peerContactId?: number;
 	readonly code?: string;
 }
 
-export interface StartSignalPeerServerOptions {
-	readonly transport: SignalTransport;
+export interface StartSimplexPeerServerOptions {
+	readonly transport: SimplexTransport;
 	readonly agent: P2pSearchAgent;
-	readonly peers?: SignalPeerRegistry;
+	readonly peers?: SimplexPeerRegistry;
 	readonly workspacePath?: string;
 	readonly workspaceRoots?: readonly string[];
 	readonly policyStore?: {
@@ -165,10 +143,10 @@ export interface StartSignalPeerServerOptions {
 	readonly buildPeerResponse?: PeerResponseBuilder;
 	readonly searchTimeoutMs?: number;
 	readonly pseudonymize?: boolean;
-	readonly logger?: (entry: SignalPeerLog) => void;
+	readonly logger?: (entry: SimplexPeerLog) => void;
 }
 
-export interface SignalPeerServer {
+export interface SimplexPeerServer {
 	close(): Promise<void>;
 }
 
@@ -177,12 +155,12 @@ type TokenBucket = {
 	lastRefillMs: number;
 };
 
-function consumeToken(buckets: Map<string, TokenBucket>, peerId: string, quotas: PolicyQuotas): boolean {
+function consumeToken(buckets: Map<number, TokenBucket>, contactId: number, quotas: PolicyQuotas): boolean {
 	const now = Date.now();
 	const refillPerMs = quotas.queriesPerHour / (60 * 60 * 1000);
-	const bucket = buckets.get(peerId);
+	const bucket = buckets.get(contactId);
 	if (bucket === undefined) {
-		buckets.set(peerId, { tokens: Math.max(0, quotas.burst - 1), lastRefillMs: now });
+		buckets.set(contactId, { tokens: Math.max(0, quotas.burst - 1), lastRefillMs: now });
 		return quotas.burst >= 1;
 	}
 	bucket.tokens = Math.min(quotas.burst, bucket.tokens + (now - bucket.lastRefillMs) * refillPerMs);
@@ -210,15 +188,12 @@ function rejection(id: string, code: string, message: string): string {
 		files: [],
 		diagnostics: [{ code, message }],
 	};
-	return JSON.stringify({ v: 1, kind: "response", id, payload });
+	return JSON.stringify({ v: 1, kind: "response", id, payload } satisfies SimplexWireEnvelope);
 }
 
-function findPeer(registry: SignalPeerRegistry, message: SignalIncomingMessage): string | undefined {
-	const candidates = [message.sourceUuid, message.source].filter(
-		(candidate): candidate is string => typeof candidate === "string",
-	);
+function findPeer(registry: SimplexPeerRegistry, message: SimplexIncomingMessage): number | undefined {
 	for (const record of Object.values(registry)) {
-		if (candidates.includes(record.signalId)) return record.signalId;
+		if (record.contactId === message.contactId) return record.contactId;
 	}
 	return undefined;
 }
@@ -246,7 +221,7 @@ class QuerySerializer {
 		this.waiting += 1;
 		const result = this.chain.then(task);
 		this.chain = result.catch(() => {});
-		this.chain.finally(() => {
+		void this.chain.finally(() => {
 			this.waiting -= 1;
 		});
 		return result;
@@ -260,12 +235,12 @@ export class QueueFullError extends Error {
 	}
 }
 
-export async function startSignalPeerServer(options: StartSignalPeerServerOptions): Promise<SignalPeerServer> {
+export async function startSimplexPeerServer(options: StartSimplexPeerServerOptions): Promise<SimplexPeerServer> {
 	if (!options.agent || typeof options.agent.searchDocuments !== "function") {
 		throw new TypeError("A public agent.searchDocuments implementation is required.");
 	}
 	if (options.agent.remoteSession !== true) {
-		throw new TypeError("Signal peer server requires an agent constructed with remoteSession: true.");
+		throw new TypeError("SimpleX peer server requires an agent constructed with remoteSession: true.");
 	}
 	const injectionClassifier = options.injectionClassifier ?? true;
 	if (injectionClassifier && typeof options.injectionClassifierModel !== "function") {
@@ -277,78 +252,78 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 	const quotas = resolveQuotas(options.quotas, policyStore?.quotas);
 	const resolvePolicy =
 		options.resolvePolicy ?? (policyStore ? policyStore.resolvePolicy.bind(policyStore) : () => PRIVATE_POLICY);
-	const peers = options.peers ?? (options.workspacePath ? loadSignalPeerRegistry(options.workspacePath) : {});
+	const peers = options.peers ?? (options.workspacePath ? loadSimplexPeerRegistry(options.workspacePath) : {});
 	const workspaceRoots = options.workspaceRoots ?? (options.workspacePath ? [options.workspacePath] : []);
-	const logger = options.logger ?? ((entry: SignalPeerLog) => console.info(JSON.stringify(entry)));
-	const buckets = new Map<string, TokenBucket>();
+	const logger = options.logger ?? ((entry: SimplexPeerLog) => console.info(JSON.stringify(entry)));
+	const buckets = new Map<number, TokenBucket>();
 	const serializer = new QuerySerializer(options.queueDepth ?? DEFAULT_QUEUE_DEPTH);
 	const transport = options.transport;
 
-	const handle = async (incoming: SignalIncomingMessage): Promise<void> => {
-		let envelope: SignalWireEnvelope | undefined;
+	const handle = async (incoming: SimplexIncomingMessage): Promise<void> => {
+		let envelope: SimplexWireEnvelope | undefined;
 		try {
-			const parsed = JSON.parse(incoming.message) as unknown;
-			if (Value.Check(SignalWireEnvelopeSchema, parsed)) envelope = parsed;
+			const parsed = JSON.parse(incoming.text) as unknown;
+			if (Value.Check(SimplexWireEnvelopeSchema, parsed)) envelope = parsed;
 		} catch {
 			envelope = undefined;
 		}
 		if (envelope === undefined) {
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection("unknown", "internal-error", "Message is not a valid peer wire envelope."),
 			);
 			log(logger, { event: "request_rejected", code: "internal-error" });
 			return;
 		}
-		if (envelope.kind !== "query") return; // responses are consumed by querySignalPeer
+		if (envelope.kind !== "query") return; // responses are consumed by querySimplexPeer
 
-		const peerSignalId = findPeer(peers, incoming);
-		if (peerSignalId === undefined) {
+		const peerContactId = findPeer(peers, incoming);
+		if (peerContactId === undefined) {
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection(envelope.id, "auth-error", "Peer authentication failed."),
 			);
 			log(logger, { event: "request_rejected", code: "auth-error" });
 			return;
 		}
-		if (!consumeToken(buckets, peerSignalId, quotas)) {
+		if (!consumeToken(buckets, peerContactId, quotas)) {
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection(envelope.id, "rate-limited", "Peer query quota exceeded."),
 			);
-			log(logger, { event: "request_rejected", peerSignalId, code: "rate-limited" });
+			log(logger, { event: "request_rejected", peerContactId, code: "rate-limited" });
 			return;
 		}
 		if (!Value.Check(PeerQueryRequestSchema, envelope.payload)) {
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection(envelope.id, "internal-error", "Request payload is not a valid peer query."),
 			);
-			log(logger, { event: "request_rejected", peerSignalId, code: "internal-error" });
+			log(logger, { event: "request_rejected", peerContactId, code: "internal-error" });
 			return;
 		}
 		const request = envelope.payload as PeerQueryRequest;
 		const screened = screenInboundQuery(request.query);
 		if (!screened.ok) {
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection(envelope.id, "injection-detected", "The query was rejected by the inbound safety gate."),
 			);
-			log(logger, { event: "request_rejected", peerSignalId, code: "injection-detected" });
+			log(logger, { event: "request_rejected", peerContactId, code: "injection-detected" });
 			return;
 		}
 		if (injectionClassifier) {
 			const classification = await classifyInjection(options.injectionClassifierModel!, screened.canonicalQuery);
 			if (classification.injection) {
 				await transport.sendMessage(
-					incoming.source,
+					incoming.contactId,
 					rejection(envelope.id, "injection-detected", "The query was rejected by the inbound safety gate."),
 				);
-				log(logger, { event: "request_rejected", peerSignalId, code: "injection-detected" });
+				log(logger, { event: "request_rejected", peerContactId, code: "injection-detected" });
 				return;
 			}
 		}
-		log(logger, { event: "request", peerSignalId });
+		log(logger, { event: "request", peerContactId });
 
 		const observedSources = new Set<string>();
 		let searchResponse: SearchDocumentsResponse;
@@ -357,7 +332,7 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 				options.agent.searchDocuments(screened.canonicalQuery, {
 					topK: request.topK,
 					scope: request.scope,
-					peerFingerprint: peerSignalId,
+					peerFingerprint: String(peerContactId),
 					resolvePolicy,
 					observedSources,
 					searchTimeoutMs: options.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
@@ -366,7 +341,7 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 		} catch (error) {
 			const code = error instanceof QueueFullError ? "queue-full" : "internal-error";
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection(
 					envelope.id,
 					code,
@@ -375,7 +350,7 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 						: "The peer query could not be completed.",
 				),
 			);
-			log(logger, { event: "request_rejected", peerSignalId, code });
+			log(logger, { event: "request_rejected", peerContactId, code });
 			return;
 		}
 
@@ -384,7 +359,7 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 				response: searchResponse,
 				observedSources,
 				resolvePolicy,
-				peerFingerprint: peerSignalId,
+				peerFingerprint: String(peerContactId),
 				workspaceRoots,
 				pseudonymize: options.pseudonymize ?? false,
 			});
@@ -392,21 +367,21 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 				throw new Error("Egress response failed wire validation.");
 			}
 			const message = JSON.stringify({ v: 1, kind: "response", id: envelope.id, payload: peerResponse });
-			if (Buffer.byteLength(message) > MAX_SIGNAL_WIRE_BYTES) {
+			if (Buffer.byteLength(message) > MAX_SIMPLEX_WIRE_BYTES) {
 				await transport.sendMessage(
-					incoming.source,
-					rejection(envelope.id, "internal-error", "The peer response exceeds the Signal message size limit."),
+					incoming.contactId,
+					rejection(envelope.id, "internal-error", "The peer response exceeds the SimpleX message size limit."),
 				);
-				log(logger, { event: "request_rejected", peerSignalId, code: "internal-error" });
+				log(logger, { event: "request_rejected", peerContactId, code: "internal-error" });
 				return;
 			}
-			await transport.sendMessage(incoming.source, message);
+			await transport.sendMessage(incoming.contactId, message);
 		} catch {
 			await transport.sendMessage(
-				incoming.source,
+				incoming.contactId,
 				rejection(envelope.id, "internal-error", "The peer response could not be built."),
 			);
-			log(logger, { event: "request_rejected", peerSignalId, code: "internal-error" });
+			log(logger, { event: "request_rejected", peerContactId, code: "internal-error" });
 		}
 	};
 
@@ -419,7 +394,7 @@ export async function startSignalPeerServer(options: StartSignalPeerServerOption
 	};
 }
 
-function log(logger: (entry: SignalPeerLog) => void, entry: SignalPeerLog): void {
+function log(logger: (entry: SimplexPeerLog) => void, entry: SimplexPeerLog): void {
 	try {
 		logger(entry);
 	} catch {
@@ -427,28 +402,28 @@ function log(logger: (entry: SignalPeerLog) => void, entry: SignalPeerLog): void
 	}
 }
 
-export interface QuerySignalPeerOptions {
+export interface QuerySimplexPeerOptions {
 	readonly timeoutMs?: number;
 }
 
 /**
- * Client side of the Signal peer wire: send a PeerQueryRequest and await the
+ * Client side of the SimpleX peer wire: send a PeerQueryRequest and await the
  * correlated PeerQueryResponse.
  */
-export async function querySignalPeer(
-	transport: SignalTransport,
-	peerSignalId: string,
+export async function querySimplexPeer(
+	transport: SimplexTransport,
+	contactId: number,
 	request: PeerQueryRequest,
-	options: QuerySignalPeerOptions = {},
+	options: QuerySimplexPeerOptions = {},
 ): Promise<PeerQueryResponse> {
 	const id = randomUUID();
 	const timeoutMs = options.timeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS;
 	return new Promise<PeerQueryResponse>((resolve, reject) => {
-		const handler = (incoming: SignalIncomingMessage): void => {
-			let envelope: SignalWireEnvelope | undefined;
+		const handler = (incoming: SimplexIncomingMessage): void => {
+			let envelope: SimplexWireEnvelope | undefined;
 			try {
-				const parsed = JSON.parse(incoming.message) as unknown;
-				if (Value.Check(SignalWireEnvelopeSchema, parsed)) envelope = parsed;
+				const parsed = JSON.parse(incoming.text) as unknown;
+				if (Value.Check(SimplexWireEnvelopeSchema, parsed)) envelope = parsed;
 			} catch {
 				return;
 			}
@@ -458,16 +433,16 @@ export async function querySignalPeer(
 			if (Value.Check(PeerQueryResponseSchema, envelope.payload)) {
 				resolve(envelope.payload as PeerQueryResponse);
 			} else {
-				reject(new Error("Signal peer response failed wire validation."));
+				reject(new Error("SimpleX peer response failed wire validation."));
 			}
 		};
 		const unsubscribe = transport.onMessage(handler);
 		const timer = setTimeout(() => {
 			unsubscribe();
-			reject(new Error(`Signal peer query timed out after ${timeoutMs}ms.`));
+			reject(new Error(`SimpleX peer query timed out after ${timeoutMs}ms.`));
 		}, timeoutMs);
 		void transport
-			.sendMessage(peerSignalId, JSON.stringify({ v: 1, kind: "query", id, payload: request }))
+			.sendMessage(contactId, JSON.stringify({ v: 1, kind: "query", id, payload: request }))
 			.catch((error: unknown) => {
 				clearTimeout(timer);
 				unsubscribe();

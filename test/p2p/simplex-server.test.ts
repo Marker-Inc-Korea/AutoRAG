@@ -3,22 +3,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
-import type { P2pSearchAgent } from "../../src/p2p/signal-server.ts";
 import {
-	querySignalPeer,
-	type SignalPeerRegistry,
-	type SignalPeerServer,
-	startSignalPeerServer,
-} from "../../src/p2p/signal-server.ts";
-import type { SignalIncomingMessage, SignalTransport } from "../../src/p2p/signal-transport.ts";
+	querySimplexPeer,
+	type SimplexPeerRegistry,
+	type SimplexPeerServer,
+	startSimplexPeerServer,
+} from "../../src/p2p/simplex-server.ts";
+import type { SimplexIncomingMessage, SimplexTransport } from "../../src/p2p/simplex-transport.ts";
 import { type PeerQueryResponse, resetWireMapping } from "../../src/p2p/wire.ts";
 import type { RetrievalOptions } from "../../src/retrieval/types.ts";
 
 const roots: string[] = [];
-const servers: SignalPeerServer[] = [];
+const servers: SimplexPeerServer[] = [];
 
 function workspace(): string {
-	const root = mkdtempSync(join(tmpdir(), "autorag-signal-server-"));
+	const root = mkdtempSync(join(tmpdir(), "autorag-simplex-server-"));
 	roots.push(root);
 	return root;
 }
@@ -29,29 +28,48 @@ afterEach(async () => {
 	resetWireMapping();
 });
 
-/** In-memory SignalTransport pair: messages sent on one arrive on the other. */
-class FakeTransport implements SignalTransport {
-	readonly account: string;
+/** In-memory SimplexTransport pair for gate tests. */
+class FakeTransport implements SimplexTransport {
+	readonly dbPrefix = "fake";
+	readonly displayName: string;
+	readonly contactId: number;
 	peer: FakeTransport | undefined;
-	readonly sent: { recipient: string; message: string }[] = [];
+	readonly sent: { contactId: number; text: string }[] = [];
 	readonly received: string[] = [];
-	private readonly handlers: ((message: SignalIncomingMessage) => void)[] = [];
+	private readonly handlers: ((message: SimplexIncomingMessage) => void)[] = [];
 
-	constructor(account: string) {
-		this.account = account;
+	constructor(contactId: number, displayName: string) {
+		this.contactId = contactId;
+		this.displayName = displayName;
 	}
 
-	async sendMessage(recipient: string, message: string): Promise<void> {
-		this.sent.push({ recipient, message });
+	async getUserId(): Promise<number> {
+		return 1;
+	}
+	async getOrCreateAddress(): Promise<string> {
+		return "simplex:/contact#fake";
+	}
+	async createInvitation(): Promise<string> {
+		return "simplex:/invitation#fake";
+	}
+	async connect(): Promise<void> {}
+	async listContacts(): Promise<{ contactId: number; localDisplayName: string }[]> {
+		return this.peer !== undefined
+			? [{ contactId: this.peer.contactId, localDisplayName: this.peer.displayName }]
+			: [];
+	}
+
+	async sendMessage(contactId: number, text: string): Promise<void> {
+		this.sent.push({ contactId, text });
 		const target = this.peer;
-		if (target !== undefined) {
+		if (target !== undefined && target.contactId === contactId) {
 			queueMicrotask(() => {
-				target.emit({ source: this.account, message, timestamp: Date.now() });
+				target.emit({ contactId: this.contactId, contactName: this.displayName, text, chatItemId: Date.now() });
 			});
 		}
 	}
 
-	onMessage(handler: (message: SignalIncomingMessage) => void): () => void {
+	onMessage(handler: (message: SimplexIncomingMessage) => void): () => void {
 		this.handlers.push(handler);
 		return () => {
 			const index = this.handlers.indexOf(handler);
@@ -59,21 +77,21 @@ class FakeTransport implements SignalTransport {
 		};
 	}
 
-	emit(message: SignalIncomingMessage): void {
+	emit(message: SimplexIncomingMessage): void {
 		for (const handler of this.handlers) handler(message);
 	}
 
-	async close(): Promise<void> {}
-
-	/** Capture every message the peer sends back (raw-Signal client stand-in). */
+	/** Capture every message the peer sends back (raw-SimpleX client stand-in). */
 	captureReplies(): void {
-		this.onMessage((message) => this.received.push(message.message));
+		this.onMessage((message) => this.received.push(message.text));
 	}
+
+	async close(): Promise<void> {}
 }
 
 function transportPair(): { client: FakeTransport; server: FakeTransport } {
-	const client = new FakeTransport("+821011111111");
-	const server = new FakeTransport("+821022222222");
+	const client = new FakeTransport(2, "client-agent");
+	const server = new FakeTransport(1, "server-agent");
 	client.peer = server;
 	server.peer = client;
 	return { client, server };
@@ -91,37 +109,36 @@ function searchResponse(query = "query"): SearchDocumentsResponse {
 	} as SearchDocumentsResponse;
 }
 
-function stubAgent(
-	implementation?: (query: string, options?: RetrievalOptions) => Promise<SearchDocumentsResponse>,
-): P2pSearchAgent & { calls: { query: string; options?: RetrievalOptions }[] } {
-	const calls: { query: string; options?: RetrievalOptions }[] = [];
+function stubAgent(implementation?: (query: string, options?: RetrievalOptions) => Promise<SearchDocumentsResponse>): {
+	remoteSession: true;
+	calls: { query: string }[];
+	searchDocuments: (q: string, o?: RetrievalOptions) => Promise<SearchDocumentsResponse>;
+} {
+	const calls: { query: string }[] = [];
 	return {
 		remoteSession: true,
 		calls,
 		searchDocuments: async (query: string, options?: RetrievalOptions) => {
-			calls.push({ query, options });
+			calls.push({ query });
 			return implementation !== undefined ? implementation(query, options) : searchResponse(query);
 		},
 	};
 }
 
-/** Agent whose retrieval observes one source, so the egress gate admits it. */
-function observingAgent(): P2pSearchAgent & { calls: { query: string; options?: RetrievalOptions }[] } {
+function observingAgent() {
 	return stubAgent(async (query, options) => {
-		const observed = options?.observedSources as Set<string> | undefined;
-		observed?.add("docs/policy.md");
+		(options?.observedSources as Set<string> | undefined)?.add("docs/policy.md");
 		return searchResponse(query);
 	});
 }
 
-/** Policy resolution that admits every source for every peer. */
 const openPolicy = { tier: "always", allowed: true, shareBytes: true, redact: false } as const;
 const openResolver = () => openPolicy;
 
-const PEER_ID = "+821011111111";
+const PEER_CONTACT_ID = 2;
 
-function peers(): SignalPeerRegistry {
-	return { alice: { signalId: PEER_ID, addedAt: new Date().toISOString() } };
+function peers(): SimplexPeerRegistry {
+	return { "client-agent": { contactId: PEER_CONTACT_ID, addedAt: new Date().toISOString() } };
 }
 
 async function lastResponse(transport: FakeTransport, minCount = 1): Promise<PeerQueryResponse> {
@@ -140,18 +157,17 @@ async function lastResponse(transport: FakeTransport, minCount = 1): Promise<Pee
 	return responsesOf()[responsesOf().length - 1]!;
 }
 
-/** Transport pair with the client already capturing replies. */
 function capturingPair(): { client: FakeTransport; server: FakeTransport } {
 	const pair = transportPair();
 	pair.client.captureReplies();
 	return pair;
 }
 
-describe("startSignalPeerServer", () => {
+describe("startSimplexPeerServer", () => {
 	it("requires a remote-session agent", async () => {
 		const { server } = transportPair();
 		await expect(
-			startSignalPeerServer({
+			startSimplexPeerServer({
 				transport: server,
 				agent: { remoteSession: false, searchDocuments: async () => searchResponse() },
 				peers: peers(),
@@ -163,7 +179,7 @@ describe("startSignalPeerServer", () => {
 	it("answers an authorized peer query through the full gate pipeline", async () => {
 		const { client, server } = transportPair();
 		const agent = observingAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
@@ -172,25 +188,30 @@ describe("startSignalPeerServer", () => {
 			resolvePolicy: openResolver,
 		});
 		servers.push(handle);
-		const response = await querySignalPeer(client, server.account, { v: 1, query: "refund policy" });
+		const response = await querySimplexPeer(
+			client,
+			server.contactId,
+			{ v: 1, query: "refund policy" },
+			{ timeoutMs: 5000 },
+		);
 		expect(response.status).toBe("ok");
 		expect(agent.calls).toHaveLength(1);
 		expect(agent.calls[0]!.query).toBe("refund policy");
 	});
 
-	it("rejects a query from an unknown Signal sender with auth-error", async () => {
+	it("rejects a query from an unknown contact with auth-error", async () => {
 		const { client, server } = capturingPair();
 		const agent = stubAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
-			peers: { alice: { signalId: "+821099999999", addedAt: new Date().toISOString() } },
+			peers: { other: { contactId: 99, addedAt: new Date().toISOString() } },
 			workspacePath: workspace(),
 			injectionClassifier: false,
 		});
 		servers.push(handle);
 		await client.sendMessage(
-			server.account,
+			server.contactId,
 			JSON.stringify({ v: 1, kind: "query", id: "q1", payload: { v: 1, query: "hi" } }),
 		);
 		const response = await lastResponse(client);
@@ -202,7 +223,7 @@ describe("startSignalPeerServer", () => {
 	it("rejects an injection-shaped query at L0 without calling the agent", async () => {
 		const { client, server } = capturingPair();
 		const agent = stubAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
@@ -211,7 +232,7 @@ describe("startSignalPeerServer", () => {
 		});
 		servers.push(handle);
 		await client.sendMessage(
-			server.account,
+			server.contactId,
 			JSON.stringify({
 				v: 1,
 				kind: "query",
@@ -228,7 +249,7 @@ describe("startSignalPeerServer", () => {
 	it("rejects malformed payloads with internal-error", async () => {
 		const { client, server } = capturingPair();
 		const agent = stubAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
@@ -236,7 +257,7 @@ describe("startSignalPeerServer", () => {
 			injectionClassifier: false,
 		});
 		servers.push(handle);
-		await client.sendMessage(server.account, "this is not json");
+		await client.sendMessage(server.contactId, "this is not json");
 		const response = await lastResponse(client);
 		expect(response.status).toBe("rejected");
 		expect(response.diagnostics.some((d) => d.code === "internal-error")).toBe(true);
@@ -246,7 +267,7 @@ describe("startSignalPeerServer", () => {
 	it("rate-limits a peer that exceeds its burst quota", async () => {
 		const { client, server } = capturingPair();
 		const agent = observingAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
@@ -258,7 +279,7 @@ describe("startSignalPeerServer", () => {
 		servers.push(handle);
 		const send = (id: string) =>
 			client.sendMessage(
-				server.account,
+				server.contactId,
 				JSON.stringify({ v: 1, kind: "query", id, payload: { v: 1, query: "quota probe" } }),
 			);
 		await send("r1");
@@ -274,7 +295,7 @@ describe("startSignalPeerServer", () => {
 	it("returns policy-denied when no retrieval sources were observed", async () => {
 		const { client, server } = transportPair();
 		const agent = stubAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
@@ -282,17 +303,17 @@ describe("startSignalPeerServer", () => {
 			injectionClassifier: false,
 		});
 		servers.push(handle);
-		const response = await querySignalPeer(client, server.account, { v: 1, query: "anything" });
+		const response = await querySimplexPeer(client, server.contactId, { v: 1, query: "anything" });
 		expect(response.status).toBe("rejected");
 		expect(response.diagnostics.some((d) => d.code === "policy-denied")).toBe(true);
 	});
 });
 
-describe("querySignalPeer", () => {
+describe("querySimplexPeer", () => {
 	it("correlates responses by id and ignores unrelated messages", async () => {
 		const { client, server } = transportPair();
 		const agent = observingAgent();
-		const handle = await startSignalPeerServer({
+		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
@@ -301,17 +322,21 @@ describe("querySignalPeer", () => {
 			resolvePolicy: openResolver,
 		});
 		servers.push(handle);
-		const pending = querySignalPeer(client, server.account, { v: 1, query: "correlation" });
-		client.emit({ source: server.account, message: "unrelated chatter", timestamp: Date.now() });
+		const pending = querySimplexPeer(client, server.contactId, { v: 1, query: "correlation" });
+		client.emit({
+			contactId: server.contactId,
+			contactName: "server-agent",
+			text: "unrelated chatter",
+			chatItemId: 1,
+		});
 		const response = await pending;
 		expect(response.status).toBe("ok");
 	});
 
 	it("times out when the peer never responds", async () => {
-		const client = new FakeTransport("+821033333333");
-		client.peer = undefined;
-		await expect(
-			querySignalPeer(client, "+821044444444", { v: 1, query: "hello" }, { timeoutMs: 100 }),
-		).rejects.toThrow(/timed out/);
+		const client = new FakeTransport(9, "lonely");
+		await expect(querySimplexPeer(client, 42, { v: 1, query: "hello" }, { timeoutMs: 100 })).rejects.toThrow(
+			/timed out/,
+		);
 	});
 });
