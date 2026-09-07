@@ -70,6 +70,10 @@ export interface P2pConfig {
 	enabled?: boolean;
 	port?: number;
 	host?: string;
+	/** Signal account (E.164 number) this installation serves queries from. */
+	account?: string;
+	/** Optional signal-cli data directory override. */
+	signalDataDir?: string;
 	maxBodyBytes?: number;
 	maxFileBytes?: number;
 	policy?: Record<string, unknown>;
@@ -646,6 +650,8 @@ const P2P_ALLOWLIST = new Set([
 	"enabled",
 	"port",
 	"host",
+	"account",
+	"signalDataDir",
 	"maxBodyBytes",
 	"maxFileBytes",
 	"policy",
@@ -662,8 +668,8 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 	const out: P2pConfig = {};
 	if (raw === undefined || raw === null) {
 		out.enabled = false;
-		out.host = "0.0.0.0";
-		out.port = 9470;
+		out.host = "127.0.0.1";
+		out.port = 7583;
 		out.injectionClassifier = true;
 		out.piiNer = false;
 		out.searchTimeoutMs = 120000;
@@ -692,7 +698,21 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 		}
 		out.host = record.host.trim();
 	}
-	out.host ??= "0.0.0.0";
+	out.host ??= "127.0.0.1";
+
+	if (record.account !== undefined) {
+		if (typeof record.account !== "string" || !/^\+[1-9][0-9]{6,14}$/.test(record.account)) {
+			throw new ConfigError("p2p.account must be an E.164 phone number like +821012345678");
+		}
+		out.account = record.account;
+	}
+
+	if (record.signalDataDir !== undefined) {
+		if (typeof record.signalDataDir !== "string" || record.signalDataDir.trim().length === 0) {
+			throw new ConfigError("p2p.signalDataDir must be a non-empty string");
+		}
+		out.signalDataDir = record.signalDataDir;
+	}
 
 	if (record.port !== undefined) {
 		if (typeof record.port !== "number" || !Number.isInteger(record.port) || record.port < 1 || record.port > 65535) {
@@ -700,7 +720,7 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 		}
 		out.port = record.port;
 	}
-	out.port ??= 9470;
+	out.port ??= 7583;
 
 	if (record.maxBodyBytes !== undefined) {
 		if (

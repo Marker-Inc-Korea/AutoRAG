@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runServe } from "../../src/cli/commands/serve.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { main, parseArgs } from "../../src/cli/index.ts";
-import type { P2pServer } from "../../src/p2p/server.ts";
+import type { SignalPeerServer } from "../../src/p2p/signal-server.ts";
+import type { SignalIncomingMessage, SignalTransport } from "../../src/p2p/signal-transport.ts";
 
 let root: string;
 let configPath: string;
@@ -21,7 +22,7 @@ beforeEach(() => {
 			searchPaths: [join(root, "docs")],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
-			p2p: { injectionClassifier: false },
+			p2p: { injectionClassifier: false, account: "+821012345678" },
 		}),
 	);
 });
@@ -43,24 +44,31 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 	};
 }
 
-function stubServer(overrides: Partial<P2pServer> = {}): P2pServer {
+function stubServer(): SignalPeerServer {
+	return { close: async () => undefined };
+}
+
+function stubTransport(account = "+821012345678"): SignalTransport & { closed: boolean } {
+	const state = { closed: false };
 	return {
-		url: "http://127.0.0.1:19470",
-		origin: "http://127.0.0.1:19470",
-		host: "127.0.0.1",
-		port: 19470,
-		queue: {} as never,
-		close: async () => undefined,
-		...overrides,
+		account,
+		get closed() {
+			return state.closed;
+		},
+		sendMessage: async () => undefined,
+		onMessage: (_handler: (message: SignalIncomingMessage) => void) => () => {},
+		close: async () => {
+			state.closed = true;
+		},
 	};
 }
 
 describe("autorag serve", () => {
 	it("parses serve flags and lists the command in help", async () => {
-		const parsed = parseArgs(["serve", "--port", "19470", "--host", "127.0.0.1"]);
+		const parsed = parseArgs(["serve", "--port", "17583", "--host", "127.0.0.1"]);
 		if ("error" in parsed) throw new Error(parsed.error);
 		expect(parsed.positionals).toEqual(["serve"]);
-		expect(parsed.flags.port).toBe("19470");
+		expect(parsed.flags.port).toBe("17583");
 		expect(parsed.flags.host).toBe("127.0.0.1");
 
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -74,45 +82,68 @@ describe("autorag serve", () => {
 	});
 
 	it("refuses to start with p2p disabled and no --force", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				p2p: { enabled: false, injectionClassifier: false, account: "+821012345678" },
+			}),
+		);
 		const stderr: string[] = [];
 		const code = await runServe(
 			makeCtx({
 				flags: { config: configPath },
 				stderr: (line) => stderr.push(line),
 			}),
-			{ startP2pServer: async () => stubServer() },
+			{ startSignalPeerServer: async () => stubServer(), startSignalDaemon: async () => stubTransport() },
 		);
 		expect(code).toBe(2);
 		expect(stderr.join("\n")).toMatch(/p2p.*disabled|p2p.*not.*enabled|enable.*p2p|p2p.*enable/i);
 	});
 
-	it("starts with --force even when p2p is disabled in config", async () => {
+	it("refuses to start without a Signal account", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				p2p: { enabled: true, injectionClassifier: false },
+			}),
+		);
+		const stderr: string[] = [];
+		const code = await runServe(makeCtx({ flags: { config: configPath }, stderr: (line) => stderr.push(line) }), {
+			startSignalPeerServer: async () => stubServer(),
+			startSignalDaemon: async () => stubTransport(),
+		});
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toMatch(/account/i);
+	});
+
+	it("starts with --force even when p2p is disabled in config, closes daemon cleanly", async () => {
 		const stdout: string[] = [];
-		let closeCalled = false;
+		const transport = stubTransport();
 		const code = await runServe(
 			makeCtx({
 				flags: { config: configPath, force: true },
 				stdout: (line) => stdout.push(line),
 			}),
 			{
-				startP2pServer: async () =>
-					stubServer({
-						close: async () => {
-							closeCalled = true;
-						},
-					}),
+				startSignalDaemon: async () => transport,
+				startSignalPeerServer: async () => stubServer(),
 				waitUntilStopped: async (server) => {
 					await server.close();
 				},
 			},
 		);
 		expect(code).toBe(0);
-		expect(closeCalled).toBe(true);
+		expect(transport.closed).toBe(true);
 	});
 
-	it("starts on a free port with stub server, prints fingerprint (not full key), shuts down cleanly", async () => {
+	it("reports the account and daemon bind, never private material", async () => {
 		const stdout: string[] = [];
-		let closeCalled = false;
 		const code = await runServe(
 			makeCtx({
 				flags: { config: configPath, force: true },
@@ -120,28 +151,18 @@ describe("autorag serve", () => {
 				json: true,
 			}),
 			{
-				startP2pServer: async () =>
-					stubServer({
-						port: 19471,
-						close: async () => {
-							closeCalled = true;
-						},
-					}),
+				startSignalDaemon: async () => stubTransport(),
+				startSignalPeerServer: async () => stubServer(),
 				waitUntilStopped: async (server) => {
 					await server.close();
 				},
-				getFingerprint: async () => "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 			},
 		);
 		expect(code).toBe(0);
-		expect(closeCalled).toBe(true);
-
 		const payload = JSON.parse(stdout[0] ?? "{}") as Record<string, unknown>;
 		expect(payload.ok).toBe(true);
-		expect(payload.host).toBe("127.0.0.1");
-		expect(payload.port).toBe(19471);
-		expect(payload.fingerprint).toBe("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
-		// No full pubkey or private key in output
+		expect(payload.account).toBe("+821012345678");
+		expect(payload.daemon).toEqual({ host: "127.0.0.1", port: 7583 });
 		const stdoutText = stdout.join(" ");
 		expect(stdoutText).not.toContain("privateKey");
 		expect(stdoutText).not.toContain("pubkey");
@@ -155,17 +176,17 @@ describe("autorag serve", () => {
 				searchPaths: [join(root, "docs")],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				p2p: { enabled: true, injectionClassifier: false },
+				p2p: { enabled: true, injectionClassifier: false, account: "+821012345678" },
 			}),
 		);
 		let receivedAgent: { remoteSession?: boolean; searchDocuments: unknown } | undefined;
 		const code = await runServe(makeCtx({ flags: { config: configPath } }), {
-			startP2pServer: async (options) => {
+			startSignalDaemon: async () => stubTransport(),
+			startSignalPeerServer: async (options) => {
 				receivedAgent = options.agent as typeof receivedAgent;
 				return stubServer();
 			},
 			waitUntilStopped: async () => undefined,
-			getFingerprint: async () => "test-fp",
 		});
 		expect(code).toBe(0);
 		expect(receivedAgent?.remoteSession).toBe(true);
@@ -173,7 +194,6 @@ describe("autorag serve", () => {
 	});
 
 	it("surfaces ConfigError for invalid config", async () => {
-		// Write a config with invalid p2p value
 		writeFileSync(
 			configPath,
 			JSON.stringify({
@@ -189,35 +209,33 @@ describe("autorag serve", () => {
 				flags: { config: configPath },
 				stderr: (line) => stderr.push(line),
 			}),
-			{ startP2pServer: async () => stubServer() },
+			{ startSignalPeerServer: async () => stubServer(), startSignalDaemon: async () => stubTransport() },
 		);
 		expect(code).toBe(2);
 		expect(stderr.join("\n")).toMatch(/ConfigError|config|invalid/i);
 	});
 
-	it("uses flags --port and --host", async () => {
+	it("passes --port and --host through to the signal-cli daemon bind", async () => {
 		const stdout: string[] = [];
+		let daemonOptions: { host?: string; port?: number } | undefined;
 		const code = await runServe(
 			makeCtx({
-				flags: { config: configPath, force: true, port: "19472", host: "0.0.0.0" },
+				flags: { config: configPath, force: true, port: "17590", host: "127.0.0.2" },
 				stdout: (line) => stdout.push(line),
 				json: true,
 			}),
 			{
-				startP2pServer: async (opts) =>
-					stubServer({
-						host: opts.host ?? "127.0.0.1",
-						port: opts.port ?? 19472,
-						close: async () => undefined,
-					}),
+				startSignalDaemon: async (options) => {
+					daemonOptions = options;
+					return stubTransport();
+				},
+				startSignalPeerServer: async () => stubServer(),
 				waitUntilStopped: async () => undefined,
-				getFingerprint: async () => "test-fp",
 			},
 		);
 		expect(code).toBe(0);
-		const payload = JSON.parse(stdout[0] ?? "{}") as Record<string, unknown>;
-		expect(payload.host).toBe("0.0.0.0");
-		expect(payload.port).toBe(19472);
+		expect(daemonOptions?.host).toBe("127.0.0.2");
+		expect(daemonOptions?.port).toBe(17590);
 	});
 
 	it("passes classifier model, search roots, and quota limits to the server", async () => {
@@ -229,10 +247,9 @@ describe("autorag serve", () => {
 				memoryPath: join(root, "memory.json"),
 				p2p: {
 					enabled: true,
+					account: "+821012345678",
 					injectionClassifier: true,
 					piiNer: true,
-					maxBodyBytes: 1024,
-					maxFileBytes: 2048,
 					quotas: { queriesPerHour: 7, burst: 2 },
 				},
 			}),
@@ -253,19 +270,17 @@ describe("autorag serve", () => {
 					maxTokens: 16,
 				},
 			}),
-			startP2pServer: async (options) => {
+			startSignalDaemon: async () => stubTransport(),
+			startSignalPeerServer: async (options) => {
 				received = options as unknown as Record<string, unknown>;
 				return stubServer();
 			},
 			waitUntilStopped: async () => undefined,
-			getFingerprint: async () => "test-fp",
 		});
 		expect(code).toBe(0);
 		expect(received?.injectionClassifier).toBe(true);
 		expect(typeof received?.injectionClassifierModel).toBe("function");
-		expect(received?.piiNer).toBe(true);
-		expect(received?.maxBodyBytes).toBe(1024);
-		expect(received?.maxFileBytes).toBe(2048);
+		expect(received?.pseudonymize).toBe(true);
 		expect(received?.quotas).toEqual({ queriesPerHour: 7, burst: 2 });
 		expect(received?.workspaceRoots).toEqual([join(root, "docs")]);
 		expect(received?.policyStore).toBeDefined();
@@ -278,7 +293,7 @@ describe("autorag serve", () => {
 				searchPaths: [join(root, "docs")],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				p2p: { enabled: true, injectionClassifier: true },
+				p2p: { enabled: true, account: "+821012345678", injectionClassifier: true },
 			}),
 		);
 		const stderr: string[] = [];
@@ -291,7 +306,8 @@ describe("autorag serve", () => {
 				modelResolver: () => {
 					throw new Error("no model");
 				},
-				startP2pServer: async () => stubServer(),
+				startSignalPeerServer: async () => stubServer(),
+				startSignalDaemon: async () => stubTransport(),
 			},
 		);
 		expect(code).toBe(2);
