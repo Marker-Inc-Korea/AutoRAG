@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { resolveAutoRAGHome } from "../../config/home.ts";
+import { resolveP2pWorkspace } from "./p2p.ts";
 import type { CommandContext } from "./types.ts";
 
 const VALID_TIERS = new Set(["private", "never", "always", "peers"]);
@@ -104,7 +105,7 @@ function validateTier(tier: string): tier is "private" | "never" | "always" | "p
 
 export function runP2pPolicy(ctx: CommandContext): number {
 	const subcommand = ctx.positionals[0];
-	const policyPath = workspacePolicyPath(ctx.cwd);
+	const policyPath = workspacePolicyPath(resolveP2pWorkspace(ctx));
 
 	switch (subcommand) {
 		case "list": {

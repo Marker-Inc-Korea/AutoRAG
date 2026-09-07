@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Value } from "typebox/value";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
+import { planSourceRoots, type SourceRoot } from "../filesystem/source-paths.ts";
+import { parsedMirrorRoot } from "../mirror/paths.ts";
 import type { RetrievalOptions } from "../retrieval/types.ts";
 import { buildPeerResponse as defaultBuildPeerResponse } from "./egress-gate.ts";
+import { resolveFileShare } from "./file-sharing.ts";
 import { loadPeerRegistry, type PeerRecord, type PeerRegistry, sha256Body, verifyRequest } from "./identity.ts";
 import { classifyInjection, type InjectionClassifierModel } from "./injection-classifier.ts";
 import { screenInboundQuery } from "./injection-gate.ts";
@@ -147,10 +150,15 @@ export async function startP2pServer(options: StartP2pServerOptions): Promise<P2
 	const config = options.config ?? {};
 	const host = options.host ?? config.host ?? DEFAULT_HOST;
 	const port = options.port ?? config.port ?? DEFAULT_PORT;
+	const injectionClassifier = options.injectionClassifier ?? config.injectionClassifier ?? true;
+	if (injectionClassifier && typeof options.injectionClassifierModel !== "function") {
+		throw new TypeError("P2P injection classifier is enabled but no classifier model was provided.");
+	}
 	const policyStore =
 		options.policyStore ?? (options.workspacePath ? new PolicyStore(options.workspacePath) : undefined);
 	const quotas = resolveQuotas(options.quotas ?? config.quotas, policyStore?.quotas);
 	const maxBodyBytes = options.maxBodyBytes ?? config.maxBodyBytes ?? quotas.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+	const maxFileBytes = options.maxFileBytes ?? config.maxFileBytes ?? quotas.maxFileBytes;
 	const queue = new QueryQueue<SearchDocumentsResponse>(
 		options.queueDepth ?? config.queueDepth ?? DEFAULT_QUEUE_DEPTH,
 	);
@@ -160,13 +168,15 @@ export async function startP2pServer(options: StartP2pServerOptions): Promise<P2
 		options.resolvePolicy ?? (policyStore ? policyStore.resolvePolicy.bind(policyStore) : () => PRIVATE_POLICY);
 	const effectiveConfig: P2pServerConfig = {
 		...config,
-		injectionClassifier: options.injectionClassifier ?? config.injectionClassifier,
+		injectionClassifier,
 		piiNer: options.piiNer ?? config.piiNer,
 		searchTimeoutMs: options.searchTimeoutMs ?? config.searchTimeoutMs,
 		pseudonymize: options.pseudonymize ?? config.pseudonymize,
 		workspaceRoots:
 			options.workspaceRoots ?? config.workspaceRoots ?? (options.workspacePath ? [options.workspacePath] : []),
 	};
+	const sourceRoots = planSourceRoots(effectiveConfig.workspaceRoots ?? []);
+	const parsedRoot = options.workspacePath !== undefined ? parsedMirrorRoot(options.workspacePath) : "";
 	const logger = options.logger ?? ((entry: P2pRequestLog) => console.info(JSON.stringify(entry)));
 	const buckets = new Map<string, TokenBucket>();
 	const httpServer = createServer((request, response) => {
@@ -175,6 +185,7 @@ export async function startP2pServer(options: StartP2pServerOptions): Promise<P2
 			buildPeerResponse,
 			config: effectiveConfig,
 			maxBodyBytes,
+			maxFileBytes,
 			peerRegistry,
 			resolvePolicy,
 			injectionClassifierModel: options.injectionClassifierModel,
@@ -182,6 +193,8 @@ export async function startP2pServer(options: StartP2pServerOptions): Promise<P2
 			buckets,
 			queue,
 			quotas,
+			sourceRoots,
+			parsedMirrorRoot: parsedRoot,
 			onQueueEnqueued: options.onQueueEnqueued,
 		});
 	});
@@ -219,6 +232,7 @@ async function handleRequest(
 		readonly buildPeerResponse: PeerResponseBuilder;
 		readonly config: P2pServerConfig;
 		readonly maxBodyBytes: number;
+		readonly maxFileBytes: number;
 		readonly peerRegistry: PeerRegistry;
 		readonly resolvePolicy: PolicyResolver;
 		readonly injectionClassifierModel: InjectionClassifierModel | undefined;
@@ -226,6 +240,8 @@ async function handleRequest(
 		readonly buckets: Map<string, TokenBucket>;
 		readonly queue: QueryQueue<SearchDocumentsResponse>;
 		readonly quotas: PolicyQuotas;
+		readonly sourceRoots: readonly SourceRoot[];
+		readonly parsedMirrorRoot: string;
 		readonly onQueueEnqueued: ((pendingCount: number) => void) | undefined;
 	},
 ): Promise<void> {
@@ -285,7 +301,13 @@ async function handleRequest(
 	log(ctx.logger, requestLog);
 
 	if (req.method === "GET" && parsedUrl.pathname === "/v1/file") {
-		sendRefusal(res, 403, "policy-denied", "File sharing is not available on this endpoint.");
+		const file = resolveFileShare(parsedUrl.searchParams.get("source") ?? "", headers.fingerprint, {
+			resolvePolicy: ctx.resolvePolicy,
+			workspaceRoots: ctx.sourceRoots,
+			parsedMirrorRoot: ctx.parsedMirrorRoot,
+			maxFileBytes: ctx.maxFileBytes,
+		});
+		sendJson(res, file.status === "ok" ? 200 : 403, file);
 		return;
 	}
 	if (req.method !== "POST" || parsedUrl.pathname !== "/v1/query") {

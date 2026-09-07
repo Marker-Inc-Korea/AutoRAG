@@ -21,6 +21,7 @@ beforeEach(() => {
 			searchPaths: [join(root, "docs")],
 			workspacePath: root,
 			memoryPath: join(root, "memory.json"),
+			p2p: { injectionClassifier: false },
 		}),
 	);
 });
@@ -154,7 +155,7 @@ describe("autorag serve", () => {
 				searchPaths: [join(root, "docs")],
 				workspacePath: root,
 				memoryPath: join(root, "memory.json"),
-				p2p: { enabled: true },
+				p2p: { enabled: true, injectionClassifier: false },
 			}),
 		);
 		let receivedAgent: { remoteSession?: boolean; searchDocuments: unknown } | undefined;
@@ -217,5 +218,83 @@ describe("autorag serve", () => {
 		const payload = JSON.parse(stdout[0] ?? "{}") as Record<string, unknown>;
 		expect(payload.host).toBe("0.0.0.0");
 		expect(payload.port).toBe(19472);
+	});
+
+	it("passes classifier model, search roots, and quota limits to the server", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				p2p: {
+					enabled: true,
+					injectionClassifier: true,
+					piiNer: true,
+					maxBodyBytes: 1024,
+					maxFileBytes: 2048,
+					quotas: { queriesPerHour: 7, burst: 2 },
+				},
+			}),
+		);
+		let received: Record<string, unknown> | undefined;
+		const code = await runServe(makeCtx({ flags: { config: configPath } }), {
+			modelResolver: () => ({
+				model: {
+					id: "stub",
+					name: "stub",
+					api: "openai-completions",
+					provider: "stub",
+					baseUrl: "http://127.0.0.1:9",
+					reasoning: false,
+					input: ["text"],
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+					contextWindow: 128,
+					maxTokens: 16,
+				},
+			}),
+			startP2pServer: async (options) => {
+				received = options as unknown as Record<string, unknown>;
+				return stubServer();
+			},
+			waitUntilStopped: async () => undefined,
+			getFingerprint: async () => "test-fp",
+		});
+		expect(code).toBe(0);
+		expect(received?.injectionClassifier).toBe(true);
+		expect(typeof received?.injectionClassifierModel).toBe("function");
+		expect(received?.piiNer).toBe(true);
+		expect(received?.maxBodyBytes).toBe(1024);
+		expect(received?.maxFileBytes).toBe(2048);
+		expect(received?.quotas).toEqual({ queriesPerHour: 7, burst: 2 });
+		expect(received?.workspaceRoots).toEqual([join(root, "docs")]);
+		expect(received?.policyStore).toBeDefined();
+	});
+
+	it("fails closed at startup when the classifier is enabled without a model", async () => {
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [join(root, "docs")],
+				workspacePath: root,
+				memoryPath: join(root, "memory.json"),
+				p2p: { enabled: true, injectionClassifier: true },
+			}),
+		);
+		const stderr: string[] = [];
+		const code = await runServe(
+			makeCtx({
+				flags: { config: configPath },
+				stderr: (line) => stderr.push(line),
+			}),
+			{
+				modelResolver: () => {
+					throw new Error("no model");
+				},
+				startP2pServer: async () => stubServer(),
+			},
+		);
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toMatch(/classifier|model/i);
 	});
 });

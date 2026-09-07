@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -36,6 +36,7 @@ async function _run(args: string[]): Promise<{ code: number; stdout: string[]; s
 
 import { runP2p } from "../../src/cli/commands/p2p.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
+import { main, parseArgs } from "../../src/cli/index.ts";
 import { decodePairingCode, generateIdentity, loadPeerRegistry } from "../../src/p2p/identity.ts";
 
 function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
@@ -303,5 +304,59 @@ describe("autorag p2p dispatch error handling", () => {
 			}),
 		);
 		expect(code).toBe(2);
+	});
+
+	it("keeps the pair subcommand when dispatched through main()", async () => {
+		const stdout: string[] = [];
+		const originalStdout = process.stdout.write.bind(process.stdout);
+		const previousCwd = process.cwd();
+		process.stdout.write = ((chunk: string | Uint8Array) => {
+			stdout.push(String(chunk));
+			return true;
+		}) as typeof process.stdout.write;
+		try {
+			process.chdir(root);
+			const code = await main(["p2p", "pair", "--json"]);
+			expect(code).toBe(0);
+		} finally {
+			process.chdir(previousCwd);
+			process.stdout.write = originalStdout;
+		}
+		const payload = JSON.parse(stdout.join("")) as { code?: string };
+		expect(typeof payload.code).toBe("string");
+		expect((payload.code ?? "").length).toBeGreaterThan(0);
+	});
+
+	it("parses pairing flags", () => {
+		const parsed = parseArgs(["p2p", "pair", "--accept", "abc", "--alias", "friend", "--endpoint", "127.0.0.1:9470"]);
+		if ("error" in parsed) throw new Error(parsed.error);
+		expect(parsed.positionals).toEqual(["p2p", "pair"]);
+		expect(parsed.flags.accept).toBe("abc");
+		expect(parsed.flags.alias).toBe("friend");
+		expect(parsed.flags.endpoint).toBe("127.0.0.1:9470");
+	});
+
+	it("stores identity under config workspacePath, not cwd", async () => {
+		const workspace = join(root, "configured-ws");
+		mkdirSync(workspace, { recursive: true });
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [root],
+				workspacePath: workspace,
+				memoryPath: join(workspace, "memory.json"),
+			}),
+		);
+		const code = await runP2p(
+			makeCtx({
+				positionals: ["pair"],
+				flags: { config: configPath },
+				stdout: () => undefined,
+			}),
+		);
+		expect(code).toBe(0);
+		expect(existsSync(join(workspace, ".autorag", "p2p", "identity.json"))).toBe(true);
+		expect(existsSync(join(root, ".autorag", "p2p", "identity.json"))).toBe(false);
 	});
 });

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Value } from "typebox/value";
@@ -17,7 +17,7 @@ import {
 	type StartP2pServerOptions,
 	startP2pServer,
 } from "../../src/p2p/server.ts";
-import { type PeerQueryResponse, PeerQueryResponseSchema } from "../../src/p2p/wire.ts";
+import { type PeerQueryResponse, PeerQueryResponseSchema, resetWireMapping, wireSourceId } from "../../src/p2p/wire.ts";
 import type { RetrievalOptions } from "../../src/retrieval/types.ts";
 
 const roots: string[] = [];
@@ -143,6 +143,7 @@ async function json(responseValue: Response): Promise<Record<string, unknown>> {
 afterEach(async () => {
 	for (const server of servers.splice(0)) await server.close();
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+	resetWireMapping();
 });
 
 describe("P2P peer server", () => {
@@ -406,6 +407,47 @@ describe("P2P peer server", () => {
 			},
 		});
 		expect(fileResponse.status).toBe(403);
-		expect((await json(fileResponse)).diagnostics).toEqual([{ code: "policy-denied", message: expect.any(String) }]);
+		expect(await json(fileResponse)).toMatchObject({
+			status: "rejected",
+			diagnostic: { code: "policy-denied" },
+		});
+	});
+
+	it("requires a classifier model when L1 is enabled", async () => {
+		const value = fixture();
+		await expect(
+			startP2pServer({
+				agent: value.agent,
+				peers: loadPeerRegistry(value.root),
+				config: { host: "127.0.0.1", port: 0, injectionClassifier: true },
+			}),
+		).rejects.toThrow(/classifier model/);
+	});
+
+	it("serves always-tier original bytes on GET /v1/file", async () => {
+		const value = fixture();
+		const docs = join(value.root, "docs");
+		mkdirSync(docs, { recursive: true });
+		writeFileSync(join(docs, "always.txt"), "ALWAYS-TIER-VERBATIM-BYTES\n");
+		const virtualPath = "/docs/always.txt";
+		const wireId = wireSourceId(virtualPath);
+		const server = await start(value, {
+			workspacePath: value.root,
+			workspaceRoots: [docs],
+			resolvePolicy: () => ({ tier: "always", allowed: true, shareBytes: true, redact: false }),
+		});
+		const requestTimestamp = ++timestamp;
+		const fileResponse = await fetch(`${server.origin}/v1/file?source=${encodeURIComponent(wireId)}`, {
+			headers: {
+				"x-peer-fingerprint": value.peer.fingerprint,
+				"x-peer-timestamp": String(requestTimestamp),
+				"x-peer-signature": signRequest(value.peerIdentity.privateKey, requestTimestamp, bodyHash("")),
+			},
+		});
+		expect(fileResponse.status).toBe(200);
+		const body = await json(fileResponse);
+		expect(body.status).toBe("ok");
+		expect(body.redacted).toBe(false);
+		expect(Buffer.from(String(body.fileBase64), "base64").toString("utf8")).toBe("ALWAYS-TIER-VERBATIM-BYTES\n");
 	});
 });

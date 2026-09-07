@@ -137,7 +137,7 @@ The two-instance P2P permission-sharing harness uses only loopback networking an
 bun scripts/manual-qa/p2p-loopback-qa.ts
 ```
 
-It creates temporary workspaces with a mixed-case source root and fixtures for every sharing tier, generates and accepts pairing codes, starts two local P2P workers on `127.0.0.1:18080` and `127.0.0.1:18081`, then verifies signed query/egress behavior and the original-file endpoint. Assertions cover opaque slugged sources, verbatim `always` bytes, PII-redacted `peers` text, withheld `peers` binary, indistinguishable `never`/missing refusals, unsigned authentication failure, replay rejection, quota rate limiting, and prompt-injection rejection. The model/retrieval layer is a deterministic local stub, so this QA must never be run with `OPENAI_API_KEY` or any other remote credential.
+It creates temporary workspaces with a mixed-case source root and fixtures for every sharing tier, generates and accepts pairing codes, starts two local P2P workers on `127.0.0.1:19480` and `127.0.0.1:19481`, then verifies signed query/egress behavior and the original-file endpoint. Assertions cover opaque slugged sources, verbatim `always` bytes, PII-redacted `peers` text, withheld `peers` binary, indistinguishable `never`/missing refusals, unsigned authentication failure, replay rejection, quota rate limiting, and prompt-injection rejection. The model/retrieval layer is a deterministic local stub, so this QA must never be run with `OPENAI_API_KEY` or any other remote credential.
 
 The harness always kills child workers, removes its temporary workspaces, checks both fixed ports with `lsof`, and prints a cleanup receipt. A successful run exits 0 and prints `PASS` for every assertion plus `CLEANUP receipt`.
 

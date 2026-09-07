@@ -44,6 +44,10 @@ const VALUE_FLAGS = new Set([
 	"port",
 	"host",
 	"peer",
+	"accept",
+	"alias",
+	"endpoint",
+	"remove",
 ]);
 
 const COMMANDS = [
@@ -233,7 +237,6 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 				ctx.positionals = ctx.positionals.slice(1);
 				return runP2pPolicy(ctx);
 			}
-			ctx.positionals = ctx.positionals.slice(1);
 			const { runP2p } = await import("./commands/p2p.ts");
 			return runP2p(ctx);
 		}

@@ -5,9 +5,20 @@ import {
 	registerPeer,
 	removePeer,
 } from "../../p2p/identity.ts";
-import { ConfigError, resolveConfigPath } from "../config.ts";
+import { ConfigError, resolveConfig, resolveConfigPath } from "../config.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
+
+/** Resolve the workspace used for P2P identity/policy, matching `autorag serve`. */
+export function resolveP2pWorkspace(ctx: CommandContext): string {
+	const resolved = resolveConfigPath({ flags: ctx.flags, cwd: ctx.cwd });
+	// Only honor an explicit config (`--config` / AUTORAG_CONFIG). A default home
+	// config must not steal identity/policy writes away from the caller's cwd.
+	if (resolved.explicit) {
+		return resolveConfig({ flags: ctx.flags, cwd: ctx.cwd, readOnly: true }).workspacePath;
+	}
+	return ctx.cwd;
+}
 
 /**
  * `autorag p2p pair` and `autorag p2p peers` — peer identity and registry management.
@@ -15,15 +26,9 @@ import type { CommandContext } from "./types.ts";
 export async function runP2p(ctx: CommandContext): Promise<number> {
 	const subcommand = ctx.positionals[0];
 	const flags = ctx.flags;
-	const _resolved = resolveConfigPath({ flags, cwd: ctx.cwd });
 
-	// Load or create identity (lazy init if not yet present)
-	const identity = loadOrCreateIdentity(ctx.cwd);
-
-	switch (subcommand) {
-		case undefined:
-		case "help": {
-			ctx.stdout(`Usage: autorag p2p <subcommand> [options]
+	if (subcommand === undefined || subcommand === "help") {
+		ctx.stdout(`Usage: autorag p2p <subcommand> [options]
 
 Subcommands:
   pair                      Print this installation's pairing code
@@ -37,9 +42,21 @@ Subcommands:
 
   help                      Show this help
 `);
-			return 0;
-		}
+		return 0;
+	}
 
+	let workspace: string;
+	try {
+		workspace = resolveP2pWorkspace(ctx);
+	} catch (error) {
+		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
+		return 2;
+	}
+
+	// Load or create identity (lazy init if not yet present)
+	const identity = loadOrCreateIdentity(workspace);
+
+	switch (subcommand) {
 		case "pair": {
 			const accept = flags.accept;
 			if (accept !== undefined) {
@@ -68,7 +85,7 @@ Subcommands:
 
 				let peer: import("../../p2p/identity.ts").PeerRecord;
 				try {
-					peer = registerPeer(ctx.cwd, alias, {
+					peer = registerPeer(workspace, alias, {
 						endpoint: codePayload.endpoint,
 						pubkey: codePayload.pubkey,
 					});
@@ -141,7 +158,7 @@ Subcommands:
 					ctx.stderr(renderError(new ConfigError("--remove requires a peer alias."), { json: ctx.json }));
 					return 2;
 				}
-				const removed = removePeer(ctx.cwd, remove);
+				const removed = removePeer(workspace, remove);
 				if (!removed) {
 					ctx.stderr(renderError(new ConfigError(`Peer not found: ${remove}`), { json: ctx.json }));
 					return 2;
@@ -154,7 +171,7 @@ Subcommands:
 				return 0;
 			}
 
-			const registry = loadPeerRegistry(ctx.cwd);
+			const registry = loadPeerRegistry(workspace);
 			const entries = Object.entries(registry);
 
 			if (ctx.json) {

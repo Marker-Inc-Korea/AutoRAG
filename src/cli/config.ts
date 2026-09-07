@@ -80,6 +80,7 @@ export interface P2pConfig {
 	injectionClassifier?: boolean;
 	piiNer?: boolean;
 	searchTimeoutMs?: number;
+	newFilesPublic?: boolean;
 }
 
 export interface UiConfig {
@@ -652,6 +653,7 @@ const P2P_ALLOWLIST = new Set([
 	"injectionClassifier",
 	"piiNer",
 	"searchTimeoutMs",
+	"newFilesPublic",
 ]);
 
 const P2P_QUOTA_ALLOWLIST = new Set(["queriesPerHour", "burst"]);
@@ -778,6 +780,13 @@ function normalizeP2pConfig(raw: unknown): P2pConfig {
 		out.piiNer = record.piiNer;
 	}
 	out.piiNer ??= false;
+
+	if (record.newFilesPublic !== undefined) {
+		if (typeof record.newFilesPublic !== "boolean") {
+			throw new ConfigError("p2p.newFilesPublic must be a boolean");
+		}
+		out.newFilesPublic = record.newFilesPublic;
+	}
 
 	if (record.searchTimeoutMs !== undefined) {
 		if (

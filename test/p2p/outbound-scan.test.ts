@@ -163,14 +163,18 @@ describe("P2P outbound payload scan", () => {
 				{ id: "shared", source: "/docs/shared.md", content: "tool-retrieved corpus text", score: 1, metadata: {} },
 			],
 		});
-		await toolAgent.searchDocuments("fixture");
+		await toolAgent.searchDocuments("fixture", {
+			resolvePolicy: () => ({ tier: "always", allowed: true, shareBytes: true, redact: false }),
+			peerFingerprint: "peer-test",
+			observedSources: new Set<string>(),
+		});
 		const toolContext = contexts[1];
 		const toolResult = toolContext?.messages.find((message) => message.role === "toolResult");
 		expect(toolResult).toMatchObject({
-			content: [{ text: expect.stringContaining("<retrieved_content") }],
+			content: [{ type: "text", text: expect.stringContaining("<retrieved_content") }],
 		});
 		expect(toolResult).toMatchObject({
-			content: [{ text: expect.stringContaining("tool-retrieved corpus text") }],
+			details: { sources: expect.arrayContaining(["/docs/shared.md"]) },
 		});
 	});
 

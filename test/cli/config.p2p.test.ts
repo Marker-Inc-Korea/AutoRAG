@@ -139,4 +139,10 @@ describe("P2pConfig normalization", () => {
 		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
 		expect(config.p2p!.quotas).toEqual({ queriesPerHour: 10, burst: 3 });
 	});
+
+	it("accepts newFilesPublic boolean", () => {
+		const path = writeConfig({ p2p: { newFilesPublic: true } });
+		const config = resolveConfig({ flags: { config: path }, cwd: root, env: {} });
+		expect(config.p2p!.newFilesPublic).toBe(true);
+	});
 });

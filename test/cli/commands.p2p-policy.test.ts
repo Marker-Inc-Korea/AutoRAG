@@ -197,3 +197,24 @@ describe("round-trip: set then list", () => {
 		expect(JSON.parse(captured[0]!)).toEqual({});
 	});
 });
+
+describe("autorag p2p policy workspace routing", () => {
+	it("writes policy under config workspacePath, not cwd", () => {
+		const workspace = join(root, "configured-ws");
+		mkdirSync(join(workspace, ".autorag", "p2p"), { recursive: true });
+		const configPath = join(root, "config.json");
+		writeFileSync(
+			configPath,
+			JSON.stringify({
+				searchPaths: [root],
+				workspacePath: workspace,
+				memoryPath: join(workspace, "memory.json"),
+			}),
+		);
+		ctx.flags = { config: configPath };
+		ctx.positionals = ["set", "/docs/*", "always"];
+		runP2pPolicy(ctx);
+		expect(existsSync(join(workspace, ".autorag", "p2p", "policy.toml"))).toBe(true);
+		expect(existsSync(join(root, ".autorag", "p2p", "policy.toml"))).toBe(false);
+	});
+});
