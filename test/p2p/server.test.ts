@@ -73,7 +73,9 @@ interface Fixture {
 }
 
 function fixture(
-	agent: Omit<P2pSearchAgent, "remoteSession"> | P2pSearchAgent = { searchDocuments: async (query) => searchResponse(query) },
+	agent: Omit<P2pSearchAgent, "remoteSession"> | P2pSearchAgent = {
+		searchDocuments: async (query) => searchResponse(query),
+	},
 ): Fixture {
 	const root = workspace();
 	const peerIdentity = generateIdentity(root);
@@ -147,7 +149,7 @@ describe("P2P peer server", () => {
 	it("requires a remote-session agent at construction time", async () => {
 		const root = workspace();
 		const peerIdentity = generateIdentity(root);
-		const peer = registerPeer(root, "friend", {
+		registerPeer(root, "friend", {
 			endpoint: "127.0.0.1:9470",
 			pubkey: peerIdentity.pubkey,
 		});

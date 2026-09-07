@@ -158,17 +158,14 @@ describe("autorag serve", () => {
 			}),
 		);
 		let receivedAgent: { remoteSession?: boolean; searchDocuments: unknown } | undefined;
-		const code = await runServe(
-			makeCtx({ flags: { config: configPath } }),
-			{
-				startP2pServer: async (options) => {
-					receivedAgent = options.agent as typeof receivedAgent;
-					return stubServer();
-				},
-				waitUntilStopped: async () => undefined,
-				getFingerprint: async () => "test-fp",
+		const code = await runServe(makeCtx({ flags: { config: configPath } }), {
+			startP2pServer: async (options) => {
+				receivedAgent = options.agent as typeof receivedAgent;
+				return stubServer();
 			},
-		);
+			waitUntilStopped: async () => undefined,
+			getFingerprint: async () => "test-fp",
+		});
 		expect(code).toBe(0);
 		expect(receivedAgent?.remoteSession).toBe(true);
 		expect(typeof receivedAgent?.searchDocuments).toBe("function");
