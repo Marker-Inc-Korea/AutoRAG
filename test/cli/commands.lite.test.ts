@@ -57,6 +57,42 @@ describe("autorag lite lifecycle dispatch", () => {
 		expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toContain("Config file not found");
 	});
 
+	it("rejects fractional top-k values instead of truncating them", async () => {
+		const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const code = await main(["lite", "retrieve", "query", "--top-k", "1.5", "--json"]);
+		expect(code).toBe(2);
+		expect(String(err.mock.calls.at(-1)?.[0] ?? "")).toContain("positive integer");
+	});
+
+	it("does not treat a datasource-only refresh as a parsed index refresh", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-readiness-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--method", "datasources", "--config", configPath, "--json"])).toBe(0);
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(2);
+			expect(String(out.mock.calls.at(-1)?.[0] ?? "")).toContain('"index-not-ready"');
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("rejects retrieval after the parsed index becomes stale", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-stale-"));
+		const configPath = join(root, "config.json");
+		writeConfig(root, configPath);
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			expect(await main(["lite", "refresh", "--config", configPath, "--json"])).toBe(0);
+			writeFileSync(join(root, "docs", "note.md"), "Changed after refresh\n");
+			expect(await main(["lite", "retrieve", "query", "--config", configPath, "--json"])).toBe(2);
+			expect(String(out.mock.calls.at(-1)?.[0] ?? "")).toContain("Index is stale");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("routes refresh, watch, and index with path-opaque output", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-lite-lifecycle-"));
 		const configPath = join(root, "config.json");

@@ -121,6 +121,11 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		return this.installFailed || !this.autoInstall;
 	}
 
+	/** Status distinguishes an explicit missing override from deferred resolution. */
+	isExplicitBinaryMissing(): boolean {
+		return this.binaryPath !== undefined && !existsSync(this.binaryPath);
+	}
+
 	/** A vector index is ready only after MinSync has written its cursor. */
 	isReady(): boolean {
 		return existsSync(join(this.workspacePath, ".minsync", "cursor.json"));

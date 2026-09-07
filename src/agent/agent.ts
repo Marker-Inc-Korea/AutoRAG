@@ -1095,8 +1095,13 @@ export class AutoRAGAgent {
 				datasources,
 				lastError: undefined,
 			};
-			mkdirSync(dirname(refreshReadinessPath(this.workspaceProjectRoot)), { recursive: true });
-			writeFileSync(refreshReadinessPath(this.workspaceProjectRoot), '{"version":1,"completed":true}\n');
+			if (needsParsed) {
+				mkdirSync(dirname(refreshReadinessPath(this.workspaceProjectRoot)), { recursive: true });
+				writeFileSync(
+					refreshReadinessPath(this.workspaceProjectRoot),
+					'{"version":1,"completed":true,"parsed":true}\n',
+				);
+			}
 			const publicMinsync = minsync
 				? {
 						ok: minsync.ok,
@@ -1187,7 +1192,7 @@ export class AutoRAGAgent {
 	private refreshComponentStatus(): AutoRAGRefreshComponentStatus {
 		const status: { minsync?: string; jikji?: string; datasources?: string } = {};
 		if (this.minSyncMethod !== undefined) {
-			status.minsync = this.minSyncMethod.isBinaryMissing()
+			status.minsync = this.minSyncMethod.isExplicitBinaryMissing()
 				? "unavailable"
 				: this.refreshState.minsync?.ok === false
 					? "degraded"
