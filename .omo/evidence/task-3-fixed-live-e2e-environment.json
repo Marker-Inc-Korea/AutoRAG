@@ -1,17 +1,31 @@
 {
   "task": "3",
-  "generatedAt": "2026-09-08",
-  "command": "node scripts/live-e2e/runner.mjs preflight --json",
+  "generatedAt": "2026-09-08T21:30:00Z",
+  "command": "node scripts/live-e2e/runner.mjs preflight --json [--endpoint <url>]",
   "liveServices": {
-    "available": false,
-    "probe": "curl -sS --max-time 2 http://127.0.0.1:18080/",
-    "observed": "HTTP connection produced no response (curl exit 7 / status 000)."
+    "available": true,
+    "probe": "curl -sS --max-time 2 -o /tmp/o.txt -w \"http=%{http_code} exit=%{exitcode}\" http://127.0.0.1:18080/",
+    "observed": {
+      "rawRootProbe": {
+        "httpCode": 501,
+        "exitCode": 0,
+        "body": "<!DOCTYPE HTML><html><body><h1>Error response</h1><p>Error code: 501</p><p>Message: Unsupported method ('GET').</p></body></html>"
+      },
+      "embedProbe": {
+        "httpCode": 200,
+        "exitCode": 0,
+        "bodyPrefix": "[[-0.18803255259990692, ...]]",
+        "dimension": 768,
+        "note": "POST /embed returns JSON array-of-arrays — Ollama TEI adapter is live on 127.0.0.1:18080"
+      }
+    }
   },
   "scenarios": {
-    "mockedLocalServiceWithMissingOptionalBinaries": {
-      "verdict": "degraded",
+    "healthyLoopbackWithAllBinaries": {
+      "command": "node scripts/live-e2e/runner.mjs preflight --endpoint http://127.0.0.1:18080/embed --json",
+      "verdict": "ready",
       "exitCode": 0,
-      "endpoint": "http://127.0.0.1:18080/",
+      "endpoint": "http://127.0.0.1:18080/embed",
       "openaiKeyPresent": false,
       "embedding": {
         "status": "ready",
@@ -19,61 +33,85 @@
         "dimension": 768
       },
       "lanes": {
-        "katok": {
-          "status": "SKIP",
-          "reason": "katok-not-installed"
-        },
-        "discrawl": {
-          "status": "SKIP",
-          "reason": "discrawl-not-installed"
-        },
-        "qmd": {
-          "status": "SKIP",
-          "reason": "qmd-not-installed"
-        },
-        "rclone": {
-          "status": "SKIP",
-          "reason": "rclone-not-installed"
-        },
-        "mailcrawl": {
-          "status": "SKIP",
-          "reason": "mailcrawl-not-installed"
-        },
-        "jikji": {
-          "status": "SKIP",
-          "reason": "jikji-not-installed"
-        },
-        "minsync": {
-          "status": "SKIP",
-          "reason": "minsync-not-installed"
-        }
-      }
+        "katok": { "status": "READY" },
+        "discrawl": { "status": "READY" },
+        "qmd": { "status": "READY" },
+        "rclone": { "status": "READY" },
+        "mailcrawl": { "status": "READY" },
+        "jikji": { "status": "READY" },
+        "minsync": { "status": "READY" }
+      },
+      "note": "All optional binaries present in workspace PATH → each lane READY → overall verdict ready"
+    },
+    "degradedDatasourceLanes": {
+      "command": "PATH=/opt/homebrew/opt/node/bin:/usr/bin:/bin node scripts/live-e2e/runner.mjs preflight --endpoint http://127.0.0.1:18080/embed --json",
+      "verdict": "degraded",
+      "exitCode": 0,
+      "endpoint": "http://127.0.0.1:18080/embed",
+      "openaiKeyPresent": false,
+      "embedding": {
+        "status": "ready",
+        "expectedModel": "embeddinggemma:latest",
+        "dimension": 768
+      },
+      "lanes": {
+        "katok": { "status": "SKIP", "reason": "katok-not-installed" },
+        "discrawl": { "status": "SKIP", "reason": "discrawl-not-installed" },
+        "qmd": { "status": "SKIP", "reason": "qmd-not-installed" },
+        "rclone": { "status": "SKIP", "reason": "rclone-not-installed" },
+        "mailcrawl": { "status": "SKIP", "reason": "mailcrawl-not-installed" },
+        "jikji": { "status": "SKIP", "reason": "jikji-not-installed" },
+        "minsync": { "status": "SKIP", "reason": "minsync-not-installed" }
+      },
+      "note": "PATH stripped of $HOME/.cargo/bin and /opt/homebrew/bin → all 7 datasource binaries absent → each lane SKIP → overall verdict degraded (exit 0)"
     },
     "openaiEgress": {
+      "command": "AUTORAG_OPENAI_API_KEY=fake node scripts/live-e2e/runner.mjs preflight --endpoint http://127.0.0.1:18080/embed --json",
       "verdict": "refused",
       "exitCode": 1,
       "code": "live-e2e-openai-egress",
+      "endpoint": "http://127.0.0.1:18080/embed",
       "openaiKeyPresent": false,
-      "credentialEchoed": false
+      "embedding": { "status": "unavailable" },
+      "lanes": { "katok": { "status": "READY" }, "discrawl": { "status": "READY" }, "qmd": { "status": "READY" }, "rclone": { "status": "READY" }, "mailcrawl": { "status": "READY" }, "jikji": { "status": "READY" }, "minsync": { "status": "READY" } },
+      "notes": [
+        "AUTORAG_OPENAI_API_KEY defined → code rejects as egress regardless of loopback endpoint",
+        "openaiKeyPresent is always false in preflight output (code literal); the guard act is the verdict==refused + live-e2e-openai-egress code"
+      ]
     },
-    "malformedCredentialUrl": {
+    "nonLoopbackEmbedding": {
+      "command": "node scripts/live-e2e/runner.mjs preflight --endpoint https://example.test/embed --json",
       "verdict": "refused",
       "exitCode": 1,
       "code": "live-e2e-non-loopback-embedding",
       "endpoint": "https://example.test/embed",
-      "credentialEchoed": false
+      "openaiKeyPresent": false,
+      "embedding": { "status": "malformed" },
+      "lanes": { "katok": { "status": "READY" }, "discrawl": { "status": "READY" }, "qmd": { "status": "READY" }, "rclone": { "status": "READY" }, "mailcrawl": { "status": "READY" }, "jikji": { "status": "READY" }, "minsync": { "status": "READY" } },
+      "note": "Non-loopback endpoint → refused; hostname not 127.0.0.1 or localhost"
     },
-    "promptInjectionAdjacent": {
+    "credentialRedactionInEndpoint": {
+      "command": "node scripts/live-e2e/runner.mjs preflight --endpoint http://user:secret@127.0.0.1:18080/embed --json",
+      "verdict": "refused",
+      "exitCode": 1,
+      "code": "live-e2e-embedding-unavailable",
+      "endpoint": "http://127.0.0.1:18080/embed",
+      "openaiKeyPresent": false,
+      "embedding": { "status": "unavailable" },
+      "lanes": { "katok": { "status": "READY" }, "discrawl": { "status": "READY" }, "qmd": { "status": "READY" }, "rclone": { "status": "READY" }, "mailcrawl": { "status": "READY" }, "jikji": { "status": "READY" }, "minsync": { "status": "READY" } },
+      "note": "Credentials in URL are stripped by safeEndpoint() before output: endpoint shows http://127.0.0.1:18080/embed without user:secret"
+    },
+    "promptInjectionPath": {
       "status": "N/A",
-      "reason": "preflight embeds only the fixed tiny string \"preflight\"; corpus text is never sent"
+      "reason": "preflight embeds only the fixed tiny string \"preflight\"; corpus text is never sent to the embedding service"
     },
-    "staleState": {
+    "stateMutation": {
       "status": "N/A",
-      "reason": "preflight does not mutate or consume runner state"
+      "reason": "preflight is a read-only probe; it does not create, mutate, or consume runner state or lock files"
     },
-    "misleadingSuccessOutput": {
+    "skipVsPass": {
       "status": "covered",
-      "reason": "SKIP is distinct from READY and yields degraded verdict; configured unavailable lane yields FAIL/refused"
+      "reason": "SKIP is distinct from READY and yields degraded verdict (exit 0); configured-but-unavailable lane would yield FAIL/refused (exit 1)"
     }
   }
 }
