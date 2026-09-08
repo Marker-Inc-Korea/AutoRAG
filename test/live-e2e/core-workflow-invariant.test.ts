@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	assertAbsoluteReadableSource,
@@ -60,11 +60,20 @@ describe("live-e2e core workflow invariants", () => {
 		expect(() => readFileSync(join(clone, "state"))).toThrow();
 	});
 
+	it("canonicalizes readable source paths before comparing retrieval sources", () => {
+		const root = tempRoot();
+		const actual = join(root, "actual.txt");
+		const alias = join(root, "alias.txt");
+		writeFileSync(actual, "readable");
+		symlinkSync(actual, alias);
+		expect(assertAbsoluteReadableSource(alias)).toBe(realpathSync(actual));
+	});
+
 	it("accepts only absolute existing readable source paths", () => {
 		const root = tempRoot();
 		const source = join(root, "source.txt");
 		writeFileSync(source, "readable");
-		expect(assertAbsoluteReadableSource(source)).toBe(resolve(source));
+		expect(assertAbsoluteReadableSource(source)).toBe(realpathSync(source));
 		expect(() => assertAbsoluteReadableSource("relative.txt")).toThrow("source-not-absolute");
 	});
 });

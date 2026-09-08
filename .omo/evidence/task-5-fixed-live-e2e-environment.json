@@ -1,28 +1,24 @@
 {
   "task": "todo-5",
+  "root": "/Volumes/SSD1/4/AutoRAG",
   "bootstrap": {
-    "command": "node scripts/live-e2e/runner.mjs bootstrap --root .",
+    "command": "node scripts/live-e2e/runner.mjs bootstrap --root /Volumes/SSD1/4/AutoRAG",
     "exitCode": 0,
     "result": "BOOTSTRAP_OK: /Volumes/SSD1/4/AutoRAG",
-    "verifyCommand": "node scripts/live-e2e/runner.mjs verify-corpus --root .",
+    "verifyCommand": "node scripts/live-e2e/runner.mjs verify-corpus --root /Volumes/SSD1/4/AutoRAG",
     "verifyExitCode": 0,
     "resultText": "VERIFY_OK: corpus integrity confirmed"
-  },
-  "initialRefusal": {
-    "command": "node scripts/live-e2e/runner.mjs preflight --json",
-    "exitCode": 1,
-    "diagnostic": "live-e2e-embedding-unavailable",
-    "note": "Captured before the adapter route correction; no workflow pass was claimed."
   },
   "adapterProbe": {
     "command": "curl -sS -o /tmp/autorag-tei-probe.json -w 'HTTP %{http_code}\\n' -X POST http://127.0.0.1:18080/embed -H 'content-type: application/json' --data '{\"inputs\":[\"preflight\"]}'",
     "httpStatus": 200,
-    "dimension": 768
+    "dimension": 768,
+    "loopbackOnly": true
   },
   "cold": {
-    "command": "make e2e-live-cold E2E_ARGS='--evidence-dir .omo/evidence/live-core'",
+    "command": "make e2e-live-cold E2E_ROOT=/Volumes/SSD1/4/AutoRAG E2E_ARGS='--evidence-dir .omo/evidence/task-5-cold-fresh'",
     "exitCode": 0,
-    "evidence": ".omo/evidence/live-core/result.json",
+    "parsedMirrorWrites": 1,
     "fullSync": true,
     "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
     "cursorExists": true,
@@ -30,34 +26,49 @@
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
+    "score": 1,
     "embeddingEndpoint": "http://127.0.0.1:18080",
+    "embeddingModel": "embeddinggemma:latest",
+    "embeddingDimension": 768,
     "openaiKeyPresent": false,
-    "cleanupLockReleased": true,
-    "cleanupCommand": "rm -rf .autorag-e2e",
-    "cloneStateRemoved": true
+    "cleanupLockReleased": true
   },
   "warm": {
-    "command": "make e2e-live E2E_ARGS='--evidence-dir .omo/evidence/live-core-warm'",
+    "command": "make e2e-live E2E_ROOT=/Volumes/SSD1/4/AutoRAG E2E_ARGS='--evidence-dir .omo/evidence/task-5-warm-fresh'",
     "exitCode": 0,
-    "evidence": ".omo/evidence/live-core-warm/result.json",
-    "cursorReused": true,
-    "parsedWrites": 0,
+    "parsedMirrorWrites": 0,
     "fullSync": false,
+    "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+    "cursorReused": true,
     "hitSource": "/Volumes/SSD1/4/AutoRAG/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
+    "score": 1,
     "embeddingEndpoint": "http://127.0.0.1:18080",
+    "embeddingModel": "embeddinggemma:latest",
+    "embeddingDimension": 768,
     "openaiKeyPresent": false,
-    "cleanupLockReleased": true,
-    "cleanupCommand": "rm -rf .autorag-e2e",
-    "cloneStateRemoved": true
+    "cleanupLockReleased": true
   },
   "refusalRequirements": {
-    "missingCorpus": "live-e2e-root-not-bootstrapped / MISSING_FILE: corpus/sample.txt",
+    "notBootstrapped": "live-e2e-root-not-bootstrapped / MISSING_FILE: corpus/sample.txt",
+    "wrongRouteOrPort": "live-e2e-embedding-unavailable",
+    "nonLoopback": "live-e2e-non-loopback-embedding",
     "staleFingerprint": "live-e2e-fingerprint-mismatch",
-    "serviceUnavailable": "live-e2e-embedding-unavailable",
-    "malformedOrMissingCapabilities": "preflight refuses configured failures as live-e2e-datasource-failure; workflow never searches",
-    "secretRedaction": "preflight evidence records openaiKeyPresent only and never credential values"
+    "malformedResponse": "live-e2e-embedding-unavailable",
+    "openaiEgress": "live-e2e-openai-egress; evidence records openaiKeyPresent only and never credential values"
+  },
+  "fix": {
+    "sourceMapping": "Canonicalize the live fixture with realpathSync so it compares equal to MinSyncVectorMethod's realpathSync-derived source.",
+    "cleanupReporting": "Defer finish() until after the workflow lock is released, so cleanup.lockReleased is persisted accurately."
+  },
+  "cleanup": {
+    "command": "rm -rf .autorag-e2e /tmp/autorag-live-root.nnPiSs /tmp/autorag-live-evidence-fixed",
+    "lockReleased": true,
+    "cloneStateRemoved": true,
+    "tempEvidenceRemoved": true,
+    "debugJournalRemoved": true,
+    "processesKilled": true
   }
 }

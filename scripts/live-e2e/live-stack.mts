@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
 
@@ -14,7 +14,7 @@ const workspace = value("--workspace");
 const mode = args.includes("--mode") ? args[args.indexOf("--mode") + 1] : "warm";
 if (mode !== "cold" && mode !== "warm") throw new Error("invalid mode");
 
-const source = join(root, "corpus", "sample.txt");
+const source = realpathSync(join(root, "corpus", "sample.txt"));
 const cursorPath = join(workspace, ".minsync", "cursor.json");
 const cursorExistedBefore = existsSync(cursorPath);
 const agent = new AutoRAGAgent({

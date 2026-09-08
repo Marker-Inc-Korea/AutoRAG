@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,7 @@ export function assertServiceReady(result) {
 export function assertAbsoluteReadableSource(source) {
 	if (!isAbsolute(source)) throw new Error("source-not-absolute");
 	accessSync(source, constants.R_OK);
-	return resolve(source);
+	return realpathSync(source);
 }
 
 export function tryAcquireWorkflowLock(root = E2E_DIR) {
@@ -73,19 +73,22 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 	if (process.env.OPENAI_API_KEY || process.env.AUTORAG_OPENAI_API_KEY) return finish(evidence, "live-e2e-openai-egress", evidencePath, 1);
 	const lock = tryAcquireWorkflowLock();
 	if (!lock.ok) return finish(evidence, lock.code, evidencePath, 1);
+	let diagnostic;
+	let exitCode = 0;
 	try {
 		const childEnv = { ...process.env, AUTORAG_HOME: env.AUTORAG_HOME, AUTORAG_CONFIG: env.AUTORAG_CONFIG, AUTORAG_WORKSPACE: env.AUTORAG_WORKSPACE, AUTORAG_SEARCH_PATHS: env.AUTORAG_SEARCH_PATHS, AUTORAG_MEMORY_PATH: env.AUTORAG_MEMORY_PATH, OPENAI_API_KEY: "", AUTORAG_OPENAI_API_KEY: "" };
 		const child = record(commandResult("bun", ["scripts/live-e2e/live-stack.mts", "--root", resolvedRoot, "--workspace", env.AUTORAG_WORKSPACE, "--mode", mode], REPO_ROOT, childEnv));
 		if (child.exitCode !== 0) {
-			evidence.diagnostics.push("live-e2e-stack-failed");
-			return finish(evidence, "live-e2e-stack-failed", evidencePath, 1);
+			diagnostic = "live-e2e-stack-failed";
+			exitCode = 1;
+		} else {
+			Object.assign(evidence, readJson(join(env.AUTORAG_WORKSPACE, "live-stack-result.json")));
 		}
-		Object.assign(evidence, readJson(join(env.AUTORAG_WORKSPACE, "live-stack-result.json")));
-		return finish(evidence, undefined, evidencePath, 0);
 	} finally {
 		lock.release?.();
 		evidence.cleanup.lockReleased = true;
 	}
+	return finish(evidence, diagnostic, evidencePath, exitCode);
 }
 
 function finish(evidence, diagnostic, evidencePath, exitCode) {
