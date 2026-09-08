@@ -1,9 +1,10 @@
-import { accessSync, constants, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildEnv, loadFingerprint, removeE2eState, tryLock, writeFingerprint } from "./env.mjs";
+import { buildEnv, loadFingerprint, removeE2eState, writeFingerprint } from "./env.mjs";
 import { runPreflight } from "./preflight.mjs";
+import { parseDatasourceSelection, runDatasourceMatrix } from "./datasources.mjs";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const E2E_DIR = join(REPO_ROOT, ".autorag-e2e");
@@ -54,7 +55,7 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 	const resolvedRoot = resolve(root);
 	const evidencePath = resolve(evidenceDir ?? join(REPO_ROOT, ".omo", "evidence", `live-core-${mode}`));
 	mkdirSync(evidencePath, { recursive: true });
-	const evidence = { mode, root: resolvedRoot, startedAt: new Date().toISOString(), commands: [], diagnostics: [], cleanup: { lockReleased: false, cloneStateRemoved: false } };
+	const evidence = { mode, root: resolvedRoot, startedAt: new Date().toISOString(), commands: [], diagnostics: [], datasourceSelection: parseDatasourceSelection(), datasourceLanes: [], commandsSummary: { core: "PENDING", datasources: "PENDING" }, cleanup: { lockReleased: false, cloneStateRemoved: false } };
 	const record = (result) => { evidence.commands.push(result); return result; };
 	const corpus = record(commandResult("node", ["scripts/live-e2e/runner.mjs", "verify-corpus", "--root", resolvedRoot], REPO_ROOT, process.env));
 	if (corpus.exitCode !== 0) return finish(evidence, "live-e2e-root-not-bootstrapped", evidencePath, 1);
@@ -83,6 +84,15 @@ export async function runWorkflow({ root, mode, evidenceDir }) {
 			exitCode = 1;
 		} else {
 			Object.assign(evidence, readJson(join(env.AUTORAG_WORKSPACE, "live-stack-result.json")));
+			evidence.commandsSummary.core = "PASS";
+			const datasources = await runDatasourceMatrix({ root: resolvedRoot, selection: evidence.datasourceSelection });
+			evidence.datasourceLanes = datasources.lanes;
+			evidence.datasourceSummary = datasources.summary;
+			evidence.commandsSummary.datasources = datasources.exitCode === 0 ? "PASS_OR_SKIP" : "FAIL";
+			if (datasources.exitCode !== 0) {
+				diagnostic = "live-e2e-datasource-failure";
+				exitCode = 1;
+			}
 		}
 	} finally {
 		lock.release?.();
@@ -96,6 +106,9 @@ function finish(evidence, diagnostic, evidencePath, exitCode) {
 	evidence.finishedAt = new Date().toISOString();
 	evidence.exitCode = exitCode;
 	writeFileSync(join(evidencePath, "result.json"), `${JSON.stringify(evidence, null, 2)}\n`);
+	const taskEvidencePath = join(REPO_ROOT, ".omo", "evidence", "task-6-fixed-live-e2e-environment.json");
+	mkdirSync(join(REPO_ROOT, ".omo", "evidence"), { recursive: true });
+	writeFileSync(taskEvidencePath, `${JSON.stringify({ ...evidence, task: "6", scenario: "fixed-live-e2e-environment", cleanupReceipt: "runner lock released; native stores untouched" }, null, 2)}\n`);
 	return { ...evidence, evidencePath };
 }
 

@@ -27,6 +27,7 @@ import {
 
 export { bootstrap, verifyCorpus } from "./bootstrap.mjs";
 export { runPreflight } from "./preflight.mjs";
+export { buildDatasourceMatrix, parseDatasourceSelection, runDatasourceMatrix } from "./datasources.mjs";
 export { runWorkflow } from "./workflow.mjs";
 
 // ── Paths ────────────────────────────────────────────────────────────

@@ -1,0 +1,191 @@
+{
+  "mode": "cold",
+  "root": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
+  "startedAt": "2026-09-08T12:26:36.638Z",
+  "commands": [
+    {
+      "command": [
+        "node",
+        "scripts/live-e2e/runner.mjs",
+        "verify-corpus",
+        "--root",
+        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e"
+      ],
+      "exitCode": 0,
+      "stdout": "VERIFY_OK: corpus integrity confirmed\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "bun",
+        "scripts/live-e2e/live-stack.mts",
+        "--root",
+        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
+        "--workspace",
+        "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace",
+        "--mode",
+        "cold"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "diagnostics": [],
+  "datasourceSelection": [
+    "local",
+    "configured"
+  ],
+  "datasourceLanes": [
+    {
+      "name": "local",
+      "status": "PASS",
+      "reason": "absolute corpus source is readable",
+      "evidence": {
+        "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+        "identity": "local:corpus/sample.txt",
+        "sourceAbsolute": true,
+        "sourceReadable": true,
+        "nativeIdentity": true
+      }
+    },
+    {
+      "name": "katok",
+      "status": "SKIP",
+      "reason": "katok-native-store-not-configured"
+    },
+    {
+      "name": "discrawl",
+      "status": "SKIP",
+      "reason": "discrawl-native-store-not-configured"
+    },
+    {
+      "name": "wacrawl",
+      "status": "SKIP",
+      "reason": "wacrawl-native-store-not-configured"
+    },
+    {
+      "name": "telecrawl",
+      "status": "SKIP",
+      "reason": "telecrawl-native-store-not-configured"
+    },
+    {
+      "name": "slacrawl",
+      "status": "SKIP",
+      "reason": "slacrawl-native-store-not-configured"
+    },
+    {
+      "name": "notcrawl",
+      "status": "SKIP",
+      "reason": "notcrawl-native-store-not-configured"
+    },
+    {
+      "name": "qmd",
+      "status": "SKIP",
+      "reason": "qmd-native-store-not-configured"
+    },
+    {
+      "name": "rclone",
+      "status": "SKIP",
+      "reason": "rclone-native-store-not-configured"
+    },
+    {
+      "name": "mailcrawl",
+      "status": "SKIP",
+      "reason": "mailcrawl-native-store-not-configured"
+    },
+    {
+      "name": "spotlight",
+      "status": "SKIP",
+      "reason": "spotlight-native-store-not-configured"
+    }
+  ],
+  "commandsSummary": {
+    "core": "PASS",
+    "datasources": "PASS_OR_SKIP"
+  },
+  "cleanup": {
+    "lockReleased": true,
+    "cloneStateRemoved": false
+  },
+  "preflight": {
+    "verdict": "ready",
+    "exitCode": 0,
+    "endpoint": "http://127.0.0.1:18080/",
+    "openaiKeyPresent": false,
+    "embedding": {
+      "status": "ready",
+      "expectedModel": "embeddinggemma:latest",
+      "dimension": 768
+    },
+    "lanes": {
+      "katok": {
+        "status": "READY"
+      },
+      "discrawl": {
+        "status": "READY"
+      },
+      "qmd": {
+        "status": "READY"
+      },
+      "rclone": {
+        "status": "READY"
+      },
+      "mailcrawl": {
+        "status": "READY"
+      },
+      "jikji": {
+        "status": "READY"
+      },
+      "minsync": {
+        "status": "READY"
+      }
+    }
+  },
+  "refresh": {
+    "parsed": {
+      "scanned": 1,
+      "written": 1,
+      "skipped": 0
+    },
+    "minsync": {
+      "ok": true,
+      "synced": 1
+    }
+  },
+  "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+  "cursorExists": true,
+  "hit": {
+    "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+    "sourceAbsolute": true,
+    "sourceExists": true,
+    "sourceReadable": true,
+    "score": 1
+  },
+  "status": {
+    "state": "success",
+    "stale": false,
+    "components": {
+      "minsync": "ready"
+    }
+  },
+  "embedding": {
+    "endpoint": "http://127.0.0.1:18080",
+    "model": "embeddinggemma:latest",
+    "dimension": 768,
+    "loopbackOnly": true
+  },
+  "openaiKeyPresent": false,
+  "incremental": false,
+  "fullSync": true,
+  "datasourceSummary": {
+    "pass": 1,
+    "skip": 10,
+    "fail": 0
+  },
+  "finishedAt": "2026-09-08T12:26:37.701Z",
+  "exitCode": 0,
+  "task": "6",
+  "scenario": "fixed-live-e2e-environment",
+  "cleanupReceipt": "runner lock released; native stores untouched"
+}
