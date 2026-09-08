@@ -7,14 +7,14 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ── Paths ────────────────────────────────────────────────────────────
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MANIFEST_PATH = join(__dirname, "manifest.json");
+const MANIFEST_PATH = join(__dirname, "corpus", "MANIFEST.json");
 
 // ── Manifest loader ──────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ function loadManifest() {
 	const parsed = JSON.parse(raw);
 
 	if (!parsed.version || !Array.isArray(parsed.entries)) {
-		throw new Error("MANIFEST_INVALID: manifest.json must have `version` (number) and `entries` (array)");
+		throw new Error("MANIFEST_INVALID: MANIFEST.json must have `version` (number) and `entries` (array)");
 	}
 	if (parsed.version !== 1) {
 		throw new Error("MANIFEST_VERSION_UNSUPPORTED: version " + parsed.version);
@@ -51,7 +51,7 @@ function sha256Of(filePath) {
 /**
  * Copy manifest + all fixture files to `root`.
  * Creates `root` if it doesn't exist. Idempotent — overwrites only if files
- * differ.
+ * differ. All bootstrapped files are set to read-only (0444).
  * @param {string} root
  */
 export async function bootstrap(root) {
@@ -60,9 +60,11 @@ export async function bootstrap(root) {
 	const rootReal = resolve(root);
 	mkdirSync(rootReal, { recursive: true });
 
-	// Copy manifest.json to root
-	const manifestDest = join(rootReal, "manifest.json");
-	copyManifestFile(MANIFEST_PATH, manifestDest);
+	// Copy MANIFEST.json to root/corpus/MANIFEST.json
+	const manifestDest = join(rootReal, "corpus", "MANIFEST.json");
+	const manifestParent = resolve(manifestDest, "..");
+	mkdirSync(manifestParent, { recursive: true });
+	copyReadOnly(MANIFEST_PATH, manifestDest);
 
 	// Copy each entry
 	for (const entry of manifest.entries) {
@@ -73,19 +75,30 @@ export async function bootstrap(root) {
 		const parentDir = resolve(dest, "..");
 		mkdirSync(parentDir, { recursive: true });
 
-		copyManifestFile(src, dest);
+		copyReadOnly(src, dest);
 	}
 }
 
-function copyManifestFile(src, dest) {
-	if (existsSync(dest)) {
-		const existingHash = sha256Of(dest);
-		const srcHash = sha256Of(src);
-		if (existingHash === srcHash) {
-			return; // already identical — idempotent skip
-		}
+/**
+ * Copy `src` to `dest`, making `dest` writable first if needed, then
+ * set `dest` to read-only (0444). Skips copy if content is already identical.
+ * @param {string} src
+ * @param {string} dest
+ */
+function copyReadOnly(src, dest) {
+	if (existsSync(dest) && sha256Of(dest) === sha256Of(src)) {
+		// Content already matches — just ensure read-only mode
+		chmodSync(dest, 0o444);
+		return;
 	}
+
+	// Existing destination must be writable to overwrite
+	if (existsSync(dest)) {
+		chmodSync(dest, 0o644);
+	}
+
 	copyFileSync(src, dest);
+	chmodSync(dest, 0o444);
 }
 
 // ── Verify corpus ────────────────────────────────────────────────────
@@ -159,7 +172,6 @@ async function main() {
 			await bootstrap(root);
 			console.log("BOOTSTRAP_OK: " + resolve(root));
 			process.exit(0);
-			break;
 		}
 		case "verify-corpus": {
 			const result = await verifyCorpus(root);
@@ -172,13 +184,11 @@ async function main() {
 				}
 				process.exit(1);
 			}
-			break;
 		}
 		default: {
 			console.error("ERROR: unknown command \"" + command + "\"");
 			console.error("  valid commands: bootstrap, verify-corpus");
 			process.exit(2);
-			break;
 		}
 	}
 }
