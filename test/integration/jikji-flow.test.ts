@@ -145,6 +145,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: { binaryPath },
+			minSync: false,
 		});
 
 		await agent.refresh(true);
@@ -182,6 +183,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: { binaryPath },
+			minSync: false,
 		});
 
 		await agent.refresh(true);
@@ -211,6 +213,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			minSync: false,
 		});
 
 		await expect(agent.prepareJikji()).resolves.toBeUndefined();
@@ -225,6 +228,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: { binaryPath: missingBinary },
+			minSync: false,
 		});
 
 		const results = await agent.prepareJikji();
