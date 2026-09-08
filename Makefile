@@ -52,10 +52,10 @@ test:
 test-all: test
 
 e2e-live:
-	node scripts/live-e2e/runner.mjs print-env --mode warm --root "$(E2E_ROOT)" $(E2E_ARGS)
+	node scripts/live-e2e/runner.mjs live --mode warm --root "$(E2E_ROOT)" $(E2E_ARGS)
 
 e2e-live-cold:
-	node scripts/live-e2e/runner.mjs print-env --mode cold --root "$(E2E_ROOT)" $(E2E_ARGS)
+	node scripts/live-e2e/runner.mjs live --mode cold --root "$(E2E_ROOT)" $(E2E_ARGS)
 
 test-macos:
 	@test "$$(uname -s)" = "Darwin" || { echo "test-macos requires a macOS host"; exit 1; }

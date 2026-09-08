@@ -7,6 +7,7 @@
  *   verify-corpus --root <path>
  *   print-env --mode <warm|cold> --json [--root <path>]
  *   lock-probe [--hold-ms <ms>]
+ *   live --mode <warm|cold> --root <path> [--evidence-dir <path>]
  *
  * This is a plain JS ESM module (.mjs).  All type annotations use JSDoc.
  */
@@ -26,6 +27,7 @@ import {
 
 export { bootstrap, verifyCorpus } from "./bootstrap.mjs";
 export { runPreflight } from "./preflight.mjs";
+export { runWorkflow } from "./workflow.mjs";
 
 // ── Paths ────────────────────────────────────────────────────────────
 
@@ -195,6 +197,22 @@ function cmdLockProbe(args) {
 
 // ── Preflight command ────────────────────────────────────────────────
 
+async function cmdLive(args) {
+	const modeIndex = args.indexOf("--mode");
+	const mode = modeIndex >= 0 ? args[modeIndex + 1] : "warm";
+	if (mode !== "warm" && mode !== "cold") {
+		console.error("ERROR: --mode must be warm or cold");
+		process.exit(2);
+	}
+	const result = await (await import("./workflow.mjs")).runWorkflow({
+		root: resolveRoot(args),
+		mode,
+		evidenceDir: args.includes("--evidence-dir") ? args[args.indexOf("--evidence-dir") + 1] : undefined,
+	});
+	console.log(JSON.stringify(result, null, 2));
+	process.exit(result.exitCode);
+}
+
 async function cmdPreflight(args) {
 	const { runPreflight } = await import("./preflight.mjs");
 	const endpointIndex = args.indexOf("--endpoint");
@@ -219,7 +237,7 @@ async function main() {
 	const args = process.argv.slice(2);
 	if (args.length === 0) {
 		console.error("usage: node scripts/live-e2e/runner.mjs <command> [options]");
-		console.error("  commands: bootstrap, verify-corpus, print-env, lock-probe, preflight");
+		console.error("  commands: bootstrap, verify-corpus, print-env, lock-probe, preflight, live");
 		process.exit(2);
 	}
 
@@ -228,6 +246,10 @@ async function main() {
 	// print-env, lock-probe, and preflight handle their own flag parsing
 	if (command === "preflight") {
 		return cmdPreflight(args);
+	}
+
+	if (command === "live") {
+		return cmdLive(args);
 	}
 
 	if (command === "print-env") {
@@ -269,7 +291,7 @@ async function main() {
 		}
 		default: {
 			console.error("ERROR: unknown command \"" + command + "\"");
-			console.error("  valid commands: bootstrap, verify-corpus, print-env, lock-probe, preflight");
+			console.error("  valid commands: bootstrap, verify-corpus, print-env, lock-probe, preflight, live");
 			process.exit(2);
 		}
 	}

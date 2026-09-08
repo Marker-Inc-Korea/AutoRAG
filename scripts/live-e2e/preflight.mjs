@@ -76,7 +76,9 @@ export async function runPreflight(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   let embedding;
   try {
-    const response = await fetchImpl(endpoint, {
+    const probeEndpoint = new URL(endpoint);
+    if (probeEndpoint.pathname === "/" || probeEndpoint.pathname.length === 0) probeEndpoint.pathname = "/embed";
+    const response = await fetchImpl(probeEndpoint.toString(), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ inputs: ["preflight"] }),

@@ -1,0 +1,63 @@
+{
+  "task": "todo-5",
+  "bootstrap": {
+    "command": "node scripts/live-e2e/runner.mjs bootstrap --root .",
+    "exitCode": 0,
+    "result": "BOOTSTRAP_OK: /Volumes/SSD1/4/AutoRAG",
+    "verifyCommand": "node scripts/live-e2e/runner.mjs verify-corpus --root .",
+    "verifyExitCode": 0,
+    "resultText": "VERIFY_OK: corpus integrity confirmed"
+  },
+  "initialRefusal": {
+    "command": "node scripts/live-e2e/runner.mjs preflight --json",
+    "exitCode": 1,
+    "diagnostic": "live-e2e-embedding-unavailable",
+    "note": "Captured before the adapter route correction; no workflow pass was claimed."
+  },
+  "adapterProbe": {
+    "command": "curl -sS -o /tmp/autorag-tei-probe.json -w 'HTTP %{http_code}\\n' -X POST http://127.0.0.1:18080/embed -H 'content-type: application/json' --data '{\"inputs\":[\"preflight\"]}'",
+    "httpStatus": 200,
+    "dimension": 768
+  },
+  "cold": {
+    "command": "make e2e-live-cold E2E_ARGS='--evidence-dir .omo/evidence/live-core'",
+    "exitCode": 0,
+    "evidence": ".omo/evidence/live-core/result.json",
+    "fullSync": true,
+    "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+    "cursorExists": true,
+    "hitSource": "/Volumes/SSD1/4/AutoRAG/corpus/sample.txt",
+    "sourceAbsolute": true,
+    "sourceExists": true,
+    "sourceReadable": true,
+    "embeddingEndpoint": "http://127.0.0.1:18080",
+    "openaiKeyPresent": false,
+    "cleanupLockReleased": true,
+    "cleanupCommand": "rm -rf .autorag-e2e",
+    "cloneStateRemoved": true
+  },
+  "warm": {
+    "command": "make e2e-live E2E_ARGS='--evidence-dir .omo/evidence/live-core-warm'",
+    "exitCode": 0,
+    "evidence": ".omo/evidence/live-core-warm/result.json",
+    "cursorReused": true,
+    "parsedWrites": 0,
+    "fullSync": false,
+    "hitSource": "/Volumes/SSD1/4/AutoRAG/corpus/sample.txt",
+    "sourceAbsolute": true,
+    "sourceExists": true,
+    "sourceReadable": true,
+    "embeddingEndpoint": "http://127.0.0.1:18080",
+    "openaiKeyPresent": false,
+    "cleanupLockReleased": true,
+    "cleanupCommand": "rm -rf .autorag-e2e",
+    "cloneStateRemoved": true
+  },
+  "refusalRequirements": {
+    "missingCorpus": "live-e2e-root-not-bootstrapped / MISSING_FILE: corpus/sample.txt",
+    "staleFingerprint": "live-e2e-fingerprint-mismatch",
+    "serviceUnavailable": "live-e2e-embedding-unavailable",
+    "malformedOrMissingCapabilities": "preflight refuses configured failures as live-e2e-datasource-failure; workflow never searches",
+    "secretRedaction": "preflight evidence records openaiKeyPresent only and never credential values"
+  }
+}

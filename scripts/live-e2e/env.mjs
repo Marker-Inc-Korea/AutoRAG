@@ -128,9 +128,9 @@ export function buildEnv(root) {
 		corpusDigest: computeCorpusDigest(rootReal),
 		gitCommitSha,
 		gitDirty,
-		embeddingModel: "text-embedding-3-small",
-		embeddingDimension: 1536,
-		embeddingService: "openai",
+		embeddingModel: "embeddinggemma:latest",
+		embeddingDimension: 768,
+		embeddingService: "http://127.0.0.1:18080",
 		parserConfig: "default",
 		minSyncConfig: "default",
 	};
