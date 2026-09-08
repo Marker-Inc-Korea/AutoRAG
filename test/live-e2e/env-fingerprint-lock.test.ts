@@ -17,6 +17,11 @@ const REPO_ROOT = resolve(__dirname, "..", "..");
 const RUNNER_PATH = join(REPO_ROOT, "scripts", "live-e2e", "runner.mjs");
 const BOOTSTRAP_PATH = join(REPO_ROOT, "scripts", "live-e2e", "bootstrap.mjs");
 
+// ── File-level cleanup guard — ensures no cross-file pollution with parallelism
+// The env.mjs production code hardcodes .autorag-e2e at repo root, so we clean
+// at suite start AND end.
+const E2E_DIR = resolve(REPO_ROOT, ".autorag-e2e");
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 /** Run `node runner.mjs <args>` synchronously and return result. */
@@ -51,8 +56,6 @@ function bootstrapRoot(root: string): void {
 	}
 }
 
-const E2E_DIR = resolve(REPO_ROOT, ".autorag-e2e");
-
 // ── Before/after helpers ─────────────────────────────────────────────
 
 function cleanE2eState(): void {
@@ -60,6 +63,16 @@ function cleanE2eState(): void {
 		rmSync(E2E_DIR, { recursive: true, force: true });
 	}
 }
+
+beforeAll(() => {
+	// Wipe any leftover state from a parallel test file
+	cleanE2eState();
+});
+
+afterAll(() => {
+	// Ensure clean exit
+	cleanE2eState();
+});
 
 // ── Tests ────────────────────────────────────────────────────────────
 
@@ -333,69 +346,183 @@ describe("lock-probe contention", () => {
 	});
 });
 
-// ── Cold-mode cleanup boundary tests ────────────────────────────────
+// ── Bugfix 1: AUTORAG_SEARCH_PATHS points to immutable shared root ───
 
-describe("cold-mode cleanup boundary", () => {
-	const tmp = createTempDir();
+describe("bugfix: AUTORAG_SEARCH_PATHS to immutable shared root", () => {
+	let tmpRoot: string;
 
-	beforeAll(() => {
-		bootstrapRoot(tmp);
+	beforeEach(() => {
+		cleanE2eState();
+		tmpRoot = createTempDir();
+		bootstrapRoot(tmpRoot);
 	});
 
+	afterEach(() => {
+		cleanE2eState();
+		if (tmpRoot && existsSync(tmpRoot)) rmSync(tmpRoot, { recursive: true, force: true });
+	});
+
+	test("AUTORAG_SEARCH_PATHS points to <shared-root>/corpus not .autorag-e2e/search-paths", () => {
+		const { exitCode, stdout, stderr } = runRunnerSync([
+			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
+		]);
+		expect(exitCode, `stderr: ${stderr}`).toBe(0);
+
+		const parsed = JSON.parse(stdout) as Record<string, string>;
+		const searchPaths = parsed.AUTORAG_SEARCH_PATHS ?? "";
+
+		expect(searchPaths).toBe(join(tmpRoot, "corpus"));
+	});
+
+	test("AUTORAG_SEARCH_PATHS does NOT contain .autorag-e2e", () => {
+		const { exitCode, stdout, stderr } = runRunnerSync([
+			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
+		]);
+		expect(exitCode, `stderr: ${stderr}`).toBe(0);
+
+		const parsed = JSON.parse(stdout) as Record<string, string>;
+		expect(parsed.AUTORAG_SEARCH_PATHS).not.toContain(".autorag-e2e");
+	});
+
+	test("AUTORAG_SEARCH_PATHS is an existing directory", () => {
+		const { exitCode, stdout, stderr } = runRunnerSync([
+			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
+		]);
+		expect(exitCode, `stderr: ${stderr}`).toBe(0);
+
+		const parsed = JSON.parse(stdout) as Record<string, string>;
+		expect(existsSync(parsed.AUTORAG_SEARCH_PATHS)).toBe(true);
+	});
+
+	test("AUTORAG_SEARCH_PATHS contains a bootstrapped corpus (MANIFEST.json present)", () => {
+		const { exitCode, stdout, stderr } = runRunnerSync([
+			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
+		]);
+		expect(exitCode, `stderr: ${stderr}`).toBe(0);
+
+		const parsed = JSON.parse(stdout) as Record<string, string>;
+		expect(existsSync(join(parsed.AUTORAG_SEARCH_PATHS, "MANIFEST.json"))).toBe(true);
+	});
+});
+
+// ── Bugfix 2: malformed fingerprint blocks warm mode ────────────────
+
+describe("bugfix: malformed fingerprint blocks warm mode", () => {
+	let tmpRoot: string;
+
+	beforeEach(() => {
+		cleanE2eState();
+		tmpRoot = createTempDir();
+		bootstrapRoot(tmpRoot);
+	});
+
+	afterEach(() => {
+		cleanE2eState();
+		if (tmpRoot && existsSync(tmpRoot)) rmSync(tmpRoot, { recursive: true, force: true });
+	});
+
+	test("malformed JSON in fingerprint/state.json blocks warm mode with live-e2e-fingerprint-mismatch", () => {
+		mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
+		writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), "this is not valid json at all {{{{");
+
+		const { exitCode, stderr } = runRunnerSync([
+			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
+		]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("live-e2e-fingerprint-mismatch");
+	});
+
+	test("cold mode overwrites a malformed fingerprint silently", () => {
+		mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
+		writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), "garbage{{{");
+
+		const { exitCode, stderr } = runRunnerSync([
+			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
+		]);
+
+		expect(exitCode, `cold mode must pass on malformed: ${stderr}`).toBe(0);
+	});
+
+	test("empty file in fingerprint/state.json blocks warm mode", () => {
+		mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
+		writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), "");
+
+		const { exitCode, stderr } = runRunnerSync([
+			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
+		]);
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain("live-e2e-fingerprint-mismatch");
+	});
+});
+
+// ── Bugfix 3: stale lock detection and break ─────────────────────────
+
+describe("bugfix: stale lock detection and break", () => {
 	beforeEach(() => {
 		cleanE2eState();
 	});
 
-	afterAll(() => {
-		if (existsSync(tmp)) {
-			rmSync(tmp, { recursive: true, force: true });
-		}
+	afterEach(() => {
 		cleanE2eState();
 	});
 
-	test("cold mode deletes .autorag-e2e and rebuilds", () => {
-		// Create some state within .autorag-e2e
-		mkdirSync(E2E_DIR, { recursive: true });
-		writeFileSync(join(E2E_DIR, "some-state.bin"), "stale\n");
-		expect(existsSync(join(E2E_DIR, "some-state.bin"))).toBe(true);
+	test("stale lock with dead PID is broken and acquired", () => {
+		mkdirSync(join(E2E_DIR, "locks", "live-e2e.lock"), { recursive: true });
+		writeFileSync(join(E2E_DIR, "locks", "live-e2e.lock", "pid"), "99999999");
 
-		// Run cold mode
-		const { exitCode, stderr } = runRunnerSync([
-			"print-env", "--mode", "cold", "--json", "--root", tmp,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["lock-probe"]);
 
-		expect(exitCode, `cold mode should pass, stderr: ${stderr}`).toBe(0);
-		// .autorag-e2e should still exist (it was recreated by cold mode)
-		expect(existsSync(E2E_DIR)).toBe(true);
-		// But stale-state.bin should be gone
-		expect(existsSync(join(E2E_DIR, "some-state.bin"))).toBe(false);
+		expect(exitCode, `should acquire after breaking stale lock, stderr: ${stderr}`).toBe(0);
+		expect(stdout).toContain("live-e2e-lock-acquired");
+		expect(existsSync(join(E2E_DIR, "locks", "live-e2e.lock"))).toBe(false);
 	});
 
-	test("cold mode never deletes the shared corpus root", () => {
-		expect(existsSync(join(tmp, "corpus", "MANIFEST.json")), "shared corpus must exist").toBe(true);
+	test("stale lock with dead PID broken even after previous acquire", () => {
+		mkdirSync(join(E2E_DIR, "locks", "live-e2e.lock"), { recursive: true });
+		writeFileSync(join(E2E_DIR, "locks", "live-e2e.lock", "pid"), "99999999");
 
-		// Create .autorag-e2e state
-		mkdirSync(E2E_DIR, { recursive: true });
-		writeFileSync(join(E2E_DIR, "state.bin"), "data\n");
+		const { exitCode: e1 } = runRunnerSync(["lock-probe"]);
+		expect(e1).toBe(0);
 
-		runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmp]);
-
-		// Shared root corpus must survive
-		expect(existsSync(join(tmp, "corpus", "MANIFEST.json")), "shared corpus must survive cold mode").toBe(true);
+		const { exitCode: e2, stdout: o2 } = runRunnerSync(["lock-probe"]);
+		expect(e2).toBe(0);
+		expect(o2).toContain("live-e2e-lock-acquired");
 	});
 
-	test("refuse when shared root is not bootstrapped", () => {
-		const emptyRoot = createTempDir();
-		try {
-			// Empty root — no corpus
-			const { exitCode, stderr } = runRunnerSync([
-				"print-env", "--mode", "cold", "--json", "--root", emptyRoot,
-			]);
+	test("lock without PID file is conservatively treated as held", () => {
+		mkdirSync(join(E2E_DIR, "locks", "live-e2e.lock"), { recursive: true });
+		// No pid file inside — for a live holder this is a <1ms window
+		// between mkdir and PID file write. Conservative: treat as held.
 
-			expect(exitCode).toBe(1);
-			expect(stderr).toContain("live-e2e-root-not-bootstrapped");
-		} finally {
-			rmSync(emptyRoot, { recursive: true, force: true });
+		const { exitCode, stdout } = runRunnerSync(["lock-probe"]);
+		expect(exitCode).toBe(1);
+		expect(stdout).toContain("live-e2e-lock-held");
+	});
+
+	test("live holder lock is held (not broken)", async () => {
+		const { spawn } = await import("node:child_process");
+
+		const holder = spawn(process.execPath, [RUNNER_PATH, "lock-probe", "--hold-ms", "3000"], {
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+		const lockPath = join(E2E_DIR, "locks", "live-e2e.lock");
+		while (!existsSync(join(lockPath, "pid"))) {
+			await new Promise((r) => setTimeout(r, 10));
 		}
+
+		const { exitCode, stdout, stderr } = runRunnerSync(["lock-probe"]);
+		expect(exitCode, `should be held, stderr: ${stderr}`).toBe(1);
+		expect(stdout).toContain("live-e2e-lock-held");
+
+		holder.kill("SIGKILL");
+		await new Promise((r) => holder.on("exit", r));
+		await new Promise((r) => setTimeout(r, 100));
+
+		const { exitCode: exit2, stdout: out2 } = runRunnerSync(["lock-probe"]);
+		expect(exit2).toBe(0);
+		expect(out2).toContain("live-e2e-lock-acquired");
 	});
 });

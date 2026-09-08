@@ -92,7 +92,18 @@ async function cmdPrintEnv(args) {
 
 	// Warm-mode fingerprint check
 	if (mode === "warm") {
-		const prevFp = loadFingerprint();
+		let prevFp = null;
+		try {
+			prevFp = loadFingerprint();
+		} catch (/** @type {unknown} */ e) {
+			// File exists but is malformed — treat as mismatch
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error("FATAL: " + msg);
+			console.error(
+				"ERROR: live-e2e-fingerprint-mismatch — stale state detected. Run with --mode cold to rebuild.",
+			);
+			process.exit(1);
+		}
 		if (prevFp !== null && !fingerprintsMatch(prevFp, env.fingerprint)) {
 			console.error(
 				"ERROR: live-e2e-fingerprint-mismatch — stale state detected. Run with --mode cold to rebuild.",
