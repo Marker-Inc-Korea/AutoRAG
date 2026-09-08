@@ -8,23 +8,24 @@ v0.4.2, whose `query` command supports vector, BM25, and hybrid modes.
 
 MinSync is enabled by default. When no usable `minsync` executable is found
 in the configured `binaryPath`, on `PATH`, or in the workspace cache, AutoRAG
-installs the supported version from crates.io via:
-
-```bash
-cargo install minsync --version 0.4.2 --locked
-```
-
-This is the primary installation path. If `cargo` is unavailable or fails,
-AutoRAG downloads the verified release asset for the current platform into:
+downloads the verified v0.4.2 release asset for the current platform into:
 
 ```text
 <workspace>/.autorag/bin/minsync
 ```
 
 Release assets are selected by platform and architecture and verified against
-their SHA-256 digest before installation. The cargo fallback requires a Rust
-toolchain. Installation failures are reported as a degraded MinSync status;
-AutoRAG does not claim that the index is ready.
+their SHA-256 digest before installation. If no matching release asset is
+available or the download fails, AutoRAG falls back to building from
+crates.io via:
+
+```bash
+cargo install minsync --version 0.4.2 --locked
+```
+
+The cargo fallback requires a Rust toolchain and compiles from source, so it
+can take several minutes. Installation failures are reported as a degraded
+MinSync status; AutoRAG does not claim that the index is ready.
 
 To manage MinSync yourself, set an explicit path and disable installation:
 

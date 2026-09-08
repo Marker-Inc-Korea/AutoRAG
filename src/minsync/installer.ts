@@ -45,23 +45,28 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
 
-	// Try the supported MinSync release via crates.io FIRST.
+	// Fast path first: download the verified pinned GitHub release asset.
+	// Cargo source builds take minutes and require a Rust toolchain, so they
+	// are only a fallback when the release asset is unavailable.
 	try {
-		return await installMinSyncFromCargo(options, binaryPath);
-	} catch {
-		// cargo failed — fall through to GitHub release
+		const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
+		const release = await releaseProvider();
+		const asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
+		requireSha256(asset);
+		const assetInstaller = options.assetInstaller ?? installReleaseAsset;
+		mkdirSync(dirname(binaryPath), { recursive: true });
+		await assetInstaller(asset, binaryPath);
+		await chmod(binaryPath, 0o755);
+		return { binaryPath, version: release.tagName };
+	} catch (releaseError) {
+		// release asset unavailable — fall back to cargo, preserving the
+		// release failure reason when cargo also fails.
+		try {
+			return await installMinSyncFromCargo(options, binaryPath);
+		} catch {
+			throw releaseError;
+		}
 	}
-
-	// Fallback: GitHub release asset
-	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
-	const release = await releaseProvider();
-	const asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
-	requireSha256(asset);
-	const assetInstaller = options.assetInstaller ?? installReleaseAsset;
-	mkdirSync(dirname(binaryPath), { recursive: true });
-	await assetInstaller(asset, binaryPath);
-	await chmod(binaryPath, 0o755);
-	return { binaryPath, version: release.tagName };
 }
 
 async function installMinSyncFromCargo(

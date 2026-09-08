@@ -603,68 +603,68 @@ describe("MinSyncVectorMethod", () => {
 		expect(results).toEqual([]);
 	});
 
-	it("installs the supported MinSync version via cargo when no binary exists", async () => {
+	it("installs the pinned GitHub release asset before trying cargo when no binary exists", async () => {
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
-		let cargoArgs: string[] | undefined;
-		let githubCalled = false;
-		const resolved = await ensureMinSyncBinary({
-			root,
-			platform: "darwin",
-			arch: "arm64",
-			cargoInstaller: async ({ args, destination }) => {
-				cargoArgs = [...args];
-				mkdirSync(dirname(destination), { recursive: true });
-				writeFileSync(destination, "#!/usr/bin/env node\necho cargo-latest\n");
-				chmodSync(destination, 0o755);
-				return "0.4.2";
-			},
-			releaseProvider: async () => {
-				githubCalled = true;
-				throw new Error("github should not run");
-			},
-		});
-		expect(githubCalled).toBe(false);
-		expect(cargoArgs).toEqual(expect.arrayContaining(["install", "minsync", "--version", "0.4.2", "--locked"]));
-		expect(resolved).toMatchObject({
-			binaryPath: installedBinary,
-			version: "0.4.2",
-		});
-		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-latest");
-	});
-
-	it("falls back to the latest GitHub release asset when cargo install fails", async () => {
-		// Given
-		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		let cargoCalled = false;
 		const release = {
-			tagName: "v0.2.1",
+			tagName: "v0.4.2",
 			assets: [
 				{
-					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					name: "minsync-v0.4.2-aarch64-apple-darwin.tar.gz",
 					downloadUrl: "https://example.test/minsync.tgz",
 					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
 				},
 			],
 		};
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoInstaller: async () => {
+				cargoCalled = true;
+				throw new Error("cargo should not run");
+			},
+			releaseProvider: async () => release,
+			assetInstaller: async (asset, destination) => {
+				expect(asset.name).toBe("minsync-v0.4.2-aarch64-apple-darwin.tar.gz");
+				writeFileSync(destination, "#!/usr/bin/env node\necho release-binary\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+		expect(cargoCalled).toBe(false);
+		expect(resolved).toMatchObject({
+			binaryPath: installedBinary,
+			version: "v0.4.2",
+		});
+		expect(readFileSync(installedBinary, "utf8")).toContain("release-binary");
+	});
+
+	it("falls back to cargo install when the GitHub release install fails", async () => {
+		// Given
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		let cargoArgs: string[] | undefined;
 
 		// When
 		const resolved = await ensureMinSyncBinary({
 			root,
 			platform: "darwin",
 			arch: "arm64",
-			cargoInstaller: async () => {
-				throw new Error("cargo unavailable");
+			releaseProvider: async () => {
+				throw new Error("release unavailable");
 			},
-			releaseProvider: async () => release,
-			assetInstaller: async (asset, destination) => {
-				expect(asset.name).toBe("minsync-v0.2.1-aarch64-apple-darwin.tar.gz");
-				writeFileSync(destination, "#!/usr/bin/env node\n");
+			cargoInstaller: async ({ args, destination }) => {
+				cargoArgs = [...args];
+				mkdirSync(dirname(destination), { recursive: true });
+				writeFileSync(destination, "#!/usr/bin/env node\necho cargo-fallback\n");
 				chmodSync(destination, 0o755);
+				return "0.4.2";
 			},
 		});
 
 		// Then
-		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
-		expect(readFileSync(installedBinary, "utf8")).toContain("node");
+		expect(cargoArgs).toEqual(expect.arrayContaining(["install", "minsync", "--version", "0.4.2", "--locked"]));
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "0.4.2" });
+		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-fallback");
 	});
 
 	it("rejects release assets without a usable sha256 digest", async () => {
