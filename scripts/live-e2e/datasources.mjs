@@ -6,16 +6,16 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 const NATIVE_LANES = Object.freeze([
-	{ name: "katok", binary: "katok", command: "scripts/manual-qa/run-qa-katok-live.ts", identityPattern: /(?:^|\s)kakao:[^\s]+/u },
-	{ name: "discrawl", binary: "discrawl", command: "scripts/manual-qa/run-qa-discrawl-live.ts", identityPattern: /(?:^|\s)\/discord\/[^\s]+/u },
+	{ name: "katok", binary: "katok", command: "scripts/manual-qa/run-qa-katok-live.ts", identityPattern: /\bkakao:[^\s]+/u },
+	{ name: "discrawl", binary: "discrawl", command: "scripts/manual-qa/run-qa-discrawl-live.ts", identityPattern: /\/discord\/[^\s]+/u },
 	{ name: "wacrawl", binary: "wacrawl" },
 	{ name: "telecrawl", binary: "telecrawl" },
 	{ name: "slacrawl", binary: "slacrawl" },
 	{ name: "notcrawl", binary: "notcrawl" },
 	{ name: "qmd", binary: "qmd" },
 	{ name: "rclone", binary: "rclone" },
-	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /(?:^|\s)\/mailcrawl\/[^\s]+/u },
-	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /(?:^|\s)spotlight:[^\s]+/u },
+	{ name: "mailcrawl", binary: "mailcrawl", command: "scripts/manual-qa/run-qa-mailcrawl-live.ts", identityPattern: /\/mailcrawl\/[^\s]+/u },
+	{ name: "spotlight", binary: "mdfind", command: "scripts/manual-qa/run-qa-spotlight-live.ts", identityPattern: /\bspotlight:[^\s]+/u },
 ]);
 
 export function buildDatasourceMatrix() {

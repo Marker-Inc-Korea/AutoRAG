@@ -42,6 +42,23 @@ describe("live-e2e datasource matrix", () => {
 		expect(result.lanes[0]?.reason).toContain("native identity");
 	});
 
+	it("accepts a source=prefixed kakao identity emitted by the live harness", async () => {
+		const result = await runDatasourceMatrix({
+			root: fixtureRoot(),
+			selection: ["katok"],
+			which: () => true,
+			configured: () => true,
+			run: async () => ({
+				ok: true,
+				stdout: "KATOK_LIVE_QA_PASS source=kakao:chat/sender/chunk",
+				stderr: "",
+				code: 0,
+			}),
+		});
+		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "PASS" });
+		expect(result.lanes[0]?.evidence?.nativeIdentity).toBe(true);
+	});
+
 	it("passes the selected root as the native harness working directory", async () => {
 		const root = fixtureRoot();
 		let observedCwd = "";
