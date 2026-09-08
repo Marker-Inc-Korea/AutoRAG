@@ -1,0 +1,79 @@
+{
+  "task": "3",
+  "generatedAt": "2026-09-08",
+  "command": "node scripts/live-e2e/runner.mjs preflight --json",
+  "liveServices": {
+    "available": false,
+    "probe": "curl -sS --max-time 2 http://127.0.0.1:18080/",
+    "observed": "HTTP connection produced no response (curl exit 7 / status 000)."
+  },
+  "scenarios": {
+    "mockedLocalServiceWithMissingOptionalBinaries": {
+      "verdict": "degraded",
+      "exitCode": 0,
+      "endpoint": "http://127.0.0.1:18080/",
+      "openaiKeyPresent": false,
+      "embedding": {
+        "status": "ready",
+        "expectedModel": "embeddinggemma:latest",
+        "dimension": 768
+      },
+      "lanes": {
+        "katok": {
+          "status": "SKIP",
+          "reason": "katok-not-installed"
+        },
+        "discrawl": {
+          "status": "SKIP",
+          "reason": "discrawl-not-installed"
+        },
+        "qmd": {
+          "status": "SKIP",
+          "reason": "qmd-not-installed"
+        },
+        "rclone": {
+          "status": "SKIP",
+          "reason": "rclone-not-installed"
+        },
+        "mailcrawl": {
+          "status": "SKIP",
+          "reason": "mailcrawl-not-installed"
+        },
+        "jikji": {
+          "status": "SKIP",
+          "reason": "jikji-not-installed"
+        },
+        "minsync": {
+          "status": "SKIP",
+          "reason": "minsync-not-installed"
+        }
+      }
+    },
+    "openaiEgress": {
+      "verdict": "refused",
+      "exitCode": 1,
+      "code": "live-e2e-openai-egress",
+      "openaiKeyPresent": false,
+      "credentialEchoed": false
+    },
+    "malformedCredentialUrl": {
+      "verdict": "refused",
+      "exitCode": 1,
+      "code": "live-e2e-non-loopback-embedding",
+      "endpoint": "https://example.test/embed",
+      "credentialEchoed": false
+    },
+    "promptInjectionAdjacent": {
+      "status": "N/A",
+      "reason": "preflight embeds only the fixed tiny string \"preflight\"; corpus text is never sent"
+    },
+    "staleState": {
+      "status": "N/A",
+      "reason": "preflight does not mutate or consume runner state"
+    },
+    "misleadingSuccessOutput": {
+      "status": "covered",
+      "reason": "SKIP is distinct from READY and yields degraded verdict; configured unavailable lane yields FAIL/refused"
+    }
+  }
+}

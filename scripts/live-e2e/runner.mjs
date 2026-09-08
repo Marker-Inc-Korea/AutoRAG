@@ -25,6 +25,7 @@ import {
 // ── Re-export sub-module functions for direct test imports ────────────
 
 export { bootstrap, verifyCorpus } from "./bootstrap.mjs";
+export { runPreflight } from "./preflight.mjs";
 
 // ── Paths ────────────────────────────────────────────────────────────
 
@@ -192,19 +193,43 @@ function cmdLockProbe(args) {
 	}
 }
 
+// ── Preflight command ────────────────────────────────────────────────
+
+async function cmdPreflight(args) {
+	const { runPreflight } = await import("./preflight.mjs");
+	const endpointIndex = args.indexOf("--endpoint");
+	const endpoint = endpointIndex !== -1 ? args[endpointIndex + 1] : undefined;
+	const configuredLanes = [];
+	for (let index = 0; index < args.length; index += 1) {
+		if (args[index] === "--lane" && args[index + 1]) configuredLanes.push(args[index + 1]);
+	}
+	const result = await runPreflight({ endpoint, configuredLanes });
+	if (args.includes("--json")) {
+		console.log(JSON.stringify(result, null, 2));
+	} else {
+		console.log(result.verdict.toUpperCase());
+		console.log("embedding=" + result.embedding.status);
+	}
+	process.exit(result.exitCode);
+}
+
 // ── CLI entrypoint ───────────────────────────────────────────────────
 
 async function main() {
 	const args = process.argv.slice(2);
 	if (args.length === 0) {
 		console.error("usage: node scripts/live-e2e/runner.mjs <command> [options]");
-		console.error("  commands: bootstrap, verify-corpus, print-env, lock-probe");
+		console.error("  commands: bootstrap, verify-corpus, print-env, lock-probe, preflight");
 		process.exit(2);
 	}
 
 	const command = args[0];
 
-	// print-env and lock-probe handle their own flag parsing
+	// print-env, lock-probe, and preflight handle their own flag parsing
+	if (command === "preflight") {
+		return cmdPreflight(args);
+	}
+
 	if (command === "print-env") {
 		return cmdPrintEnv(args);
 	}
@@ -244,7 +269,7 @@ async function main() {
 		}
 		default: {
 			console.error("ERROR: unknown command \"" + command + "\"");
-			console.error("  valid commands: bootstrap, verify-corpus, print-env, lock-probe");
+			console.error("  valid commands: bootstrap, verify-corpus, print-env, lock-probe, preflight");
 			process.exit(2);
 		}
 	}
