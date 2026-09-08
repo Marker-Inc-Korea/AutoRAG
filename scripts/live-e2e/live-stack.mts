@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { AutoRAGAgent } from "../../src/agent/agent.ts";
+import { buildLiveStackOptions } from "./workflow.mjs";
 
 const args = process.argv.slice(2);
 const value = (name: string): string => {
@@ -17,22 +18,7 @@ if (mode !== "cold" && mode !== "warm") throw new Error("invalid mode");
 const source = realpathSync(join(root, "corpus", "sample.txt"));
 const cursorPath = join(workspace, ".minsync", "cursor.json");
 const cursorExistedBefore = existsSync(cursorPath);
-const agent = new AutoRAGAgent({
-	searchPaths: [join(root, "corpus")],
-	workspacePath: root,
-	memoryPath: join(workspace, "memory.json"),
-	jikji: false,
-	minSync: {
-		workspacePath: workspace,
-		autoInstall: false,
-		embedder: {
-			id: "tei:embeddinggemma:latest",
-			baseUrl: "http://127.0.0.1:18080",
-			dimension: 768,
-			timeoutMs: 120_000,
-		},
-	},
-});
+const agent = new AutoRAGAgent(buildLiveStackOptions(root, workspace));
 const refresh = await agent.refresh(mode === "cold", { methods: ["parsed", "minsync"] });
 if (refresh.minsync?.ok !== true) throw new Error(`minsync-${refresh.minsync?.reason ?? "unready"}`);
 if (!existsSync(cursorPath)) throw new Error("minsync-cursor-missing");

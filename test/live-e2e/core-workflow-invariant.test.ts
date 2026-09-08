@@ -1,10 +1,20 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	assertAbsoluteReadableSource,
 	assertServiceReady,
+	buildLiveStackOptions,
 	cleanupCloneState,
 	isFingerprintCurrent,
 	tryAcquireWorkflowLock,
@@ -67,6 +77,23 @@ describe("live-e2e core workflow invariants", () => {
 		writeFileSync(actual, "readable");
 		symlinkSync(actual, alias);
 		expect(assertAbsoluteReadableSource(alias)).toBe(realpathSync(actual));
+	});
+
+	it("builds the agent with clone-local workspace and shared search path", () => {
+		const root = tempRoot();
+		const workspace = join(root, ".autorag-e2e", "workspace");
+		const options = buildLiveStackOptions(root, workspace);
+		expect(options.workspacePath).toBe(workspace);
+		expect(options.searchPaths).toEqual([join(root, "corpus")]);
+		expect(options.workspacePath).not.toBe(root);
+	});
+
+	it("keeps mutable parsed state out of the shared corpus root", () => {
+		const root = tempRoot();
+		const workspace = join(root, ".autorag-e2e", "workspace");
+		mkdirSync(join(workspace, ".autorag", "parsed"), { recursive: true });
+		expect(existsSync(join(root, ".autorag"))).toBe(false);
+		expect(existsSync(join(workspace, ".autorag", "parsed"))).toBe(true);
 	});
 
 	it("accepts only absolute existing readable source paths", () => {

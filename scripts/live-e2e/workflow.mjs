@@ -17,6 +17,25 @@ export function assertServiceReady(result) {
 	if (result.verdict === "refused") throw new Error(result.code ?? "live-e2e-service-refused");
 }
 
+export function buildLiveStackOptions(root, workspace) {
+	return {
+		searchPaths: [join(resolve(root), "corpus")],
+		workspacePath: resolve(workspace),
+		memoryPath: join(resolve(workspace), "memory.json"),
+		jikji: false,
+		minSync: {
+			workspacePath: resolve(workspace),
+			autoInstall: false,
+			embedder: {
+				id: "tei:embeddinggemma:latest",
+				baseUrl: "http://127.0.0.1:18080",
+				dimension: 768,
+				timeoutMs: 120_000,
+			},
+		},
+	};
+}
+
 export function assertAbsoluteReadableSource(source) {
 	if (!isAbsolute(source)) throw new Error("source-not-absolute");
 	accessSync(source, constants.R_OK);
