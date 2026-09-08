@@ -1,7 +1,7 @@
 {
   "mode": "cold",
-  "root": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
-  "startedAt": "2026-09-08T12:26:36.638Z",
+  "root": "/var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-task6-root.XXXXXX.72pwgJ2qmw",
+  "startedAt": "2026-09-08T12:45:46.587Z",
   "commands": [
     {
       "command": [
@@ -9,7 +9,7 @@
         "scripts/live-e2e/runner.mjs",
         "verify-corpus",
         "--root",
-        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e"
+        "/var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-task6-root.XXXXXX.72pwgJ2qmw"
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
@@ -20,7 +20,7 @@
         "bun",
         "scripts/live-e2e/live-stack.mts",
         "--root",
-        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
+        "/var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-task6-root.XXXXXX.72pwgJ2qmw",
         "--workspace",
         "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace",
         "--mode",
@@ -42,7 +42,7 @@
       "status": "PASS",
       "reason": "absolute corpus source is readable",
       "evidence": {
-        "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+        "source": "/var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-task6-root.XXXXXX.72pwgJ2qmw/corpus/sample.txt",
         "identity": "local:corpus/sample.txt",
         "sourceAbsolute": true,
         "sourceReadable": true,
@@ -106,7 +106,7 @@
   },
   "cleanup": {
     "lockReleased": true,
-    "cloneStateRemoved": false
+    "cloneStateRemoved": true
   },
   "preflight": {
     "verdict": "ready",
@@ -156,7 +156,7 @@
   "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
   "hit": {
-    "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
+    "source": "/private/var/folders/8w/_x12f_056yv_z1x45vr_f2cm0000gp/T/autorag-task6-root.XXXXXX.72pwgJ2qmw/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
@@ -183,9 +183,9 @@
     "skip": 10,
     "fail": 0
   },
-  "finishedAt": "2026-09-08T12:26:37.701Z",
+  "finishedAt": "2026-09-08T12:45:48.143Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",
-  "cleanupReceipt": "runner lock released; native stores untouched"
+  "cleanupReceipt": "runner lock released; .autorag-e2e and temporary bootstrap root removed; native stores untouched"
 }

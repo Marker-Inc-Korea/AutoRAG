@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -24,6 +24,40 @@ afterEach(() => {
 });
 
 describe("live-e2e datasource matrix", () => {
+	it("registers an existing katok manual-QA harness", () => {
+		const katok = buildDatasourceMatrix().find((lane) => lane.name === "katok");
+		expect(katok?.command).toBeDefined();
+		expect(existsSync(katok?.command ?? "")).toBe(true);
+	});
+
+	it("rejects a successful native command without a lane-native identity", async () => {
+		const result = await runDatasourceMatrix({
+			root: fixtureRoot(),
+			selection: ["katok"],
+			which: () => true,
+			configured: () => true,
+			run: async () => ({ ok: true, stdout: "should not be reached", stderr: "", code: 0 }),
+		});
+		expect(result.lanes[0]).toMatchObject({ name: "katok", status: "FAIL" });
+		expect(result.lanes[0]?.reason).toContain("native identity");
+	});
+
+	it("passes the selected root as the native harness working directory", async () => {
+		const root = fixtureRoot();
+		let observedCwd = "";
+		await runDatasourceMatrix({
+			root,
+			selection: ["katok"],
+			which: () => true,
+			configured: () => true,
+			run: async (_command, _args, cwd) => {
+				observedCwd = cwd;
+				return { ok: false, stdout: "", stderr: "fixture failed", code: 1 };
+			},
+		});
+		expect(observedCwd).toBe(root);
+	});
+
 	it("skips unavailable optional lanes without converting them to pass or throwing", async () => {
 		const result = await runDatasourceMatrix({
 			root: "/tmp/live-e2e-root",

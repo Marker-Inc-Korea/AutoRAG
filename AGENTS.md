@@ -78,12 +78,15 @@ The summary separates the core MinSync result (`commandsSummary.core`) from
 checks the absolute bootstrapped corpus source; `configured` checks each
 available native CLI lane (katok, discrawl, wacrawl, telecrawl, slacrawl,
 notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight). Missing optional CLIs
-are `SKIP` with a reason. An installed/configured lane whose native check fails
-is `FAIL`; `SKIP` is never reported as PASS. Native stores, profiles, and
-keychains remain owned by their CLIs: the runner does not copy datasource data
-or force an AutoRAG workspace. Native datasource references and setup details
-are in `docs/manual-qa-datasources.md` and the individual scripts under
-`scripts/manual-qa/`.
+or unconfigured native stores are `SKIP` with a reason. An installed/configured
+lane whose native check fails, including a successful harness without a valid
+source-native identity, is `FAIL`; `SKIP` is never reported as PASS. Native
+lanes are expected to remain `SKIP` unless a real native store is configured.
+Native stores, profiles, and keychains remain owned by their CLIs: the runner
+does not copy datasource data or force an AutoRAG workspace. Native datasource
+references and setup details are in `docs/manual-qa-datasources.md` and the
+individual scripts under `scripts/manual-qa/`, including the real katok harness
+at `scripts/manual-qa/run-qa-katok-live.ts`.
 
 Evidence is written to `.omo/evidence/task-6-fixed-live-e2e-environment.json`
 for this task and to the runner result directory (by default

@@ -7,7 +7,7 @@ export type DatasourceLane = {
 };
 export function buildDatasourceMatrix(): readonly Readonly<Record<string, string>>[];
 export function parseDatasourceSelection(value?: string): readonly string[];
-export function validateNativeIdentity(source: unknown): boolean;
+export function validateNativeIdentity(source: unknown, laneName?: string): boolean;
 export function sanitizeDiagnostic(value: unknown): string;
 export function runDatasourceMatrix(options?: Readonly<{
 	readonly root?: string;
