@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FauxProviderRegistration, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
@@ -53,7 +53,7 @@ function internals(agent: AutoRAGAgent): AgentInternals {
 }
 
 describe("AutoRAGAgent remote-session memory isolation", () => {
-	it("does not read or write memory during a remote search", async () => {
+	it("reads and writes the shared memory during a remote search", async () => {
 		const memoryPath = join(root, "memory.json");
 		const agent = new AutoRAGAgent({
 			model: registration.getModel(),
@@ -69,23 +69,15 @@ describe("AutoRAGAgent remote-session memory isolation", () => {
 		memory.recordWeakSignal("seed", "search", "followup");
 		memory.save();
 		const before = readFileSync(memoryPath);
-		const beforeMtime = statSync(memoryPath).mtimeMs;
-		const signalCount = memory.getSignalCount();
-		const recordWeakSignal = vi.spyOn(memory, "recordWeakSignal");
 		const recordCuratedResultsSession = vi.spyOn(memory, "recordCuratedResultsSession");
 		const save = vi.spyOn(memory, "save");
-		const input = [{ role: "user", content: [{ type: "text", text: "query" }], timestamp: 1 }];
-		await expect(internals(agent).withMemoryContext(input)).resolves.toBe(input);
 
 		const response = await agent.searchDocuments("remote query");
 
-		expect(internals(agent).sessions.get(response.sessionId)?.transient).toBe(true);
-		expect(recordWeakSignal).not.toHaveBeenCalled();
-		expect(recordCuratedResultsSession).not.toHaveBeenCalled();
-		expect(save).not.toHaveBeenCalled();
-		expect(memory.getSignalCount()).toBe(signalCount);
+		expect(internals(agent).sessions.get(response.sessionId)?.transient).not.toBe(true);
+		expect(recordCuratedResultsSession).toHaveBeenCalled();
+		expect(save).toHaveBeenCalled();
 		expect(existsSync(memoryPath)).toBe(true);
-		expect(readFileSync(memoryPath)).toEqual(before);
-		expect(statSync(memoryPath).mtimeMs).toBe(beforeMtime);
+		expect(readFileSync(memoryPath)).not.toEqual(before);
 	});
 });

@@ -121,6 +121,42 @@ describe("buildPeerResponse", () => {
 		expect(resolvePolicy).toHaveBeenCalledWith("/Shared Docs/secret.md", peerFingerprint);
 	});
 
+	it("masks denied evidence text from the curated answer", () => {
+		const result = buildPeerResponse({
+			response: response("shared secret payroll numbers", [
+				{
+					number: 1,
+					title: "Allowed",
+					summary: "shared",
+					source: "/Shared Docs/guide.md",
+					excerpt: "guide",
+				},
+				{
+					number: 2,
+					title: "Denied",
+					summary: "secret payroll numbers",
+					source: "/Shared Docs/secret.md",
+					excerpt: "payroll",
+				},
+			]),
+			observedSources: new Set(["/Shared Docs/guide.md", "/Shared Docs/secret.md"]),
+			resolvePolicy: (source: string) => ({
+				tier: source === "/Shared Docs/guide.md" ? ("always" as const) : ("never" as const),
+				allowed: source === "/Shared Docs/guide.md",
+				shareBytes: source === "/Shared Docs/guide.md",
+				redact: source !== "/Shared Docs/guide.md",
+			}),
+			peerFingerprint,
+			workspaceRoots,
+			pseudonymize: false,
+		});
+
+		expect(result.status).toBe("ok");
+		expect(result.results).toHaveLength(1);
+		expect(result.answer).not.toContain("secret payroll numbers");
+		expect(result.answer).toContain("[redacted]");
+	});
+
 	it("redacts PII in answer, summary, and excerpt before emitting", () => {
 		const result = buildPeerResponse({
 			response: response("Contact alice@example.com", [

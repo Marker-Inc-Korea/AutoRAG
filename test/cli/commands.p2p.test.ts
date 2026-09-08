@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runP2p } from "../../src/cli/commands/p2p.ts";
 import type { CommandContext } from "../../src/cli/commands/types.ts";
+import {
+	listPendingPeerRequests,
+	loadPeerRequestDecision,
+	savePendingPeerRequest,
+} from "../../src/p2p/approval-store.ts";
 import { loadSimplexPeerRegistry } from "../../src/p2p/simplex-server.ts";
 
 let root: string;
@@ -106,5 +111,57 @@ describe("autorag p2p peers", () => {
 			}),
 		);
 		expect(code).toBe(2);
+	});
+});
+
+describe("autorag p2p requests", () => {
+	it("lists, approves, and denies pending peer requests", async () => {
+		savePendingPeerRequest(root, {
+			id: "req-1",
+			contactId: 42,
+			query: "refund policy",
+			createdAt: new Date().toISOString(),
+			sources: ["/docs/shared.md"],
+			payload: { v: 1, status: "ok", answer: "ok", results: [], files: [], diagnostics: [] },
+		});
+		const listOut: string[] = [];
+		const listed = await runP2p(
+			makeCtx({ positionals: ["requests"], json: true, stdout: (line) => listOut.push(line) }),
+		);
+		expect(listed).toBe(0);
+		const listedPayload = JSON.parse(listOut[0] ?? "{}") as { requests: Array<{ id: string }> };
+		expect(listedPayload.requests.map((request) => request.id)).toEqual(["req-1"]);
+
+		const approveOut: string[] = [];
+		const approved = await runP2p(
+			makeCtx({
+				positionals: ["requests", "approve", "req-1"],
+				json: true,
+				stdout: (line) => approveOut.push(line),
+			}),
+		);
+		expect(approved).toBe(0);
+		expect(JSON.parse(approveOut[0] ?? "{}")).toMatchObject({ ok: true, id: "req-1", decision: "approve" });
+		expect(loadPeerRequestDecision(root, "req-1")?.decision).toBe("approve");
+		expect(listPendingPeerRequests(root)).toHaveLength(0);
+
+		savePendingPeerRequest(root, {
+			id: "req-2",
+			contactId: 42,
+			query: "secret payroll",
+			createdAt: new Date().toISOString(),
+			sources: ["/docs/secret.md"],
+			payload: { v: 1, status: "ok", answer: "secret", results: [], files: [], diagnostics: [] },
+		});
+		const denyOut: string[] = [];
+		const denied = await runP2p(
+			makeCtx({
+				positionals: ["requests", "deny", "req-2"],
+				json: true,
+				stdout: (line) => denyOut.push(line),
+			}),
+		);
+		expect(denied).toBe(0);
+		expect(JSON.parse(denyOut[0] ?? "{}")).toMatchObject({ ok: true, id: "req-2", decision: "deny" });
 	});
 });

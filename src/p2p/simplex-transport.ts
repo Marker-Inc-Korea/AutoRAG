@@ -260,13 +260,17 @@ class SimplexClient implements SimplexTransport {
 
 	async getOrCreateAddress(): Promise<string> {
 		const userId = await this.requireUserId();
-		const existing = await this.cmd(`/_show_address ${userId}`);
-		if (responseType(existing) === "userContactLink" && isRecord(existing)) {
-			const link = existing.contactLink;
-			if (isRecord(link) && isRecord(link.connLinkContact)) {
-				const full = link.connLinkContact.connFullLink;
-				if (typeof full === "string") return full;
+		try {
+			const existing = await this.cmd(`/_show_address ${userId}`);
+			if (responseType(existing) === "userContactLink" && isRecord(existing)) {
+				const link = existing.contactLink;
+				if (isRecord(link) && isRecord(link.connLinkContact)) {
+					const full = link.connLinkContact.connFullLink;
+					if (typeof full === "string") return full;
+				}
 			}
+		} catch {
+			// No address yet — create one below.
 		}
 		const created = await this.cmd(`/_address ${userId}`);
 		if (responseType(created) !== "userContactLinkCreated" || !isRecord(created)) {

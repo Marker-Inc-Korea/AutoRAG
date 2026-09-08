@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
+import { listPendingPeerRequests, writePeerRequestDecision } from "../../src/p2p/approval-store.ts";
 import {
 	querySimplexPeer,
 	type SimplexPeerRegistry,
@@ -177,26 +178,53 @@ describe("startSimplexPeerServer", () => {
 	});
 
 	it("answers an authorized peer query through the full gate pipeline", async () => {
-		const { client, server } = transportPair();
+		const { client, server } = capturingPair();
 		const agent = observingAgent();
+		const root = workspace();
 		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
-			workspacePath: workspace(),
+			workspacePath: root,
 			injectionClassifier: false,
 			resolvePolicy: openResolver,
 		});
 		servers.push(handle);
-		const response = await querySimplexPeer(
-			client,
-			server.contactId,
-			{ v: 1, query: "refund policy" },
-			{ timeoutMs: 5000 },
-		);
+		const pending = querySimplexPeer(client, server.contactId, { v: 1, query: "refund policy" }, { timeoutMs: 5000 });
+		await expect.poll(() => listPendingPeerRequests(root).length, { timeout: 2000, interval: 10 }).toBe(1);
+		expect(client.received).toHaveLength(0);
+		writePeerRequestDecision(root, listPendingPeerRequests(root)[0]!.id, "approve");
+		const response = await pending;
 		expect(response.status).toBe("ok");
 		expect(agent.calls).toHaveLength(1);
 		expect(agent.calls[0]!.query).toBe("refund policy");
+	});
+
+	it("does not send document content when the operator denies a pending request", async () => {
+		const { client, server } = capturingPair();
+		const agent = observingAgent();
+		const root = workspace();
+		const handle = await startSimplexPeerServer({
+			transport: server,
+			agent,
+			peers: peers(),
+			workspacePath: root,
+			injectionClassifier: false,
+			resolvePolicy: openResolver,
+		});
+		servers.push(handle);
+		await client.sendMessage(
+			server.contactId,
+			JSON.stringify({ v: 1, kind: "query", id: "ask-1", payload: { v: 1, query: "refund policy" } }),
+		);
+		await expect.poll(() => listPendingPeerRequests(root).length, { timeout: 2000, interval: 10 }).toBe(1);
+		expect(client.received).toHaveLength(0);
+		writePeerRequestDecision(root, listPendingPeerRequests(root)[0]!.id, "deny");
+		const response = await lastResponse(client);
+		expect(response.status).toBe("rejected");
+		expect(response.answer).toBe("");
+		expect(response.results).toEqual([]);
+		expect(response.diagnostics.some((d) => d.code === "policy-denied")).toBe(true);
 	});
 
 	it("rejects a query from an unknown contact with auth-error", async () => {
@@ -284,7 +312,7 @@ describe("startSimplexPeerServer", () => {
 			);
 		await send("r1");
 		await send("r2");
-		await lastResponse(client, 2);
+		await lastResponse(client, 1);
 		const responses = client.received
 			.map((raw) => JSON.parse(raw) as { kind: string; payload: PeerQueryResponse })
 			.filter((envelope) => envelope.kind === "response")
@@ -313,11 +341,12 @@ describe("querySimplexPeer", () => {
 	it("correlates responses by id and ignores unrelated messages", async () => {
 		const { client, server } = transportPair();
 		const agent = observingAgent();
+		const root = workspace();
 		const handle = await startSimplexPeerServer({
 			transport: server,
 			agent,
 			peers: peers(),
-			workspacePath: workspace(),
+			workspacePath: root,
 			injectionClassifier: false,
 			resolvePolicy: openResolver,
 		});
@@ -329,6 +358,8 @@ describe("querySimplexPeer", () => {
 			text: "unrelated chatter",
 			chatItemId: 1,
 		});
+		await expect.poll(() => listPendingPeerRequests(root).length, { timeout: 2000, interval: 10 }).toBe(1);
+		writePeerRequestDecision(root, listPendingPeerRequests(root)[0]!.id, "approve");
 		const response = await pending;
 		expect(response.status).toBe("ok");
 	});

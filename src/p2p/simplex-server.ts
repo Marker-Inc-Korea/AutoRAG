@@ -5,6 +5,12 @@ import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 import type { SearchDocumentsResponse } from "../agent/search-documents.ts";
 import type { RetrievalOptions } from "../retrieval/types.ts";
+import {
+	ApprovalAbortedError,
+	ApprovalTimeoutError,
+	savePendingPeerRequest,
+	waitForPeerRequestDecision,
+} from "./approval-store.ts";
 import { buildPeerResponse as defaultBuildPeerResponse } from "./egress-gate.ts";
 import { classifyInjection, type InjectionClassifierModel } from "./injection-classifier.ts";
 import { screenInboundQuery } from "./injection-gate.ts";
@@ -258,6 +264,7 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 	const buckets = new Map<number, TokenBucket>();
 	const serializer = new QuerySerializer(options.queueDepth ?? DEFAULT_QUEUE_DEPTH);
 	const transport = options.transport;
+	const abort = new AbortController();
 
 	const handle = async (incoming: SimplexIncomingMessage): Promise<void> => {
 		let envelope: SimplexWireEnvelope | undefined;
@@ -340,6 +347,7 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 			);
 		} catch (error) {
 			const code = error instanceof QueueFullError ? "queue-full" : "internal-error";
+			const detail = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
 			await transport.sendMessage(
 				incoming.contactId,
 				rejection(
@@ -347,7 +355,7 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 					code,
 					error instanceof QueueFullError
 						? "The peer query queue is full."
-						: "The peer query could not be completed.",
+						: `The peer query could not be completed: ${detail}`,
 				),
 			);
 			log(logger, { event: "request_rejected", peerContactId, code });
@@ -375,7 +383,46 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 				log(logger, { event: "request_rejected", peerContactId, code: "internal-error" });
 				return;
 			}
-			await transport.sendMessage(incoming.contactId, message);
+			if (peerResponse.status !== "ok") {
+				await transport.sendMessage(incoming.contactId, message);
+				return;
+			}
+			if (options.workspacePath === undefined) {
+				await transport.sendMessage(
+					incoming.contactId,
+					rejection(envelope.id, "internal-error", "Peer query approval requires a workspace path."),
+				);
+				return;
+			}
+			savePendingPeerRequest(options.workspacePath, {
+				id: envelope.id,
+				contactId: incoming.contactId,
+				query: screened.canonicalQuery,
+				createdAt: new Date().toISOString(),
+				sources: [...observedSources],
+				payload: peerResponse,
+			});
+			try {
+				const decision = await waitForPeerRequestDecision(options.workspacePath, envelope.id, {
+					timeoutMs: options.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS,
+					abort: abort.signal,
+				});
+				if (decision.decision === "approve") {
+					await transport.sendMessage(incoming.contactId, message);
+				} else {
+					await transport.sendMessage(
+						incoming.contactId,
+						rejection(envelope.id, "policy-denied", "The operator declined to share this response."),
+					);
+				}
+			} catch (error) {
+				if (error instanceof ApprovalAbortedError) return;
+				const reason =
+					error instanceof ApprovalTimeoutError
+						? "The operator did not approve this response in time."
+						: "Peer query approval failed.";
+				await transport.sendMessage(incoming.contactId, rejection(envelope.id, "policy-denied", reason));
+			}
 		} catch {
 			await transport.sendMessage(
 				incoming.contactId,
@@ -390,7 +437,9 @@ export async function startSimplexPeerServer(options: StartSimplexPeerServerOpti
 	});
 
 	return {
-		close: async () => {},
+		close: async () => {
+			abort.abort();
+		},
 	};
 }
 

@@ -31,7 +31,7 @@ function method(results: RetrievalResult[], datasource = false): RetrievalMethod
 }
 
 describe("remote-session retrieval policy", () => {
-	it("filters retrieval before the remote caller and records only observed sources", async () => {
+	it("keeps all retrieval candidates and records every observed source", async () => {
 		temp = mkdtempSync(join(tmpdir(), "autorag-remote-policy-"));
 		const observedSources = new Set<string>();
 		const agent = new AutoRAGAgent({
@@ -56,8 +56,8 @@ describe("remote-session retrieval policy", () => {
 			observedSources,
 		});
 
-		expect(retrieved.results.map((item) => item.source)).toEqual(["/docs/shared.md"]);
-		expect(observedSources).toEqual(new Set(["/docs/shared.md"]));
+		expect(retrieved.results.map((item) => item.source)).toEqual(["/docs/shared.md", "/docs/secret.md"]);
+		expect(observedSources).toEqual(new Set(["/docs/shared.md", "/docs/secret.md"]));
 		expect(observedSources).not.toContain("/model/forged-source.md");
 	});
 
@@ -90,8 +90,11 @@ describe("remote-session retrieval policy", () => {
 			peerFingerprint: "peer-a",
 			observedSources,
 		});
-		expect(retrieved.results.map((item) => item.source)).toEqual(["kakao:shared-room/chunks/a"]);
-		expect(observedSources).toEqual(new Set(["kakao:shared-room/chunks/a"]));
+		expect(retrieved.results.map((item) => item.source)).toEqual([
+			"kakao:shared-room/chunks/a",
+			"kakao:private-room/chunks/b",
+		]);
+		expect(observedSources).toEqual(new Set(["kakao:shared-room/chunks/a", "kakao:private-room/chunks/b"]));
 	});
 
 	it("defaults remote search timeout to 120 seconds", () => {

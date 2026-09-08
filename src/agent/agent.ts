@@ -47,9 +47,8 @@ import {
 	syncParsedMirrors,
 } from "../mirror/sync.ts";
 import { AutoRAGRunLogger } from "../observability/run-log.ts";
-import { fenceRetrievedContent, scanOutboundPayload } from "../p2p/injection-classifier.ts";
+import { scanOutboundPayload } from "../p2p/injection-classifier.ts";
 import type { PolicyResolver } from "../p2p/policy-filter.ts";
-import { filterRetrievalResultsByPolicy } from "../p2p/policy-filter.ts";
 import type { DefaultParserRegistryOptions } from "../parser/index.ts";
 import { ParallelRetriever, ResultMerger } from "../retrieval/merger.ts";
 import { type BM25SyncResult, removeLegacyBm25Artifacts } from "../retrieval/methods/bm25.ts";
@@ -108,8 +107,6 @@ import {
 	type WatchRefreshHandle,
 	type WatchWatcher,
 } from "./watch-refresh.ts";
-
-const denyPolicy: PolicyResolver = () => ({ tier: "private", allowed: false, shareBytes: false, redact: true });
 
 const SEARCH_TOOLS = [
 	BASH_TOOL_NAME,
@@ -392,7 +389,7 @@ export class AutoRAGAgent {
 		this.memory.load();
 		this.runLogger = new AutoRAGRunLogger(join(dirname(memPath), "logs", "runs.jsonl"));
 
-		const checkMemoryTool = options.remoteSession ? undefined : createCheckMemoryTool(this.memory);
+		const checkMemoryTool = createCheckMemoryTool(this.memory);
 		const searchBM25Tool = createSearchBM25DocumentsTool(
 			() => this.remoteFilteredRetrievalMethod(this.bm25Method),
 			(scope) => this.resolveRetrievalScope(scope),
@@ -409,14 +406,11 @@ export class AutoRAGAgent {
 		const scanDuplicateDocumentsTool =
 			this.dupeyOptions === false ? undefined : createScanDuplicateDocumentsTool(this);
 
-		const bashTool = options.remoteSession
-			? undefined
-			: createBashTool({
-					cwd: this.workspaceProjectRoot,
-				});
+		const bashTool = createBashTool({
+			cwd: this.workspaceProjectRoot,
+		});
 
-		const jikjiFindTool =
-			!options.remoteSession && this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
+		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
 		// Reserved AutoRAG tool names the agent always owns. Caller tools with
 		// these names are dropped (reserved wins), never rejected.
@@ -468,11 +462,11 @@ export class AutoRAGAgent {
 		this.baseSystemPromptConfig = {
 			toolNames,
 			modelId: options.model?.id,
-			memorySignalCount: this.remoteSession ? 0 : this.memory.getSignalCount(),
+			memorySignalCount: this.memory.getSignalCount(),
 			manifests,
 			datasourceSkills: this.datasourceAgentSkills,
 			jikjiIndexingEnabled: options.jikji !== false,
-			retrievedContentGuard: this.remoteSession,
+			retrievedContentGuard: false,
 		};
 		const systemPrompt = buildSystemPrompt(this.currentSystemPromptConfig());
 
@@ -494,10 +488,8 @@ export class AutoRAGAgent {
 					| { resultCount?: number; sources?: string[]; method?: string }
 					| undefined;
 				const method = details?.method ?? toolName;
-				if (!this.remoteSession) {
-					this.memory.recordWeakSignal(this.lastQuery, method, "followup");
-					this.memory.save();
-				}
+				this.memory.recordWeakSignal(this.lastQuery, method, "followup");
+				this.memory.save();
 				return undefined;
 			},
 		});
@@ -527,30 +519,6 @@ export class AutoRAGAgent {
 	}
 
 	private async withMemoryContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
-		if (this.remoteSession) {
-			const hasRetrievedToolResult = messages.some(
-				(message) =>
-					message.role === "toolResult" && (SEARCH_TOOLS as readonly string[]).includes(message.toolName),
-			);
-			if (!hasRetrievedToolResult) return messages;
-			return messages.map((message) => {
-				if (message.role !== "toolResult" || !(SEARCH_TOOLS as readonly string[]).includes(message.toolName)) {
-					return message;
-				}
-				const details =
-					message.details && typeof message.details === "object" && !Array.isArray(message.details)
-						? (message.details as { sources?: readonly unknown[] })
-						: undefined;
-				const sources = details?.sources?.filter((source): source is string => typeof source === "string") ?? [];
-				const source = sources.length > 0 ? sources.join(",") : message.toolName;
-				return {
-					...message,
-					content: message.content.map((part) =>
-						part.type === "text" ? { ...part, text: fenceRetrievedContent(source, part.text) } : part,
-					),
-				};
-			});
-		}
 		const hints = this.lastQuery ? this.memory.getMethodHints(this.lastQuery) : [];
 		const insights = this.lastQuery ? this.memory.getInsights(this.lastQuery) : [];
 		const contextHints = this.lastQuery ? this.memory.getContextHints(this.lastQuery) : undefined;
@@ -630,16 +598,14 @@ export class AutoRAGAgent {
 		if (this.remoteSession && this.activeRetrievalOptions?.observedSources !== undefined) {
 			for (const source of details?.sources ?? []) this.activeRetrievalOptions.observedSources.add(source);
 		}
-		if (!this.remoteSession) {
-			this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
-			this.memory.save();
-		}
+		this.memory.recordWeakSignal(this.lastQuery, details?.method ?? event.toolName, "followup");
+		this.memory.save();
 	}
 
 	private currentSystemPromptConfig(models: Partial<SystemPromptConfig> = {}): SystemPromptConfig {
 		return {
 			...this.baseSystemPromptConfig,
-			memorySignalCount: this.remoteSession ? 0 : this.memory.getSignalCount(),
+			memorySignalCount: this.memory.getSignalCount(),
 			...models,
 		};
 	}
@@ -692,20 +658,18 @@ export class AutoRAGAgent {
 		const sid = sessionId ?? this.lastSessionId;
 		const session = sid ? this.sessions.get(sid) : undefined;
 		const query = session?.query ?? this.lastQuery;
-		if (query && !this.remoteSession) {
+		if (query) {
 			this.memory.resolvePendingEntries(query, null, satisfied ? "useful" : "not_useful");
 			this.memory.save();
 		}
 	}
 
 	recordResultFeedback(feedback: ResultFeedback[]): void {
-		if (this.remoteSession) return;
 		this.memory.recordResultFeedback(feedback);
 		this.memory.save();
 	}
 
 	recordFeedbackByNumbers(sessionId: string, usefulNumbers: number[], notUsefulNumbers: number[] = []): void {
-		if (this.remoteSession) return;
 		recordNumberedFeedback(this.sessions, this.memory, sessionId, usefulNumbers, notUsefulNumbers);
 	}
 
@@ -714,7 +678,7 @@ export class AutoRAGAgent {
 			...usefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: true })),
 			...notUsefulFeedbackIds.map((feedbackId) => ({ feedbackId, useful: false })),
 		];
-		if (!this.remoteSession && this.memory.recordFeedbackByIds(feedback)) this.memory.save();
+		if (this.memory.recordFeedbackByIds(feedback)) this.memory.save();
 	}
 
 	getResultRegistry(sessionId?: string): ReadonlyMap<number, CuratedResult> {
@@ -787,6 +751,9 @@ export class AutoRAGAgent {
 			if (captured === undefined) {
 				throw new Error("AutoRAG agent completed without emitting structured results");
 			}
+			if (this.remoteSession && options.observedSources !== undefined) {
+				for (const entry of captured.mapping) options.observedSources.add(entry.source);
+			}
 			if (this.remoteSession) {
 				const scan = scanOutboundPayload(
 					[
@@ -807,7 +774,6 @@ export class AutoRAGAgent {
 				this.sessions,
 				this.memory,
 				this.collectComponentDiagnostics(),
-				{ isolateMemory: this.remoteSession },
 			);
 			this.runLogger.write({
 				event: "search_completed",
@@ -861,37 +827,6 @@ export class AutoRAGAgent {
 
 	private datasourceAccessContext(options: RetrievalOptions = {}): DatasourceAccessContext {
 		const effectiveOptions = this.remoteSession ? { ...this.activeRetrievalOptions, ...options } : options;
-		if (this.remoteSession) {
-			// Policy scopes are supplied by the trusted server from its PolicyStore;
-			// source-level filtering below handles channel-specific never/private rules.
-			const policyScopes = effectiveOptions.policyDatasourceScopes ?? [];
-			const allowedScopes = policyScopes.filter((scope) => {
-				const probe = scope.replace(/\*+$/u, "probe");
-				return effectiveOptions.resolvePolicy?.(probe, effectiveOptions.peerFingerprint).allowed ?? false;
-			});
-			const allowedTags = this.methodRegistry
-				.list()
-				.filter((method) => {
-					const descriptor = method.describe();
-					return (
-						descriptor.datasourceId !== undefined &&
-						(allowedScopes.length === 0 ||
-							allowedScopes.some((scope) => scope.startsWith(`${descriptor.datasourceId}:`)))
-					);
-				})
-				.flatMap((method) => method.describe().tags ?? []);
-			const trustedTags = [...new Set(allowedTags)];
-			return new DatasourceAccessContext({
-				allowedTags:
-					trustedTags.length > 0
-						? trustedTags
-						: (effectiveOptions.allowedTags ?? this.datasourceAccessOptions.allowedTags ?? []),
-				// Datasource identifiers use colon schemes (e.g. kakao:room/**),
-				// while DatasourceAccessContext scopes are slash paths. The policy
-				// filter below applies the source-identifier glob authoritatively.
-				allowedScopes: effectiveOptions.allowedScopes ?? [],
-			});
-		}
 		return new DatasourceAccessContext({
 			allowedTags: effectiveOptions.allowedTags ?? this.datasourceAccessOptions.allowedTags,
 			allowedScopes: effectiveOptions.allowedScopes ?? this.datasourceAccessOptions.allowedScopes,
@@ -1016,13 +951,7 @@ export class AutoRAGAgent {
 			);
 		}
 		const formatResults = (label: string, results: RetrievalResult[] | undefined): void => {
-			if (results && this.remoteSession && options.resolvePolicy !== undefined) {
-				const filtered = filterRetrievalResultsByPolicy(
-					new Map([[label, results]]),
-					options.resolvePolicy ?? denyPolicy,
-					options.peerFingerprint ?? "",
-				);
-				results = filtered.get(label) ?? [];
+			if (results) {
 				for (const result of results) options.observedSources?.add(result.source);
 			}
 			if (!results || results.length === 0) return;
@@ -1031,11 +960,7 @@ export class AutoRAGAgent {
 					.slice(0, 5)
 					.map(
 						(result, index) =>
-							`[${index + 1}] ${result.source}\n${
-								this.remoteSession
-									? fenceRetrievedContent(result.source, result.content.replace(/\s+/gu, " ").slice(0, 400))
-									: result.content.replace(/\s+/gu, " ").slice(0, 400)
-							}`,
+							`[${index + 1}] ${result.source}\n${result.content.replace(/\s+/gu, " ").slice(0, 400)}`,
 					)
 					.join("\n")}`,
 			);
@@ -1542,21 +1467,14 @@ export class AutoRAGAgent {
 		options = this.normalizeRetrievalOptions(options);
 		const methods = this.methodRegistry.list();
 		const { results: byMethod, diagnostics } = await this.retriever.retrieveWithDiagnostics(methods, query, options);
-		let filteredByMethod = this.datasourceFilter.filter(
+		const filteredByMethod = this.datasourceFilter.filter(
 			byMethod,
 			methods,
 			this.datasourceAccessContext(options),
 			options.scope,
 		);
-		if (this.remoteSession && options.resolvePolicy !== undefined) {
-			filteredByMethod = filterRetrievalResultsByPolicy(
-				filteredByMethod,
-				options.resolvePolicy ?? denyPolicy,
-				options.peerFingerprint ?? "",
-			);
-			for (const results of filteredByMethod.values()) {
-				for (const result of results) options.observedSources?.add(result.source);
-			}
+		for (const results of filteredByMethod.values()) {
+			for (const result of results) options.observedSources?.add(result.source);
 		}
 		if (this.minSyncMethod?.isBinaryMissing() && !diagnostics.some((d) => d.source === "minsync")) {
 			diagnostics.push({
@@ -1602,16 +1520,9 @@ export class AutoRAGAgent {
 			query,
 			retrievalOptions,
 		);
-		let filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
-		if (this.remoteSession && retrievalOptions.resolvePolicy !== undefined) {
-			filteredByMethod = filterRetrievalResultsByPolicy(
-				filteredByMethod,
-				retrievalOptions.resolvePolicy ?? denyPolicy,
-				retrievalOptions.peerFingerprint ?? "",
-			);
-			for (const results of filteredByMethod.values()) {
-				for (const result of results) retrievalOptions.observedSources?.add(result.source);
-			}
+		const filteredByMethod = this.datasourceFilter.filter(byMethod, methods, ctx, options.scope);
+		for (const results of filteredByMethod.values()) {
+			for (const result of results) retrievalOptions.observedSources?.add(result.source);
 		}
 		return {
 			results: this.rerankWithMemory(
@@ -1632,7 +1543,6 @@ export class AutoRAGAgent {
 	}
 
 	private rerankWithMemory(query: string, results: readonly RetrievalResult[]): RetrievalResult[] {
-		if (this.remoteSession) return [...results];
 		const methodScores = new Map(this.memory.getMethodHints(query).map((hint) => [hint.method, hint.score]));
 		const context = this.memory.getContextHints(query);
 		const scoreMap = (
@@ -1681,21 +1591,15 @@ export class AutoRAGAgent {
 			describe(): { name: string };
 		},
 	>(method: T | undefined): T | undefined {
-		if (!method || !this.remoteSession) return method;
+		if (!method) return method;
 		return new Proxy(method, {
 			get: (target, property, receiver) => {
 				if (property !== "retrieve") return Reflect.get(target, property, receiver);
 				return async (query: string, options: RetrievalOptions) => {
 					const effective = { ...this.activeRetrievalOptions, ...options };
 					const results = await target.retrieve.call(target, query, effective);
-					const filtered =
-						filterRetrievalResultsByPolicy(
-							new Map([[target.describe().name, results]]),
-							effective.resolvePolicy ?? denyPolicy,
-							effective.peerFingerprint ?? "",
-						).get(target.describe().name) ?? [];
-					for (const result of filtered) effective.observedSources?.add(result.source);
-					return filtered;
+					for (const result of results) effective.observedSources?.add(result.source);
+					return results;
 				};
 			},
 		}) as T;

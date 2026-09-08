@@ -1,3 +1,4 @@
+import { listPendingPeerRequests, loadPendingPeerRequest, writePeerRequestDecision } from "../../p2p/approval-store.ts";
 import { loadSimplexPeerRegistry, type SimplexPeerRecord, saveSimplexPeerRegistry } from "../../p2p/simplex-server.ts";
 import { ConfigError, resolveConfig, resolveConfigPath } from "../config.ts";
 import { renderError } from "../output.ts";
@@ -28,6 +29,9 @@ Subcommands:
   peers                     List trusted peers (alias, contactId, addedAt)
   peers --add <alias> --contact-id <n>   Trust a peer's SimpleX contact id
   peers --remove <alias>    Remove a peer from the registry
+  requests                  List pending peer-query approvals
+  requests approve <id>     Allow sending the pending response
+  requests deny <id>        Refuse the pending response without document content
 
   help                      Show this help
 
@@ -105,6 +109,54 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 				ctx.stdout("-".repeat(72));
 				for (const [alias, peer] of entries) {
 					ctx.stdout(`${alias.padEnd(24)} ${String(peer.contactId).padEnd(12)} ${peer.addedAt}`);
+				}
+			}
+			return 0;
+		}
+
+		case "requests": {
+			const action = ctx.positionals[1];
+			const id = ctx.positionals[2];
+			if (action === "approve" || action === "deny") {
+				if (typeof id !== "string" || id.length === 0) {
+					ctx.stderr(
+						renderError(new ConfigError(`Request id required: autorag p2p requests ${action} <id>`), {
+							json: ctx.json,
+						}),
+					);
+					return 2;
+				}
+				const pending = loadPendingPeerRequest(workspace, id);
+				if (pending === undefined) {
+					ctx.stderr(renderError(new ConfigError(`Pending request not found: ${id}`), { json: ctx.json }));
+					return 2;
+				}
+				const decision = writePeerRequestDecision(workspace, id, action);
+				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, id, decision: decision.decision }));
+				else ctx.stdout(`${action === "approve" ? "Approved" : "Denied"} request: ${id}`);
+				return 0;
+			}
+			const requests = listPendingPeerRequests(workspace);
+			if (ctx.json) {
+				ctx.stdout(
+					JSON.stringify({
+						ok: true,
+						requests: requests.map((request) => ({
+							id: request.id,
+							contactId: request.contactId,
+							query: request.query,
+							createdAt: request.createdAt,
+							sources: request.sources,
+						})),
+					}),
+				);
+			} else if (requests.length === 0) {
+				ctx.stdout("No pending peer requests.");
+			} else {
+				ctx.stdout(`${"ID".padEnd(40)} ${"Contact".padEnd(10)} Query`);
+				ctx.stdout("-".repeat(88));
+				for (const request of requests) {
+					ctx.stdout(`${request.id.padEnd(40)} ${String(request.contactId).padEnd(10)} ${request.query}`);
 				}
 			}
 			return 0;

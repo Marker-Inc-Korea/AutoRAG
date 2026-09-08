@@ -64,7 +64,7 @@ describe("P2P outbound payload scan", () => {
 		});
 	});
 
-	it("fences remote prefetch and tool-result context but leaves local prompts unmodified", async () => {
+	it("keeps remote prefetch and tool-result context unfenced like local search", async () => {
 		const root = mkdtempSync(join(tmpdir(), "autorag-outbound-scan-context-"));
 		tempRoots.push(root);
 		const remote = new AutoRAGAgent({
@@ -94,10 +94,9 @@ describe("P2P outbound payload scan", () => {
 		};
 
 		const prefetch = await remoteInternals.prefetchInitialRetrievalContext("query", {});
-		expect(prefetch).toContain(
-			'<retrieved_content source="/docs/shared.md">retrieved corpus text</retrieved_content>',
-		);
-		expect(remote.getSystemPrompt()).toContain(FENCING_GUARD_LINE);
+		expect(prefetch).toContain("retrieved corpus text");
+		expect(prefetch).not.toContain("<retrieved_content");
+		expect(remote.getSystemPrompt()).not.toContain(FENCING_GUARD_LINE);
 		expect(local.getSystemPrompt()).not.toContain(FENCING_GUARD_LINE);
 		expect(
 			local.buildSearchPrompt(
@@ -171,7 +170,7 @@ describe("P2P outbound payload scan", () => {
 		const toolContext = contexts[1];
 		const toolResult = toolContext?.messages.find((message) => message.role === "toolResult");
 		expect(toolResult).toMatchObject({
-			content: [{ type: "text", text: expect.stringContaining("<retrieved_content") }],
+			content: [{ type: "text", text: expect.not.stringContaining("<retrieved_content") }],
 		});
 		expect(toolResult).toMatchObject({
 			details: { sources: expect.arrayContaining(["/docs/shared.md"]) },

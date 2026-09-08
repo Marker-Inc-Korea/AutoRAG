@@ -55,6 +55,21 @@ function excerptFor(result: SearchDocumentResult): string {
 	return typeof firstEvidence?.excerpt === "string" ? firstEvidence.excerpt : "";
 }
 
+function maskDeniedEvidence(
+	answer: string,
+	dropped: readonly { readonly title: string; readonly summary: string; readonly excerpt: string }[],
+): string {
+	let masked = answer;
+	for (const item of dropped) {
+		for (const piece of [item.summary, item.excerpt, item.title]) {
+			if (piece.length >= 8 && masked.includes(piece)) {
+				masked = masked.split(piece).join("[redacted]");
+			}
+		}
+	}
+	return masked;
+}
+
 function rejectedResponse(diagnostics: readonly EgressDiagnostic[]): PeerQueryResponse {
 	return {
 		v: 1,
@@ -152,6 +167,14 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 		});
 	}
 
+	const droppedEvidence = rawResults.flatMap((rawResult) => {
+		if (!isSearchDocumentResult(rawResult) || typeof rawResult.source !== "string") return [];
+		if (survivingResults.some((result) => result.number === rawResult.number)) return [];
+		return [{ title: rawResult.title, summary: rawResult.summary, excerpt: excerptFor(rawResult) }];
+	});
+	const maskedAnswer = maskDeniedEvidence(answer, droppedEvidence);
+	outboundTexts[0] = maskedAnswer;
+
 	const scan = scanOutboundPayload(outboundTexts, [...options.workspaceRoots]);
 	if (!scan.ok) {
 		return rejectedResponse([
@@ -163,7 +186,7 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 	return {
 		v: 1,
 		status: "ok",
-		answer,
+		answer: maskedAnswer,
 		results: survivingResults,
 		files: [],
 		diagnostics,

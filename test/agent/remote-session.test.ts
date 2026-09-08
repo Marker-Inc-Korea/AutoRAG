@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("AutoRAGAgent remote-session tool surface", () => {
-	it("excludes local-only tools while retaining retrieval and emit tools", () => {
+	it("keeps the normal local tools during a remote peer search", () => {
 		tmpDir = mkdtempSync(join(tmpdir(), "autorag-remote-session-"));
 		const agent = new AutoRAGAgent({
 			searchPaths: [FIXTURE_DIR],
@@ -31,7 +31,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 		const names = (agent as unknown as AgentInternals).innerAgent.state.tools.map((tool) => tool.name);
 
 		for (const name of ["bash", "jikji_find", "check_memory"]) {
-			expect(names, name).not.toContain(name);
+			expect(names, name).toContain(name);
 		}
 		for (const name of [
 			"lexical_search_local_docs",
@@ -45,7 +45,7 @@ describe("AutoRAGAgent remote-session tool surface", () => {
 
 		const prompt = agent.getSystemPrompt();
 		for (const name of ["bash", "jikji_find", "check_memory"]) {
-			expect(prompt).not.toContain(`- **${name}**:`);
+			expect(prompt).toContain(`- **${name}**:`);
 		}
 	});
 });

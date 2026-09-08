@@ -103,6 +103,7 @@ Commands:
                        (--port N  --force)
   p2p                  SimpleX peer trust management
                        (peers [--add <alias> --contact-id <n>] [--remove <alias>])
+                       (requests [approve|deny <id>])
   p2p policy list      Show effective merged sharing policy (virtual-path keys)
   p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]
   p2p policy unset     Remove a sharing rule by key
