@@ -12,7 +12,9 @@ const NOTCRAWL_PROFILE: CrawlerProfile = {
 	binaryName: "notcrawl",
 	allowedEnvPrefixes: ["NOTCRAWL_"],
 	syncArgs: (options) => [...globalArgs(options), "sync"],
-	searchArgs: (options, query, topK) => [...globalArgs(options), "search", query, "--limit", String(topK), "--json"],
+	// notcrawl search has no --json flag (checked through v0.6.0): it prints one
+	// tab-separated `kind\tid\ttitle\ttext` row per hit, so parse that instead.
+	searchArgs: (options, query, topK) => [...globalArgs(options), "search", query, "--limit", String(topK)],
 	parseSyncCount: parseCount,
 	parseHits,
 };
@@ -54,6 +56,12 @@ function globalArgs(options: CrawlerCliOptions): readonly string[] {
 }
 
 function parseCount(stdout: string): number | undefined {
+	const trimmed = stdout.trim();
+	// notcrawl sync prints a text summary like `desktop: pages=3 blocks=...`
+	if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+		const textMatch = /\bpages=(\d+)/.exec(trimmed);
+		return textMatch ? Number(textMatch[1]) : 0;
+	}
 	const parsed = parseJson(stdout);
 	if (parsed === undefined) return undefined;
 	if (Array.isArray(parsed)) return parsed.length;
@@ -66,6 +74,10 @@ function parseCount(stdout: string): number | undefined {
 }
 
 function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
+	const trimmed = stdout.trim();
+	if (trimmed.length > 0 && !trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+		return parseTabSeparatedHits(trimmed);
+	}
 	const parsed = parseJson(stdout);
 	const rows = Array.isArray(parsed)
 		? parsed
@@ -97,6 +109,29 @@ function parseHits(stdout: string): readonly CrawlerHit[] | undefined {
 				...(parentTitle !== undefined ? { parentTitle } : {}),
 				...(url !== undefined ? { url } : {}),
 				...(lastEditedTime !== undefined ? { lastEditedTime } : {}),
+			},
+		});
+	}
+	return hits;
+}
+
+function parseTabSeparatedHits(stdout: string): readonly CrawlerHit[] | undefined {
+	const hits: CrawlerHit[] = [];
+	for (const [index, line] of stdout.split("\n").entries()) {
+		if (line.trim().length === 0) continue;
+		const [kind, id, title, ...textParts] = line.split("\t");
+		if (kind === undefined || id === undefined || id.length === 0) return undefined;
+		const content = textParts.join("\t");
+		const cleanTitle = (title ?? "").replace(/\\t/g, "\t").replace(/\\n/g, "\n");
+		hits.push({
+			id,
+			content: content.replace(/\\t/g, "\t").replace(/\\n/g, "\n"),
+			score: 1 / (index + 1),
+			...(cleanTitle.length > 0 ? { title: cleanTitle } : {}),
+			hierarchy: [kind, ...(cleanTitle.length > 0 ? [cleanTitle] : []), id],
+			metadata: {
+				kind,
+				...(cleanTitle.length > 0 ? { title: cleanTitle } : {}),
 			},
 		});
 	}
