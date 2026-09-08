@@ -1,82 +1,206 @@
 {
   "task": "todo-5",
-  "root": "/tmp/autorag-live-shared.ljanI4",
-  "bootstrap": {
-    "command": "node scripts/live-e2e/runner.mjs bootstrap --root /tmp/autorag-live-shared.ljanI4",
-    "exitCode": 0,
-    "result": "BOOTSTRAP_OK: /tmp/autorag-live-shared.ljanI4",
-    "verifyCommand": "node scripts/live-e2e/runner.mjs verify-corpus --root /tmp/autorag-live-shared.ljanI4",
-    "verifyExitCode": 0,
-    "resultText": "VERIFY_OK: corpus integrity confirmed"
-  },
+  "scenario": "deterministic-live-e2e-cold-warm",
   "adapterProbe": {
-    "command": "curl -sS -o /tmp/autorag-tei-probe.json -w 'HTTP %{http_code}\\n' -X POST http://127.0.0.1:18080/embed -H 'content-type: application/json' --data '{\"inputs\":[\"preflight\"]}'",
+    "endpoint": "http://127.0.0.1:18080",
     "httpStatus": 200,
     "dimension": 768,
     "loopbackOnly": true
   },
-  "cold": {
-    "command": "make e2e-live-cold E2E_ROOT=/tmp/autorag-live-shared.ljanI4 E2E_ARGS='--evidence-dir /tmp/autorag-live-evidence.L3Xf4P/cold'",
-    "exitCode": 0,
-    "parsedMirrorWrites": 1,
-    "fullSync": true,
-    "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
-    "cursorExists": true,
-    "hitSource": "/private/tmp/autorag-live-shared.ljanI4/corpus/sample.txt",
-    "sourceAbsolute": true,
-    "sourceExists": true,
-    "sourceReadable": true,
-    "score": 1,
-    "embeddingEndpoint": "http://127.0.0.1:18080",
-    "embeddingModel": "embeddinggemma:latest",
-    "embeddingDimension": 768,
-    "openaiKeyPresent": false,
-    "cleanupLockReleased": true
-  },
-  "warm": {
-    "command": "make e2e-live E2E_ROOT=/tmp/autorag-live-shared.ljanI4 E2E_ARGS='--evidence-dir /tmp/autorag-live-evidence.L3Xf4P/warm'",
-    "exitCode": 0,
-    "parsedMirrorWrites": 0,
-    "fullSync": false,
-    "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
-    "cursorExists": true,
-    "hitSource": "/private/tmp/autorag-live-shared.ljanI4/corpus/sample.txt",
-    "sourceAbsolute": true,
-    "sourceExists": true,
-    "sourceReadable": true,
-    "score": 1,
-    "embeddingEndpoint": "http://127.0.0.1:18080",
-    "embeddingModel": "embeddinggemma:latest",
-    "embeddingDimension": 768,
-    "openaiKeyPresent": false,
-    "cleanupLockReleased": true,
-    "cursorReused": true
-  },
-  "refusalRequirements": {
-    "notBootstrapped": "live-e2e-root-not-bootstrapped / MISSING_FILE: corpus/sample.txt",
-    "wrongRouteOrPort": "live-e2e-embedding-unavailable",
-    "nonLoopback": "live-e2e-non-loopback-embedding",
-    "staleFingerprint": "live-e2e-fingerprint-mismatch",
-    "malformedResponse": "live-e2e-embedding-unavailable",
-    "openaiEgress": "live-e2e-openai-egress; evidence records openaiKeyPresent only and never credential values"
+  "runs": [
+    {
+      "run": 1,
+      "root": "/tmp/autorag-live-runs.4HBewK/root-1",
+      "cold": {
+        "mode": "cold",
+        "exitCode": 0,
+        "parsedMirrorWrites": 1,
+        "fullSync": true,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-1/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": []
+      },
+      "warm": {
+        "mode": "warm",
+        "exitCode": 0,
+        "parsedMirrorWrites": 0,
+        "fullSync": false,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-1/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": [],
+        "cursorReused": true
+      }
+    },
+    {
+      "run": 2,
+      "root": "/tmp/autorag-live-runs.4HBewK/root-2",
+      "cold": {
+        "mode": "cold",
+        "exitCode": 0,
+        "parsedMirrorWrites": 1,
+        "fullSync": true,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-2/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": []
+      },
+      "warm": {
+        "mode": "warm",
+        "exitCode": 0,
+        "parsedMirrorWrites": 0,
+        "fullSync": false,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-2/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": [],
+        "cursorReused": true
+      }
+    },
+    {
+      "run": 3,
+      "root": "/tmp/autorag-live-runs.4HBewK/root-3",
+      "cold": {
+        "mode": "cold",
+        "exitCode": 0,
+        "parsedMirrorWrites": 1,
+        "fullSync": true,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-3/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": []
+      },
+      "warm": {
+        "mode": "warm",
+        "exitCode": 0,
+        "parsedMirrorWrites": 0,
+        "fullSync": false,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-3/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": [],
+        "cursorReused": true
+      }
+    }
+  ],
+  "determinism": {
+    "coldExitCodes": [
+      0,
+      0,
+      0
+    ],
+    "warmExitCodes": [
+      0,
+      0,
+      0
+    ],
+    "warmParsedMirrorWrites": [
+      0,
+      0,
+      0
+    ],
+    "warmFullSync": [
+      false,
+      false,
+      false
+    ],
+    "allColdFullSync": true,
+    "allWarmIncremental": true
   },
   "fix": {
-    "sourceMapping": "AutoRAGAgent.workspacePath now uses clone-local AUTORAG_WORKSPACE while searchPaths remains the immutable shared corpus.",
-    "coldMinSync": "MinSyncClient initializes clone-local .minsync/config.toml before check/restore and sync; cold creates config and cursor without ENOENT.",
-    "warmMinSync": "The same clone-local cursor is reused, so warm uses incremental sync with fullSync:false and parsed writes 0."
+    "exactOrdering": "After awaiting init, sync now requires <workspace>/.minsync/config.toml to exist before configuredMaxChunkSize/readConfigSnapshot/rewriteEmbedderConfig/check; otherwise it returns init-failed and never restores/reads config.",
+    "workspaceMapping": "AutoRAGAgent.workspacePath is clone-local; searchPaths remains shared corpus."
   },
   "adversarial": {
-    "sharedMutableState": "find <shared-root> -name .autorag returned no paths after cold and warm",
-    "misleadingSuccessOutput": "both workflow exit codes are 0 and result.json records PASS plus observable hit/cursor/lock state",
-    "staleState": "warm fingerprint reuse checked",
-    "egress": "embedding endpoint is loopback-only; OpenAI key presence false"
+    "sharedMutableState": "find <shared-root> -name .autorag returned no paths in each fresh run",
+    "misleadingSuccessOutput": "all six workflow invocations exited 0 and each result records hit, cursor, and lockReleased observables",
+    "staleState": "warm runs reused the cold-created cursor",
+    "egress": "loopback-only adapter; OpenAI key presence false"
   },
-  "cleanup": {
-    "command": "rm -rf .autorag-e2e /tmp/autorag-live-shared.ljanI4 /tmp/autorag-live-evidence.L3Xf4P .debug-journal.md .jikji",
-    "lockReleased": true,
-    "cloneStateRemoved": true,
-    "tempEvidenceRemoved": true,
-    "debugJournalRemoved": true,
-    "processesKilled": true
-  }
+  "sourceRead": "Each hit source is absolute/readable and was compared to the bootstrapped fixture."
 }
