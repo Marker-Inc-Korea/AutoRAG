@@ -186,11 +186,9 @@ function cmdLockProbe(args) {
 		case "acquired":
 			console.log("live-e2e-lock-acquired");
 			process.exit(0);
-			break;
 		case "held":
 			console.log(result.reason);
 			process.exit(1);
-			break;
 	}
 }
 

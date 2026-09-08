@@ -1,89 +1,40 @@
 {
-	"task": "st_01a07f12",
-	"implementation": "Todo 2 phase 2 — fix three bugs: AUTORAG_SEARCH_PATHS path, malformed fingerprint blocking, stale lock recovery",
-	"parentTask": "st_01a07eed",
-	"bugfixes": {
-		"bug1": "AUTORAG_SEARCH_PATHS now points to <shared-root>/corpus (immutable bootstrapped), not .autorag-e2e/search-paths (mutable scratch)",
-		"bug2": "loadFingerprint() throws on malformed/empty files; cmdPrintEnv catches and exits 1 with live-e2e-fingerprint-mismatch",
-		"bug3": "tryLock() now calls breakStaleLock() before each mkdir attempt, detecting dead PIDs via kill(pid,0). Stale locks without PID are conservatively held (not broken), preventing <1ms mkdir→PID-write race. SIGKILL'd holders are detected and broken."
+	"task": "st_01a08086",
+	"implementation": "Todo 2 hygiene fix — lint: useTemplate, noUnusedImports, noUnusedVariables; split lock module from env.mjs for size gate; remove unreachable break in runner.mjs",
+	"parentTask": "st_01a07f12",
+	"hygieneFixes": {
+		"lint_before": "4 violations (2 useTemplate, 1 noUnusedImports, 1 noUnusedVariables)",
+		"lint_after": "0 violations, bun run lint exit 0",
+		"env_mjs_pureLOC_before": 280,
+		"env_mjs_pureLOC_after": 180,
+		"lock_mjs_pureLOC": 117,
+		"runner_mjs_unreachable_break": "removed 2 break statements after process.exit() in cmdLockProbe",
+		"test_file_unused_imports": "removed chmodSync, readFileSync, readdirSync, statSync from imports; removed _BOOTSTRAP_PATH variable",
+		"test_file_template_literals": "converted 2 string concatenations to template literals"
 	},
 	"changedFiles": [
 		"scripts/live-e2e/env.mjs",
 		"scripts/live-e2e/runner.mjs",
+		"scripts/live-e2e/lock.mjs",
 		"test/live-e2e/env-fingerprint-lock.test.ts",
 		".omo/evidence/task-2-fixed-live-e2e-environment.json"
 	],
-	"removedFiles": ["test/live-e2e/bugfix-three.test.ts"],
 	"testResults": {
 		"allPassed": true,
 		"files": ["test/live-e2e/manifest-invariant.test.ts", "test/live-e2e/env-fingerprint-lock.test.ts"],
 		"totalTests": 35,
-		"status": "GREEN",
-		"addedTests": [
-			"AUTORAG_SEARCH_PATHS points to <shared-root>/corpus",
-			"AUTORAG_SEARCH_PATHS does NOT contain .autorag-e2e",
-			"AUTORAG_SEARCH_PATHS is an existing directory with MANIFEST.json",
-			"malformed JSON in fingerprint/state.json blocks warm mode",
-			"empty file in fingerprint/state.json blocks warm mode",
-			"cold mode overwrites malformed fingerprint silently",
-			"stale lock with dead PID broken and acquired",
-			"stale lock dead PID broken after acquire (idempotent)",
-			"lock without PID file is conservatively treated as held",
-			"live holder lock is held; SIGKILL then followed by acquire"
-		]
+		"status": "GREEN"
 	},
-	"scenarioResults": {
-		"bug1SearchPathsIsSharedRootCorpus": true,
-		"bug1SearchPathsNotDotAutoragE2e": true,
-		"bug1SearchPathsExistsWithManifest": true,
-		"bug2MalformedJsonWarmExit1": true,
-		"bug2MalformedJsonColdExit0": true,
-		"bug2EmptyFileWarmExit1": true,
-		"bug3StaleDeadPidBroken": true,
-		"bug3NoPidFileTreatedAsHeld": true,
-		"bug3LivePidIsHeld": true,
-		"bug3SIGKILLThenAcquire": true
+	"verification": {
+		"bunLint": "exit 0",
+		"nodeCheck": "exit 0 on all 4 .mjs files (bootstrap.mjs, env.mjs, lock.mjs, runner.mjs)",
+		"tscNoEmit": "exit 0",
+		"vitest": "35 passed, 0 failed (2 files, 3.37s)",
+		"lspErrors": "0 errors across all changed files",
+		"smoke_bootstrap_and_printEnv": "exit 0, AUTORAG_SEARCH_PATHS ends with /corpus",
+		"smoke_malformed_fingerprint": "exit 1 with live-e2e-fingerprint-mismatch",
+		"pureLOC_env_mjs": 180,
+		"pureLOC_lock_mjs": 117
 	},
-	"diagnostics": {
-		"nodeCheck": "exit=0 on all .mjs files (env.mjs, bootstrap.mjs, runner.mjs)",
-		"tscNoEmit": "exit=0, no errors",
-		"lspErrors": "0 errors across scripts/live-e2e/ and test/live-e2e/",
-		"vitest": "35 passed, 0 failed (2 files, 3.3s)"
-	},
-	"adversarialClasses": {
-		"malformed_fingerprint_json": {
-			"tested": true,
-			"classes": ["invalid JSON", "empty file", "cold mode overwrites"],
-			"result": "Warm mode: exit 1 with live-e2e-fingerprint-mismatch; cold mode: exit 0 (wipes and rebuilds)"
-		},
-		"stale_lock_with_dead_pid": {
-			"tested": true,
-			"classes": ["PID 99999999 (nonexistent)", "no PID file (conservative held)", "SIGKILL'd live holder"],
-			"result": "Dead PID: breakStaleLock detects via kill(pid,0), removes lock, next mkdir succeeds. No PID: conservative 'held' to avoid mkdir→write race. SIGKILL: detect dead, break, acquire."
-		},
-		"concurrent_lock_with_pid_race": {
-			"tested": true,
-			"classes": ["Two concurrent --hold-ms 1000, mkdir atomicity"],
-			"result": "Exactly one acquires. breakStaleLock without PID does not break (conservative), avoiding the mkdir→write race."
-		},
-		"cross_test_isolation": {
-			"tested": true,
-			"classes": ["Parallel vitest files sharing .autorag-e2e"],
-			"result": "beforeAll/afterAll cleanup at file level prevents cross-file pollution. Tests consolidated into single file."
-		}
-	},
-	"postWriteReview": {
-		"singleResponsibility": "env.mjs: environment/fingerprint/lock/cleanup; runner.mjs: CLI dispatch; bootstrap.mjs: corpus bootstrap/verify.",
-		"boundaryPurity": "CLI args parsed at boundary. Fingerprint parsed at boundary, throws on malformed. Lock PID checked via OS process table.",
-		"variantDiscrimination": "tryLock returns discriminated union; cmdLockProbe switches on kind exhaustively.",
-		"escapeHatches": "None.",
-		"defensiveLayer": "None. breakStaleLock conservative on missing PID avoids TOCTOU race.",
-		"helpersForOneOff": "None.",
-		"tests": "24 focused tests in single file (plus 11 preserved).",
-		"parameterBloat": "No function exceeds 3 parameters.",
-		"redundantVerification": "None.",
-		"negativeNaming": "None.",
-		"loggingConventions": "Structured prefix diagnostics (live-e2e-fingerprint-mismatch, live-e2e-lock-held, etc.).",
-		"pureLOC": "env.mjs <250, runner.mjs <250, test file <500 (combined from two files). All clean."
-	}
+	"behaviorChange": "ZERO — all public exports, CLI contracts, exit codes, diagnostics strings, lock/fingerprint/search-path semantics are identical. Lock logic extracted to lock.mjs and re-exported from env.mjs."
 }

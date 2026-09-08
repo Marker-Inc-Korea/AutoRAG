@@ -4,7 +4,7 @@
  * lock contention, and cold-mode cleanup boundary.
  */
 
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
 const RUNNER_PATH = join(REPO_ROOT, "scripts", "live-e2e", "runner.mjs");
-const BOOTSTRAP_PATH = join(REPO_ROOT, "scripts", "live-e2e", "bootstrap.mjs");
 
 // ── File-level cleanup guard — ensures no cross-file pollution with parallelism
 // The env.mjs production code hardcodes .autorag-e2e at repo root, so we clean
@@ -93,9 +92,7 @@ describe("print-env", () => {
 	});
 
 	test("print-env --json outputs all five override env vars", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `exit code, stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -108,9 +105,7 @@ describe("print-env", () => {
 	});
 
 	test("every mutable path is beneath the current repo's .autorag-e2e", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, string>;
@@ -118,30 +113,23 @@ describe("print-env", () => {
 		for (const key of ["AUTORAG_HOME", "AUTORAG_CONFIG", "AUTORAG_WORKSPACE", "AUTORAG_MEMORY_PATH"] as const) {
 			const val = parsed[key];
 			expect(val, `${key} must be a string`).toBeTypeOf("string");
-			expect(
-				resolve(val!).startsWith(E2E_DIR),
-				`${key}=${val!} must be under ${E2E_DIR}`,
-			).toBe(true);
+			expect(resolve(val!).startsWith(E2E_DIR), `${key}=${val!} must be under ${E2E_DIR}`).toBe(true);
 		}
 	});
 
 	test("AUTORAG_SEARCH_PATHS does not reference the global ~/.autorag", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, unknown>;
 
 		const searchPaths = String(parsed.AUTORAG_SEARCH_PATHS ?? "");
 		expect(searchPaths).not.toContain("~/.autorag");
-		expect(searchPaths).not.toContain(process.env.HOME + "/.autorag");
+		expect(searchPaths).not.toContain(`${process.env.HOME}/.autorag`);
 	});
 
 	test("globalHomeFallback is false in the env output", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -149,9 +137,7 @@ describe("print-env", () => {
 	});
 
 	test("print-env refuses unknown mode", () => {
-		const { exitCode, stderr } = runRunnerSync([
-			"print-env", "--mode", "unknown", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "unknown", "--json", "--root", tmpRoot]);
 
 		expect(exitCode).toBe(1);
 		expect(stderr).toMatch(/mode/);
@@ -159,9 +145,7 @@ describe("print-env", () => {
 
 	test("print-env uses --root or AUTORAG_LIVE_E2E_ROOT, falling back to repo root", () => {
 		// Provide explicit --root
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -171,9 +155,7 @@ describe("print-env", () => {
 	});
 
 	test("print-env prints fingerprint when --mode warm", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 		const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -197,9 +179,7 @@ describe("fingerprint warm-mode blocking", () => {
 		const tmp = createTempDir();
 		try {
 			bootstrapRoot(tmp);
-			const { exitCode, stderr } = runRunnerSync([
-				"print-env", "--mode", "cold", "--json", "--root", tmp,
-			]);
+			const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmp]);
 
 			expect(exitCode, `cold mode should pass but got stderr: ${stderr}`).toBe(0);
 		} finally {
@@ -231,9 +211,7 @@ describe("fingerprint warm-mode blocking", () => {
 			mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
 			writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), JSON.stringify(staleFingerprint));
 
-			const { exitCode, stderr } = runRunnerSync([
-				"print-env", "--mode", "warm", "--json", "--root", tmp,
-			]);
+			const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmp]);
 
 			expect(exitCode).toBe(1);
 			expect(stderr).toContain("live-e2e-fingerprint-mismatch");
@@ -249,15 +227,11 @@ describe("fingerprint warm-mode blocking", () => {
 			bootstrapRoot(tmp);
 
 			// Run cold first — this should create the state with matching fingerprint
-			const coldResult = runRunnerSync([
-				"print-env", "--mode", "cold", "--json", "--root", tmp,
-			]);
+			const coldResult = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmp]);
 			expect(coldResult.exitCode).toBe(0);
 
 			// Now warm should succeed
-			const { exitCode, stderr } = runRunnerSync([
-				"print-env", "--mode", "warm", "--json", "--root", tmp,
-			]);
+			const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmp]);
 
 			expect(exitCode, `warm mode should pass after cold init, stderr: ${stderr}`).toBe(0);
 		} finally {
@@ -283,7 +257,7 @@ describe("lock-probe contention", () => {
 
 		expect(exitCode, `lock-probe should pass, stderr: ${stderr}`).toBe(0);
 		expect(stdout).toContain("live-e2e-lock-acquired");
-			// Lock directory should be gone after release
+		// Lock directory should be gone after release
 		const lockFile = join(E2E_DIR, "locks", "live-e2e.lock");
 		expect(existsSync(lockFile), "lock file should be released").toBe(false);
 	});
@@ -307,14 +281,17 @@ describe("lock-probe contention", () => {
 		// Write a temp script that runs both and captures their outputs
 		// Use mkdtempSync from fs to create temp dir
 		const { mkdtempSync } = await import("node:fs");
-		const tmpDir = mkdtempSync((await import("node:os").then((o) => o.tmpdir())) + "/live-e2e-locktest-");
+		const tmpDir = mkdtempSync(`${await import("node:os").then((o) => o.tmpdir())}/live-e2e-locktest-`);
 		const { writeFileSync } = await import("node:fs");
-		writeFileSync(join(tmpDir, "run.sh"), [
-			"#!/bin/sh",
-			`"${nodeExe}" "${runner}" lock-probe --hold-ms 1000 > "${tmpDir}/out1" 2>"${tmpDir}/err1" &`,
-			`"${nodeExe}" "${runner}" lock-probe --hold-ms 1000 > "${tmpDir}/out2" 2>"${tmpDir}/err2" &`,
-			"wait",
-		].join("\n"));
+		writeFileSync(
+			join(tmpDir, "run.sh"),
+			[
+				"#!/bin/sh",
+				`"${nodeExe}" "${runner}" lock-probe --hold-ms 1000 > "${tmpDir}/out1" 2>"${tmpDir}/err1" &`,
+				`"${nodeExe}" "${runner}" lock-probe --hold-ms 1000 > "${tmpDir}/out2" 2>"${tmpDir}/err2" &`,
+				"wait",
+			].join("\n"),
+		);
 		const { chmodSync } = await import("node:fs");
 		chmodSync(join(tmpDir, "run.sh"), 0o755);
 
@@ -363,9 +340,7 @@ describe("bugfix: AUTORAG_SEARCH_PATHS to immutable shared root", () => {
 	});
 
 	test("AUTORAG_SEARCH_PATHS points to <shared-root>/corpus not .autorag-e2e/search-paths", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmpRoot]);
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 
 		const parsed = JSON.parse(stdout) as Record<string, string>;
@@ -375,9 +350,7 @@ describe("bugfix: AUTORAG_SEARCH_PATHS to immutable shared root", () => {
 	});
 
 	test("AUTORAG_SEARCH_PATHS does NOT contain .autorag-e2e", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmpRoot]);
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 
 		const parsed = JSON.parse(stdout) as Record<string, string>;
@@ -385,9 +358,7 @@ describe("bugfix: AUTORAG_SEARCH_PATHS to immutable shared root", () => {
 	});
 
 	test("AUTORAG_SEARCH_PATHS is an existing directory", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmpRoot]);
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 
 		const parsed = JSON.parse(stdout) as Record<string, string>;
@@ -395,9 +366,7 @@ describe("bugfix: AUTORAG_SEARCH_PATHS to immutable shared root", () => {
 	});
 
 	test("AUTORAG_SEARCH_PATHS contains a bootstrapped corpus (MANIFEST.json present)", () => {
-		const { exitCode, stdout, stderr } = runRunnerSync([
-			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stdout, stderr } = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmpRoot]);
 		expect(exitCode, `stderr: ${stderr}`).toBe(0);
 
 		const parsed = JSON.parse(stdout) as Record<string, string>;
@@ -425,9 +394,7 @@ describe("bugfix: malformed fingerprint blocks warm mode", () => {
 		mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
 		writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), "this is not valid json at all {{{{");
 
-		const { exitCode, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode).toBe(1);
 		expect(stderr).toContain("live-e2e-fingerprint-mismatch");
@@ -437,9 +404,7 @@ describe("bugfix: malformed fingerprint blocks warm mode", () => {
 		mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
 		writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), "garbage{{{");
 
-		const { exitCode, stderr } = runRunnerSync([
-			"print-env", "--mode", "cold", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "cold", "--json", "--root", tmpRoot]);
 
 		expect(exitCode, `cold mode must pass on malformed: ${stderr}`).toBe(0);
 	});
@@ -448,9 +413,7 @@ describe("bugfix: malformed fingerprint blocks warm mode", () => {
 		mkdirSync(join(E2E_DIR, "fingerprint"), { recursive: true });
 		writeFileSync(join(E2E_DIR, "fingerprint", "state.json"), "");
 
-		const { exitCode, stderr } = runRunnerSync([
-			"print-env", "--mode", "warm", "--json", "--root", tmpRoot,
-		]);
+		const { exitCode, stderr } = runRunnerSync(["print-env", "--mode", "warm", "--json", "--root", tmpRoot]);
 
 		expect(exitCode).toBe(1);
 		expect(stderr).toContain("live-e2e-fingerprint-mismatch");
