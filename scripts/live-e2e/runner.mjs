@@ -1,151 +1,186 @@
 /**
- * scripts/live-e2e/runner.mjs — Fixed corpus bootstrap & verification.
+ * scripts/live-e2e/runner.mjs — Fixed corpus bootstrap & verification,
+ * environment, fingerprint, lock, and cleanup commands.
  *
  * Commands:
- *   node scripts/live-e2e/runner.mjs bootstrap --root <path>
- *   node scripts/live-e2e/runner.mjs verify-corpus --root <path>
+ *   bootstrap --root <path>
+ *   verify-corpus --root <path>
+ *   print-env --mode <warm|cold> --json [--root <path>]
+ *   lock-probe [--hold-ms <ms>]
+ *
+ * This is a plain JS ESM module (.mjs).  All type annotations use JSDoc.
  */
 
-import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	buildEnv,
+	loadFingerprint,
+	removeE2eState,
+	tryLock,
+	writeFingerprint,
+} from "./env.mjs";
+
+// ── Re-export sub-module functions for direct test imports ────────────
+
+export { bootstrap, verifyCorpus } from "./bootstrap.mjs";
 
 // ── Paths ────────────────────────────────────────────────────────────
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const MANIFEST_PATH = join(__dirname, "corpus", "MANIFEST.json");
+const REPO_ROOT = resolve(__dirname, "..", "..");
+const E2E_DIR = join(REPO_ROOT, ".autorag-e2e");
 
-// ── Manifest loader ──────────────────────────────────────────────────
-
-function loadManifest() {
-	if (!existsSync(MANIFEST_PATH)) {
-		throw new Error("MANIFEST_MISSING: " + MANIFEST_PATH);
-	}
-	const raw = readFileSync(MANIFEST_PATH, "utf-8");
-	const parsed = JSON.parse(raw);
-
-	if (!parsed.version || !Array.isArray(parsed.entries)) {
-		throw new Error("MANIFEST_INVALID: MANIFEST.json must have `version` (number) and `entries` (array)");
-	}
-	if (parsed.version !== 1) {
-		throw new Error("MANIFEST_VERSION_UNSUPPORTED: version " + parsed.version);
-	}
-	for (const entry of parsed.entries) {
-		if (!entry.path || !entry.sha256) {
-			throw new Error("MANIFEST_INVALID_ENTRY: each entry must have `path` and `sha256`");
-		}
-	}
-	return parsed;
-}
-
-// ── SHA-256 helper ───────────────────────────────────────────────────
-
-function sha256Of(filePath) {
-	const content = readFileSync(filePath);
-	return createHash("sha256").update(content).digest("hex");
-}
-
-// ── Bootstrap ────────────────────────────────────────────────────────
+// ── Root resolution ──────────────────────────────────────────────────
 
 /**
- * Copy manifest + all fixture files to `root`.
- * Creates `root` if it doesn't exist. Idempotent — overwrites only if files
- * differ. All bootstrapped files are set to read-only (0444).
- * @param {string} root
+ * Resolve the shared corpus root from CLI args or env.
+ * Priority: --root flag > AUTORAG_LIVE_E2E_ROOT env var > repo root.
+ * @param {readonly string[]} args
+ * @returns {string} resolved absolute path
  */
-export async function bootstrap(root) {
-	const manifest = loadManifest();
-
-	const rootReal = resolve(root);
-	mkdirSync(rootReal, { recursive: true });
-
-	// Copy MANIFEST.json to root/corpus/MANIFEST.json
-	const manifestDest = join(rootReal, "corpus", "MANIFEST.json");
-	const manifestParent = resolve(manifestDest, "..");
-	mkdirSync(manifestParent, { recursive: true });
-	copyReadOnly(MANIFEST_PATH, manifestDest);
-
-	// Copy each entry
-	for (const entry of manifest.entries) {
-		const src = join(__dirname, entry.path);
-		const dest = join(rootReal, entry.path);
-
-		// Ensure parent directory exists
-		const parentDir = resolve(dest, "..");
-		mkdirSync(parentDir, { recursive: true });
-
-		copyReadOnly(src, dest);
+function resolveRoot(args) {
+	const rootIndex = args.indexOf("--root");
+	if (rootIndex !== -1 && args[rootIndex + 1]) {
+		return resolve(args[rootIndex + 1]);
 	}
+	// Fallback to env var
+	const envRoot = process.env.AUTORAG_LIVE_E2E_ROOT;
+	if (envRoot) {
+		return resolve(envRoot);
+	}
+	// Default: use repo root itself
+	return REPO_ROOT;
 }
 
-/**
- * Copy `src` to `dest`, making `dest` writable first if needed, then
- * set `dest` to read-only (0444). Skips copy if content is already identical.
- * @param {string} src
- * @param {string} dest
- */
-function copyReadOnly(src, dest) {
-	if (existsSync(dest) && sha256Of(dest) === sha256Of(src)) {
-		// Content already matches — just ensure read-only mode
-		chmodSync(dest, 0o444);
-		return;
-	}
-
-	// Existing destination must be writable to overwrite
-	if (existsSync(dest)) {
-		chmodSync(dest, 0o644);
-	}
-
-	copyFileSync(src, dest);
-	chmodSync(dest, 0o444);
-}
-
-// ── Verify corpus ────────────────────────────────────────────────────
+// ── Print-env command ────────────────────────────────────────────────
 
 /**
- * Verify that `root` contains a faithful copy of the fixture corpus.
- * Returns { ok: true } on success, or { ok: false, errors: [...] } on
- * any mismatch or missing file.
- * @param {string} root
- * @returns {Promise<{ok: boolean, errors: string[]}>}
+ * @param {readonly string[]} args
  */
-export async function verifyCorpus(root) {
-	const errors = [];
+async function cmdPrintEnv(args) {
+	const modeIndex = args.indexOf("--mode");
+	const mode = modeIndex !== -1 ? args[modeIndex + 1] : "warm";
 
-	// Guard: root must exist
-	const rootReal = resolve(root);
-	if (!existsSync(rootReal)) {
-		return { ok: false, errors: ["MISSING_ROOT: " + rootReal] };
+	if (mode !== "warm" && mode !== "cold") {
+		console.error(`ERROR: --mode must be "warm" or "cold", got "${mode}"`);
+		process.exit(1);
 	}
 
-	let manifest;
-	try {
-		manifest = loadManifest();
-	} catch (e) {
-		return { ok: false, errors: [e.message] };
+	const root = resolveRoot(args);
+
+	// Guard: corpus must be bootstrapped
+	const corpusManifest = join(root, "corpus", "MANIFEST.json");
+	if (!existsSync(corpusManifest)) {
+		console.error(
+			"ERROR: live-e2e-root-not-bootstrapped: " + root + " is missing corpus/MANIFEST.json",
+		);
+		process.exit(1);
 	}
 
-	// Verify each entry
-	for (const entry of manifest.entries) {
-		const fixturePath = join(rootReal, entry.path);
+	// Cold mode: blow away .autorag-e2e and rebuild
+	if (mode === "cold") {
+		removeE2eState();
+	}
 
-		if (!existsSync(fixturePath)) {
-			errors.push("MISSING_FILE: " + entry.path);
-			continue;
-		}
+	// Ensure .autorag-e2e exists
+	mkdirSync(E2E_DIR, { recursive: true });
 
-		const actualHash = sha256Of(fixturePath);
-		if (actualHash !== entry.sha256) {
-			errors.push(
-				"DRIFT_DETECTED: " + entry.path
-					+ " — expected " + entry.sha256
-					+ ", got " + actualHash,
+	// Build the environment
+	const env = buildEnv(root);
+
+	// Warm-mode fingerprint check
+	if (mode === "warm") {
+		const prevFp = loadFingerprint();
+		if (prevFp !== null && !fingerprintsMatch(prevFp, env.fingerprint)) {
+			console.error(
+				"ERROR: live-e2e-fingerprint-mismatch — stale state detected. Run with --mode cold to rebuild.",
 			);
+			process.exit(1);
 		}
 	}
 
-	return errors.length === 0 ? { ok: true, errors: [] } : { ok: false, errors };
+	// Persist the fingerprint (always)
+	writeFingerprint(env.fingerprint);
+
+	// Output
+	const hasJson = args.includes("--json");
+	if (hasJson) {
+		console.log(JSON.stringify(env, null, 2));
+	} else {
+		console.log("AUTORAG_HOME=" + env.AUTORAG_HOME);
+		console.log("AUTORAG_CONFIG=" + env.AUTORAG_CONFIG);
+		console.log("AUTORAG_WORKSPACE=" + env.AUTORAG_WORKSPACE);
+		console.log("AUTORAG_SEARCH_PATHS=" + env.AUTORAG_SEARCH_PATHS);
+		console.log("AUTORAG_MEMORY_PATH=" + env.AUTORAG_MEMORY_PATH);
+		console.log("globalHomeFallback=" + env.globalHomeFallback);
+		console.log("runnerSchemaVersion=" + env.runnerSchemaVersion);
+		console.log("corpusVersion=" + env.fingerprint.corpusVersion);
+		console.log("corpusDigest=" + env.fingerprint.corpusDigest);
+		console.log("gitCommitSha=" + env.fingerprint.gitCommitSha);
+		console.log("gitDirty=" + env.fingerprint.gitDirty);
+	}
+}
+
+// ── Fingerprint comparison ───────────────────────────────────────────
+
+/**
+ * @param {Record<string, unknown>} a
+ * @param {Record<string, unknown>} b
+ * @returns {boolean}
+ */
+function fingerprintsMatch(a, b) {
+	const keys = [
+		"runnerSchemaVersion",
+		"corpusVersion",
+		"corpusDigest",
+		"gitCommitSha",
+		"embeddingModel",
+		"embeddingDimension",
+		"embeddingService",
+		"parserConfig",
+		"minSyncConfig",
+	];
+	for (const key of keys) {
+		if (a[key] !== b[key]) return false;
+	}
+	return true;
+}
+
+// ── Lock-probe command ───────────────────────────────────────────────
+
+/**
+ * @param {readonly string[]} args
+ */
+function cmdLockProbe(args) {
+	const holdIndex = args.indexOf("--hold-ms");
+	let holdMs = 0;
+	if (holdIndex !== -1 && args[holdIndex + 1]) {
+		const raw = args[holdIndex + 1];
+		const parsed = Number(raw);
+		if (!Number.isFinite(parsed) || parsed < 0) {
+			console.error("ERROR: --hold-ms must be a non-negative integer, got \"" + raw + "\"");
+			process.exit(1);
+		}
+		holdMs = parsed;
+	}
+
+	// Ensure the e2e directory exists so lock dir can be created
+	mkdirSync(E2E_DIR, { recursive: true });
+
+	const result = tryLock(holdMs);
+
+	switch (result.kind) {
+		case "acquired":
+			console.log("live-e2e-lock-acquired");
+			process.exit(0);
+			break;
+		case "held":
+			console.log(result.reason);
+			process.exit(1);
+			break;
+	}
 }
 
 // ── CLI entrypoint ───────────────────────────────────────────────────
@@ -153,12 +188,23 @@ export async function verifyCorpus(root) {
 async function main() {
 	const args = process.argv.slice(2);
 	if (args.length === 0) {
-		console.error("usage: node scripts/live-e2e/runner.mjs <command> [--root <path>]");
-		console.error("  commands: bootstrap, verify-corpus");
+		console.error("usage: node scripts/live-e2e/runner.mjs <command> [options]");
+		console.error("  commands: bootstrap, verify-corpus, print-env, lock-probe");
 		process.exit(2);
 	}
 
 	const command = args[0];
+
+	// print-env and lock-probe handle their own flag parsing
+	if (command === "print-env") {
+		return cmdPrintEnv(args);
+	}
+
+	if (command === "lock-probe") {
+		return cmdLockProbe(args);
+	}
+
+	// bootstrap and verify-corpus need --root
 	const rootIndex = args.indexOf("--root");
 	const root = rootIndex !== -1 ? args[rootIndex + 1] : undefined;
 
@@ -169,12 +215,14 @@ async function main() {
 
 	switch (command) {
 		case "bootstrap": {
-			await bootstrap(root);
+			const { bootstrap: doBootstrap } = await import("./bootstrap.mjs");
+			await doBootstrap(root);
 			console.log("BOOTSTRAP_OK: " + resolve(root));
 			process.exit(0);
 		}
 		case "verify-corpus": {
-			const result = await verifyCorpus(root);
+			const { verifyCorpus: doVerify } = await import("./bootstrap.mjs");
+			const result = await doVerify(root);
 			if (result.ok) {
 				console.log("VERIFY_OK: corpus integrity confirmed");
 				process.exit(0);
@@ -187,7 +235,7 @@ async function main() {
 		}
 		default: {
 			console.error("ERROR: unknown command \"" + command + "\"");
-			console.error("  valid commands: bootstrap, verify-corpus");
+			console.error("  valid commands: bootstrap, verify-corpus, print-env, lock-probe");
 			process.exit(2);
 		}
 	}
