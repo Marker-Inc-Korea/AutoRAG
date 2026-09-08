@@ -1,6 +1,14 @@
 SHELL := /bin/bash
 
-.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci
+# ── Live E2E ────────────────────────────────────────────────────────
+# Shared corpus root for live-e2e. Defaults to the current repo path so
+# targets pass the checked-out code to the runner. Override with
+# E2E_ROOT=</path>; when AUTORAG_LIVE_E2E_ROOT is set it is honored as a
+# documented outside-repo default. Targets NEVER create or bootstrap this
+# root implicitly — run the explicit bootstrap command first.
+E2E_ROOT ?= $(if $(AUTORAG_LIVE_E2E_ROOT),$(AUTORAG_LIVE_E2E_ROOT),$(CURDIR))
+
+.PHONY: help install lint format typecheck build test test-all test-macos test-windows test-linux ci e2e-live e2e-live-cold
 
 help:
 	@printf '%s\n' \
@@ -14,7 +22,14 @@ help:
 		'make test-macos    Run the complete suite on a macOS host' \
 		'make test-windows  Run the complete suite on a Windows host' \
 		'make test-linux    Run the complete suite in a Linux container' \
-		'make ci            Run lint, typecheck, tests, and build locally'
+		'make e2e-live      Run warm live-E2E (reuse clone-local state)' \
+		'make e2e-live-cold Run cold live-E2E (delete state, rebuild)' \
+		'make ci            Run lint, typecheck, tests, and build locally' \
+		'' \
+		'  E2E_ROOT=<root>  Shared corpus root (default: current repo path;' \
+		'                   honors AUTORAG_LIVE_E2E_ROOT if set)' \
+		'  E2E_ARGS=<args>  Extra arguments forwarded to the runner' \
+		'  bootstrap first: node scripts/live-e2e/runner.mjs bootstrap --root "$$AUTORAG_LIVE_E2E_ROOT"'
 
 install:
 	bun install --frozen-lockfile
@@ -35,6 +50,12 @@ test:
 	bun run test
 
 test-all: test
+
+e2e-live:
+	node scripts/live-e2e/runner.mjs print-env --mode warm --root "$(E2E_ROOT)" $(E2E_ARGS)
+
+e2e-live-cold:
+	node scripts/live-e2e/runner.mjs print-env --mode cold --root "$(E2E_ROOT)" $(E2E_ARGS)
 
 test-macos:
 	@test "$$(uname -s)" = "Darwin" || { echo "test-macos requires a macOS host"; exit 1; }

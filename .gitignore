@@ -8,7 +8,7 @@ artifacts/
 .DS_Store
 decks/
 .autorag/
-.autorag-e2e/
+.autorag-e2e
 .pptx-venv/
 evidence/
 *.local.json
