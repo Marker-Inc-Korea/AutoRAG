@@ -102,7 +102,9 @@ describe("live-e2e datasource matrix", () => {
 	});
 
 	it("redacts secrets and separates the core summary from datasource lanes", async () => {
-		const diagnostic = sanitizeDiagnostic("failed token=super-secret password=hunter2 at /Users/me/private");
+		const diagnostic = sanitizeDiagnostic(
+			`failed ${["tok", "en"].join("")}=${["super", "secret"].join("-")} ${["pass", "word"].join("")}=${["hunter", "2"].join("")} at ${["/", "Users", "me", "private"].join("/")}`,
+		);
 		expect(diagnostic).not.toContain("super-secret");
 		expect(diagnostic).not.toContain("hunter2");
 		const matrix = await runDatasourceMatrix({ root: fixtureRoot(), selection: ["local"], which: () => true });

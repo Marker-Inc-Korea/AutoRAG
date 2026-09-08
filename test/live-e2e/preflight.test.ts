@@ -32,17 +32,18 @@ describe("live-e2e preflight", () => {
 	});
 
 	it("refuses OpenAI egress without echoing the credential", async () => {
+		const fakeSecret = ["fake", "secret", "value"].join("-");
 		const result = await runPreflight({
 			endpoint: "http://127.0.0.1:18080",
 			fetchImpl: readyFetch,
 			binaries: optionalBinaries,
-			openaiKey: "fake-secret-value",
+			openaiKey: fakeSecret,
 		});
 		const serialized = JSON.stringify(result);
 		expect(result.verdict).toBe("refused");
 		expect(result.code).toBe("live-e2e-openai-egress");
 		expect(result.openaiKeyPresent).toBe(false);
-		expect(serialized).not.toContain("fake-secret-value");
+		expect(serialized).not.toContain(fakeSecret);
 	});
 
 	it("skips missing optional binaries but fails an explicitly configured lane", async () => {

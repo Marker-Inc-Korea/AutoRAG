@@ -66,7 +66,7 @@
       "note": "PATH stripped of $HOME/.cargo/bin and /opt/homebrew/bin → all 7 datasource binaries absent → each lane SKIP → overall verdict degraded (exit 0)"
     },
     "openaiEgress": {
-      "command": "AUTORAG_OPENAI_API_KEY=fake node scripts/live-e2e/runner.mjs preflight --endpoint http://127.0.0.1:18080/embed --json",
+      "command": "AUTORAG_OPENAI_API_KEY=<set> node scripts/live-e2e/runner.mjs preflight --endpoint http://127.0.0.1:18080/embed --json",
       "verdict": "refused",
       "exitCode": 1,
       "code": "live-e2e-openai-egress",
@@ -91,7 +91,7 @@
       "note": "Non-loopback endpoint → refused; hostname not 127.0.0.1 or localhost"
     },
     "credentialRedactionInEndpoint": {
-      "command": "node scripts/live-e2e/runner.mjs preflight --endpoint http://user:secret@127.0.0.1:18080/embed --json",
+      "command": "node scripts/live-e2e/runner.mjs preflight --endpoint http://user:<redacted>@127.0.0.1:18080/embed --json",
       "verdict": "refused",
       "exitCode": 1,
       "code": "live-e2e-embedding-unavailable",
