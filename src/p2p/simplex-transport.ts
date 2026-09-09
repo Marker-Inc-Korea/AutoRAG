@@ -97,7 +97,7 @@ function extractTextFromChatItem(item: unknown): { chatItemId: number; text: str
 
 async function waitForPort(port: number, proc: ChildProcess, timeoutMs: number): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
-	for (; ;) {
+	for (;;) {
 		if (proc.exitCode !== null) {
 			throw new SimplexError(`simplex-chat exited with code ${proc.exitCode} before the WebSocket server started`);
 		}

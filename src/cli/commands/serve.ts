@@ -2,9 +2,9 @@ import { existsSync } from "node:fs";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { AutoRAGAgent } from "../../agent/agent.ts";
+import { planSourceRoots, sourceIdentifier } from "../../filesystem/source-paths.ts";
 import type { InjectionClassifierModel } from "../../p2p/injection-classifier.ts";
 import { PolicyStore } from "../../p2p/policy.ts";
-import { planSourceRoots, sourceIdentifier } from "../../filesystem/source-paths.ts";
 import {
 	type SimplexPeerServer,
 	type StartSimplexPeerServerOptions,
@@ -116,8 +116,8 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 					error instanceof ConfigError
 						? error
 						: new ConfigError(
-							`P2P injection classifier requires a configured model: ${error instanceof Error ? error.message : "resolve failed"}.`,
-						),
+								`P2P injection classifier requires a configured model: ${error instanceof Error ? error.message : "resolve failed"}.`,
+							),
 					{ json: ctx.json, debug: ctx.debug },
 				),
 			);
@@ -153,12 +153,12 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			searchTimeoutMs: p2p.searchTimeoutMs,
 			...(resolvedModel !== undefined
 				? {
-					model: resolvedModel.model,
-					...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
-					...(resolvedModel.providerApiKeys !== undefined
-						? { providerApiKeys: resolvedModel.providerApiKeys }
-						: {}),
-				}
+						model: resolvedModel.model,
+						...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
+						...(resolvedModel.providerApiKeys !== undefined
+							? { providerApiKeys: resolvedModel.providerApiKeys }
+							: {}),
+					}
 				: {}),
 		});
 		const policyStore = new PolicyStore({
@@ -198,7 +198,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 			...(p2p.quotas !== undefined ? { quotas: p2p.quotas } : {}),
 		} as StartSimplexPeerServerOptions);
 	} catch (error) {
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		const status = error instanceof ConfigError ? 2 : 1;
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return status;
@@ -208,7 +208,7 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	try {
 		address = await transport.getOrCreateAddress();
 	} catch (error) {
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		ctx.stderr(
 			renderError(error instanceof Error ? error : new ConfigError("address creation failed"), {
 				json: ctx.json,
@@ -232,10 +232,10 @@ export async function runServe(ctx: CommandContext, deps: ServeCommandDeps = {})
 	const wait = deps.waitUntilStopped ?? defaultWaitUntilStopped;
 	try {
 		await wait(server);
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		return 0;
 	} catch (error) {
-		await transport.close().catch(() => { });
+		await transport.close().catch(() => {});
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
 		return 1;
 	}
