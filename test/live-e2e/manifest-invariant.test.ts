@@ -78,10 +78,7 @@ describe("LiveE2eManifest", () => {
 		for (const entry of manifest.entries) {
 			const fullPath = join(root, entry.path);
 			const content = readFileSync(fullPath);
-			const normalized = Buffer.from(
-				content.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
-				"utf8",
-			);
+			const normalized = Buffer.from(content.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n"), "utf8");
 			const digest = createHash("sha256").update(normalized).digest("hex");
 			expect(digest, `SHA-256 mismatch for ${entry.path}`).toBe(entry.sha256);
 		}
