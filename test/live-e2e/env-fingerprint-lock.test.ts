@@ -263,54 +263,55 @@ describe("lock-probe contention", () => {
 	});
 
 	test("two concurrent lock-probes yield exactly one failure", async () => {
-		const { execSync } = await import("node:child_process");
-		const { existsSync } = await import("node:fs");
+		const { spawn } = await import("node:child_process");
 
-		// Ensure clean lock state before starting
 		const lockDir = join(E2E_DIR, "locks");
 		if (existsSync(lockDir)) {
-			const { rmSync } = await import("node:fs");
 			rmSync(lockDir, { recursive: true, force: true });
 		}
 
-		// Start two concurrent lock-probe processes via shell backgrounding.
-		// Each has a 1-second hold. Collect outputs from both.
-		const runner = RUNNER_PATH;
-		const nodeExe = process.execPath;
+		const isolatedPath = { PATH: "/nonexistent", Path: "/nonexistent" } as const;
 
-		// Write a temp script that runs both and captures their outputs
-		// Use mkdtempSync from fs to create temp dir
-		const { mkdtempSync } = await import("node:fs");
-		const tmpDir = mkdtempSync(`${await import("node:os").then((o) => o.tmpdir())}/live-e2e-locktest-`);
-		const { writeFileSync } = await import("node:fs");
-		writeFileSync(
-			join(tmpDir, "run.sh"),
-			[
-				"#!/bin/sh",
-				`"${nodeExe}" "${runner}" lock-probe --hold-ms 1000 > "${tmpDir}/out1" 2>"${tmpDir}/err1" &`,
-				`"${nodeExe}" "${runner}" lock-probe --hold-ms 1000 > "${tmpDir}/out2" 2>"${tmpDir}/err2" &`,
-				"wait",
-			].join("\n"),
-		);
-		const { chmodSync } = await import("node:fs");
-		chmodSync(join(tmpDir, "run.sh"), 0o755);
+		function runProbe(holdMs: number): Promise<{ stdout: string; stderr: string }> {
+			return new Promise((resolve, reject) => {
+				const child = spawn(process.execPath, [RUNNER_PATH, "lock-probe", "--hold-ms", String(holdMs)], {
+					stdio: ["ignore", "pipe", "pipe"],
+					env: { ...process.env, ...isolatedPath },
+				});
+				let stdout = "";
+				let stderr = "";
+				child.stdout.on("data", (chunk: Buffer) => {
+					stdout += chunk.toString("utf8");
+				});
+				child.stderr.on("data", (chunk: Buffer) => {
+					stderr += chunk.toString("utf8");
+				});
+				const timer = setTimeout(() => {
+					child.kill("SIGKILL");
+					reject(new Error(`lock-probe timed out stdout=${stdout} stderr=${stderr}`));
+				}, 10_000);
+				child.once("error", (error) => {
+					clearTimeout(timer);
+					reject(error);
+				});
+				child.once("close", () => {
+					clearTimeout(timer);
+					resolve({ stdout, stderr });
+				});
+			});
+		}
 
-		execSync(join(tmpDir, "run.sh"), { timeout: 10_000 });
+		const [first, second] = await Promise.all([runProbe(1000), runProbe(1000)]);
+		const outputs = [first.stdout, second.stdout];
+		const acquired = outputs.filter((text) => text.includes("live-e2e-lock-acquired"));
+		const held = outputs.filter((text) => text.includes("live-e2e-lock-held"));
 
-		const out1 = (await import("node:fs")).readFileSync(join(tmpDir, "out1"), "utf-8").trim();
-		const out2 = (await import("node:fs")).readFileSync(join(tmpDir, "out2"), "utf-8").trim();
+		expect(
+			acquired.length,
+			`exactly one should acquire the lock first=${first.stdout} second=${second.stdout} err1=${first.stderr} err2=${second.stderr}`,
+		).toBe(1);
+		expect(held.length, `exactly one should be held first=${first.stdout} second=${second.stdout}`).toBe(1);
 
-		const acquired = [out1, out2].filter((o) => o.includes("live-e2e-lock-acquired"));
-		const held = [out1, out2].filter((o) => o.includes("live-e2e-lock-held"));
-
-		expect(acquired.length, "exactly one should acquire the lock").toBe(1);
-		expect(held.length, "exactly one should be held").toBe(1);
-
-		// Clean up tmp dir
-		const { rmSync } = await import("node:fs");
-		rmSync(tmpDir, { recursive: true, force: true });
-
-		// Lock should be released after both exit
 		const lockFile = join(E2E_DIR, "locks", "live-e2e.lock");
 		expect(existsSync(lockFile), "lock file should be released").toBe(false);
 	});
@@ -466,23 +467,36 @@ describe("bugfix: stale lock detection and break", () => {
 
 	test("live holder lock is held (not broken)", async () => {
 		const { spawn } = await import("node:child_process");
+		const isolatedPath = { PATH: "/nonexistent", Path: "/nonexistent" } as const;
 
 		const holder = spawn(process.execPath, [RUNNER_PATH, "lock-probe", "--hold-ms", "3000"], {
 			stdio: ["ignore", "pipe", "pipe"],
+			env: { ...process.env, ...isolatedPath },
 		});
 
-		const lockPath = join(E2E_DIR, "locks", "live-e2e.lock");
-		while (!existsSync(join(lockPath, "pid"))) {
-			await new Promise((r) => setTimeout(r, 10));
+		try {
+			const pidPath = join(E2E_DIR, "locks", "live-e2e.lock", "pid");
+			const deadline = Date.now() + 5_000;
+			while (!existsSync(pidPath)) {
+				if (holder.exitCode !== null || Date.now() > deadline) {
+					throw new Error("holder never wrote lock pid");
+				}
+				await new Promise((resolve) => setTimeout(resolve, 10));
+			}
+
+			const { exitCode, stdout, stderr } = runRunnerSync(["lock-probe"], isolatedPath);
+			expect(exitCode, `should be held, stderr: ${stderr}`).toBe(1);
+			expect(stdout).toContain("live-e2e-lock-held");
+		} finally {
+			holder.kill("SIGKILL");
+			await new Promise<void>((resolve) => {
+				if (holder.exitCode !== null) {
+					resolve();
+					return;
+				}
+				holder.once("exit", () => resolve());
+			});
 		}
-
-		const { exitCode, stdout, stderr } = runRunnerSync(["lock-probe"]);
-		expect(exitCode, `should be held, stderr: ${stderr}`).toBe(1);
-		expect(stdout).toContain("live-e2e-lock-held");
-
-		holder.kill("SIGKILL");
-		await new Promise((r) => holder.on("exit", r));
-		await new Promise((r) => setTimeout(r, 100));
 
 		const { exitCode: exit2, stdout: out2 } = runRunnerSync(["lock-probe"]);
 		expect(exit2).toBe(0);

@@ -11,7 +11,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..", "..");
@@ -32,7 +31,7 @@ const LOCK_FILE = join(LOCK_DIR, "live-e2e.lock");
  * The winner writes its PID inside for diagnostic purposes.
  *
  * **Stale lock recovery**: if the lock exists and the PID inside is dead
- * (via kill(pid, 0)), the stale lock is removed and acquisition retried.
+ * (via process.kill(pid, 0)), the stale lock is removed and acquisition retried.
  * This prevents a SIGKILL'd holder from permanently blocking the lock.
  *
  * @param {number} [holdMs=0] - How long (ms) to hold the lock before releasing.
@@ -56,13 +55,8 @@ export function tryLock(holdMs = 0) {
 				writeFileSync(join(LOCK_FILE, "pid"), String(process.pid));
 			} catch { /* ignore — lock is ours regardless */ }
 
-			// Hold if requested
-			if (holdMs > 0) {
-				spawnSync("sleep", [String(Math.ceil(holdMs / 1000))], {
-					stdio: "inherit",
-					timeout: holdMs + 5000,
-				});
-			}
+			// Hold if requested. Atomics.wait is portable; the `sleep` binary is not on Windows.
+			sleepMs(holdMs);
 
 			// Release: remove the lock directory
 			rmSync(LOCK_FILE, { recursive: true, force: true });
@@ -89,8 +83,8 @@ export function tryLock(holdMs = 0) {
  * Check if an existing lock directory holds a stale PID.
  * If so, remove the lock directory so a new acquirer can create it.
  *
- * Uses kill(pid, 0): returns 0 if the process exists, -1 with ESRCH if not.
- * This is safe — we never send a signal, just probe existence.
+ * Uses process.kill(pid, 0): throws ESRCH if the process is gone.
+ * This is safe — signal 0 never terminates, and Node implements it on Windows.
  *
  * The lock is considered stale (and broken) when:
  * - PID file exists, PID is numeric, valid, and kill(pid, 0) reports dead
@@ -137,17 +131,43 @@ function breakStaleLock() {
 		return;
 	}
 
-	// Probe if the process exists using kill(pid, 0)
+	// Probe if the process exists without depending on a `kill` binary.
+	if (!isPidAlive(pid)) {
+		rmSync(LOCK_FILE, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Block the current thread for `ms` milliseconds.
+ * Portable: does not depend on a `sleep` binary (missing on Windows).
+ * @param {number} ms
+ */
+function sleepMs(ms) {
+	if (ms <= 0) {
+		return;
+	}
+	const end = Date.now() + ms;
+	const sentinel = new Int32Array(new SharedArrayBuffer(4));
+	let remaining = ms;
+	while (remaining > 0) {
+		Atomics.wait(sentinel, 0, 0, remaining);
+		remaining = end - Date.now();
+	}
+}
+
+/**
+ * Probe whether `pid` still exists without sending a real signal.
+ * `process.kill(pid, 0)` works on Windows; the `kill` binary does not.
+ * EPERM/EACCES mean the process exists but is not signalable.
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function isPidAlive(pid) {
 	try {
-		const result = spawnSync("kill", ["-0", String(pid)], {
-			stdio: "ignore",
-			timeout: 1000,
-		});
-		if (result.status !== 0) {
-			// Process does not exist — stale lock, break it
-			rmSync(LOCK_FILE, { recursive: true, force: true });
-		}
-	} catch {
-		// kill command failed — can't probe, conservatively leave lock
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		const code = error instanceof Error && "code" in error ? String(error.code) : "";
+		return code === "EPERM" || code === "EACCES";
 	}
 }
