@@ -6,6 +6,7 @@ import type { SearchDocumentsResponse } from "../../src/agent/search-documents.t
 import { listPendingPeerRequests, writePeerRequestDecision } from "../../src/p2p/approval-store.ts";
 import {
 	querySimplexPeer,
+	rankSimplexPeerTargets,
 	type SimplexPeerRegistry,
 	type SimplexPeerServer,
 	startSimplexPeerServer,
@@ -141,6 +142,31 @@ const PEER_CONTACT_ID = 2;
 function peers(): SimplexPeerRegistry {
 	return { "client-agent": { contactId: PEER_CONTACT_ID, addedAt: new Date().toISOString() } };
 }
+
+describe("local peer persona target ranking", () => {
+	it("ranks by explainable keyword overlap and ignores peers with no match", () => {
+		const matches = rankSimplexPeerTargets("finance budget", {
+			alice: {
+				contactId: 42,
+				addedAt: "2026-01-01T00:00:00.000Z",
+				displayName: "Alice",
+				org: "Finance",
+				accessHint: ["budget", "tax"],
+			},
+			bob: {
+				contactId: 43,
+				addedAt: "2026-01-01T00:00:00.000Z",
+				description: "Design documents",
+			},
+		});
+
+		expect(matches).toEqual([{ alias: "alice", score: 2, matchedTerms: ["budget", "finance"] }]);
+	});
+
+	it("returns no candidates for an empty query", () => {
+		expect(rankSimplexPeerTargets("!!!", peers())).toEqual([]);
+	});
+});
 
 async function lastResponse(transport: FakeTransport, minCount = 1): Promise<PeerQueryResponse> {
 	const responsesOf = () =>

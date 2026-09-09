@@ -1,5 +1,10 @@
 import { listPendingPeerRequests, loadPendingPeerRequest, writePeerRequestDecision } from "../../p2p/approval-store.ts";
-import { loadSimplexPeerRegistry, type SimplexPeerRecord, saveSimplexPeerRegistry } from "../../p2p/simplex-server.ts";
+import {
+	loadSimplexPeerRegistry,
+	rankSimplexPeerTargets,
+	type SimplexPeerRecord,
+	saveSimplexPeerRegistry,
+} from "../../p2p/simplex-server.ts";
 import { ConfigError, resolveConfig, resolveConfigPath } from "../config.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
@@ -26,9 +31,12 @@ export async function runP2p(ctx: CommandContext): Promise<number> {
 		ctx.stdout(`Usage: autorag p2p <subcommand> [options]
 
 Subcommands:
-  peers                     List trusted peers (alias, contactId, addedAt)
-  peers --add <alias> --contact-id <n>   Trust a peer's SimpleX contact id
+  peers                     List trusted peers and local persona metadata
+  peers --add <alias> --contact-id <n> [persona flags]   Trust/update a peer
+  peers --edit <alias> [persona flags]                   Update local persona
   peers --remove <alias>    Remove a peer from the registry
+  peers --show <alias>      Show one peer and local persona
+  peers --rank <query>      Rank local peers by keyword overlap (no send)
   requests                  List pending peer-query approvals
   requests approve <id>     Allow sending the pending response
   requests deny <id>        Refuse the pending response without document content
@@ -52,6 +60,10 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 		case "peers": {
 			const remove = flags.remove;
 			const add = flags.add;
+			const edit = flags.edit;
+			const show = flags.show;
+			const rank = flags.rank;
+			const persona = readPersonaFlags(flags);
 			if (remove !== undefined) {
 				if (typeof remove !== "string" || remove.length === 0) {
 					ctx.stderr(renderError(new ConfigError("--remove requires a peer alias."), { json: ctx.json }));
@@ -66,6 +78,23 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 				saveSimplexPeerRegistry(workspace, registry);
 				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, removed: remove }));
 				else ctx.stdout(`Removed peer: ${remove}`);
+				return 0;
+			}
+			if (typeof show === "string") {
+				const peer = loadSimplexPeerRegistry(workspace)[show];
+				if (peer === undefined) {
+					ctx.stderr(renderError(new ConfigError(`Peer not found: ${show}`), { json: ctx.json }));
+					return 2;
+				}
+				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, alias: show, ...peer }));
+				else ctx.stdout(`${show}: ${JSON.stringify(peer)}`);
+				return 0;
+			}
+			if (typeof rank === "string") {
+				const matches = rankSimplexPeerTargets(rank, loadSimplexPeerRegistry(workspace));
+				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, query: rank, matches }));
+				else if (matches.length === 0) ctx.stdout("No matching peers.");
+				else for (const match of matches) ctx.stdout(`${match.alias}: ${match.matchedTerms.join(", ")}`);
 				return 0;
 			}
 			if (add !== undefined) {
@@ -84,11 +113,30 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 					return 2;
 				}
 				const registry = loadSimplexPeerRegistry(workspace);
-				const record: SimplexPeerRecord = { contactId, addedAt: new Date().toISOString() };
+				const existing = registry[add];
+				const record: SimplexPeerRecord = {
+					...(existing ?? {}),
+					contactId,
+					addedAt: existing?.addedAt ?? new Date().toISOString(),
+					...persona,
+				};
 				registry[add] = record;
 				saveSimplexPeerRegistry(workspace, registry);
 				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, alias: add, contactId }));
 				else ctx.stdout(`Added peer: ${add} (contactId ${contactId})`);
+				return 0;
+			}
+			if (typeof edit === "string") {
+				const registry = loadSimplexPeerRegistry(workspace);
+				const existing = registry[edit];
+				if (existing === undefined) {
+					ctx.stderr(renderError(new ConfigError(`Peer not found: ${edit}`), { json: ctx.json }));
+					return 2;
+				}
+				registry[edit] = { ...existing, ...persona };
+				saveSimplexPeerRegistry(workspace, registry);
+				if (ctx.json) ctx.stdout(JSON.stringify({ ok: true, alias: edit, ...registry[edit] }));
+				else ctx.stdout(`Updated peer: ${edit}`);
 				return 0;
 			}
 
@@ -98,7 +146,7 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 				ctx.stdout(
 					JSON.stringify({
 						ok: true,
-						peers: entries.map(([alias, peer]) => ({ alias, contactId: peer.contactId, addedAt: peer.addedAt })),
+						peers: entries.map(([alias, peer]) => ({ alias, ...peer })),
 					}),
 				);
 			} else if (entries.length === 0) {
@@ -108,7 +156,9 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 				ctx.stdout(`${"Alias".padEnd(24)} ${"Contact ID".padEnd(12)} Added At`);
 				ctx.stdout("-".repeat(72));
 				for (const [alias, peer] of entries) {
-					ctx.stdout(`${alias.padEnd(24)} ${String(peer.contactId).padEnd(12)} ${peer.addedAt}`);
+					ctx.stdout(
+						`${alias.padEnd(24)} ${String(peer.contactId).padEnd(12)} ${peer.displayName ?? ""} ${peer.addedAt}`,
+					);
 				}
 			}
 			return 0;
@@ -171,4 +221,24 @@ Peers connect via SimpleX addresses printed by \`autorag serve\`.
 			return 2;
 		}
 	}
+}
+
+function readPersonaFlags(
+	flags: CommandContext["flags"],
+): Pick<SimplexPeerRecord, "displayName" | "description" | "role" | "org" | "accessHint"> {
+	const accessHint = flags["access-hint"];
+	return {
+		...(typeof flags["display-name"] === "string" ? { displayName: flags["display-name"] } : {}),
+		...(typeof flags.description === "string" ? { description: flags.description } : {}),
+		...(typeof flags.role === "string" ? { role: flags.role } : {}),
+		...(typeof flags.org === "string" ? { org: flags.org } : {}),
+		...(typeof accessHint === "string"
+			? {
+					accessHint: accessHint
+						.split(",")
+						.map((value) => value.trim())
+						.filter(Boolean),
+				}
+			: {}),
+	};
 }
