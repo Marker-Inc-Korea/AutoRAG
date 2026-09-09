@@ -50,6 +50,14 @@ const VALUE_FLAGS = new Set([
 	"remove",
 	"add",
 	"contact-id",
+	"edit",
+	"show",
+	"rank",
+	"display-name",
+	"description",
+	"role",
+	"org",
+	"access-hint",
 ]);
 
 const COMMANDS = [
@@ -102,7 +110,10 @@ Commands:
   serve                Start the P2P peer query server over SimpleX
                        (--port N  --force)
   p2p                  SimpleX peer trust management
-                       (peers [--add <alias> --contact-id <n>] [--remove <alias>])
+                       (peers [--add <alias> --contact-id <n>] [--edit <alias>]
+                        [--display-name <name>] [--description <text>]
+                        [--role <role>] [--org <org>] [--access-hint <csv>]
+                        [--show <alias>] [--rank <query>] [--remove <alias>])
                        (requests [approve|deny <id>])
   p2p policy list      Show effective merged sharing policy (virtual-path keys)
   p2p policy set       Set a sharing rule: <source-glob> <private|never|always|peers> [--peer fp...]

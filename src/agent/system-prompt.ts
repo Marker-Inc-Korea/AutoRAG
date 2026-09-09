@@ -42,6 +42,11 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		toolLine(config, "load_datasource_skill", "load instructions for an authorized datasource"),
 		toolLine(config, "scan_duplicate_documents", "read-only dupey scan of configured local document roots"),
 		toolLine(config, "check_memory", "inspect advisory retrieval hints from prior feedback"),
+		toolLine(
+			config,
+			"recommend_peer_targets",
+			"recommend local peer personas to ask about a topic without contacting them",
+		),
 		toolLine(config, "emit_autorag_results", "return the final structured answer and number-to-source mapping"),
 		...config.toolNames
 			.filter(
@@ -56,6 +61,7 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 						"load_datasource_skill",
 						"scan_duplicate_documents",
 						"check_memory",
+						"recommend_peer_targets",
 						"emit_autorag_results",
 					].includes(name),
 			)

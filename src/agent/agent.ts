@@ -85,6 +85,7 @@ import {
 	type MergedJikjiPolicy,
 } from "./jikji-find-tool.ts";
 import { loadLocalAutoRAGModel } from "./local-model.ts";
+import { createRecommendPeerTargetsTool, RECOMMEND_PEER_TARGETS_TOOL_NAME } from "./peer-target-tool.ts";
 import { createSearchAllDocumentsTool, SEARCH_ALL_DOCUMENTS_TOOL_NAME } from "./search-all-tool.ts";
 import { createSearchBM25DocumentsTool, SEARCH_BM25_DOCUMENTS_TOOL_NAME } from "./search-bm25-tool.ts";
 import {
@@ -409,6 +410,7 @@ export class AutoRAGAgent {
 		const bashTool = createBashTool({
 			cwd: this.workspaceProjectRoot,
 		});
+		const peerTargetTool = this.remoteSession ? undefined : createRecommendPeerTargetsTool(this.workspaceProjectRoot);
 
 		const jikjiFindTool = this.jikjiClient !== undefined ? createJikjiFindTool(this) : undefined;
 
@@ -425,6 +427,7 @@ export class AutoRAGAgent {
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
 			SCAN_DUPLICATE_DOCUMENTS_TOOL_NAME,
+			RECOMMEND_PEER_TARGETS_TOOL_NAME,
 		]);
 		const droppedCallerToolNames: string[] = [];
 		const callerTools = (options.tools ?? []).filter((tool) => {
@@ -450,6 +453,7 @@ export class AutoRAGAgent {
 			emitResultsTool,
 			...(scanDuplicateDocumentsTool !== undefined ? [scanDuplicateDocumentsTool] : []),
 			...(jikjiFindTool !== undefined ? [jikjiFindTool] : []),
+			...(peerTargetTool !== undefined ? [peerTargetTool] : []),
 		];
 		const seenToolNames = new Set<string>();
 		const tools = orderedTools.filter((tool) => {

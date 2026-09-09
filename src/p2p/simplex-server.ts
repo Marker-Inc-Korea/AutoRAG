@@ -67,9 +67,45 @@ export interface SimplexPeerRecord {
 	/** SimpleX contact id of the peer (stable per profile). */
 	readonly contactId: number;
 	readonly addedAt: string;
+	readonly displayName?: string;
+	readonly description?: string;
+	readonly role?: string;
+	readonly org?: string;
+	readonly accessHint?: readonly string[];
 }
 
 export type SimplexPeerRegistry = Record<string, SimplexPeerRecord>;
+
+export interface PeerTargetMatch {
+	readonly alias: string;
+	readonly score: number;
+	readonly matchedTerms: readonly string[];
+}
+
+const TARGET_TOKEN_PATTERN = /[\p{L}\p{N}]+/gu;
+
+function targetTokens(value: string): Set<string> {
+	return new Set((value.toLocaleLowerCase().match(TARGET_TOKEN_PATTERN) ?? []).filter((token) => token.length > 1));
+}
+
+/** Rank local peer records by explainable keyword overlap; never sends a request. */
+export function rankSimplexPeerTargets(query: string, registry: SimplexPeerRegistry): readonly PeerTargetMatch[] {
+	const queryTerms = targetTokens(query);
+	if (queryTerms.size === 0) return [];
+
+	return Object.entries(registry)
+		.map(([alias, peer]) => {
+			const peerTerms = targetTokens(
+				[alias, peer.displayName, peer.description, peer.role, peer.org, ...(peer.accessHint ?? [])]
+					.filter((value): value is string => value !== undefined)
+					.join(" "),
+			);
+			const matchedTerms = [...queryTerms].filter((term) => peerTerms.has(term)).sort();
+			return { alias, score: matchedTerms.length, matchedTerms };
+		})
+		.filter((match) => match.score > 0)
+		.sort((left, right) => right.score - left.score || left.alias.localeCompare(right.alias));
+}
 
 const PEERS_DIR = join(".autorag", "p2p");
 const PEERS_FILENAME = "simplex-peers.json";
@@ -89,7 +125,19 @@ export function loadSimplexPeerRegistry(workspacePath: string): SimplexPeerRegis
 				typeof (record as Record<string, unknown>).contactId === "number" &&
 				typeof (record as Record<string, unknown>).addedAt === "string"
 			) {
-				registry[alias] = record as SimplexPeerRecord;
+				const raw = record as Record<string, unknown>;
+				const accessHint = Array.isArray(raw.accessHint)
+					? raw.accessHint.filter((value): value is string => typeof value === "string")
+					: undefined;
+				registry[alias] = {
+					contactId: raw.contactId as number,
+					addedAt: raw.addedAt as string,
+					...(typeof raw.displayName === "string" ? { displayName: raw.displayName } : {}),
+					...(typeof raw.description === "string" ? { description: raw.description } : {}),
+					...(typeof raw.role === "string" ? { role: raw.role } : {}),
+					...(typeof raw.org === "string" ? { org: raw.org } : {}),
+					...(accessHint !== undefined ? { accessHint } : {}),
+				};
 			}
 		}
 		return registry;
