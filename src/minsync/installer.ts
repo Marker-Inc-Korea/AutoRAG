@@ -64,10 +64,17 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	return { binaryPath, version: release.tagName };
 }
 
+function isIsolatedTestRuntime(): boolean {
+	return process.env.NODE_ENV === "test";
+}
+
 async function installMinSyncFromCargoIfAvailable(
 	options: EnsureMinSyncBinaryOptions,
 	destination: string,
 ): Promise<InstalledMinSyncBinary | undefined> {
+	// bun/vitest suites must not compile minsync from crates.io unless a test
+	// injects cargoLocator/cargoInstaller. Production auto-install stays cargo-first.
+	if (isIsolatedTestRuntime() && options.cargoLocator === undefined) return undefined;
 	const env = options.env ?? process.env;
 	const cargoLocator =
 		options.cargoLocator ?? ((lookupEnv) => lookupCargo(lookupEnv, options.platform ?? process.platform));
