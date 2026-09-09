@@ -46,7 +46,8 @@ export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): 
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
 	mkdirSync(dirname(binaryPath), { recursive: true });
-	const cargoInstaller = options.cargoInstaller ?? ((destination) => installMinSyncFromCargoIfAvailable(options, destination));
+	const cargoInstaller =
+		options.cargoInstaller ?? ((destination) => installMinSyncFromCargoIfAvailable(options, destination));
 	try {
 		const fromCargo = await cargoInstaller(binaryPath);
 		if (fromCargo !== undefined) return fromCargo;

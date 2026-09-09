@@ -24,6 +24,7 @@ function makeAgent(overrides: Record<string, unknown> = {}) {
 		memoryPath: join(root, "memory.json"),
 		workspacePath: root,
 		jikji: false,
+		minSync: { autoInstall: false },
 		...overrides,
 	});
 }
