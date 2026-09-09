@@ -583,6 +583,40 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-minsync");
 	});
 
+	it("skips cargo install and uses GitHub when cargo is not on PATH", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const order: string[] = [];
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoLocator: () => undefined,
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async (_asset, destination) => {
+				order.push("github-asset");
+				writeFileSync(destination, "#!/usr/bin/env node\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+
+		expect(order).toEqual(["github", "github-asset"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
+	});
+
 	it("falls back to the GitHub release asset when cargo install is unavailable", async () => {
 		// Given
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
