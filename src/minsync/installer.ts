@@ -33,23 +33,26 @@ export interface EnsureMinSyncBinaryOptions {
 	readonly arch?: NodeJS.Architecture;
 	readonly releaseProvider?: () => Promise<MinSyncRelease>;
 	readonly assetInstaller?: (asset: MinSyncReleaseAsset, destination: string) => Promise<void>;
+	/** Test seam: cargo-first installer. Return undefined to fall back to GitHub. */
+	readonly cargoInstaller?: (destination: string) => Promise<InstalledMinSyncBinary | undefined>;
 }
 
 export async function ensureMinSyncBinary(options: EnsureMinSyncBinaryOptions): Promise<InstalledMinSyncBinary> {
 	const binaryPath = join(options.root, ".autorag", "bin", executableName(options.platform ?? process.platform));
 	if (existsSync(binaryPath)) return { binaryPath, version: "cached" };
+	mkdirSync(dirname(binaryPath), { recursive: true });
+	const cargoInstaller = options.cargoInstaller ?? ((destination) => installMinSyncFromCargo(options, destination));
+	try {
+		const fromCargo = await cargoInstaller(binaryPath);
+		if (fromCargo !== undefined) return fromCargo;
+	} catch (error) {
+		if (!(error instanceof MinSyncReleaseError)) throw error;
+	}
 	const releaseProvider = options.releaseProvider ?? fetchLatestMinSyncRelease;
 	const release = await releaseProvider();
-	let asset: MinSyncReleaseAsset;
-	try {
-		asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
-	} catch (error) {
-		if (!(error instanceof MinSyncReleaseError) || !error.message.startsWith("No MinSync")) throw error;
-		return installMinSyncFromCargo(options, binaryPath);
-	}
+	const asset = selectReleaseAsset(release, options.platform ?? process.platform, options.arch ?? process.arch);
 	requireSha256(asset);
 	const assetInstaller = options.assetInstaller ?? installReleaseAsset;
-	mkdirSync(dirname(binaryPath), { recursive: true });
 	await assetInstaller(asset, binaryPath);
 	await chmod(binaryPath, 0o755);
 	return { binaryPath, version: release.tagName };
