@@ -78,7 +78,11 @@ describe("LiveE2eManifest", () => {
 		for (const entry of manifest.entries) {
 			const fullPath = join(root, entry.path);
 			const content = readFileSync(fullPath);
-			const digest = createHash("sha256").update(content).digest("hex");
+			const normalized = Buffer.from(
+				content.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
+				"utf8",
+			);
+			const digest = createHash("sha256").update(normalized).digest("hex");
 			expect(digest, `SHA-256 mismatch for ${entry.path}`).toBe(entry.sha256);
 		}
 	});
@@ -151,6 +155,12 @@ describe("LiveE2eManifest", () => {
 			const result = await verifyCorpus(root);
 			expect(result.ok).toBe(true);
 			expect(result.errors).toHaveLength(0);
+
+			const manifest = loadManifest();
+			for (const entry of manifest.entries) {
+				const bytes = readFileSync(join(root, entry.path));
+				expect(bytes.includes(0x0d), `bootstrapped ${entry.path} must be LF`).toBe(false);
+			}
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

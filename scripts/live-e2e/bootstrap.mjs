@@ -5,7 +5,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,9 +39,19 @@ function loadManifest() {
 
 // ── SHA-256 helper ───────────────────────────────────────────────────
 
+function toLf(bytes) {
+	if (!bytes.includes(0x0d)) {
+		return bytes;
+	}
+	return Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n"), "utf8");
+}
+
+function sha256OfBytes(bytes) {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+
 function sha256Of(filePath) {
-	const content = readFileSync(filePath);
-	return createHash("sha256").update(content).digest("hex");
+	return sha256OfBytes(readFileSync(filePath));
 }
 
 // ── Bootstrap ────────────────────────────────────────────────────────
@@ -84,18 +94,18 @@ export async function bootstrap(root) {
  * @param {string} dest
  */
 function copyReadOnly(src, dest) {
-	if (existsSync(dest) && sha256Of(dest) === sha256Of(src)) {
-		// Content already matches — just ensure read-only mode
+	// Normalize CRLF so Windows checkouts still match the LF SHA-256 contract.
+	const srcBytes = toLf(readFileSync(src));
+	if (existsSync(dest) && sha256Of(dest) === sha256OfBytes(srcBytes)) {
 		chmodSync(dest, 0o444);
 		return;
 	}
 
-	// Existing destination must be writable to overwrite
 	if (existsSync(dest)) {
 		chmodSync(dest, 0o644);
 	}
 
-	copyFileSync(src, dest);
+	writeFileSync(dest, srcBytes);
 	chmodSync(dest, 0o444);
 }
 
@@ -137,8 +147,8 @@ export async function verifyCorpus(root) {
 		if (actualHash !== entry.sha256) {
 			errors.push(
 				"DRIFT_DETECTED: " + entry.path
-					+ " — expected " + entry.sha256
-					+ ", got " + actualHash,
+				+ " — expected " + entry.sha256
+				+ ", got " + actualHash,
 			);
 		}
 	}
