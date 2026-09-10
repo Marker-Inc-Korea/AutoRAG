@@ -46,6 +46,15 @@ Use the latest checkout's explicit, clone-local environment. Each clone owns its
 `.autorag-e2e` state, so five independent clones may run concurrently without
 sharing mutable state. Do not point two clones at the same `E2E_ROOT`.
 
+The live-E2E environment is coupled to AutoRAG's behavior. When a change
+modifies AutoRAG's major behavior or features — the agent tool surface,
+retrieval methods, datasource skills, MinSync/embedding configuration, result
+source identity rules, or the output contract — review whether the live-E2E
+environment must change too (`scripts/live-e2e/`, `test/live-e2e/`, the corpus
+manifest, preflight gates, and this procedure). A behavioral change that
+invalidates the existing cold/warm QA evidence requires regenerating that
+evidence; do not treat stale green evidence as proof for the new behavior.
+
 Prerequisites:
 
 - Node.js 24+, Bun, and the repository dependencies (`bun install --frozen-lockfile`).
