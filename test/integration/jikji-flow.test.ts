@@ -97,6 +97,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -121,6 +122,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -133,6 +135,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			minSync: { autoInstall: false },
 		});
 
 		expect(toolNames(agent)).not.toContain(JIKJI_FIND_TOOL_NAME);
@@ -144,6 +147,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -166,6 +170,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -181,6 +186,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
@@ -211,6 +217,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
 			jikji: false,
+			minSync: { autoInstall: false },
 		});
 
 		await expect(agent.prepareJikji()).resolves.toBeUndefined();
@@ -224,6 +231,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath: missingBinary },
 		});
 
@@ -245,6 +253,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath: missingBinary },
 		});
 
@@ -261,6 +270,7 @@ describe("AutoRAGAgent Jikji indexing integration", () => {
 			searchPaths: [docs],
 			memoryPath: join(root, "memory.json"),
 			workspacePath: root,
+			minSync: { autoInstall: false },
 			jikji: { binaryPath },
 		});
 
