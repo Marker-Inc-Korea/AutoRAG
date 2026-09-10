@@ -55,7 +55,6 @@ const DEFAULT_QUOTAS: PolicyQuotas = {
 const POLICY_TIERS = new Set<PolicyTier>(["private", "never", "always", "peers"]);
 const UNSAFE_POLICY_CHARACTERS = /[\p{Cc}\p{Cf}]/u;
 const WINDOWS_ABSOLUTE_PATH = /^[a-z]:[\\/]/iu;
-const URL_SCHEME = /^([a-z][a-z0-9+.-]*):/iu;
 const POSIX_FILESYSTEM_ROOTS = new Set([
 	"applications",
 	"bin",
@@ -128,15 +127,12 @@ function validatePolicyKey(key: unknown, workspacePath: string, context: string)
 	if (normalized.includes("\\") || normalized.includes("\0")) {
 		throw new PolicyError(`${context} must use source-identifier separators, not filesystem separators`);
 	}
-	if (looksLikeAbsoluteFilesystemPath(normalized, workspacePath)) {
-		throw new PolicyError(`${context} must be a virtual source identifier, not an absolute filesystem path`);
-	}
 	const sourceSegments = normalized.startsWith("/") ? normalized.slice(1).split("/") : [];
 	if (sourceSegments.some((segment) => segment === "." || segment === "..")) {
 		throw new PolicyError(`${context} must not contain path traversal segments`);
 	}
-	if (!normalized.startsWith("/") && !URL_SCHEME.test(normalized)) {
-		throw new PolicyError(`${context} must start with / or a datasource scheme`);
+	if (!normalized.startsWith("/") && !WINDOWS_ABSOLUTE_PATH.test(normalized)) {
+		throw new PolicyError(`${context} must be an absolute local path or slash-prefixed datasource source`);
 	}
 	if (normalized.startsWith("/") && normalized === "/") {
 		throw new PolicyError(`${context} must identify a source namespace`);

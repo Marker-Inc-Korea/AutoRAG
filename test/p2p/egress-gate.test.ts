@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchDocumentsResponse } from "../../src/agent/search-documents.ts";
 import { buildPeerResponse } from "../../src/p2p/egress-gate.ts";
-import { resetWireMapping, wireSourceId, wireSourceIdToVirtualPath } from "../../src/p2p/wire.ts";
+import { resetWireMapping } from "../../src/p2p/wire.ts";
 
 const peerFingerprint = "peer-a";
 const workspaceRoots = ["/workspace/AutoRAG"];
@@ -77,10 +77,9 @@ describe("buildPeerResponse", () => {
 		expect(result.results).toHaveLength(1);
 		expect(result.results[0]).toMatchObject({
 			number: 1,
-			source: wireSourceId("/Shared Docs/guide.md"),
+			source: "/Shared Docs/guide.md",
 		});
-		expect(result.results[0]?.source).toMatch(/^\/[a-z0-9-]+(\/|$)/);
-		expect(wireSourceIdToVirtualPath(result.results[0]?.source ?? "")).toBe("/Shared Docs/guide.md");
+		expect(result.results[0]?.source).toBe("/Shared Docs/guide.md");
 		expect(result.diagnostics).toEqual(
 			expect.arrayContaining([expect.objectContaining({ code: "source-unmappable" })]),
 		);

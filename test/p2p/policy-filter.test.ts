@@ -32,7 +32,7 @@ function makePolicy(): PolicyStore {
 [policy."/docs/private/**"]
 	tier = "never"
 
-[policy."kakao:개발톡방/**"]
+[policy."/kakao/personal/chunks/**"]
 	tier = "peers"
 peers = ["peer-a"]
 `,
@@ -52,7 +52,7 @@ describe("filterRetrievalResultsByPolicy", () => {
 				"files",
 				[result("/docs/public/guide.md"), result("/docs/private/secret.md"), result("/unknown/not-listed.md")],
 			],
-			["datasource", [result("kakao:개발톡방/alice/chunk-1"), result("kakao:다른톡방/alice/chunk-2")]],
+			["datasource", [result("/kakao/personal/chunks/chunk-1"), result("/kakao/other/chunks/chunk-2")]],
 		]);
 
 		const filtered = filterRetrievalResultsByPolicy(results, policy.resolvePolicy.bind(policy), "peer-a");
@@ -60,7 +60,7 @@ describe("filterRetrievalResultsByPolicy", () => {
 		expect(filtered).toEqual(
 			new Map<string, RetrievalResult[]>([
 				["files", [result("/docs/public/guide.md")]],
-				["datasource", [result("kakao:개발톡방/alice/chunk-1")]],
+				["datasource", [result("/kakao/personal/chunks/chunk-1")]],
 			]),
 		);
 	});
@@ -68,23 +68,23 @@ describe("filterRetrievalResultsByPolicy", () => {
 	it("passes the raw source and peer fingerprint to the policy resolver", () => {
 		const resolver = vi.fn((source: string, peerFingerprint?: string) => ({
 			tier: "always" as const,
-			allowed: source === "kakao:개발톡방/alice/chunk-1" && peerFingerprint === "peer-a",
+			allowed: source === "/kakao/personal/chunks/chunk-1" && peerFingerprint === "peer-a",
 			shareBytes: true,
 			redact: false,
 		}));
-		const results = new Map<string, RetrievalResult[]>([["search", [result("kakao:개발톡방/alice/chunk-1")]]]);
+		const results = new Map<string, RetrievalResult[]>([["search", [result("/kakao/personal/chunks/chunk-1")]]]);
 
 		const filtered = filterRetrievalResultsByPolicy(results, resolver, "peer-a");
 
 		expect(filtered.get("search")).toHaveLength(1);
-		expect(resolver).toHaveBeenCalledWith("kakao:개발톡방/alice/chunk-1", "peer-a");
+		expect(resolver).toHaveBeenCalledWith("/kakao/personal/chunks/chunk-1", "peer-a");
 	});
 
 	it("returns empty arrays when every candidate is denied, including an absent policy source", () => {
 		const policy = makePolicy();
 		const results = new Map<string, RetrievalResult[]>([
 			["files", [result("/docs/private/secret.md"), result("/unknown/not-listed.md")]],
-			["datasource", [result("kakao:개발톡방/alice/chunk-1")]],
+			["datasource", [result("/kakao/personal/chunks/chunk-1")]],
 		]);
 
 		const filtered = filterRetrievalResultsByPolicy(results, policy.resolvePolicy.bind(policy), "other-peer");

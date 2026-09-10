@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { type Static, Type } from "typebox";
 
 // ---------------------------------------------------------------------------
@@ -28,7 +27,7 @@ const PeerDiagnosticSchema = Type.Object({
 
 const PeerFileEntrySchema = Type.Object({
 	source: Type.String({
-		description: "Opaque wire source id (slugged virtual path matching the wire source regex)",
+		description: "Canonical retrieval source identifier",
 	}),
 	contentBase64: Type.String({ description: "Base64-encoded file content" }),
 	redacted: Type.Boolean({ description: "Whether the content was PII-redacted" }),
@@ -43,8 +42,7 @@ const PeerResultEntrySchema = Type.Object({
 	title: Type.String({ minLength: 1, description: "Short title of the result" }),
 	summary: Type.String({ description: "Key insight summary" }),
 	source: Type.String({
-		pattern: "^/[a-z0-9-]+(/|$)",
-		description: "Opaque wire source id — slugged virtual path matching ^/[a-z0-9-]+(/|$)",
+		description: "Canonical retrieval source identifier",
 	}),
 	excerpt: Type.String({ description: "Supporting excerpt" }),
 });
@@ -80,85 +78,15 @@ export const PeerQueryResponseSchema = Type.Object({
 });
 
 export type PeerQueryResponse = Static<typeof PeerQueryResponseSchema>;
-// src/datasource/connector.ts:86-99)
-// ---------------------------------------------------------------------------
-
-/**
- * Slugify a single path segment: lowercase, replace runs of non-[a-z0-9] with
- * '-', trim leading/trailing '-', and append an 8-char sha256 hex suffix of the
- * original segment when slugging actually changed it.
- */
-function slugSegment(segment: string): string {
-	const lowered = segment.toLowerCase();
-	const slugged = lowered.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-	if (slugged === lowered && slugged.length > 0) {
-		// unchanged and non-empty — return as-is
-		return slugged;
-	}
-	const hash = createHash("sha256").update(segment).digest("hex").slice(0, 8);
-	return slugged.length > 0 ? `${slugged}-${hash}` : hash;
-}
-
-// ---------------------------------------------------------------------------
-// Mapping stores: wireSourceId -> virtualPath, virtualPath -> wireSourceId
-// ---------------------------------------------------------------------------
-
-const wireToVirtual = new Map<string, string>();
-const virtualToWire = new Map<string, string>();
-
-/**
- * Compute the wire source id for a virtual path and record the mapping for
- * reverse resolution.
- *
- * wireSourceId(virtualPath) = '/' + slug(rootPrefix) + '/' + slug(relativePath)
- *
- * The result is a deterministic opaque id that matches ^/[a-z0-9-]+(/|$) and
- * can be round-tripped via wireSourceIdToVirtualPath.
- *
- * Throws if the virtual path does not start with '/'.
- */
-export function wireSourceId(virtualPath: string): string {
-	if (!virtualPath.startsWith("/")) {
-		throw new Error(`wireSourceId: virtual path must start with '/', got: ${virtualPath}`);
-	}
-
-	if (virtualToWire.has(virtualPath)) {
-		return virtualToWire.get(virtualPath)!;
-	}
-
-	// Normalize: collapse repeated slashes, trim trailing slash
-	const normalized = virtualPath.replace(/\/+/g, "/").replace(/\/$/, "");
-	if (normalized === "/" || normalized.length === 0) {
-		const id = "/";
-		virtualToWire.set(virtualPath, id);
-		wireToVirtual.set(id, virtualPath);
-		return id;
-	}
-
-	// Split into segments: strip leading /
-	const segments = normalized.slice(1).split("/");
-	const sluggedSegments = segments.map(slugSegment);
-	const id = `/${sluggedSegments.join("/")}`;
-
-	virtualToWire.set(virtualPath, id);
-	wireToVirtual.set(id, virtualPath);
-	return id;
+/** P2P carries the same canonical source identifier used by retrieval and policy. */
+export function wireSourceId(source: string): string {
+	if (source.length === 0) throw new Error("wireSourceId: source must not be empty");
+	return source;
 }
 
 /**
- * Reverse-resolve a wire source id back to its original virtual path.
- * Returns undefined for unknown ids.
- */
-export function wireSourceIdToVirtualPath(wireId: string): string | undefined {
-	// Normalize: collapse slashes, trim trailing
-	const normalized = wireId.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
-	return wireToVirtual.get(normalized);
-}
-
-/**
- * Reset the wire id mapping. Useful for testing isolation.
+ * Retained as a no-op test/setup hook while the public wire source is the
+ * retrieval source itself.
  */
 export function resetWireMapping(): void {
-	wireToVirtual.clear();
-	virtualToWire.clear();
 }

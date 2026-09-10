@@ -77,12 +77,12 @@ describe("remote-session retrieval policy", () => {
 			.getMethodRegistry()
 			.register(
 				method(
-					[result("kakao:shared-room/chunks/a", "allowed"), result("kakao:private-room/chunks/b", "denied")],
+					[result("/kakao/shared/chunks/a", "allowed"), result("/kakao/private/chunks/b", "denied")],
 					true,
 				),
 			);
 		const resolvePolicy = (source: string) =>
-			source.startsWith("kakao:shared-room/")
+			source.startsWith("/kakao/shared/")
 				? { tier: "peers" as const, allowed: true, shareBytes: false, redact: true }
 				: { tier: "never" as const, allowed: false, shareBytes: false, redact: true };
 		const retrieved = await agent.retrieveWithDiagnostics("messages", {
@@ -91,10 +91,10 @@ describe("remote-session retrieval policy", () => {
 			observedSources,
 		});
 		expect(retrieved.results.map((item) => item.source)).toEqual([
-			"kakao:shared-room/chunks/a",
-			"kakao:private-room/chunks/b",
+			"/kakao/shared/chunks/a",
+			"/kakao/private/chunks/b",
 		]);
-		expect(observedSources).toEqual(new Set(["kakao:shared-room/chunks/a", "kakao:private-room/chunks/b"]));
+		expect(observedSources).toEqual(new Set(["/kakao/shared/chunks/a", "/kakao/private/chunks/b"]));
 	});
 
 	it("defaults remote search timeout to 120 seconds", () => {

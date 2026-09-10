@@ -415,7 +415,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(readFileSync(stagedPolicy, "utf8")).toContain("cancellation terms");
 	});
 
-	it("returns vector results resolved to the original source file path", async () => {
+	it("returns vector results with the canonical virtual source", async () => {
 		// Given
 		writeFakeMinSync(
 			JSON.stringify({
@@ -482,7 +482,7 @@ describe("MinSyncVectorMethod", () => {
 		);
 	});
 
-	it("maps real MinSync relative file paths to original source files", async () => {
+	it("maps real MinSync relative file paths to the canonical virtual source", async () => {
 		// Given
 		writeFakeMinSync(
 			JSON.stringify([

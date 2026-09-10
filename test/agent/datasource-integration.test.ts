@@ -127,14 +127,14 @@ describe("AutoRAGAgent datasource integration", () => {
 			workspacePath: tmpDir,
 			jikji: false,
 			datasourceSkills: [
-				makeSkill([result("a", "kakao:오픈소스 개발과제/chunks/a"), result("b", "kakao:다른방/chunks/b")]),
+				makeSkill([result("a", "/kakao/personal/chunks/a"), result("b", "/kakao/personal/chunks/b")]),
 			],
 			datasourceAccess: { allowedTags: ["kakao"] },
 		});
 
 		const { results } = await agent.searchDatasourceDocuments("message");
 
-		expect(results.map((r) => r.source)).toEqual(["kakao:오픈소스 개발과제/chunks/a", "kakao:다른방/chunks/b"]);
+		expect(results.map((r) => r.source)).toEqual(["/kakao/personal/chunks/a", "/kakao/personal/chunks/b"]);
 	});
 
 	it("keeps datasource default-deny even when tool args try to grant tags or scopes", async () => {

@@ -3,7 +3,6 @@ import { scanOutboundPayload } from "./injection-classifier.ts";
 import { redactPII } from "./pii-gate.ts";
 import type { PolicyResolution } from "./policy.ts";
 import type { PeerQueryResponse } from "./wire.ts";
-import { wireSourceId } from "./wire.ts";
 
 export type EgressPolicyResolver = (source: string, peerFingerprint?: string) => PolicyResolution;
 
@@ -21,8 +20,6 @@ interface EgressDiagnostic {
 	readonly code: string;
 	readonly message: string;
 }
-
-const WIRE_SOURCE_PATTERN = /^\/[a-z0-9-]+(?:\/|$)/u;
 
 function diagnostic(code: string, message: string): EgressDiagnostic {
 	return { code, message };
@@ -133,17 +130,11 @@ export function buildPeerResponse(options: BuildPeerResponseOptions): PeerQueryR
 			continue;
 		}
 
-		let source: string;
-		try {
-			source = wireSourceId(rawResult.source);
-		} catch {
-			diagnostics.push(diagnostic("source-unmappable", "A result source could not be mapped to a wire id."));
+		if (!rawResult.source.startsWith("/")) {
+			diagnostics.push(diagnostic("source-unmappable", "A result source is not a canonical virtual source."));
 			continue;
 		}
-		if (!WIRE_SOURCE_PATTERN.test(source)) {
-			diagnostics.push(diagnostic("source-unmappable", "A result source produced an invalid wire id."));
-			continue;
-		}
+		const source = rawResult.source;
 
 		const title = redactPII(rawResult.title, {
 			pseudonymize: options.pseudonymize,

@@ -24,7 +24,7 @@ Three principles drive every design decision:
    stores (katok, discrawl, qmd, msgvault, rclone, …) in place. No forced
    ingestion into a central index, no third-party server holding a copy of
    your corpus. Results carry source-native identities
-   (`kakao:<chat>/<sender>/<chunk>`) with scope-checked access — see the
+   (`/kakao/<instance>/chunks/<chunk>`) with scope-checked access — see the
    [competitive landscape study](docs/competitive-landscape-2026-09.md) for
    why this is the durable differentiator.
 2. **Just works — no RAG degree required.** Install it and it works: minimal

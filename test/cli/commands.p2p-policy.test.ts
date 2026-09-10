@@ -71,13 +71,13 @@ describe("autorag p2p policy list", () => {
 		expect(output["/docs/public"]).toEqual({ tier: "always" });
 	});
 
-	it("exposes datasource globs (e.g. kakao:...) correctly", () => {
-		writeFileSync(policyPath, '[policy]\n"kakao:*" = { tier = "peers", peers = ["abc123"] }\n"/docs/*" = "always"\n');
+	it("exposes slash datasource globs correctly", () => {
+		writeFileSync(policyPath, '[policy]\n"/kakao/*" = { tier = "peers", peers = ["abc123"] }\n"/docs/*" = "always"\n');
 		ctx.positionals = ["list"];
 		runP2pPolicy(ctx);
 		const output = JSON.parse(captured[0]!);
-		expect(output).toHaveProperty("kakao:*");
-		expect(output["kakao:*"]).toEqual({ tier: "peers", peers: ["abc123"] });
+		expect(output).toHaveProperty("/kakao/*");
+		expect(output["/kakao/*"]).toEqual({ tier: "peers", peers: ["abc123"] });
 		expect(output).toHaveProperty("/docs/*");
 		expect(output["/docs/*"]).toEqual({ tier: "always" });
 	});
@@ -144,11 +144,11 @@ describe("autorag p2p policy set", () => {
 		expect(toml).toContain("always");
 	});
 
-	it("supports datasource scheme keys like kakao:*", () => {
-		ctx.positionals = ["set", "kakao:*", "always"];
+	it("supports slash datasource keys like /kakao/*", () => {
+		ctx.positionals = ["set", "/kakao/*", "always"];
 		runP2pPolicy(ctx);
 		const toml = readFileSync(policyPath, "utf8");
-		expect(toml).toContain("kakao:*");
+		expect(toml).toContain('"/kakao/*"');
 		expect(toml).toContain("always");
 	});
 });

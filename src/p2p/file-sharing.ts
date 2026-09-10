@@ -1,11 +1,8 @@
-import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
-import { extname, join } from "node:path";
-import { resolveVirtualSource, type SourceRoot } from "../filesystem/source-paths.ts";
-import { PARSED_FILES_SUBDIR } from "../mirror/paths.ts";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { extname, isAbsolute, relative } from "node:path";
+import type { SourceRoot } from "../filesystem/source-paths.ts";
 import { redactPII } from "./pii-gate.ts";
 import type { PolicyResolution, PolicyTier } from "./policy.ts";
-import { wireSourceIdToVirtualPath } from "./wire.ts";
 
 export interface FileShareDiagnostic {
 	readonly code: string;
@@ -14,19 +11,19 @@ export interface FileShareDiagnostic {
 
 export type FileShareResponse =
 	| {
-			readonly status: "ok";
-			readonly fileBase64: string;
-			readonly redacted: boolean;
-	  }
+		readonly status: "ok";
+		readonly fileBase64: string;
+		readonly redacted: boolean;
+	}
 	| {
-			readonly status: "withheld";
-			readonly fileBase64: "";
-			readonly diagnostic: FileShareDiagnostic;
-	  }
+		readonly status: "withheld";
+		readonly fileBase64: "";
+		readonly diagnostic: FileShareDiagnostic;
+	}
 	| {
-			readonly status: "rejected";
-			readonly diagnostic: FileShareDiagnostic;
-	  };
+		readonly status: "rejected";
+		readonly diagnostic: FileShareDiagnostic;
+	};
 
 export type FileResponse = FileShareResponse;
 
@@ -99,13 +96,29 @@ function tooLarge(): FileShareResponse {
 	};
 }
 
-function mirrorPath(parsedRoot: string, virtualPath: string): string {
-	const digest = createHash("sha256").update(virtualPath).digest("hex");
-	return join(parsedRoot, PARSED_FILES_SUBDIR, `${digest}.md`);
+function isTextSource(source: string): boolean {
+	return TEXT_EXTENSIONS.has(extname(source).toLowerCase());
 }
 
-function isTextVirtualPath(virtualPath: string): boolean {
-	return TEXT_EXTENSIONS.has(extname(virtualPath).toLowerCase());
+function resolveLocalSource(source: string, roots: readonly SourceRoot[]): { realPath: string } | undefined {
+	if (!isAbsolute(source)) return undefined;
+	let candidate: string;
+	try {
+		candidate = realpathSync(source);
+	} catch {
+		return undefined;
+	}
+	for (const root of roots) {
+		let rootPath: string;
+		try {
+			rootPath = realpathSync(root.rootPath);
+		} catch {
+			continue;
+		}
+		const rel = relative(rootPath, candidate);
+		if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return { realPath: candidate };
+	}
+	return undefined;
 }
 
 function readOriginalBytes(realPath: string, maxFileBytes: number): Buffer | undefined {
@@ -133,20 +146,15 @@ export function resolveFileShare(
 ): FileShareResponse {
 	if (typeof wireId !== "string" || typeof peerFingerprint !== "string") return denied();
 
-	let virtualPath: string | undefined;
-	try {
-		virtualPath = wireSourceIdToVirtualPath(wireId);
-	} catch {
-		return denied();
-	}
-	if (virtualPath === undefined) return denied();
+	const source = wireId;
+	if (!source.startsWith("/")) return denied();
 
-	const resolved = resolveVirtualSource(virtualPath, options.workspaceRoots);
+	const resolved = resolveLocalSource(source, options.workspaceRoots);
 	if (resolved === undefined) return denied();
 
 	let policy: PolicyResolution;
 	try {
-		policy = options.resolvePolicy(virtualPath, peerFingerprint);
+		policy = options.resolvePolicy(source, peerFingerprint);
 	} catch {
 		return denied();
 	}
@@ -165,7 +173,7 @@ export function resolveFileShare(
 	}
 
 	if (!isAllowedTier(policy, "peers")) return denied();
-	if (!isTextVirtualPath(virtualPath)) {
+	if (!isTextSource(source)) {
 		return {
 			status: "withheld",
 			fileBase64: "",
@@ -175,7 +183,7 @@ export function resolveFileShare(
 
 	let markdown: string;
 	try {
-		markdown = readFileSync(mirrorPath(options.parsedMirrorRoot, virtualPath), "utf8");
+		markdown = readFileSync(resolved.realPath, "utf8");
 	} catch {
 		return denied();
 	}

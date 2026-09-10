@@ -6,7 +6,6 @@ import {
 	PeerQueryResponseSchema,
 	resetWireMapping,
 	wireSourceId,
-	wireSourceIdToVirtualPath,
 } from "../../src/p2p/wire.js";
 
 // ---------------------------------------------------------------------------
@@ -197,7 +196,7 @@ describe("PeerQueryResponse schema — rejections", () => {
 		expect(check(PeerQueryResponseSchema, resp)).toBe(true);
 	});
 
-	it("rejects source with uppercase first segment (not slugged)", () => {
+	it("accepts source with uppercase path segments", () => {
 		const resp = {
 			...minimalResponse(),
 			results: [
@@ -210,10 +209,10 @@ describe("PeerQueryResponse schema — rejections", () => {
 				},
 			],
 		};
-		expect(check(PeerQueryResponseSchema, resp)).toBe(false);
+		expect(check(PeerQueryResponseSchema, resp)).toBe(true);
 	});
 
-	it("rejects source with uppercase characters (not slugged)", () => {
+	it("accepts source with uppercase characters", () => {
 		const resp = {
 			...minimalResponse(),
 			results: [
@@ -226,10 +225,10 @@ describe("PeerQueryResponse schema — rejections", () => {
 				},
 			],
 		};
-		expect(check(PeerQueryResponseSchema, resp)).toBe(false);
+		expect(check(PeerQueryResponseSchema, resp)).toBe(true);
 	});
 
-	it("rejects source with underscore", () => {
+	it("accepts source with underscore", () => {
 		const resp = {
 			...minimalResponse(),
 			results: [
@@ -242,10 +241,10 @@ describe("PeerQueryResponse schema — rejections", () => {
 				},
 			],
 		};
-		expect(check(PeerQueryResponseSchema, resp)).toBe(false);
+		expect(check(PeerQueryResponseSchema, resp)).toBe(true);
 	});
 
-	it("rejects source that is just a bare segment without leading slash", () => {
+	it("accepts a datasource or local source string without imposing wire remapping", () => {
 		const resp = {
 			...minimalResponse(),
 			results: [
@@ -258,7 +257,7 @@ describe("PeerQueryResponse schema — rejections", () => {
 				},
 			],
 		};
-		expect(check(PeerQueryResponseSchema, resp)).toBe(false);
+		expect(check(PeerQueryResponseSchema, resp)).toBe(true);
 	});
 
 	it("rejects non-integer result number", () => {
@@ -299,32 +298,21 @@ describe("PeerQueryResponse schema — rejections", () => {
 // ---------------------------------------------------------------------------
 
 describe("wireSourceId", () => {
-	it('produces a slug for "My Docs/report.final.pdf" that matches the source regex', () => {
+	it("preserves the canonical source identifier without a second wire format", () => {
 		const id = wireSourceId("/My Docs/report.final.pdf");
-		expect(id).toMatch(/^\/[a-z0-9-]+(\/|$)/);
-		// should look like /my-docs/reportfinalpdf-<hash> or /my-docs/report-final-pdf-<hash>
-		expect(id).not.toContain(" ");
-		expect(id).not.toContain(".");
-		expect(id).not.toContain("Uppercase");
+		expect(id).toBe("/My Docs/report.final.pdf");
 	});
 
-	it("round-trips via wireSourceIdToVirtualPath", () => {
+	it("keeps the source unchanged on the wire", () => {
 		const virtualPath = "/My Docs/report.final.pdf";
 		const id = wireSourceId(virtualPath);
-		const roundTripped = wireSourceIdToVirtualPath(id);
-		expect(roundTripped).toBe(virtualPath);
+		expect(id).toBe(virtualPath);
 	});
 
-	it("produces distinct ids for slug-colliding paths", () => {
-		// "My Docs/report" and "my-docs/report" will slug-identically to
-		// "my-docs/report" but the hash suffix makes them distinct
+	it("preserves distinct canonical source identifiers", () => {
 		const id1 = wireSourceId("/My Docs/report");
 		const id2 = wireSourceId("/my-docs/report");
 		expect(id1).not.toBe(id2);
-
-		// But both still match the source regex
-		expect(id1).toMatch(/^\/[a-z0-9-]+(\/|$)/);
-		expect(id2).toMatch(/^\/[a-z0-9-]+(\/|$)/);
 	});
 
 	it("handles a simple path with no slugging needed", () => {
@@ -340,9 +328,10 @@ describe("wireSourceId", () => {
 		expect(id).toBe("/docs");
 	});
 
-	it("rejects virtual paths that do not start with /", () => {
+	it("accepts absolute local and slash-prefixed datasource sources", () => {
 		expect(() => wireSourceId("")).toThrow();
-		expect(() => wireSourceId("docs/file")).toThrow();
+		expect(wireSourceId("/kakao/personal/chunks/c-1")).toBe("/kakao/personal/chunks/c-1");
+		expect(wireSourceId("/Users/me/docs/file.md")).toBe("/Users/me/docs/file.md");
 	});
 });
 

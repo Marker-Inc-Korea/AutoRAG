@@ -133,9 +133,8 @@ describe("Katok retrieval source identity", () => {
 
 		expect(results).toHaveLength(1);
 		const source = results[0]?.source ?? "";
-		expect(source.startsWith("/")).toBe(false);
+		expect(source).toBe("/kakao/default/chunks/chunk-001");
 		expect(source.toLowerCase()).toContain("kakao");
-		expect(source).toContain("오픈소스 개발과제");
 		expect(results[0]?.metadata).toMatchObject({ datasourceId: "kakao", chatName: "오픈소스 개발과제" });
 	});
 });

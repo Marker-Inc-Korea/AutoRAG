@@ -5,6 +5,7 @@ import type {
 	RetrievalResult,
 } from "../../../retrieval/types.ts";
 import type { KatokHit, KatokSearchMode, KatokSearchOptions, KatokSearchResult } from "./types.ts";
+import { katokSourcePath } from "./paths.ts";
 
 /**
  * Narrow client surface required by the KakaoTalk retrieval methods.
@@ -122,18 +123,8 @@ async function retrieveKatok(
 	return mapped;
 }
 
-/**
- * Human-readable kakao source identity. Starts with the `kakao:` scheme so
- * the agent can never mistake it for an OS file path, and carries the chat
- * name and sender when katok provides them (e.g.
- * `kakao:오픈소스 개발과제/류동현투이컨설팅/chunk_58b3`).
- */
 function katokSource(instanceId: string, hit: KatokHit): string {
-	const chatName = typeof hit.metadata?.chatName === "string" ? hit.metadata.chatName : undefined;
-	const sender = typeof hit.metadata?.senderNickname === "string" ? hit.metadata.senderNickname : undefined;
-	const room = chatName ?? instanceId;
-	const segments = [room, sender, hit.chunkId].filter((segment) => segment !== undefined && segment.length > 0);
-	return `kakao:${segments.join("/")}`;
+	return katokSourcePath(instanceId, hit.chunkId);
 }
 
 function toRetrievalResult(

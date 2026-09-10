@@ -98,23 +98,23 @@ tier = "never"
 		});
 	});
 
-	it("matches datasource identifiers as raw unified source strings", () => {
+	it("matches slash datasource identifiers as unified source strings", () => {
 		writeWorkspacePolicy(`
-[policy."kakao:개발톡방/**"]
+[policy."/kakao/personal/chunks/**"]
 tier = "always"
 
-[policy."gmail:thread-123/**"]
+[policy."/gmail/personal/chunks/**"]
 tier = "peers"
 peers = ["mail-peer"]
 `);
 		const policy = store();
-		policy.promoteSource("kakao:개발톡방/alice/chunk-1");
-		policy.promoteSource("kakao:다른방/alice/chunk-1");
-		policy.promoteSource("gmail:thread-123/message-1");
+		policy.promoteSource("/kakao/personal/chunks/chunk-1");
+		policy.promoteSource("/kakao/other/chunks/chunk-1");
+		policy.promoteSource("/gmail/personal/chunks/message-1");
 
-		expect(policy.resolvePolicy("kakao:개발톡방/alice/chunk-1", "any").allowed).toBe(true);
-		expect(policy.resolvePolicy("kakao:다른방/alice/chunk-1", "any").allowed).toBe(false);
-		expect(policy.resolvePolicy("gmail:thread-123/message-1", "mail-peer")).toMatchObject({
+		expect(policy.resolvePolicy("/kakao/personal/chunks/chunk-1", "any").allowed).toBe(true);
+		expect(policy.resolvePolicy("/kakao/other/chunks/chunk-1", "any").allowed).toBe(false);
+		expect(policy.resolvePolicy("/gmail/personal/chunks/message-1", "mail-peer")).toMatchObject({
 			tier: "peers",
 			allowed: true,
 			shareBytes: false,
@@ -202,18 +202,18 @@ tier = "always"
 
 	it("supports local glob wildcards without reparsing datasource identifiers", () => {
 		writeWorkspacePolicy(`
-[policy."kakao:개발톡방/*/chunk-?"]
+[policy."/kakao/personal/*/chunk-?"]
 tier = "always"
 `);
 		const policy = store();
-		policy.promoteSource("kakao:개발톡방/alice/chunk-1");
-		policy.promoteSource("kakao:개발톡방/alice/nested/chunk-1");
+		policy.promoteSource("/kakao/personal/alice/chunk-1");
+		policy.promoteSource("/kakao/personal/alice/nested/chunk-1");
 
-		expect(policy.resolvePolicy("kakao:개발톡방/alice/chunk-1", "peer").allowed).toBe(true);
-		expect(policy.resolvePolicy("kakao:개발톡방/alice/nested/chunk-1", "peer").allowed).toBe(false);
+		expect(policy.resolvePolicy("/kakao/personal/alice/chunk-1", "peer").allowed).toBe(true);
+		expect(policy.resolvePolicy("/kakao/personal/alice/nested/chunk-1", "peer").allowed).toBe(false);
 	});
 
-	it("rejects absolute filesystem paths and unsafe control-format characters as keys", () => {
+	it("accepts absolute local source keys and rejects unsafe control characters", () => {
 		writeGlobalConfig({
 			p2p: {
 				policy: {

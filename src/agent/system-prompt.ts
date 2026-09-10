@@ -72,8 +72,8 @@ export function buildSystemPrompt(config: SystemPromptConfig): string {
 		config.manifests.length === 0
 			? ""
 			: `\n## Indexed Stores\n\n${config.manifests
-					.map((manifest) => `- **${manifest.name}**: ${manifest.description ?? "indexed document store"}`)
-					.join("\n")}\n`;
+				.map((manifest) => `- **${manifest.name}**: ${manifest.description ?? "indexed document store"}`)
+				.join("\n")}\n`;
 	const datasourceSkills = buildDatasourceSkillsPrompt(config.datasourceSkills ?? []);
 	const noSearchTools =
 		toolLines.length === 0
@@ -118,7 +118,7 @@ ${noSearchTools}
 - Use MinSync-backed BM25 for exact terminology, MinSync vector search for semantic similarity, and \`search_all_documents\` when hybrid ranking over the same MinSync chunks can help.
 - Use \`bash\` to read already-retrieved local files with cat/head/sed. find/grep/rg must be small and bounded: one already-known directory from retrieval, a tight pattern, and a cap (head, maxdepth, or file types). Never recursively scan a whole search root (Downloads, Documents, Desktop, or /); those calls miss the bash timeout and stall the search loop.
 - If retrieval is empty, retry a simpler query or synonyms through retrieval tools first. Do not widen filesystem discovery to compensate.
-- Slash-prefixed datasource IDs such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/... are virtual, not OS paths. Do not bash them. Search them with \`search_datasource_documents\`.
+- Local retrieval sources are absolute filesystem paths and may be read with \`bash\` after verifying the returned path. Datasource retrieval sources use slash-prefixed virtual identifiers such as /kakao/..., /gmail/..., /slack/..., /discord/..., and /github/...; they are not OS paths and must never be passed to \`cd\`, \`cat\`, or other filesystem tools. Search or fetch them through \`search_datasource_documents\` and the loaded datasource skill/native CLI.
 - Cross-check important claims against the original source and preserve real source paths.
 
 ${duplicateManagement}
