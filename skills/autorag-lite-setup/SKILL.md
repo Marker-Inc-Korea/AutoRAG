@@ -112,6 +112,11 @@ autorag lite refresh --force --json
 - MinSync and Jikji auto-install on first use by default. If they are missing
   or broken, run a full refresh or return to setup rather than silently
   degrading to lexical-only search.
+- MinSync's default embedder is local EmbeddingGemma (768 dimensions, served
+  locally via Ollama): no embedder flags and no API key are needed, and no
+  corpus text leaves the machine. During setup, verify the local model is
+  available (`ollama pull embeddinggemma` with `ollama serve` running);
+  override it only when intentionally using a remote embedder.
 - Exact duplicate exclusion during refresh is enabled by default via the
   external `dupey` CLI. Install dupey during setup when it is missing
   (`command -v dupey || cargo install dupey`) and tell the user the feature is
