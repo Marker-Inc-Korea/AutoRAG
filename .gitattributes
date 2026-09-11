@@ -1,0 +1,2 @@
+# Live-E2E corpus hashes are byte-exact. Keep LF on every OS, including Windows.
+scripts/live-e2e/corpus/** text eol=lf

@@ -57,7 +57,7 @@ export class MinSyncClient {
 				initArgs.push("--embedder", this.embedder.id);
 			}
 			const init = await this.spawn(initArgs, spawnOpts);
-			if (!init.ok) {
+			if (!init.ok || !existsSync(minSyncConfigPath(this.workspacePath))) {
 				return {
 					ok: false,
 					synced: 0,

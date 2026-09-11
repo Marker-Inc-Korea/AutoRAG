@@ -1,0 +1,206 @@
+{
+  "task": "todo-5",
+  "scenario": "deterministic-live-e2e-cold-warm",
+  "adapterProbe": {
+    "endpoint": "http://127.0.0.1:18080",
+    "httpStatus": 200,
+    "dimension": 768,
+    "loopbackOnly": true
+  },
+  "runs": [
+    {
+      "run": 1,
+      "root": "/tmp/autorag-live-runs.4HBewK/root-1",
+      "cold": {
+        "mode": "cold",
+        "exitCode": 0,
+        "parsedMirrorWrites": 1,
+        "fullSync": true,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-1/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": []
+      },
+      "warm": {
+        "mode": "warm",
+        "exitCode": 0,
+        "parsedMirrorWrites": 0,
+        "fullSync": false,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-1/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": [],
+        "cursorReused": true
+      }
+    },
+    {
+      "run": 2,
+      "root": "/tmp/autorag-live-runs.4HBewK/root-2",
+      "cold": {
+        "mode": "cold",
+        "exitCode": 0,
+        "parsedMirrorWrites": 1,
+        "fullSync": true,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-2/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": []
+      },
+      "warm": {
+        "mode": "warm",
+        "exitCode": 0,
+        "parsedMirrorWrites": 0,
+        "fullSync": false,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-2/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": [],
+        "cursorReused": true
+      }
+    },
+    {
+      "run": 3,
+      "root": "/tmp/autorag-live-runs.4HBewK/root-3",
+      "cold": {
+        "mode": "cold",
+        "exitCode": 0,
+        "parsedMirrorWrites": 1,
+        "fullSync": true,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-3/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": []
+      },
+      "warm": {
+        "mode": "warm",
+        "exitCode": 0,
+        "parsedMirrorWrites": 0,
+        "fullSync": false,
+        "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
+        "cursorExists": true,
+        "hit": {
+          "source": "/private/tmp/autorag-live-runs.4HBewK/root-3/corpus/sample.txt",
+          "sourceAbsolute": true,
+          "sourceExists": true,
+          "sourceReadable": true,
+          "score": 1
+        },
+        "embedding": {
+          "endpoint": "http://127.0.0.1:18080",
+          "model": "embeddinggemma:latest",
+          "dimension": 768,
+          "loopbackOnly": true
+        },
+        "openaiKeyPresent": false,
+        "cleanupLockReleased": true,
+        "diagnostics": [],
+        "cursorReused": true
+      }
+    }
+  ],
+  "determinism": {
+    "coldExitCodes": [
+      0,
+      0,
+      0
+    ],
+    "warmExitCodes": [
+      0,
+      0,
+      0
+    ],
+    "warmParsedMirrorWrites": [
+      0,
+      0,
+      0
+    ],
+    "warmFullSync": [
+      false,
+      false,
+      false
+    ],
+    "allColdFullSync": true,
+    "allWarmIncremental": true
+  },
+  "fix": {
+    "exactOrdering": "After awaiting init, sync now requires <workspace>/.minsync/config.toml to exist before configuredMaxChunkSize/readConfigSnapshot/rewriteEmbedderConfig/check; otherwise it returns init-failed and never restores/reads config.",
+    "workspaceMapping": "AutoRAGAgent.workspacePath is clone-local; searchPaths remains shared corpus."
+  },
+  "adversarial": {
+    "sharedMutableState": "find <shared-root> -name .autorag returned no paths in each fresh run",
+    "misleadingSuccessOutput": "all six workflow invocations exited 0 and each result records hit, cursor, and lockReleased observables",
+    "staleState": "warm runs reused the cold-created cursor",
+    "egress": "loopback-only adapter; OpenAI key presence false"
+  },
+  "sourceRead": "Each hit source is absolute/readable and was compared to the bootstrapped fixture."
+}
