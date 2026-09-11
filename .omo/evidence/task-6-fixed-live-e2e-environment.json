@@ -1,7 +1,7 @@
 {
   "mode": "cold",
-  "root": "/tmp/autorag-task6-fresh",
-  "startedAt": "2026-09-08T12:55:23.922Z",
+  "root": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
+  "startedAt": "2026-09-11T08:33:18.222Z",
   "commands": [
     {
       "command": [
@@ -9,7 +9,7 @@
         "scripts/live-e2e/runner.mjs",
         "verify-corpus",
         "--root",
-        "/tmp/autorag-task6-fresh"
+        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e"
       ],
       "exitCode": 0,
       "stdout": "VERIFY_OK: corpus integrity confirmed\n",
@@ -20,7 +20,7 @@
         "bun",
         "scripts/live-e2e/live-stack.mts",
         "--root",
-        "/tmp/autorag-task6-fresh",
+        "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e",
         "--workspace",
         "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace",
         "--mode",
@@ -42,7 +42,7 @@
       "status": "PASS",
       "reason": "absolute corpus source is readable",
       "evidence": {
-        "source": "/tmp/autorag-task6-fresh/corpus/sample.txt",
+        "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
         "identity": "local:corpus/sample.txt",
         "sourceAbsolute": true,
         "sourceReadable": true,
@@ -51,48 +51,66 @@
     },
     {
       "name": "katok",
-      "status": "SKIP",
-      "reason": "katok-native-store-not-configured"
+      "status": "PASS",
+      "reason": "native-store harness passed with verified native identity",
+      "evidence": {
+        "binary": "katok",
+        "nativeStorePreserved": true,
+        "output": "KATOK_LIVE_QA_PASS source=kakao:IT 개발 커리어 공유방/kdy1/chunk_c7c53e497e5fe1fb\n",
+        "nativeIdentity": true
+      }
     },
     {
       "name": "discrawl",
-      "status": "SKIP",
-      "reason": "discrawl-native-store-not-configured"
+      "status": "PASS",
+      "reason": "native-store harness passed with verified native identity",
+      "evidence": {
+        "binary": "discrawl",
+        "nativeStorePreserved": true,
+        "output": "annels / 6 guilds\n\n[discord-hybrid] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-hybrid] \"deploy failed\" -> 3 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n  2. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=0.5000\n  3. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.3333\n\n[discord-fts] \"meeting schedule\" -> 0 hit(s)\n\n[discord-fts] \"deploy failed\" -> 1 hit(s)\n  1. #Cheol <Cheol> Error: 412 Account nomadamas is suspended, possibly due to reaching the monthly spending limit or fa\n     source=/discord/live/chunks/1528773923418669248 score=1.0000\n\n[discord-semantic] \"meeting schedule\" -> 3 hit(s)\n  1. #철박사님만-없는방 <minsing Jin> 앞선 저녁 약속이 있어소\n     source=/discord/live/chunks/1533081242747277533 score=1.0000\n  2. #minsing Jin <minsing Jin> 다른날 부를게유~ 성과공유회는 다음기회에\n     source=/discord/live/chunks/1518183556587851917 score=0.5000\n  3. #철박사님도있는잡담방 <Bobb Kim> 금요일? 나 목욜에 뭔가 일정이 있어버려\n     source=/discord/live/chunks/1531874896391573614 score=0.3333\n\n[discord-semantic] \"deploy failed\" -> 3 hit(s)\n  1. #minsing Jin <minsing Jin> 아직 작동을 안해 😂\n     source=/discord/live/chunks/1535992254202650695 score=1.0000\n  2. #성과-공유회 <Jeffrey Kim> 늦었다\n     source=/discord/live/chunks/1534505940219596940 score=0.5000\n  3. #B200을 차지하기 위한 로동 <Jeffrey Kim> 새로고침을 안했따\n     source=/discord/live/chunks/1534254501488234737 score=0.3333\n\nIncremental check: re-running index should sync 0 new messages.\n  second pass: 2697 new message(s)\n",
+        "nativeIdentity": true
+      }
     },
     {
       "name": "wacrawl",
       "status": "SKIP",
-      "reason": "wacrawl-native-store-not-configured"
+      "reason": "wacrawl-live-harness-not-registered"
     },
     {
       "name": "telecrawl",
       "status": "SKIP",
-      "reason": "telecrawl-native-store-not-configured"
+      "reason": "telecrawl-live-harness-not-registered"
     },
     {
       "name": "slacrawl",
       "status": "SKIP",
-      "reason": "slacrawl-native-store-not-configured"
+      "reason": "slacrawl-live-harness-not-registered"
     },
     {
       "name": "notcrawl",
       "status": "SKIP",
-      "reason": "notcrawl-native-store-not-configured"
+      "reason": "notcrawl-live-harness-not-registered"
     },
     {
       "name": "qmd",
       "status": "SKIP",
-      "reason": "qmd-native-store-not-configured"
+      "reason": "qmd-live-harness-not-registered"
     },
     {
       "name": "rclone",
       "status": "SKIP",
-      "reason": "rclone-native-store-not-configured"
+      "reason": "rclone-live-harness-not-registered"
     },
     {
       "name": "mailcrawl",
-      "status": "SKIP",
-      "reason": "mailcrawl-native-store-not-configured"
+      "status": "PASS",
+      "reason": "native-store harness passed with verified native identity",
+      "evidence": {
+        "binary": "mailcrawl",
+        "nativeStorePreserved": true,
+        "output": "MAILCRAWL_LIVE_QA_PASS\n{\"firstSync\":{\"messages\":1,\"added\":1,\"updated\":0,\"deleted\":0,\"unchanged\":0,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"firstIndex\":{\"embedded\":1,\"reused\":0,\"generation\":\"gen-382cf0f1ae1fc00c-1789115601421\"},\"secondSync\":{\"messages\":0,\"added\":0,\"updated\":0,\"deleted\":0,\"unchanged\":1,\"chunksAdded\":1,\"archiveRevision\":\"382cf0f1ae1fc00c1bfd161d24bec2ab5c8e2879f449cd7c44b1b8bf6fffcc96\"},\"secondIndex\":{\"embedded\":0,\"reused\":1,\"generation\":\"gen-382cf0f1ae1fc00c-1789115602266\"},\"bm25Hits\":1,\"semanticHits\":1,\"hybridHits\":1,\"source\":\"/mailcrawl/personal/chunks/969fdab2de3b041d3b4331f5\"}\n",
+        "nativeIdentity": true
+      }
     },
     {
       "name": "spotlight",
@@ -156,7 +174,7 @@
   "cursorPath": "/Volumes/SSD1/4/AutoRAG/.autorag-e2e/workspace/.minsync/cursor.json",
   "cursorExists": true,
   "hit": {
-    "source": "/private/tmp/autorag-task6-fresh/corpus/sample.txt",
+    "source": "/Volumes/SSD1/4/AutoRAG/scripts/live-e2e/corpus/sample.txt",
     "sourceAbsolute": true,
     "sourceExists": true,
     "sourceReadable": true,
@@ -179,11 +197,11 @@
   "incremental": false,
   "fullSync": true,
   "datasourceSummary": {
-    "pass": 1,
-    "skip": 10,
+    "pass": 4,
+    "skip": 7,
     "fail": 0
   },
-  "finishedAt": "2026-09-08T12:55:25.042Z",
+  "finishedAt": "2026-09-11T08:33:24.186Z",
   "exitCode": 0,
   "task": "6",
   "scenario": "fixed-live-e2e-environment",

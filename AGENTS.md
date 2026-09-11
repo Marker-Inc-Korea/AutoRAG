@@ -73,24 +73,28 @@ Prerequisites:
 Run the cold path (fresh runner state and core local-file/MinSync verification):
 
 ```bash
-make e2e-live-cold E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT" E2E_DATASOURCES=local,configured
+make e2e-live-cold E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 ```
 
 Run the warm path (reuse the same clone-local state after a successful cold run):
 
 ```bash
-make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT" E2E_DATASOURCES=local,configured
+make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
 ```
 
-The summary separates the core MinSync result (`commandsSummary.core`) from
-`datasourceLanes`. Datasource lanes are opt-in via `E2E_DATASOURCES`: `local`
-checks the absolute bootstrapped corpus source; `configured` checks each
-available native CLI lane (katok, discrawl, wacrawl, telecrawl, slacrawl,
-notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight). Missing optional CLIs
-or unconfigured native stores are `SKIP` with a reason. An installed/configured
+Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
+executes the `local` lane plus every native CLI lane (katok, discrawl, wacrawl,
+telecrawl, slacrawl, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
+`E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
+skips native lanes entirely). The summary separates the core MinSync result
+(`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
+native store is missing are `SKIP` with a reason. An installed/configured
 lane whose native check fails, including a successful harness without a valid
-source-native identity, is `FAIL`; `SKIP` is never reported as PASS. Native
-lanes are expected to remain `SKIP` unless a real native store is configured.
+source-native identity, is `FAIL`; `SKIP` is never reported as PASS. On a
+host where a native store genuinely exists, its lane must run and PASS —
+leaving it `SKIP` by narrowing `E2E_DATASOURCES` is a QA gap, not a green
+run. Native lanes are expected to remain `SKIP` only when no native store is
+configured.
 Native stores, profiles, and keychains remain owned by their CLIs: the runner
 does not copy datasource data or force an AutoRAG workspace. Native datasource
 references and setup details are in `docs/manual-qa-datasources.md` and the

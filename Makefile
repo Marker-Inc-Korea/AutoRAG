@@ -29,6 +29,8 @@ help:
 		'  E2E_ROOT=<root>  Shared corpus root (default: current repo path;' \
 		'                   honors AUTORAG_LIVE_E2E_ROOT if set)' \
 		'  E2E_ARGS=<args>  Extra arguments forwarded to the runner' \
+		'  E2E_DATASOURCES  Lane selection (default: local,configured = every lane;' \
+		'                   native lanes without a store report SKIP)' \
 		'  bootstrap first: node scripts/live-e2e/runner.mjs bootstrap --root "$$AUTORAG_LIVE_E2E_ROOT"'
 
 install:

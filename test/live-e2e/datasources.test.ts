@@ -112,4 +112,14 @@ describe("live-e2e datasource matrix", () => {
 		expect(parseDatasourceSelection("local,configured")).toContain("local");
 		expect(buildDatasourceMatrix().some((lane) => lane.name === "local")).toBe(true);
 	});
+
+	it("defaults to every lane (local + all native datasources) without E2E_DATASOURCES", () => {
+		const previous = process.env.E2E_DATASOURCES;
+		delete process.env.E2E_DATASOURCES;
+		try {
+			expect(parseDatasourceSelection()).toEqual(["local", "configured"]);
+		} finally {
+			if (previous !== undefined) process.env.E2E_DATASOURCES = previous;
+		}
+	});
 });
