@@ -140,7 +140,14 @@ each exact canonical-text hash, and excludes older copies from the mirror. Set
 `"excludeExactDuplicates": false` to index every copy. Missing dupey is
 non-fatal; refresh continues without this optimization.
 
-Optional MinSync embedder settings:
+MinSync's default embedder is local EmbeddingGemma (768 dimensions, served
+locally via Ollama). The default needs no embedder flags and no API key, and
+no corpus text is sent to a remote embedding service. During setup, verify the
+local model is available (`ollama pull embeddinggemma` with `ollama serve`
+running) instead of silently falling back.
+
+Override the embedder only when intentionally using a different, for example
+remote, provider:
 
 ```bash
 autorag init \
@@ -152,7 +159,8 @@ autorag init \
 ```
 
 Only store the environment-variable name, never its value. Dimension and batch
-size must be positive integers.
+size must be positive integers, and the dimension must match the embedder
+(EmbeddingGemma is 768; text-embedding-3-small is 1536).
 
 ## Configure datasource skills when requested
 
