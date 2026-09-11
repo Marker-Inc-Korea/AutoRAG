@@ -11,6 +11,7 @@ export interface MinSyncClientOptions {
 	readonly maxChunkSize?: number;
 }
 
+/** MinSync v0.4.2 supports vector, BM25, and hybrid query modes. */
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -28,7 +29,7 @@ export class MinSyncClient {
 		this.maxChunkSize = options.maxChunkSize;
 	}
 
-	async sync(): Promise<MinSyncSyncResult> {
+	async sync(force = false): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "missing-binary" };
 		}
@@ -93,7 +94,7 @@ export class MinSyncClient {
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
 		if (chunkSizeChanged) rmSync(cursorPath, { force: true });
 		const syncArgs =
-			existsSync(cursorPath) && !chunkSizeChanged
+			existsSync(cursorPath) && !chunkSizeChanged && !force
 				? ["sync", "--format", "json"]
 				: ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);
@@ -117,7 +118,7 @@ export class MinSyncClient {
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
-		const result = await this.spawn(["query", "--format", "json", "-k", String(topK), "--mode", mode, text]);
+		const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
 		if (!result.ok) return [];
 		return parseQueryHits(result.stdout);
 	}

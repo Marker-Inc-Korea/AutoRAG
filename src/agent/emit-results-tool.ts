@@ -26,7 +26,7 @@ const evidenceRefSchema = Type.Object({
 	confidence: Type.Optional(Type.Number({ description: "Evidence confidence, 0..1", minimum: 0, maximum: 1 })),
 });
 
-const emitResultsSchema = Type.Object({
+export const emitResultsSchema = Type.Object({
 	answer: Type.String({
 		description: "Final curated answer for the caller. Reference results by number (e.g. [1], [2]).",
 	}),
@@ -41,7 +41,7 @@ const emitResultsSchema = Type.Object({
 					lineNumber: Type.Optional(Type.Integer({ description: "Line number of the excerpt, if known" })),
 				}),
 			),
-			confidence: Type.Number({ description: "Confidence in this result, 0..1" }),
+			confidence: Type.Number({ description: "Confidence in this result, 0..1", minimum: 0, maximum: 1 }),
 		}),
 		{ description: "Numbered curated knowledge units." },
 	),

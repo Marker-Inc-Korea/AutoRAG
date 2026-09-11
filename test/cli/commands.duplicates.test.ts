@@ -38,6 +38,28 @@ function context(json = false): { ctx: CommandContext; stdout: string[]; stderr:
 	};
 }
 
+describe("runDuplicates exit codes", () => {
+	it("returns exit 2 when --config points to a missing file", async () => {
+		const err: string[] = [];
+		const { ctx } = context();
+		const code = await runDuplicates(
+			{
+				...ctx,
+				flags: { config: join(root, "nonexistent-config.json") },
+				stderr: (line) => err.push(line),
+			},
+			async () => ({
+				dir: "",
+				files: [],
+				families: [],
+				errors: [],
+			}),
+		);
+		expect(code).toBe(2);
+		expect(err.join("\n")).toContain("Config file not found");
+	});
+});
+
 describe("autorag duplicates", () => {
 	it("prints a safe cleanup plan without changing files", async () => {
 		const docs = join(root, "docs");

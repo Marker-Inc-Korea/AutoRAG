@@ -51,6 +51,20 @@ function writeConfig(minSync?: unknown): void {
 	writeFileSync(join(configDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 }
 
+describe("runStatus exit codes", () => {
+	it("returns exit 2 when --config points to a missing file", async () => {
+		const err: string[] = [];
+		const code = await runStatus(
+			makeCtx({
+				flags: { config: join(root, "nonexistent-config.json") },
+				stderr: (line) => err.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(err.join("\n")).toContain("Config file not found");
+	});
+});
+
 describe("runRefresh + runStatus (cli)", () => {
 	it("refresh then status emits JSON with counts and no leaked paths", async () => {
 		writeConfig();
@@ -109,7 +123,7 @@ describe("runRefresh + runStatus (cli)", () => {
 		expect(statusCode).toBe(0);
 
 		const status = JSON.parse(statusOut[0]);
-		// MinSync absence surfaces as a component readiness state, not a throw.
+		// MinSync absence surfaces as a configured component state, not a throw.
 		expect(status.components).toBeDefined();
 		expect(status.components.minsync).toBe("configured");
 		// Path opacity holds on the status path too.

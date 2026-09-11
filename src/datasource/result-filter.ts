@@ -68,6 +68,7 @@ export class DatasourceResultFilter {
 		methods: readonly RetrievalMethod[],
 		ctx: DatasourceAccessContext,
 		userScope?: string,
+		userScopes?: readonly string[],
 	): ResultsByMethod {
 		const descriptors = new Map<string, RetrievalMethod>();
 		for (const method of methods) {
@@ -98,7 +99,7 @@ export class DatasourceResultFilter {
 				continue;
 			}
 			// Scope-capable methods are narrowed by trusted/user scopes.
-			const predicate = ctx.allowedSourcesPredicate(userScope);
+			const predicate = ctx.allowedSourcesPredicate(userScope, userScopes);
 			out.set(
 				name,
 				results.filter((r) => predicate(r.source)),

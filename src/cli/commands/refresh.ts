@@ -1,5 +1,5 @@
 import { AutoRAGAgent, type RefreshMethod } from "../../agent/agent.ts";
-import { buildAgentOptions, resolveConfig } from "../config.ts";
+import { buildAgentOptions, ConfigError, resolveConfig } from "../config.ts";
 import { renderError, renderRefresh } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -22,7 +22,7 @@ export async function runRefresh(ctx: CommandContext): Promise<number> {
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
-		return 1;
+		return error instanceof ConfigError ? 2 : 1;
 	}
 }
 

@@ -50,6 +50,20 @@ function writeConfig(): void {
 	writeFileSync(join(configDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 }
 
+describe("runWatch exit codes", () => {
+	it("returns exit 2 when --config points to a missing file", async () => {
+		const err: string[] = [];
+		const code = await runWatch(
+			makeCtx({
+				flags: { once: true, config: join(root, "nonexistent-config.json") },
+				stderr: (line) => err.push(line),
+			}),
+		);
+		expect(code).toBe(2);
+		expect(err.join("\n")).toContain("Config file not found");
+	});
+});
+
 describe("runWatch (cli)", () => {
 	it("watch --once refreshes indexes as a single tick", async () => {
 		writeConfig();

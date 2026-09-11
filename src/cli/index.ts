@@ -16,6 +16,7 @@ const BOOLEAN_FLAGS = new Set([
 	"skip-probes",
 	"no-open",
 	"allow-remote",
+	"full",
 ]);
 const VALUE_FLAGS = new Set([
 	"config",
@@ -44,6 +45,7 @@ const VALUE_FLAGS = new Set([
 	"timeout-ms",
 	"port",
 	"host",
+	"input",
 ]);
 
 const COMMANDS = [
@@ -60,6 +62,7 @@ const COMMANDS = [
 	"duplicates",
 	"tui",
 	"ui",
+	"lite",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -89,6 +92,13 @@ Commands:
   index reset          Remove parsed/minsync indexes (--method)
   index rebuild        Reset then re-run a refresh (--method minsync|all)
   health               Check model/provider auth and completion access (no index check)
+  lite init|ui|refresh|watch|status|index|duplicates|health
+                       Model-free setup, indexing, status, and datasource lifecycle
+                       (lite refresh: --full --force --method; watch: --once)
+  lite retrieve <query>
+                       Retrieve documents without model curation
+                       (--top-k N  --scope SCOPE  --tags A,B  --json  --debug)
+  lite report <query>   Persist a structured report (--input FILE)
   duplicates [DIR]     Scan exact/near duplicate document families; never deletes files
   tui                  Open an interactive Pi-powered librarian terminal UI
   ui                   Open a local loopback page to connect and manage data sources
@@ -220,6 +230,9 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 			const { runUi } = await import("./commands/ui.ts");
 			return runUi(ctx);
 		}
+		case "lite": {
+			return dispatchLite(ctx);
+		}
 	}
 }
 
@@ -235,8 +248,12 @@ export async function main(argv: readonly string[]): Promise<number> {
 	const debug = flags.debug === true;
 
 	if (flags.help === true || command === undefined || command === "help") {
-		process.stdout.write(USAGE);
-		return 0;
+		if (command === "lite") {
+			// Defer to lite dispatch for subcommand-specific help.
+		} else {
+			process.stdout.write(USAGE);
+			return 0;
+		}
 	}
 	if (!(COMMANDS as readonly string[]).includes(command)) {
 		process.stderr.write(`Unknown command: ${command}\n\n${USAGE}`);
@@ -270,6 +287,11 @@ function isInvokedDirectly(): boolean {
 	} catch {
 		return false;
 	}
+}
+
+async function dispatchLite(ctx: CommandContext): Promise<number> {
+	const { runLite } = await import("./commands/lite.ts");
+	return runLite(ctx);
 }
 
 if (isInvokedDirectly()) {

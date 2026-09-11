@@ -120,6 +120,50 @@ function result(id: string, source: string): RetrievalResult {
 	return { id, source, content: `message ${id}`, score: 1, metadata: {} };
 }
 
+function makeScopedSkill(rows: readonly RetrievalResult[]): DatasourceSkill {
+	const method: RetrievalMethod = {
+		describe: () => ({
+			name: "slack.keyword",
+			type: "bm25",
+			description: "Slack test datasource method",
+			status: "active",
+			capabilities: ["keyword", "scoped"],
+			datasourceId: "slack",
+			tags: ["slack"],
+		}),
+		retrieve: async (_query, options) =>
+			rows.filter((row) => options.scope === undefined || row.source.startsWith(options.scope.replace("/**", ""))),
+	};
+	return {
+		describe: () => ({
+			name: "slack",
+			type: "chat",
+			description: "Slack chats",
+			capabilities: ["keyword", "polling", "scoped"],
+			tags: ["slack"],
+			status: "active",
+			datasourceId: "slack",
+			instanceId: "allowed",
+		}),
+		polling: () => ({ mode: "poll", intervalMs: 60_000 }),
+		skillManifest: () => ({
+			name: "datasource-slack",
+			description: "Search Slack chats.",
+			content: "Search with search_datasource_documents.",
+		}),
+		index: async () => ({
+			ok: true,
+			instanceId: "allowed",
+			skill: "slack",
+			chunkCount: rows.length,
+			indexedAt: 1,
+			diagnostics: [],
+		}),
+		retrievalMethods: () => [method],
+		describeSources: () => [],
+	};
+}
+
 describe("AutoRAGAgent datasource integration", () => {
 	it("passes datasource results of a tag-authorized skill through to merge", async () => {
 		const agent = new AutoRAGAgent({
@@ -136,6 +180,29 @@ describe("AutoRAGAgent datasource integration", () => {
 		const { results } = await agent.searchDatasourceDocuments("message");
 
 		expect(results.map((r) => r.source)).toEqual(["kakao:오픈소스 개발과제/chunks/a", "kakao:다른방/chunks/b"]);
+	});
+
+	it("narrows caller tags and scopes instead of widening trusted datasource access", async () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: ["test/fixtures/sample-project"],
+			workspacePath: tmpDir,
+			minSync: false,
+			jikji: false,
+			datasourceSkills: [
+				makeScopedSkill([
+					result("allowed", "/slack/allowed/channel/message"),
+					result("secret", "/slack/secret/channel/message"),
+				]),
+			],
+			datasourceAccess: { allowedTags: ["slack"], allowedScopes: ["/slack/allowed/**"] },
+		});
+
+		const { results } = await agent.retrieveWithDiagnostics("message", {
+			allowedTags: ["slack", "github"],
+			allowedScopes: ["/slack/**", "/github/**"],
+		});
+
+		expect(results.map((row) => row.source)).toEqual(["/slack/allowed/channel/message"]);
 	});
 
 	it("keeps datasource default-deny even when tool args try to grant tags or scopes", async () => {

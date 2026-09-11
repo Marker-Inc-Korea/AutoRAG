@@ -220,7 +220,7 @@ export function renderMemory(schema: MemorySchemaV4, opts: RenderOptions): strin
 export function renderFeedback(result: { applied: boolean; sessionId: string }, opts: RenderOptions): string {
 	const envelope = { ok: true, applied: result.applied, sessionId: result.sessionId };
 	if (opts.json) {
-		return JSON.stringify(envelope, null, 2);
+		return JSON.stringify(envelope);
 	}
 	const lines: string[] = [];
 	lines.push(`feedback: ${result.applied ? "applied" : "not applied"}`);

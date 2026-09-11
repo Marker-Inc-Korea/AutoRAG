@@ -1,3 +1,4 @@
+export { RetrievalEngine, type RetrievalEngineOptions } from "./engine.ts";
 export type { MergeOptions } from "./merger.ts";
 export { ParallelRetriever, ResultMerger } from "./merger.ts";
 export { RetrievalMethodRegistry } from "./registry.ts";

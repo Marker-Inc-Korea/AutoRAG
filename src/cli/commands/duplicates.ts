@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { DupeyScanResult } from "../../dupey/index.ts";
 import { scanWithDupey } from "../../dupey/index.ts";
-import { resolveConfig } from "../config.ts";
+import { ConfigError, resolveConfig } from "../config.ts";
 import { renderError } from "../output.ts";
 import type { CommandContext } from "./types.ts";
 
@@ -12,6 +12,12 @@ interface ExactGroup {
 	readonly files: readonly string[];
 }
 
+/**
+ * `autorag duplicates` — scan configured roots for exact and near duplicate
+ * document families. Never deletes or moves source files.
+ *
+ * Exit codes: 0 on success, 2 on config error, 1 on runtime error.
+ */
 export async function runDuplicates(
 	ctx: CommandContext,
 	scanner: DuplicateScanner = (path) => scanWithDupey(path),
@@ -58,7 +64,7 @@ export async function runDuplicates(
 		return 0;
 	} catch (error) {
 		ctx.stderr(renderError(error, { json: ctx.json, debug: ctx.debug }));
-		return 1;
+		return error instanceof ConfigError ? 2 : 1;
 	}
 }
 

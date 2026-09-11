@@ -27,6 +27,7 @@ import {
 	rewriteEmbedderConfig,
 } from "../../src/minsync/index.ts";
 import { saveMirrorIndex } from "../../src/mirror/index.ts";
+import { RetrievalEngine } from "../../src/retrieval/engine.ts";
 
 let root: string;
 let source: string;
@@ -68,7 +69,7 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-function writeFakeMinSync(queryJson: string): void {
+function writeFakeMinSync(queryJson: string, strictQuery = false): void {
 	writeFileSync(
 		minsyncBinary,
 		`#!/usr/bin/env node
@@ -100,6 +101,7 @@ if (args[0] === "sync") {
 }
 
 if (args[0] === "query") {
+  ${strictQuery ? 'const supported = args.length === 8 && args[1] === "--format" && args[2] === "json" && args[3] === "--mode" && args[4] === "bm25" && args[5] === "-k" && !args[6].startsWith("--");\n  if (!supported) { console.error("unsupported query arguments: " + args.join(" ")); process.exit(2); }' : ""}
   console.log(${JSON.stringify(queryJson)});
   process.exit(0);
 }
@@ -126,6 +128,30 @@ function requireValue<T>(value: T | undefined, label: string): T {
 	if (value === undefined) throw new Error(`missing ${label}`);
 	return value;
 }
+
+describe("MinSyncClient", () => {
+	it("uses the official v0.4.2 query command with its selected mode", async () => {
+		// Given
+		writeFakeMinSync(JSON.stringify({ results: [{ path: parsedOutput, score: 0.9, text: "semantic hit" }] }), true);
+		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
+
+		// When
+		const results = await client.query("renewal cancellation", 2, "bm25");
+
+		// Then
+		expect(results).toEqual([{ path: parsedOutput, score: 0.9, text: "semantic hit" }]);
+		expect(JSON.parse(loggedCalls()[0] ?? "{}").args).toEqual([
+			"query",
+			"--format",
+			"json",
+			"--mode",
+			"bm25",
+			"-k",
+			"2",
+			"renewal cancellation",
+		]);
+	});
+});
 
 describe("MinSyncVectorMethod", () => {
 	it("syncs parsed mirror files through minsync sync when a mirror index exists", async () => {
@@ -447,7 +473,7 @@ describe("MinSyncVectorMethod", () => {
 		expect(result.metadata).toMatchObject({ method: "minsync", virtualPath: "/docs/policy.txt" });
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "--mode", "vector", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "vector", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
@@ -477,10 +503,47 @@ describe("MinSyncVectorMethod", () => {
 		expect(results[0]?.metadata.method).toBe("minsync-bm25");
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({
-				args: ["query", "--format", "json", "-k", "2", "--mode", "bm25", "renewal cancellation"],
+				args: ["query", "--format", "json", "--mode", "bm25", "-k", "2", "renewal cancellation"],
 				cwd: minSyncCwd(),
 			}),
 		);
+	});
+
+	it("exposes an install-failed diagnostic through retrieval after auto-install fails", async () => {
+		// Given
+		const originalPath = process.env.PATH;
+		process.env.PATH = join(root, "empty-path");
+		const method = new MinSyncVectorMethod({
+			root,
+			workspacePath: minsyncWorkspace,
+			installer: {
+				cargoInstaller: async () => {
+					throw new Error("mock cargo failure");
+				},
+				releaseProvider: async () => {
+					throw new Error("mock install failure");
+				},
+			},
+			autoInstall: true,
+		});
+		const engine = new RetrievalEngine({ isMinSyncBinaryMissing: () => method.isBinaryMissing() });
+		engine.register(method);
+
+		try {
+			// When
+			const { results, diagnostics } = await engine.retrieve("renewal cancellation");
+
+			// Then
+			expect(results).toEqual([]);
+			expect(diagnostics).toHaveLength(1);
+			expect(diagnostics[0]).toMatchObject({
+				code: "minsync-unavailable",
+				severity: "warning",
+				source: "minsync",
+			});
+		} finally {
+			process.env.PATH = originalPath;
+		}
 	});
 
 	it("maps real MinSync relative file paths to original source files", async () => {

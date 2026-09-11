@@ -1,5 +1,47 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AutoRAGRefreshOptions, AutoRAGRefreshResult } from "../../src/agent/agent.ts";
+import { runLiteRefresh } from "../../src/cli/commands/lite-refresh.ts";
+import type { CommandContext } from "../../src/cli/commands/types.ts";
 import { main, parseArgs } from "../../src/cli/index.ts";
+import { AutoRAGLite } from "../../src/core.ts";
+
+describe("lite refresh forwarding", () => {
+	it("forwards --method and --full to the model-free runtime", async () => {
+		const root = mkdtempSync(join(tmpdir(), "autorag-lite-refresh-test-"));
+		writeFileSync(
+			join(root, "config.json"),
+			JSON.stringify({ searchPaths: [root], workspacePath: root, memoryPath: join(root, "memory.json") }),
+		);
+		let received: { force: boolean | undefined; options?: AutoRAGRefreshOptions } | undefined;
+		vi.spyOn(AutoRAGLite.prototype, "refresh").mockImplementation(
+			async (force?: boolean, options?: AutoRAGRefreshOptions): Promise<AutoRAGRefreshResult> => {
+				received = { force, options };
+				return { indexPath: root, scanned: 0, written: 0, deleted: 0, skipped: 0, diagnostics: [] };
+			},
+		);
+		const output: string[] = [];
+		const context: CommandContext = {
+			positionals: [],
+			flags: { config: join(root, "config.json"), method: "minsync,jikji,datasources", full: true },
+			json: true,
+			debug: false,
+			cwd: root,
+			stdout: (line) => output.push(line),
+			stderr: (line) => output.push(line),
+		};
+
+		expect(await runLiteRefresh(context)).toBe(0);
+		expect(received).toEqual({
+			force: true,
+			options: { methods: ["minsync", "datasources", "jikji"] },
+		});
+		expect(JSON.parse(output[0] ?? "{}").ok).toBe(true);
+		rmSync(root, { recursive: true, force: true });
+	});
+});
 
 describe("parseArgs", () => {
 	it("collects positionals in order", () => {
@@ -59,6 +101,19 @@ describe("parseArgs", () => {
 		expect(parsed.flags["embedder-id"]).toBe("text-embedding-3-small");
 		expect(parsed.flags["embedder-dimension"]).toBe("1536");
 		expect(parsed.flags["embedder-api-key-env"]).toBe("OPENAI_API_KEY");
+	});
+
+	it("accepts the lite full-refresh and report-input flags", () => {
+		const refresh = parseArgs(["lite", "refresh", "--full", "--method", "minsync,jikji"]);
+		expect("error" in refresh).toBe(false);
+		if ("error" in refresh) return;
+		expect(refresh.flags.full).toBe(true);
+		expect(refresh.flags.method).toBe("minsync,jikji");
+
+		const report = parseArgs(["lite", "report", "helper query", "--input", "/tmp/report.json"]);
+		expect("error" in report).toBe(false);
+		if ("error" in report) return;
+		expect(report.flags.input).toBe("/tmp/report.json");
 	});
 });
 
@@ -162,5 +217,18 @@ describe("main health routing", () => {
 		expect(usage).toContain("--timeout-ms");
 		expect(usage).toContain("duplicates");
 		expect(usage).toContain("evidence <session>");
+	});
+
+	it("advertises and dispatches the lite headless namespace", async () => {
+		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		const err = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+		const code = await main(["lite", "retrieve", "helper function", "--help"]);
+		const usage = String(out.mock.calls[0]?.[0] ?? "");
+		expect(code).toBe(0);
+		expect(usage).toContain("lite retrieve");
+		expect(usage).toContain("lite report");
+		expect(usage).toContain("lite init");
+		expect(usage).toContain("lite health");
+		expect(String(err.mock.calls[0]?.[0] ?? "")).not.toContain("Unknown command");
 	});
 });

@@ -60,6 +60,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 	private readonly embedder: MinSyncEmbedderConfig | undefined;
 	private readonly maxChunkSize: number | undefined;
 	private readonly mode: MinSyncQueryMode;
+	private installFailed = false;
 
 	constructor(options: MinSyncVectorMethodOptions) {
 		this.root = options.root;
@@ -92,7 +93,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 		};
 	}
 
-	async sync(): Promise<MinSyncSyncResult> {
+	async sync(force = false): Promise<MinSyncSyncResult> {
 		syncMinSyncWorkspace(this.root, { workspacePath: this.workspacePath });
 		const binaryResult = await this.resolveBinary();
 		if (binaryResult === undefined) {
@@ -105,14 +106,23 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				embedder: this.embedder,
 				maxChunkSize: this.maxChunkSize,
 			});
-			return client.sync();
+			return client.sync(force);
 		}
 		// install-failed degrade result
 		return binaryResult;
 	}
 
-	/** MinSync is resolved from PATH, then the workspace cache. */
+	/** Report unavailable binaries without treating auto-install as already failed. */
 	isBinaryMissing(): boolean {
+		if (this.binaryPath !== undefined) return !existsSync(this.binaryPath);
+		if (lookupInPath(process.env) !== undefined) return false;
+		const cachedBinary = join(this.root, ".autorag", "bin", executableName(process.platform));
+		if (existsSync(cachedBinary)) return false;
+		return this.installFailed || !this.autoInstall;
+	}
+
+	/** Status distinguishes an explicit missing override from deferred resolution. */
+	isExplicitBinaryMissing(): boolean {
 		return this.binaryPath !== undefined && !existsSync(this.binaryPath);
 	}
 
@@ -175,6 +185,7 @@ export class MinSyncVectorMethod implements RetrievalMethod {
 				const installed = await ensureMinSyncBinary({ ...this.installer, root: this.root });
 				return installed.binaryPath;
 			} catch {
+				this.installFailed = true;
 				return degrade(this.workspacePath, "install-failed");
 			}
 		}
