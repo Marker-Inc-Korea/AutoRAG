@@ -68,6 +68,6 @@
     "@types/mailparser": "^3.4.6",
     "@types/node": "^26.4.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }
