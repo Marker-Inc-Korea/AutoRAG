@@ -76,9 +76,11 @@ describe("parent-agent skill docs", () => {
 		expect(setup).toMatch(/they do not fail config resolution/);
 	});
 
-	it("lists builtin datasource templates and the loopback UI", () => {
+	it("lists builtin datasource templates and probes them wizard-style", () => {
 		const setup = readSkill("autorag-setup");
-		expect(setup).toContain("autorag ui --no-open");
+		expect(setup).toContain("wizard-style");
+		expect(setup).toContain("do not recommend it for datasource");
+		expect(setup).not.toContain("autorag ui --no-open");
 		for (const name of BUILTIN_DATASOURCE_SKILL_NAMES) {
 			expect(setup).toContain(name);
 		}
