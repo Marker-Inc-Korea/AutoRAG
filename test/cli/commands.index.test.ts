@@ -218,7 +218,10 @@ describe("runIndex", () => {
 	it("rebuild --yes removes then re-creates the parsed index via refresh", async () => {
 		const fx = seedWorkspace();
 		mkdirSync(join(tmpDir, "home", ".autorag"), { recursive: true });
-		writeFileSync(join(tmpDir, "home", ".autorag", "config.json"), JSON.stringify({ jikji: false }));
+		writeFileSync(
+			join(tmpDir, "home", ".autorag", "config.json"),
+			JSON.stringify({ jikji: false, minSync: { autoInstall: false } }),
+		);
 		// Provide a parseable source file so refresh rebuilds the parsed mirror.
 		const docs = join(fx.workspace, "docs");
 		mkdirSync(docs, { recursive: true });

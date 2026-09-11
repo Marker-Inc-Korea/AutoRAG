@@ -1,31 +1,29 @@
 # MinSync setup
 
 AutoRAG uses MinSync for local lexical BM25, semantic vector, and hybrid
-retrieval over parsed document mirrors. AutoRAG installs and targets MinSync
-v0.4.2, whose `query` command supports vector, BM25, and hybrid modes.
+retrieval over parsed document mirrors.
 
 ## Automatic installation
 
 MinSync is enabled by default. When no usable `minsync` executable is found
 in the configured `binaryPath`, on `PATH`, or in the workspace cache, AutoRAG
-downloads the verified v0.4.2 release asset for the current platform into:
-
-```text
-<workspace>/.autorag/bin/minsync
-```
-
-Release assets are selected by platform and architecture and verified against
-their SHA-256 digest before installation. If no matching release asset is
-available or the download fails, AutoRAG falls back to building from
-crates.io via:
+installs from crates.io first:
 
 ```bash
 cargo install minsync --version 0.4.2 --locked
 ```
 
-The cargo fallback requires a Rust toolchain and compiles from source, so it
-can take several minutes. Installation failures are reported as a degraded
-MinSync status; AutoRAG does not claim that the index is ready.
+The cargo path requires a Rust toolchain and writes the binary to:
+
+```text
+<workspace>/.autorag/bin/minsync
+```
+
+If cargo is missing or the install fails, AutoRAG falls back to the verified
+GitHub release asset for the current platform. Release assets are selected by
+platform and architecture and verified against their SHA-256 digest before
+installation. Installation failures are reported as a degraded MinSync status;
+AutoRAG does not claim that the index is ready.
 
 To manage MinSync yourself, set an explicit path and disable installation:
 

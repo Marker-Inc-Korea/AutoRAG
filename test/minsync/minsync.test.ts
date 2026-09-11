@@ -14,12 +14,14 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	ensureMinSyncBinary,
+	MINSYNC_VERSION,
 	MinSyncClient,
+	MinSyncReleaseError,
 	MinSyncVectorMethod,
 	minSyncConfigPath,
 	rewriteEmbedderConfig,
@@ -507,34 +509,6 @@ describe("MinSyncVectorMethod", () => {
 		);
 	});
 
-	it("maps real MinSync relative file paths to original source files", async () => {
-		// Given
-		writeFakeMinSync(
-			JSON.stringify([
-				{
-					path: "files/docs/policy.txt.md",
-					score: 0.77,
-					text: "Relative path hit from MinSync.",
-				},
-			]),
-		);
-		const method = new MinSyncVectorMethod({
-			binaryPath: minsyncBinary,
-			root,
-			workspacePath: minsyncWorkspace,
-		});
-
-		// When
-		const results = await method.retrieve("relative path", { topK: 1 });
-
-		// Then
-		expect(results).toHaveLength(1);
-		const result = requireValue(results[0], "relative path result");
-		expect(result.source).toBe(realpathSync(join(source, "policy.txt")));
-		expect(result.metadata.virtualPath).toBe("/docs/policy.txt");
-		expect(result.content).toBe("Relative path hit from MinSync.");
-	});
-
 	it("exposes an install-failed diagnostic through retrieval after auto-install fails", async () => {
 		// Given
 		const originalPath = process.env.PATH;
@@ -572,6 +546,34 @@ describe("MinSyncVectorMethod", () => {
 		}
 	});
 
+	it("maps real MinSync relative file paths to original source files", async () => {
+		// Given
+		writeFakeMinSync(
+			JSON.stringify([
+				{
+					path: "files/docs/policy.txt.md",
+					score: 0.77,
+					text: "Relative path hit from MinSync.",
+				},
+			]),
+		);
+		const method = new MinSyncVectorMethod({
+			binaryPath: minsyncBinary,
+			root,
+			workspacePath: minsyncWorkspace,
+		});
+
+		// When
+		const results = await method.retrieve("relative path", { topK: 1 });
+
+		// Then
+		expect(results).toHaveLength(1);
+		const result = requireValue(results[0], "relative path result");
+		expect(result.source).toBe(realpathSync(join(source, "policy.txt")));
+		expect(result.metadata.virtualPath).toBe("/docs/policy.txt");
+		expect(result.content).toBe("Relative path hit from MinSync.");
+	});
+
 	it("returns empty vector results when the minsync binary is missing", async () => {
 		// Given
 		const method = new MinSyncVectorMethod({
@@ -603,68 +605,175 @@ describe("MinSyncVectorMethod", () => {
 		expect(results).toEqual([]);
 	});
 
-	it("installs the pinned GitHub release asset before trying cargo when no binary exists", async () => {
+	it("prefers cargo install over a GitHub release asset when no binary exists", async () => {
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
-		let cargoCalled = false;
+		const order: string[] = [];
 		const release = {
-			tagName: "v0.4.2",
+			tagName: "v0.2.1",
 			assets: [
 				{
-					name: "minsync-v0.4.2-aarch64-apple-darwin.tar.gz",
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
 					downloadUrl: "https://example.test/minsync.tgz",
 					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
 				},
 			],
 		};
+
 		const resolved = await ensureMinSyncBinary({
 			root,
 			platform: "darwin",
 			arch: "arm64",
-			cargoInstaller: async () => {
-				cargoCalled = true;
-				throw new Error("cargo should not run");
+			cargoInstaller: async (destination) => {
+				order.push("cargo");
+				mkdirSync(join(root, ".autorag", "bin"), { recursive: true });
+				writeFileSync(destination, "#!/usr/bin/env cargo-minsync\n");
+				chmodSync(destination, 0o755);
+				return { binaryPath: destination, version: MINSYNC_VERSION };
 			},
-			releaseProvider: async () => release,
-			assetInstaller: async (asset, destination) => {
-				expect(asset.name).toBe("minsync-v0.4.2-aarch64-apple-darwin.tar.gz");
-				writeFileSync(destination, "#!/usr/bin/env node\necho release-binary\n");
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async () => {
+				order.push("github-asset");
+				writeFileSync(installedBinary, "#!/usr/bin/env node\n");
+				chmodSync(installedBinary, 0o755);
+			},
+		});
+
+		expect(order).toEqual(["cargo"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: MINSYNC_VERSION });
+		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-minsync");
+	});
+
+	it("does not compile minsync from cargo during NODE_ENV=test without an injected locator", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const order: string[] = [];
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async (_asset, destination) => {
+				order.push("github-asset");
+				writeFileSync(destination, "#!/usr/bin/env node\n");
 				chmodSync(destination, 0o755);
 			},
 		});
-		expect(cargoCalled).toBe(false);
-		expect(resolved).toMatchObject({
-			binaryPath: installedBinary,
-			version: "v0.4.2",
-		});
-		expect(readFileSync(installedBinary, "utf8")).toContain("release-binary");
+
+		expect(order).toEqual(["github", "github-asset"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
 	});
 
-	it("falls back to cargo install when the GitHub release install fails", async () => {
+	it("skips cargo install and uses GitHub when cargo is not on PATH", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const order: string[] = [];
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoLocator: () => undefined,
+			releaseProvider: async () => {
+				order.push("github");
+				return release;
+			},
+			assetInstaller: async (_asset, destination) => {
+				order.push("github-asset");
+				writeFileSync(destination, "#!/usr/bin/env node\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+
+		expect(order).toEqual(["github", "github-asset"]);
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
+	});
+
+	it("falls back to the GitHub release asset when cargo install is unavailable", async () => {
 		// Given
 		const installedBinary = join(root, ".autorag", "bin", "minsync");
-		let cargoArgs: string[] | undefined;
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
 
 		// When
 		const resolved = await ensureMinSyncBinary({
 			root,
 			platform: "darwin",
 			arch: "arm64",
-			releaseProvider: async () => {
-				throw new Error("release unavailable");
-			},
-			cargoInstaller: async ({ args, destination }) => {
-				cargoArgs = [...args];
-				mkdirSync(dirname(destination), { recursive: true });
-				writeFileSync(destination, "#!/usr/bin/env node\necho cargo-fallback\n");
+			cargoInstaller: async () => undefined,
+			releaseProvider: async () => release,
+			assetInstaller: async (asset, destination) => {
+				expect(asset.name).toBe("minsync-v0.2.1-aarch64-apple-darwin.tar.gz");
+				writeFileSync(destination, "#!/usr/bin/env node\n");
 				chmodSync(destination, 0o755);
-				return "0.4.2";
 			},
 		});
 
 		// Then
-		expect(cargoArgs).toEqual(expect.arrayContaining(["install", "minsync", "--version", "0.4.2", "--locked"]));
-		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "0.4.2" });
-		expect(readFileSync(installedBinary, "utf8")).toContain("cargo-fallback");
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
+		expect(readFileSync(installedBinary, "utf8")).toContain("node");
+	});
+
+	it("falls back to the GitHub release asset when cargo install throws", async () => {
+		const installedBinary = join(root, ".autorag", "bin", "minsync");
+		const release = {
+			tagName: "v0.2.1",
+			assets: [
+				{
+					name: "minsync-v0.2.1-aarch64-apple-darwin.tar.gz",
+					downloadUrl: "https://example.test/minsync.tgz",
+					sha256: "7350561268bb4e0b9e1621f8557f97e73b43e78e6a09fb2dada54cd413c0c971",
+				},
+			],
+		};
+
+		const resolved = await ensureMinSyncBinary({
+			root,
+			platform: "darwin",
+			arch: "arm64",
+			cargoInstaller: async () => {
+				throw new MinSyncReleaseError("cargo missing");
+			},
+			releaseProvider: async () => release,
+			assetInstaller: async (_asset, destination) => {
+				writeFileSync(destination, "#!/usr/bin/env node\n");
+				chmodSync(destination, 0o755);
+			},
+		});
+
+		expect(resolved).toMatchObject({ binaryPath: installedBinary, version: "v0.2.1" });
 	});
 
 	it("rejects release assets without a usable sha256 digest", async () => {
@@ -685,9 +794,7 @@ describe("MinSyncVectorMethod", () => {
 				root,
 				platform: "darwin",
 				arch: "arm64",
-				cargoInstaller: async () => {
-					throw new Error("cargo unavailable");
-				},
+				cargoInstaller: async () => undefined,
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
@@ -712,9 +819,7 @@ describe("MinSyncVectorMethod", () => {
 				root,
 				platform: "darwin",
 				arch: "arm64",
-				cargoInstaller: async () => {
-					throw new Error("cargo unavailable");
-				},
+				cargoInstaller: async () => undefined,
 				releaseProvider: async () => release,
 			}),
 		).rejects.toThrow("sha256");
@@ -777,17 +882,6 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 		}
 	});
 
-	it("degrades with missing-binary when PATH resolution finds no executable", async () => {
-		const savedPath = process.env.PATH;
-		process.env.PATH = "/nonexistent";
-		try {
-			const method = new MinSyncVectorMethod({ root, workspacePath: minsyncWorkspace, autoInstall: false });
-			expect(await method.sync()).toMatchObject({ ok: false, reason: "missing-binary" });
-		} finally {
-			process.env.PATH = savedPath;
-		}
-	});
-
 	it("auto-installs a verified release when no binary is available", async () => {
 		const savedPath = process.env.PATH;
 		process.env.PATH = savedPath
@@ -802,14 +896,12 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 				installer: {
 					platform: "darwin",
 					arch: "arm64",
-					cargoInstaller: async () => {
-						throw new Error("cargo unavailable");
-					},
+					cargoInstaller: async () => undefined,
 					releaseProvider: async () => ({
-						tagName: "v0.4.2",
+						tagName: "v0.3.0",
 						assets: [
 							{
-								name: "minsync-v0.4.2-aarch64-apple-darwin.tar.gz",
+								name: "minsync-v0.3.0-aarch64-apple-darwin.tar.gz",
 								downloadUrl: "https://example.test/minsync.tar.gz",
 								sha256: "a".repeat(64),
 							},
