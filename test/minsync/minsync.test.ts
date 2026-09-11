@@ -1016,6 +1016,28 @@ if (args[0] === "sync") { mkdirSync(dirname(cursor), { recursive: true }); write
 		rmSync(workspace, { recursive: true, force: true });
 	});
 
+	it("requires init to materialize config.toml before reading it", async () => {
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args }) + "\\n");
+if (args[0] === "check") process.stdout.write('{"embedder_ok":true,"vectorstore_ok":true}');
+if (args[0] === "sync") process.stdout.write('{"synced":1}');
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			embedder: { id: "test" },
+		}).sync();
+
+		expect(result).toMatchObject({ ok: false, reason: "init-failed" });
+		expect(loggedCalls().map((line) => JSON.parse(line).args[0])).toEqual(["init"]);
+	});
+
 	it("rewrites allowlisted embedder fields into .minsync/config.toml after init", async () => {
 		// Create a minimal config.toml that init would have produced
 		const minsyncConfigDir = join(minsyncWorkspace, ".minsync");

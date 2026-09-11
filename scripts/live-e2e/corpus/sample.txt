@@ -1,0 +1,5 @@
+This is a fixed read-only live-e2e fixture corpus for AutoRAG bootstrapped verification.
+
+Content: AutoRAG live end-to-end test sample.
+Purpose: Verify deterministic bootstrap, manifest integrity, and drift detection.
+SHA-256 anchor: This file must never change in the committed manifest.

@@ -40,6 +40,81 @@ The repository root includes a `Makefile` for AutoRAG 2.0 validation:
 - `make lint`, `make typecheck`, `make build` — run individual checks.
 - `make ci` — run the normal local lint, typecheck, complete test, and build sequence.
 
+## Fixed live-E2E environment (the supported procedure)
+
+Use the latest checkout's explicit, clone-local environment. Each clone owns its
+`.autorag-e2e` state, so five independent clones may run concurrently without
+sharing mutable state. Do not point two clones at the same `E2E_ROOT`.
+
+The live-E2E environment is coupled to AutoRAG's behavior. When a change
+modifies AutoRAG's major behavior or features — the agent tool surface,
+retrieval methods, datasource skills, MinSync/embedding configuration, result
+source identity rules, or the output contract — review whether the live-E2E
+environment must change too (`scripts/live-e2e/`, `test/live-e2e/`, the corpus
+manifest, preflight gates, and this procedure). A behavioral change that
+invalidates the existing cold/warm QA evidence requires regenerating that
+evidence; do not treat stale green evidence as proof for the new behavior.
+
+Prerequisites:
+
+- Node.js 24+, Bun, and the repository dependencies (`bun install --frozen-lockfile`).
+- A bootstrapped corpus root. Bootstrap is explicit; live targets never create
+  one implicitly:
+  `export AUTORAG_LIVE_E2E_ROOT="$PWD/scripts/live-e2e"`
+  `node scripts/live-e2e/runner.mjs bootstrap --root "$AUTORAG_LIVE_E2E_ROOT"`
+- Ollama running locally with `embeddinggemma:latest`, and the repository TEI
+  adapter running on `127.0.0.1:18080`:
+  `ollama pull embeddinggemma:latest`, `ollama serve`, and
+  `python3 scripts/manual-qa/ollama-tei-adapter.py`.
+- `OPENAI_API_KEY` and `AUTORAG_OPENAI_API_KEY` unset. Embeddings are local
+  only; do not configure a remote embedding endpoint or send corpus text off
+  the machine.
+
+Run the cold path (fresh runner state and core local-file/MinSync verification):
+
+```bash
+make e2e-live-cold E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
+```
+
+Run the warm path (reuse the same clone-local state after a successful cold run):
+
+```bash
+make e2e-live E2E_ROOT="$AUTORAG_LIVE_E2E_ROOT"
+```
+
+Datasource lanes run by default: with no `E2E_DATASOURCES` override the runner
+executes the `local` lane plus every native CLI lane (katok, discrawl, wacrawl,
+telecrawl, slacrawl, notcrawl, qmd, rclone, mailcrawl, and macOS Spotlight).
+`E2E_DATASOURCES` only narrows this default (e.g. `E2E_DATASOURCES=local`
+skips native lanes entirely). The summary separates the core MinSync result
+(`commandsSummary.core`) from `datasourceLanes`. Native lanes whose CLI or
+native store is missing are `SKIP` with a reason. An installed/configured
+lane whose native check fails, including a successful harness without a valid
+source-native identity, is `FAIL`; `SKIP` is never reported as PASS. On a
+host where a native store genuinely exists, its lane must run and PASS —
+leaving it `SKIP` by narrowing `E2E_DATASOURCES` is a QA gap, not a green
+run. Native lanes are expected to remain `SKIP` only when no native store is
+configured.
+Native stores, profiles, and keychains remain owned by their CLIs: the runner
+does not copy datasource data or force an AutoRAG workspace. Native datasource
+references and setup details are in `docs/manual-qa-datasources.md` and the
+individual scripts under `scripts/manual-qa/`, including the real katok harness
+at `scripts/manual-qa/run-qa-katok-live.ts`.
+
+Evidence is written to `.omo/evidence/task-6-fixed-live-e2e-environment.json`
+for this task and to the runner result directory (by default
+`.omo/evidence/live-core-cold/result.json` or `live-core-warm/result.json`).
+Evidence and diagnostics redact tokens, passwords, credentials, and absolute
+home paths. Assert local retrieval sources are absolute and readable; assert
+native datasource results retain their source-native identity rather than a
+slash-prefixed fake filesystem path.
+
+Cleanup is limited to runner-owned state. The cold command removes and rebuilds
+`.autorag-e2e`; for manual cleanup, run `rm -rf .autorag-e2e` from this clone
+only. Remove temporary adapter processes separately, and leave katok,
+discrawl, crawler, qmd, rclone, mailcrawl, and Spotlight native stores untouched.
+Record the cleanup receipt in the task evidence; never stage `.debug-journal.md`.
+
 ## Required MinSync Live QA
 
 When validating local-file retrieval changes, run a real `minsync sync --full`

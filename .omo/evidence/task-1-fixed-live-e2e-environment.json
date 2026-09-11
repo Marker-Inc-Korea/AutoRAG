@@ -1,0 +1,107 @@
+{
+	"task": "st_01a07f01",
+	"implementation": "Todo 1 fix - Align manifest to corpus/MANIFEST.json, enforce read-only bootstrap, remove unreachable code in runner",
+	"parentTask": "st_01a07eed",
+	"changedFiles": [
+		"scripts/live-e2e/runner.mjs",
+		"scripts/live-e2e/corpus/MANIFEST.json",
+		"test/live-e2e/manifest-invariant.test.ts",
+		".omo/evidence/task-1-fixed-live-e2e-environment.json"
+	],
+	"removedFiles": [
+		"scripts/live-e2e/manifest.json"
+	],
+	"gitignoreChanges": [],
+	"testResults": {
+		"allPassed": true,
+		"file": "test/live-e2e/manifest-invariant.test.ts",
+		"tests": 11,
+		"status": "GREEN",
+		"addedTests": [
+			"manifest lives at corpus/MANIFEST.json",
+			"no legacy manifest.json remains at fixture root",
+			"bootstrap creates root with all fixture files and bootstrapped manifest",
+			"bootstrap produces read-only bootstrapped files (no write bits)",
+			"re-bootstrap is idempotent and preserves read-only mode"
+		]
+	},
+	"scenarioResults": {
+		"nodeCheck": "exit=0",
+		"tscNoEmit": "exit=0",
+		"bootstrapExitCode": 0,
+		"bootstrapOutput": "BOOTSTRAP_OK: <dir>",
+		"bootstrappedFilesMode": "100444 (read-only, no write bits)",
+		"bootstrappedManifestPath": "<root>/corpus/MANIFEST.json",
+		"verifyCorpusExitCode": 0,
+		"verifyCorpusOutput": "VERIFY_OK: corpus integrity confirmed",
+		"idempotentReBootstrapExitCode": 0,
+		"idempotentReBootstrapMode": "100444 (read-only preserved)",
+		"missingRootExitCode": 1,
+		"missingRootError": "MISSING_ROOT",
+		"driftDetectedExitCode": 1,
+		"driftDetectedError": "DRIFT_DETECTED: corpus/sample.txt — expected f3c8d1ca... got 52d3e939...",
+		"driftRestoreExitCode": 0,
+		"driftRestoreOutput": "VERIFY_OK: corpus integrity confirmed",
+		"driftRestoreMode": "100444 (read-only restored)",
+		"missingFlagExitCode": 2,
+		"missingFlagError": "ERROR: --root <path> is required",
+		"unknownCommandExitCode": 2,
+		"unknownCommandError": "ERROR: unknown command \"badcmd\"",
+		"cleanupReceipt": "removed <temp-root>; test ! -e <temp-root> confirms removal"
+	},
+	"dependencyBlocked": {
+		"make_e2e_live": "Todo 4 owns Make targets; not implemented here."
+	},
+	"adversarialClasses": {
+		"malformed_input": {
+			"tested": true,
+			"classes": ["invalid root (nonexistent path)", "missing --root flag", "unknown command"],
+			"result": "Nonexistent root → exit 1 with MISSING_ROOT; missing --root → exit 2; unknown command → exit 2"
+		},
+		"stale_state": {
+			"tested": true,
+			"classes": ["manifest drift (byte mutation)", "read-only file externally mutated"],
+			"result": "DRIFT_DETECTED with exit code 1; re-bootstrap restores content and read-only mode"
+		},
+		"dirty_worktree": {
+			"tested": true,
+			"classes": ["no runtime files tracked — runner.mjs, corpus/MANIFEST.json, corpus/sample.txt are tracked by git"],
+			"result": "Verified committed manifest and corpus are tracked; temp root dirs are ephemeral"
+		},
+		"misleading_success_output": {
+			"tested": true,
+			"classes": ["verify returns exit code 0 only after hash match", "manifest entry SHA-256 verified in test", "read-only mode does not prevent verify"],
+			"result": "exit code 0 requires all SHA-256 matches; any mismatch yields exit code 1; read-only files are readable and verify passes"
+		},
+		"missing_manifest": {
+			"tested": false,
+			"classes": ["source MANIFEST.json absent from corpus/"],
+			"reason": "Not exercised by a dedicated test. loadManifest() throws MANIFEST_MISSING with a clear path when corpus/MANIFEST.json is absent; verify-corpus catches and returns it in errors[], bootstrap propagates it before writing. Not a runtime corpus state — it is a repo-source invariant."
+		},
+		"permission_denied": {
+			"tested": true,
+			"classes": ["read-only bootstrapped files cannot be written by runner"],
+			"result": "Bootstrap sets all files to 0444; verify reads them fine; writeFileSync on bootstrapped files fails with EACCES without chmod (test uses chmod 644 before mutation). Test 'bootstrap produces read-only bootstrapped files' asserts isReadOnly, and 're-bootstrap is idempotent and preserves read-only mode' proves mode survives re-bootstrap."
+		}
+	},
+	"diagnostics": {
+		"runner.mjs": "No diagnostics found (node --check, LSP)",
+		"manifest-invariant.test.ts": "No diagnostics found (tsc --noEmit, LSP, Biome clean)",
+		"corpus/MANIFEST.json": "No diagnostics — valid JSON"
+	},
+	"runnerUnreachableCode": "Removed: switch cases for bootstrap, verify-corpus, and default each had 'break' after 'process.exit()' — break statements were unreachable and have been removed.",
+	"postWriteReview": {
+		"singleResponsibility": "scripts/live-e2e/ owns one thing: fixed live-e2e fixture corpus manifest + bootstrap/verify tooling. runner.mjs is the entrypoint, corpus/MANIFEST.json is the data contract, corpus/ is the fixture files.",
+		"boundaryPurity": "Root path from CLI is a string — resolved and validated at the boundary (existsSync). Manifest is parsed from JSON into a typed object. All external input (CLI args, file reads) is validated at the boundary.",
+		"variantDiscrimination": "None required. CLI command is a simple string switch with default case — not a tagged type from a data model.",
+		"escapeHatches": "None.",
+		"defensiveLayer": "None. The runner trusts readFileSync/copyFileSync with proper error propagation. No unnecessary null checks.",
+		"helpersForOneOff": "copyReadOnly is used for both manifest + entry files — shared helper is appropriate. Not a one-off helper.",
+		"tests": "11 tests cover manifest location, structural validity, SHA-256 integrity, read-only bootstrap mode, idempotent re-bootstrap with mode preservation, verify pass/fail, missing root, and drift detection.",
+		"parameterBloat": "No function exceeds 2 parameters.",
+		"redundantVerification": "None. Bootstrap writes files; verify-corpus reads them. copyReadOnly chmods to 0444 after copy — that's a post-action enforcement, not a verification query.",
+		"negativeNaming": "None. All names are positive: loadManifest, bootstrap, verifyCorpus, copyReadOnly, isReadOnly.",
+		"loggingConventions": "Runner uses console.log/console.error with structured prefix tags (BOOTSTRAP_OK, VERIFY_OK, VERIFY_FAIL). Follows project existing pattern.",
+		"pureLOC": "runner.mjs: 157 pure LOC; test: 187 pure LOC. Both well under 250 limit."
+	}
+}
