@@ -9,7 +9,11 @@ import { BUILTIN_DATASOURCE_SKILL_NAMES } from "../../src/datasource/skills/fact
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
-function readSkill(name: "autorag" | "autorag-setup"): string {
+const SKILL_NAMES = ["autorag", "autorag-setup", "autorag-lite-setup", "autorag-lite-search"] as const;
+
+type SkillName = (typeof SKILL_NAMES)[number];
+
+function readSkill(name: SkillName): string {
 	return readFileSync(join(repoRoot, "skills", name, "SKILL.md"), "utf8").replace(/\r\n?/g, "\n");
 }
 
@@ -35,8 +39,9 @@ const searchResponse: SearchDocumentsResponse = {
 
 describe("parent-agent skill docs", () => {
 	it("keeps skill folder names aligned with frontmatter", () => {
-		expect(readSkill("autorag")).toMatch(/^---\nname: autorag\n/m);
-		expect(readSkill("autorag-setup")).toMatch(/^---\nname: autorag-setup\n/m);
+		for (const name of SKILL_NAMES) {
+			expect(readSkill(name)).toMatch(new RegExp(`^---\\nname: ${name}\\n`, "m"));
+		}
 	});
 
 	it("documents MinSync auto-install as on by default", () => {
@@ -77,6 +82,37 @@ describe("parent-agent skill docs", () => {
 		for (const name of BUILTIN_DATASOURCE_SKILL_NAMES) {
 			expect(setup).toContain(name);
 		}
+	});
+
+	it("ships every skill folder in the npm package", () => {
+		const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+			files: string[];
+		};
+		expect(pkg.files).toContain("skills");
+	});
+
+	it("documents the lite retrieve JSON contract and diagnostics codes", () => {
+		const search = readSkill("autorag-lite-search");
+		expect(search).toContain("autorag lite retrieve");
+		expect(search).toContain("index-not-ready");
+		expect(search).toContain("retrieval-method-failed");
+		expect(search).toContain("minsync-unavailable");
+		expect(search).toContain("--scope");
+		expect(search).toContain("--tags");
+		expect(search).toContain("sessionId");
+		expect(search).toContain("autorag evidence");
+		expect(search).toContain("autorag feedback");
+	});
+
+	it("documents the lite refresh method values and force flags", () => {
+		const setup = readSkill("autorag-lite-setup");
+		for (const method of ["parsed", "minsync", "datasources", "jikji", "all"]) {
+			expect(setup).toContain(method);
+		}
+		expect(setup).toContain("--full");
+		expect(setup).toContain("--force");
+		expect(setup).toContain("unknown-datasource-skill");
+		expect(setup).toContain("autorag lite watch --once");
 	});
 
 	it("presents hwp as a supported parsed format and not a legacy exclusion", () => {

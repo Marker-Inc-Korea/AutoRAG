@@ -63,16 +63,20 @@ export class DatasourceAccessContext {
 	 * Datasources without the `scoped` capability bypass this predicate and
 	 * are authorized only at the skill/tag level.
 	 */
-	allowedSourcesPredicate(_userScope?: string): (source: string) => boolean {
+	allowedSourcesPredicate(_userScope?: string, userScopes?: readonly string[]): (source: string) => boolean {
 		if (this.denyAll) return () => false;
 		const trustedScopes = this.allowedScopes;
 		const normalizedUserScope = _userScope === undefined ? undefined : normalizeVirtualPath(_userScope);
+		const normalizedUserScopes = userScopes?.map(normalizeVirtualPath);
 		return (source: string): boolean => {
 			if (source.includes("#")) return false;
 			const inTrusted =
 				trustedScopes.length === 0 ? true : trustedScopes.some((scope) => matchesVirtualPathScope(source, scope));
 			if (!inTrusted) return false;
-			return normalizedUserScope === undefined ? true : matchesVirtualPathScope(source, normalizedUserScope);
+			if (normalizedUserScope !== undefined && !matchesVirtualPathScope(source, normalizedUserScope)) return false;
+			return normalizedUserScopes === undefined || normalizedUserScopes.length === 0
+				? true
+				: normalizedUserScopes.some((scope) => matchesVirtualPathScope(source, scope));
 		};
 	}
 }

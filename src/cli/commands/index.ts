@@ -2,7 +2,7 @@ import { existsSync, lstatSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { AutoRAGAgent, type AutoRAGRefreshResult, type RefreshMethod } from "../../agent/agent.ts";
 import { MINSYNC_SUBDIR } from "../../minsync/paths.ts";
-import { PARSED_MIRROR_SUBDIR } from "../../mirror/paths.ts";
+import { PARSED_MIRROR_SUBDIR, refreshReadinessPath } from "../../mirror/paths.ts";
 import { buildAgentOptions, type CliConfig, resolveConfig } from "../config.ts";
 import { renderError, renderIndex } from "../output.ts";
 import { parseMethodFlag } from "./refresh.ts";
@@ -84,6 +84,9 @@ export async function runIndex(ctx: CommandContext): Promise<number> {
 	// Remove each existing target. force:true makes this idempotent.
 	for (const target of targets) {
 		rmSync(target, { recursive: true, force: true });
+	}
+	if (sub === "reset" || targetSubdirs.includes(PARSED_MIRROR_SUBDIR)) {
+		rmSync(refreshReadinessPath(config.workspacePath), { force: true });
 	}
 
 	if (sub === "reset") {

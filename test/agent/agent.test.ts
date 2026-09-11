@@ -34,7 +34,12 @@ function makeTool(name: string): AgentTool {
 interface AgentInternals {
 	lastQuery: string | undefined;
 	memory: RetrievalMemory;
-	minSyncMethod: { describe(): { name: string } } | undefined;
+	minSyncMethod:
+		| {
+				describe(): { name: string };
+				isBinaryMissing(): boolean;
+		  }
+		| undefined;
 	innerAgent: {
 		transformContext?: (
 			messages: Array<{ role: "user"; content: Array<{ type: "text"; text: string }>; timestamp: number }>,
@@ -434,5 +439,55 @@ describe("AutoRAGAgent default method registration", () => {
 			memoryPath: join(tmpDir, "memory.json"),
 		});
 		expect(internals(agent).minSyncMethod).toBeDefined();
+	});
+});
+
+describe("AutoRAGAgent.getRetrievalEngine delegation", () => {
+	it("passes isMinSyncBinaryMissing hook when minSync is configured", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		const internal = internals(agent);
+		const engine = agent.getRetrievalEngine();
+		// The engine's internal isMinSyncBinaryMissing should be set when
+		// minSyncMethod is present.
+		const engineInternals = engine as unknown as { isMinSyncBinaryMissing: (() => boolean) | undefined };
+		expect(engineInternals.isMinSyncBinaryMissing).toBeDefined();
+		// The predicate should match the agent's binary-missing state.
+		const binaryMissing = internal.minSyncMethod?.isBinaryMissing?.() ?? true;
+		expect(engineInternals.isMinSyncBinaryMissing!()).toBe(binaryMissing);
+	});
+
+	it("omits isMinSyncBinaryMissing hook when minSync: false", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+			minSync: false,
+		});
+		const engine = agent.getRetrievalEngine();
+		const engineInternals = engine as unknown as { isMinSyncBinaryMissing: (() => boolean) | undefined };
+		expect(engineInternals.isMinSyncBinaryMissing).toBeUndefined();
+	});
+
+	it("getRetrievalEngine() registers all agent methods", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		const engine = agent.getRetrievalEngine();
+		// Should include the registered methods (minsync, hybrid, etc.)
+		expect(engine.getMethodRegistry().get("minsync")).toBeDefined();
+		expect(engine.getMethodRegistry().list().length).toBeGreaterThanOrEqual(1);
+	});
+
+	it("getRetrievalEngine() is cached (same instance on second call)", () => {
+		const agent = new AutoRAGAgent({
+			searchPaths: [FIXTURE_DIR],
+			memoryPath: join(tmpDir, "memory.json"),
+		});
+		const first = agent.getRetrievalEngine();
+		const second = agent.getRetrievalEngine();
+		expect(first).toBe(second);
 	});
 });
