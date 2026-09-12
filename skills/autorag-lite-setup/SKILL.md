@@ -57,14 +57,31 @@ Config resolution follows the usual order: `--config`, `AUTORAG_CONFIG`,
 include `AUTORAG_HOME`, `AUTORAG_CONFIG`, `AUTORAG_SEARCH_PATHS`,
 `AUTORAG_WORKSPACE`, and `AUTORAG_MEMORY_PATH`.
 
-## Configure datasources when requested
+## Probe and configure datasources (setup wizard)
 
-Datasource skills belong in trusted config and remain default-deny. Prefer
-`autorag lite ui --no-open` to connect datasources; it writes the same trusted
-`datasources` / `datasourceAccess` fields as a hand-edited config, stores
-env-var names rather than secrets, and binds a loopback address by default.
-Do not bind non-loopback hosts unless the user explicitly allowed remote
-access.
+`autorag lite ui` is still in development — do not recommend it for datasource
+setup. Configure datasources directly in trusted config, wizard-style:
+
+1. Probe every datasource for setup feasibility before asking the user
+   anything: the backing CLI exists (`katok`, `discrawl`, `slacrawl`,
+   `wacrawl`, `telecrawl`, `notcrawl`, `qmd`, `mailcrawl`, `rclone`), its
+   local store or archive is present, and any credentials it needs are
+   available as environment variables or in the tool's own external
+   configuration.
+2. Auto-configure every datasource that probes feasible — write its trusted
+   `datasources` / `datasourceAccess` entries without asking. For example,
+   when Slack (`slacrawl`) and Discord (`discrawl`) are installed, set both up
+   automatically.
+3. Skip every datasource that probes infeasible (for example Notion or
+   Telegram when their CLIs are not installed) and always report the skipped
+   list to the user, with what is missing for each.
+4. Set up a skipped datasource only when the user explicitly asks for it:
+   install or authenticate the backing CLI first, then configure it.
+5. E-mail datasources (`gmail`, `mail-export`, `mailcrawl`) matter to most
+   users — always probe them and report their status, even when they end up
+   skipped.
+
+Datasource skills belong in trusted config and remain default-deny.
 
 Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 `slack`, `discord`, `clawgallery`, `notion`, `github`, `cloud-drive`, `gmail`,
@@ -72,7 +89,8 @@ Config keys may be builtin template names (`kakao`, `whatsapp`, `telegram`,
 aliases with `"type": "<template>"`. Unknown names are skipped with an
 `unknown-datasource-skill` warning; they do not fail config resolution.
 `datasourceAccess.allowedTags` and `allowedScopes` narrow trusted access and
-can never grant it.
+can never grant it. Store only env-var names such as `tokenEnv` or
+`apiKeyEnv`, never credential values.
 
 ## Build and refresh indexes
 
@@ -100,8 +118,11 @@ autorag lite refresh --force --json
   available (`ollama pull embeddinggemma` with `ollama serve` running);
   override it only when intentionally using a remote embedder.
 - Exact duplicate exclusion during refresh is enabled by default via the
-  external `dupey` CLI. Missing dupey is non-fatal; refresh continues without
-  it. Set `"excludeExactDuplicates": false` to index every copy.
+  external `dupey` CLI. Install dupey during setup when it is missing
+  (`command -v dupey || cargo install dupey`) and tell the user the feature is
+  available; when installation is impossible, refresh continues without it
+  and the user is told duplicate exclusion is off. Set
+  `"excludeExactDuplicates": false` to index every copy.
 
 Retrieval requires a completed refresh. `autorag lite retrieve` before any
 refresh exits with code 2 and an `index-not-ready` diagnostic; a successful
@@ -117,10 +138,12 @@ autorag lite watch
 ```
 
 Prefer non-daemon `autorag lite watch --once` from cron, launchd, a systemd
-user timer, or Task Scheduler, typically every 15 to 30 minutes. Use the same
-config as retrieval, avoid overlapping runs, and keep logs outside source
-trees. `--immediate` triggers a first refresh on start and `--debounce-ms N`
-tunes change coalescing.
+user timer, or Task Scheduler, hourly by default (every 1 hour; shorten only
+when the user asks for fresher indexes). Use the same config as retrieval,
+avoid overlapping runs, and keep logs outside source trees. `--immediate`
+triggers a first refresh on start and `--debounce-ms N` tunes change
+coalescing. Once the schedule is installed, tell the user right away that
+hourly freshness is set up.
 
 ## Status and index maintenance
 
@@ -152,6 +175,8 @@ accepting silently degraded search.
 ## Completion condition
 
 Setup is complete only when the CLI is installed, roots are approved, a
-non-secret model-free config is written, `refresh` has built the requested
-indexes, `status` reports healthy indexes, and any requested watch schedule is
-installed or verified.
+non-secret model-free config is written, every datasource has been probed and
+the auto-configured and skipped lists reported to the user, dupey is installed
+or its absence reported, `refresh` has built the requested indexes, `status`
+reports healthy indexes, and any requested watch schedule is installed or
+verified with the user told it is active.
