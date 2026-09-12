@@ -18,7 +18,7 @@ import {
 	resolveAgentModel,
 	resolveConfig,
 } from "../config.ts";
-import { renderError, renderSearch } from "../output.ts";
+import { renderError, renderPreliminary, renderSearch } from "../output.ts";
 import { createTuiSlashCommands, parseSlashCommand, renderSlashHelp } from "../tui-commands.ts";
 import {
 	createFileTuiSessionStore,
@@ -58,6 +58,7 @@ type TuiAgent = Pick<AutoRAGAgent, "searchDocumentsStream"> & Partial<Pick<AutoR
 
 type SearchStreamHandlers = {
 	readonly onProgress: (text: string) => void;
+	readonly onPreliminary?: (response: SearchDocumentsResponse) => void;
 	readonly onComplete: (response: SearchDocumentsResponse) => void;
 	readonly isInterrupted?: () => boolean;
 };
@@ -213,6 +214,9 @@ async function consumeSearchStream(agent: TuiAgent, query: string, handlers: Sea
 				if (progress !== undefined) handlers.onProgress(progress);
 				break;
 			}
+			case "preliminary":
+				handlers.onPreliminary?.(event.response);
+				break;
 			case "complete":
 				handlers.onComplete(event.response);
 				break;
@@ -388,6 +392,14 @@ function runRealTui(ctx: CommandContext, agent: TuiAgent, store: TuiSessionStore
 					renderTranscript();
 					tui.requestRender();
 				},
+				onPreliminary: (response) => {
+					transcriptHistory = `${transcriptHistory}\n\n${renderPreliminary(response, {
+						json: false,
+						debug: ctx.debug,
+					})}`;
+					renderTranscript();
+					tui.requestRender();
+				},
 				onComplete: (response) => {
 					const answer = renderSearch(response, { json: false, debug: ctx.debug });
 					completedResponse = response;
@@ -502,6 +514,9 @@ export async function runTui(ctx: CommandContext, deps: TuiDeps = {}): Promise<n
 				await consumeSearchStream(agent, query, {
 					onProgress: (progress) => {
 						tui.rendered.push(progress);
+					},
+					onPreliminary: (response) => {
+						tui.rendered.push(renderPreliminary(response, { json: false, debug: ctx.debug }));
 					},
 					onComplete: (response) => {
 						const answer = renderSearch(response, { json: false, debug: ctx.debug });

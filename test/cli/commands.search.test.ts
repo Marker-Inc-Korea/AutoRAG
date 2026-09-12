@@ -165,6 +165,79 @@ describe("runSearch", () => {
 		]);
 		expect(JSON.parse(stdout[0]).answer).toBe("[1] answer");
 	});
+
+	it("renders the preliminary fast answer before the final response", async () => {
+		const { ctx, stdout } = context(["query"]);
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "preliminary" as const,
+						response: { ...response, answer: "[1] fast answer" },
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout).toHaveLength(2);
+		const first = JSON.parse(stdout[0]);
+		expect(first.type).toBe("preliminary");
+		expect(first.response.answer).toBe("[1] fast answer");
+		expect(JSON.parse(stdout[1]).answer).toBe("[1] answer");
+	});
+
+	it("marks the preliminary fast answer distinctly in human output", async () => {
+		const { ctx, stdout } = context(["query"]);
+		ctx.json = false;
+		await runSearch(ctx, {
+			agentFactory: () => ({
+				async *searchDocumentsStream() {
+					yield {
+						type: "preliminary" as const,
+						response: { ...response, answer: "[1] fast answer" },
+					};
+					yield { type: "complete" as const, response };
+				},
+			}),
+		});
+		expect(stdout[0]).toContain("fast answer");
+		expect(stdout[0].toLowerCase()).toContain("verif");
+		expect(stdout[1]).toContain("[1] answer");
+	});
+
+	it("forwards thinking-level flags to the agent", async () => {
+		let received: unknown;
+		const { ctx } = context(["query"], { "fast-thinking": "low", "final-thinking": "max" });
+		expect(
+			await runSearch(ctx, {
+				agentFactory: (options) => {
+					received = options.thinking;
+					return completeStream();
+				},
+			}),
+		).toBe(0);
+		expect(received).toEqual({ fast: "low", final: "max" });
+	});
+
+	it("disables the two-phase flow with --single-phase", async () => {
+		let received: unknown;
+		const { ctx } = context(["query"], { "single-phase": true });
+		expect(
+			await runSearch(ctx, {
+				agentFactory: (options) => {
+					received = options.thinking;
+					return completeStream();
+				},
+			}),
+		).toBe(0);
+		expect(received).toBe(false);
+	});
+
+	it("rejects an unknown thinking level", async () => {
+		const { ctx, stderr } = context(["query"], { "final-thinking": "bogus" });
+		expect(await runSearch(ctx, { agentFactory: () => completeStream() })).toBe(2);
+		expect(stderr.join("\n")).toContain("thinking");
+	});
 });
 
 describe("classifySearchHealthHint", () => {
