@@ -3,7 +3,7 @@ import { watch as fsWatch, mkdirSync, realpathSync, statSync, writeFileSync } fr
 import { dirname, join, resolve } from "node:path";
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type Skill } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { streamSimple } from "@earendil-works/pi-ai/compat";
+import { clampThinkingLevel, streamSimple } from "@earendil-works/pi-ai/compat";
 import { resolveAutoRAGHome } from "../config/home.ts";
 import { DatasourceAccessContext, type DatasourceAccessContextOptions } from "../datasource/access-context.ts";
 import { mapDatasourceDiagnostics } from "../datasource/diagnostics.ts";
@@ -74,6 +74,11 @@ import {
 	EMIT_AUTORAG_RESULTS_TOOL_NAME,
 } from "./emit-results-tool.ts";
 import {
+	type AutoRAGFastAnswerDetails,
+	createEmitFastAnswerTool,
+	EMIT_FAST_ANSWER_TOOL_NAME,
+} from "./fast-answer-tool.ts";
+import {
 	createJikjiFindTool,
 	JIKJI_FIND_TOOL_NAME,
 	type JikjiFindPerRootPolicy,
@@ -88,6 +93,7 @@ import {
 } from "./search-datasource-tool.ts";
 import {
 	createEmptySearchDocumentsResponse,
+	createPreliminarySearchDocumentsResponse,
 	recordNumberedFeedback,
 	recordStructuredResultsSession,
 	type SearchDocumentDiagnostic,
@@ -187,6 +193,24 @@ interface RefreshState {
 	watchFailed: boolean;
 }
 
+/** Thinking level applied per search phase. "off" requests no reasoning. */
+export type AutoRAGThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
+ * Two-phase progressive answers: the fast phase delivers an immediate first
+ * answer with {@link AutoRAGThinkingOptions.fast} thinking (default "off"),
+ * then the verification phase re-checks and finalizes with
+ * {@link AutoRAGThinkingOptions.final} thinking (default "high"). Pass
+ * `false` on {@link AutoRAGAgentOptions.thinking} to keep the legacy
+ * single-phase flow.
+ */
+export interface AutoRAGThinkingOptions {
+	/** Thinking level for the immediate first answer. Default "off". */
+	readonly fast?: AutoRAGThinkingLevel;
+	/** Thinking level for the verification/finalization phase. Default "high". */
+	readonly final?: AutoRAGThinkingLevel;
+}
+
 export interface AutoRAGAgentOptions {
 	model?: Model<Api>;
 	apiKey?: string;
@@ -210,6 +234,8 @@ export interface AutoRAGAgentOptions {
 	searchTimeoutMs?: number;
 	/** Maximum number of retrieval/tool executions allowed in one search. */
 	maxSearchToolCalls?: number;
+	/** Two-phase progressive answers with per-phase thinking control. Default enabled. */
+	thinking?: AutoRAGThinkingOptions | false;
 }
 
 export interface AutoRAGSearchSession {
@@ -247,6 +273,10 @@ export class AutoRAGAgent {
 	private readonly sessions = new Map<string, { query: string; registry: Map<number, CuratedResult> }>();
 	private activeRun = false;
 	private resultCapture: ((details: AutoRAGResultsDetails) => void) | undefined;
+	private preliminaryCallback: ((response: SearchDocumentsResponse) => void) | undefined;
+	/** Per-phase thinking levels; undefined marks the legacy single-phase flow. */
+	private readonly fastThinkingLevel: AutoRAGThinkingLevel | undefined;
+	private readonly finalThinkingLevel: AutoRAGThinkingLevel | undefined;
 	private autoRefreshTimer: NodeJS.Timeout | undefined;
 	private refreshing = false;
 	private jikjiPrepareInFlight: Promise<void> | undefined;
@@ -300,6 +330,9 @@ export class AutoRAGAgent {
 		if (!Number.isInteger(this.maxSearchToolCalls) || this.maxSearchToolCalls <= 0) {
 			throw new Error("maxSearchToolCalls must be a positive integer");
 		}
+		const thinking = options.thinking;
+		this.fastThinkingLevel = thinking === false ? undefined : (thinking?.fast ?? "off");
+		this.finalThinkingLevel = thinking === false ? undefined : (thinking?.final ?? "high");
 		this.apiKey = options.apiKey;
 		this.providerApiKeys = options.providerApiKeys;
 		const manifests = manifestDir ? loadManifests(manifestDir) : [];
@@ -375,6 +408,7 @@ export class AutoRAGAgent {
 			SEARCH_DATASOURCE_DOCUMENTS_TOOL_NAME,
 			LOAD_DATASOURCE_SKILL_TOOL_NAME,
 			EMIT_AUTORAG_RESULTS_TOOL_NAME,
+			EMIT_FAST_ANSWER_TOOL_NAME,
 			SEARCH_MINSYNC_DOCUMENTS_TOOL_NAME,
 			SEARCH_ALL_DOCUMENTS_TOOL_NAME,
 			JIKJI_FIND_TOOL_NAME,
@@ -513,12 +547,20 @@ export class AutoRAGAgent {
 		};
 	}
 
-	private createSearchSession(model: Model<Api>, systemPrompt: string): AutoRAGSearchSession {
+	private createSearchSession(
+		resolved: {
+			readonly model: Model<Api>;
+			readonly apiKey?: string;
+			readonly providerApiKeys?: Readonly<Record<string, string>>;
+		},
+		systemPrompt: string,
+	): AutoRAGSearchSession {
 		const agent = new Agent({
-			initialState: { systemPrompt, model, tools: [...this.tools] },
+			initialState: { systemPrompt, model: resolved.model, tools: [...this.tools] },
 			streamFn: streamSimple,
 			getApiKey: (provider) =>
-				this.providerApiKeys?.[provider] ?? (provider === model.provider ? this.apiKey : undefined),
+				resolved.providerApiKeys?.[provider] ??
+				(provider === resolved.model.provider ? resolved.apiKey : undefined),
 			convertToLlm: (messages) =>
 				messages.filter(
 					(message) => message.role === "user" || message.role === "assistant" || message.role === "toolResult",
@@ -684,6 +726,7 @@ export class AutoRAGAgent {
 		this.scheduleJikjiPrepare();
 		this.scheduleMinSyncPrepare();
 		let captured: AutoRAGResultsDetails | undefined;
+		let fastCaptured: AutoRAGFastAnswerDetails | undefined;
 		let session: AutoRAGSearchSession | undefined;
 		let unsubscribers: readonly (() => void)[] = [];
 		this.resultCapture = (details) => {
@@ -701,7 +744,7 @@ export class AutoRAGAgent {
 			});
 			searchStarted = true;
 			session = this.createSearchSession(
-				resolved.model,
+				resolved,
 				buildSystemPrompt(this.currentSystemPromptConfig({ modelId: resolved.model.id })),
 			);
 			this.activeSession = session;
@@ -711,15 +754,47 @@ export class AutoRAGAgent {
 				await Promise.race([
 					(async () => {
 						// Start retrieval immediately, without waiting for the model's
-						// first inference. The model receives the result as a follow-up
-						// turn, and is explicitly forbidden from finalizing before it.
+						// first inference.
 						const retrievalPromise = this.prefetchInitialRetrievalContext(trimmedQuery, options);
-						await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
-						if (captured === undefined) {
-							const initialRetrievalContext = await retrievalPromise;
-							await session.prompt(
-								`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
+						if (this.fastThinkingLevel === undefined) {
+							// Legacy single-phase flow (thinking disabled).
+							await session.prompt(this.buildSearchPrompt(trimmedQuery, options));
+							if (captured === undefined) {
+								const initialRetrievalContext = await retrievalPromise;
+								await session.prompt(
+									`Baseline retrieval is complete. Use this evidence before deciding whether additional search is needed:\n\n${initialRetrievalContext}`,
+								);
+							}
+							return;
+						}
+						// Two-phase flow: fast thinking-off answer first, then a
+						// thinking-on verification pass that finalizes the results.
+						const fastTool = createEmitFastAnswerTool((details) => {
+							fastCaptured = details;
+						});
+						const baseline = await retrievalPromise;
+						session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.fastThinkingLevel);
+						session.agent.state.tools = [...this.tools, fastTool];
+						await session.prompt(this.buildFastAnswerPrompt(trimmedQuery, options, baseline));
+						let preliminary = fastCaptured;
+						if (preliminary === undefined) {
+							const text = lastAssistantText(session.agent.state.messages);
+							if (text !== undefined) preliminary = { answer: text, results: [], sources: [] };
+						}
+						if (preliminary !== undefined) {
+							this.preliminaryCallback?.(
+								createPreliminarySearchDocumentsResponse(
+									sessionId,
+									trimmedQuery,
+									preliminary,
+									this.collectComponentDiagnostics(),
+								),
 							);
+						}
+						if (captured === undefined && this.finalThinkingLevel !== undefined) {
+							session.agent.state.thinkingLevel = clampThinkingLevel(resolved.model, this.finalThinkingLevel);
+							session.agent.state.tools = [...this.tools];
+							await session.prompt(this.buildRefinementPrompt(trimmedQuery, options, preliminary?.answer));
 						}
 					})(),
 					new Promise<never>((_, reject) => {
@@ -789,6 +864,7 @@ export class AutoRAGAgent {
 			}
 			this.activeSession = undefined;
 			this.resultCapture = undefined;
+			this.preliminaryCallback = undefined;
 			this.activeRun = false;
 		}
 	}
@@ -829,6 +905,11 @@ export class AutoRAGAgent {
 			query: query.trim(),
 			text: "Reviewing the query.",
 		});
+		this.preliminaryCallback = (response) => {
+			queue.push({ type: "preliminary", response });
+			wake?.();
+			wake = undefined;
+		};
 		const run = this.searchDocuments(query, options)
 			.then((response) => {
 				if (progressBuffer.trim() !== "") {
@@ -1031,6 +1112,45 @@ export class AutoRAGAgent {
 				this.minSyncPrepareInFlight = undefined;
 			});
 		return this.minSyncPrepareInFlight;
+	}
+
+	/**
+	 * Fast-phase prompt for two-phase searches. The baseline retrieval context
+	 * is already gathered, so the model answers immediately with thinking off
+	 * via emit_fast_answer, without any further tool calls.
+	 */
+	buildFastAnswerPrompt(query: string, options: RetrievalOptions, baseline: string): string {
+		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} knowledge units.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Answer this original query immediately: ${query}${limit}${scope}\n\n` +
+			`Baseline retrieval evidence (already gathered for you):\n${baseline}\n\n` +
+			`Produce the best complete, self-contained answer you can RIGHT NOW from this evidence. Do NOT call any search, retrieval, or file-reading tools and do NOT wait for more evidence. ` +
+			`If the query is answerable from general knowledge alone, answer directly. ` +
+			`Call emit_fast_answer exactly once with the answer, its numbered knowledge units, and their real source paths, then stop. ` +
+			`This is the user's immediate first answer; a deeper verification pass follows afterwards, so state uncertainty honestly in the answer text.`
+		);
+	}
+
+	/**
+	 * Verification-phase prompt for two-phase searches. The user already saw
+	 * the fast answer; the model now verifies it against sources with thinking
+	 * on and finalizes with emit_autorag_results exactly once.
+	 */
+	buildRefinementPrompt(query: string, options: RetrievalOptions, fastAnswer: string | undefined): string {
+		const limit = typeof options.topK === "number" ? ` Return at most ${options.topK} curated results.` : "";
+		const scope = options.scope ? ` Restrict search to virtual path scope ${options.scope}.` : "";
+		return (
+			`Original query: ${query}${limit}${scope}\n\n` +
+			`The user already received this immediate first answer:\n${fastAnswer ?? "(the fast phase produced no answer)"}\n\n` +
+			`Now verify it rigorously. Check important claims against the actual source files with bash, correct anything wrong or unsupported, fill gaps with the retrieval tools, and resolve conflicts and freshness. ` +
+			`Preserve real source paths and evidence excerpts in the result mapping. ` +
+			`Do not use broad grep/find or recursive filesystem scans: only inspect a path or narrow neighborhood surfaced by retrieval, and only when evidence clearly points there. ` +
+			`Do not query the same datasource more than three times. After three attempts, stop searching that datasource and conclude from the evidence available. ` +
+			`If more search is needed, first write a brief 1\u20132 line progress update stating the best current hypothesis and what you are checking next, then call retrieval tools. ` +
+			`When finished, call ${EMIT_AUTORAG_RESULTS_TOOL_NAME} exactly once as your final action with the curated ` +
+			`results and the internal number-to-source mapping.`
+		);
 	}
 
 	buildSearchPrompt(query: string, options: RetrievalOptions, initialRetrievalContext?: string): string {
@@ -1719,6 +1839,20 @@ export class AutoRAGAgent {
 			this.datasourceVirtualScopePrefixes,
 		);
 	}
+}
+
+function lastAssistantText(messages: readonly AgentMessage[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "assistant") continue;
+		const text = message.content
+			.filter((block) => block.type === "text")
+			.map((block) => block.text)
+			.join("")
+			.trim();
+		if (text !== "") return text;
+	}
+	return undefined;
 }
 
 function toSearchDiagnostic(diagnostic: ParsedMirrorDiagnostic): SearchDocumentDiagnostic {
