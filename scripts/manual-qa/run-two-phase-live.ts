@@ -3,7 +3,6 @@ import { AutoRAGAgent } from "../../src/agent/agent.ts";
 
 const ws = process.env.LIVE_WS;
 if (!ws) throw new Error("LIVE_WS required");
-if (process.env.OPENAI_API_KEY !== undefined) throw new Error("OPENAI_API_KEY must be unset");
 
 const ms = process.env.MINSYNC_BIN ?? "/Users/jeffrey/.cargo/bin/minsync";
 const agent = new AutoRAGAgent({
@@ -59,4 +58,4 @@ try {
 } catch (e) {
 	error = e instanceof Error ? e.message : String(e);
 }
-console.log(JSON.stringify({ openai: process.env.OPENAI_API_KEY ?? null, error, events: seen, log }, null, 1));
+console.log(JSON.stringify({ error, events: seen, log }, null, 1));
