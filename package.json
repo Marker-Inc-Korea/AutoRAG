@@ -1,6 +1,6 @@
 {
   "name": "@autorag/librarian",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "Self-evolving librarian agent on Pi framework with pluggable retrieval methods",
   "license": "MIT",
   "repository": {
