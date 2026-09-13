@@ -69,6 +69,16 @@ describe("getRefreshStatus", () => {
 		expect(status.lastError).not.toContain("/Users/");
 	});
 
+	it("survives a stale-free index across separate agent instances", async () => {
+		const first = makeAgent();
+		await first.refresh(true);
+		// A later agent instance (e.g. a separate CLI invocation) must not
+		// report stale just because this process has never refreshed.
+		const second = makeAgent();
+		const status = await second.getRefreshStatus();
+		expect(status.stale).toBe(false);
+	});
+
 	it("becomes stale again when a source file changes after refresh", async () => {
 		const agent = makeAgent();
 		await agent.refresh(true);
@@ -145,7 +155,7 @@ describe("getRefreshStatus", () => {
 		const agent = makeAgent();
 		const handle = agent.startWatchRefresh({
 			maxWatchers: 0,
-			watcherFactory: () => ({ close: () => {} }),
+			watcherFactory: () => ({ close: () => { } }),
 		});
 		const status = await agent.getRefreshStatus();
 		handle.stop();

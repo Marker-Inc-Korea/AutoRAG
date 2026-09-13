@@ -1182,7 +1182,7 @@ export class AutoRAGAgent {
 			lastStartedAt: this.refreshState.lastStartedAt,
 			lastFinishedAt: this.refreshState.lastFinishedAt,
 			counts: this.refreshState.counts,
-			stale: this.refreshState.lastOutcome === "never" || staleDiagnostics.length > 0,
+			stale: staleDiagnostics.length > 0,
 			diagnostics,
 			components: this.refreshComponentStatus(),
 			lastError: this.refreshState.lastError,
