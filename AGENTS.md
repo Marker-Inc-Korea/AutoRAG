@@ -251,8 +251,8 @@ Contributors and agents adding a CLI-backed datasource must:
   --help` guidance so the agent understands which CLI backs the datasource;
 - keep failure isolation per CLI (missing binary degrades to diagnostics,
   never crashes the search loop);
-- retain small, focused guards where they matter (e.g. katok's pre-spawn
-  remote-embedding env rejection, discrawl's user-token rejection);
+- retain small, focused guards where they matter (e.g. discrawl's user-token
+  rejection);
 - add focused tests and live manual QA where a local store exists before
   registering the datasource.
 

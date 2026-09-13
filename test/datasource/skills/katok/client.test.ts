@@ -6,9 +6,6 @@ import { KatokClient } from "../../../../src/datasource/skills/katok/client.ts";
 
 type LoggedCall = {
 	readonly args: readonly string[];
-	readonly envKatokEmbedder: string | null;
-	readonly envEmbedderBaseUrl: string | null;
-	readonly envAllowRemoteEmbeddings: string | null;
 	readonly envApiKey?: string | null;
 };
 
@@ -45,9 +42,6 @@ import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({
   args,
-  envKatokEmbedder: process.env.KATOK_EMBEDDER ?? null,
-  envEmbedderBaseUrl: process.env.EMBEDDER_BASE_URL ?? null,
-  envAllowRemoteEmbeddings: process.env.ALLOW_REMOTE_EMBEDDINGS ?? null,
   envApiKey: process.env.OPENAI_API_KEY ?? null,
 }) + "\\n");
 
@@ -90,9 +84,6 @@ function isLoggedCall(value: unknown): value is LoggedCall {
 	return (
 		Array.isArray(value.args) &&
 		value.args.every((arg) => typeof arg === "string") &&
-		isNullableString(value.envKatokEmbedder) &&
-		isNullableString(value.envEmbedderBaseUrl) &&
-		isNullableString(value.envAllowRemoteEmbeddings) &&
 		(value.envApiKey === undefined || isNullableString(value.envApiKey))
 	);
 }
@@ -239,7 +230,7 @@ describe("KatokClient", () => {
 			binaryPath,
 			`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2), envKatokEmbedder: null, envEmbedderBaseUrl: null, envAllowRemoteEmbeddings: null }) + "\\n");
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2) }) + "\\n");
 process.exit(2);
 `,
 		);
@@ -321,7 +312,7 @@ setInterval(() => undefined, 1000);
 			binaryPath,
 			`#!/usr/bin/env node
 import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2), envKatokEmbedder: null, envEmbedderBaseUrl: null, envAllowRemoteEmbeddings: null }) + "\\n");
+appendFileSync(${JSON.stringify(logPath)}, JSON.stringify({ args: process.argv.slice(2) }) + "\\n");
 setInterval(() => undefined, 1000);
 `,
 		);
@@ -355,75 +346,6 @@ process.stdout.write("x".repeat(64));
 		const result = await client.doctor();
 
 		expect(result).toMatchObject({ ok: false, reason: "stdout-too-large" });
-	});
-
-	describe("remote-embedding rejection (pre-spawn, case-insensitive)", () => {
-		const rejectingCases = [
-			{ label: "EMBEDDER_BASE_URL any value", env: { EMBEDDER_BASE_URL: "https://embed.example.com" } },
-			{ label: "ALLOW_REMOTE_EMBEDDINGS any value", env: { ALLOW_REMOTE_EMBEDDINGS: "1" } },
-			{ label: "embedder_base_url lowercase", env: { embedder_base_url: "https://embed.example.com" } },
-			{ label: "Allow_Remote_Embeddings mixed case", env: { Allow_Remote_Embeddings: "true" } },
-			{ label: "EMBEDDER_BASE_URL empty string", env: { EMBEDDER_BASE_URL: "" } },
-			{ label: "KATOK_EMBEDDER http url", env: { KATOK_EMBEDDER: "http://embed.example.com" } },
-			{ label: "katok_embedder https url", env: { katok_embedder: "https://embed.example.com/v1" } },
-			{ label: "KATOK_EMBEDDER url with whitespace", env: { KATOK_EMBEDDER: "  https://embed.example.com  " } },
-		];
-
-		it.each(rejectingCases)("rejects $label without spawning", async ({ env }) => {
-			writeFakeKatok();
-			const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }), ...env });
-
-			const result = await client.doctor();
-
-			expect(result).toMatchObject({ ok: false, reason: "remote-embedding-rejected" });
-			expect(loggedCalls()).toHaveLength(0);
-		});
-
-		const allowingCases = [
-			{ label: "no embedder env at all", env: {} as Record<string, string> },
-			{ label: "KATOK_EMBEDDER local model name", env: { KATOK_EMBEDDER: "local-bge-small" } },
-			{ label: "KATOK_EMBEDDER empty", env: { KATOK_EMBEDDER: "" } },
-			{ label: "KATOK_EMBEDDER local path", env: { KATOK_EMBEDDER: "/opt/models/bge" } },
-		];
-
-		it.each(allowingCases)("spawns normally for $label", async ({ env }) => {
-			writeFakeKatok();
-			const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }), ...env });
-
-			const result = await client.doctor();
-
-			expect(result.ok).toBe(true);
-			expect(loggedCalls()).toHaveLength(1);
-		});
-
-		it("rejects a remote-embedding key supplied via process.env-equivalent merge even when options.env is clean", async () => {
-			writeFakeKatok();
-			// Simulate a polluted base env by setting it on the client's env merge
-			// through an override that itself is dangerous.
-			const client = fakeClient({ KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }), ALLOW_REMOTE_EMBEDDINGS: "1" });
-
-			const result = await client.doctor();
-
-			expect(result).toMatchObject({ ok: false, reason: "remote-embedding-rejected" });
-			expect(loggedCalls()).toHaveLength(0);
-		});
-
-		it("does not leak the env value in the failure result", async () => {
-			writeFakeKatok();
-			const client = fakeClient({
-				KATOK_FAKE_OUTPUT: jsonEnv({ ready: true }),
-				EMBEDDER_BASE_URL: "https://secret-embed.example.com/token-xyz",
-			});
-
-			const result = await client.doctor();
-
-			expect(result.ok).toBe(false);
-			if (result.ok) return;
-			const serialized = JSON.stringify(result);
-			expect(serialized).not.toContain("secret-embed.example.com");
-			expect(serialized).not.toContain("token-xyz");
-			expect(result.violatingKey).toBe("EMBEDDER_BASE_URL");
-		});
 	});
 
 	describe("paths and source opacity", () => {
