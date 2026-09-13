@@ -8,11 +8,7 @@ import {
 	type TUI,
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
-import {
-	AutoRAGAgent,
-	type AutoRAGAgentOptions,
-	type AutoRAGThinkingLevel,
-} from "../../agent/agent.ts";
+import { AutoRAGAgent, type AutoRAGAgentOptions, type AutoRAGThinkingLevel } from "../../agent/agent.ts";
 import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../../config/home.ts";
 import {
