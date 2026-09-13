@@ -317,6 +317,7 @@ async function collectFiles(
 		return;
 	}
 	for await (const entry of dir) {
+		if (entry.name.startsWith(".")) continue;
 		if (SKIP_DIR_NAMES.has(entry.name)) continue;
 		const sourcePath = resolve(directory, entry.name);
 		if (entry.isDirectory()) {

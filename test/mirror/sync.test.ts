@@ -77,6 +77,18 @@ describe("syncParsedMirrors", () => {
 		expect(markdown).toContain("Row 1: 제목 | 담당자 | 세부 내용");
 	});
 
+	it("ignores dot-prefixed index files such as .jikji_agent_map.md", async () => {
+		writeFileSync(join(source, ".jikji_agent_map.md"), "agent map\n");
+		writeFileSync(join(source, "real.md"), "Real doc\n");
+
+		const result = await syncParsedMirrors({ root, searchPaths: [source], registry: createDefaultParserRegistry() });
+		const index = loadMirrorIndex(root);
+
+		expect(result).toMatchObject({ scanned: 1, written: 1 });
+		expect(index.entries["/docs/real.md"]).toBeDefined();
+		expect(index.entries["/docs/.jikji_agent_map.md"]).toBeUndefined();
+	});
+
 	it("creates real markdown files and an index for supported virtual files", async () => {
 		writeFileSync(join(source, "note.txt"), "Alpha\n");
 		writeFileSync(join(source, "skip.bin"), Buffer.from([0, 1]));
