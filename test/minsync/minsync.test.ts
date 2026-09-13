@@ -168,7 +168,12 @@ describe("MinSyncVectorMethod", () => {
 
 		// Then
 		expect(result).toMatchObject({ synced: 1 });
-		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["init", "--format", "json"], cwd: minSyncCwd() }));
+		expect(loggedCalls()).toContainEqual(
+			JSON.stringify({
+				args: ["init", "--format", "json", "--embedder", "tei:embeddinggemma:latest"],
+				cwd: minSyncCwd(),
+			}),
+		);
 		expect(loggedCalls()).toContainEqual(JSON.stringify({ args: ["check", "--format", "json"], cwd: minSyncCwd() }));
 		expect(loggedCalls()).toContainEqual(
 			JSON.stringify({ args: ["sync", "--full", "--format", "json"], cwd: minSyncCwd() }),
@@ -847,7 +852,7 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 		expect(initCall?.args[embedderIdx! + 1]).toBe("openai:text-embedding-3-large");
 	});
 
-	it("does not pass --embedder when no embedder.id is set", async () => {
+	it("defaults init to the local EmbeddingGemma embedder when none is configured", async () => {
 		writeFakeMinSync(JSON.stringify({ results: [] }));
 		const method = new MinSyncVectorMethod({
 			binaryPath: minsyncBinary,
@@ -860,7 +865,9 @@ describe("MinSyncVectorMethod embedder plumbing", () => {
 		const initCall = loggedCalls()
 			.map((line) => JSON.parse(line) as { args: string[]; cwd: string })
 			.find((call) => call.args[0] === "init");
-		expect(initCall?.args).not.toContain("--embedder");
+		expect(initCall?.args).toContain("--embedder");
+		const embedderIdx = initCall?.args.indexOf("--embedder");
+		expect(initCall?.args[embedderIdx! + 1]).toBe("tei:embeddinggemma:latest");
 	});
 
 	it("degrades with missing-binary when no binary is available and autoInstall is false", async () => {

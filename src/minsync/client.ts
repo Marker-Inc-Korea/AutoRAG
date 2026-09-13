@@ -14,6 +14,20 @@ export interface MinSyncClientOptions {
 /** MinSync v0.4.2 supports vector, BM25, and hybrid query modes. */
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
+const LOOPBACK = "http://127.0.0.1:18080";
+
+/**
+ * Default embedder when the caller does not configure one: the local
+ * EmbeddingGemma model through the TEI-compatible Ollama adapter shipped in
+ * `scripts/manual-qa/ollama-tei-adapter.py`. Never fall through to MinSync's
+ * upstream default (a remote OpenAI embedder) — corpus text stays local.
+ */
+export const LOCAL_EMBEDDER_DEFAULT: MinSyncEmbedderConfig = {
+	id: "tei:embeddinggemma:latest",
+	baseUrl: LOOPBACK,
+	dimension: 768,
+};
+
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export class MinSyncClient {
@@ -25,7 +39,7 @@ export class MinSyncClient {
 	constructor(options: MinSyncClientOptions) {
 		this.binaryPath = options.binaryPath;
 		this.workspacePath = options.workspacePath;
-		this.embedder = options.embedder;
+		this.embedder = options.embedder ?? LOCAL_EMBEDDER_DEFAULT;
 		this.maxChunkSize = options.maxChunkSize;
 	}
 
