@@ -1,6 +1,12 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { configuredMaxChunkSize, minSyncConfigPath, rewriteEmbedderConfig } from "./embedder-config.ts";
+import {
+	configuredMaxChunkSize,
+	configuredVectorDimension,
+	minSyncConfigPath,
+	rewriteEmbedderConfig,
+} from "./embedder-config.ts";
+import { ensureLocalEmbedder } from "./local-embedder.ts";
 import { spawnProcess } from "./process.ts";
 import type { MinSyncEmbedderConfig, MinSyncQueryHit, MinSyncSyncResult } from "./types.ts";
 
@@ -15,6 +21,18 @@ export interface MinSyncClientOptions {
 export type MinSyncQueryMode = "vector" | "bm25" | "hybrid";
 
 const API_KEY_ENV_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export class MinSyncQueryError extends Error {
+	readonly code: number | null;
+	readonly stderr: string;
+
+	constructor(code: number | null, stderr: string) {
+		super(stderr || `MinSync query failed with exit code ${code ?? "unknown"}`);
+		this.name = "MinSyncQueryError";
+		this.code = code;
+		this.stderr = stderr;
+	}
+}
 
 export class MinSyncClient {
 	private readonly binaryPath: string;
@@ -32,6 +50,19 @@ export class MinSyncClient {
 	async sync(force = false): Promise<MinSyncSyncResult> {
 		if (!existsSync(this.binaryPath)) {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "missing-binary" };
+		}
+		try {
+			await ensureLocalEmbedder({
+				baseUrl: this.embedder?.baseUrl,
+				timeoutMs: this.embedder?.timeoutMs,
+			});
+		} catch (error) {
+			return {
+				ok: false,
+				synced: 0,
+				workspacePath: this.workspacePath,
+				reason: error instanceof Error ? error.message : "local-embedder-unavailable",
+			};
 		}
 		if (this.embedder?.apiKeyEnv) {
 			const envName = this.embedder.apiKeyEnv;
@@ -67,6 +98,7 @@ export class MinSyncClient {
 			}
 		}
 		const configuredChunkSize = configuredMaxChunkSize(this.workspacePath);
+		const configuredDimension = configuredVectorDimension(this.workspacePath);
 		const configPath = minSyncConfigPath(this.workspacePath);
 		const shouldRewriteConfig = this.embedder !== undefined || this.maxChunkSize !== undefined;
 		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
@@ -92,14 +124,16 @@ export class MinSyncClient {
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: checkFailure };
 		}
 		const chunkSizeChanged = this.maxChunkSize !== undefined && configuredChunkSize !== this.maxChunkSize;
-		if (chunkSizeChanged) rmSync(cursorPath, { force: true });
+		const dimensionChanged =
+			this.embedder?.dimension !== undefined && configuredDimension !== this.embedder.dimension;
+		if (chunkSizeChanged || dimensionChanged) rmSync(cursorPath, { force: true });
 		const syncArgs =
-			existsSync(cursorPath) && !chunkSizeChanged && !force
+			existsSync(cursorPath) && !chunkSizeChanged && !dimensionChanged && !force
 				? ["sync", "--format", "json"]
 				: ["sync", "--full", "--format", "json"];
 		const result = await this.spawn(syncArgs, spawnOpts);
 		if (!result.ok) {
-			if (chunkSizeChanged) rmSync(cursorPath, { force: true });
+			if (chunkSizeChanged || dimensionChanged) rmSync(cursorPath, { force: true });
 			restoreConfig();
 			return {
 				ok: false,
@@ -109,7 +143,7 @@ export class MinSyncClient {
 			};
 		}
 		if (!existsSync(cursorPath)) {
-			if (chunkSizeChanged) rmSync(cursorPath, { force: true });
+			if (chunkSizeChanged || dimensionChanged) rmSync(cursorPath, { force: true });
 			restoreConfig();
 			return { ok: false, synced: 0, workspacePath: this.workspacePath, reason: "not-ready: missing cursor" };
 		}
@@ -118,9 +152,33 @@ export class MinSyncClient {
 
 	async query(text: string, topK: number, mode: MinSyncQueryMode = "vector"): Promise<readonly MinSyncQueryHit[]> {
 		if (!existsSync(this.binaryPath)) return [];
-		const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
-		if (!result.ok) return [];
-		return parseQueryHits(result.stdout);
+		const configPath = minSyncConfigPath(this.workspacePath);
+		const configuredDimension = configuredVectorDimension(this.workspacePath);
+		if (
+			this.embedder?.dimension !== undefined &&
+			configuredDimension !== undefined &&
+			this.embedder.dimension !== configuredDimension
+		) {
+			throw new MinSyncQueryError(
+				null,
+				`configured embedder dimension ${this.embedder.dimension} does not match indexed dimension ${configuredDimension}; reindex required`,
+			);
+		}
+		const shouldRewriteConfig = this.embedder !== undefined;
+		const originalConfig = shouldRewriteConfig ? readConfigSnapshot(configPath) : undefined;
+		const configRewritten =
+			shouldRewriteConfig && rewriteEmbedderConfig(this.workspacePath, this.embedder ?? {}) === true;
+		try {
+			await ensureLocalEmbedder({
+				baseUrl: this.embedder?.baseUrl,
+				timeoutMs: this.embedder?.timeoutMs,
+			});
+			const result = await this.spawn(["query", "--format", "json", "--mode", mode, "-k", String(topK), text]);
+			if (!result.ok) throw new MinSyncQueryError(result.code, result.stderr);
+			return parseQueryHits(result.stdout);
+		} finally {
+			if (configRewritten && originalConfig !== undefined) writeFileSync(configPath, originalConfig);
+		}
 	}
 
 	private async spawn(

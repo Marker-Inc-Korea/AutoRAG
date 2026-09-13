@@ -31,6 +31,22 @@ export function configuredMaxChunkSize(workspacePath: string): number | undefine
 	return typeof maxChunkSize === "number" ? maxChunkSize : undefined;
 }
 
+export function configuredVectorDimension(workspacePath: string): number | undefined {
+	let raw: string;
+	try {
+		raw = readFileSync(minSyncConfigPath(workspacePath), "utf8");
+	} catch {
+		return undefined;
+	}
+	const parsed = parse(raw) as Record<string, unknown>;
+	const vectorstore = parsed.vectorstore;
+	if (typeof vectorstore !== "object" || vectorstore === null || Array.isArray(vectorstore)) return undefined;
+	const options = (vectorstore as Record<string, unknown>).options;
+	if (typeof options !== "object" || options === null || Array.isArray(options)) return undefined;
+	const dimension = (options as Record<string, unknown>).dimension;
+	return typeof dimension === "number" ? dimension : undefined;
+}
+
 /**
  * Atomically rewrite allowlisted embedder fields in MinSync config.toml.
  * Reads the existing file, merges the allowlisted fields from `embedder`,
