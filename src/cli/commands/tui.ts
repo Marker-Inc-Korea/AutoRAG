@@ -8,7 +8,11 @@ import {
 	type TUI,
 	TuiMainScreen,
 } from "@earendil-works/pi-tui";
-import { AutoRAGAgent, type AutoRAGAgentOptions } from "../../agent/agent.ts";
+import {
+	AutoRAGAgent,
+	type AutoRAGAgentOptions,
+	type AutoRAGThinkingLevel,
+} from "../../agent/agent.ts";
 import type { SearchDocumentsResponse, SearchDocumentsStreamEvent } from "../../agent/search-documents.ts";
 import { resolveAutoRAGHome } from "../../config/home.ts";
 import {
@@ -232,13 +236,35 @@ function createAgent(ctx: CommandContext, deps: TuiDeps) {
 	if (deps.agentFactory) return deps.agentFactory();
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	const resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
+	const thinking = parseThinkingFlags(ctx.flags);
 	const options: AutoRAGAgentOptions = {
 		...buildAgentOptions(config),
 		model: resolvedModel.model,
 		...(resolvedModel.apiKey !== undefined ? { apiKey: resolvedModel.apiKey } : {}),
 		...(resolvedModel.providerApiKeys !== undefined ? { providerApiKeys: resolvedModel.providerApiKeys } : {}),
+		...(thinking !== undefined ? { thinking } : {}),
 	};
 	return new AutoRAGAgent(options);
+}
+
+const THINKING_LEVELS: readonly AutoRAGThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+function parseThinkingFlags(flags: CommandContext["flags"]): AutoRAGAgentOptions["thinking"] | undefined {
+	if (flags["single-phase"] === true) return false;
+	const parse = (value: string | boolean | undefined): AutoRAGThinkingLevel | undefined =>
+		typeof value === "string" && THINKING_LEVELS.includes(value as AutoRAGThinkingLevel)
+			? (value as AutoRAGThinkingLevel)
+			: undefined;
+	const fast = parse(flags["fast-thinking"]);
+	const final = parse(flags["final-thinking"]);
+	if (flags["fast-thinking"] !== undefined && fast === undefined) {
+		throw new Error(`Invalid fast thinking level. Use one of: ${THINKING_LEVELS.join(", ")}.`);
+	}
+	if (flags["final-thinking"] !== undefined && final === undefined) {
+		throw new Error(`Invalid final thinking level. Use one of: ${THINKING_LEVELS.join(", ")}.`);
+	}
+	if (fast === undefined && final === undefined) return undefined;
+	return { ...(fast !== undefined ? { fast } : {}), ...(final !== undefined ? { final } : {}) };
 }
 
 function createRealTui(): TUI {
