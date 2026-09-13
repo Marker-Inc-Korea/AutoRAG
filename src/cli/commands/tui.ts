@@ -64,7 +64,7 @@ type SearchStreamHandlers = {
 };
 
 export interface TuiDeps {
-	agentFactory?: (opts?: AutoRAGAgentOptions) => TuiAgent;
+	agentFactory?: (opts?: Partial<AutoRAGAgentOptions>) => TuiAgent;
 	modelResolver?: (config: CliConfig) => ResolvedAgentModel;
 	tuiFactory?: (ctx: CommandContext) => TuiDriver;
 	sessionStore?: TuiSessionStore;
@@ -229,10 +229,10 @@ function stripAnsi(text: string): string {
 }
 
 function createAgent(ctx: CommandContext, deps: TuiDeps) {
-	if (deps.agentFactory) return deps.agentFactory();
+	const thinking = parseThinkingFlags(ctx.flags);
+	if (deps.agentFactory) return deps.agentFactory(thinking === undefined ? undefined : { thinking });
 	const config = resolveConfig({ flags: ctx.flags, cwd: ctx.cwd });
 	const resolvedModel = (deps.modelResolver ?? resolveAgentModel)(config);
-	const thinking = parseThinkingFlags(ctx.flags);
 	const options: AutoRAGAgentOptions = {
 		...buildAgentOptions(config),
 		model: resolvedModel.model,
