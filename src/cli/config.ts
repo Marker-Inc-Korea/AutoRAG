@@ -1136,8 +1136,11 @@ export function writeDefaultConfig(
 	partial: Partial<CliConfig>,
 	opts: { force?: boolean; atomicCreate?: boolean; cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): void {
+	if (partial.workspacePath === undefined) {
+		throw new ConfigError("autorag init requires --workspace <absolute path>");
+	}
 	const cwd = resolve(opts.cwd ?? process.cwd());
-	const workspacePath = resolvePersistedPath(partial.workspacePath ?? ".", cwd);
+	const workspacePath = resolvePersistedPath(partial.workspacePath, cwd);
 	const memoryPath =
 		partial.memoryPath === undefined
 			? join(resolveAutoRAGHome(opts.env), "memory.json")

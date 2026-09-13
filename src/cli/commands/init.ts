@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import {
 	type CliConfig,
 	ConfigError,
@@ -28,7 +28,15 @@ export async function runInit(ctx: CommandContext): Promise<number> {
 			.map((entry) => entry.trim())
 			.filter((entry) => entry.length > 0);
 	}
-	if (typeof flags.workspace === "string") partial.workspacePath = flags.workspace;
+	if (typeof flags.workspace === "string") {
+		if (!isAbsolute(flags.workspace)) {
+			ctx.stderr(
+				renderError(new ConfigError("--workspace must be an absolute path"), { json: ctx.json, debug: ctx.debug }),
+			);
+			return 2;
+		}
+		partial.workspacePath = flags.workspace;
+	}
 	if (typeof flags["memory-path"] === "string") partial.memoryPath = flags["memory-path"];
 	if (typeof flags["minsync-max-chunk-size"] === "string") {
 		try {

@@ -32,19 +32,38 @@ function makeCtx(overrides: Partial<CommandContext> = {}): CommandContext {
 		json: false,
 		debug: false,
 		cwd: root,
-		stdout: () => {},
-		stderr: () => {},
+		stdout: () => { },
+		stderr: () => { },
 		...overrides,
 	};
 }
 
 describe("runInit", () => {
+	it("requires an explicit --workspace instead of defaulting to cwd", async () => {
+		const stderr: string[] = [];
+		const code = await runInit(makeCtx({ stderr: (line) => stderr.push(line) }));
+
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toContain("--workspace");
+	});
+
+	it("rejects a relative --workspace path", async () => {
+		const stderr: string[] = [];
+		const code = await runInit(
+			makeCtx({ flags: { workspace: "relative-workspace" }, stderr: (line) => stderr.push(line) }),
+		);
+
+		expect(code).toBe(2);
+		expect(stderr.join("\n")).toContain("absolute");
+	});
+
 	it("writes one model setting", async () => {
 		const code = await runInit(
 			makeCtx({
 				flags: {
 					"model-provider": "test-provider",
 					"model-id": "single-agent",
+					workspace: join(root, "workspace"),
 				},
 			}),
 		);
@@ -54,7 +73,7 @@ describe("runInit", () => {
 	});
 
 	it("does not write private model defaults without model flags", async () => {
-		const code = await runInit(makeCtx());
+		const code = await runInit(makeCtx({ flags: { workspace: join(root, "workspace") } }));
 
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
@@ -75,6 +94,7 @@ describe("runInit", () => {
 		const code = await runInit(
 			makeCtx({
 				flags: {
+					workspace: join(root, "workspace"),
 					"model-provider": "override-provider",
 					"model-id": "override-model",
 				},
@@ -89,7 +109,10 @@ describe("runInit", () => {
 	it("writes the default config under ~/.autorag and reports its absolute path", async () => {
 		const home = join(root, "home");
 		const stdout: string[] = [];
-		const code = await runInit(makeCtx({ json: true, stdout: (line) => stdout.push(line) }));
+		const code = await runInit(makeCtx({
+			json: true, flags: { workspace: join(root, "workspace") }, stdout: (line) =>
+				stdout.push(line)
+		}));
 		expect(code).toBe(0);
 		const configPath = join(home, ".autorag", "config.json");
 		expect(existsSync(configPath)).toBe(true);
@@ -106,7 +129,7 @@ describe("runInit", () => {
 		const code = await runInit(
 			makeCtx({
 				cwd: initCwd,
-				flags: { "search-paths": "docs" },
+				flags: { "search-paths": "docs", workspace: initCwd },
 			}),
 		);
 		const persisted = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
@@ -233,7 +256,7 @@ describe("runInit", () => {
 
 		const code = await runInit(
 			makeCtx({
-				flags: { "search-paths": "new", force: true },
+				flags: { "search-paths": "new", force: true, workspace: join(root, "ws") },
 			}),
 		);
 
@@ -247,7 +270,7 @@ describe("runInit", () => {
 		const stdout: string[] = [];
 		const code = await runInit(
 			makeCtx({
-				flags: { "search-paths": "docs" },
+				flags: { "search-paths": "docs", workspace: join(root, "ws") },
 				json: true,
 				stdout: (line) => stdout.push(line),
 			}),
@@ -264,7 +287,7 @@ describe("runInit", () => {
 		const stdout: string[] = [];
 		const code = await runInit(
 			makeCtx({
-				flags: { "search-paths": "docs" },
+				flags: { "search-paths": "docs", workspace: join(root, "ws") },
 				stdout: (line) => stdout.push(line),
 			}),
 		);
@@ -282,6 +305,7 @@ describe("runInit embedder flags", () => {
 			makeCtx({
 				flags: {
 					"search-paths": "docs",
+					workspace: join(root, "ws"),
 					"embedder-id": "text-embedding-3-small",
 					"embedder-base-url": "https://api.openai.com/v1",
 					"embedder-api-key-env": "OPENAI_API_KEY",
@@ -315,6 +339,7 @@ describe("runInit embedder flags", () => {
 			makeCtx({
 				flags: {
 					"search-paths": "docs",
+					workspace: join(root, "ws"),
 					"embedder-id": "bge-m3",
 					"embedder-dimension": "1024",
 				},
@@ -329,7 +354,11 @@ describe("runInit embedder flags", () => {
 	});
 
 	it("writes the MinSync chunk size into method config", async () => {
-		const code = await runInit(makeCtx({ flags: { "search-paths": "docs", "minsync-max-chunk-size": "1000" } }));
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "docs", "minsync-max-chunk-size": "1000", workspace: join(root, "ws") },
+			}),
+		);
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.minSync.maxChunkSize).toBe(1000);
@@ -339,7 +368,7 @@ describe("runInit embedder flags", () => {
 	it("does not write minSync.embedder when no embedder flags are given", async () => {
 		const code = await runInit(
 			makeCtx({
-				flags: { "search-paths": "docs" },
+				flags: { "search-paths": "docs", workspace: join(root, "ws") },
 			}),
 		);
 		expect(code).toBe(0);
@@ -375,7 +404,11 @@ describe("runInit embedder flags", () => {
 	});
 
 	it("defaults bm25 and minSync enabled when no method flags are given", async () => {
-		const code = await runInit(makeCtx({ flags: { "search-paths": "docs" } }));
+		const code = await runInit(
+			makeCtx({
+				flags: { "search-paths": "docs", workspace: join(root, "ws") },
+			}),
+		);
 		expect(code).toBe(0);
 		const config = JSON.parse(readFileSync(homeConfigPath(), "utf8"));
 		expect(config.minSync).toBeDefined();

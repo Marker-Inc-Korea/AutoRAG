@@ -34,7 +34,7 @@ describe("autorag lite lifecycle dispatch", () => {
 		writeFileSync(join(docs, "note.md"), "Lifecycle fixture\n");
 		const out = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 		try {
-			expect(await main(["lite", "init", "--config", configPath, "--search-paths", docs])).toBe(0);
+			expect(await main(["lite", "init", "--config", configPath, "--search-paths", docs, "--workspace", root])).toBe(0);
 			writeConfig(root, configPath, true);
 			expect(await main(["lite", "status", "--config", configPath, "--json"])).toBe(0);
 			expect(String(out.mock.calls.at(-1)?.[0] ?? "")).toContain('"state"');
