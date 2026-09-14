@@ -47,7 +47,14 @@ export interface FailureResult {
 }
 
 export class CacheError extends Error {
-	readonly code: "invalid-hash" | "offline-missing" | "download" | "hash-mismatch" | "io";
+	readonly code:
+		| "invalid-hash"
+		| "offline-missing"
+		| "download"
+		| "hash-mismatch"
+		| "io"
+		| "extraction"
+		| "missing-member";
 	readonly path?: string;
 
 	constructor(
@@ -78,4 +85,5 @@ export interface RuntimeAsset {
 	readonly version: string;
 	readonly platform: PlatformId;
 	readonly archiveMembers: readonly string[];
+	readonly kind: "runtime";
 }

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn as defaultSpawn, type SpawnOptions } from "node:child_process";
-import { appendFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { platform } from "node:os";
 import { basename, join } from "node:path";
@@ -21,7 +21,7 @@ export interface SupervisorStatus {
 }
 
 export class SupervisorError extends Error {
-	readonly code: "lock-conflict" | "readiness-timeout" | "spawn" | "exited" | "shutdown";
+	readonly code: "lock-conflict" | "readiness-timeout" | "spawn" | "exited" | "shutdown" | "missing-executable";
 	constructor(code: SupervisorError["code"], message: string, options: { readonly cause?: unknown } = {}) {
 		super(message, { cause: options.cause });
 		this.name = "SupervisorError";
@@ -63,6 +63,7 @@ export class EmbeddingRuntimeSupervisor {
 	private readonly killProcess: KillLike;
 	private readonly fetchHealth: typeof globalThis.fetch;
 	private readonly osPlatform: NodeJS.Platform;
+	private readonly defaultExecutable: boolean;
 	private child?: ChildProcess;
 	private startedAt?: number;
 	private currentPort?: number;
@@ -76,13 +77,18 @@ export class EmbeddingRuntimeSupervisor {
 		const profile = resolveProfile(options.profileId ?? "qwen3-embedding-0.6b");
 		this.root = options.cacheRoot ?? resolveAutoRAGHome();
 		this.backend = options.backend ?? profile.backend;
-		this.executablePath = options.executablePath ?? join(cacheDirectory("runtime", this.root), "llama-server");
+		this.osPlatform = options.platform ?? platform();
+		this.defaultExecutable = options.executablePath === undefined;
+		this.executablePath =
+			options.executablePath ??
+			(this.osPlatform === "win32"
+				? join(cacheDirectory("runtime", this.root), "llama-server.exe")
+				: join(cacheDirectory("runtime", this.root), "bin", "llama-server"));
 		this.modelPath = options.modelPath ?? join(cacheDirectory("models", this.root), basename(profile.model));
 		this.timeoutMs = options.readinessTimeoutMs ?? DEFAULT_TIMEOUT;
 		this.intervalMs = options.readinessIntervalMs ?? DEFAULT_INTERVAL;
 		this.logMaxBytes = options.logMaxBytes ?? DEFAULT_LOG_BYTES;
 		this.spawnProcess = options.spawn ?? ((command, args, spawnOptions) => defaultSpawn(command, args, spawnOptions));
-		this.osPlatform = options.platform ?? platform();
 		this.killProcess =
 			options.kill ??
 			((pid, signal) => {
@@ -180,7 +186,47 @@ export class EmbeddingRuntimeSupervisor {
 		}
 	}
 
+	private async resolveExecutable(): Promise<string> {
+		if (!this.defaultExecutable) return this.executablePath;
+		try {
+			if (await stat(this.executablePath)) return this.executablePath;
+		} catch {
+			// Search atomically extracted runtime trees.
+		}
+		const runtimeRoot = cacheDirectory("runtime", this.root);
+		try {
+			for (const entry of await readdir(runtimeRoot, { withFileTypes: true })) {
+				if (!entry.isDirectory() || !entry.name.endsWith(".extracted")) continue;
+				const candidate = join(
+					runtimeRoot,
+					entry.name,
+					this.osPlatform === "win32" ? "llama-server.exe" : "bin",
+					...(this.osPlatform === "win32" ? [] : ["llama-server"]),
+				);
+				try {
+					await stat(candidate);
+					return candidate;
+				} catch {
+					/* continue */
+				}
+			}
+		} catch {
+			/* handled below */
+		}
+		return this.executablePath;
+	}
+
 	private async startChild(): Promise<void> {
+		const executablePath = await this.resolveExecutable();
+		try {
+			await stat(executablePath);
+		} catch (error) {
+			throw new SupervisorError(
+				"missing-executable",
+				`Embedding runtime executable is missing. Run autorag models prefetch.`,
+				{ cause: error },
+			);
+		}
 		this.currentPort = await reservePort();
 		const args = [
 			"--embeddings",
@@ -196,7 +242,7 @@ export class EmbeddingRuntimeSupervisor {
 		const spawnOptions: SpawnOptions = { stdio: ["ignore", "pipe", "pipe"], detached: this.osPlatform !== "win32" };
 		let child: ChildProcess;
 		try {
-			child = this.spawnProcess(this.executablePath, args, spawnOptions);
+			child = this.spawnProcess(executablePath, args, spawnOptions);
 		} catch (error) {
 			throw new SupervisorError("spawn", "Unable to start embedding runtime.", { cause: error });
 		}

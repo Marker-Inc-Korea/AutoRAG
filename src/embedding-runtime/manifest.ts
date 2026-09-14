@@ -35,6 +35,7 @@ const profiles: Readonly<Record<ProfileId, RuntimeProfile>> = {
 const runtimeAssets: Readonly<Record<PlatformId, RuntimeAsset>> = {
 	"darwin-arm64-metal": {
 		id: "llama-macos-arm64",
+		kind: "runtime",
 		platform: "darwin-arm64-metal",
 		version: RUNTIME_BUILD,
 		filename: "llama-b10951-bin-macos-arm64.tar.gz",
@@ -44,6 +45,7 @@ const runtimeAssets: Readonly<Record<PlatformId, RuntimeAsset>> = {
 	},
 	"win-x64-cpu": {
 		id: "llama-win-cpu-x64",
+		kind: "runtime",
 		platform: "win-x64-cpu",
 		version: RUNTIME_BUILD,
 		filename: "llama-b10951-bin-win-cpu-x64.zip",
@@ -53,6 +55,7 @@ const runtimeAssets: Readonly<Record<PlatformId, RuntimeAsset>> = {
 	},
 	"win-x64-vulkan": {
 		id: "llama-win-vulkan-x64",
+		kind: "runtime",
 		platform: "win-x64-vulkan",
 		version: RUNTIME_BUILD,
 		filename: "llama-b10951-bin-win-vulkan-x64.zip",

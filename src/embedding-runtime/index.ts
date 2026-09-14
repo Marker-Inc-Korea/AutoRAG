@@ -13,12 +13,26 @@ import type { BackendKind, HealthStatus, ProfileId, RuntimeProfile } from "./typ
 
 export interface EmbeddingRuntimeCache {
 	downloadAsset(
-		asset: { id: string; url: string; filename: string; sha256: string },
+		asset: {
+			id: string;
+			url: string;
+			filename: string;
+			sha256: string;
+			kind?: "model" | "runtime";
+			archiveMembers?: readonly string[];
+		},
 		options?: CacheOptions,
 	): Promise<string>;
 	importAsset(
 		sourcePath: string,
-		asset: { id: string; url: string; filename: string; sha256: string },
+		asset: {
+			id: string;
+			url: string;
+			filename: string;
+			sha256: string;
+			kind?: "model" | "runtime";
+			archiveMembers?: readonly string[];
+		},
 		options?: CacheOptions,
 	): Promise<string>;
 	verifyCacheEntry(path: string, expectedSha256: string): Promise<string>;
@@ -87,8 +101,7 @@ function modelAsset(profile: RuntimeProfile) {
 }
 function runtimeAsset(platform: EmbeddingRuntimeOptions["platform"] | undefined, backend: BackendKind) {
 	const selected = platform ?? "darwin-arm64-metal";
-	const asset = selectPlatformAsset(selected, backend, false);
-	return { id: asset.id, filename: asset.filename, url: asset.url, sha256: asset.sha256 };
+	return selectPlatformAsset(selected, backend, false);
 }
 function identity(profile: RuntimeProfile): RuntimeIdentity {
 	return {

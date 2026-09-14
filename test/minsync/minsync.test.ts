@@ -1270,6 +1270,21 @@ if (args[0] === "sync") process.exit(1);
 });
 
 describe("AutoRAG embedding runtime integration", () => {
+	it("degrades bootstrap failures to the typed embedder-unavailable diagnostic", async () => {
+		writeFakeMinSync(JSON.stringify({ results: [] }));
+		const result = await new MinSyncClient({
+			binaryPath: minsyncBinary,
+			workspacePath: minsyncWorkspace,
+			runtime: {
+				ensureRuntime: async () => {
+					throw new Error("runtime bootstrap failed");
+				},
+			},
+		}).sync();
+		expect(result.ok).toBe(false);
+		expect(result.diagnostic).toMatchObject({ code: "embedder-unavailable", retryable: true });
+	});
+
 	const runtime = {
 		ensureRuntime: async () => ({
 			baseUrl: "http://127.0.0.1:43123",

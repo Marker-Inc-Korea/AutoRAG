@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -60,5 +61,55 @@ describe("embedding runtime cache", () => {
 		const path = await downloadAsset(asset, { cacheRoot, fetch: async () => new Response(bytes) });
 		await writeFile(path, "corrupt");
 		await expect(verifyCacheEntry(path, sha256)).rejects.toBeInstanceOf(CacheError);
+	});
+
+	it("routes model and runtime assets separately and extracts a tar.gz server", async () => {
+		const cacheRoot = await root();
+		const fixture = await mkdtemp(join(cacheRoot, "fixture-"));
+		await mkdir(join(fixture, "bin"), { recursive: true });
+		await writeFile(join(fixture, "bin", "llama-server"), "#!/bin/sh\n");
+		const archive = join(cacheRoot, "runtime.tar.gz");
+		execFileSync("tar", ["-czf", archive, "-C", fixture, "bin/llama-server"]);
+		const archiveBytes = await readFile(archive);
+		const runtimeAsset = {
+			id: "runtime-fixture",
+			url: "https://fixture.invalid/runtime.tar.gz",
+			filename: "runtime.tar.gz",
+			sha256: createHash("sha256").update(archiveBytes).digest("hex"),
+			kind: "runtime" as const,
+			archiveMembers: ["bin/llama-server"],
+		};
+		const runtimePath = await downloadAsset(runtimeAsset, {
+			cacheRoot,
+			fetch: async () => new Response(archiveBytes),
+		});
+		expect(runtimePath).toBe(join(cacheRoot, "runtime", "runtime.tar.gz.extracted", "bin", "llama-server"));
+		expect((await stat(runtimePath)).mode & 0o111).toBeGreaterThan(0);
+		expect(await downloadAsset(asset, { cacheRoot, fetch: async () => new Response(bytes) })).toBe(
+			join(cacheRoot, "models", "model.gguf"),
+		);
+	});
+
+	it("rejects a runtime archive with missing expected members and cleans extraction state", async () => {
+		const cacheRoot = await root();
+		const fixture = await mkdtemp(join(cacheRoot, "fixture-"));
+		await writeFile(join(fixture, "not-server"), "nope");
+		const archive = join(cacheRoot, "runtime.tar.gz");
+		execFileSync("tar", ["-czf", archive, "-C", fixture, "not-server"]);
+		const archiveBytes = await readFile(archive);
+		const runtimeAsset = {
+			id: "bad-runtime",
+			url: "https://fixture.invalid/runtime.tar.gz",
+			filename: "bad-runtime.tar.gz",
+			sha256: createHash("sha256").update(archiveBytes).digest("hex"),
+			kind: "runtime" as const,
+			archiveMembers: ["bin/llama-server"],
+		};
+		await expect(
+			downloadAsset(runtimeAsset, { cacheRoot, fetch: async () => new Response(archiveBytes) }),
+		).rejects.toMatchObject({
+			code: "missing-member",
+		});
+		await expect(stat(join(cacheRoot, "runtime", "bad-runtime.tar.gz.extracted.part-dir"))).rejects.toThrow();
 	});
 });
