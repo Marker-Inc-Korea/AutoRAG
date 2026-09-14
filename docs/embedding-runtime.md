@@ -334,7 +334,7 @@ compares this block with the machine manifest and with the pinned values in
       "licenseId": "MIT",
       "noticeFile": "licenses/llama.cpp-MIT.txt",
       "archiveMembers": [
-        "bin/llama-server"
+        "llama-b10951/llama-server"
       ]
     },
     {

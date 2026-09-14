@@ -69,7 +69,7 @@
       "licenseId": "MIT",
       "noticeFile": "licenses/llama.cpp-MIT.txt",
       "archiveMembers": [
-        "bin/llama-server"
+        "llama-b10951/llama-server"
       ]
     },
     {
