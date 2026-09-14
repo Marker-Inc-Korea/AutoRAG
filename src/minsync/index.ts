@@ -1,5 +1,11 @@
-export { MinSyncClient, type MinSyncClientOptions, type MinSyncQueryMode } from "./client.ts";
 export {
+	MinSyncClient,
+	type MinSyncClientOptions,
+	MinSyncQueryError,
+	type MinSyncQueryMode,
+} from "./client.ts";
+export {
+	configuredVectorDimension,
 	MINSYNC_CONFIG_DIR,
 	MINSYNC_CONFIG_FILE,
 	minSyncConfigPath,
@@ -17,6 +23,11 @@ export {
 	MinSyncReleaseError,
 	selectReleaseAsset,
 } from "./installer.ts";
+export {
+	ensureLocalEmbedder,
+	LocalEmbedderError,
+	type LocalEmbedderPreflightOptions,
+} from "./local-embedder.ts";
 export {
 	MinSyncHybridMethod,
 	type MinSyncHybridMethodOptions,
