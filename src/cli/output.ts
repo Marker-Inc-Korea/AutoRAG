@@ -190,6 +190,18 @@ export function renderSearch(resp: SearchDocumentsResponse, opts: RenderOptions)
 	return renderSearchHuman(resp, opts.debug ?? false);
 }
 
+/**
+ * Render the two-phase search's immediate first answer. Kept distinct from
+ * the final response so callers can show "fast answer → verified answer"
+ * progression; the JSON shape wraps the normal search envelope.
+ */
+export function renderPreliminary(resp: SearchDocumentsResponse, opts: RenderOptions): string {
+	if (opts.json) {
+		return JSON.stringify({ type: "preliminary", response: searchEnvelope(resp, opts.debug ?? false) }, null, 2);
+	}
+	return `fast answer (still verifying):\n${renderSearchHuman(resp, opts.debug ?? false)}`;
+}
+
 function renderMemoryHuman(schema: MemorySchemaV4, debug: boolean): string {
 	const lines: string[] = [];
 	lines.push("memory:");
