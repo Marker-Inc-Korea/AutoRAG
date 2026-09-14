@@ -71,8 +71,11 @@ jobs:
                   path: sboms
                   merge-multiple: true
 
+            - name: Check embedding compliance manifest
+              run: node scripts/check-embedding-manifest.mjs
+
             - name: Stage GitHub Release assets
-              run: bun scripts/supply-chain/stage-release-assets.ts --out release-assets --sbom-dir sboms
+              run: bun scripts/supply-chain/stage-release-assets.ts --out release-assets --sbom-dir sboms --embedding-assets
 
             - name: Publish to npm
               run: npm publish --provenance --access public
@@ -85,5 +88,7 @@ jobs:
                   name: "AutoRAG ${{ github.ref_name }}"
                   generate_release_notes: true
                   make_latest: "true"
+                  # Compliance notices and the pinned platform archives are staged
+                  # in nested paths; attach the complete staged tree.
                   files: |
-                      release-assets/*
+                      release-assets/**

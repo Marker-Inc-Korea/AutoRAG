@@ -1,0 +1,13 @@
+Qwen3-Embedding-0.6B
+
+The Qwen3-Embedding-0.6B model asset is provided under the Apache License, Version 2.0. The pinned GGUF asset is published by Qwen at:
+https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF
+
+Model card and pinned asset revision:
+https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/tree/370f27d7550e0def9b39c1f16d3fbaa13aa67728
+
+Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+The text is also included in licenses/apache-2.0.txt.
+
+This notice identifies the model license and provenance. The model weights are not included in the npm package; release jobs fetch the immutable URL in licenses/embedding-assets.json and verify its SHA-256 before staging.

@@ -1,0 +1,24 @@
+EmbeddingGemma profile notice
+
+Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms
+
+Section 3.1 distribution flow-down (verbatim)
+
+You must include the use restrictions referenced in Section 3.2 as an enforceable provision in any agreement (e.g., license agreement, terms of use, etc.) governing the use and/or distribution of Gemma or Model Derivatives and you must provide notice to subsequent users you Distribute to that Gemma or Model Derivatives are subject to the use restrictions in Section 3.2.
+
+You must provide all third party recipients of Gemma or Model Derivatives a copy of this Agreement.
+
+All Distributions (other than through a Hosted Service) must be accompanied by a "Notice" text file that contains the following notice:
+"Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms".
+
+Section 3.2 Use Restrictions (verbatim)
+
+You must not use any of the Gemma Services:
+
+for the restricted uses set forth in the Gemma Prohibited Use Policy at ai.google.dev/gemma/prohibited_use_policy ("Prohibited Use Policy"), which is hereby incorporated by reference into this Agreement; or
+
+in violation of applicable laws and regulations.
+
+To the maximum extent permitted by law, Google reserves the right to restrict (remotely or otherwise) usage of any of the Gemma Services that Google reasonably believes are in violation of this Agreement.
+
+The complete Gemma Terms of Use supplied with this notice are in gemma-terms-of-use.html (the fetched source page) and gemma-terms-of-use.txt (a readable text rendering). The source page is https://ai.google.dev/gemma/terms.

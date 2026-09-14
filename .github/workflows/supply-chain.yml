@@ -53,6 +53,8 @@ jobs:
                   node-version: 24
             - name: Install dependencies
               run: bun install --frozen-lockfile
+            - name: Embedding compliance manifest gate
+              run: node scripts/check-embedding-manifest.mjs
             - name: License and NOTICE gate
               run: bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json
             - uses: actions/upload-artifact@v4
