@@ -96,3 +96,30 @@ autorag search --json "semantic question about the documents"
 The MinSync workspace is local to the configured AutoRAG workspace. The
 embedding adapter must remain bound to loopback; do not use a remote endpoint
 for private corpus text in this QA flow.
+
+## Direct Ollama mode (without the TEI adapter)
+
+Ollama also exposes an OpenAI-compatible embeddings endpoint. MinSync can use
+it directly, so a new local index does not need the repository's TEI adapter:
+
+```toml
+[embedder]
+id = "openai:embeddinggemma:latest"
+base_url = "http://127.0.0.1:11434"
+
+[vectorstore.options]
+dimension = 768
+```
+
+MinSync's OpenAI adapter still requires `OPENAI_API_KEY` to be present; for a
+loopback-only Ollama endpoint, a non-secret sentinel is sufficient:
+
+```bash
+export OPENAI_API_KEY=ollama
+```
+
+AutoRAG starts `ollama serve` on demand when this direct loopback endpoint is
+configured and unavailable. Existing indexes created through
+`tei:embeddinggemma:latest` remain tied to their TEI endpoint and still need
+the TEI adapter; switching an existing index to direct Ollama should be
+treated as a reindex/compatibility change, not an in-place configuration edit.

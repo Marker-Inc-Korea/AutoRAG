@@ -23,15 +23,6 @@ import type {
 } from "./types.ts";
 import { DEFAULT_KATOK_BINARY, DEFAULT_KATOK_MAX_BUFFER_BYTES, DEFAULT_KATOK_TIMEOUT_MS } from "./types.ts";
 
-/**
- * Environment keys whose mere presence (any value) enables remote embeddings
- * for the `katok` CLI. Compared case-insensitively so casing tricks cannot
- * smuggle remote embedder configuration into the spawned process.
- */
-const REMOTE_EMBEDDING_KEYS: ReadonlySet<string> = new Set(["embedder_base_url", "allow_remote_embeddings"]);
-
-/** The `KATOK_EMBEDDER` key (case-insensitive) is only rejected when URL-valued. */
-const KATOK_EMBEDDER_KEY = "katok_embedder";
 const SAFE_INHERITED_ENV_KEYS = new Set(["HOME", "LANG", "LC_ALL", "PATH", "TMPDIR", "TMP", "TEMP"]);
 const SAFE_KATOK_ENV_PREFIX = "KATOK_";
 
@@ -41,7 +32,6 @@ type ProcessResult = {
 	readonly stdout: string;
 	readonly stderr: string;
 	readonly code: number | null;
-	readonly violatingKey?: string;
 };
 
 type BufferState = {
@@ -58,19 +48,12 @@ type SpawnRequest = {
 	readonly cwd?: string;
 };
 
-interface RemoteEmbeddingViolation {
-	readonly key: string;
-}
-
 /**
  * Thin external `katok` CLI wrapper. Every method spawns the `katok` binary as
  * a child process, parses JSON from stdout, and returns a discriminated ok/fail
- * union. No method throws for expected failures (missing binary, rejected
- * remote-embedding config, CLI nonzero exit, timeout, oversized output, or
- * invalid JSON). The client never opens the KakaoTalk database directly.
- *
- * Remote-embedding configuration is rejected before spawn, case-insensitively,
- * so the spawned process can never egress embeddings to a remote endpoint.
+ * union. No method throws for expected failures (missing binary, CLI nonzero
+ * exit, timeout, oversized output, or invalid JSON). The client never opens the
+ * KakaoTalk database directly.
  */
 export class KatokClient {
 	private readonly options: KatokOptions;
@@ -144,19 +127,8 @@ export class KatokClient {
 		return data === undefined ? toFailure(result, "invalid-shape") : ok(data, result);
 	}
 
-	/** Single retrieval pipeline: build env, gate remote embeddings, spawn, parse-free raw result. */
+	/** Single retrieval pipeline: build env, spawn, parse-free raw result. */
 	private async run(args: readonly string[], signal?: AbortSignal): Promise<ProcessResult> {
-		const violation = findRemoteEmbeddingViolation({ ...process.env, ...(this.options.env ?? {}) });
-		if (violation !== undefined) {
-			return {
-				ok: false,
-				reason: "remote-embedding-rejected",
-				stdout: "",
-				stderr: "",
-				code: null,
-				violatingKey: violation.key,
-			};
-		}
 		const env = controlledEnv(this.options.env);
 		return spawnKatok({
 			options: this.options,
@@ -255,9 +227,7 @@ function commonArgs(options: KatokOptions): readonly string[] {
 
 /**
  * Builds the child environment by merging `process.env` with the caller's
- * overrides. `undefined` values remove a key. The remote-embedding gate runs
- * on this merged env so the spawned process can never receive a remote
- * embedder configuration.
+ * overrides. `undefined` values remove a key.
  */
 function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined>> | undefined): NodeJS.ProcessEnv {
 	const env: NodeJS.ProcessEnv = {};
@@ -276,20 +246,6 @@ function controlledEnv(configuredEnv: Readonly<Record<string, string | undefined
 
 function isAllowedKatokEnvKey(key: string): boolean {
 	return SAFE_INHERITED_ENV_KEYS.has(key) || key.startsWith(SAFE_KATOK_ENV_PREFIX);
-}
-
-function findRemoteEmbeddingViolation(env: NodeJS.ProcessEnv): RemoteEmbeddingViolation | undefined {
-	for (const [key, value] of Object.entries(env)) {
-		if (value === undefined) continue;
-		const lower = key.toLowerCase();
-		if (REMOTE_EMBEDDING_KEYS.has(lower)) return { key };
-		if (lower === KATOK_EMBEDDER_KEY && isUrlValue(value)) return { key };
-	}
-	return undefined;
-}
-
-function isUrlValue(value: string): boolean {
-	return /^https?:\/\//i.test(value.trim());
 }
 
 function searchOk(hits: readonly KatokSearchHit[], result: ProcessResult): KatokSearchResult {
@@ -460,7 +416,6 @@ function toFailure(result: ProcessResult, reason?: KatokFailure["reason"]): Kato
 		stdout: sanitizeDiagnosticText(result.stdout),
 		stderr: sanitizeDiagnosticText(result.stderr),
 		code: result.code,
-		...(result.violatingKey !== undefined ? { violatingKey: result.violatingKey } : {}),
 	};
 }
 

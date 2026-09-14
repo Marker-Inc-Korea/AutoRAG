@@ -45,7 +45,6 @@ export const DEFAULT_KATOK_OPTIONS = {
  */
 export type KatokFailureReason =
 	| "binary-missing"
-	| "remote-embedding-rejected"
 	| "nonzero-exit"
 	| "spawn-error"
 	| "timeout"
@@ -65,11 +64,6 @@ export interface KatokFailure {
 	readonly stderr: string;
 	/** Exit code, or `null` when the process never exited normally. */
 	readonly code: number | null;
-	/**
-	 * The offending environment key when `reason === "remote-embedding-rejected"`.
-	 * A config key name (never a path, never the key's value).
-	 */
-	readonly violatingKey?: string;
 	readonly hits?: readonly unknown[];
 }
 
