@@ -36,8 +36,8 @@ describe("live-e2e core workflow invariants", () => {
 	it("refuses stale fingerprints rather than treating warm state as reusable", () => {
 		expect(
 			isFingerprintCurrent(
-				{ corpusDigest: "old", embeddingModel: "embeddinggemma:latest" },
-				{ corpusDigest: "new", embeddingModel: "embeddinggemma:latest" },
+				{ corpusDigest: "old", embeddingModel: "Qwen3-Embedding-0.6B-Q8_0.gguf" },
+				{ corpusDigest: "new", embeddingModel: "Qwen3-Embedding-0.6B-Q8_0.gguf" },
 			),
 		).toBe(false);
 	});

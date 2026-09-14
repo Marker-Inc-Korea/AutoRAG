@@ -128,9 +128,9 @@ export function buildEnv(root) {
 		corpusDigest: computeCorpusDigest(rootReal),
 		gitCommitSha,
 		gitDirty,
-		embeddingModel: "embeddinggemma:latest",
-		embeddingDimension: 768,
-		embeddingService: "http://127.0.0.1:18080",
+		embeddingModel: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+		embeddingDimension: 1024,
+		embeddingService: "autorag-gateway:qwen3-embedding-0.6b",
 		parserConfig: "default",
 		minSyncConfig: "default",
 	};
