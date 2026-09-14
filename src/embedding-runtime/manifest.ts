@@ -41,7 +41,7 @@ const runtimeAssets: Readonly<Record<PlatformId, RuntimeAsset>> = {
 		filename: "llama-b10951-bin-macos-arm64.tar.gz",
 		url: "https://github.com/ggml-org/llama.cpp/releases/download/b10951/llama-b10951-bin-macos-arm64.tar.gz",
 		sha256: "93d024186f1e6ff1d221f5e0b03567f74dc27a49f5bd42c83066d30af4fbbfec",
-		archiveMembers: ["bin/llama-server"],
+		archiveMembers: ["llama-b10951/llama-server"],
 	},
 	"win-x64-cpu": {
 		id: "llama-win-cpu-x64",

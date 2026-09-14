@@ -85,13 +85,13 @@ describe("embedding runtime cache", () => {
 		await expect(verifyCacheEntry(path, sha256)).rejects.toBeInstanceOf(CacheError);
 	});
 
-	it("routes model and runtime assets separately and extracts a tar.gz server", async () => {
+	it("routes model and runtime assets separately and extracts a tar.gz server matching real llama.cpp layout", async () => {
 		const cacheRoot = await root();
 		const fixture = await mkdtemp(join(cacheRoot, "fixture-"));
-		await mkdir(join(fixture, "bin"), { recursive: true });
-		await writeFile(join(fixture, "bin", "llama-server"), "#!/bin/sh\n");
+		await mkdir(join(fixture, "llama-b10951"), { recursive: true });
+		await writeFile(join(fixture, "llama-b10951", "llama-server"), "#!/bin/sh\n");
 		const archive = join(cacheRoot, "runtime.tar.gz");
-		execFileSync("tar", ["-czf", archive, "-C", fixture, "bin/llama-server"]);
+		execFileSync("tar", ["-czf", archive, "-C", fixture, "llama-b10951/llama-server"]);
 		const archiveBytes = await readFile(archive);
 		const runtimeAsset = {
 			id: "runtime-fixture",
@@ -99,13 +99,13 @@ describe("embedding runtime cache", () => {
 			filename: "runtime.tar.gz",
 			sha256: createHash("sha256").update(archiveBytes).digest("hex"),
 			kind: "runtime" as const,
-			archiveMembers: ["bin/llama-server"],
+			archiveMembers: ["llama-b10951/llama-server"],
 		};
 		const runtimePath = await downloadAsset(runtimeAsset, {
 			cacheRoot,
 			fetch: async () => new Response(archiveBytes),
 		});
-		expect(runtimePath).toBe(join(cacheRoot, "runtime", "runtime.tar.gz.extracted", "bin", "llama-server"));
+		expect(runtimePath).toBe(join(cacheRoot, "runtime", "runtime.tar.gz.extracted", "llama-b10951", "llama-server"));
 		expect((await stat(runtimePath)).mode & 0o111).toBeGreaterThan(0);
 		expect(await downloadAsset(asset, { cacheRoot, fetch: async () => new Response(bytes) })).toBe(
 			join(cacheRoot, "models", "model.gguf"),
@@ -115,9 +115,10 @@ describe("embedding runtime cache", () => {
 	it("rejects a runtime archive with missing expected members and cleans extraction state", async () => {
 		const cacheRoot = await root();
 		const fixture = await mkdtemp(join(cacheRoot, "fixture-"));
-		await writeFile(join(fixture, "not-server"), "nope");
+		await mkdir(join(fixture, "llama-b10951"), { recursive: true });
+		await writeFile(join(fixture, "llama-b10951", "not-server"), "nope");
 		const archive = join(cacheRoot, "runtime.tar.gz");
-		execFileSync("tar", ["-czf", archive, "-C", fixture, "not-server"]);
+		execFileSync("tar", ["-czf", archive, "-C", fixture, "llama-b10951/not-server"]);
 		const archiveBytes = await readFile(archive);
 		const runtimeAsset = {
 			id: "bad-runtime",
@@ -125,7 +126,7 @@ describe("embedding runtime cache", () => {
 			filename: "bad-runtime.tar.gz",
 			sha256: createHash("sha256").update(archiveBytes).digest("hex"),
 			kind: "runtime" as const,
-			archiveMembers: ["bin/llama-server"],
+			archiveMembers: ["llama-b10951/llama-server"],
 		};
 		await expect(
 			downloadAsset(runtimeAsset, { cacheRoot, fetch: async () => new Response(archiveBytes) }),

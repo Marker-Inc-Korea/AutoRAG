@@ -79,11 +79,12 @@ export class EmbeddingRuntimeSupervisor {
 		this.backend = options.backend ?? profile.backend;
 		this.osPlatform = options.platform ?? platform();
 		this.defaultExecutable = options.executablePath === undefined;
+		const runtimeDir = cacheDirectory("runtime", this.root);
 		this.executablePath =
 			options.executablePath ??
 			(this.osPlatform === "win32"
-				? join(cacheDirectory("runtime", this.root), "llama-server.exe")
-				: join(cacheDirectory("runtime", this.root), "bin", "llama-server"));
+				? join(runtimeDir, "llama-server.exe")
+				: join(runtimeDir, "llama-b10951", "llama-server"));
 		this.modelPath = options.modelPath ?? join(cacheDirectory("models", this.root), basename(profile.model));
 		this.timeoutMs = options.readinessTimeoutMs ?? DEFAULT_TIMEOUT;
 		this.intervalMs = options.readinessIntervalMs ?? DEFAULT_INTERVAL;
@@ -197,17 +198,22 @@ export class EmbeddingRuntimeSupervisor {
 		try {
 			for (const entry of await readdir(runtimeRoot, { withFileTypes: true })) {
 				if (!entry.isDirectory() || !entry.name.endsWith(".extracted")) continue;
-				const candidate = join(
-					runtimeRoot,
-					entry.name,
-					this.osPlatform === "win32" ? "llama-server.exe" : "bin",
-					...(this.osPlatform === "win32" ? [] : ["llama-server"]),
-				);
-				try {
-					await stat(candidate);
-					return candidate;
-				} catch {
-					/* continue */
+				// The real llama.cpp b10951 macOS archive extracts to llama-b10951/<binary>.
+				// Windows zip members are flat (no versioned prefix).
+				const dirs = this.osPlatform === "win32" ? [""] : ["llama-b10951", "bin"];
+				for (const subdir of dirs) {
+					const candidate = join(
+						runtimeRoot,
+						entry.name,
+						subdir,
+						this.osPlatform === "win32" ? "llama-server.exe" : "llama-server",
+					);
+					try {
+						await stat(candidate);
+						return candidate;
+					} catch {
+						/* continue */
+					}
 				}
 			}
 		} catch {
