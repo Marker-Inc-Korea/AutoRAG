@@ -26,7 +26,8 @@
   "files": [
     "dist",
     "skills",
-    "README.md"
+    "README.md",
+    "NOTICE"
   ],
   "publishConfig": {
     "access": "public"
@@ -39,18 +40,19 @@
     "test:windows": "node scripts/run-test-files.mjs",
     "check": "biome check --write .",
     "lint": "biome check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "supply-chain": "bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json"
   },
   "engines": {
     "node": ">=24.0.0"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.4",
-    "@earendil-works/pi-ai": "^0.84.4",
-    "@earendil-works/pi-coding-agent": "0.84.4",
-    "@earendil-works/pi-tui": "0.84.4",
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@earendil-works/pi-tui": "0.85.1",
     "@opendataloader/pdf": "^2.5.7",
-    "@rhwp/core": "0.8.4",
+    "@rhwp/core": "0.8.6",
     "chardet": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
     "iconv-lite": "^0.7.3",
@@ -67,7 +69,8 @@
     "@biomejs/biome": "2.5.12",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^26.4.1",
+    "@types/ws": "^8.18.1",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

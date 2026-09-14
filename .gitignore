@@ -14,6 +14,11 @@ evidence/
 *.local.json
 /tmp/autorag-*.json
 /tmp/autorag-*.err
+/sbom.cdx.json
+/sbom.local.cdx.json
+/autorag.cdx.json
+/autorag.spdx.json
+/release-assets/
 
 # Shared / legacy Python artifacts
 .env

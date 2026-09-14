@@ -24,6 +24,12 @@
 		"lineWidth": 120
 	},
 	"files": {
-		"includes": ["src/**/*.ts", "test/**/*.ts", "!**/node_modules/**/*"]
+		"includes": [
+			"src/**/*.ts",
+			"test/**/*.ts",
+			"scripts/supply-chain/**/*.ts",
+			"!**/node_modules/**/*",
+			"!**/.worktrees/**/*"
+		]
 	}
 }
