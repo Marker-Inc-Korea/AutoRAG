@@ -36,18 +36,14 @@ new AutoRAGAgent({
    - Expected: katok-owned chat/channel filtering and chat identity metadata
      remain intact; AutoRAG does not apply a virtual source scope.
 
-4. **Remote embedding egress rejection**
-   - Set one of these before refresh/search: `EMBEDDER_BASE_URL`, `embedder_base_url`, `ALLOW_REMOTE_EMBEDDINGS`, `allow_remote_embeddings`, or URL-valued `KATOK_EMBEDDER`.
-   - Expected: `katok` is not spawned; datasource diagnostic code maps to egress rejection; the remote URL value is not present in any serialized result/status.
-
-5. **Missing binary / permission failure**
+4. **Missing binary / permission failure**
    - Point `KatokClient` at a nonexistent binary or run without required OS permissions.
    - Expected: no throw; the failure surfaces as a warning/error diagnostic.
 
-6. **Public response curation**
+5. **Public response curation**
    - Run `searchDocuments()` and let the librarian curate a KakaoTalk-supported answer.
    - Expected: visible `answer` and `results` contain curated facts grounded in the datasource evidence.
 
 ## Environment limitation note
 
-CI and most development containers do not have a real KakaoTalk profile or macOS app-container permissions. In those environments, perform checks 1, 4, and 5 with the test/fake katok client; record real-data checks as manually blocked by missing local KakaoTalk credentials rather than bypassing the safety requirements.
+CI and most development containers do not have a real KakaoTalk profile or macOS app-container permissions. In those environments, perform checks 1 and 4 with the test/fake katok client; record real-data checks as manually blocked by missing local KakaoTalk credentials rather than bypassing the safety requirements.

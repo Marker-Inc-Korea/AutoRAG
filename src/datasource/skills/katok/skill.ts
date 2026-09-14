@@ -79,12 +79,11 @@ export class KatokSkill implements DatasourceSkill {
 	async index(): Promise<DatasourceIndexResult> {
 		try {
 			const doctor = await this.client.doctor();
-			if (!doctor.ok) return this.fail(katokFailureCode("datasource-unavailable", doctor.reason), doctor);
+			if (!doctor.ok) return this.fail("datasource-unavailable", doctor);
 			const sync = await this.client.sync();
-			if (!sync.ok) return this.fail(katokFailureCode("datasource-index-failed", sync.reason), sync);
+			if (!sync.ok) return this.fail("datasource-index-failed", sync);
 			const indexResult = await this.client.index();
-			if (!indexResult.ok)
-				return this.fail(katokFailureCode("datasource-index-failed", indexResult.reason), indexResult);
+			if (!indexResult.ok) return this.fail("datasource-index-failed", indexResult);
 			this.lastIndexedAt = Date.now();
 			const chunkCount =
 				"data" in indexResult &&
@@ -194,10 +193,6 @@ export class KatokSkill implements DatasourceSkill {
 			message,
 		};
 	}
-}
-
-function katokFailureCode(fallback: DatasourceDiagnosticCode, reason: string): DatasourceDiagnosticCode {
-	return reason === "remote-embedding-rejected" ? "datasource-embedding-egress-rejected" : fallback;
 }
 
 function sanitizeDiagnosticText(value: string): string {

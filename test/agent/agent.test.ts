@@ -82,7 +82,7 @@ describe("AutoRAGAgent", () => {
 	it("aborts and rejects when a search exceeds its timeout", async () => {
 		let abortCalls = 0;
 		const session = {
-			agent: { subscribe: () => () => undefined },
+			agent: { subscribe: () => () => undefined, state: { messages: [] } },
 			prompt: async () => await new Promise<void>(() => undefined),
 			abort: async () => {
 				abortCalls += 1;
@@ -114,6 +114,7 @@ describe("AutoRAGAgent", () => {
 					});
 					return () => undefined;
 				},
+				state: { messages: [] },
 			},
 			prompt: async () => undefined,
 			abort: async () => {
