@@ -47,7 +47,8 @@ export function stageReleaseAssets(input: {
 }
 
 function packNpmTarball(projectRoot: string, outputDir: string): void {
-	const result = spawnSync("npm", ["pack", "--pack-destination", outputDir], {
+	const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+	const result = spawnSync(npmCommand, ["pack", "--pack-destination", outputDir], {
 		cwd: projectRoot,
 		encoding: "utf8",
 	});
