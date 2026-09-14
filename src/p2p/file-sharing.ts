@@ -147,7 +147,7 @@ export function resolveFileShare(
 	if (typeof wireId !== "string" || typeof peerFingerprint !== "string") return denied();
 
 	const source = wireId;
-	if (!source.startsWith("/")) return denied();
+	if (!isAbsolute(source)) return denied();
 
 	const resolved = resolveLocalSource(source, options.workspaceRoots);
 	if (resolved === undefined) return denied();
