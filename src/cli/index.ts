@@ -52,6 +52,7 @@ const VALUE_FLAGS = new Set([
 
 const COMMANDS = [
 	"init",
+	"setup",
 	"refresh",
 	"status",
 	"search",
@@ -81,6 +82,7 @@ Usage: autorag <command> [args] [flags]
 
 Commands:
   init                 Write ~/.autorag/config.json for a local collection
+  setup                Probe and configure local runtime and datasources
 	                       (--search-paths a,b  --workspace DIR  --memory-path FILE
 	                        --model-provider P  --model-id ID
 	                        --embedder-id ID --embedder-base-url URL --embedder-api-key-env VAR
@@ -188,6 +190,10 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		case "init": {
 			const { runInit } = await import("./commands/init.ts");
 			return runInit(ctx);
+		}
+		case "setup": {
+			const { runSetupCommand } = await import("./commands/setup.ts");
+			return runSetupCommand(ctx);
 		}
 		case "refresh": {
 			const { runRefresh } = await import("./commands/refresh.ts");
