@@ -135,6 +135,64 @@ describe("DiscrawlClient search", () => {
 	});
 });
 
+describe("DiscrawlClient managed embeddings", () => {
+	it("emits the native OpenAI-compatible config and rebuilds on managed identity change", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-managed-"));
+		const client = new DiscrawlClient({
+			root,
+			embeddingRuntime: {
+				provider: "openai_compatible",
+				model: "Qwen3",
+				baseUrl: "http://127.0.0.1:18080/v1",
+				dimensions: 1024,
+			},
+		});
+		const first = await client.configureEmbeddings({
+			provider: "openai_compatible",
+			model: "Qwen3",
+			baseUrl: "http://127.0.0.1:18080/v1",
+			dimensions: 1024,
+		});
+		const path = join(root, ".autorag", "datasources", "discrawl", "config.toml");
+		expect(first).toMatchObject({ configured: true, rebuildRequired: false });
+		expect(readFileSync(path, "utf8")).toContain("[search.embeddings]");
+		expect(readFileSync(path, "utf8")).toContain('provider = "openai_compatible"');
+		const second = await client.configureEmbeddings({
+			provider: "openai_compatible",
+			model: "Qwen3-v2",
+			baseUrl: "http://127.0.0.1:18080/v1",
+			dimensions: 1024,
+		});
+		expect(second.rebuildRequired).toBe(true);
+	});
+
+	it("leaves explicit and malformed operator config byte-identical", async () => {
+		const root = mkdtempSync(join(tmpdir(), "discrawl-explicit-"));
+		const configPath = join(root, "operator.toml");
+		const original = "garbage = [\n";
+		writeFileSync(configPath, original);
+		const client = new DiscrawlClient({
+			root,
+			configPath,
+			embeddingRuntime: {
+				provider: "openai_compatible",
+				model: "Qwen3",
+				baseUrl: "http://127.0.0.1:18080/v1",
+				dimensions: 1024,
+			},
+		});
+		expect(
+			await client.configureEmbeddings({
+				provider: "openai_compatible",
+				model: "Qwen3",
+				baseUrl: "http://127.0.0.1:18080/v1",
+				dimensions: 1024,
+			}),
+		).toMatchObject({ configured: false });
+		expect(readFileSync(configPath, "utf8")).toBe(original);
+	});
+});
+
 describe("DiscrawlClient user-token gate", () => {
 	it("refuses to spawn when a Discord user token is present", async () => {
 		const binaryPath = stubBinary("echo '[]'");

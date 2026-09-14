@@ -146,14 +146,37 @@ async function retrieveDiscrawl(
 	} catch {
 		return [];
 	}
-	if (!result.ok) return [];
+	if (!result.ok) {
+		if (mode !== "hybrid") return [];
+		try {
+			result = await client.search("fts", trimmed, { ...options, topK });
+		} catch {
+			return [];
+		}
+		if (!result.ok) return [];
+		return mapDiscrawlHits(result.hits, "discord-hybrid", instanceId, "fts", options, "semantic-unavailable").slice(
+			0,
+			topK,
+		);
+	}
 
+	return mapDiscrawlHits(result.hits, methodName, instanceId, mode, options).slice(0, topK);
+}
+
+function mapDiscrawlHits(
+	hits: readonly DiscrawlSearchHit[],
+	methodName: string,
+	instanceId: string,
+	mode: DiscrawlSearchMode,
+	options: RetrievalOptions,
+	diagnostic?: string,
+): RetrievalResult[] {
 	const mapped: RetrievalResult[] = [];
-	for (const hit of result.hits) {
+	for (const hit of hits) {
 		const source = discrawlSourcePath(instanceId, hit.messageId);
 		if (!matchesScope(source, options.scope, options.allowedScopes)) continue;
-		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode));
-		if (mapped.length >= topK) break;
+		mapped.push(toRetrievalResult(hit, source, methodName, instanceId, mode, diagnostic));
+		if (mapped.length >= (options.topK ?? DEFAULT_TOP_K)) break;
 	}
 	return mapped;
 }
@@ -174,6 +197,7 @@ function toRetrievalResult(
 	methodName: string,
 	instanceId: string,
 	mode: DiscrawlSearchMode,
+	diagnostic?: string,
 ): RetrievalResult {
 	return {
 		id: `discord:${instanceId}:${hit.messageId}`,
@@ -186,6 +210,7 @@ function toRetrievalResult(
 			datasourceId: DISCORD_DATASOURCE_ID,
 			instanceId,
 			mode,
+			...(diagnostic !== undefined ? { diagnostic } : {}),
 			messageId: hit.messageId,
 			...(hit.channelName !== undefined ? { channelName: hit.channelName } : {}),
 			...(hit.channelId !== undefined ? { channelId: hit.channelId } : {}),

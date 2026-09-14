@@ -28,7 +28,8 @@ import { DEFAULT_DISCRAWL_EMBEDDING_MODEL, DEFAULT_DISCRAWL_MODE, ENGLISH_ONLY_E
 export interface DiscrawlSkillClient extends DiscrawlSearchClient {
 	doctor(): Promise<DiscrawlDoctorResult>;
 	sync(): Promise<DiscrawlSyncResult>;
-	embed(limit?: number): Promise<DiscrawlEmbedResult>;
+	embed(limit?: number, rebuild?: boolean): Promise<DiscrawlEmbedResult>;
+	prepareEmbeddings?(): Promise<boolean>;
 }
 
 export interface DiscrawlSkillOptions {
@@ -115,6 +116,21 @@ export class DiscrawlSkill implements DatasourceSkill {
 	async index(): Promise<DatasourceIndexResult> {
 		const diagnostics: DatasourceDiagnostic[] = [];
 
+		let rebuildEmbeddings = false;
+		if (this.client.prepareEmbeddings !== undefined) {
+			try {
+				rebuildEmbeddings = await this.client.prepareEmbeddings();
+			} catch {
+				diagnostics.push({
+					code: "datasource-index-failed",
+					severity: "warning",
+					message: "discrawl embedding configuration failed; semantic retrieval will fall back to FTS only",
+					instanceId: this.instanceId,
+					source: DISCORD_DATASOURCE_ID,
+				});
+			}
+		}
+
 		let doctor: DiscrawlDoctorResult;
 		try {
 			doctor = await this.client.doctor();
@@ -137,7 +153,7 @@ export class DiscrawlSkill implements DatasourceSkill {
 		if (!sync.ok) return this.fail(failureCode(sync, "datasource-index-failed"), describe(sync), diagnostics);
 
 		if (doctor.data.embeddingsOk) {
-			const embed = await this.runEmbed();
+			const embed = await this.runEmbed(rebuildEmbeddings);
 			if (embed !== undefined) diagnostics.push(embed);
 		} else {
 			diagnostics.push({
@@ -228,10 +244,10 @@ export class DiscrawlSkill implements DatasourceSkill {
 		};
 	}
 
-	private async runEmbed(): Promise<DatasourceDiagnostic | undefined> {
+	private async runEmbed(rebuild = false): Promise<DatasourceDiagnostic | undefined> {
 		let embed: DiscrawlEmbedResult;
 		try {
-			embed = await this.client.embed(this.embedLimit);
+			embed = await this.client.embed(this.embedLimit, rebuild);
 		} catch {
 			return {
 				code: "datasource-index-failed",

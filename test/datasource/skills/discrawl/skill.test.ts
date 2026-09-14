@@ -51,6 +51,8 @@ class StubClient {
 	public searchResult: DiscrawlSearchResult = okSearch([]);
 	public searchCalls: { mode: string; query: string }[] = [];
 	public embedCalled = false;
+	public embedRebuild = false;
+	public prepareResult = false;
 
 	async doctor(): Promise<DiscrawlDoctorResult> {
 		return this.doctorResult;
@@ -58,9 +60,13 @@ class StubClient {
 	async sync(): Promise<DiscrawlSyncResult> {
 		return this.syncResult;
 	}
-	async embed(): Promise<DiscrawlEmbedResult> {
+	async embed(_limit?: number, rebuild = false): Promise<DiscrawlEmbedResult> {
 		this.embedCalled = true;
+		this.embedRebuild = rebuild;
 		return this.embedResult;
+	}
+	async prepareEmbeddings(): Promise<boolean> {
+		return this.prepareResult;
 	}
 	async search(mode: string, query: string): Promise<DiscrawlSearchResult> {
 		this.searchCalls.push({ mode, query });
@@ -195,6 +201,14 @@ describe("DiscrawlSkill index", () => {
 		expect(result.diagnostics.some((d) => d.code === "datasource-empty")).toBe(true);
 	});
 
+	it("rebuilds native embeddings after a runtime identity change", async () => {
+		const stub = new StubClient();
+		stub.prepareResult = true;
+		const result = await new DiscrawlSkill({ client: asClient(stub) }).index();
+		expect(result.ok).toBe(true);
+		expect(stub.embedRebuild).toBe(true);
+	});
+
 	it("degrades a failed embed pass to a warning without failing the index", async () => {
 		const stub = new StubClient();
 		stub.embedResult = { ok: false, reason: "nonzero-exit", stdout: "", stderr: "", code: 1 };
@@ -233,6 +247,21 @@ describe("DiscrawlSkill retrieval methods", () => {
 			authorName: "리누스형",
 			mode: "hybrid",
 		});
+	});
+
+	it("falls back to FTS with a machine-readable semantic diagnostic", async () => {
+		const stub = new StubClient();
+		stub.searchResult = { ok: false, reason: "nonzero-exit", stdout: "", stderr: "", code: 1 };
+		const original = stub.search.bind(stub);
+		stub.search = async (mode: string, query: string) => {
+			if (mode === "fts") return okSearch(HITS);
+			return original(mode, query);
+		};
+		const [hybrid] = new DiscrawlSkill({ client: asClient(stub) }).retrievalMethods();
+		const results = await hybrid?.retrieve("anything", { topK: 5 });
+		expect(results).toHaveLength(1);
+		expect(results[0]?.id).toBe("discord:default:1513467741523415161");
+		expect(results[0]?.metadata.diagnostic).toBe("semantic-unavailable");
 	});
 
 	it("returns no results when the CLI fails, never throwing", async () => {
