@@ -20,8 +20,8 @@ jobs:
             contents: read
             pull-requests: write
         steps:
-            - uses: actions/checkout@v4
-            - uses: actions/dependency-review-action@v4
+            - uses: actions/checkout@v7
+            - uses: actions/dependency-review-action@v5
               with:
                   config-file: ./.github/dependency-review-config.yml
 
@@ -44,7 +44,7 @@ jobs:
     license-notice-gate:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - uses: oven-sh/setup-bun@v2
               with:
                   bun-version: latest
@@ -55,7 +55,7 @@ jobs:
               run: bun install --frozen-lockfile
             - name: License and NOTICE gate
               run: bun scripts/supply-chain/evaluate.ts gate --sbom sbom.local.cdx.json
-            - uses: actions/upload-artifact@v4
+            - uses: actions/upload-artifact@v7
               with:
                   name: local-cyclonedx
                   path: sbom.local.cdx.json
@@ -68,7 +68,7 @@ jobs:
             contents: write
             id-token: write
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - uses: anchore/sbom-action@v0
               with:
                   path: .
