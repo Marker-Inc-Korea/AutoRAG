@@ -109,20 +109,20 @@ describe("KatokSemanticMethod descriptor", () => {
 });
 
 describe("KatokBm25Method retrieve", () => {
-	it("maps hits to human-readable kakao: sources, never OS-file-looking paths", async () => {
+	it("maps hits to the canonical slash datasource source", async () => {
 		const client = makeClient();
 		const method = new KatokBm25Method({ client, instanceId: INSTANCE_ID });
 
 		const results = await method.retrieve("refund", { topK: 10 });
 
 		expect(results.map((r) => r.source)).toEqual([
-			"kakao:default/chunk-001",
-			"kakao:default/chunk-002",
-			"kakao:default/chunk-003",
+			"/kakao/default/chunks/chunk-001",
+			"/kakao/default/chunks/chunk-002",
+			"/kakao/default/chunks/chunk-003",
 		]);
 		for (const result of results) {
-			expect(result.source.startsWith("/")).toBe(false);
-			expect(result.source.startsWith("kakao:")).toBe(true);
+			expect(result.source.startsWith("/")).toBe(true);
+			expect(result.source.startsWith("kakao:")).toBe(false);
 			expect(result.id).toBe(`kakao:${INSTANCE_ID}:${result.metadata.chunkId}`);
 		}
 	});
