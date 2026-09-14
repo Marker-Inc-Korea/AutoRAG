@@ -50,6 +50,17 @@ export interface ResolvedVirtualSource {
 }
 
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+const WINDOWS_DRIVE_PATH = /^[a-z]:[\\/]/iu;
+
+/**
+ * True when `source` is an absolute filesystem path on any supported OS
+ * (POSIX `/...`, Windows drive `C:\` or `C:/`, or UNC `\\...`).
+ * Platform-independent so peer wire ids behave identically on macOS, Linux,
+ * and Windows servers.
+ */
+export function isFilesystemAbsolutePath(source: string): boolean {
+	return source.startsWith("/") || source.startsWith("\\\\") || WINDOWS_DRIVE_PATH.test(source);
+}
 
 /**
  * Normalize an opaque virtual source id. Returns the normalized id, or
