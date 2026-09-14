@@ -18,9 +18,11 @@ import { delimiter, join } from "node:path";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	ensureLocalEmbedder,
 	ensureMinSyncBinary,
 	MINSYNC_VERSION,
 	MinSyncClient,
+	MinSyncQueryError,
 	MinSyncReleaseError,
 	MinSyncVectorMethod,
 	minSyncConfigPath,
@@ -150,6 +152,70 @@ describe("MinSyncClient", () => {
 			"2",
 			"renewal cancellation",
 		]);
+	});
+
+	it("surfaces the native query failure instead of returning empty hits", async () => {
+		// Given
+		writeFileSync(
+			minsyncBinary,
+			`#!/usr/bin/env node
+if (process.argv[2] === "query") {
+  console.error("embedding failed: local endpoint unavailable");
+  process.exit(5);
+}
+process.exit(2);
+`,
+		);
+		chmodSync(minsyncBinary, 0o755);
+		const client = new MinSyncClient({ binaryPath: minsyncBinary, workspacePath: minsyncWorkspace });
+
+		// When
+		const query = client.query("renewal cancellation", 2);
+
+		// Then
+		await expect(query).rejects.toBeInstanceOf(MinSyncQueryError);
+		await expect(query).rejects.toMatchObject({
+			code: 5,
+			stderr: "embedding failed: local endpoint unavailable\n",
+		});
+	});
+});
+
+describe("local embedder preflight", () => {
+	it("starts Ollama when its direct OpenAI-compatible endpoint is unavailable", async () => {
+		// Given
+		let ready = false;
+		let starts = 0;
+
+		// When
+		await ensureLocalEmbedder({
+			baseUrl: "http://127.0.0.1:11434/v1",
+			probe: async () => ready,
+			start: async () => {
+				starts += 1;
+				ready = true;
+			},
+			timeoutMs: 1_000,
+		});
+
+		// Then
+		expect(starts).toBe(1);
+	});
+
+	it("leaves TEI endpoints caller-managed", async () => {
+		// Given
+		let starts = 0;
+
+		// When
+		await ensureLocalEmbedder({
+			baseUrl: "http://127.0.0.1:18080",
+			start: async () => {
+				starts += 1;
+			},
+		});
+
+		// Then
+		expect(starts).toBe(0);
 	});
 });
 
