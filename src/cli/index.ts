@@ -46,6 +46,8 @@ const VALUE_FLAGS = new Set([
 	"port",
 	"host",
 	"input",
+	"profile",
+	"format",
 ]);
 
 const COMMANDS = [
@@ -63,6 +65,8 @@ const COMMANDS = [
 	"tui",
 	"ui",
 	"lite",
+	"models",
+	"gateway",
 ] as const;
 type CommandName = (typeof COMMANDS)[number];
 
@@ -103,6 +107,9 @@ Commands:
   tui                  Open an interactive Pi-powered librarian terminal UI
   ui                   Open a local loopback page to connect and manage data sources
                        (--port N  --host 127.0.0.1  --no-open  --allow-remote)
+  models prefetch|import|verify
+                       Manage verified embedding model cache (--profile ID)
+  gateway status|stop  Inspect or stop the on-demand embedding gateway (--format json)
 
 Setup:
   autorag init --search-paths /path/to/docs,/path/to/notes   # choose folders
@@ -232,6 +239,14 @@ async function dispatch(command: CommandName, ctx: CommandContext): Promise<numb
 		}
 		case "lite": {
 			return dispatchLite(ctx);
+		}
+		case "models": {
+			const { runModels } = await import("./commands/models.ts");
+			return runModels(ctx);
+		}
+		case "gateway": {
+			const { runGateway } = await import("./commands/gateway.ts");
+			return runGateway(ctx);
 		}
 	}
 }
