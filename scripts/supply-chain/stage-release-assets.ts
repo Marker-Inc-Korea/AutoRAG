@@ -54,9 +54,7 @@ function packNpmTarball(projectRoot: string, outputDir: string): void {
 		shell: process.platform === "win32",
 	});
 	if (result.status !== 0) {
-		throw new SupplyChainError(
-			`npm pack failed: ${result.error?.message || result.stderr || result.stdout}`,
-		);
+		throw new SupplyChainError(`npm pack failed: ${result.error?.message || result.stderr || result.stdout}`);
 	}
 }
 
