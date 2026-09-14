@@ -51,9 +51,12 @@ function packNpmTarball(projectRoot: string, outputDir: string): void {
 	const result = spawnSync(npmCommand, ["pack", "--pack-destination", outputDir], {
 		cwd: projectRoot,
 		encoding: "utf8",
+		shell: process.platform === "win32",
 	});
 	if (result.status !== 0) {
-		throw new SupplyChainError(`npm pack failed: ${result.stderr || result.stdout}`);
+		throw new SupplyChainError(
+			`npm pack failed: ${result.error?.message || result.stderr || result.stdout}`,
+		);
 	}
 }
 
