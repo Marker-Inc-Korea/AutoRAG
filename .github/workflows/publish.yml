@@ -12,7 +12,7 @@ jobs:
   set-version:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify legacy tag format
         run: |
@@ -33,7 +33,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
 
       - name: Upload updated pyproject.toml
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyproject-toml
           path: legacy/pyproject.toml
@@ -43,14 +43,14 @@ jobs:
     needs: [set-version]
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up the python environment
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: 'true'
           cache-suffix: '3.11'
@@ -81,7 +81,7 @@ jobs:
       contents: write
     steps:
       - name: Create GitHub release (never marked as latest)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "AutoRAG Legacy ${{ github.ref_name }}"
           generate_release_notes: true
