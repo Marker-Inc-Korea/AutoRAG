@@ -23,7 +23,7 @@ jobs:
       run: |
         sudo apt-get install gcc
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v7
     - name: Install Python 3.10
       run: uv python install 3.10
     - name: Install Venv
